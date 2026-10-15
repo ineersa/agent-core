@@ -35,6 +35,97 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         (new Filesystem())->mkdir(\dirname($this->path));
     }
 
+    public function testMixedPagesHaveDistinctChronologicalCursorsAndSeekOnlyTheNextPrompt(): void
+    {
+        $seq = 0;
+        $fullNextPrompt = str_repeat('Next prompt with full text. ', 100);
+        for ($i = 0; $i < 40; ++$i) {
+            $turn = 100 - $i;
+            $this->write(++$seq, $turn, 'agent_command_applied', ['kind' => 'follow_up', 'text' => 1 === $i ? $fullNextPrompt : 'Prompt '.$turn]);
+            $this->write(++$seq, $turn, 'turn_advanced', ['turn_no' => $turn]);
+            $this->write(++$seq, $turn, 'llm_step_completed', ['assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Answer '.$turn]]]]);
+        }
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        $all = [];
+        $after = 0;
+        do {
+            $page = $index->entryPage($this->log, $this->path, 'indexed', after: $after);
+            $this->assertLessThanOrEqual(32, \count($page['rows']));
+            array_push($all, ...$page['rows']);
+            $after = $page['newer'];
+        } while (null !== $after);
+        $this->assertCount(80, $all);
+        $this->assertCount(80, array_unique(array_column($all, 'cursor')));
+        $this->assertSame(['user', 'assistant', 'user', 'assistant'], array_column(\array_slice($all, 0, 4), 'role'));
+        $this->assertSame([100, 100, 99, 99], array_column(\array_slice($all, 0, 4), 'turn_no'));
+        $this->assertSame([2, 2, 5, 5], array_column(\array_slice($all, 0, 4), 'anchor'));
+        $older = $index->entryPage($this->log, $this->path, 'indexed', before: $all[32]['cursor']);
+        $this->assertSame(\array_slice($all, 0, 32), $older['rows']);
+        $this->logger->records = [];
+        $answer = $index->selectEntry($this->log, $this->path, 'indexed', 100, 'assistant');
+        $this->assertSame(['position' => 61, 'predecessor' => 100, 'text' => $fullNextPrompt, 'selectedPromptTurnNo' => 99], $answer);
+        $this->assertSame(1, $this->readLines('selected_prompt'));
+        $this->assertSame(0, $this->readBytes('index_cold_rebuild'));
+        $last = $index->selectEntry($this->log, $this->path, 'indexed', 61, 'assistant');
+        $this->assertSame('', $last['text']);
+        $this->assertSame(0, $last['selectedPromptTurnNo']);
+    }
+
+    public function testColdAnswerIndexExcludesToolAndCommentaryResponsesAndRetainsForwardAnswersUntilDiscard(): void
+    {
+        $comment = \Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem::toText(['id' => 'comment', 'type' => 'message', 'role' => 'assistant', 'phase' => 'commentary', 'content' => [['type' => 'output_text', 'text' => 'Checking']]]);
+        $responses = [
+            ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Tool commentary']], 'tool_calls' => [['id' => 'call']]],
+            ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Checking', 'text_signature' => $comment->getSignature()]]],
+            ['role' => 'assistant', 'content' => [['type' => 'thinking', 'text' => 'Reasoning only']]],
+            ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Final answer']]],
+        ];
+        $seq = 0;
+        foreach ($responses as $i => $message) {
+            $this->write(++$seq, $i + 1, 'turn_advanced', ['turn_no' => $i + 1]);
+            $this->write(++$seq, $i + 1, 'llm_step_completed', ['assistant_message' => $message]);
+        }
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        $this->assertSame([4], array_column($index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows'], 'turn_no'));
+        (new Filesystem())->remove([\dirname($this->path).'/history-index.sqlite', \dirname($this->path).'/history-index.sqlite-wal', \dirname($this->path).'/history-index.sqlite-shm']);
+        $this->write(++$seq, 1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'history_select']);
+        $this->assertSame([4], array_column($index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows'], 'turn_no'), 'Selection is not deletion, including after a cold index rebuild.');
+        $this->write(++$seq, 1, 'history_tail_discarded', ['after_turn_no' => 1]);
+        $this->assertSame([], $index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows']);
+        $this->expectException(\RuntimeException::class);
+        $index->selectEntry($this->log, $this->path, 'indexed', 4, 'assistant');
+    }
+
+    public function testMixedPageQueriesSeekTheAssistantIndexWithoutTemporaryOrdering(): void
+    {
+        $this->write(1, 1, 'turn_advanced', ['turn_no' => 1]);
+        $this->write(2, 1, 'llm_step_completed', ['assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Answer']]]]);
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        $index->entryPage($this->log, $this->path, 'indexed', after: 0);
+        // Bind the plan proof to the actual mixed paging UNION, not a simplified
+        // answer-only SELECT that could conceal a scan or sort in the real page.
+        $entries = "(SELECT anchor, anchor AS cursor, turn_no, prompt_preview AS preview, 'user' AS role FROM turn_anchor WHERE retained = 1 AND prompt_seq IS NOT NULL UNION ALL SELECT anchor, answer_seq AS cursor, turn_no, answer_preview AS preview, 'assistant' AS role FROM turn_anchor WHERE retained = 1 AND answer_seq IS NOT NULL)";
+        $file = (new \ReflectionClass(RunHistoryIndex::class))->getFileName();
+        $this->assertIsString($file);
+        $source = file_get_contents($file);
+        $this->assertIsString($source);
+        $this->assertStringContainsString('$entries = "'.$entries.'";', $source);
+        $db = $this->db();
+        try {
+            foreach (['<' => 'DESC', '>' => 'ASC'] as $operator => $direction) {
+                foreach (['SELECT * FROM '.$entries.' WHERE cursor '.$operator.' ? ORDER BY cursor '.$direction.' LIMIT '.RunHistoryIndex::PAGE_SIZE,
+                    'SELECT cursor FROM '.$entries.' WHERE cursor '.$operator.' ? LIMIT 1'] as $sql) {
+                    $plan = implode("\n", array_column($db->fetchAllAssociative('EXPLAIN QUERY PLAN '.$sql, [2]), 'detail'));
+                    $this->assertMatchesRegularExpression('/SEARCH turn_anchor USING (?:COVERING )?INDEX turn_answers \(answer_seq[<>]/', $plan, $sql."\n".$plan);
+                    $this->assertStringNotContainsString('SCAN turn_anchor', $plan, $sql."\n".$plan);
+                    $this->assertStringNotContainsString('TEMP B-TREE', $plan, $sql."\n".$plan);
+                }
+            }
+        } finally {
+            $db->close();
+        }
+    }
+
     public function testColdRebuildWarmSeekAndSuffixBytesArePhysical(): void
     {
         $bytes = 0;
@@ -59,6 +150,32 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->assertSame($bytes + $suffix, (int) $db->fetchOne('SELECT end_offset FROM index_meta'));
         } finally {
             $db->close();
+        }
+    }
+
+    public function testAnswerSeekIndexRebuildsDisposableSchemasWithAndWithoutAnswerColumns(): void
+    {
+        $this->write(1, 1, 'turn_advanced', ['turn_no' => 1]);
+        $this->write(2, 1, 'llm_step_completed', ['assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Answer']]]]);
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        $expected = $index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows'];
+        foreach ([4, 3] as $version) {
+            $db = $this->db();
+            $db->executeStatement('DROP INDEX turn_answers');
+            $db->executeStatement('UPDATE index_meta SET version = ?', [$version]);
+            if (3 === $version) {
+                $db->executeStatement('ALTER TABLE turn_anchor DROP COLUMN answer_seq');
+                $db->executeStatement('ALTER TABLE turn_anchor DROP COLUMN answer_preview');
+            }
+            $db->close();
+            $this->assertSame($expected, $index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows']);
+            $db = $this->db();
+            try {
+                $this->assertSame(5, (int) $db->fetchOne('SELECT version FROM index_meta'));
+                $this->assertSame('CREATE INDEX turn_answers ON turn_anchor (answer_seq) WHERE retained = 1 AND answer_seq IS NOT NULL', $db->fetchOne("SELECT sql FROM sqlite_master WHERE name = 'turn_answers'"));
+            } finally {
+                $db->close();
+            }
         }
     }
 
@@ -94,21 +211,21 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $events[] = new RunEvent('indexed', $seq, $turn, $type, $payload);
         }
         $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
-        $page = $index->promptPage($this->log, $this->path, 'indexed', after: 0);
+        $page = $index->entryPage($this->log, $this->path, 'indexed', after: 0);
         $reference = (new \Ineersa\CodingAgent\Tests\Support\HistoryReferenceProjector())->build($events);
         $this->assertSame(array_keys($reference->promptsByTurnNo), array_column($page['rows'], 'turn_no'));
         $this->assertSame([3, 31], array_column($page['rows'], 'anchor'));
         $this->assertSame(RunHistoryIndex::PREVIEW_BYTES, \strlen($page['rows'][1]['preview']));
         $this->assertSame(27, $page['selected']);
         $this->logger->records = [];
-        $prompt = $index->selectPrompt($this->log, $this->path, 'indexed', 4);
-        $this->assertSame(['position' => 80, 'predecessor' => 80, 'text' => $text], $prompt);
+        $prompt = $index->selectEntry($this->log, $this->path, 'indexed', 4);
+        $this->assertSame(['position' => 80, 'predecessor' => 80, 'text' => $text, 'selectedPromptTurnNo' => 4], $prompt);
         $this->assertSame($promptBytes, $this->readBytes('selected_prompt'));
         $this->assertSame(1, $this->readLines('selected_prompt'));
         $this->assertSame(0, $this->readBytes('index_cold_rebuild'));
         $this->assertSame(0, $this->readBytes('sequence_range'));
         $this->logger->records = [];
-        $near = $index->promptPage($this->log, $this->path, 'indexed');
+        $near = $index->entryPage($this->log, $this->path, 'indexed');
         $this->assertSame([4], array_column($near['rows'], 'turn_no'));
         $this->assertSame(31, $near['older']);
         $this->assertSame(0, $this->readBytes('selected_prompt'));
@@ -120,20 +237,20 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $this->write(1, 0, 'run_started', ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Original']]]]]);
         $this->write(3, 1, 'turn_advanced');
         $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
-        $index->promptPage($this->log, $this->path, 'indexed');
+        $index->entryPage($this->log, $this->path, 'indexed');
         $db = $this->db();
         $db->executeStatement('UPDATE event_location SET offset = (SELECT offset FROM event_location WHERE seq = 3), length = (SELECT length FROM event_location WHERE seq = 3) WHERE seq = 1');
         $db->close();
         $canonical = file_get_contents($this->path);
         try {
-            $index->selectPrompt($this->log, $this->path, 'indexed', 1);
+            $index->selectEntry($this->log, $this->path, 'indexed', 1);
             $this->fail('A mismatching prompt location must not be accepted.');
         } catch (\RuntimeException $exception) {
             $this->assertStringContainsString('does not match', $exception->getMessage());
         }
         $this->assertSame($canonical, file_get_contents($this->path));
         $this->assertFileExists(\dirname($this->path).'/history-index.sqlite.unavailable');
-        $this->assertSame('Original', $index->selectPrompt($this->log, $this->path, 'indexed', 1)['text']);
+        $this->assertSame('Original', $index->selectEntry($this->log, $this->path, 'indexed', 1)['text']);
         $this->assertFileDoesNotExist(\dirname($this->path).'/history-index.sqlite.unavailable');
     }
 
@@ -144,17 +261,17 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->write($i * 3 + 1, 81 - $i, 'turn_advanced');
         }
         $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
-        $tail = $index->promptPage($this->log, $this->path, 'indexed');
+        $tail = $index->entryPage($this->log, $this->path, 'indexed');
         $this->assertCount(32, $tail['rows']);
         $this->assertSame(1, $tail['rows'][31]['turn_no']);
-        $outsidePage = $index->selectPrompt($this->log, $this->path, 'indexed', 80);
+        $outsidePage = $index->selectEntry($this->log, $this->path, 'indexed', 80);
         $this->assertSame(0, $outsidePage['predecessor']);
         $this->assertSame(str_repeat('p1', 300), $outsidePage['text']);
         $all = [];
         $after = 0;
         $this->logger->records = [];
         do {
-            $page = $index->promptPage($this->log, $this->path, 'indexed', after: $after);
+            $page = $index->entryPage($this->log, $this->path, 'indexed', after: $after);
             $this->assertLessThanOrEqual(32, \count($page['rows']));
             $this->assertLessThanOrEqual(32 * 240, array_sum(array_map(static fn (array $row): int => \strlen($row['preview']), $page['rows'])));
             array_push($all, ...array_column($page['rows'], 'turn_no'));
@@ -163,7 +280,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $this->assertSame(range(80, 1), $all);
         $this->assertSame(3, $this->readLines('index_boundary_validation'));
         $this->assertSame(0, $this->readBytes('index_cold_rebuild'));
-        $older = $index->promptPage($this->log, $this->path, 'indexed', before: $tail['older']);
+        $older = $index->entryPage($this->log, $this->path, 'indexed', before: $tail['older']);
         $this->assertSame(range(64, 33), array_column($older['rows'], 'turn_no'));
         $db = $this->db();
         $db->executeStatement('ALTER TABLE turn_anchor DROP COLUMN prompt_seq');
@@ -172,7 +289,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $db->executeStatement('UPDATE index_meta SET version = 2');
         $db->close();
         $this->logger->records = [];
-        $rebuilt = $index->promptPage($this->log, $this->path, 'indexed');
+        $rebuilt = $index->entryPage($this->log, $this->path, 'indexed');
         $this->assertSame($tail, $rebuilt);
         $this->assertSame(filesize($this->path), $this->readBytes('index_cold_rebuild'));
     }

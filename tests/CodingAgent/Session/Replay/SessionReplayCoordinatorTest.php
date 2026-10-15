@@ -87,7 +87,7 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
         $this->write(7, 1, 'agent_command_applied', ['kind' => 'follow_up', 'message' => $this->message('discarded')]);
         $this->write(9, 2, 'turn_advanced', ['turn_no' => 2]);
         $this->write(11, 2, 'agent_end', ['reason' => 'completed']);
-        $this->write(13, 1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'history_select']);
+        $this->write(13, 1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'history_select', 'selected_prompt_turn_no' => 2]);
         $this->write(15, 1, 'history_tail_discarded', ['after_turn_no' => 1]);
         $this->write(17, 1, 'agent_command_applied', ['kind' => 'follow_up', 'message' => $this->message('replacement')]);
         $this->write(19, 2, 'turn_advanced', ['turn_no' => 2]);
@@ -159,7 +159,7 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
         $this->assertSame([], $preview->state->pendingToolCalls);
         $this->assertSame([], $preview->state->currentToolCalls);
         $this->assertNull($preview->state->currentOperation);
-        $this->write(19, 1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'history_select']);
+        $this->write(19, 1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'history_select', 'selected_prompt_turn_no' => 0]);
         $recovered = $this->coordinator->reconstruct(RunState::queued('coordinated'));
         $this->assertNotNull($recovered);
         $this->assertSame([], $recovered->state->pendingToolCalls);

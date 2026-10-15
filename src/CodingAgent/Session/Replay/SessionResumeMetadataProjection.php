@@ -25,6 +25,10 @@ final class SessionResumeMetadataProjection
         if ([] !== $data) {
             $this->data = $data;
         }
+        if (\array_key_exists('selected_prompt_turn_no', $this->data)
+            && (!\is_int($this->data['selected_prompt_turn_no']) || $this->data['selected_prompt_turn_no'] < 0)) {
+            throw new \InvalidArgumentException('Resume history selection requires a non-negative prompt turn.');
+        }
         $queued = $this->data['queued_messages'] ?? null;
         if (!\is_array($queued) || \count($queued) > self::MAX_MESSAGES) {
             throw new \LengthException('Resume pending messages exceed the bootstrap view budget.');
@@ -40,6 +44,18 @@ final class SessionResumeMetadataProjection
 
     public function observe(RunEvent $event, ?RuntimeEvent $runtime, bool $pending = false): void
     {
+        if ('history_position_set' === $event->type && 'history_select' === ($event->payload['reason'] ?? null)) {
+            $prompt = $event->payload['selected_prompt_turn_no'] ?? null;
+            if (!\is_int($prompt) || $prompt < 0) {
+                throw new \InvalidArgumentException('Resume history selection requires a non-negative prompt turn.');
+            }
+            // Retain only the canonical selection identity. Its full prompt can
+            // be outside the replay prefix and is sought once when sealing.
+            $this->data['selected_prompt_turn_no'] = $prompt;
+        } elseif (\in_array($event->type, ['history_position_set', 'history_tail_discarded', 'turn_advanced', 'context_compacted'], true)
+            || ('agent_command_applied' === $event->type && \in_array($event->payload['kind'] ?? null, ['follow_up', 'steer', 'append_message', 'compact'], true))) {
+            unset($this->data['selected_prompt_turn_no']);
+        }
         $key = $event->payload['idempotency_key'] ?? null;
         if (\in_array($event->type, ['agent_command_applied', 'agent_command_rejected'], true) && \is_string($key)) {
             $this->removeMessage($key);

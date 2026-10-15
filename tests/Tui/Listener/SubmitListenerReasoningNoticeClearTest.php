@@ -49,8 +49,8 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
         $harness = new VirtualTuiHarness(sessionId: $state->sessionId);
         $screen = $harness->screen();
         $screen->setStatus('om', 'poller alive');
-        $screen->setTransientStatus('history', 'Session has no user prompts yet');
-        $this->assertStringContainsString('Session has no user prompts yet', $harness->plainScreenText());
+        $screen->setTransientStatus('history', 'Session has no conversation history yet');
+        $this->assertStringContainsString('Session has no conversation history yet', $harness->plainScreenText());
 
         $tui = $harness->tui();
         $this->registerSubmitListener($client, $state, $screen, $tui);
@@ -59,7 +59,7 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
         $tui->handleInput("\r");
 
         $after = $harness->plainScreenText();
-        $this->assertStringNotContainsString('Session has no user prompts yet', $after);
+        $this->assertStringNotContainsString('Session has no conversation history yet', $after);
         $this->assertStringContainsString('poller alive', $after);
     }
 
@@ -68,7 +68,7 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
     {
         $state = new TuiSessionState('transient-repost-session');
         $provider = $this->createStub(HistoryProviderInterface::class);
-        $provider->method('forSession')->willReturn(new HistoryView(prompts: [], selectedAnchor: 0));
+        $provider->method('forSession')->willReturn(new HistoryView(entries: [], selectedAnchor: 0));
         $harness = new VirtualTuiHarness(sessionId: $state->sessionId);
         $screen = $harness->screen();
         $tui = $harness->tui();
@@ -90,10 +90,10 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
         $tui->handleInput("\r");
         $text = $harness->plainScreenText();
         $this->assertStringNotContainsString('File rewind requires an active session.', $text);
-        $this->assertStringContainsString('Session has no user prompts yet', $text);
+        $this->assertStringContainsString('Session has no conversation history yet', $text);
         $tui->handleInput('/unknown-command');
         $tui->handleInput("\r");
-        $this->assertStringNotContainsString('Session has no user prompts yet', $harness->plainScreenText());
+        $this->assertStringNotContainsString('Session has no conversation history yet', $harness->plainScreenText());
     }
 
     #[Test]

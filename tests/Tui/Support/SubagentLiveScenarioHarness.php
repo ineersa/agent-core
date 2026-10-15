@@ -362,7 +362,7 @@ final class SubagentLiveScenarioHarness
         return new class implements HistoryProviderInterface {
             public function forSession(string $runId, ?int $before = null, ?int $after = null): HistoryView
             {
-                return new HistoryView(prompts: [], selectedAnchor: 0);
+                return new HistoryView(entries: [], selectedAnchor: 0);
             }
 
             public function promptText(string $runId, int $turnNo): string

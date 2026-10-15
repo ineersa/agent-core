@@ -93,7 +93,10 @@ final readonly class BridgeTuiExtensionContext implements TuiExtensionContextInt
         $after = 0;
         do {
             $history = $this->runtime->historyProvider->forSession($sessionId, after: $after);
-            foreach ($history->prompts as $prompt) {
+            foreach ($history->entries as $prompt) {
+                if ('user' !== $prompt->role) {
+                    continue;
+                }
                 $title = PickerListLabelFormatter::sanitizeTitle($this->runtime->historyProvider->promptText($sessionId, $prompt->turnNo));
                 if ('' === $title) {
                     $title = 'Turn '.$prompt->turnNo;

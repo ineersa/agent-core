@@ -18,10 +18,10 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
- * Manages the /history picker overlay (linear user-prompt undo/redo).
+ * Manages the /history picker overlay.
  *
- * Rows are human prompts only. Selecting prompt N positions conversation context
- * immediately before N and populates the editor with N's original text.
+ * User entries position context before the prompt and load it into the editor.
+ * Assistant entries position context after the answer and load the next prompt.
  * Forward history remains until a context-mutating action discards it.
  */
 final class HistoryPickerController
@@ -48,15 +48,15 @@ final class HistoryPickerController
         $state = $this->state;
 
         $history = $this->historyProvider->forSession($state->sessionId, $before, $after);
-        if ([] === $history->prompts) {
-            $screen->setTransientStatus('history', 'Session has no user prompts yet');
+        if ([] === $history->entries) {
+            $screen->setTransientStatus('history', 'Session has no conversation history yet');
             $screen->refresh();
 
             return;
         }
 
         $header = new TextWidget(
-            text: $screen->theme()->muted('Session history — Enter to edit prompt (Esc to close)'),
+            text: $screen->theme()->muted('Session history — Enter to select position (Esc to close)'),
             truncate: true,
         );
 
@@ -85,6 +85,8 @@ final class HistoryPickerController
                 $picker->open(before: $history->olderBefore);
             } elseif ('newer' === $value) {
                 $picker->open(after: $history->newerAfter);
+            } elseif (str_starts_with($value, 'assistant:')) {
+                $switcher->selectHistoryTurn((int) substr($value, 10), 'assistant');
             } else {
                 $switcher->selectHistoryTurn((int) $value);
             }
@@ -110,22 +112,22 @@ final class HistoryPickerController
     {
         $items = [];
         if (null !== $history->olderBefore) {
-            $items[] = ['value' => 'older', 'label' => $theme->muted('Older prompts...')];
+            $items[] = ['value' => 'older', 'label' => $theme->muted('Older entries...')];
         }
-        foreach ($history->prompts as $prompt) {
-            $body = PickerListLabelFormatter::sanitizeTitle($prompt->promptText);
+        foreach ($history->entries as $prompt) {
+            $body = PickerListLabelFormatter::sanitizeTitle($prompt->text);
             if ('' === $body) {
-                $body = 'User message (turn '.$prompt->turnNo.')';
+                $body = ucfirst($prompt->role).' message (turn '.$prompt->turnNo.')';
             }
-            $marker = $prompt->anchor === $history->selectedAnchor ? '◉ ' : '○ ';
-            $prefix = PickerListLabelFormatter::formatRolePrefix($theme, 'user');
+            $marker = $prompt->anchor === $history->selectedAnchor && $prompt->role === $history->selectedRole ? '◉ ' : '○ ';
+            $prefix = PickerListLabelFormatter::formatRolePrefix($theme, $prompt->role);
             $items[] = [
-                'value' => (string) $prompt->turnNo,
+                'value' => ('assistant' === $prompt->role ? 'assistant:' : '').$prompt->turnNo,
                 'label' => $marker.$prefix.' '.$body,
             ];
         }
         if (null !== $history->newerAfter) {
-            $items[] = ['value' => 'newer', 'label' => $theme->muted('Newer prompts...')];
+            $items[] = ['value' => 'newer', 'label' => $theme->muted('Newer entries...')];
         }
 
         return $items;
@@ -136,12 +138,12 @@ final class HistoryPickerController
      */
     public static function initialSelectedIndex(HistoryView $history): int
     {
-        $prompts = $history->prompts;
+        $prompts = $history->entries;
         if ([] === $prompts) {
             return 0;
         }
 
-        // Prefer the first human prompt after the selected tip (tip may equal a prompt
+        // Prefer the first entry after the selected tip (tip may equal a prompt
         // turn when sitting at its completion, or an internal predecessor).
         $offset = null !== $history->olderBefore ? 1 : 0;
         foreach ($prompts as $idx => $prompt) {

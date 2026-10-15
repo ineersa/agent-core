@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
-use Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt;
+use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -58,7 +58,7 @@ final readonly class SelectHistoryTurnHandler
         }
 
         try {
-            $this->commandBus->dispatch(new SelectHistoryPrompt($runId, $targetTurnNo, $command->id));
+            $this->commandBus->dispatch(new SelectHistoryEntry($runId, $targetTurnNo, $command->id, (string) ($command->payload['role'] ?? 'user')));
         } catch (\Throwable $e) {
             $this->logger->error('select_history_turn_handler.failed', [
                 'run_id' => $runId,

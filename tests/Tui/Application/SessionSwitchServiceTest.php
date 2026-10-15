@@ -252,7 +252,7 @@ final class SessionSwitchServiceTest extends TestCase
             ->with(
                 'test-run-id',
                 $this->callback(static fn (UserCommand $cmd): bool => 'select_history_turn' === $cmd->type
-                    && ['turn_no' => 3] === $cmd->payload
+                    && ['turn_no' => 3, 'role' => 'user'] === $cmd->payload
                 ),
             );
 

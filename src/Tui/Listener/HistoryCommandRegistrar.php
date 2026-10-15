@@ -21,7 +21,7 @@ final class HistoryCommandRegistrar implements TuiListenerRegistrar, SlashComman
     {
         $catalog->registerMetadata(new CommandMetadata(
             name: 'history',
-            description: 'Show session user-prompt history — Enter to edit prompt, Esc to close',
+            description: 'Show user prompts and final answers; Enter to select position, Esc to close',
             usage: '/history',
             acceptsArguments: false,
         ));
