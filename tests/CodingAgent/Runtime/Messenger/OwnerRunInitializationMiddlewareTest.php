@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
@@ -167,7 +168,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
             self::getContainer()->get(HatfieldSessionStore::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            new \Psr\Log\NullLogger(), self::getContainer()->get(AgentArtifactRegistry::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class));
+            new \Psr\Log\NullLogger(), self::getContainer()->get(AgentArtifactRegistry::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), self::getContainer()->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class));
         try {
             $middleware->handle(new Envelope($this->start($run), [new ReceivedStamp('run_control')]), new StackMiddleware());
             $this->fail('Empty recovery must not admit queued state.');
@@ -176,6 +177,112 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
         }
         $this->expectException(RunContextNotLoadedException::class);
         $this->registry()->requireLoaded($run);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('lateStartTerminalKinds')]
+    public function testLateStartOnTerminalChildDoesNotReviveAndLeavesChildUnloaded(string $kind): void
+    {
+        $container = self::getContainer();
+        $parent = $this->reserve();
+        $identity = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO(
+            $parent,
+            'child-terminal-'.$kind,
+            'agent_terminal_'.$kind,
+            'scout',
+            'task',
+            AgentArtifactKindEnum::Subagent,
+        );
+        $lifecycle = $container->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
+        $lifecycle->reservePending($identity);
+
+        $events = $container->get(EventStoreInterface::class);
+        $registry = $this->registry();
+        if ('completed' === $kind) {
+            $input = new \Ineersa\AgentCore\Domain\Run\StartRunInput(
+                'instructions',
+                [],
+                $identity->childRunId,
+                new RunMetadata(session: ['kind' => 'agent_child', 'parent_run_id' => $parent], model: 'test-model'),
+            );
+            $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService::class)
+                ->startPreparedInOrder($parent, 'launch-call-'.$kind, [$identity], [new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO($identity, $input)]);
+            $queued = $container->get('messenger.transport.run_control')->getSent()[0];
+            $this->assertInstanceOf(StartRun::class, $queued->getMessage());
+            $container->get('agent.command.bus')->dispatch($queued->with(new ReceivedStamp('run_control')));
+            $this->assertSame(RunStatus::Running, $registry->requireLoaded($identity->childRunId)->status);
+            PreparedEventStoreSeeder::append(
+                $events,
+                RunEvent::forAppend($identity->childRunId, 0, 'agent_end', ['reason' => 'completed']),
+            );
+            $registry->release($identity->childRunId);
+            $late = $queued;
+        } else {
+            $container->get('agent.command.bus')->dispatch(
+                (new Envelope(new ApplyCommand($identity->childRunId, 0, 'cancel', 1, 'cancel-'.$kind, 'cancel')))
+                    ->with(new ReceivedStamp('run_control')),
+            );
+            $projection = $container->get(RunOperationalProjectionRepository::class)->find($identity->childRunId);
+            $this->assertNotNull($projection);
+            $this->assertSame(RunStatus::Cancelled, $projection->status);
+            $this->assertSame($parent, $projection->parentRunId);
+            try {
+                $registry->requireLoaded($identity->childRunId);
+                $this->fail('Cancel-before-start must already release the finished child.');
+            } catch (RunContextNotLoadedException $exception) {
+                // Production cancel already released the finished child. Continue with late StartRun.
+                $this->assertStringContainsString($identity->childRunId, $exception->getMessage());
+            }
+            $late = new Envelope($this->childStart($identity->childRunId, $parent), [new ReceivedStamp('run_control')]);
+        }
+
+        $beforeSeq = $events->latestSequenceFor($identity->childRunId);
+        $this->assertNotNull($beforeSeq);
+        $container->get('agent.command.bus')->dispatch($late);
+
+        $this->assertSame($beforeSeq, $events->latestSequenceFor($identity->childRunId));
+        $projection = $container->get(RunOperationalProjectionRepository::class)->find($identity->childRunId);
+        $this->assertNotNull($projection);
+        $this->assertSame($parent, $projection->parentRunId);
+        $this->assertSame($parent, $projection->ownerSessionId);
+        $this->assertTrue($container->get(RunRelationshipReaderInterface::class)->isAgentChild($identity->childRunId));
+        $this->expectException(RunContextNotLoadedException::class);
+        $registry->requireLoaded($identity->childRunId);
+    }
+
+    public static function lateStartTerminalKinds(): iterable
+    {
+        yield 'completed child' => ['completed'];
+        yield 'cancel before start' => ['cancelled'];
+    }
+
+    public function testRecoveredParentConflictIsRejectedBeforePublication(): void
+    {
+        $container = self::getContainer();
+        $parent = $this->reserve();
+        $entry = $container->get(AgentArtifactRegistry::class)->create($parent, 'agent_conflict', 'child-conflict', 'scout', AgentArtifactKindEnum::Subagent);
+        $this->registry()->createNew($entry->agentRunId);
+        PreparedEventStoreSeeder::append(
+            $container->get(EventStoreInterface::class),
+            RunEvent::forAppend($entry->agentRunId, 0, 'run_started', ['payload' => ['metadata' => [
+                'model' => 'test-model',
+                'session' => ['kind' => 'agent_child', 'parent_run_id' => 'conflicting-parent'],
+            ]]]),
+        );
+        $this->registry()->release($entry->agentRunId);
+
+        try {
+            $this->consume($this->childStart($entry->agentRunId, $parent));
+            $this->fail('Conflicting recovered ownership must not be published.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('parent identity conflicts with child reservation', $exception->getMessage());
+        }
+        $projection = $container->get(RunOperationalProjectionRepository::class)->find($entry->agentRunId);
+        $this->assertNotNull($projection);
+        $this->assertSame($parent, $projection->parentRunId);
+        $this->assertSame($parent, $projection->ownerSessionId);
+        $this->assertSame(0, $projection->lastEventSequence);
+        $this->expectException(RunContextNotLoadedException::class);
+        $this->registry()->requireLoaded($entry->agentRunId);
     }
 
     private function reserve(): string
@@ -191,6 +298,21 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
     private function start(string $run): StartRun
     {
         return new StartRun($run, 0, 'start', 1, 'start', new StartRunPayload('system', metadata: new RunMetadata(model: 'test-model')));
+    }
+
+    private function childStart(string $run, string $parent): StartRun
+    {
+        return new StartRun(
+            $run,
+            0,
+            'start',
+            1,
+            'start-late-'.$run,
+            new StartRunPayload(
+                'system',
+                metadata: new RunMetadata(session: ['kind' => 'agent_child', 'parent_run_id' => $parent], model: 'test-model'),
+            ),
+        );
     }
 
     private function consume(object $message): void

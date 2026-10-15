@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Lifecycle;
 
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
@@ -739,14 +742,31 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
         $this->ensureArtifactReserved($parent, $c1['childRunId'], $c1['artifactId'], 's-nat', 'Do work');
 
+        $active = self::getContainer()->get(ActiveRunContextInterface::class);
+        $previous = new RunState(
+            runId: $c1['childRunId'],
+            status: RunStatus::Running,
+            turnNo: 2,
+            lastSeq: 0,
+            model: 'deepseek/deepseek-v4-flash',
+            parentRunId: $parent,
+        );
+        $active->loadRecovered($previous);
+
+        $observeBus = new TestMessageBus();
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
             new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
             new TestLogger(),
-            new TestMessageBus(),
+            $observeBus,
         );
 
+        $terminalStatus = match ($scenario) {
+            'completed' => RunStatus::Completed,
+            'failed' => RunStatus::Failed,
+            default => RunStatus::Cancelled,
+        };
         if ('completed' === $scenario) {
             $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Completed, 2, [
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
@@ -767,6 +787,30 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'stop']]]]),
                 new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'cancelled']),
             ]));
+        }
+
+        // Production owner terminal commits release finished children after verified
+        // finalization. Drive that path, then prove later delivery from durable products.
+        $childStore = new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore();
+        $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+            activeRunContext: $active,
+            eventStore: $childStore,
+            logger: new TestLogger(),
+            finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create(
+                $childStore,
+                new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
+            ),
+        );
+        $commit->commit(
+            $previous,
+            $previous->with(['status' => $terminalStatus]),
+            [new RunEvent($c1['childRunId'], 0, 2, RunEventTypeEnum::AgentEnd->value, ['reason' => $terminalStatus->value])],
+        );
+
+        try {
+            $active->requireLoaded($c1['childRunId']);
+            $this->fail('Finished child must leave the owner registry before parent delivery.');
+        } catch (RunContextNotLoadedException) {
         }
 
         $appended = [];
@@ -1516,8 +1560,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             batchIndex: 1,
         );
         $events = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
-        PreparedEventStoreSeeder::append($events, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($identity->childRunId, 0, 'run_started', ['payload' => ['messages' => [['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'partial']]]]]]));
-        PreparedEventStoreSeeder::append($events, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($identity->childRunId, 0, 'agent_end', ['reason' => 'failed']));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($identity->childRunId, 0, 'run_started', ['payload' => ['messages' => [['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'partial']]]]]]));
+        PreparedEventStoreSeeder::append($events, RunEvent::forAppend($identity->childRunId, 0, 'agent_end', ['reason' => 'failed']));
 
         $outcome = $this->createOutcomeFactory()->buildNaturalArtifactOutcome(
             $identity,
@@ -1620,7 +1664,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame([], $completionBus->messages);
         $this->assertFileExists($inputPath);
         // A retry may queue the same command; only owner consumption commits it.
-        $active = self::getContainer()->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class);
+        $active = self::getContainer()->get(ActiveRunContextInterface::class);
         $active->loadRecovered(\Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parent)->withTurnNo(2)->withPendingToolCalls([$tool => false])->build());
         if ($superseded) {
             if (null !== $kind) {

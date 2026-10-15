@@ -83,6 +83,14 @@ final readonly class RunCommit
                 $afterTurnActions,
             );
 
+            // A finished child leaves owner memory after its terminal transition is
+            // verified and finalized. Canonical history and the narrow projection
+            // are enough for later parent delivery; keep the returned RunState for
+            // this caller's in-flight observers without retaining registry residency.
+            if (null !== $committedState->parentRunId && $committedState->status->isTerminal()) {
+                $this->activeRunContext->release($committedState->runId);
+            }
+
             if (!$dispatchAfterTurnHooks) {
                 return $committedState;
             }
