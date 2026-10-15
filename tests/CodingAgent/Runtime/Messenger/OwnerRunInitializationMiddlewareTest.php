@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
@@ -239,6 +240,11 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
         $container->get('agent.command.bus')->dispatch($late);
 
         $this->assertSame($beforeSeq, $events->latestSequenceFor($identity->childRunId));
+        $projection = $container->get(RunOperationalProjectionRepository::class)->find($identity->childRunId);
+        $this->assertNotNull($projection);
+        $this->assertSame($parent, $projection->parentRunId);
+        $this->assertSame($parent, $projection->ownerSessionId);
+        $this->assertTrue($container->get(RunRelationshipReaderInterface::class)->isAgentChild($identity->childRunId));
         $this->expectException(RunContextNotLoadedException::class);
         $registry->requireLoaded($identity->childRunId);
     }
@@ -247,6 +253,36 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
     {
         yield 'completed child' => ['completed'];
         yield 'cancel before start' => ['cancelled'];
+    }
+
+    public function testRecoveredParentConflictIsRejectedBeforePublication(): void
+    {
+        $container = self::getContainer();
+        $parent = $this->reserve();
+        $entry = $container->get(AgentArtifactRegistry::class)->create($parent, 'agent_conflict', 'child-conflict', 'scout', AgentArtifactKindEnum::Subagent);
+        $this->registry()->createNew($entry->agentRunId);
+        PreparedEventStoreSeeder::append(
+            $container->get(EventStoreInterface::class),
+            RunEvent::forAppend($entry->agentRunId, 0, 'run_started', ['payload' => ['metadata' => [
+                'model' => 'test-model',
+                'session' => ['kind' => 'agent_child', 'parent_run_id' => 'conflicting-parent'],
+            ]]]),
+        );
+        $this->registry()->release($entry->agentRunId);
+
+        try {
+            $this->consume($this->childStart($entry->agentRunId, $parent));
+            $this->fail('Conflicting recovered ownership must not be published.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('parent identity conflicts with child reservation', $exception->getMessage());
+        }
+        $projection = $container->get(RunOperationalProjectionRepository::class)->find($entry->agentRunId);
+        $this->assertNotNull($projection);
+        $this->assertSame($parent, $projection->parentRunId);
+        $this->assertSame($parent, $projection->ownerSessionId);
+        $this->assertSame(0, $projection->lastEventSequence);
+        $this->expectException(RunContextNotLoadedException::class);
+        $this->registry()->requireLoaded($entry->agentRunId);
     }
 
     private function reserve(): string

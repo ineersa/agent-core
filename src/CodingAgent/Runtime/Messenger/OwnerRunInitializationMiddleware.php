@@ -82,9 +82,8 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
                     }
                 }
 
-                // Owner StartRun post-handling is done. Drop a finished child that this
-                // envelope recovered only for a late no-op/redelivery, including cancel-
-                // before-start recovery that may lack parentRunId on the rebuilt state.
+                // Owner StartRun post-handling is done. A late envelope must not
+                // retain a recovered terminal child's execution state.
                 if (null !== $child && null !== $status && $status->isTerminal()) {
                     $this->registry->release($runId);
                 }
@@ -130,6 +129,14 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
                     $recovered = $this->replay->rebuildIfStale(RunState::queued($runId), $runId)->rebuiltState;
                     if (null === $recovered || $recovered->runId !== $runId || 0 >= $recovered->lastSeq) {
                         throw new \RuntimeException('Owner recovery produced no state: '.$runId);
+                    }
+                    $child = $this->children->locate($runId);
+                    if (null !== $child) {
+                        if (null !== $recovered->parentRunId && $recovered->parentRunId !== $child->parentRunId) {
+                            throw new \RuntimeException('Owner recovery parent identity conflicts with child reservation: '.$runId);
+                        }
+                        // Pre-start cancellation has no run_started metadata to restore ownership.
+                        $recovered = $recovered->with(['parentRunId' => $child->parentRunId]);
                     }
                     $this->registry->loadRecovered($recovered);
                 }
