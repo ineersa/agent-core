@@ -215,9 +215,10 @@ final class HatfieldSessionStore
 
     /**
      * Claim a chat epoch from retained history, not from a worker connection.
-     * Missing anchors mean compaction/discard rewrote the prefix; normal resume does not.
+     * Resume and appended turns retain the ordered prefix. Rewrites must reset it
+     * even when every transition anchor survives: controls depend on anchor context.
      *
-     * @param list<string> $historyKeys
+     * @param array<string, string> $historyKeys ordered anchor keys mapped to canonical prefix fingerprints
      *
      * @return array{baseline: string, update: ?string}|null
      */
@@ -227,27 +228,25 @@ final class HatfieldSessionStore
         if (null === $entity) {
             return null;
         }
-        $keys = array_fill_keys($historyKeys, true);
-        $root = array_key_first($keys);
         $baseline = $entity->reasoningBaseline;
-        $valid = ($baseline['model'] ?? null) === $model && \is_string($baseline['effort'] ?? null);
-        if (isset($baseline['root']) && $baseline['root'] !== $root) {
-            $valid = false;
-        }
+        $history = $baseline['history'] ?? null;
+        $valid = ($baseline['model'] ?? null) === $model && \is_string($baseline['effort'] ?? null)
+            && \is_array($history)
+            && \array_slice($historyKeys, 0, \count($history), true) === $history;
         foreach ($baseline['transitions'] ?? [] as $transition) {
-            if (!isset($keys[$transition['message_key']])) {
+            if (!isset($historyKeys[$transition['message_key']])) {
                 $valid = false;
             }
         }
         if (!$valid) {
-            $entity->reasoningBaseline = ['model' => $model, 'effort' => $effort, 'last_emitted' => $effort, 'root' => $root, 'transitions' => []];
+            $entity->reasoningBaseline = ['model' => $model, 'effort' => $effort, 'last_emitted' => $effort, 'history' => $historyKeys, 'transitions' => []];
             $this->entityManager->flush();
 
             return null;
         }
-        // Existing durable epochs need no prefix rewrite merely because this process resumed.
-        if (!\array_key_exists('root', $baseline)) {
-            $baseline['root'] = $root;
+        // Track appended anchors too, so later rewrites cannot hide behind an older prefix.
+        if ($history !== $historyKeys) {
+            $baseline['history'] = $historyKeys;
             $entity->reasoningBaseline = $baseline;
             $this->entityManager->flush();
         }
