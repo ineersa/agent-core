@@ -63,7 +63,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         [$freshTui, $freshState, $freshTicks, $freshClient] = $this->virtualSession($run);
         $freshTui->screen()->promptEditor()->replaceText('LOCAL_DRAFT');
         $freshState->handle = $freshClient->attach($run);
-        $freshState->sessionReady = false;
+        $freshState->beginBootstrapAttach();
         $this->consumeMaintenance();
         for ($i = 0; $i < 8 && !$freshState->sessionReady; ++$i) {
             $freshState->lastPoll = 0.0;
@@ -88,6 +88,80 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         yield 'last answer clears' => [2, 'assistant', false];
         yield 'user selection' => [1, 'user', false];
         yield 'edited branch does not resurrect old prompt' => [1, 'assistant', true];
+    }
+
+    #[DataProvider('delayedBootstrapDrafts')]
+    public function testNativeInputAfterAttachKeepsDraftWhenBootstrapMounts(int $turn, string $keys, string $expectedDraft, bool $pressEnter): void
+    {
+        $container = static::getContainer();
+        $run = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('delayed bootstrap draft');
+        $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        $next = str_repeat('Full canonical U2 to edit. ', 24);
+        $message = static fn (string $role, string $text): array => ['role' => $role, 'content' => [['type' => 'text', 'text' => $text]]];
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::appendMany($store, [
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => [$message('user', 'U1')]]]),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'one']),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 1, 'llm_step_completed', ['step_id' => 'one', 'assistant_message' => $message('assistant', 'A1')]),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 1, 'agent_end', ['reason' => 'completed']),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 1, 'agent_command_applied', ['kind' => 'follow_up', 'message' => $message('user', $next)]),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 2, 'turn_advanced', ['turn_no' => 2, 'step_id' => 'two']),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 2, 'llm_step_completed', ['step_id' => 'two', 'assistant_message' => $message('assistant', 'A2')]),
+            \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($run, 2, 'agent_end', ['reason' => 'completed']),
+        ]);
+        [$oldTui, $oldState, $oldTicks, $oldClient] = $this->virtualSession($run);
+        $oldState->handle = new \Ineersa\CodingAgent\Runtime\Contract\RunHandle($run, 'attached');
+        $oldState->lastSeq = $store->latestSequenceFor($run);
+        $oldState->sessionReady = true;
+        $oldClient->send($run, new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'select_history_turn', payload: ['turn_no' => $turn, 'role' => 'assistant']));
+        $this->consumeMaintenance();
+        $oldTicks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        $this->assertSame(1 === $turn ? $next : '', $oldTui->screen()->editorText());
+        $container->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class)->release($run);
+        iterator_to_array($container->get(\Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink::class)->drain($run));
+        unset($oldTui, $oldState, $oldTicks, $oldClient);
+        gc_collect_cycles();
+
+        // Hold sealed bootstrap frames until after native editor input so the
+        // attach start, not the first poll, is the draft baseline.
+        [$freshTui, $freshState, $freshTicks, $freshClient] = $this->virtualSession($run, withSubmit: true);
+        $freshTui->startInputLoop();
+        $freshState->handle = $freshClient->attach($run);
+        $freshState->beginBootstrapAttach();
+        $this->assertFalse($freshState->sessionReady);
+        $this->assertFalse($freshState->bootstrapMounted);
+        $freshTui->sendInput($keys);
+        if ($pressEnter) {
+            $freshTui->sendInput("\r");
+            $this->assertFalse($freshState->sessionReady);
+            $this->assertSame($expectedDraft, $freshTui->screen()->editorText());
+            $sent = $container->get('messenger.transport.run_control')->getSent();
+            foreach ($sent as $envelope) {
+                $this->assertNotInstanceOf(\Ineersa\AgentCore\Domain\Message\ApplyCommand::class, $envelope->getMessage());
+            }
+            $this->assertStringContainsString('Restoring session', $freshTui->screen()->workingMessage());
+        }
+        $this->assertSame($expectedDraft, $freshTui->screen()->editorText());
+        $this->consumeMaintenance();
+        for ($i = 0; $i < 8 && !$freshState->sessionReady; ++$i) {
+            $freshState->lastPoll = 0.0;
+            $freshTicks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        }
+        $this->assertTrue($freshState->bootstrapMounted, $freshState->bootstrapError ?? $freshState->lastRuntimePollError);
+        $this->assertTrue($freshState->sessionReady);
+        $freshState->lastPoll = 0.0;
+        $freshTicks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        $this->assertSame($expectedDraft, $freshTui->screen()->editorText(), 'Native input after attach must survive bootstrap editor restore or clear.');
+        $this->assertNull($freshState->pendingEditorPromptText);
+        $freshTui->stopInputLoop();
+        $freshClient->cancelBootstrap($run);
+    }
+
+    public static function delayedBootstrapDrafts(): iterable
+    {
+        yield 'following prompt overwrite refused' => [1, 'typed-after-attach', 'typed-after-attach', false];
+        yield 'last answer clear refused' => [2, 'keep-draft', 'keep-draft', false];
+        yield 'enter while restoring keeps draft' => [1, 'queued-locally', 'queued-locally', true];
+        yield 'typed then deleted still refuses restore' => [1, "x\x7f", '', false];
     }
 
     public function testAssistantSelectionPrefillsNextPromptAndRetainsAnswerThroughColdReplayAndEditing(): void
@@ -307,7 +381,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
     }
 
     /** @return array{VirtualTuiHarness, TuiSessionState, \Ineersa\Tui\Runtime\TuiTickDispatcher, \Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient} */
-    private function virtualSession(string $run): array
+    private function virtualSession(string $run, bool $withSubmit = false): array
     {
         $container = static::getContainer();
         $harness = new VirtualTuiHarness(sessionId: $run);
@@ -317,6 +391,26 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         $ticks = new \Ineersa\Tui\Runtime\TuiTickDispatcher();
         $context = new \Ineersa\Tui\Runtime\TuiRuntimeContext($harness->tui(), $client, $state, $harness->screen(), $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class), $ticks, $services->switch, new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(), $container->get(HistoryProviderInterface::class), $services);
         (new \Ineersa\Tui\Listener\TickPollListener(new \Ineersa\Tui\Listener\RuntimeQuestionEventHandler()))->register($context);
+        if ($withSubmit) {
+            (new \Ineersa\Tui\Listener\SubmitListener(
+                sessionStore: $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class),
+                blockFactory: new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
+                subagentLiveInputPolicy: new \Ineersa\Tui\Command\SubagentLiveInputPolicy(),
+                logger: new \Psr\Log\NullLogger(),
+                pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
+                    new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
+                    $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class),
+                    new \Ineersa\CodingAgent\Config\AppConfig(
+                        tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                        logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+                        sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                        cwd: getcwd() ?: '/tmp',
+                    ),
+                    new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
+                    new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+                ),
+            ))->register($context);
+        }
 
         return [$harness, $state, $ticks, $client];
     }

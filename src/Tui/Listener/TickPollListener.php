@@ -65,6 +65,14 @@ final class TickPollListener implements TuiListenerRegistrar
             ? 'next_tick_after_mount'
             : 'next_tick_after_boundary';
 
+        // Track native editor edits during attach/bootstrap. Widget onChange
+        // appends; it does not replace PromptHistoryListener's onInput slot.
+        $screen->editorWidget()->onChange(static function () use ($state): void {
+            if (!$state->sessionReady) {
+                $state->editorChangedSinceAttach = true;
+            }
+        });
+
         $context->ticks->add(static function () use ($poller, $state, $client, $screen, $tui, $promptHistory, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePickerController, $memorySnapshotLogger, &$pendingIdleMemoryCheckpoint, &$idleMemoryCheckpointEmitted, &$idleCheckpointPhase): ?bool {
             $activityBefore = $state->activity;
             $lastSeqBefore = $state->lastSeq;
@@ -271,7 +279,11 @@ final class TickPollListener implements TuiListenerRegistrar
 
             // /history selection: load the selected or following user prompt once.
             if (null !== $state->pendingEditorPromptText) {
-                $screen->promptEditor()->replaceText($state->pendingEditorPromptText);
+                // Local input since attach wins over bootstrap restore/clear.
+                // Live /history selection clears editorChangedSinceAttach first.
+                if (!$state->editorChangedSinceAttach) {
+                    $screen->promptEditor()->replaceText($state->pendingEditorPromptText);
+                }
                 $state->pendingEditorPromptText = null;
             }
 

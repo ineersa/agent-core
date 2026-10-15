@@ -63,9 +63,14 @@ final class TuiBootstrapAssembler
             $this->cut = $next;
             $this->latestEpoch = $next->viewEpoch;
             $this->hash = hash_init('sha256');
+            // Preserve editorChangedSinceAttach across bootstrap.available so
+            // native input typed after attach() but before this frame still wins.
             $state->sessionReady = false;
             $state->bootstrapMounted = false;
-            $state->bootstrapStartedAt = microtime(true);
+            $state->bootstrapError = null;
+            if (0.0 === $state->bootstrapStartedAt) {
+                $state->bootstrapStartedAt = microtime(true);
+            }
 
             return null;
         }

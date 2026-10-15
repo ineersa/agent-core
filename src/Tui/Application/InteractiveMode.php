@@ -478,8 +478,7 @@ final readonly class InteractiveMode
                 $existingRunId = (string) $session->id;
                 try {
                     $state->handle = $client->attach($existingRunId);
-                    $state->sessionReady = false;
-                    $state->bootstrapStartedAt = microtime(true);
+                    $state->beginBootstrapAttach();
                 } catch (\Throwable $e) {
                     $this->logger->warning('Failed to resume run', [
                         'exception' => $e,

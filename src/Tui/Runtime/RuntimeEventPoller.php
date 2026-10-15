@@ -161,10 +161,7 @@ final class RuntimeEventPoller
                         $this->eventApplier->releaseBootstrap();
                         $this->pendingEvents = [];
                         $state->handle = new RunHandle($runtimeEvent->runId, 'bootstrapping', $requestId);
-                        $state->sessionReady = false;
-                        $state->bootstrapMounted = false;
-                        $state->bootstrapError = null;
-                        $state->bootstrapStartedAt = $now;
+                        $state->beginBootstrapAttach();
                         $this->deferredInputReady = false;
                         if (null !== $onSessionRestoring) {
                             $onSessionRestoring();
@@ -285,6 +282,8 @@ final class RuntimeEventPoller
                             }
 
                             if (\array_key_exists('editor_prompt_text', $runtimeEvent->payload)) {
+                                // Explicit live selection replaces the editor.
+                                $state->editorChangedSinceAttach = false;
                                 $state->pendingEditorPromptText = $editorPromptText;
                             }
                         } else {
