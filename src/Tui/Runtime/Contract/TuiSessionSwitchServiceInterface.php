@@ -41,7 +41,7 @@ interface TuiSessionSwitchServiceInterface
     public function requestReload(string $sessionId): void;
 
     /**
-     * Select a user-prompt turn in linear history (linear history selection).
+     * Select a user prompt or final assistant answer in linear history (linear history selection).
      *
      * Cancels the current run, then dispatches a select_history_turn command
      * via AgentSessionClient::send(). The controller subprocess appends
@@ -52,5 +52,5 @@ interface TuiSessionSwitchServiceInterface
      *
      * @throws \RuntimeException if there is no active session or run handle
      */
-    public function selectHistoryTurn(int $targetTurnNo): void;
+    public function selectHistoryTurn(int $targetTurnNo, string $role = 'user'): void;
 }

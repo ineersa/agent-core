@@ -81,7 +81,7 @@ final class HistorySelectionServiceTest extends TestCase
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
         $rebuilder->expects($this->never())->method('rebuildAtPosition');
         try {
-            $this->service($rebuilder)->selectPrompt('selection', 80, 'command');
+            $this->service($rebuilder)->selectEntry('selection', 80, 'command');
             $this->fail('Internal anchors must not be selectable.');
         } catch (\RuntimeException $exception) {
             $this->assertStringContainsString('not a selectable human prompt', $exception->getMessage());
@@ -97,7 +97,7 @@ final class HistorySelectionServiceTest extends TestCase
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
         $rebuilder->expects($this->never())->method('rebuildAtPosition');
         try {
-            $this->service($rebuilder)->selectPrompt('selection', 100, 'command');
+            $this->service($rebuilder)->selectEntry('selection', 100, 'command');
             $this->fail('Duplicate sequence must refuse selection.');
         } catch (RunStateDuplicateSequenceReplayException $exception) {
             $this->assertStringContainsString('duplicate sequence', $exception->getMessage());
@@ -112,7 +112,7 @@ final class HistorySelectionServiceTest extends TestCase
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
         $rebuilder->expects($this->once())->method('rebuildAtPosition')->with($this->anything(), 'selection', $predecessor)
             ->willReturn(RunStateReplayResult::rebuilt(new RunState(runId: 'selection', status: RunStatus::Running)));
-        $result = $this->service($rebuilder)->selectPrompt('selection', $target, 'command');
+        $result = $this->service($rebuilder)->selectEntry('selection', $target, 'command');
         $this->assertSame($predecessor, $result['rebuiltState']->turnNo);
         $this->assertSame($target, $result['selectedPromptTurnNo']);
         $this->assertSame($text, $result['editorPromptText']);
@@ -126,7 +126,7 @@ final class HistorySelectionServiceTest extends TestCase
         $this->assertSame($result['rebuiltState'], $this->context->requireLoaded('selection'));
         $this->assertSame([], $this->commands->messages);
         $source = $this->store->historySource('selection');
-        $page = (new RunHistoryIndex(new LockFactory(new InMemoryStore()), new NullLogger()))->promptPage($source->log, $source->path, 'selection', after: 0);
+        $page = (new RunHistoryIndex(new LockFactory(new InMemoryStore()), new NullLogger()))->entryPage($source->log, $source->path, 'selection', after: 0);
         $this->assertSame([100, 4, 3], array_column($page['rows'], 'turn_no'), 'Selection retains forward history.');
     }
 

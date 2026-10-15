@@ -142,7 +142,7 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
         return $target;
     }
 
-    public function selectHistoryTurn(int $targetTurnNo): void
+    public function selectHistoryTurn(int $targetTurnNo, string $role = 'user'): void
     {
         if (null === $this->state->handle) {
             throw new \RuntimeException('Cannot select history: no active session or run handle.');
@@ -156,7 +156,7 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
         // Dispatch the history-select command.
         $this->client->send($runId, new UserCommand(
             type: 'select_history_turn',
-            payload: ['turn_no' => $targetTurnNo],
+            payload: ['turn_no' => $targetTurnNo, 'role' => $role],
         ));
 
         // Do NOT reset local state here — that happens reactively when the

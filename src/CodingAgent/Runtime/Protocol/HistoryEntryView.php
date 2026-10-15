@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Protocol;
 
 /**
- * One bounded human-prompt preview and its immutable anchor.
+ * One bounded history entry preview and its immutable anchor.
  */
-final readonly class HistoryPromptView
+final readonly class HistoryEntryView
 {
     public function __construct(
         public int $turnNo,
-        public string $promptText,
+        public string $text,
         public int $anchor,
+        public string $role = 'user',
     ) {
     }
 }

@@ -97,7 +97,7 @@ final class SessionHistoryProviderTest extends PerMethodIsolatedKernelTestCase
         $sessions = new HatfieldSessionStore($container->get(AppConfig::class), $em, new EventDispatcher());
         $cold = new SessionRunEventStore($sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new LockFactory(new FlockStore()), new NullLogger(), new FileRunSequenceAllocator());
         $history = (new SessionHistoryProvider($cold, $container->get(RunHistoryIndex::class)))->forSession($runId);
-        $this->assertSame('Read both fixtures', $history->prompts[0]->promptText);
+        $this->assertSame('Read both fixtures', $history->entries[0]->text);
         $coordinator = $container->get(SessionReplayCoordinator::class);
         $replay = new SessionRunStateReplayService($cold, $coordinator);
         $state = $replay->rebuildIfStale(RunState::queued($runId), $runId)->rebuiltState;

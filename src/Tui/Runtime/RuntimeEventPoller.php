@@ -161,10 +161,16 @@ final class RuntimeEventPoller
                         $this->eventApplier->releaseBootstrap();
                         $this->pendingEvents = [];
                         $state->handle = new RunHandle($runtimeEvent->runId, 'bootstrapping', $requestId);
-                        $state->sessionReady = false;
-                        $state->bootstrapMounted = false;
-                        $state->bootstrapError = null;
-                        $state->bootstrapStartedAt = $now;
+                        // Automatic recovery of the same session must keep the current
+                        // editor, including ready-session drafts that never set the
+                        // attach dirty flag. Genuine fresh attach still resets via
+                        // TuiSessionState::beginBootstrapAttach() in InteractiveMode.
+                        $preserveEditor = $state->sessionReady
+                            || $state->editorChangedSinceAttach;
+                        $state->beginBootstrapAttach();
+                        if ($preserveEditor) {
+                            $state->editorChangedSinceAttach = true;
+                        }
                         $this->deferredInputReady = false;
                         if (null !== $onSessionRestoring) {
                             $onSessionRestoring();
@@ -284,7 +290,9 @@ final class RuntimeEventPoller
                                 $this->eventApplier->hydrateProjectedTranscript([]);
                             }
 
-                            if ('' !== $editorPromptText) {
+                            if (\array_key_exists('editor_prompt_text', $runtimeEvent->payload)) {
+                                // Explicit live selection replaces the editor.
+                                $state->editorChangedSinceAttach = false;
                                 $state->pendingEditorPromptText = $editorPromptText;
                             }
                         } else {

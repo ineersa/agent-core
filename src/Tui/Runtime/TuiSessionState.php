@@ -37,6 +37,12 @@ final class TuiSessionState
     public float $bootstrapStartedAt = 0.0;
     public ?string $bootstrapError = null;
 
+    /**
+     * True after native editor input during the current attach/bootstrap window.
+     * Bootstrap restore or clear applies only when this remains false.
+     */
+    public bool $editorChangedSinceAttach = false;
+
     public ?RunHandle $handle = null;
     public ?StartRunRequest $request = null;
 
@@ -131,8 +137,8 @@ final class TuiSessionState
     public bool $isCompacting = false;
 
     /**
-     * Original user prompt text from /history selection, applied once by TickPollListener
-     * into the editor after RunHistoryPositionChanged rebuild. Null when nothing pending.
+     * Selected or following user prompt from /history, applied once by TickPollListener
+     * after RunHistoryPositionChanged rebuild. Empty clears the editor; null means nothing pending.
      */
     public ?string $pendingEditorPromptText = null;
 
@@ -202,6 +208,17 @@ final class TuiSessionState
         // Catalog is typed-only; wire denorm happens in TuiRuntimeEventApplier.
         $this->subagentLiveCatalog = new SubagentLiveCatalog();
         $this->subagentLiveView = new SubagentLiveViewState();
+    }
+
+    /** Mark the start of an attach/bootstrap window and clear prior draft tracking. */
+    public function beginBootstrapAttach(): void
+    {
+        $this->sessionReady = false;
+        $this->bootstrapMounted = false;
+        $this->bootstrapError = null;
+        $this->bootstrapStartedAt = microtime(true);
+        $this->editorChangedSinceAttach = false;
+        $this->pendingEditorPromptText = null;
     }
 
     /**

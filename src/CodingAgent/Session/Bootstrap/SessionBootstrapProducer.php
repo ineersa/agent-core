@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator;
 use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
+use Ineersa\CodingAgent\Session\SessionHistoryProvider;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
@@ -35,6 +36,7 @@ final class SessionBootstrapProducer
         private readonly SessionBootstrapSpoolStore $spools,
         private readonly LoggerInterface $logger,
         private readonly SessionBootstrapEmissionGate $emissionGate,
+        private readonly SessionHistoryProvider $history,
     ) {
     }
 
@@ -101,9 +103,15 @@ final class SessionBootstrapProducer
             if (null === $cut || $cut['sequence'] !== $state->lastSeq) {
                 throw new \RuntimeException('Bootstrap owner and canonical cut diverged.');
             }
+            $resume = $this->resume?->toArray() ?? throw new \LogicException('Missing bootstrap metadata.');
+            if (\array_key_exists('selected_prompt_turn_no', $resume)) {
+                $turn = $resume['selected_prompt_turn_no'];
+                $resume['editor_prompt_text'] = 0 === $turn ? '' : $this->history->promptText($runId, $turn);
+                unset($resume['selected_prompt_turn_no']);
+            }
 
             return $this->spools->seal($runId, $cut['sequence'], $cut['end_offset'], $cut['anchor'], $this->blocks,
-                ['status' => $state->status->value, 'model' => $state->model, 'turn_no' => $state->turnNo] + ($this->resume?->toArray() ?? throw new \LogicException('Missing bootstrap metadata.')));
+                ['status' => $state->status->value, 'model' => $state->model, 'turn_no' => $state->turnNo] + $resume);
         } finally {
             $this->release();
         }

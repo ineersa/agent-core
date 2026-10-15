@@ -39,7 +39,7 @@ final class SessionResumeMetadataProjectionTest extends TestCase
         yield 'applied' => ['agent_command_applied', ['idempotency_key' => 'current']];
         yield 'rejected' => ['agent_command_rejected', ['idempotency_key' => 'current']];
         yield 'cancelled' => ['agent_command_applied', ['kind' => 'cancel']];
-        yield 'selection suppresses seed' => ['history_position_set', ['reason' => 'history_select']];
+        yield 'selection suppresses seed' => ['history_position_set', ['reason' => 'history_select', 'selected_prompt_turn_no' => 0]];
         yield 'discarded' => ['history_tail_discarded', ['after_turn_no' => 0]];
     }
 
@@ -85,6 +85,36 @@ final class SessionResumeMetadataProjectionTest extends TestCase
         $this->assertSame(0.25, $data['usage']['totalCost']);
         $this->assertSame(3, $data['usage']['cacheReadTokens']);
         $this->assertTrue($data['usage']['hasCacheTelemetry']);
+    }
+
+    #[DataProvider('selectionMutations')]
+    public function testSelectionIdentityIsClearedByContextMutation(string $type, array $payload): void
+    {
+        $projection = new SessionResumeMetadataProjection();
+        $projection->observe(new RunEvent('42', 1, 1, 'history_position_set', ['reason' => 'history_select', 'selected_prompt_turn_no' => 2]), null);
+        $this->assertSame(2, $projection->toArray()['selected_prompt_turn_no']);
+        $projection->observe(new RunEvent('42', 2, 1, 'context_refreshed'), null);
+        $this->assertSame(2, $projection->toArray()['selected_prompt_turn_no'], 'Attach refresh must preserve the selection.');
+        $projection->observe(new RunEvent('42', 3, 1, $type, $payload), null);
+        $this->assertArrayNotHasKey('selected_prompt_turn_no', $projection->toArray());
+    }
+
+    public static function selectionMutations(): iterable
+    {
+        yield 'discard' => ['history_tail_discarded', ['after_turn_no' => 1]];
+        yield 'advance' => ['turn_advanced', ['turn_no' => 3]];
+        yield 'continuation' => ['history_position_set', ['reason' => 'continue']];
+        yield 'compaction' => ['context_compacted', []];
+        foreach (['follow_up', 'steer', 'append_message', 'compact'] as $kind) {
+            yield $kind => ['agent_command_applied', ['kind' => $kind]];
+        }
+    }
+
+    public function testSelectionRequiresATypedCanonicalPromptIdentity(): void
+    {
+        $projection = new SessionResumeMetadataProjection();
+        $this->expectException(\InvalidArgumentException::class);
+        $projection->observe(new RunEvent('42', 1, 1, 'history_position_set', ['reason' => 'history_select', 'selected_prompt_turn_no' => '2']), null);
     }
 
     private function queue(SessionResumeMetadataProjection $projection, string $key, string $text): void

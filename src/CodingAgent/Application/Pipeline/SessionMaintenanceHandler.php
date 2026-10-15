@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Application\Message\RepairDeferredChildObligationDTO;
 use Ineersa\CodingAgent\Application\Message\RepairDeferredChildrenDTO;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
-use Ineersa\CodingAgent\Application\Message\SelectHistoryPrompt;
+use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
@@ -69,11 +69,11 @@ final readonly class SessionMaintenanceHandler
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]
-    public function select(SelectHistoryPrompt $command): RuntimeEvent
+    public function select(SelectHistoryEntry $command): RuntimeEvent
     {
         try {
             $this->initialization->initializeForOwner($command->runId, $command);
-            $result = $this->history->selectPrompt($command->runId, $command->turnNo, $command->commandId);
+            $result = $this->history->selectEntry($command->runId, $command->turnNo, $command->commandId, $command->role);
             $event = RunHistoryPositionChangedEventFactory::create($command->runId, $result['positionEventSeq'], $result['rebuiltState']->turnNo, $result['selectedPromptTurnNo'], $result['editorPromptText']);
         } catch (\Throwable $exception) {
             $this->logger->warning('history.selection.failed', ['run_id' => $command->runId, 'component' => 'session.maintenance', 'event_type' => 'history.selection.failed', 'exception_class' => $exception::class]);

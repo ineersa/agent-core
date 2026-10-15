@@ -295,7 +295,7 @@ final class ReloadCommandHandlerTest extends TestCase
                 $this->reloadedSessionId = $sessionId;
             }
 
-            public function selectHistoryTurn(int $targetTurnNo): void
+            public function selectHistoryTurn(int $targetTurnNo, string $role = 'user'): void
             {
             }
         };

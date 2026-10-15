@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Picker;
 
 use Ineersa\CodingAgent\Runtime\Contract\HistoryProviderInterface;
-use Ineersa\CodingAgent\Runtime\Protocol\HistoryPromptView;
+use Ineersa\CodingAgent\Runtime\Protocol\HistoryEntryView;
 use Ineersa\CodingAgent\Runtime\Protocol\HistoryView;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Picker\HistoryPickerController;
@@ -85,7 +85,7 @@ final class HistoryPickerControllerTest extends TestCase
     #[Test]
     public function testBuildItemsEmptyHistory(): void
     {
-        $history = new HistoryView(prompts: [], selectedAnchor: 0);
+        $history = new HistoryView(entries: [], selectedAnchor: 0);
         $theme = new DefaultTheme(new ThemePalette('test'));
         $this->assertSame([], HistoryPickerController::buildItems($history, $theme));
     }
@@ -109,7 +109,7 @@ final class HistoryPickerControllerTest extends TestCase
     #[Test]
     public function testOpenShowsStatusWhenEmpty(): void
     {
-        $history = new HistoryView(prompts: [], selectedAnchor: 0);
+        $history = new HistoryView(entries: [], selectedAnchor: 0);
         $provider = $this->createStub(HistoryProviderInterface::class);
         $provider->method('forSession')->willReturn($history);
         $switcher = $this->createStub(TuiSessionSwitchServiceInterface::class);
@@ -147,9 +147,9 @@ final class HistoryPickerControllerTest extends TestCase
     private function createUserPromptHistory(int $positionTurnNo = 3): HistoryView
     {
         return new HistoryView(
-            prompts: [
-                new HistoryPromptView(turnNo: 1, promptText: 'Hello', anchor: 1),
-                new HistoryPromptView(turnNo: 3, promptText: 'Follow-up', anchor: 3),
+            entries: [
+                new HistoryEntryView(turnNo: 1, text: 'Hello', anchor: 1),
+                new HistoryEntryView(turnNo: 3, text: 'Follow-up', anchor: 3),
             ],
             selectedAnchor: $positionTurnNo,
         );

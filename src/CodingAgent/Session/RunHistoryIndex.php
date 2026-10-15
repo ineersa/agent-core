@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Session;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception as DbalException;
+use Ineersa\CodingAgent\Session\History\HistoryAssistantTextExtractor;
 use Ineersa\CodingAgent\Session\History\HistoryPromptTextExtractor;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
@@ -17,7 +18,7 @@ final readonly class RunHistoryIndex
 {
     public const int PAGE_SIZE = 32;
     public const int PREVIEW_BYTES = 240;
-    private const int VERSION = 3;
+    private const int VERSION = 5;
 
     public function __construct(private LockFactory $locks, private LoggerInterface $logger)
     {
@@ -68,9 +69,12 @@ final readonly class RunHistoryIndex
         }
     }
 
-    /** @return array{position: int, predecessor: int, text: string} */
-    public function selectPrompt(JsonlRunEventLog $log, string $path, string $runId, int $turnNo): array
+    /** @return array{position: int, predecessor: int, text: string, selectedPromptTurnNo: int} */
+    public function selectEntry(JsonlRunEventLog $log, string $path, string $runId, int $turnNo, string $role = 'user'): array
     {
+        if (!\in_array($role, ['user', 'assistant'], true)) {
+            throw new \InvalidArgumentException('History selection requires a user or assistant role.');
+        }
         if (!is_file($path)) {
             throw new \RuntimeException('Cannot select history: no events found.');
         }
@@ -79,12 +83,26 @@ final readonly class RunHistoryIndex
         $observation = new JsonlPhysicalReadObservation();
         try {
             $db = $this->synchronize($log, $path, $runId);
-            $row = $db->fetchAssociative('SELECT t.predecessor, e.seq, e.offset, e.length, e.type FROM turn_anchor t JOIN event_location e ON e.seq = t.prompt_seq WHERE t.turn_no = ? AND t.retained = 1 ORDER BY t.anchor DESC LIMIT 1', [$turnNo]);
+            $position = (int) $db->fetchOne('SELECT t.turn_no FROM index_meta m LEFT JOIN turn_anchor t ON t.anchor = m.selected_anchor');
+            $selectedPromptTurnNo = $turnNo;
+            if ('assistant' === $role) {
+                $answer = $db->fetchAssociative('SELECT anchor FROM turn_anchor WHERE turn_no = ? AND retained = 1 AND answer_seq IS NOT NULL ORDER BY anchor DESC LIMIT 1', [$turnNo]);
+                if (false === $answer) {
+                    throw new \RuntimeException('Target is not a selectable final assistant response.');
+                }
+                // Displayed turn numbers are sparse and can run backwards. Find the
+                // next human prompt in immutable retained anchor order instead.
+                $next = $db->fetchOne('SELECT turn_no FROM turn_anchor WHERE retained = 1 AND prompt_seq IS NOT NULL AND anchor > ? ORDER BY anchor LIMIT 1', [$answer['anchor']]);
+                if (false === $next) {
+                    return ['position' => $position, 'predecessor' => $turnNo, 'text' => '', 'selectedPromptTurnNo' => 0];
+                }
+                $selectedPromptTurnNo = (int) $next;
+            }
+            $row = $db->fetchAssociative('SELECT t.predecessor, e.seq, e.offset, e.length, e.type FROM turn_anchor t JOIN event_location e ON e.seq = t.prompt_seq WHERE t.turn_no = ? AND t.retained = 1 ORDER BY t.anchor DESC LIMIT 1', [$selectedPromptTurnNo]);
             if (false === $row) {
                 throw new \RuntimeException(\sprintf('Cannot select history for run %s: target turn %d is not a selectable human prompt.', $runId, $turnNo));
             }
-            $position = (int) $db->fetchOne('SELECT t.turn_no FROM index_meta m LEFT JOIN turn_anchor t ON t.anchor = m.selected_anchor');
-            $predecessor = (int) $db->fetchOne('SELECT turn_no FROM turn_anchor WHERE anchor = ?', [$row['predecessor']]);
+            $predecessor = 'assistant' === $role ? $turnNo : (int) $db->fetchOne('SELECT turn_no FROM turn_anchor WHERE anchor = ?', [$row['predecessor']]);
             try {
                 $text = '';
                 foreach ($log->linesAt($path, [['offset' => (int) $row['offset'], 'length' => (int) $row['length']]], $observation) as $line) {
@@ -103,7 +121,7 @@ final readonly class RunHistoryIndex
                 throw $exception;
             }
 
-            return ['position' => $position, 'predecessor' => $predecessor, 'text' => $text];
+            return ['position' => $position, 'predecessor' => $predecessor, 'text' => $text, 'selectedPromptTurnNo' => $selectedPromptTurnNo];
         } finally {
             if (isset($db)) {
                 $db->close();
@@ -114,14 +132,14 @@ final readonly class RunHistoryIndex
     }
 
     /**
-     * @return array{rows: list<array{anchor: int, turn_no: int, preview: string}>, selected: int, older: ?int, newer: ?int}
+     * @return array{rows: list<array{anchor: int, cursor: int, turn_no: int, preview: string, role: string}>, selected: int, selected_role: string, older: ?int, newer: ?int}
      */
-    public function promptPage(JsonlRunEventLog $log, string $path, string $runId, ?int $before = null, ?int $after = null): array
+    public function entryPage(JsonlRunEventLog $log, string $path, string $runId, ?int $before = null, ?int $after = null): array
     {
         if (null !== $before && null !== $after) {
             throw new \InvalidArgumentException('A history page has only one direction.');
         }
-        $empty = ['rows' => [], 'selected' => 0, 'older' => null, 'newer' => null];
+        $empty = ['rows' => [], 'selected' => 0, 'selected_role' => 'user', 'older' => null, 'newer' => null];
         if (!is_file($path)) {
             return $empty;
         }
@@ -130,28 +148,30 @@ final readonly class RunHistoryIndex
         try {
             $db = $this->synchronize($log, $path, $runId);
             $selected = (int) $db->fetchOne('SELECT selected_anchor FROM index_meta');
-            $sql = 'SELECT anchor, turn_no, prompt_preview FROM turn_anchor WHERE retained = 1 AND prompt_seq IS NOT NULL';
+            $selectedRole = false !== $db->fetchOne('SELECT anchor FROM turn_anchor WHERE anchor = ? AND answer_seq IS NOT NULL', [$selected]) ? 'assistant' : 'user';
+            $entries = "(SELECT anchor, anchor AS cursor, turn_no, prompt_preview AS preview, 'user' AS role FROM turn_anchor WHERE retained = 1 AND prompt_seq IS NOT NULL UNION ALL SELECT anchor, answer_seq AS cursor, turn_no, answer_preview AS preview, 'assistant' AS role FROM turn_anchor WHERE retained = 1 AND answer_seq IS NOT NULL)";
+            $sql = 'SELECT * FROM '.$entries;
             $descending = null !== $before;
             $params = [];
             if (null !== $before) {
-                $sql .= ' AND anchor < ?';
+                $sql .= ' WHERE cursor < ?';
                 $params[] = $before;
             } elseif (null !== $after) {
-                $sql .= ' AND anchor > ?';
+                $sql .= ' WHERE cursor > ?';
                 $params[] = $after;
             } else {
                 $focus = $db->fetchOne('SELECT anchor FROM turn_anchor WHERE retained = 1 AND prompt_seq IS NOT NULL AND anchor > ? ORDER BY anchor LIMIT 1', [$selected]);
                 if (false !== $focus) {
-                    $sql .= ' AND anchor >= ?';
+                    $sql .= ' WHERE cursor >= ?';
                     $params[] = $focus;
                 } else {
                     $descending = true;
                 }
             }
-            $result = $db->executeQuery($sql.' ORDER BY anchor '.($descending ? 'DESC' : 'ASC').' LIMIT '.self::PAGE_SIZE, $params);
+            $result = $db->executeQuery($sql.' ORDER BY cursor '.($descending ? 'DESC' : 'ASC').' LIMIT '.self::PAGE_SIZE, $params);
             $rows = [];
             while (false !== ($row = $result->fetchAssociative())) {
-                $rows[] = ['anchor' => (int) $row['anchor'], 'turn_no' => (int) $row['turn_no'], 'preview' => (string) $row['prompt_preview']];
+                $rows[] = ['anchor' => (int) $row['anchor'], 'cursor' => (int) $row['cursor'], 'turn_no' => (int) $row['turn_no'], 'preview' => (string) $row['preview'], 'role' => (string) $row['role']];
             }
             $result->free();
             if ($descending) {
@@ -160,12 +180,12 @@ final readonly class RunHistoryIndex
             if ([] === $rows) {
                 return $empty;
             }
-            $first = $rows[0]['anchor'];
-            $last = $rows[array_key_last($rows)]['anchor'];
-            $older = false !== $db->fetchOne('SELECT anchor FROM turn_anchor WHERE retained = 1 AND prompt_seq IS NOT NULL AND anchor < ? LIMIT 1', [$first]);
-            $newer = false !== $db->fetchOne('SELECT anchor FROM turn_anchor WHERE retained = 1 AND prompt_seq IS NOT NULL AND anchor > ? LIMIT 1', [$last]);
+            $first = $rows[0]['cursor'];
+            $last = $rows[array_key_last($rows)]['cursor'];
+            $older = false !== $db->fetchOne('SELECT cursor FROM '.$entries.' WHERE cursor < ? LIMIT 1', [$first]);
+            $newer = false !== $db->fetchOne('SELECT cursor FROM '.$entries.' WHERE cursor > ? LIMIT 1', [$last]);
 
-            return ['rows' => $rows, 'selected' => $selected, 'older' => $older ? $first : null, 'newer' => $newer ? $last : null];
+            return ['rows' => $rows, 'selected' => $selected, 'selected_role' => $selectedRole, 'older' => $older ? $first : null, 'newer' => $newer ? $last : null];
         } finally {
             if (isset($db)) {
                 $db->close();
@@ -319,9 +339,10 @@ final readonly class RunHistoryIndex
         $db->executeStatement('PRAGMA temp_store = FILE');
         $db->executeStatement('PRAGMA journal_mode = WAL');
         $db->executeStatement('CREATE TABLE IF NOT EXISTS index_meta (version INTEGER NOT NULL, run_id TEXT NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL, end_offset INTEGER NOT NULL, last_seq INTEGER NOT NULL, selected_anchor INTEGER NOT NULL, tip_anchor INTEGER NOT NULL, boundary_offset INTEGER NOT NULL, boundary_length INTEGER NOT NULL, boundary_hash TEXT NOT NULL)');
-        $db->executeStatement('CREATE TABLE IF NOT EXISTS turn_anchor (anchor INTEGER PRIMARY KEY, turn_no INTEGER NOT NULL, predecessor INTEGER NOT NULL, retained INTEGER NOT NULL, completion_seq INTEGER NOT NULL DEFAULT 0, prompt_seq INTEGER, prompt_preview TEXT)');
+        $db->executeStatement('CREATE TABLE IF NOT EXISTS turn_anchor (anchor INTEGER PRIMARY KEY, turn_no INTEGER NOT NULL, predecessor INTEGER NOT NULL, retained INTEGER NOT NULL, completion_seq INTEGER NOT NULL DEFAULT 0, prompt_seq INTEGER, prompt_preview TEXT, answer_seq INTEGER, answer_preview TEXT)');
         $db->executeStatement('CREATE TABLE IF NOT EXISTS pending_prompt (kind TEXT PRIMARY KEY, seq INTEGER NOT NULL, preview TEXT NOT NULL)');
         $db->executeStatement('CREATE INDEX IF NOT EXISTS turn_display ON turn_anchor (turn_no, anchor)');
+        $db->executeStatement('CREATE INDEX IF NOT EXISTS turn_answers ON turn_anchor (answer_seq) WHERE retained = 1 AND answer_seq IS NOT NULL');
         $db->executeStatement('CREATE TABLE IF NOT EXISTS event_location (seq INTEGER PRIMARY KEY, offset INTEGER NOT NULL, length INTEGER NOT NULL, type TEXT NOT NULL, turn_no INTEGER NOT NULL, anchor INTEGER NOT NULL)');
         $db->executeStatement('CREATE INDEX IF NOT EXISTS event_turn_anchor ON event_location (turn_no, anchor)');
         $db->executeStatement('CREATE INDEX IF NOT EXISTS event_anchor ON event_location (anchor, seq)');
@@ -506,6 +527,10 @@ final readonly class RunHistoryIndex
             $db->insert('history_change', ['seq' => $seq, 'kind' => $type, 'anchor' => $selected]);
         } elseif (\in_array($type, ['agent_end', 'llm_step_completed'], true) && $anchor > 0) {
             $db->executeStatement('UPDATE turn_anchor SET completion_seq = ? WHERE anchor = ?', [$seq, $anchor]);
+            if ('llm_step_completed' === $type) {
+                $answerText = HistoryAssistantTextExtractor::extract($payload);
+                $db->executeStatement('UPDATE turn_anchor SET answer_seq = ?, answer_preview = ? WHERE anchor = ?', ['' !== $answerText ? $seq : null, '' !== $answerText ? mb_strcut($answerText, 0, self::PREVIEW_BYTES, 'UTF-8') : null, $anchor]);
+            }
         }
         $db->insert('event_location', ['seq' => $seq, 'offset' => $offset, 'length' => $length, 'type' => $type, 'turn_no' => $record['turn_no'], 'anchor' => $anchor]);
         if (\in_array($type, ['agent_command_queued', 'agent_command_applied'], true)) {
