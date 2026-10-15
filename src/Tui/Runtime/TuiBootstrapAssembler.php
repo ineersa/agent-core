@@ -67,7 +67,6 @@ final class TuiBootstrapAssembler
             // native input typed after attach() but before this frame still wins.
             $state->sessionReady = false;
             $state->bootstrapMounted = false;
-            $state->bootstrapError = null;
             if (0.0 === $state->bootstrapStartedAt) {
                 $state->bootstrapStartedAt = microtime(true);
             }

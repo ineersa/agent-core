@@ -104,6 +104,81 @@ final class TickPollListenerTest extends TestCase
         $this->assertSame('new-request', $state->handle->bootstrapRequestId);
     }
 
+    public function testUnreadyControllerReconnectPreservesDirtyEditorGuardAcrossRequestReplacement(): void
+    {
+        $state = new TuiSessionState('parent');
+        $state->handle = new RunHandle('parent', 'bootstrapping', 'old-request');
+        $state->beginBootstrapAttach();
+        $state->editorChangedSinceAttach = true;
+        $state->pendingEditorPromptText = 'Canonical following prompt U2';
+        $harness = new VirtualTuiHarness(sessionId: 'parent');
+        $harness->screen()->promptEditor()->replaceText('LOCAL DRAFT');
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->atLeastOnce())->method('events')->willReturnOnConsecutiveCalls(
+            [new RuntimeEvent('session.restoring', 'parent', 0, [
+                'previous_command_id' => 'old-request',
+                'command_id' => 'new-request',
+            ])],
+            [],
+        );
+        $poller = new RuntimeEventPoller(new TuiRuntimeEventApplier(
+            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), SubagentProgressSerializerTestSupport::denormalizer()),
+            new NullLogger(), new RuntimeExceptionBoundary(new EventDispatcher()), $this->createStub(SessionTranscriptProviderInterface::class));
+        $services = $this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state,
+            client: $client, parentPoller: $poller, childPoller: $this->createIsolatedSubagentLiveChildPoller(),
+            subagentLivePicker: $this->closedSubagentLivePicker());
+        $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($state)
+            ->withClient($client)->withSessionServices($services)->build();
+        $this->createTickPollListener()->register($context);
+
+        $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+
+        $this->assertFalse($state->sessionReady);
+        $this->assertSame('new-request', $state->handle->bootstrapRequestId);
+        $this->assertTrue($state->editorChangedSinceAttach);
+        $this->assertNull($state->pendingEditorPromptText);
+        $this->assertSame('LOCAL DRAFT', $harness->screen()->editorText());
+
+        // Replacement bootstrap still delivers historical prefill identity; dirty input wins.
+        $state->pendingEditorPromptText = 'Canonical following prompt U2';
+        $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+        $this->assertNull($state->pendingEditorPromptText);
+        $this->assertSame('LOCAL DRAFT', $harness->screen()->editorText());
+    }
+
+    public function testReadySessionReconnectResetsDirtyEditorGuard(): void
+    {
+        $state = new TuiSessionState('parent');
+        $state->sessionReady = true;
+        $state->handle = new RunHandle('parent', 'attached', 'old-request');
+        $state->editorChangedSinceAttach = true;
+        $state->pendingEditorPromptText = 'Stale pending from earlier attach';
+        $harness = new VirtualTuiHarness(sessionId: 'parent');
+        $harness->screen()->promptEditor()->replaceText('Ready draft');
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->atLeastOnce())->method('events')->willReturn([new RuntimeEvent('session.restoring', 'parent', 0, [
+            'previous_command_id' => 'old-request',
+            'command_id' => 'new-request',
+        ])]);
+        $poller = new RuntimeEventPoller(new TuiRuntimeEventApplier(
+            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), SubagentProgressSerializerTestSupport::denormalizer()),
+            new NullLogger(), new RuntimeExceptionBoundary(new EventDispatcher()), $this->createStub(SessionTranscriptProviderInterface::class));
+        $services = $this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state,
+            client: $client, parentPoller: $poller, childPoller: $this->createIsolatedSubagentLiveChildPoller(),
+            subagentLivePicker: $this->closedSubagentLivePicker());
+        $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($state)
+            ->withClient($client)->withSessionServices($services)->build();
+        $this->createTickPollListener()->register($context);
+
+        $context->ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+
+        $this->assertFalse($state->sessionReady);
+        $this->assertSame('new-request', $state->handle->bootstrapRequestId);
+        $this->assertFalse($state->editorChangedSinceAttach);
+        $this->assertNull($state->pendingEditorPromptText);
+        $this->assertSame('Ready draft', $harness->screen()->editorText());
+    }
+
     /**
      * Confirm cancel must send a boolean false answer so the bash background
      * poller receives a resolved decision instead of hanging on null.
