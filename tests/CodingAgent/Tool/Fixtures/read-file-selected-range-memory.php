@@ -5,16 +5,17 @@ declare(strict_types=1);
 /**
  * Independent strict-128M probe for a small selected read from a large text file.
  *
- * Creates the fixture with bounded writes, reads a tiny mid-file range through
- * ReadFileTool, and reports peak allocator usage. The selected result remains
- * legitimate retained text; unselected prefix/suffix bodies must not dominate.
+ * Creates a giant unselected first line with bounded writes, validates the
+ * offset through the native toolbox, and reads a tiny range with ReadFileTool.
+ * Validation and execution must both avoid retaining the unselected line.
  */
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
+use Ineersa\CodingAgent\Tests\Tool\Support\ToolValidationHarness;
 use Ineersa\CodingAgent\Tool\ReadFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use Symfony\AI\Platform\Result\ToolCall;
 
 require dirname(__DIR__, 4).'/vendor/autoload.php';
 
@@ -28,9 +29,9 @@ if (!is_string($directory) || '' === $directory) {
 
 TestDirectoryIsolation::ensureDirectory($directory);
 $path = $directory.'/large-selected-range.txt';
-$prefixLines = 45_000;
+$prefixLines = 1;
 $selectedLines = 3;
-$suffixLines = 45_000;
+$suffixLines = 1;
 $unselectedLine = str_repeat('U', 1024)."\n";
 $selected = ["want-1\n", "want-2\n", "want-3\n"];
 
@@ -41,9 +42,12 @@ if (false === $handle) {
 }
 
 try {
-    for ($i = 0; $i < $prefixLines; ++$i) {
-        fwrite($handle, $unselectedLine);
+    $chunk = str_repeat('U', 1024 * 1024);
+    for ($i = 0; $i < 160; ++$i) {
+        fwrite($handle, $chunk);
     }
+    fwrite($handle, "\n");
+    unset($chunk);
     foreach ($selected as $line) {
         fwrite($handle, $line);
     }
@@ -62,11 +66,12 @@ if (false === $archiveBytes) {
 
 $before = memory_get_usage(true);
 $tool = new ReadFileTool(new ToolRuntime(new StackToolExecutionContextAccessor()));
-$result = $tool(new ReadFileArgumentsDTO(
-    path: $path,
-    offset: $prefixLines + 1,
-    limit: $selectedLines,
-));
+$toolbox = ToolValidationHarness::toolbox($tool);
+$result = (string) $toolbox->execute(new ToolCall('read-memory', 'read', [
+    'path' => $path,
+    'offset' => $prefixLines + 1,
+    'limit' => $selectedLines,
+]))->getResult();
 $peak = memory_get_peak_usage(true);
 
 $expected = implode('', $selected)
