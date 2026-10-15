@@ -9,16 +9,19 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Isolated SQLite paths for TUI E2E subprocesses (app state + Messenger transport).
+ * Isolated SQLite paths for TUI E2E subprocesses (app state).
  *
  * TUI tmux tests spawn agent/controller children that do not inherit ParaTest
- * worker env; each test must pass both HATFIELD_TEST_* paths explicitly so
- * parallel TUI workers do not share one messenger_transport_test.sqlite.
+ * worker env; each test must pass HATFIELD_TEST_DATABASE_PATH explicitly so
+ * parallel TUI workers do not share one app_test.sqlite.
+ *
+ * Durable Messenger queues use session-owned sqlite-queue brokers, not a
+ * Doctrine transport SQLite file.
  */
 final class TuiE2eDatabaseEnv
 {
     /**
-     * @return array{app: string, transport: string}
+     * @return array{app: string}
      */
     public static function allocatePaths(string $prefix): array
     {
@@ -26,13 +29,12 @@ final class TuiE2eDatabaseEnv
 
         return [
             'app' => 'app_test-'.$suffix.'.sqlite',
-            'transport' => 'messenger_transport_test-'.$suffix.'.sqlite',
         ];
     }
 
-    public static function shellPrefix(string $appDbPath, string $transportDbPath): string
+    public static function shellPrefix(string $appDbPath): string
     {
-        return self::shellPrefixWithOptionalMessengerBinary($appDbPath, $transportDbPath, null);
+        return self::shellPrefixWithOptionalMessengerBinary($appDbPath, null);
     }
 
     /**
@@ -42,10 +44,9 @@ final class TuiE2eDatabaseEnv
      */
     public static function shellPrefixWithLowLatencyMessenger(
         string $appDbPath,
-        string $transportDbPath,
         string $testProjectDir,
     ): string {
-        return self::shellPrefixWithOptionalMessengerBinary($appDbPath, $transportDbPath, $testProjectDir);
+        return self::shellPrefixWithOptionalMessengerBinary($appDbPath, $testProjectDir);
     }
 
     /**
@@ -76,7 +77,7 @@ final class TuiE2eDatabaseEnv
     }
 
     /**
-     * @return array{app: string, transport: string, appAbsolute: string, transportAbsolute: string, appEnv: string, transportEnv: string}
+     * @return array{app: string, appAbsolute: string, appEnv: string}
      */
     public static function allocateIsolatedPaths(string $kernelProjectDir, string $isolatedProjectDir, string $prefix): array
     {
@@ -85,11 +86,8 @@ final class TuiE2eDatabaseEnv
 
         return [
             'app' => $paths['app'],
-            'transport' => $paths['transport'],
             'appAbsolute' => self::isolatedSqliteAbsolutePath($isolatedProjectDir, $paths['app']),
-            'transportAbsolute' => self::isolatedSqliteAbsolutePath($isolatedProjectDir, $paths['transport']),
             'appEnv' => self::doctrineEnvPathForIsolatedSqlite($kernelProjectDir, $isolatedProjectDir, $paths['app']),
-            'transportEnv' => self::doctrineEnvPathForIsolatedSqlite($kernelProjectDir, $isolatedProjectDir, $paths['transport']),
         ];
     }
 
@@ -225,13 +223,11 @@ final class TuiE2eDatabaseEnv
 
     private static function shellPrefixWithOptionalMessengerBinary(
         string $appDbPath,
-        string $transportDbPath,
         ?string $testProjectDir,
     ): string {
         $prefix = \sprintf(
-            'HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s ',
+            'HATFIELD_TEST_DATABASE_PATH=%s ',
             escapeshellarg($appDbPath),
-            escapeshellarg($transportDbPath),
         );
         if (null === $testProjectDir || '' === $testProjectDir) {
             return $prefix;

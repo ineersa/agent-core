@@ -26,7 +26,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
     private TmuxHarness $tmux;
     private string $testProjectDir;
 
-    /** @var array{app: string, transport: string, appEnv: string, transportEnv: string}|null */
+    /** @var array{app: string, appEnv: string}|null */
     private ?array $dbPaths = null;
 
     protected function setUp(): void
@@ -58,7 +58,6 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
         $sessionId = TuiE2eSessionCatalogSeeder::createSession(
             $this->testProjectDir,
             $paths['appEnv'],
-            $paths['transportEnv'],
             'Tell me about testing.',
         );
         ResumeCanonicalEventsFixture::write($this->testProjectDir, $sessionId);
@@ -133,7 +132,6 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             'APP_ENV=test %sHOME=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefixWithLowLatencyMessenger(
                 $paths['appEnv'],
-                $paths['transportEnv'],
                 $this->testProjectDir,
             ),
             escapeshellarg($this->testProjectDir.'/home'),
@@ -154,9 +152,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
         );
         $this->dbPaths = [
             'app' => $allocated['app'],
-            'transport' => $allocated['transport'],
             'appEnv' => $allocated['appEnv'],
-            'transportEnv' => $allocated['transportEnv'],
         ];
 
         $settings = TuiE2eDatabaseEnv::replayBaseSettings();

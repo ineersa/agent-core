@@ -11,6 +11,8 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueEnv;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -148,7 +150,11 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         private readonly PromptTemplatesRuntimeConfig $promptTemplatesConfig,
         private readonly ToolFilterRuntimeConfig $toolFilterConfig,
         private readonly LoggerInterface $logger,
+        private readonly string $sessionsBasePath,
     ) {
+        if ('' === $this->sessionsBasePath || !str_starts_with($this->sessionsBasePath, '/')) {
+            throw new \InvalidArgumentException('JsonlProcessAgentSessionClient requires an absolute sessionsBasePath.');
+        }
         $this->compactEventBuffer = new RuntimeEventPerRunCompactBuffer();
         $this->eventBufferWatermarkActive = false;
         $this->eventBufferWatermarkLastLoggedAt = null;
@@ -674,25 +680,18 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         ];
 
         $currentEnv = getenv();
-        // Build session-scoped queue names so no cross-session message
-        // stealing can occur. Falls back to 'default' before start().
         $queueSuffix = $this->sessionId ?? 'default';
-
+        $queuePaths = SessionSqliteQueuePaths::forSession(
+            $this->sessionsBasePath,
+            $runtimeCwd,
+            $queueSuffix,
+        );
         $env = array_merge(\is_array($currentEnv) ? $currentEnv : $_ENV, [
             'APP_ENV' => $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? 'prod',
             'APP_DEBUG' => $_SERVER['APP_DEBUG'] ?? $_ENV['APP_DEBUG'] ?? '0',
-            // Controller/worker mode must use real async queues. The parent
-            // TUI process defaults to sync:// so --transport=in-process remains
-            // usable without a consumer pool.
-            // Stock Doctrine redeliver_timeout ≈ ten 365-day years; no keepalive.
-            // Rows older than that horizon can reclaim. Restarting the same session
-            // reuses the same queue and does not reset delivered_at age.
-            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$queueSuffix}&redeliver_timeout=315360000",
-            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$queueSuffix}&redeliver_timeout=315360000",
-            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$queueSuffix}&redeliver_timeout=315360000",
-            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$queueSuffix}&redeliver_timeout=315360000",
-            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$queueSuffix}&redeliver_timeout=315360000",
-            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=extension_agent_{$queueSuffix}&redeliver_timeout=315360000",
+            // Parent publishes broker paths + DSNs so controller/consumer boots
+            // resolve sqlite-queue transports before the broker is started.
+            ...SessionSqliteQueueEnv::processEnv($queuePaths),
             // Pass session ID so the controller can identify and reap its own
             // orphaned consumers when a previous session was SIGKILL'd.
             'HATFIELD_SESSION_ID' => $this->sessionId ?? 'unknown',

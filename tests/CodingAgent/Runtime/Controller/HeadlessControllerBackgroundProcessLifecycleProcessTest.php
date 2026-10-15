@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Group;
  * before runtime.ready at startup and before its owned process exits on EOF.
  *
  * This is intentionally a controller-process proof rather than listener-only
- * dispatch: each seed uses the same isolated app/transport SQLite pair and
+ * dispatch: each seed uses the same isolated app SQLite database and
  * .hatfield tree as the source controller subprocess.
  *
  * @group controller-replay
@@ -67,7 +67,6 @@ final class HeadlessControllerBackgroundProcessLifecycleProcessTest extends Cont
         return ControllerReplayBackgroundProcessSeeder::seedAcceptedFinished(
             $this->tempDir,
             $this->appDatabaseFilename(),
-            $this->messengerTransportDatabaseFilename(),
             $this->sessionId,
             $prefix,
         );
@@ -82,7 +81,6 @@ final class HeadlessControllerBackgroundProcessLifecycleProcessTest extends Cont
             ControllerReplayBackgroundProcessSeeder::recordExists(
                 $this->tempDir,
                 $this->appDatabaseFilename(),
-                $this->messengerTransportDatabaseFilename(),
                 $seed['id'],
             ),
         );
@@ -111,10 +109,5 @@ final class HeadlessControllerBackgroundProcessLifecycleProcessTest extends Cont
     private function appDatabaseFilename(): string
     {
         return 'app_test-replay-'.$this->sessionId.'.sqlite';
-    }
-
-    private function messengerTransportDatabaseFilename(): string
-    {
-        return 'messenger_transport_test-replay-'.$this->sessionId.'.sqlite';
     }
 }

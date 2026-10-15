@@ -1,0 +1,8 @@
+# Session-owned sqlite-queue broker defaults.
+#
+# Authoritative broker defaults for sqlite-queue:broker. The controller launches
+# the bundle command without CLI overrides so these values remain the single
+# source of truth. FULL matches Hatfield queue-commit durability expectations.
+sqlite_queue:
+    synchronous: full
+    redeliver_timeout: 60

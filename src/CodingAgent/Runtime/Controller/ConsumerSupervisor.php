@@ -30,9 +30,12 @@ use Symfony\Component\Process\Process;
  * Process management:
  * - Launch: creates a non-blocking Symfony Process with timeout(null) and
  *   Symfony Messenger --memory-limit for graceful worker recycling
- * - Consumers launch without --keepalive; session Doctrine DSNs use a ~10-year
- *   redeliver_timeout so short-lived claims are not age-reclaimed. Abandoned
- *   deliveries still need explicit `/repair` redrive of current effects
+ * - Consumers launch with native --keepalive=5 so long handlers renew the
+ *   broker's 60-second lease. Failed keepalive does not stop a running
+ *   handler; ownership loss remains at-least-once and still needs explicit
+ *   `/repair` for interrupted sessions
+ * - scheduler_default keeps native Scheduler transport behavior and omits
+ *   --keepalive (that receiver is not a sqlite-queue KeepaliveReceiver)
  * - Supervision: polls isRunning() every 5s; exit code 0 is treated as
  *   normal memory-limit (or other graceful) recycle with immediate relaunch;
  *   non-zero exits use crash restart policy with exponential backoff
@@ -61,11 +64,18 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     /** Symfony Messenger graceful worker recycle threshold for controller consumers. */
     private const string CONSUMER_MEMORY_LIMIT = '256M';
 
-    /**
-     * Idle poll delay passed to messenger:consume in seconds (50ms).
-     * Symfony converts this CLI value to microseconds for Worker::run().
-     */
-    private const float CONSUMER_SLEEP_SECONDS = 0.05;
+    /** Native Messenger keepalive interval in seconds; must stay below the broker lease. */
+    private const int CONSUMER_KEEPALIVE_SECONDS = 5;
+
+    /** Transports that consume sqlite-queue receivers and need lease renewal. */
+    private const array BROKER_KEEPALIVE_TRANSPORTS = [
+        'run_control',
+        'llm',
+        'tool',
+        'agent',
+        'mcp',
+        'extension_agent',
+    ];
 
     /** Max bytes of stderr tail retained per consumer for crash diagnostics. */
     private const int STDERR_TAIL_MAX_BYTES = 16_384;
@@ -116,16 +126,20 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
             $env = $_ENV;
             $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = '1';
 
+            $command = [
+                ...$appCommand,
+                'messenger:consume',
+                $transportName,
+                '--no-interaction',
+                '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
+            ];
+            if (\in_array($transportName, self::BROKER_KEEPALIVE_TRANSPORTS, true)) {
+                // Omit --sleep so sqlite-queue native WAIT notifications wake idle workers.
+                $command[] = '--keepalive='.self::CONSUMER_KEEPALIVE_SECONDS;
+            }
+
             $process = new Process(
-                [
-                    ...$appCommand,
-                    'messenger:consume',
-                    $transportName,
-                    '--no-interaction',
-                    '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
-                    // Explicit values avoid Symfony's one-second default idle sleep.
-                    '--sleep='.self::CONSUMER_SLEEP_SECONDS,
-                ],
+                $command,
                 cwd: $cwd,
                 env: $env,
                 timeout: null,

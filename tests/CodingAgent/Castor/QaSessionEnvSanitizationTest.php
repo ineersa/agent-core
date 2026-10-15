@@ -97,7 +97,7 @@ final class QaSessionEnvSanitizationTest extends TestCase
     {
         self::requireCastorFiles();
 
-        $dsn = 'doctrine://messenger_transport?queue_name=session_poison_x';
+        $dsn = 'sqlite-queue://session_poison_x?endpoint=%2Ftmp%2Fhq-poison.sock';
         $poisoned = [];
         try {
             foreach (self::DSN_VARS as $var) {

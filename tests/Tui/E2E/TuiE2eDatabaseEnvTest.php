@@ -12,17 +12,15 @@ use PHPUnit\Framework\TestCase;
  */
 final class TuiE2eDatabaseEnvTest extends TestCase
 {
-    public function testShellPrefixSetsPairedDatabaseEnvVars(): void
+    public function testShellPrefixSetsAppDatabaseEnvVar(): void
     {
         $prefix = TuiE2eDatabaseEnv::shellPrefix(
             'app_test-abc.sqlite',
-            'messenger_transport_test-abc.sqlite',
         );
 
         $this->assertStringContainsString('HATFIELD_TEST_DATABASE_PATH=', $prefix);
-        $this->assertStringContainsString('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=', $prefix);
         $this->assertStringContainsString('app_test-abc.sqlite', $prefix);
-        $this->assertStringContainsString('messenger_transport_test-abc.sqlite', $prefix);
+        $this->assertStringNotContainsString('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=', $prefix);
     }
 
     public function testDoctrineEnvPathResolvesToIsolatedAbsolutePath(): void

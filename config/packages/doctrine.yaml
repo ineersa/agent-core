@@ -1,22 +1,20 @@
 # Doctrine DBAL + ORM configuration for SQLite-backed storage.
 #
-# Two SQLite files under .hatfield/ (CWD-relative; see Kernel app.cwd):
-#   - state.sqlite          — app/runtime state (ORM entities, sessions metadata)
-#   - messenger-transport.sqlite — Symfony Messenger doctrine transport only
-#
-# Splitting queue persistence from app-state writes prevents app DB write locks
-# from blocking Messenger retry/redelivery (session-6 class failures).
+# App/runtime ORM state lives in .hatfield/state.sqlite (CWD-relative; see
+# Kernel app.cwd). Durable Messenger queues use the session-owned sqlite-queue
+# broker under configured session storage, not a Doctrine transport connection.
 #
 # options key 2 = PDO::ATTR_TIMEOUT (seconds). SQLite maps this to PRAGMA
-# busy_timeout (milliseconds = seconds × 1000), so 5 → 5000ms on both connections.
-# Both connections use BEGIN IMMEDIATE for explicit outer transactions so competing
-# writers wait before taking a read snapshot instead of failing on read→write upgrade.
+# busy_timeout (milliseconds = seconds × 1000), so 5 → 5000ms.
+# BEGIN IMMEDIATE on the default connection makes competing app-state writers
+# wait before taking a read snapshot instead of failing on read→write upgrade.
 #
 # ORM entities on the default connection:
 #   - background_process  — BackgroundProcessManager durable tracking
 #   - tool_batch_schedule — DoctrineToolBatchStore scheduling metadata
 #   - tool_question       — ToolQuestionStore cross-process tool-local questions
 #
+
 doctrine:
     dbal:
         default_connection: default
@@ -24,17 +22,6 @@ doctrine:
             default:
                 driver: pdo_sqlite
                 path: '%app.cwd%/.hatfield/state.sqlite'
-                logging: false
-                profiling: false
-                options:
-                    2: 5
-
-            # SqliteImmediateTransactionMiddleware uses BEGIN IMMEDIATE so concurrent
-            # messenger:consume workers wait on the writer slot at transaction start
-            # instead of failing on deferred read→write upgrade.
-            messenger_transport:
-                driver: pdo_sqlite
-                path: '%app.cwd%/.hatfield/messenger-transport.sqlite'
                 logging: false
                 profiling: false
                 options:
@@ -59,6 +46,3 @@ doctrine:
                         dir: '%kernel.project_dir%/src/CodingAgent/Entity'
                         prefix: 'Ineersa\CodingAgent\Entity'
                         type: attribute
-            messenger_transport:
-                connection: messenger_transport
-                mappings: { }

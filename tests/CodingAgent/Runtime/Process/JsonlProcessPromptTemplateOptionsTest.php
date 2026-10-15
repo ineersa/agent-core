@@ -170,6 +170,7 @@ PHP);
             promptTemplatesConfig: $promptConfig,
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
+            sessionsBasePath: sys_get_temp_dir().'/hatfield-sessions',
         );
 
         $handle = $client->start(new StartRunRequest(

@@ -35,8 +35,8 @@ abstract class ControllerE2eTestCase extends TestCase
     /** @var list<int> Same-UID tracked PIDs still alive after the last stopProcess() teardown. */
     protected array $lastTeardownSurvivorPids = [];
 
-    /** Filename under project var/test/ for this controller's Messenger transport DB. */
-    protected string $messengerTransportDbFilename = '';
+    /** Absolute path of this controller's session-owned sqlite-queue database. */
+    protected string $sqliteQueueDatabasePath = '';
 
     protected string $stdoutBuf = '';
     protected string $stderrBuf = '';
@@ -216,15 +216,13 @@ abstract class ControllerE2eTestCase extends TestCase
             // the real developer HOME (proc_open env arrays do not inherit).
             'HOME' => $this->tempDir,
             'HATFIELD_TEST_DATABASE_PATH' => 'app_test-live-'.$this->sessionId.'.sqlite',
-            'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => 'messenger_transport_test-live-'.$this->sessionId.'.sqlite',
-            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$this->sessionId}&redeliver_timeout=315360000",
-            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$this->sessionId}&redeliver_timeout=315360000",
-            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$this->sessionId}&redeliver_timeout=315360000",
-            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$this->sessionId}&redeliver_timeout=315360000",
-            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$this->sessionId}&redeliver_timeout=315360000",
-            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=extension_agent_{$this->sessionId}&redeliver_timeout=315360000",
             'HATFIELD_SESSION_ID' => $this->sessionId,
             'LLAMA_CPP_SMOKE_TEST' => '1',
+            ...\Ineersa\CodingAgent\Tests\Support\SessionSqliteQueueTestEnv::forSession(
+                $this->tempDir.'/.hatfield/sessions',
+                $this->tempDir,
+                $this->sessionId,
+            ),
         ];
         $env = array_merge($env, $this->controllerSubprocessEnv());
 
@@ -254,7 +252,7 @@ abstract class ControllerE2eTestCase extends TestCase
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
-        $this->messengerTransportDbFilename = (string) ($env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] ?? '');
+        $this->sqliteQueueDatabasePath = (string) ($env['HATFIELD_SQLITE_QUEUE_DATABASE'] ?? '');
         $this->trackControllerProcessTree($process);
     }
 
@@ -572,7 +570,7 @@ abstract class ControllerE2eTestCase extends TestCase
             $chunks[] = 'Messenger transport DB: '.filesize($transportDb).' bytes';
             try {
                 $db = new \PDO('sqlite:'.$transportDb);
-                $rows = $db->query('SELECT count(*), queue_name FROM messenger_messages GROUP BY queue_name');
+                $rows = $db->query('SELECT count(*), queue FROM queue_messages GROUP BY queue');
                 if (false !== $rows) {
                     foreach ($rows as $row) {
                         $chunks[] = '  '.($row[0] ?? 0).' messages in queue '.($row[1] ?? '?');
@@ -963,11 +961,9 @@ YAML;
      */
     protected function configuredMessengerTransportDbPath(): string
     {
-        $filename = '' !== $this->messengerTransportDbFilename
-            ? $this->messengerTransportDbFilename
-            : 'messenger_transport_test.sqlite';
-
-        return $this->projectDir.'/var/test/'.$filename;
+        return '' !== $this->sqliteQueueDatabasePath
+            ? $this->sqliteQueueDatabasePath
+            : $this->tempDir.'/.hatfield/sessions/'.$this->sessionId.'/messenger-queue.sqlite';
     }
 
     /**

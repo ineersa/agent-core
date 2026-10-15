@@ -413,7 +413,6 @@ final class PharSmokeTest extends TestCase
             'config/hatfield.defaults.yaml',
             'config/themes/catppuccin-mocha.yaml',
             'migrations/application/Version20260601152619.php',
-            'migrations/messenger_transport/Version20260828224203.php',
             'docs/settings.md',
             'docs/agents.md',
             '.hatfield/extensions/extension-api/docs/extension-api.md',

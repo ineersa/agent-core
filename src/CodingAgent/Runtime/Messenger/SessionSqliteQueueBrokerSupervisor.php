@@ -1,0 +1,532 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\CodingAgent\Runtime\Messenger;
+
+use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\SqliteQueue\Broker\BrokerEventEnum;
+use Ineersa\SqliteQueue\Sqlite\SqliteSynchronousMode;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\ExecutableFinder;
+use Symfony\Component\Process\Process;
+
+/**
+ * Starts and stops the session-owned sqlite-queue broker for one controller.
+ *
+ * The broker owns an async SQLite driver child that does not publish its PID.
+ * On Linux, launch uses OS `setsid` through Symfony Process so the broker and
+ * that driver share one process group distinct from the controller. Shutdown
+ * TERMs the broker first so it can drain, then escalates the owned group only
+ * after the grace budget. Symfony's `create_process_group` option is Windows-
+ * only and must not be treated as Linux isolation.
+ *
+ * Endpoint cleanup is ownership-gated: only sockets created by a successful
+ * start of this supervisor may be removed. Refused pre-existing endpoints are
+ * never unlinked. Package lock sidecars are left in place.
+ *
+ * Startup waits for a positive JSON ready event. Process creation alone is not
+ * readiness. Broker death after readiness is fail-visible: supervise() reports
+ * it and callers must stop the session instead of reconnecting or replaying.
+ */
+final class SessionSqliteQueueBrokerSupervisor
+{
+    private const float DEFAULT_READY_TIMEOUT_SECONDS = 10.0;
+    private const float DEFAULT_SHUTDOWN_GRACE_SECONDS = 5.0;
+    private const int STDERR_TAIL_MAX_BYTES = 16_384;
+
+    private ?Process $process = null;
+    private ?int $processGroupId = null;
+    private ?SessionSqliteQueuePaths $paths = null;
+    private string $stdoutCarry = '';
+    private string $stderrTail = '';
+    private bool $ready = false;
+    private bool $shuttingDown = false;
+    /** True only after this supervisor successfully launched a broker for $paths. */
+    private bool $ownsEndpointArtifacts = false;
+
+    public function __construct(
+        private readonly LoggerInterface $logger,
+        private readonly RuntimeProcessConfig $runtimeConfig,
+        private readonly Filesystem $filesystem = new Filesystem(),
+        private readonly float $readyTimeoutSeconds = self::DEFAULT_READY_TIMEOUT_SECONDS,
+        private readonly float $shutdownGraceSeconds = self::DEFAULT_SHUTDOWN_GRACE_SECONDS,
+        private readonly ?int $redeliverTimeoutSeconds = null,
+        private readonly ?SqliteSynchronousMode $synchronous = null,
+    ) {
+        if ($this->readyTimeoutSeconds <= 0 || !is_finite($this->readyTimeoutSeconds)) {
+            throw new \InvalidArgumentException('Broker ready timeout must be positive finite seconds.');
+        }
+        if ($this->shutdownGraceSeconds < 0 || !is_finite($this->shutdownGraceSeconds)) {
+            throw new \InvalidArgumentException('Broker shutdown grace must be non-negative finite seconds.');
+        }
+        if (null !== $this->redeliverTimeoutSeconds && $this->redeliverTimeoutSeconds <= 0) {
+            throw new \InvalidArgumentException('Broker redeliver timeout must be positive seconds.');
+        }
+    }
+
+    public function start(SessionSqliteQueuePaths $paths): void
+    {
+        if (null !== $this->process) {
+            throw new \LogicException('Session sqlite-queue broker is already started.');
+        }
+
+        $this->shuttingDown = false;
+        $this->ready = false;
+        $this->ownsEndpointArtifacts = false;
+        $this->stdoutCarry = '';
+        $this->stderrTail = '';
+        $this->paths = $paths;
+
+        $this->preparePrivatePaths($paths);
+        $this->refuseExistingEndpoint($paths->endpointPath);
+
+        $command = [
+            ...$this->runtimeConfig->executableCommand(),
+            'sqlite-queue:broker',
+            '--database='.$paths->databasePath,
+            '--endpoint='.$paths->endpointPath,
+            '--no-ansi',
+            '--no-interaction',
+        ];
+        if (null !== $this->redeliverTimeoutSeconds) {
+            $command[] = '--redeliver-timeout='.$this->redeliverTimeoutSeconds;
+        }
+        if (null !== $this->synchronous) {
+            $command[] = '--synchronous='.$this->synchronous->value;
+        }
+
+        $launchCommand = $this->wrapWithSetsid($command);
+        $process = new Process(
+            $launchCommand,
+            cwd: $this->runtimeConfig->runtimeCwd(),
+            env: $_ENV,
+            timeout: null,
+        );
+
+        try {
+            $process->start();
+        } catch (\Throwable $exception) {
+            throw new \RuntimeException(\sprintf('Failed to launch session sqlite-queue broker for session "%s": %s', $paths->sessionId, $exception->getMessage()), previous: $exception);
+        }
+
+        // Process creation succeeded: this supervisor owns cleanup for this endpoint.
+        $this->ownsEndpointArtifacts = true;
+        $this->process = $process;
+        $pid = $process->getPid();
+        if (null === $pid || $pid <= 0) {
+            $this->forceStopOwnedTree();
+            throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" started without a PID.', $paths->sessionId));
+        }
+
+        $this->awaitOwnedProcessGroupIsolation($paths->sessionId, $pid);
+        $this->waitForReady($paths);
+
+        $this->logger->info('Session sqlite-queue broker ready', [
+            'component' => 'SessionSqliteQueueBrokerSupervisor',
+            'event_type' => 'sqlite_queue.broker.ready',
+            'session_id' => $paths->sessionId,
+            'pid' => $pid,
+            'pgid' => $this->processGroupId,
+            'database' => $paths->databasePath,
+            'endpoint' => $paths->endpointPath,
+            'synchronous_override' => $this->synchronous?->value,
+            'redeliver_timeout_override_seconds' => $this->redeliverTimeoutSeconds,
+        ]);
+    }
+
+    public function paths(): ?SessionSqliteQueuePaths
+    {
+        return $this->paths;
+    }
+
+    public function isReady(): bool
+    {
+        return $this->ready && null !== $this->process && $this->process->isRunning();
+    }
+
+    /**
+     * Returns false when the ready broker has exited. Callers must fail the session.
+     */
+    public function supervise(): bool
+    {
+        if ($this->shuttingDown || null === $this->process || !$this->ready) {
+            return true;
+        }
+
+        $this->drainStreams();
+        if ($this->process->isRunning()) {
+            return true;
+        }
+
+        $exitCode = $this->process->getExitCode();
+        $this->logger->critical('Session sqlite-queue broker exited after readiness', [
+            'component' => 'SessionSqliteQueueBrokerSupervisor',
+            'event_type' => 'sqlite_queue.broker.dead',
+            'session_id' => $this->paths?->sessionId,
+            'pid' => $this->process->getPid(),
+            'pgid' => $this->processGroupId,
+            'exit_code' => $exitCode,
+            'stderr' => '' !== $this->stderrTail ? $this->stderrTail : null,
+            'stdout' => '' !== $this->stdoutCarry ? $this->stdoutCarry : null,
+        ]);
+
+        return false;
+    }
+
+    public function shutdown(): void
+    {
+        if ($this->shuttingDown) {
+            return;
+        }
+
+        $this->shuttingDown = true;
+        if (null === $this->process) {
+            $this->removeOwnedEndpointArtifacts();
+
+            return;
+        }
+
+        $sessionId = $this->paths?->sessionId;
+        $this->logger->info('Shutting down session sqlite-queue broker', [
+            'component' => 'SessionSqliteQueueBrokerSupervisor',
+            'event_type' => 'sqlite_queue.broker.shutdown_begin',
+            'session_id' => $sessionId,
+            'pid' => $this->process->getPid(),
+            'pgid' => $this->processGroupId,
+            'grace_seconds' => $this->shutdownGraceSeconds,
+        ]);
+
+        // TERM the broker process first so it can drain and close its driver.
+        $this->signalBroker(\SIGTERM);
+        $deadline = microtime(true) + $this->shutdownGraceSeconds;
+        while (microtime(true) < $deadline) {
+            $this->drainStreams();
+            if (!$this->process->isRunning() && !$this->ownedTreeAlive()) {
+                break;
+            }
+            usleep(50_000);
+        }
+
+        if ($this->process->isRunning() || $this->ownedTreeAlive()) {
+            $this->logger->warning('Session sqlite-queue broker escalated after shared grace', [
+                'component' => 'SessionSqliteQueueBrokerSupervisor',
+                'event_type' => 'sqlite_queue.broker.shutdown_escalated',
+                'session_id' => $sessionId,
+                'pid' => $this->process->getPid(),
+                'pgid' => $this->processGroupId,
+            ]);
+            $this->forceStopOwnedTree();
+        }
+
+        $this->drainStreams();
+        $this->process = null;
+        $this->processGroupId = null;
+        $this->ready = false;
+        $this->removeOwnedEndpointArtifacts();
+
+        $this->logger->info('Session sqlite-queue broker shutdown complete', [
+            'component' => 'SessionSqliteQueueBrokerSupervisor',
+            'event_type' => 'sqlite_queue.broker.shutdown_complete',
+            'session_id' => $sessionId,
+        ]);
+    }
+
+    private function preparePrivatePaths(SessionSqliteQueuePaths $paths): void
+    {
+        $databaseDir = \dirname($paths->databasePath);
+        $endpointDir = $paths->endpointDirectory();
+
+        $this->filesystem->mkdir($databaseDir, 0o700);
+        $this->filesystem->mkdir($endpointDir, 0o700);
+        @chmod($databaseDir, 0o700);
+        @chmod($endpointDir, 0o700);
+    }
+
+    /**
+     * @param list<string> $command
+     *
+     * @return list<string>
+     */
+    private function wrapWithSetsid(array $command): array
+    {
+        if ('\\' === \DIRECTORY_SEPARATOR) {
+            return $command;
+        }
+
+        $setsid = (new ExecutableFinder())->find('setsid');
+        if (null === $setsid) {
+            throw new \RuntimeException('Session sqlite-queue broker requires the setsid binary to isolate the Amp SQLite driver process group on Linux.');
+        }
+
+        return [$setsid, ...$command];
+    }
+
+    private function waitForReady(SessionSqliteQueuePaths $paths): void
+    {
+        if (null === $this->process) {
+            throw new \LogicException('Cannot wait for broker readiness without a process.');
+        }
+
+        $process = $this->process;
+        $process->setTimeout($this->readyTimeoutSeconds);
+
+        try {
+            $ready = $process->waitUntil(function (string $type, string $data) use ($process): bool {
+                if (Process::ERR === $type) {
+                    $this->appendStderrTail($data);
+                    $process->clearErrorOutput();
+
+                    return false;
+                }
+
+                $this->stdoutCarry .= $data;
+                $this->consumeReadyEvents();
+                $process->clearOutput();
+
+                return $this->ready;
+            });
+        } catch (ProcessTimedOutException $exception) {
+            $this->forceStopOwnedTree();
+            throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" did not emit ready within %.1fs. stderr=%s stdout=%s', $paths->sessionId, $this->readyTimeoutSeconds, $this->stderrTail, $this->stdoutCarry), previous: $exception);
+        } finally {
+            $process->setTimeout(null);
+        }
+
+        if ($this->ready && $ready) {
+            if (!$process->isRunning()) {
+                $this->forceStopOwnedTree();
+                throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" exited immediately after ready. stderr=%s stdout=%s', $paths->sessionId, $this->stderrTail, $this->stdoutCarry));
+            }
+
+            return;
+        }
+
+        $exitCode = $process->getExitCode();
+        $this->forceStopOwnedTree();
+        throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" exited before ready (exit_code=%s). stderr=%s stdout=%s', $paths->sessionId, null === $exitCode ? 'null' : (string) $exitCode, $this->stderrTail, $this->stdoutCarry));
+    }
+
+    private function drainStreams(): void
+    {
+        if (null === $this->process) {
+            return;
+        }
+
+        $stdout = $this->process->getIncrementalOutput();
+        if ('' !== $stdout) {
+            $this->stdoutCarry .= $stdout;
+            $this->consumeReadyEvents();
+            $this->process->clearOutput();
+            if (\strlen($this->stdoutCarry) > self::STDERR_TAIL_MAX_BYTES) {
+                $this->stdoutCarry = substr($this->stdoutCarry, -self::STDERR_TAIL_MAX_BYTES);
+            }
+        }
+
+        $stderr = $this->process->getIncrementalErrorOutput();
+        if ('' !== $stderr) {
+            $this->appendStderrTail($stderr);
+            $this->process->clearErrorOutput();
+        }
+    }
+
+    private function consumeReadyEvents(): void
+    {
+        while (false !== ($newline = strpos($this->stdoutCarry, "\n"))) {
+            $line = substr($this->stdoutCarry, 0, $newline);
+            $this->stdoutCarry = substr($this->stdoutCarry, $newline + 1);
+            $trimmed = trim($line);
+            if ('' === $trimmed) {
+                continue;
+            }
+
+            try {
+                $decoded = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
+            } catch (\JsonException $exception) {
+                $this->logger->info('Ignoring non-JSON sqlite-queue broker stdout line', [
+                    'component' => 'SessionSqliteQueueBrokerSupervisor',
+                    'event_type' => 'sqlite_queue.broker.stdout_non_json',
+                    'session_id' => $this->paths?->sessionId,
+                    'error' => $exception->getMessage(),
+                ]);
+
+                continue;
+            }
+
+            if (!\is_array($decoded) || !isset($decoded['event']) || !\is_string($decoded['event'])) {
+                continue;
+            }
+
+            if (BrokerEventEnum::Ready->value === $decoded['event']) {
+                $this->ready = true;
+            }
+        }
+    }
+
+    private function appendStderrTail(string $chunk): void
+    {
+        $tail = $this->stderrTail.$chunk;
+        if (\strlen($tail) > self::STDERR_TAIL_MAX_BYTES) {
+            $start = \strlen($tail) - self::STDERR_TAIL_MAX_BYTES;
+            while (isset($tail[$start]) && (\ord($tail[$start]) & 0xC0) === 0x80) {
+                ++$start;
+            }
+            $tail = substr($tail, $start);
+        }
+
+        $this->stderrTail = $tail;
+    }
+
+    private function refuseExistingEndpoint(string $endpointPath): void
+    {
+        clearstatcache(true, $endpointPath);
+        if (!file_exists($endpointPath) && !is_link($endpointPath)) {
+            return;
+        }
+
+        // Do not mark ownership and do not unlink: a foreign or leftover path
+        // must survive a refused start and any subsequent shutdown() cleanup.
+        throw new \RuntimeException(\sprintf('Refusing to start session sqlite-queue broker: endpoint already exists at %s. Verify no listener owns it before removing or choosing another private endpoint.', $endpointPath));
+    }
+
+    private function signalBroker(int $signal): void
+    {
+        if (null === $this->process || !$this->process->isRunning()) {
+            return;
+        }
+
+        try {
+            $this->process->signal($signal);
+        } catch (\Throwable $exception) {
+            $this->logger->info('Session sqlite-queue broker already gone during signal', [
+                'component' => 'SessionSqliteQueueBrokerSupervisor',
+                'event_type' => 'sqlite_queue.broker.signal_race',
+                'signal' => $signal,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    private function signalOwnedTree(int $signal): void
+    {
+        $pgid = $this->processGroupId;
+        if ($this->canSignalOwnedProcessGroup($pgid) && \function_exists('posix_kill')) {
+            @posix_kill(-$pgid, $signal);
+
+            return;
+        }
+
+        $this->signalBroker($signal);
+    }
+
+    private function forceStopOwnedTree(): void
+    {
+        $this->signalOwnedTree(\SIGKILL);
+        if (null !== $this->process && $this->process->isRunning()) {
+            $this->process->stop(0);
+        }
+        $this->process = null;
+        $this->processGroupId = null;
+        $this->ready = false;
+    }
+
+    private function ownedTreeAlive(): bool
+    {
+        $pgid = $this->processGroupId;
+        if (!$this->canSignalOwnedProcessGroup($pgid) || !\function_exists('posix_kill')) {
+            return false;
+        }
+
+        return @posix_kill(-$pgid, 0);
+    }
+
+    private function resolveOwnedProcessGroupId(int $pid): int
+    {
+        if (!\function_exists('posix_getpgid')) {
+            return $pid;
+        }
+
+        $pgid = @posix_getpgid($pid);
+        if (false === $pgid || $pgid <= 1) {
+            return $pid;
+        }
+
+        return $pgid;
+    }
+
+    /**
+     * setsid(1) execs into the broker after Process::start() returns. Sample PGID
+     * until the broker leaves the controller group (or the process dies).
+     */
+    private function awaitOwnedProcessGroupIsolation(string $sessionId, int $pid): void
+    {
+        $deadline = microtime(true) + min(1.0, $this->readyTimeoutSeconds);
+        $lastPgid = 0;
+        do {
+            if (null === $this->process || !$this->process->isRunning()) {
+                $this->forceStopOwnedTree();
+                throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" exited before process-group isolation (pid=%d).', $sessionId, $pid));
+            }
+
+            $lastPgid = $this->resolveOwnedProcessGroupId($pid);
+            $this->processGroupId = $lastPgid;
+            if ($this->isOwnedProcessGroupIsolated($lastPgid)) {
+                return;
+            }
+
+            usleep(1_000);
+        } while (microtime(true) < $deadline);
+
+        $this->forceStopOwnedTree();
+        throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" did not leave the controller process group before isolation deadline (pid=%d, pgid=%d).', $sessionId, $pid, $lastPgid));
+    }
+
+    private function isOwnedProcessGroupIsolated(?int $pgid): bool
+    {
+        if (null === $pgid || $pgid <= 1) {
+            return false;
+        }
+
+        if (!\function_exists('posix_getpgid')) {
+            return true;
+        }
+
+        $selfPid = getmypid();
+        $selfPgid = @posix_getpgid(false === $selfPid ? 0 : $selfPid);
+        if (false === $selfPgid) {
+            return true;
+        }
+
+        return $pgid !== $selfPgid;
+    }
+
+    private function canSignalOwnedProcessGroup(?int $pgid): bool
+    {
+        // Never escalate a process group that still includes this controller/test process.
+        return $this->isOwnedProcessGroupIsolated($pgid);
+    }
+
+    private function removeOwnedEndpointArtifacts(): void
+    {
+        if (!$this->ownsEndpointArtifacts) {
+            return;
+        }
+
+        $paths = $this->paths;
+        $this->ownsEndpointArtifacts = false;
+        if (null === $paths) {
+            return;
+        }
+
+        // Only remove the owned socket. Never delete package lock sidecars.
+        // Prefer waiting for normal broker exit (package removes its own socket);
+        // this is a best-effort cleanup after abrupt escalation.
+        $endpoint = $paths->endpointPath;
+        clearstatcache(true, $endpoint);
+        if (file_exists($endpoint) || is_link($endpoint)) {
+            @unlink($endpoint);
+        }
+    }
+}

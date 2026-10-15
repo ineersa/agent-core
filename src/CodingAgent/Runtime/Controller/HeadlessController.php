@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\CodingAgent\Config\RuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueEnv;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -69,6 +71,7 @@ final class HeadlessController
 
     public function __construct(
         private readonly ConsumerSupervisor $consumerSupervisor,
+        private readonly SessionSqliteQueueBrokerSupervisor $brokerSupervisor,
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
         private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
@@ -124,7 +127,7 @@ final class HeadlessController
 
         // Single live owner for this project+session before reaping or launching
         // consumers. Fail before runtime.ready so a second controller never shares
-        // session Doctrine queues with a healthy first owner.
+        // session broker queues with a healthy first owner.
         if (!$this->acquireSessionOwnerLock()) {
             return Command::FAILURE;
         }
@@ -137,7 +140,9 @@ final class HeadlessController
 
         try {
             $this->dispatcher->dispatch(new ControllerSessionStartingEvent($this->sessionId));
+            $this->startSessionBroker();
         } catch (\Throwable $exception) {
+            $this->brokerSupervisor->shutdown();
             $this->releaseSessionOwnerLock();
 
             throw $exception;
@@ -165,42 +170,61 @@ final class HeadlessController
         // Launch messenger consumers before advertising readiness. Clients that
         // send start_run immediately after runtime.ready must not race empty
         // run_control/llm queues under load.
-        $this->consumerSupervisor->launch('run_control');
-        // llm consumers: fixed bounded pool for concurrent provider calls
-        // (parent turns + parallel subagent children share the llm transport).
-        // Count defaults to runtime.llm_worker_count (1..8, default 4) and is
-        // intentionally distinct from tools.execution.max_parallelism.
-        // Constructor override must already be in range; invalid overrides fail closed.
-        $this->consumerSupervisor->launchMultiple('llm', $this->resolveLlmWorkerCount());
-        // tool consumers: N parallel workers for concurrent tool execution.
-        // N defaults to tools.execution.max_parallelism.
-        $effectiveWorkerCount = $this->toolWorkerCount > 0
-            ? $this->toolWorkerCount
-            : max(1, $this->toolExecutionSettings->maxParallelism());
-        $this->consumerSupervisor->launchMultiple('tool', $effectiveWorkerCount);
-        // One agent consumer: parent subagent tool orchestration/polling is isolated
-        // from generic tool workers so child tool calls are not starved.
-        $this->consumerSupervisor->launch('agent');
-        // - run_control consumes StartRun, ApplyCommand, run results, and
-        //   AdvanceRun/CompactRun transitions as the single state owner
-        // - llm consumes ExecuteLlmStep (ASYNC-04)
-        // - tool consumes ExecuteToolCall (generic tools; not subagent)
-        // - agent consumes ExecuteToolCall when toolName=subagent (AGENT-07)
-        // - mcp consumes McpInitializeSessionCommand, McpRefreshCatalogCommand,
-        //   McpDisconnectSessionCommand, and McpCallToolCommand (MCP-05).
-        //   Exactly ONE mcp consumer per session — serialized MCP calls and
-        //   single owner for STDIO child processes.
-        // Scheduler consumer: dispatches recurring background tasks such as
-        // file mention index refresh.  All future periodic background work
-        // should use Scheduler scheduled tasks, not ad-hoc TUI tick process
-        // spawning.
-        $this->consumerSupervisor->launch('scheduler_default');
-        $this->consumerSupervisor->launch('mcp');
-        // Dedicated extension-agent worker: isolated from llm/tool/run_control so
-        // extension Observer/Reflector jobs do not starve main run execution.
-        // Unconditional for now (MVP) — even when no extension registers handlers,
-        // an idle consumer is cheap relative to wiring conditional launch.
-        $this->consumerSupervisor->launch('extension_agent');
+        try {
+            $this->consumerSupervisor->launch('run_control');
+            // llm consumers: fixed bounded pool for concurrent provider calls
+            // (parent turns + parallel subagent children share the llm transport).
+            // Count defaults to runtime.llm_worker_count (1..8, default 4) and is
+            // intentionally distinct from tools.execution.max_parallelism.
+            // Constructor override must already be in range; invalid overrides fail closed.
+            $this->consumerSupervisor->launchMultiple('llm', $this->resolveLlmWorkerCount());
+            // tool consumers: N parallel workers for concurrent tool execution.
+            // N defaults to tools.execution.max_parallelism.
+            $effectiveWorkerCount = $this->toolWorkerCount > 0
+                ? $this->toolWorkerCount
+                : max(1, $this->toolExecutionSettings->maxParallelism());
+            $this->consumerSupervisor->launchMultiple('tool', $effectiveWorkerCount);
+            // One agent consumer: parent subagent tool orchestration/polling is isolated
+            // from generic tool workers so child tool calls are not starved.
+            $this->consumerSupervisor->launch('agent');
+            // - run_control consumes StartRun, ApplyCommand, run results, and
+            //   AdvanceRun/CompactRun transitions as the single state owner
+            // - llm consumes ExecuteLlmStep (ASYNC-04)
+            // - tool consumes ExecuteToolCall (generic tools; not subagent)
+            // - agent consumes ExecuteToolCall when toolName=subagent (AGENT-07)
+            // - mcp consumes McpInitializeSessionCommand, McpRefreshCatalogCommand,
+            //   McpDisconnectSessionCommand, and McpCallToolCommand (MCP-05).
+            //   Exactly ONE mcp consumer per session — serialized MCP calls and
+            //   single owner for STDIO child processes.
+            // Scheduler consumer: dispatches recurring background tasks such as
+            // file mention index refresh.  All future periodic background work
+            // should use Scheduler scheduled tasks, not ad-hoc TUI tick process
+            // spawning.
+            $this->consumerSupervisor->launch('scheduler_default');
+            $this->consumerSupervisor->launch('mcp');
+            // Dedicated extension-agent worker: isolated from llm/tool/run_control so
+            // extension Observer/Reflector jobs do not starve main run execution.
+            // Unconditional for now (MVP) — even when no extension registers handlers,
+            // an idle consumer is cheap relative to wiring conditional launch.
+            $this->consumerSupervisor->launch('extension_agent');
+        } catch (\Throwable $exception) {
+            $this->consumerSupervisor->shutdown();
+            $this->brokerSupervisor->shutdown();
+            try {
+                $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
+            } catch (\Throwable $lifecycleException) {
+                $this->logger->error('Controller session shutdown lifecycle failed after partial consumer launch', [
+                    'component' => 'HeadlessController',
+                    'event_type' => 'controller.session_startup_cleanup_lifecycle_failed',
+                    'session_id' => $this->sessionId,
+                    'exception' => $lifecycleException,
+                ]);
+            } finally {
+                $this->releaseSessionOwnerLock();
+            }
+
+            throw $exception;
+        }
 
         // Same event type/payload as before; emission now follows consumer launch.
         $this->emitter->emit(new RuntimeEvent(
@@ -264,6 +288,21 @@ final class HeadlessController
         // Consumer supervision: check child process health.
         EventLoop::repeat(self::SUPERVISE_INTERVAL, function (): void {
             if ($this->shuttingDown) {
+                return;
+            }
+
+            if (!$this->brokerSupervisor->supervise()) {
+                $this->emitter->emit(new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::ProtocolError->value,
+                    runId: '',
+                    seq: 0,
+                    payload: [
+                        'error' => 'Session sqlite-queue broker exited after readiness. Stopping the session without reconnecting or replaying uncertain queue operations.',
+                    ],
+                ));
+                $this->shutdown();
+                EventLoop::getDriver()->stop();
+
                 return;
             }
 
@@ -471,6 +510,7 @@ final class HeadlessController
         $this->logger->info('Controller shutting down gracefully');
 
         $this->consumerSupervisor->shutdown();
+        $this->brokerSupervisor->shutdown();
 
         try {
             $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
@@ -538,6 +578,12 @@ final class HeadlessController
         }
 
         return 'hatfield.controller.session.'.hash('sha256', $canonicalCwd."\0".$this->sessionId);
+    }
+
+    private function startSessionBroker(): void
+    {
+        $paths = SessionSqliteQueueEnv::pathsFromEnvironment($this->sessionId);
+        $this->brokerSupervisor->start($paths);
     }
 
     /**

@@ -15,8 +15,7 @@ use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Controller subprocess env must route Doctrine transports to messenger_transport
- * connection, not default app DB.
+ * Controller subprocess env must publish session-owned sqlite-queue broker paths and DSNs.
  *
  * @covers \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient
  */
@@ -55,8 +54,9 @@ $keys = [
     'HATFIELD_AGENT_TRANSPORT_DSN',
     'HATFIELD_MCP_TRANSPORT_DSN',
     'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN',
+    'HATFIELD_SQLITE_QUEUE_DATABASE',
+    'HATFIELD_SQLITE_QUEUE_ENDPOINT',
     'HATFIELD_TEST_DATABASE_PATH',
-    'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH',
 ];
 $out = [];
 foreach ($keys as $key) {
@@ -78,7 +78,7 @@ PHP);
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    public function testSpawnedControllerUsesMessengerTransportDoctrineConnection(): void
+    public function testSpawnedControllerUsesSessionSqliteQueueTransportDsns(): void
     {
         $envDump = $this->tmpDir.'/env.json';
         $dumpFlag = '--env-dump='.$envDump;
@@ -109,6 +109,7 @@ PHP);
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
+            sessionsBasePath: sys_get_temp_dir().'/hatfield-sessions',
         );
 
         $client->start(new StartRunRequest(
@@ -134,15 +135,21 @@ PHP);
             'HATFIELD_MCP_TRANSPORT_DSN',
             'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN',
         ] as $dsnKey) {
-            $this->assertStringStartsWith('doctrine://messenger_transport?', $env[$dsnKey], $dsnKey);
-            $this->assertStringContainsString('redeliver_timeout=315360000', $env[$dsnKey], $dsnKey);
+            $this->assertStringStartsWith('sqlite-queue://', $env[$dsnKey], $dsnKey);
+            $this->assertStringContainsString('endpoint=', $env[$dsnKey], $dsnKey);
         }
 
-        $this->assertStringContainsString('run_control_session-42', $env['HATFIELD_RUN_CONTROL_TRANSPORT_DSN']);
-        $this->assertStringContainsString('llm_session-42', $env['HATFIELD_LLM_TRANSPORT_DSN']);
-        $this->assertStringContainsString('tool_session-42', $env['HATFIELD_TOOL_TRANSPORT_DSN']);
-        $this->assertStringContainsString('extension_agent_session-42', $env['HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN']);
-        $this->assertStringNotContainsString('doctrine://default', implode(' ', $env));
+        $this->assertStringStartsWith('sqlite-queue://run_control?', $env['HATFIELD_RUN_CONTROL_TRANSPORT_DSN']);
+        $this->assertStringStartsWith('sqlite-queue://llm?', $env['HATFIELD_LLM_TRANSPORT_DSN']);
+        $this->assertStringStartsWith('sqlite-queue://tool?', $env['HATFIELD_TOOL_TRANSPORT_DSN']);
+        $this->assertStringStartsWith('sqlite-queue://agent?', $env['HATFIELD_AGENT_TRANSPORT_DSN']);
+        $this->assertStringStartsWith('sqlite-queue://mcp?', $env['HATFIELD_MCP_TRANSPORT_DSN']);
+        $this->assertStringStartsWith('sqlite-queue://extension_agent?', $env['HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN']);
+        $this->assertNotSame('', $env['HATFIELD_SQLITE_QUEUE_DATABASE'] ?? '');
+        $this->assertNotSame('', $env['HATFIELD_SQLITE_QUEUE_ENDPOINT'] ?? '');
+        $this->assertStringEndsWith('/session-42/messenger-queue.sqlite', $env['HATFIELD_SQLITE_QUEUE_DATABASE']);
+        $this->assertMatchesRegularExpression('#^/tmp/hq-[0-9a-f]{16}/q\\.sock$#', $env['HATFIELD_SQLITE_QUEUE_ENDPOINT']);
+        $this->assertStringNotContainsString('doctrine://', implode(' ', $env));
     }
 
     public function testSpawnedControllerDefaultsToProductionKernelEnv(): void
@@ -169,16 +176,12 @@ PHP);
         $saved = $this->snapshotTestDatabaseEnv();
         try {
             $appPath = 'app_test-explicit.sqlite';
-            $transportPath = 'messenger_transport_test-explicit.sqlite';
             putenv('APP_ENV=test');
             $_ENV['APP_ENV'] = 'test';
             $_SERVER['APP_ENV'] = 'test';
             putenv('HATFIELD_TEST_DATABASE_PATH='.$appPath);
             $_ENV['HATFIELD_TEST_DATABASE_PATH'] = $appPath;
             $_SERVER['HATFIELD_TEST_DATABASE_PATH'] = $appPath;
-            putenv('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH='.$transportPath);
-            $_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportPath;
-            $_SERVER['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportPath;
 
             $envDump = $this->tmpDir.'/env-explicit.json';
             $client = $this->createClientWithEnvDump($envDump);
@@ -186,36 +189,31 @@ PHP);
 
             $env = $this->waitForEnvDump($envDump);
             $this->assertSame($appPath, $env['HATFIELD_TEST_DATABASE_PATH']);
-            $this->assertSame($transportPath, $env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH']);
         } finally {
             $this->restoreTestDatabaseEnv($saved);
         }
     }
 
     /**
-     * @return array{app_env: ?string, app_debug: ?string, app_path: ?string, transport_path: ?string}
+     * @return array{app_env: ?string, app_debug: ?string, app_path: ?string}
      */
     private function snapshotTestDatabaseEnv(): array
     {
-        $transport = getenv('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH');
-
         return [
             'app_env' => getenv('APP_ENV') ?: null,
             'app_debug' => getenv('APP_DEBUG') ?: null,
             'app_path' => getenv('HATFIELD_TEST_DATABASE_PATH') ?: null,
-            'transport_path' => false === $transport ? null : ($transport ?: null),
         ];
     }
 
     /**
-     * @param array{app_env: ?string, app_debug: ?string, app_path: ?string, transport_path: ?string} $saved
+     * @param array{app_env: ?string, app_debug: ?string, app_path: ?string} $saved
      */
     private function restoreTestDatabaseEnv(array $saved): void
     {
         $this->restoreEnvVar('APP_ENV', $saved['app_env']);
         $this->restoreEnvVar('APP_DEBUG', $saved['app_debug']);
         $this->restoreEnvVar('HATFIELD_TEST_DATABASE_PATH', $saved['app_path']);
-        $this->restoreEnvVar('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH', $saved['transport_path']);
     }
 
     private function restoreEnvVar(string $name, ?string $value): void
@@ -259,6 +257,7 @@ PHP);
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
+            sessionsBasePath: sys_get_temp_dir().'/hatfield-sessions',
         );
     }
 

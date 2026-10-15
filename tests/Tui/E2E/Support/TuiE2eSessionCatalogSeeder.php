@@ -12,25 +12,23 @@ use Symfony\Component\HttpKernel\KernelInterface;
 
 /**
  * Test-only bootstrap: create a real hatfield_session row against an isolated
- * APP_ENV=test SQLite pair without invoking the LLM or a production CLI.
+ * APP_ENV=test SQLite database without invoking the LLM or a production CLI.
  *
  * Boots a short-lived CodingAgent Kernel under the exact HATFIELD_CWD /
- * HATFIELD_TEST_* paths the tmux pane will use, runs StartupDatabaseMigrator
- * (schema + transport ensurer), then HatfieldSessionStore::createSession().
+ * HATFIELD_TEST_DATABASE_PATH the tmux pane will use, runs StartupDatabaseMigrator
+ * (app schema), then HatfieldSessionStore::createSession().
  */
 final class TuiE2eSessionCatalogSeeder
 {
     /**
      * @param non-empty-string $isolatedProjectDir Absolute isolated app CWD
      * @param non-empty-string $appDbEnvPath       HATFIELD_TEST_DATABASE_PATH value
-     * @param non-empty-string $transportDbEnvPath HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH value
      *
      * @return non-empty-string Numeric session id
      */
     public static function createSession(
         string $isolatedProjectDir,
         string $appDbEnvPath,
-        string $transportDbEnvPath,
         string $prompt = 'seeded resume session',
     ): string {
         if (!is_dir($isolatedProjectDir)) {
@@ -44,14 +42,12 @@ final class TuiE2eSessionCatalogSeeder
             'APP_SECRET' => getenv('APP_SECRET'),
             'HATFIELD_CWD' => getenv('HATFIELD_CWD'),
             'HATFIELD_TEST_DATABASE_PATH' => getenv('HATFIELD_TEST_DATABASE_PATH'),
-            'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => getenv('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'),
             'env' => [
                 'APP_ENV' => $_ENV['APP_ENV'] ?? null,
                 'APP_DEBUG' => $_ENV['APP_DEBUG'] ?? null,
                 'APP_SECRET' => $_ENV['APP_SECRET'] ?? null,
                 'HATFIELD_CWD' => $_ENV['HATFIELD_CWD'] ?? null,
                 'HATFIELD_TEST_DATABASE_PATH' => $_ENV['HATFIELD_TEST_DATABASE_PATH'] ?? null,
-                'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => $_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] ?? null,
             ],
             'server' => [
                 'APP_ENV' => $_SERVER['APP_ENV'] ?? null,
@@ -59,7 +55,6 @@ final class TuiE2eSessionCatalogSeeder
                 'APP_SECRET' => $_SERVER['APP_SECRET'] ?? null,
                 'HATFIELD_CWD' => $_SERVER['HATFIELD_CWD'] ?? null,
                 'HATFIELD_TEST_DATABASE_PATH' => $_SERVER['HATFIELD_TEST_DATABASE_PATH'] ?? null,
-                'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => $_SERVER['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] ?? null,
             ],
         ];
 
@@ -80,7 +75,6 @@ final class TuiE2eSessionCatalogSeeder
             self::put('APP_SECRET', 'test-secret');
             self::put('HATFIELD_CWD', $isolatedProjectDir);
             self::put('HATFIELD_TEST_DATABASE_PATH', $appDbEnvPath);
-            self::put('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH', $transportDbEnvPath);
 
             $kernel = new Kernel('test', false);
             $kernel->boot();
@@ -126,12 +120,6 @@ final class TuiE2eSessionCatalogSeeder
                 $saved['HATFIELD_TEST_DATABASE_PATH'],
                 $saved['env']['HATFIELD_TEST_DATABASE_PATH'],
                 $saved['server']['HATFIELD_TEST_DATABASE_PATH'],
-            );
-            self::restore(
-                'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH',
-                $saved['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'],
-                $saved['env']['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'],
-                $saved['server']['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'],
             );
         }
     }

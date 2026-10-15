@@ -257,7 +257,7 @@ services:
   # Async extension-agent jobs share agent.execution.bus so BusNameStamp routes
   # re-dispatch to the bus that owns ExtensionAgentJobWorker.
   # transportDsn is fail-closed for sync:// — process controllers override
-  # HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN to doctrine:// for real async.
+  # HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN to sqlite-queue:// for real async.
   Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher:
     arguments:
       $bus: '@agent.execution.bus'
@@ -382,36 +382,19 @@ services:
     arguments:
       $connection: '@doctrine.dbal.default_connection'
 
-  app.migrations.messenger_transport_executor:
-    class: Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor
-    arguments:
-      $connection: '@doctrine.dbal.messenger_transport_connection'
-      $knownMigrations:
-        - DoctrineMigrations\MessengerTransport\Version20260828224203
-
   # Explicit outer SQLite transactions reserve the writer slot before reading so
-  # busy_timeout can serialize concurrent app-state and Messenger transport writers.
-  # autoconfigure: false keeps both connection registrations explicit.
+  # busy_timeout can serialize concurrent app-state writers on state.sqlite.
+  # autoconfigure: false keeps the default-connection registration explicit.
   Ineersa\CodingAgent\Infrastructure\Doctrine\SqliteImmediateTransactionMiddleware:
     autoconfigure: false
     tags:
       # Priority above DAMA's 100 lets DAMA translate explicit ORM transactions
-      # to savepoints. The transport keeps its established outer ordering so
-      # DAMA's suite transaction does not reserve its writer slot indefinitely.
+      # to savepoints without leaving the suite transaction as the outer writer.
       - { name: doctrine.middleware, connection: default, priority: 101 }
-      - { name: doctrine.middleware, connection: messenger_transport }
-
-  Ineersa\CodingAgent\Infrastructure\Doctrine\SqlitePollingTransportFactory:
-    autoconfigure: false
-    arguments:
-      $connection: '@doctrine.dbal.messenger_transport_connection'
-    tags:
-      - { name: messenger.transport_factory, priority: 100 }
 
   Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator:
     arguments:
       $applicationMigrationExecutor: '@Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor'
-      $transportMigrationExecutor: '@app.migrations.messenger_transport_executor'
       $sessionCatalogRecovery: '@Ineersa\CodingAgent\Session\SessionCatalogRecoveryService'
 
   # HatfieldModelCatalog — build from AppConfig.ai so all consumers share the
@@ -557,6 +540,10 @@ services:
     arguments:
       $executableLocator: '@Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator'
       $runtimeCwd: '%app.cwd%'
+
+  Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient:
+    arguments:
+      $sessionsBasePath: '@=service("Ineersa\\CodingAgent\\Session\\HatfieldSessionStore").resolveSessionsBasePath()'
 
   # ─── Controller event loop ───
 

@@ -5,6 +5,14 @@
     "description": "Monorepo for the agent-core ecosystem, consolidated into a single modular monolith.",
     "repositories": [
         {
+            "type": "vcs",
+            "url": "https://github.com/ineersa/amp-sqlite3"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/ineersa/sqlite-queue"
+        },
+        {
             "type": "git",
             "url": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform.git"
         },
@@ -28,6 +36,7 @@
         "ext-openssl": "*",
         "ext-pcntl": "*",
         "ext-pdo_sqlite": "*",
+        "ext-sqlite3": "*",
         "ext-phar": "*",
         "ext-posix": "*",
         "ext-tokenizer": "*",
@@ -55,7 +64,6 @@
         "monolog/monolog": "^3.10",
         "symfony/framework-bundle": "^8.1",
         "symfony/monolog-bundle": "^4.0",
-        "symfony/doctrine-messenger": "^8.0",
         "doctrine/doctrine-bundle": "^3.2",
         "league/mime-type-detection": "^1.15",
         "symfony/expression-language": "^8.1",
@@ -72,7 +80,9 @@
         "symfony/ai-sqlite-store": "^0.14",
         "symfony/ai-vektor-store": "^0.14",
         "centamiv/vektor": "^2.0",
-        "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/zstd-originator#cfb64a2a9859e9f4e930ccc91c0880d94e71a60f"
+        "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/zstd-originator#cfb64a2a9859e9f4e930ccc91c0880d94e71a60f",
+        "ineersa/sqlite-queue": "dev-main",
+        "fabpot/amphp-sqlite3": "dev-development"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
@@ -94,8 +104,7 @@
             "Ineersa\\Platform\\": "src/Platform/",
             "Ineersa\\HatfieldExt\\TaskWorkflow\\": ".hatfield/extensions/task-workflow/src/",
             "Ineersa\\HatfieldExt\\FileRewind\\": ".hatfield/extensions/file-rewind/src/",
-            "Ineersa\\HatfieldExt\\ObservationalMemory\\": ".hatfield/extensions/observational-memory/src/",
-            "DoctrineMigrations\\MessengerTransport\\": "migrations/messenger_transport/"
+            "Ineersa\\HatfieldExt\\ObservationalMemory\\": ".hatfield/extensions/observational-memory/src/"
         }
     },
     "autoload-dev": {

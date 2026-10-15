@@ -94,20 +94,42 @@ final class ConsumerSupervisorTest extends TestCase
 
         try {
             $supervisor = $this->createSupervisor($argvFile);
-            $supervisor->launch('test_transport', 0);
+            $supervisor->launch('run_control', 0);
 
-            $process = $this->getConsumerProcess($supervisor, 'test_transport#0');
+            $process = $this->getConsumerProcess($supervisor, 'run_control#0');
             $process->wait();
 
             $argv = json_decode((string) file_get_contents($argvFile), true, 512, \JSON_THROW_ON_ERROR);
             $this->assertIsArray($argv);
             $this->assertContains('--memory-limit=256M', $argv);
-            $this->assertNotContains('--keepalive=5', $argv);
-            $this->assertNotContains('--keepalive', $argv);
-            $this->assertContains('--sleep=0.05', $argv);
+            $this->assertContains('--keepalive=5', $argv);
+            $this->assertNotContains('--sleep=0.05', $argv);
+            $this->assertFalse(array_reduce($argv, static fn (bool $found, mixed $arg): bool => $found || (\is_string($arg) && str_starts_with($arg, '--sleep=')), false));
             $this->assertNotContains('--time-limit=3600', $argv);
             $this->assertContains('messenger:consume', $argv);
-            $this->assertContains('test_transport', $argv);
+            $this->assertContains('run_control', $argv);
+        } finally {
+            @unlink($argvFile);
+        }
+    }
+
+    public function testSchedulerTransportOmitsKeepalive(): void
+    {
+        $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-argv-');
+        $this->assertNotFalse($argvFile);
+
+        try {
+            $supervisor = $this->createSupervisor($argvFile);
+            $supervisor->launch('scheduler_default', 0);
+
+            $process = $this->getConsumerProcess($supervisor, 'scheduler_default#0');
+            $process->wait();
+
+            $argv = json_decode((string) file_get_contents($argvFile), true, 512, \JSON_THROW_ON_ERROR);
+            $this->assertIsArray($argv);
+            $this->assertContains('scheduler_default', $argv);
+            $this->assertNotContains('--keepalive=5', $argv);
+            $this->assertFalse(array_reduce($argv, static fn (bool $found, mixed $arg): bool => $found || (\is_string($arg) && str_starts_with($arg, '--keepalive')), false));
         } finally {
             @unlink($argvFile);
         }

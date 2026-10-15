@@ -108,6 +108,7 @@ PHP);
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
+            sessionsBasePath: sys_get_temp_dir().'/hatfield-sessions',
         );
 
         $runId = 'run-shell-'.bin2hex(random_bytes(4));
