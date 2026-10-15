@@ -223,11 +223,15 @@ final class ReadFileToolTest extends TestCase
     public function testReadPreservesCrlfAndFinalLineWithoutTrailingNewline(): void
     {
         $targetPath = $this->tmpDir.'/crlf_and_final.txt';
-        file_put_contents($targetPath, "one\r\ntwo\r\nthree");
+        // file(..., FILE_IGNORE_NEW_LINES) keeps CR that is not the single
+        // CR immediately before LF, including a final CR with no LF.
+        file_put_contents($targetPath, "one\r\r\ntwo\r\nthree\r");
+        $oracle = file($targetPath, \FILE_IGNORE_NEW_LINES);
+        $this->assertSame(["one\r", 'two', "three\r"], $oracle);
 
         $result = ($this->readFileTool)(new ReadFileArgumentsDTO(path: $targetPath));
 
-        $this->assertSame("one\ntwo\nthree\n", $result);
+        $this->assertSame(implode("\n", $oracle)."\n", $result);
     }
 
     public function testReadEmptyFile(): void

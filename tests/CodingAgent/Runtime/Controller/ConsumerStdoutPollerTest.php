@@ -160,11 +160,12 @@ final class ConsumerStdoutPollerTest extends TestCase
         $large = $this->line('assistant.message_completed', ['text' => $text], seq: 12);
         $this->assertGreaterThan(65_536, \strlen($large));
 
-        $prefix = substr($large, 0, 40_000);
-        $middle = substr($large, 40_000, 20_000);
-        $suffix = substr($large, 60_000);
+        $prefix = substr($large, 0, 50_000);
+        $middle = substr($large, 50_000, 20_000);
+        $suffix = substr($large, 70_000);
         $this->assertSame($large, $prefix.$middle.$suffix);
         $this->assertStringNotContainsString("\n", $prefix.$middle);
+        $this->assertGreaterThan(65_536, \strlen($prefix) + \strlen($middle));
 
         $source = new FakeConsumerStdoutSource([
             'llm#0' => $this->line('turn.started', ['turn' => 1], seq: 11).$prefix,

@@ -38,12 +38,12 @@ final class ReadFileTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'read';
 
-    public const string DESCRIPTION = 'Read a text file and return plain content. Supports offset (starting line) and limit (max lines) for reading specific sections. Binary files, image files, and PDFs are rejected.';
+    public const string DESCRIPTION = 'Read a text file and return plain content. Supports offset (starting line) and limit (max lines) for reading specific sections. Binary files, image files, PDFs, and device paths are rejected.';
 
     /** Default maximum lines for an unrestricted read. */
     private const int DEFAULT_LINE_LIMIT = 2000;
 
-    /** Byte window used while discarding unselected lines. */
+    /** Max bytes retained while discarding one unselected line. */
     private const int SKIP_CHUNK_BYTES = 8192;
 
     public function __construct(
@@ -108,9 +108,9 @@ final class ReadFileTool implements HatfieldToolProviderInterface
     /**
      * Stream only the requested line range and count the remainder.
      *
-     * Unselected lines are discarded in bounded chunks so their bodies are not
-     * retained. Selected lines keep ordinary line semantics, including CRLF and
-     * a final line without a trailing newline.
+     * Unselected lines are discarded with bounded fgets chunks so their bodies
+     * are not retained. Selected lines keep file(..., FILE_IGNORE_NEW_LINES)
+     * semantics, including multiple CR bytes before LF and a final CR without LF.
      *
      * @return array{0: string, 1: int}
      */
@@ -126,7 +126,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface
             $effectiveLimit = $limit ?? self::DEFAULT_LINE_LIMIT;
 
             for ($skipped = 0; $skipped < $start; ++$skipped) {
-                if (!$this->advancePastLine($handle)) {
+                if (!$this->advancePastLine($handle, $resolvedPath)) {
                     return ['', $skipped];
                 }
             }
@@ -135,14 +135,18 @@ final class ReadFileTool implements HatfieldToolProviderInterface
             while (\count($selected) < $effectiveLimit) {
                 $line = fgets($handle);
                 if (false === $line) {
+                    if (!feof($handle)) {
+                        throw new ToolCallException(\sprintf('Failed to read file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and disk health.');
+                    }
+
                     break;
                 }
 
-                $selected[] = rtrim($line, "\r\n");
+                $selected[] = $this->stripFileIgnoreNewlines($line);
             }
 
             $totalLines = $start + \count($selected);
-            while ($this->advancePastLine($handle)) {
+            while ($this->advancePastLine($handle, $resolvedPath)) {
                 ++$totalLines;
             }
 
@@ -161,33 +165,48 @@ final class ReadFileTool implements HatfieldToolProviderInterface
     /**
      * Discard one logical line without retaining its body.
      *
+     * Uses length-limited fgets so a giant unselected line is released in
+     * bounded chunks without seek-back rereads.
+     *
      * @param resource $handle
      */
-    private function advancePastLine($handle): bool
+    private function advancePastLine($handle, string $resolvedPath): bool
     {
         $consumed = false;
 
-        while (!feof($handle)) {
-            $chunk = fread($handle, self::SKIP_CHUNK_BYTES);
-            if (false === $chunk || '' === $chunk) {
-                break;
+        while (true) {
+            $chunk = fgets($handle, self::SKIP_CHUNK_BYTES + 1);
+            if (false === $chunk) {
+                if (!feof($handle)) {
+                    throw new ToolCallException(\sprintf('Failed to read file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and disk health.');
+                }
+
+                return $consumed;
             }
 
             $consumed = true;
-            $newline = strpos($chunk, "\n");
-            if (false === $newline) {
-                continue;
+            if (str_ends_with($chunk, "\n") || feof($handle)) {
+                return true;
             }
+        }
+    }
 
-            $remain = \strlen($chunk) - ($newline + 1);
-            if ($remain > 0 && -1 === fseek($handle, -$remain, \SEEK_CUR)) {
-                throw new ToolCallException('Failed to reposition after skipping an unselected line.', retryable: true, hint: 'Check file permissions and disk health.');
-            }
-
-            return true;
+    /**
+     * Match PHP file(..., FILE_IGNORE_NEW_LINES): strip a trailing LF and the
+     * single CR immediately before it. Other CR bytes stay in the line body.
+     */
+    private function stripFileIgnoreNewlines(string $line): string
+    {
+        if (!str_ends_with($line, "\n")) {
+            return $line;
         }
 
-        return $consumed;
+        $line = substr($line, 0, -1);
+        if (str_ends_with($line, "\r")) {
+            $line = substr($line, 0, -1);
+        }
+
+        return $line;
     }
 
     /**
