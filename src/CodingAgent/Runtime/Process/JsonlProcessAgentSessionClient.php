@@ -95,8 +95,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     /**
      * Session-scoped identifier (the full run ID).
-     * Used to scope Doctrine Messenger queue names per session so that
-     * cross-session message stealing cannot occur. One session per
+     * Selects the session-owned broker database so that cross-session
+     * message stealing cannot occur. One session per
      * Hatfield instance — session_id === run_id per AGENTS.md.
      */
     private ?string $sessionId = null;
@@ -134,7 +134,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      * spawned with. When start() or resume() sets a different
      * sessionId, ensureProcessRunning() must restart the process so
      * the controller and its consumer subprocesses use the correct
-     * session-scoped queue names.
+     * session-owned broker.
      */
     private ?string $processSessionId = null;
 
@@ -194,7 +194,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->bootstrapEnded = false;
         $this->resetSuffix();
 
-        // Derive session-scoped queue names from the request runId before
+        // Select the session-owned broker from the request runId before
         // spawning the controller process, so its env vars carry the right DSNs.
         // session_id === run_id per AGENTS.md — no truncation needed.
         $runId = '' !== $request->runId ? $request->runId : null;
@@ -326,7 +326,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->autoResumed = false;
         $this->observedChildRunIds = [];
 
-        // runId is the session ID — update session-scoped queue DSNs.
+        // runId is the session ID — select its broker before spawning the controller.
         $this->sessionId = $runId;
         $this->activeRunId = $runId;
         $this->primaryRunId = $runId;
