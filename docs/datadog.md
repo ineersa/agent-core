@@ -93,6 +93,10 @@ same poll can leave the tick-end `activity` as `starting`; use
 successful compaction completion and compaction failure: settlement is the
 `isCompacting` true→false transition, not success alone.
 
+## Resource measurements
+
+Packaged-process baselines and how to reproduce them: [Resource measurements](resource-measurements.md).
+
 ## Castor helpers
 
 ```bash
