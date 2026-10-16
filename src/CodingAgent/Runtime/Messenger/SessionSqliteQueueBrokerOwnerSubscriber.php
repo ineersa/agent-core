@@ -10,15 +10,18 @@ use Symfony\Component\Console\Event\ConsoleCommandEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
- * Owns session-broker process-group isolation and controller lifetime.
+ * Owns session-broker process-group isolation and supervised controller lifetime.
  *
  * Runs inside the actual `sqlite-queue:broker` process before BrokerCommand
  * creates Amp storage workers:
  * - posix_setsid() isolates the broker/helper group without an external setsid binary
- * - a Revolt stdin watch treats controller hard-death EOF as SIGTERM so lifetime
- *   locks release and a later controller can restart the durable queue DB
+ * - for controller-supervised launches only, a Revolt stdin watch treats controller
+ *   hard-death EOF as SIGTERM so durable queue lifetime locks release
  *
- * Autoconfigured; final vendor BrokerCommand remains untouched.
+ * Supervised ownership is detected from the existing session queue env published
+ * by SessionSqliteQueueEnv. Standalone `sqlite-queue:broker --database=...` keeps
+ * normal vendor stdin behavior (including /dev/null). Final vendor BrokerCommand
+ * remains untouched.
  */
 final class SessionSqliteQueueBrokerOwnerSubscriber implements EventSubscriberInterface
 {
@@ -39,7 +42,9 @@ final class SessionSqliteQueueBrokerOwnerSubscriber implements EventSubscriberIn
         }
 
         $this->isolateOwnedProcessGroup();
-        $this->armOwnerStdinWatch();
+        if ($this->isControllerSupervisedLaunch()) {
+            $this->armOwnerStdinWatch();
+        }
     }
 
     private function isolateOwnedProcessGroup(): void
@@ -63,13 +68,26 @@ final class SessionSqliteQueueBrokerOwnerSubscriber implements EventSubscriberIn
         }
     }
 
+    private function isControllerSupervisedLaunch(): bool
+    {
+        $database = $_SERVER[SessionSqliteQueueEnv::DATABASE_PATH]
+            ?? $_ENV[SessionSqliteQueueEnv::DATABASE_PATH]
+            ?? getenv(SessionSqliteQueueEnv::DATABASE_PATH);
+        $endpoint = $_SERVER[SessionSqliteQueueEnv::ENDPOINT_PATH]
+            ?? $_ENV[SessionSqliteQueueEnv::ENDPOINT_PATH]
+            ?? getenv(SessionSqliteQueueEnv::ENDPOINT_PATH);
+
+        return \is_string($database) && '' !== $database
+            && \is_string($endpoint) && '' !== $endpoint;
+    }
+
     private function armOwnerStdinWatch(): void
     {
         if (self::$ownerWatchArmed) {
             return;
         }
         if (!\defined('STDIN') || !\is_resource(\STDIN)) {
-            throw new \RuntimeException('Session sqlite-queue broker requires an open STDIN pipe owned by the controller.');
+            throw new \RuntimeException('Controller-supervised sqlite-queue broker requires an open STDIN pipe owned by the controller.');
         }
 
         stream_set_blocking(\STDIN, false);

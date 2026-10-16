@@ -114,7 +114,9 @@ final class SessionSqliteQueueBrokerSupervisor
         $process = new Process(
             $launchCommand,
             cwd: $this->runtimeConfig->runtimeCwd(),
-            env: \is_array($currentEnv) ? $currentEnv : $_ENV,
+            // Republish session queue ownership so the broker process can distinguish
+            // controller-supervised launches from standalone sqlite-queue:broker.
+            env: array_merge(\is_array($currentEnv) ? $currentEnv : $_ENV, SessionSqliteQueueEnv::processEnv($paths)),
             input: $ownerInput,
             timeout: null,
         );
