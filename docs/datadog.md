@@ -33,13 +33,21 @@ the process sample; only an explicit call-site `pid` does. Treat `memory_peak`
 as a lifetime high-water mark, not a steady-growth signal.
 
 `ProcessRoleAttributionSubscriber` sets ambient `process_role` from Symfony
-command options and Messenger receiver names for the life of that command or
-worker. Known values are `screen`, `controller`, `headless`, `run_control`,
-`llm`, `tool`, `agent_worker`, `mcp`, `extension_agent`, and temporary
-`console` during `messenger:consume` startup before `WorkerStartedEvent`.
-Unrelated console commands stay unattributed. Keep `process_role`, `run_id`,
-and `session_id` in logs; do not promote high-cardinality IDs into custom
-metric tags.
+resolved command input and Messenger receiver names for the life of that
+command or worker. It never scans raw argv. Known values are `screen`,
+`controller`, `headless`, `run_control`, `llm`, `tool`, `agent_worker`, `mcp`,
+`extension_agent`, `scheduler`, and temporary `console` during
+`messenger:consume` startup before `WorkerStartedEvent`. Controller wins when
+both `--controller` and `--headless` are set. Prompt or option values that
+contain those flag strings do not change the role. Multi-receiver
+`messenger:consume` workers keep only the temporary `console` role.
+Unrelated console commands stay unattributed.
+
+The same subscriber sets OS process title `hatfield.role.<role>` through
+Symfony `Command::setProcessTitle()` and a best-effort immediate title update
+for Messenger workers. Datadog Process Check matches that title. Keep
+`process_role`, `run_id`, and `session_id` in logs; do not promote
+high-cardinality IDs into custom metric tags.
 
 Lifecycle checkpoints use message `process.memory.checkpoint` with
 `event_type` values such as `tui.resume.mounted`, `compaction.retention.applied`,
@@ -134,9 +142,13 @@ sudo systemctl restart datadog-agent
 ```
 
 The config matches packaged `hatfield.phar` launches and source
-`bin/console` launches. Each instance is one role group with
-`exact_match: false`, so Datadog applies Python `re.search()` to the joined
-command line. Instance names become `process_name` tags:
+`bin/console` launches after they set `hatfield.role.<role>`. Each instance is
+one role group with `exact_match: false`, so Datadog applies Python
+`re.search()` to the joined process title or command line. Default launches
+that omit an explicit `agent` argument still become `screen` after attribution.
+Copy the sample config and restart `datadog-agent` after pulling this change.
+Binaries that never set `hatfield.role.*` titles do not match these instances.
+Instance names become `process_name` tags:
 
 - `hatfield.screen`
 - `hatfield.controller`
@@ -147,6 +159,7 @@ command line. Instance names become `process_name` tags:
 - `hatfield.agent_worker`
 - `hatfield.mcp`
 - `hatfield.extension_agent`
+- `hatfield.scheduler`
 
 Every instance also carries `service:hatfield`, `env:dev`, `app:hatfield`, and
 `process_role:<role>`. There is no overlapping aggregate instance. Do not sum

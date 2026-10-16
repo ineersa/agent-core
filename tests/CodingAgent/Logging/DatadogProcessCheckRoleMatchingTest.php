@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Logging;
 
+use Ineersa\CodingAgent\Logging\ProcessRoleEnum;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Proves ops/datadog/process.d/conf.yaml role groups match real launch shapes
- * with Datadog Process Check semantics: exact_match false uses Python
- * re.search() against the joined command line.
+ * Proves ops/datadog/process.d/conf.yaml role groups match attributed process
+ * titles with Datadog Process Check semantics: exact_match false uses Python
+ * re.search() against the joined command line / process title.
  */
 #[CoversNothing]
 final class DatadogProcessCheckRoleMatchingTest extends TestCase
 {
-    public function testRoleGroupsAreMutuallyExclusiveForRealLaunchShapes(): void
+    public function testRoleGroupsAreMutuallyExclusiveForAttributedProcessTitles(): void
     {
         $configPath = \dirname(__DIR__, 3).'/ops/datadog/process.d/conf.yaml';
         $config = Yaml::parseFile($configPath);
@@ -41,57 +42,49 @@ final class DatadogProcessCheckRoleMatchingTest extends TestCase
             );
         }
 
-        $cases = [
-            'hatfield.screen' => [
-                'php /home/x/bin/console agent',
-                'php /home/x/bin/console agent --cwd=/tmp --prompt=hi',
-                '/opt/hatfield.phar agent',
-            ],
-            'hatfield.controller' => [
-                'php /home/x/bin/console agent --controller',
-                'php /home/x/bin/console agent --cwd=/tmp --controller',
-                '/opt/hatfield.phar agent --controller --cwd=/tmp',
-            ],
-            'hatfield.headless' => [
-                'php /home/x/bin/console agent --headless',
-                '/opt/hatfield.phar agent --headless',
-            ],
-            'hatfield.run_control' => [
-                'php /home/x/bin/console messenger:consume run_control --no-interaction --memory-limit=256M',
-                '/opt/hatfield.phar messenger:consume run_control',
-            ],
-            'hatfield.llm' => [
-                'php /home/x/bin/console messenger:consume llm --sleep=0.05',
-            ],
-            'hatfield.tool' => [
-                'php /home/x/bin/console messenger:consume tool',
-            ],
-            'hatfield.agent_worker' => [
-                'php /home/x/bin/console messenger:consume agent --no-interaction',
-            ],
-            'hatfield.mcp' => [
-                'php /home/x/bin/console messenger:consume mcp',
-            ],
-            'hatfield.extension_agent' => [
-                'php /home/x/bin/console messenger:consume extension_agent',
-            ],
+        $expectedRoles = [
+            'hatfield.screen' => ProcessRoleEnum::Screen,
+            'hatfield.controller' => ProcessRoleEnum::Controller,
+            'hatfield.headless' => ProcessRoleEnum::Headless,
+            'hatfield.run_control' => ProcessRoleEnum::RunControl,
+            'hatfield.llm' => ProcessRoleEnum::Llm,
+            'hatfield.tool' => ProcessRoleEnum::Tool,
+            'hatfield.agent_worker' => ProcessRoleEnum::AgentWorker,
+            'hatfield.mcp' => ProcessRoleEnum::Mcp,
+            'hatfield.extension_agent' => ProcessRoleEnum::ExtensionAgent,
+            'hatfield.scheduler' => ProcessRoleEnum::Scheduler,
         ];
+        $this->assertEqualsCanonicalizing(array_keys($expectedRoles), array_keys($patterns));
+        $this->assertCount(\count($expectedRoles), $patterns);
 
-        $negatives = [
-            'php /home/x/bin/console cache:clear',
-            'php /home/x/bin/console agents:init',
-            'php /home/x/bin/console list',
-            'php /home/x/bin/console about',
-            'php /home/x/bin/console messenger:consume unknown_transport',
-        ];
-
-        foreach ($cases as $expected => $commands) {
-            $this->assertArrayHasKey($expected, $patterns);
-            foreach ($commands as $command) {
+        foreach ($expectedRoles as $expected => $role) {
+            $title = $role->processTitle();
+            $variants = [
+                $title,
+                $title."\0",
+                'php '.$title,
+                $title.' ',
+            ];
+            foreach ($variants as $command) {
                 $hits = $this->matchingRoles($patterns, $command);
                 $this->assertSame([$expected], $hits, $command);
             }
         }
+
+        $negatives = [
+            'php /home/x/bin/console agent',
+            'php /home/x/hatfield.phar --resume=59',
+            'php /home/x/bin/console agent --controller',
+            'php /home/x/bin/console agent --prompt=--controller',
+            'php /home/x/bin/console agent --prompt="use --headless later"',
+            'php /home/x/bin/console messenger:consume run_control --no-interaction',
+            'php /home/x/bin/console messenger:consume scheduler_default',
+            'php /home/x/bin/console messenger:consume llm tool',
+            'php /home/x/bin/console cache:clear',
+            'hatfield.role.console',
+            'hatfield.role.controllerish',
+            'not-hatfield.role.controller',
+        ];
 
         foreach ($negatives as $command) {
             $this->assertSame([], $this->matchingRoles($patterns, $command), $command);
@@ -108,7 +101,7 @@ final class DatadogProcessCheckRoleMatchingTest extends TestCase
         $hits = [];
         foreach ($patterns as $name => $pattern) {
             // Datadog uses Python re.search() with no PHP delimiters. Use '#' so
-            // patterns that contain bin/console path slashes stay valid.
+            // patterns that contain path slashes stay valid if restored later.
             if (1 === preg_match('#'.$pattern.'#', $commandLine)) {
                 $hits[] = $name;
             }

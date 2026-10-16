@@ -5,8 +5,10 @@
 #
 # Each instance is a mutually exclusive process group. exact_match: false uses
 # Python re.search() against the joined command line (Datadog Process Check
-# source). Keep patterns non-overlapping so CPU/RSS/I/O are not double-counted.
-# There is no leftover aggregate "hatfield" instance.
+# source). Hatfield replaces the OS process title with hatfield.role.<role>
+# after Symfony resolves the command, so these patterns match that title rather
+# than raw argv. Keep patterns non-overlapping so CPU/RSS/I/O are not
+# double-counted. There is no leftover aggregate "hatfield" instance.
 #
 # process_name tags come from the instance name. Use them for role selectors:
 #   process_name:hatfield.screen
@@ -17,13 +19,16 @@
 # iowrite_bytes(_count)) are emitted by this check when the Agent can read
 # /proc/<pid>/io. Verify both series with `datadog-agent check process` before
 # adding I/O widgets.
+#
+# Deploy note: copy this file and restart datadog-agent. Old binaries that never
+# set hatfield.role.* titles will not match these instances.
 
 init_config:
 
 instances:
   - name: hatfield.controller
     search_string:
-      - '(?:hatfield\.phar|bin/console)\s+agent(?!\S).*(?:^|\s)--controller(?:\s|=|$)'
+      - '(?:^|[\x00\s])hatfield\.role\.controller(?:[\x00\s]|$)'
     exact_match: false
     service: hatfield
     tags:
@@ -34,7 +39,7 @@ instances:
 
   - name: hatfield.headless
     search_string:
-      - '(?:hatfield\.phar|bin/console)\s+agent(?!\S).*(?:^|\s)--headless(?:\s|=|$)'
+      - '(?:^|[\x00\s])hatfield\.role\.headless(?:[\x00\s]|$)'
     exact_match: false
     service: hatfield
     tags:
@@ -45,7 +50,7 @@ instances:
 
   - name: hatfield.screen
     search_string:
-      - '(?:hatfield\.phar|bin/console)\s+agent(?!\S)(?!.*(?:^|\s)--(?:controller|headless)(?:\s|=|$))'
+      - '(?:^|[\x00\s])hatfield\.role\.screen(?:[\x00\s]|$)'
     exact_match: false
     service: hatfield
     tags:
@@ -56,7 +61,7 @@ instances:
 
   - name: hatfield.run_control
     search_string:
-      - '(?:hatfield\.phar|bin/console)\s+messenger:consume\s+run_control(?:\s|$)'
+      - '(?:^|[\x00\s])hatfield\.role\.run_control(?:[\x00\s]|$)'
     exact_match: false
     service: hatfield
     tags:
@@ -67,7 +72,7 @@ instances:
 
   - name: hatfield.llm
     search_string:
-      - '(?:hatfield\.phar|bin/console)\s+messenger:consume\s+llm(?:\s|$)'
+      - '(?:^|[\x00\s])hatfield\.role\.llm(?:[\x00\s]|$)'
     exact_match: false
     service: hatfield
     tags:
@@ -78,7 +83,7 @@ instances:
 
   - name: hatfield.tool
     search_string:
-      - '(?:hatfield\.phar|bin/console)\s+messenger:consume\s+tool(?:\s|$)'
+      - '(?:^|[\x00\s])hatfield\.role\.tool(?:[\x00\s]|$)'
     exact_match: false
     service: hatfield
     tags:
@@ -89,7 +94,7 @@ instances:
 
   - name: hatfield.agent_worker
     search_string:
-      - '(?:hatfield\.phar|bin/console)\s+messenger:consume\s+agent(?:\s|$)'
+      - '(?:^|[\x00\s])hatfield\.role\.agent_worker(?:[\x00\s]|$)'
     exact_match: false
     service: hatfield
     tags:
@@ -100,7 +105,7 @@ instances:
 
   - name: hatfield.mcp
     search_string:
-      - '(?:hatfield\.phar|bin/console)\s+messenger:consume\s+mcp(?:\s|$)'
+      - '(?:^|[\x00\s])hatfield\.role\.mcp(?:[\x00\s]|$)'
     exact_match: false
     service: hatfield
     tags:
@@ -111,11 +116,22 @@ instances:
 
   - name: hatfield.extension_agent
     search_string:
-      - '(?:hatfield\.phar|bin/console)\s+messenger:consume\s+extension_agent(?:\s|$)'
+      - '(?:^|[\x00\s])hatfield\.role\.extension_agent(?:[\x00\s]|$)'
     exact_match: false
     service: hatfield
     tags:
       - env:dev
       - app:hatfield
       - process_role:extension_agent
+    min_collection_interval: 15
+
+  - name: hatfield.scheduler
+    search_string:
+      - '(?:^|[\x00\s])hatfield\.role\.scheduler(?:[\x00\s]|$)'
+    exact_match: false
+    service: hatfield
+    tags:
+      - env:dev
+      - app:hatfield
+      - process_role:scheduler
     min_collection_interval: 15
