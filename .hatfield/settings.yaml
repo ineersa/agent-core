@@ -1,5 +1,5 @@
 tui:
-    theme: catppuccin-mocha
+    theme: oh-p-dark
 tools:
     bash:
         background_prompt_threshold_seconds: 15
