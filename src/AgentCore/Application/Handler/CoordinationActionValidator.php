@@ -38,9 +38,10 @@ final readonly class CoordinationActionValidator
             }
 
             $correlation = $action->expectedCorrelation;
-            $key = $correlation->runId.'|'.$correlation->turnNo.'|'.$correlation->stepId.'|'.$correlation->toolCallId;
+            // Match the deferred_tool_completion unique store key (run_id, tool_call_id).
+            $key = $this->lifecycleStoreIdentityKey($correlation->runId, $correlation->toolCallId);
             if (isset($lifecycleInvocations[$key])) {
-                throw new \RuntimeException(\sprintf('Prepared plan may contain only one lifecycle update for run "%s" turn %d step "%s" tool call "%s".', $correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->toolCallId));
+                throw new \RuntimeException(\sprintf('Prepared plan may contain only one lifecycle update for run "%s" tool call "%s".', $correlation->runId, $correlation->toolCallId));
             }
             $lifecycleInvocations[$key] = true;
         }
@@ -102,5 +103,10 @@ final readonly class CoordinationActionValidator
         }
 
         throw new \RuntimeException('Owner transition requires coordination recovery for unsupported action.');
+    }
+
+    private function lifecycleStoreIdentityKey(string $runId, string $toolCallId): string
+    {
+        return json_encode([$runId, $toolCallId], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
     }
 }

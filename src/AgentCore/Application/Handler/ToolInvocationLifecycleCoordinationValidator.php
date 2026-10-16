@@ -11,9 +11,11 @@ use Ineersa\AgentCore\Domain\Tool\ToolInvocationLifecycleTransition;
 /**
  * Validates captured tool-invocation lifecycle projection actions before recovery or commit.
  *
- * Illegal source/target transitions are refused before journaling. Complete-plan
- * uniqueness (one lifecycle update per durable invocation identity) is enforced by
- * CoordinationActionValidator::validatePlan across ordinary and after-turn actions.
+ * Per-action source/target transition checks happen here before journaling.
+ * Complete-plan uniqueness for one store identity (`run_id`, `tool_call_id`) is
+ * enforced by CoordinationActionValidator::validatePlan across ordinary and
+ * after-turn actions. Exact-target replay no-ops do not authorize duplicate
+ * lifecycle actions inside one prepared plan.
  */
 final readonly class ToolInvocationLifecycleCoordinationValidator implements CoordinationActionValidatorInterface
 {
