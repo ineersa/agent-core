@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "4048ff6266ebe41d6fd5cde967f273fb",
+    "content-hash": "78381fdb214a1dede4f01ebc0ecc1afd",
     "packages": [
         {
             "name": "amphp/amp",
@@ -2810,16 +2810,16 @@
         },
         {
             "name": "ineersa/sqlite-queue",
-            "version": "dev-feature/configurable-broker-limits",
+            "version": "dev-main",
             "source": {
                 "type": "git",
                 "url": "https://github.com/ineersa/sqlite-queue.git",
-                "reference": "5f5b92117499598cef367edc93237735cb82808d"
+                "reference": "f6c6bd497d3a13279c042f7b6d682cb24c746efa"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/ineersa/sqlite-queue/zipball/5f5b92117499598cef367edc93237735cb82808d",
-                "reference": "5f5b92117499598cef367edc93237735cb82808d",
+                "url": "https://api.github.com/repos/ineersa/sqlite-queue/zipball/f6c6bd497d3a13279c042f7b6d682cb24c746efa",
+                "reference": "f6c6bd497d3a13279c042f7b6d682cb24c746efa",
                 "shasum": ""
             },
             "require": {
@@ -2859,6 +2859,7 @@
                 "ext-posix": "Required to run the foreground broker with private file ownership checks.",
                 "symfony/framework-bundle": "Required for automatic transport and broker command registration in Symfony apps (^8.0)."
             },
+            "default-branch": true,
             "bin": [
                 "bin/sqlite-queue"
             ],
@@ -2885,10 +2886,10 @@
             ],
             "description": "Sqlite based queue broker",
             "support": {
-                "source": "https://github.com/ineersa/sqlite-queue/tree/feature/configurable-broker-limits",
+                "source": "https://github.com/ineersa/sqlite-queue/tree/main",
                 "issues": "https://github.com/ineersa/sqlite-queue/issues"
             },
-            "time": "2026-10-16T18:05:29+00:00"
+            "time": "2026-10-16T23:37:21+00:00"
         },
         {
             "name": "ineersa/symfony-ai-openai-chatgpt-platform",

@@ -5,9 +5,7 @@
 # practical single-value storage ceiling for queue body/header columns. That is
 # independent of SessionBootstrapSpoolStore::MAX_BYTES, which only bounds the
 # disposable UI bootstrap transfer and does not limit prepared ExecuteLlmStep /
-# compaction envelopes after native PhpSerializer expansion. Temporary
-# dependency branch: ineersa/sqlite-queue
-# dev-feature/configurable-broker-limits#5f5b921.
+# compaction envelopes after native PhpSerializer expansion.
 #
 # max_connections stays at the package default for standalone broker boots.
 # HeadlessController sizes the live session broker with --max-connections from
