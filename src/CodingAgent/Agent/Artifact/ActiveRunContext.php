@@ -91,14 +91,15 @@ final class ActiveRunContext implements ActiveRunContextInterface
 
     private function emitPopulationCheckpoint(string $eventType): void
     {
-        $population = $this->populationScalars();
-        $total = $population['registry_state_count'];
         // Hot replaceCurrent paths keep the same resident map size; emit only
-        // when the population changes so telemetry stays cheap.
+        // when the population changes so telemetry stays cheap. Compare size
+        // before classifying parent/child entries.
+        $total = \count($this->states);
         if ($total === $this->lastReportedPopulation) {
             return;
         }
 
+        $population = $this->populationScalars();
         $this->lastReportedPopulation = $total;
         $this->memorySnapshots->checkpoint($eventType, 'owner_registry', $population);
     }
