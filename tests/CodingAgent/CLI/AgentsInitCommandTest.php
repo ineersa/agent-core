@@ -133,6 +133,14 @@ final class AgentsInitCommandTest extends TestCase
         }
     }
 
+    #[Test]
+    public function bundledReviewerUsesHighReasoning(): void
+    {
+        $reviewer = $this->createParser()->parseFile($this->sourceDir.'/reviewer.md');
+
+        $this->assertSame('high', $reviewer->thinking);
+    }
+
     private function createCommand(): AgentsInitCommand
     {
         return new AgentsInitCommand(

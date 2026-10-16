@@ -8,7 +8,7 @@ Read [implementation-ownership.md](implementation-ownership.md) and [specificati
 2. Call `move_task(to="IN-PROGRESS")` before changing code.
 3. Perform a routing pass for the accepted fixes. Apply the ownership decision rules and record each assigned slice before detailed investigation.
 4. Implement fixes sequentially, verify the result, run focused Castor validation, and record each slice as completed or blocked.
-5. Re-review the new revision. Resume the eligible prior reviewer with `agent_resume` and provide the new commit or diff, prior findings, and resolution summary. Launch a new reviewer only when the prior reviewer cannot resume. Require a specification-fidelity review. Record the active role, artifact or run ID, target revision, and scope. If the reviewer requests changes, repeat from step 3.
+5. Resume the eligible prior reviewer with `agent_resume` using only `Review PR <url> at commit <sha>.` Do not pass earlier findings, a resolution summary, or validation claims. Launch a new reviewer only when the prior reviewer cannot resume. Apply the independent-assignment rules in [specification-fidelity.md](specification-fidelity.md) and require review of the full PR diff, not just changes since the previous review. Record the active role, artifact or run ID, baseline, target revision, and scope. If the reviewer requests changes, repeat from step 3.
 6. When the reviewer approves, call `move_task(to="CODE-REVIEW")` to push the branch and create or update the PR.
 7. Record the reviewer identity, revision, scope, decision, commit, validation, and unresolved blockers with `update_task`.
 

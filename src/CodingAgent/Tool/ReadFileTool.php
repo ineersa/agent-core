@@ -21,16 +21,18 @@ use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
  * UTF-8/extension inspection, offset-past-EOF) are enforced before execution
  * by the {@see ReadFileTarget} class-level DTO constraint via
  * ValidateToolCallArgumentsListener; this handler only resolves, reads,
- * slices, and appends the continuation hint. A file() failure here is an
+ * slices, and appends the continuation hint. An open/read failure here is an
  * operational/race error, not a validation result.
  *
  * Features:
  * - Output is plain file text (no line-number prefix).
  * - Offset and limit are 1-indexed (DTO-validated).
  * - Output passes through OutputCap for character-based capping.
- * - Large output is truncated at 2000 lines by default (via head).
+ * - Large output is truncated at 2000 lines by default.
  * - Continuation hint appended when truncation occurs.
  * - Cancellation checkpoints wrap the read path.
+ * - Unselected prefix/suffix lines are skipped in bounded chunks so a small
+ *   selected range does not retain the rest of the file.
  */
 final class ReadFileTool implements HatfieldToolProviderInterface
 {
@@ -40,6 +42,9 @@ final class ReadFileTool implements HatfieldToolProviderInterface
 
     /** Default maximum lines for an unrestricted read. */
     private const int DEFAULT_LINE_LIMIT = 2000;
+
+    /** Max bytes retained while discarding one unselected line. */
+    private const int SKIP_CHUNK_BYTES = 8192;
 
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
@@ -73,17 +78,10 @@ final class ReadFileTool implements HatfieldToolProviderInterface
 
             // Pre-execution target validation moved to the ReadFileTarget
             // DTO constraint (ValidateToolCallArgumentsListener).
-            $fileLines = $this->loadFileLines($resolvedPath);
-            $totalLines = \count($fileLines);
-            $content = $this->readContentFromLines($fileLines, $offset, $limit);
+            [$content, $totalLines] = $this->readSelectedContent($resolvedPath, $offset, $limit);
 
             // Check if the output was truncated and append continuation hint
-            $content = $this->appendContinuationHint($content, $offset, $limit, $totalLines);
-
-            // Output capping is now handled centrally by OutputCapToolResultProcessor
-            // after ToolExecutor converts the Symfony result to a domain ToolResult.
-            // Per-tool OutputCap calls are no longer needed.
-            return $content;
+            return $this->appendContinuationHint($content, $offset, $limit, $totalLines);
         });
     }
 
@@ -108,31 +106,107 @@ final class ReadFileTool implements HatfieldToolProviderInterface
     }
 
     /**
-     * @return list<string>
+     * Stream only the requested line range and count the remainder.
+     *
+     * Unselected lines are discarded with bounded fgets chunks so their bodies
+     * are not retained. Selected lines keep file(..., FILE_IGNORE_NEW_LINES)
+     * semantics, including multiple CR bytes before LF and a final CR without LF.
+     *
+     * @return array{0: string, 1: int}
      */
-    private function loadFileLines(string $resolvedPath): array
+    private function readSelectedContent(string $resolvedPath, ?int $offset, ?int $limit): array
     {
-        $lines = file($resolvedPath, \FILE_IGNORE_NEW_LINES);
-        if (false === $lines) {
+        $handle = @fopen($resolvedPath, 'rb');
+        if (false === $handle) {
             throw new ToolCallException(\sprintf('Failed to read file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and disk health.');
         }
 
-        return $lines;
+        try {
+            $start = null !== $offset ? max(0, $offset - 1) : 0;
+            $effectiveLimit = $limit ?? self::DEFAULT_LINE_LIMIT;
+
+            for ($skipped = 0; $skipped < $start; ++$skipped) {
+                if (!$this->advancePastLine($handle, $resolvedPath)) {
+                    return ['', $skipped];
+                }
+            }
+
+            $selected = [];
+            while (\count($selected) < $effectiveLimit) {
+                $line = fgets($handle);
+                if (false === $line) {
+                    if (!feof($handle)) {
+                        throw new ToolCallException(\sprintf('Failed to read file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and disk health.');
+                    }
+
+                    break;
+                }
+
+                $selected[] = $this->stripFileIgnoreNewlines($line);
+            }
+
+            $totalLines = $start + \count($selected);
+            while ($this->advancePastLine($handle, $resolvedPath)) {
+                ++$totalLines;
+            }
+
+            if ([] === $selected) {
+                return ['', $totalLines];
+            }
+
+            // Output capping is handled centrally by OutputCapToolResultProcessor
+            // after ToolExecutor converts the Symfony result to a domain ToolResult.
+            return [implode("\n", $selected)."\n", $totalLines];
+        } finally {
+            fclose($handle);
+        }
     }
 
     /**
-     * @param list<string> $fileLines
+     * Discard one logical line without retaining its body.
+     *
+     * Uses length-limited fgets so a giant unselected line is released in
+     * bounded chunks without seek-back rereads.
+     *
+     * @param resource $handle
      */
-    private function readContentFromLines(array $fileLines, ?int $offset, ?int $limit): string
+    private function advancePastLine($handle, string $resolvedPath): bool
     {
-        $start = null !== $offset ? max(0, $offset - 1) : 0;
-        $effectiveLimit = $limit ?? self::DEFAULT_LINE_LIMIT;
-        $slice = \array_slice($fileLines, $start, $effectiveLimit);
-        if ([] === $slice) {
-            return '';
+        $consumed = false;
+
+        while (true) {
+            $chunk = fgets($handle, self::SKIP_CHUNK_BYTES + 1);
+            if (false === $chunk) {
+                if (!feof($handle)) {
+                    throw new ToolCallException(\sprintf('Failed to read file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and disk health.');
+                }
+
+                return $consumed;
+            }
+
+            $consumed = true;
+            if (str_ends_with($chunk, "\n") || feof($handle)) {
+                return true;
+            }
+        }
+    }
+
+    /**
+     * Match PHP file(..., FILE_IGNORE_NEW_LINES): strip a trailing LF and the
+     * single CR immediately before it. Other CR bytes stay in the line body.
+     */
+    private function stripFileIgnoreNewlines(string $line): string
+    {
+        if (!str_ends_with($line, "\n")) {
+            return $line;
         }
 
-        return implode("\n", $slice)."\n";
+        $line = substr($line, 0, -1);
+        if (str_ends_with($line, "\r")) {
+            $line = substr($line, 0, -1);
+        }
+
+        return $line;
     }
 
     /**
