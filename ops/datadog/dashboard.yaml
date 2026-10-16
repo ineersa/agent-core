@@ -1,0 +1,747 @@
+# Proposed SPEC-07 dashboard. Not applied to Datadog.
+# The target is ordered with fixed reflow; layouts use its 12-column grid.
+# Apply through the configured Datadog dashboard tool after explicit approval.
+# Supply runtime telemetry metadata separately. This definition creates no metrics.
+
+dashboard_id: xza-j7r-e4s
+description: '[[suggested_dashboards]]'
+tags:
+  - 'ai:modified_with_ai'
+template_variables:
+  -
+    available_values:
+      - dev
+    defaults:
+      - dev
+    name: env
+    prefix: env
+title: Hatfield
+widgets:
+  -
+    definition:
+      background_color: gray
+      layout_type: ordered
+      show_title: true
+      title: 'Resource overview'
+      type: group
+      widgets:
+        -
+          definition:
+            autoscale: true
+            custom_unit: '%'
+            description: 'CPU across all matched Hatfield processes in the selected environment. May exceed 100% across cores.'
+            precision: 2
+            requests:
+              -
+                aggregator: last
+                formulas:
+                  -
+                    formula: cpu
+                queries:
+                  -
+                    data_source: metrics
+                    name: cpu
+                    query: 'sum:system.processes.cpu.pct{service:hatfield AND $env}'
+                response_format: scalar
+            title: 'Process CPU now (%)'
+            type: query_value
+          layout:
+            x: 0
+            'y': 0
+            width: 4
+            height: 3
+        -
+          definition:
+            autoscale: true
+            custom_unit: bytes
+            description: 'Summed RSS across all matched Hatfield processes in the selected environment. Shared pages can be counted more than once.'
+            precision: 2
+            requests:
+              -
+                aggregator: last
+                formulas:
+                  -
+                    formula: rss
+                queries:
+                  -
+                    data_source: metrics
+                    name: rss
+                    query: 'sum:system.processes.mem.rss{service:hatfield AND $env}'
+                response_format: scalar
+            title: 'Process RSS now (bytes)'
+            type: query_value
+          layout:
+            x: 4
+            'y': 0
+            width: 4
+            height: 3
+        -
+          definition:
+            autoscale: true
+            custom_unit: processes
+            description: 'Count of all matched Hatfield processes in the selected environment, not one application instance.'
+            precision: 2
+            requests:
+              -
+                aggregator: last
+                formulas:
+                  -
+                    formula: processes
+                queries:
+                  -
+                    data_source: metrics
+                    name: processes
+                    query: 'sum:system.processes.number{service:hatfield AND $env}'
+                response_format: scalar
+            title: 'Process count now'
+            type: query_value
+          layout:
+            x: 8
+            'y': 0
+            width: 4
+            height: 3
+        -
+          definition:
+            description: 'All matched Hatfield processes in the selected environment. CPU may exceed 100%; RSS is summed resident bytes, not unique physical RAM.'
+            requests:
+              -
+                display_type: line
+                formulas:
+                  -
+                    formula: cpu
+                queries:
+                  -
+                    data_source: metrics
+                    name: cpu
+                    query: 'sum:system.processes.cpu.pct{service:hatfield AND $env}'
+                response_format: timeseries
+              -
+                display_type: line
+                formulas:
+                  -
+                    formula: rss
+                on_right_yaxis: true
+                queries:
+                  -
+                    data_source: metrics
+                    name: rss
+                    query: 'sum:system.processes.mem.rss{service:hatfield AND $env}'
+                response_format: timeseries
+            right_yaxis:
+              include_zero: false
+              label: bytes
+              scale: linear
+            show_legend: true
+            title: 'CPU and RSS trend'
+            type: timeseries
+            yaxis:
+              include_zero: false
+              label: 'CPU %'
+              scale: linear
+          layout:
+            x: 0
+            'y': 3
+            width: 12
+            height: 5
+        -
+          definition:
+            background_color: gray
+            content: 'Collection status: CPU/RSS/count are aggregate Process Check gauges; RSS sums resident bytes and may share pages. Memory panels are event-driven checkpoint samples. Role and I/O series are not live.'
+            font_size: '12'
+            has_padding: true
+            show_tick: false
+            text_align: left
+            type: note
+            vertical_align: center
+          layout:
+            x: 0
+            'y': 8
+            width: 12
+            height: 2
+    layout:
+      x: 0
+      'y': 0
+      width: 12
+      height: 14
+  -
+    definition:
+      background_color: gray
+      layout_type: ordered
+      show_title: true
+      title: 'Process population'
+      type: group
+      widgets:
+        -
+          definition:
+            description: 'Current data exposes process_name:hatfield only. Role panels remain deferred until process_role is emitted and verified live.'
+            requests:
+              -
+                display_type: line
+                formulas:
+                  -
+                    formula: population
+                queries:
+                  -
+                    data_source: metrics
+                    name: population
+                    query: 'sum:system.processes.number{service:hatfield AND $env} by {process_name}'
+                response_format: timeseries
+            show_legend: true
+            title: 'Process population by process name'
+            type: timeseries
+          layout:
+            x: 0
+            'y': 0
+            width: 12
+            height: 5
+    layout:
+      x: 0
+      'y': 15
+      width: 12
+      height: 7
+  -
+    definition:
+      background_color: blue
+      layout_type: ordered
+      show_title: true
+      title: 'Lifecycle memory evidence'
+      type: group
+      widgets:
+        -
+          definition:
+            description: 'process.memory.checkpoint samples only. This is not continuous or time-weighted memory.'
+            requests:
+              -
+                display_type: line
+                formulas:
+                  -
+                    formula: live_heap
+                  -
+                    formula: allocator_reserved
+                queries:
+                  -
+                    compute:
+                      aggregation: avg
+                      metric: '@extra.memory_usage'
+                    data_source: logs
+                    indexes:
+                      - '*'
+                    name: live_heap
+                    search:
+                      query: 'service:hatfield $env message:"process.memory.checkpoint"'
+                  -
+                    compute:
+                      aggregation: avg
+                      metric: '@extra.memory_allocated'
+                    data_source: logs
+                    indexes:
+                      - '*'
+                    name: allocator_reserved
+                    search:
+                      query: 'service:hatfield $env message:"process.memory.checkpoint"'
+                response_format: timeseries
+            show_legend: true
+            title: 'Sampled live heap vs allocator reserved'
+            type: timeseries
+            yaxis:
+              include_zero: false
+              label: bytes
+              scale: linear
+          layout:
+            x: 0
+            'y': 0
+            width: 12
+            height: 5
+        -
+          definition:
+            description: 'Maximum @extra.memory_peak in checkpoint samples. Do not sum PHP lifetime peaks.'
+            requests:
+              -
+                display_type: line
+                formulas:
+                  -
+                    formula: lifetime_peak
+                queries:
+                  -
+                    compute:
+                      aggregation: max
+                      metric: '@extra.memory_peak'
+                    data_source: logs
+                    indexes:
+                      - '*'
+                    name: lifetime_peak
+                    search:
+                      query: 'service:hatfield $env message:"process.memory.checkpoint"'
+                response_format: timeseries
+            show_legend: true
+            title: 'Sampled lifetime memory peaks'
+            type: timeseries
+            yaxis:
+              include_zero: false
+              label: bytes
+              scale: linear
+          layout:
+            x: 0
+            'y': 5
+            width: 12
+            height: 4
+        -
+          definition:
+            autoscale: true
+            description: 'Count of process.memory.checkpoint events in the selected dashboard range.'
+            precision: 0
+            requests:
+              -
+                aggregator: last
+                formulas:
+                  -
+                    formula: samples
+                queries:
+                  -
+                    compute:
+                      aggregation: count
+                    data_source: logs
+                    indexes:
+                      - '*'
+                    name: samples
+                    search:
+                      query: 'service:hatfield $env message:"process.memory.checkpoint"'
+                response_format: scalar
+            title: 'Memory checkpoint samples'
+            type: query_value
+          layout:
+            x: 0
+            'y': 9
+            width: 4
+            height: 3
+        -
+          definition:
+            description: 'Sample count by lifecycle event type, not a memory time series.'
+            requests:
+              -
+                formulas:
+                  -
+                    formula: samples
+                queries:
+                  -
+                    compute:
+                      aggregation: count
+                    data_source: logs
+                    group_by:
+                      -
+                        facet: '@context.event_type'
+                        limit: 20
+                        sort:
+                          aggregation: count
+                          order: desc
+                    indexes:
+                      - '*'
+                    name: samples
+                    search:
+                      query: 'service:hatfield $env message:"process.memory.checkpoint"'
+                response_format: scalar
+            title: 'Checkpoint samples by event type'
+            type: toplist
+          layout:
+            x: 4
+            'y': 9
+            width: 4
+            height: 4
+        -
+          definition:
+            description: 'Sample count by lifecycle component, not a memory time series.'
+            requests:
+              -
+                formulas:
+                  -
+                    formula: samples
+                queries:
+                  -
+                    compute:
+                      aggregation: count
+                    data_source: logs
+                    group_by:
+                      -
+                        facet: '@context.component'
+                        limit: 20
+                        sort:
+                          aggregation: count
+                          order: desc
+                    indexes:
+                      - '*'
+                    name: samples
+                    search:
+                      query: 'service:hatfield $env message:"process.memory.checkpoint"'
+                response_format: scalar
+            title: 'Checkpoint samples by component'
+            type: toplist
+          layout:
+            x: 8
+            'y': 9
+            width: 4
+            height: 4
+        -
+          definition:
+            description: 'Population event samples grouped by the existing component facet; not a continuous per-process trend.'
+            requests:
+              -
+                formulas:
+                  -
+                    formula: avg_live_heap
+                queries:
+                  -
+                    compute:
+                      aggregation: avg
+                      metric: '@extra.memory_usage'
+                    data_source: logs
+                    group_by:
+                      -
+                        facet: '@context.component'
+                        limit: 10
+                        sort:
+                          aggregation: avg
+                          order: desc
+                    indexes:
+                      - '*'
+                    name: avg_live_heap
+                    search:
+                      query: 'service:hatfield $env message:"process.memory.checkpoint"'
+                response_format: scalar
+            title: 'Average sampled heap by component'
+            type: toplist
+          layout:
+            x: 0
+            'y': 13
+            width: 4
+            height: 4
+        -
+          definition:
+            description: 'Scalar checkpoint fields only. PID is reusable; interpret with host and run_id. No prompt or output fields are shown.'
+            requests:
+              -
+                columns:
+                  -
+                    field: timestamp
+                    width: auto
+                  -
+                    field: host
+                    width: auto
+                  -
+                    field: '@extra.sampler_pid'
+                    width: compact
+                  -
+                    field: '@context.run_id'
+                    width: compact
+                  -
+                    field: '@context.component'
+                    width: auto
+                  -
+                    field: '@context.event_type'
+                    width: auto
+                  -
+                    field: '@extra.memory_usage'
+                    width: compact
+                  -
+                    field: '@extra.memory_allocated'
+                    width: compact
+                  -
+                    field: '@extra.memory_peak'
+                    width: compact
+                query:
+                  data_source: logs_stream
+                  indexes: {}
+                  query_string: 'service:hatfield $env message:"process.memory.checkpoint"'
+                  sort:
+                    column: timestamp
+                    order: desc
+                  storage: hot
+                response_format: event_list
+            title: 'Checkpoint sample drilldown'
+            type: list_stream
+          layout:
+            x: 0
+            'y': 17
+            width: 12
+            height: 6
+    layout:
+      x: 0
+      'y': 23
+      width: 12
+      height: 28
+  -
+    definition:
+      background_color: purple
+      layout_type: ordered
+      show_title: true
+      title: 'LLM, tool, and warning drilldown'
+      type: group
+      widgets:
+        -
+          definition:
+            description: 'Canonical agent_loop.trace.finish logs for @context.span_name:llm.call.'
+            requests:
+              -
+                display_type: line
+                formulas:
+                  -
+                    formula: llm_p95
+                queries:
+                  -
+                    compute:
+                      aggregation: pc95
+                      metric: '@context.duration_ms'
+                    data_source: logs
+                    indexes:
+                      - '*'
+                    name: llm_p95
+                    search:
+                      query: 'service:hatfield $env message:"agent_loop.trace.finish" @context.span_name:llm.call'
+                response_format: timeseries
+            show_legend: true
+            title: 'LLM call latency (p95)'
+            type: timeseries
+          layout:
+            x: 0
+            'y': 0
+            width: 6
+            height: 4
+        -
+          definition:
+            description: 'Count of canonical agent_loop.trace.finish logs for @context.span_name:llm.call.'
+            requests:
+              -
+                display_type: line
+                formulas:
+                  -
+                    formula: llm_calls
+                queries:
+                  -
+                    compute:
+                      aggregation: count
+                    data_source: logs
+                    indexes:
+                      - '*'
+                    name: llm_calls
+                    search:
+                      query: 'service:hatfield $env message:"agent_loop.trace.finish" @context.span_name:llm.call'
+                response_format: timeseries
+            show_legend: true
+            title: 'LLM call throughput'
+            type: timeseries
+          layout:
+            x: 6
+            'y': 0
+            width: 6
+            height: 4
+        -
+          definition:
+            autoscale: true
+            description: 'Failed divided by completed plus failed LLM request events.'
+            precision: 2
+            requests:
+              -
+                aggregator: last
+                formulas:
+                  -
+                    formula: 'failed / (completed + failed) * 100'
+                queries:
+                  -
+                    compute:
+                      aggregation: count
+                    data_source: logs
+                    indexes:
+                      - '*'
+                    name: completed
+                    search:
+                      query: 'service:hatfield $env @context.event_type:llm.request.completed'
+                  -
+                    compute:
+                      aggregation: count
+                    data_source: logs
+                    indexes:
+                      - '*'
+                    name: failed
+                    search:
+                      query: 'service:hatfield $env @context.event_type:llm.request.failed'
+                response_format: scalar
+            title: 'LLM request failure rate (%)'
+            type: query_value
+          layout:
+            x: 0
+            'y': 4
+            width: 3
+            height: 4
+        -
+          definition:
+            description: 'LLM request retrying events.'
+            requests:
+              -
+                display_type: line
+                formulas:
+                  -
+                    formula: retries
+                queries:
+                  -
+                    compute:
+                      aggregation: count
+                    data_source: logs
+                    indexes:
+                      - '*'
+                    name: retries
+                    search:
+                      query: 'service:hatfield $env @context.event_type:llm.request.retrying'
+                response_format: timeseries
+            show_legend: true
+            title: 'LLM request retries'
+            type: timeseries
+          layout:
+            x: 3
+            'y': 4
+            width: 3
+            height: 4
+        -
+          definition:
+            description: 'Canonical agent_loop.trace.finish logs for @context.span_name:tool.call.'
+            requests:
+              -
+                display_type: line
+                formulas:
+                  -
+                    formula: tool_avg
+                  -
+                    formula: tool_p95
+                queries:
+                  -
+                    compute:
+                      aggregation: avg
+                      metric: '@context.duration_ms'
+                    data_source: logs
+                    indexes:
+                      - '*'
+                    name: tool_avg
+                    search:
+                      query: 'service:hatfield $env message:"agent_loop.trace.finish" @context.span_name:tool.call'
+                  -
+                    compute:
+                      aggregation: pc95
+                      metric: '@context.duration_ms'
+                    data_source: logs
+                    indexes:
+                      - '*'
+                    name: tool_p95
+                    search:
+                      query: 'service:hatfield $env message:"agent_loop.trace.finish" @context.span_name:tool.call'
+                response_format: timeseries
+            show_legend: true
+            title: 'Tool execution latency (avg/p95)'
+            type: timeseries
+          layout:
+            x: 6
+            'y': 4
+            width: 6
+            height: 4
+        -
+          definition:
+            description: 'Warning records containing Failed to execute tool, grouped by @extra.tool_name.'
+            requests:
+              -
+                formulas:
+                  -
+                    formula: failures
+                queries:
+                  -
+                    compute:
+                      aggregation: count
+                    data_source: logs
+                    group_by:
+                      -
+                        facet: '@extra.tool_name'
+                        limit: 20
+                        sort:
+                          aggregation: count
+                          order: desc
+                    indexes:
+                      - '*'
+                    name: failures
+                    search:
+                      query: 'service:hatfield $env status:warn "Failed to execute tool"'
+                response_format: scalar
+            title: 'Tool failures by tool'
+            type: toplist
+          layout:
+            x: 0
+            'y': 8
+            width: 6
+            height: 4
+        -
+          definition:
+            requests:
+              -
+                columns:
+                  -
+                    field: timestamp
+                    width: auto
+                  -
+                    field: status
+                    width: auto
+                  -
+                    field: message
+                    width: auto
+                  -
+                    field: content
+                    width: compact
+                query:
+                  data_source: logs_stream
+                  indexes: {}
+                  query_string: 'service:hatfield $env source:php status:(warn OR error OR critical OR alert OR emergency)'
+                  sort:
+                    column: timestamp
+                    order: desc
+                  storage: hot
+                response_format: event_list
+            title: 'Warnings and errors'
+            type: list_stream
+          layout:
+            x: 6
+            'y': 8
+            width: 6
+            height: 5
+        -
+          definition:
+            description: 'Scoped compaction lifecycle records; use with a range containing checkpoint samples.'
+            requests:
+              -
+                columns:
+                  -
+                    field: timestamp
+                    width: auto
+                  -
+                    field: '@context.event_type'
+                    width: auto
+                  -
+                    field: '@context.component'
+                    width: auto
+                  -
+                    field: message
+                    width: auto
+                query:
+                  data_source: logs_stream
+                  indexes: {}
+                  query_string: 'service:hatfield $env @context.event_type:(compaction.retention.applied OR tui.compaction.settled)'
+                  sort:
+                    column: timestamp
+                    order: desc
+                  storage: hot
+                response_format: event_list
+            title: 'Compaction lifecycle events'
+            type: list_stream
+          layout:
+            x: 0
+            'y': 13
+            width: 6
+            height: 5
+    layout:
+      x: 0
+      'y': 52
+      width: 12
+      height: 28

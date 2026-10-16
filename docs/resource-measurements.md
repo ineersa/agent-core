@@ -1,23 +1,27 @@
 # Resource measurements
 
-Reference notes for packaged-process memory and disk baselines. Not model-visible.
+Exploratory observations for SPEC-07. The controlled packaged resource baseline
+is incomplete. These runs do not establish a memory plateau. Not model-visible.
 
 Sanitized reproducibility artifacts for SPEC-07 live outside the repository under
 `/home/ineersa/projects/agent-core-tasks/reports/spec07-resource-baseline/`.
 
-## How to reproduce
+## Recorded commands and conditions
 
-1. Build the worktree PHAR: `castor phar:ensure`.
-2. Copy an inactive archive into `var/tmp/test-<uuid>/` only. Never read or modify
-   active sessions (including main session 75) from tests or measurement scripts.
-3. Run the ignored helper:
-   `castor --castor-file=var/tmp/spec07-measure.castor.php measure:packaged-resume`
-   or the checkpoint harvester scripts under `var/tmp/spec07-measure-*.php`.
-4. Keep current process limits. The PHAR entrypoint uses `memory_limit=512M`.
-5. Tear down owned tmux panes with Ctrl+D. Never signal `HATFIELD_SESSION_ID` or
-   root-owned processes.
+The worktree PHAR was built with `castor phar:ensure`. Exploratory runs used
+`castor --castor-file=var/tmp/spec07-measure.castor.php measure:packaged-resume`
+and ignored checkpoint-harvester helpers. The harness did not establish reliable
+readiness or process-tree attribution. These commands are an execution record,
+not an approved reproduction procedure. Repair and preserve the harness before
+repeating the experiment.
 
-## Baseline measured at `766e3f6fd`
+Only frozen copies of inactive archives may be used as runtime input. Never
+inspect an original SQLite index with a create-capable connection. Keep current
+process limits; this PHAR entrypoint uses `memory_limit=512M`. Close owned tmux
+panes cooperatively with Ctrl+D. Never signal root-owned or
+`HATFIELD_SESSION_ID` processes.
+
+## Exploratory runs at `766e3f6fd`
 
 | Item | Value |
 |---|---|
@@ -28,14 +32,19 @@ Sanitized reproducibility artifacts for SPEC-07 live outside the repository unde
 | Page cache | warm (files hashed/copied earlier; no `drop_caches`) |
 | Alternate candidate | sqlite-queue session 2 = 65,054,945 bytes (not copied for this baseline) |
 
-### Packaged cold resume of frozen compaction prefixes
+### Packaged resume attempts from archived prefixes
 
-Values are PHP heap checkpoints from `process.memory.checkpoint` /
-`owner.registry.retained` in isolated run logs. They are not Datadog Process Check
-RSS series. Host Agent `process.d` role config from this branch was not deployed
-during measurement.
+The table records PHP allocator lifetime peaks from isolated logs, not live RSS
+or settled heap. `tui.resume.mounted` is emitted while mounting the restoring
+notice, before the owner's sealed transcript is installed. Its flat value does
+not measure archive reconstruction or a completed resume. Shutdown samples have
+different retained transcript sizes, and some attempts did not pass readiness.
 
-| Prefix | Archive bytes | Screen `tui.resume.mounted` peak MiB | Screen `tui.session.shutdown` peak MiB | Shutdown transcript blocks | History index bytes | Owner registry states |
+Recorded archive sizes can include runtime appends to the copies. In particular,
+the full archive started at 23,066,618 bytes but was reported as 24,099,879 bytes
+after the attempts. These are not equal-active-window comparisons.
+
+| Prefix | Recorded archive bytes | Restoring-notice peak MiB | Shutdown peak MiB | Shutdown transcript blocks | Recorded index bytes | Owner registry states |
 |---|---:|---:|---:|---:|---:|---:|
 | c01 | 2,371,010–2,387,095 | 51.79 | 53.79–63.79 | 1–434 | 0–122,880 | 1 |
 | c03 | 5,227,859 | 51.79 | 63.79 | 274 | 188,416 | 1 |
@@ -44,14 +53,14 @@ during measurement.
 
 Observations:
 
-- Cold resume mount peak for `screen` stayed flat at 51.79 MiB across a 10× archive
-  size range.
-- Shutdown peak and retained transcript block counts rose with the retained display
-  window, not linearly with full archive bytes.
-- `owner.registry.retained` reported `registry_state_count=1` after resume attach
-  (parent only). Completed children were not kept as owner execution states.
-- Index files were rebuilt in the isolated copies. Original session 59 had no
-  durable index in this measurement window.
+- The restoring-notice peak stayed at 51.79 MiB. That is a startup-screen sample,
+  not evidence that memory is independent of archive size.
+- Shutdown peaks ranged from 53.79 to 69.79 MiB at different transcript sizes.
+  The experiment cannot attribute the difference to archived or retained data.
+- The owner reported one resident parent state after attach. No completed-child
+  accumulation workload was driven, so this does not prove child-state release.
+- Index files were rebuilt in the copies. Live role-specific Agent metrics were
+  not collected; the new `process.d` configuration was not deployed.
 
 ### Source-test owner bootstrap plateau (not packaged PHAR)
 
@@ -65,20 +74,31 @@ Observations:
 Separate cold 128M processes. Peak identical across ~16× archive growth. Label as
 source-test evidence, not packaged PHAR proof.
 
-## Limits of this baseline
+## Remaining measurements
 
 - Automated pane readiness waits timed out when scrollback mixed historical
-  transcript text with chrome. Resumes still completed and wrote checkpoints.
+  transcript text with chrome. Checkpoint presence alone does not prove readiness.
 - Live RSS role-tree sampling by `HATFIELD_CWD` did not reliably see worker
-  children. Prefer log `process_role` checkpoints until sampling is fixed.
+  children. Sample the owned process tree and verify its identities before
+  reporting per-role CPU, RSS, or I/O. Log heap samples are not substitutes for RSS.
 - `/agents-live` did not show archived completed children in this packaged resume
   path, so child-view open/close cleanup was not measured.
 - Warm same-process compaction or completed-child accumulation was not driven.
-  Cold prefix plateaus do not prove warm release.
+  Neither cold source-test results nor restoring-notice samples prove warm release.
 - Process I/O figures from `/proc/<pid>/io` were not retained for the full matrix.
-  Logical archive bytes are reported; physical block I/O was warm-pagecache.
+  Archive file size is not bytes physically read. Logical read counters and
+  physical block I/O still need separate measurements.
 - Host Datadog role matching requires deploying `ops/datadog/process.d/conf.yaml`
   and restarting the Agent. This measurement does not claim that deployment.
+
+## Inspection side effect
+
+An exploratory inspection accidentally created an empty `history-index.sqlite`
+in the original inactive session 59 directory. The file was removed after its
+provenance was established. The source `events.jsonl` hash remained unchanged.
+Future inspections must operate on copies and open SQLite files read-only.
+Main's post-handoff process inspection found no remaining measurement processes
+under this worktree's `var/tmp/test-*` directories.
 
 ## Related telemetry
 
