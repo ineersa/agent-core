@@ -5,9 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Agent\Artifact\ActiveRunContext;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
@@ -59,5 +66,61 @@ final class ActiveRunContextTest extends PerMethodIsolatedKernelTestCase
         }
         $this->expectException(RunContextNotLoadedException::class);
         $context->requireLoaded($run);
+    }
+
+    public function testPopulationCheckpointsCountResidentEntriesWithoutHotReplaceSpam(): void
+    {
+        $sessions = self::getContainer()->get(HatfieldSessionStore::class);
+        $parentId = $sessions->createSession('registry-parent');
+        $entry = self::getContainer()->get(AgentArtifactRegistry::class)->create(
+            $parentId,
+            'agent_registry_child',
+            'registry-child',
+            'scout',
+            AgentArtifactKindEnum::Subagent,
+        );
+        self::getContainer()->get(AgentChildRunDirectory::class)->register($entry);
+
+        $logger = new TestLogger();
+        $context = new ActiveRunContext(
+            self::getContainer()->get(RunOperationalProjectionRepository::class),
+            $sessions,
+            self::getContainer()->get(AgentChildRunDirectory::class),
+            self::getContainer()->get(EventStoreInterface::class),
+            new ProcessMemorySnapshotLogger($logger),
+        );
+
+        $context->createNew($parentId);
+        $context->createNew($entry->agentRunId);
+        $context->replaceCurrent($context->requireLoaded($parentId)->with([
+            'status' => RunStatus::Running,
+            'version' => 1,
+        ]));
+        $context->release($entry->agentRunId);
+
+        $checkpoints = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'process.memory.checkpoint' === ($record['message'] ?? null),
+        ));
+        $this->assertCount(3, $checkpoints);
+
+        $first = $checkpoints[0]['context'];
+        $this->assertSame('owner.registry.retained', $first['event_type']);
+        $this->assertSame('owner_registry', $first['component']);
+        $this->assertSame(1, $first['registry_state_count']);
+        $this->assertSame(1, $first['registry_parent_count']);
+        $this->assertSame(0, $first['registry_child_count']);
+
+        $second = $checkpoints[1]['context'];
+        $this->assertSame('owner.registry.retained', $second['event_type']);
+        $this->assertSame(2, $second['registry_state_count']);
+        $this->assertSame(1, $second['registry_parent_count']);
+        $this->assertSame(1, $second['registry_child_count']);
+
+        $third = $checkpoints[2]['context'];
+        $this->assertSame('owner.registry.released', $third['event_type']);
+        $this->assertSame(1, $third['registry_state_count']);
+        $this->assertSame(1, $third['registry_parent_count']);
+        $this->assertSame(0, $third['registry_child_count']);
     }
 }

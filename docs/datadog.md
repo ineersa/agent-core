@@ -13,6 +13,7 @@ metrics defined in Datadog.
 ## Principles
 
 - Structured event-style log messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`).
+  Ambient `process_role` identifies the calling process for resource attribution.
 - Normal events omit raw prompts and tool output. The bounded error-only captures in [Provider failure diagnostics](#provider-failure-diagnostics) are explicit exceptions. Never capture full session history, env secrets, or API keys.
 - Logging and application work never depend on Datadog. No Datadog client, transport, or buffer runs in the application.
 
@@ -31,11 +32,23 @@ Use `sampler_pid` for heap attribution. Ambient `pid` alone does not override
 the process sample; only an explicit call-site `pid` does. Treat `memory_peak`
 as a lifetime high-water mark, not a steady-growth signal.
 
+`ProcessRoleAttributionSubscriber` sets ambient `process_role` from Symfony
+command options and Messenger receiver names for the life of that command or
+worker. Known values are `screen`, `controller`, `headless`, `run_control`,
+`llm`, `tool`, `agent_worker`, `mcp`, `extension_agent`, and temporary
+`console` during `messenger:consume` startup before `WorkerStartedEvent`.
+Unrelated console commands stay unattributed. Keep `process_role`, `run_id`,
+and `session_id` in logs; do not promote high-cardinality IDs into custom
+metric tags.
+
 Lifecycle checkpoints use message `process.memory.checkpoint` with
 `event_type` values such as `tui.resume.mounted`, `compaction.retention.applied`,
 `tui.activity.terminal`, `tui.compaction.settled`, `tui.memory.idle`, and
-`tui.session.shutdown`. Those records carry scalar counts only (block/kind/text-byte
-totals, seq). Compaction projection checkpoints also include
+`tui.session.shutdown`. Owner-registry population samples use
+`owner.registry.retained` and `owner.registry.released` with
+`registry_state_count`, `registry_parent_count`, and `registry_child_count`.
+Those records carry scalar counts only (block/kind/text-byte totals, seq,
+resident map sizes). Compaction projection checkpoints also include
 `retention_floor_block_id`. TUI checkpoints label retained parent transcript
 counts with `transcript_scope: parent`, plus `visible_run_id` and `live_child_view`.
 Boundary samples use `checkpoint_phase: pre_next_frame`. The one-shot idle sample
@@ -110,8 +123,8 @@ result should cover only one checkout.
 
 ## Hatfield process metrics
 
-The Datadog Process Check can aggregate CPU, resident memory, and process I/O for
-the Hatfield CLI, controller, and Messenger workers. Install the sample config:
+The Datadog Process Check emits CPU, resident memory, process count, and
+process I/O for mutually exclusive Hatfield roles. Install the sample config:
 
 ```bash
 sudo install -o dd-agent -g dd-agent -m 0644 \
@@ -120,9 +133,24 @@ sudo install -o dd-agent -g dd-agent -m 0644 \
 sudo systemctl restart datadog-agent
 ```
 
-The config matches Hatfield PHAR processes and source launches through
-`bin/console`. It tags the resulting `system.processes.*` metrics with
-`service:hatfield`, `env:dev`, and `app:hatfield`.
+The config matches packaged `hatfield.phar` launches and source
+`bin/console` launches. Each instance is one role group with
+`exact_match: false`, so Datadog applies Python `re.search()` to the joined
+command line. Instance names become `process_name` tags:
+
+- `hatfield.screen`
+- `hatfield.controller`
+- `hatfield.headless`
+- `hatfield.run_control`
+- `hatfield.llm`
+- `hatfield.tool`
+- `hatfield.agent_worker`
+- `hatfield.mcp`
+- `hatfield.extension_agent`
+
+Every instance also carries `service:hatfield`, `env:dev`, `app:hatfield`, and
+`process_role:<role>`. There is no overlapping aggregate instance. Do not sum
+an old one-bucket series with these role series.
 
 Check the integration after the Agent has completed one collection interval:
 
@@ -133,17 +161,22 @@ sudo datadog-agent check process
 Use these dashboard queries:
 
 ```text
-sum:system.processes.cpu.pct{service:hatfield AND $env}
-sum:system.processes.mem.rss{service:hatfield AND $env}
-per_second(sum:system.processes.ioread_bytes_count{service:hatfield AND $env})
-per_second(sum:system.processes.iowrite_bytes_count{service:hatfield AND $env})
+sum:system.processes.cpu.pct{service:hatfield AND $env} by {process_name}
+sum:system.processes.mem.rss{service:hatfield AND $env} by {process_name}
+sum:system.processes.number{service:hatfield AND $env} by {process_name}
+per_second(sum:system.processes.ioread_bytes_count{service:hatfield AND $env}) by {process_name}
+per_second(sum:system.processes.iowrite_bytes_count{service:hatfield AND $env}) by {process_name}
 ```
 
-The Process Check must match every Hatfield process that belongs in the total.
-Short-lived processes can disappear before collection. Datadog documents
-`system.processes.cpu.pct` as inaccurate for processes that live for less than
-30 seconds. Linux process I/O availability also depends on Agent access to
-`/proc/<pid>/io`; verify both I/O metrics before adding dashboard widgets.
+Aggregate CPU across matched processes may exceed 100% when more than one core
+is busy. Aggregate RSS is the sum of matched process RSS, not a host total.
+Checkpoint `memory_usage` values are event samples, not continuous gauges.
+Never sum or average `memory_peak` across processes as if it were current
+usage. Short-lived processes can disappear before collection; Datadog
+documents `system.processes.cpu.pct` as inaccurate for processes that live for
+less than 30 seconds. Linux process I/O depends on Agent access to
+`/proc/<pid>/io`. Verify both I/O series before adding I/O widgets; absence of
+data usually means privilege or collection setup, not application code.
 
 ## Application metrics from logs
 

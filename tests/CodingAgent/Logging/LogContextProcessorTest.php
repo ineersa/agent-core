@@ -55,7 +55,7 @@ final class LogContextProcessorTest extends TestCase
 
     public function testInjectsAmbientContextIntoExtra(): void
     {
-        RunLogContext::enter(['run_id' => 'run-1', 'component' => 'runtime']);
+        RunLogContext::enter(['run_id' => 'run-1', 'component' => 'runtime', 'process_role' => 'screen']);
 
         $record = new LogRecord(
             datetime: new \DateTimeImmutable(),
@@ -68,6 +68,7 @@ final class LogContextProcessorTest extends TestCase
 
         $this->assertSame('run-1', $result->extra['run_id']);
         $this->assertSame('runtime', $result->extra['component']);
+        $this->assertSame('screen', $result->extra['process_role']);
 
         RunLogContext::leave();
     }
