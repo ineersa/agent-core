@@ -6,8 +6,15 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationLifecycleTransition;
 
-/** Validates captured tool-invocation lifecycle projection actions before recovery or commit. */
+/**
+ * Validates captured tool-invocation lifecycle projection actions before recovery or commit.
+ *
+ * Illegal source/target transitions are refused before journaling. Complete-plan
+ * uniqueness (one lifecycle update per durable invocation identity) is enforced by
+ * CoordinationActionValidator::validatePlan across ordinary and after-turn actions.
+ */
 final readonly class ToolInvocationLifecycleCoordinationValidator implements CoordinationActionValidatorInterface
 {
     public function supports(object $action): bool
@@ -33,5 +40,12 @@ final readonly class ToolInvocationLifecycleCoordinationValidator implements Coo
         if (null !== $correlation->executionOwnerReference && null === $correlation->executionOwnerKind) {
             throw new \RuntimeException('Prepared tool invocation owner reference requires an owner kind.');
         }
+
+        ToolInvocationLifecycleTransition::assertAllowed(
+            $correlation->callerDisposition,
+            $correlation->executionObservation,
+            $action->callerDisposition,
+            $action->executionObservation,
+        );
     }
 }

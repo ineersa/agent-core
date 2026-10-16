@@ -45,9 +45,8 @@ final readonly class RunCommit
                 AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)), $state->lastSeq,
             ) ?? [];
         }
-        foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {
-            $this->actionValidator->validate($action);
-        }
+        // Validate the complete ordinary + after-turn plan once before journaling.
+        $this->actionValidator->validatePlan([...$postCommitActions, ...$afterTurnActions]);
         $persist = function () use ($state, $nextState, $events, $effects, $afterTurnActions, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions): RunState {
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];
@@ -58,9 +57,7 @@ final readonly class RunCommit
             if (null !== $verifiedSource) {
                 $postCommitActions = $verifiedSource->work['actions'] ?? [];
                 $afterTurnActions = $verifiedSource->work['after_turn_actions'] ?? [];
-                foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {
-                    $this->actionValidator->validate($action);
-                }
+                $this->actionValidator->validatePlan([...$postCommitActions, ...$afterTurnActions]);
             }
 
             $committedState = $nextState;

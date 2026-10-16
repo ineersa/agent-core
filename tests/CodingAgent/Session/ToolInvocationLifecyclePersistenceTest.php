@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Doctrine\DBAL\Connection;
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
+use Ineersa\AgentCore\Application\Pipeline\RunCommit;
+use Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer;
+use Ineersa\AgentCore\Application\Pipeline\TransitionPlanFactory;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
@@ -18,6 +23,11 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Coordination\TransitionPlan;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationEnvelopeFingerprint;
@@ -314,6 +324,324 @@ final class ToolInvocationLifecyclePersistenceTest extends IsolatedKernelTestCas
         ));
     }
 
+    public function testInvalidLifecycleTransitionIsRejectedWithoutPendingJournal(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('lifecycle invalid transition');
+        /** @var DeferredToolCompletionRepositoryInterface $repo */
+        $repo = $container->get(DeferredToolCompletionRepositoryInterface::class);
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $active = $container->get(ActiveRunContextInterface::class);
+        $correlation = $repo->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440404',
+            runId: $run,
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'lifecycle-invalid-key',
+            toolCallId: 'call-lifecycle-invalid',
+            toolName: 'bash',
+            arguments: ['command' => 'sleep 1'],
+            orderIndex: 0,
+        ));
+
+        $state = new RunState(runId: $run, status: RunStatus::Running, turnNo: 1, lastSeq: 0, model: 'test-model');
+        $active->loadRecovered($state);
+        $commit = $this->runCommit($store);
+        $beforeSeq = $store->latestSequenceFor($run);
+
+        try {
+            $commit->commit(
+                $state,
+                $state,
+                [],
+                postCommitActions: [new RecordToolInvocationLifecycleDTO(
+                    $correlation,
+                    ToolInvocationCallerDispositionEnum::ForegroundResultAccepted,
+                    ToolInvocationExecutionObservationEnum::Active,
+                )],
+            );
+            $this->fail('Illegal lifecycle transition must fail before journaling.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Unsupported tool invocation lifecycle transition', $exception->getMessage());
+        }
+
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $this->assertSame($beforeSeq, $store->latestSequenceFor($run));
+        $unchanged = $repo->findByRunAndToolCall($run, 'call-lifecycle-invalid');
+        $this->assertNotNull($unchanged);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::ForegroundPending, $unchanged->callerDisposition);
+        $this->assertSame(ToolInvocationExecutionObservationEnum::Active, $unchanged->executionObservation);
+        $this->assertSame(0, $active->requireLoaded($run)->lastSeq);
+    }
+
+    public function testDuplicateLifecycleUpdatesAcrossOrdinaryAndAfterTurnActionsAreRejectedWithoutJournal(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('lifecycle duplicate plan');
+        /** @var DeferredToolCompletionRepositoryInterface $repo */
+        $repo = $container->get(DeferredToolCompletionRepositoryInterface::class);
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $active = $container->get(ActiveRunContextInterface::class);
+        $correlation = $repo->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440405',
+            runId: $run,
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'lifecycle-dup-key',
+            toolCallId: 'call-lifecycle-dup',
+            toolName: 'bash',
+            arguments: ['command' => 'sleep 1'],
+            orderIndex: 0,
+        ));
+
+        $ordinary = new RecordToolInvocationLifecycleDTO(
+            $correlation,
+            ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
+            ToolInvocationExecutionObservationEnum::Active,
+        );
+        $afterTurn = new RecordToolInvocationLifecycleDTO(
+            new DeferredToolCompletionCorrelation(
+                deferredId: $correlation->deferredId,
+                runId: $correlation->runId,
+                turnNo: $correlation->turnNo,
+                stepId: $correlation->stepId,
+                attempt: $correlation->attempt,
+                idempotencyKey: $correlation->idempotencyKey,
+                toolCallId: $correlation->toolCallId,
+                toolName: $correlation->toolName,
+                arguments: $correlation->arguments,
+                orderIndex: $correlation->orderIndex,
+                callerDisposition: ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
+                executionObservation: ToolInvocationExecutionObservationEnum::Active,
+            ),
+            ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
+            ToolInvocationExecutionObservationEnum::CancelRequested,
+        );
+
+        $state = new RunState(runId: $run, status: RunStatus::Running, turnNo: 1, lastSeq: 0, model: 'test-model');
+        $active->loadRecovered($state);
+        $commit = $this->runCommit($store, new HookDispatcher([
+            new class($afterTurn) implements EssentialAfterTurnHookInterface {
+                public function __construct(private RecordToolInvocationLifecycleDTO $action)
+                {
+                }
+
+                public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
+                {
+                    return [$this->action];
+                }
+            },
+        ]));
+        $beforeSeq = $store->latestSequenceFor($run);
+
+        try {
+            $commit->commit($state, $state, [], postCommitActions: [$ordinary]);
+            $this->fail('Duplicate lifecycle updates for one invocation must fail before journaling.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('only one lifecycle update', $exception->getMessage());
+        }
+
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $this->assertSame($beforeSeq, $store->latestSequenceFor($run));
+        $unchanged = $repo->findByRunAndToolCall($run, 'call-lifecycle-dup');
+        $this->assertNotNull($unchanged);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::ForegroundPending, $unchanged->callerDisposition);
+    }
+
+    public function testDistinctLifecycleInvocationsAreAcceptedInOnePlan(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('lifecycle distinct invocations');
+        /** @var DeferredToolCompletionRepositoryInterface $repo */
+        $repo = $container->get(DeferredToolCompletionRepositoryInterface::class);
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $active = $container->get(ActiveRunContextInterface::class);
+        $first = $repo->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440406',
+            runId: $run,
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'lifecycle-a-key',
+            toolCallId: 'call-lifecycle-a',
+            toolName: 'bash',
+            arguments: ['command' => 'sleep 1'],
+            orderIndex: 0,
+        ));
+        $second = $repo->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440407',
+            runId: $run,
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'lifecycle-b-key',
+            toolCallId: 'call-lifecycle-b',
+            toolName: 'bash',
+            arguments: ['command' => 'sleep 2'],
+            orderIndex: 1,
+        ));
+
+        $state = new RunState(runId: $run, status: RunStatus::Running, turnNo: 1, lastSeq: 0, model: 'test-model');
+        $active->loadRecovered($state);
+        $this->runCommit($store)->commit(
+            $state,
+            $state,
+            [],
+            postCommitActions: [
+                new RecordToolInvocationLifecycleDTO(
+                    $first,
+                    ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
+                    ToolInvocationExecutionObservationEnum::Active,
+                ),
+                new RecordToolInvocationLifecycleDTO(
+                    $second,
+                    ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
+                    ToolInvocationExecutionObservationEnum::Active,
+                ),
+            ],
+        );
+
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $updatedA = $repo->findByRunAndToolCall($run, 'call-lifecycle-a');
+        $updatedB = $repo->findByRunAndToolCall($run, 'call-lifecycle-b');
+        $this->assertNotNull($updatedA);
+        $this->assertNotNull($updatedB);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, $updatedA->callerDisposition);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, $updatedB->callerDisposition);
+    }
+
+    public function testAllowedLifecyclePlanRecoversAfterSqlCommitBeforeCanonicalFinalization(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('lifecycle sql then interrupt');
+        /** @var DeferredToolCompletionRepositoryInterface $repo */
+        $repo = $container->get(DeferredToolCompletionRepositoryInterface::class);
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $active = $container->get(ActiveRunContextInterface::class);
+        $correlation = $repo->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440408',
+            runId: $run,
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'lifecycle-interrupt-key',
+            toolCallId: 'call-lifecycle-interrupt',
+            toolName: 'bash',
+            arguments: ['command' => 'sleep 1'],
+            orderIndex: 0,
+        ));
+
+        $action = new RecordToolInvocationLifecycleDTO(
+            $correlation,
+            ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
+            ToolInvocationExecutionObservationEnum::Active,
+        );
+        $state = new RunState(runId: $run, status: RunStatus::Running, turnNo: 1, lastSeq: 0, model: 'test-model');
+        $active->loadRecovered($state);
+
+        $interruptStore = new class($store) implements PreparedTransitionEventStoreInterface {
+            public function __construct(private PreparedTransitionEventStoreInterface $inner)
+            {
+            }
+
+            public function appendTransition(array $events, array $work): array
+            {
+                return $this->inner->appendTransition($events, $work);
+            }
+
+            public function verifiedPendingTransition(string $runId): ?VerifiedTransitionDTO
+            {
+                return $this->inner->verifiedPendingTransition($runId);
+            }
+
+            public function verifiedPendingBatch(string $runId, string $identity): array
+            {
+                return $this->inner->verifiedPendingBatch($runId, $identity);
+            }
+
+            public function finalizeVerifiedTransition(string $runId, string $identity): void
+            {
+                throw new \RuntimeException('Injected finalize failure after lifecycle SQL.');
+            }
+
+            public function assertTransitionReady(string $runId): void
+            {
+                $this->inner->assertTransitionReady($runId);
+            }
+
+            public function latestSequenceFor(string $runId): ?int
+            {
+                return $this->inner->latestSequenceFor($runId);
+            }
+
+            public function firstFor(string $runId): ?RunEvent
+            {
+                return $this->inner->firstFor($runId);
+            }
+
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                return $this->inner->rangeFor($runId, $startSeq, $endSeq);
+            }
+
+            public function reverseFor(string $runId): iterable
+            {
+                return $this->inner->reverseFor($runId);
+            }
+
+            public function allFor(string $runId): array
+            {
+                return $this->inner->allFor($runId);
+            }
+        };
+
+        $bus = $container->get('agent.command.bus');
+        $finalizer = new TransitionFinalizer(
+            $interruptStore,
+            new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
+            new LocalMetadataCoordinator(
+                $container->get(ApplicationDbTransactionInterface::class),
+                $container->get(ToolBatchStoreInterface::class),
+                $container->get(CommandStoreInterface::class),
+                $repo,
+            ),
+            new TransitionPlanFactory(),
+            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+        );
+        $commit = new RunCommit(
+            activeRunContext: $active,
+            eventStore: $interruptStore,
+            logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            finalizer: $finalizer,
+            hookDispatcher: null,
+            tracer: null,
+            actionValidator: $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
+        );
+
+        try {
+            $commit->commit($state, $state, [], postCommitActions: [$action]);
+            $this->fail('Finalize interruption must retain the pending transition.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Injected finalize failure after lifecycle SQL.', $exception->getMessage());
+        }
+
+        $this->assertNotNull($store->verifiedPendingTransition($run));
+        $settled = $repo->findByRunAndToolCall($run, 'call-lifecycle-interrupt');
+        $this->assertNotNull($settled);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, $settled->callerDisposition);
+        $this->assertSame(ToolInvocationExecutionObservationEnum::Active, $settled->executionObservation);
+
+        $this->recovery($bus)->recover($run);
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $recovered = $repo->findByRunAndToolCall($run, 'call-lifecycle-interrupt');
+        $this->assertNotNull($recovered);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, $recovered->callerDisposition);
+        $this->assertSame(ToolInvocationExecutionObservationEnum::Active, $recovered->executionObservation);
+        $this->assertSame('pending', $repo->status($correlation->deferredId));
+    }
+
     private function recovery(MessageBusInterface $bus): PendingTransitionRecovery
     {
         $container = self::getContainer();
@@ -330,6 +658,33 @@ final class ToolInvocationLifecyclePersistenceTest extends IsolatedKernelTestCas
                 deferredCompletions: $container->get(DeferredToolCompletionRepositoryInterface::class),
             ),
             $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
+        );
+    }
+
+    private function runCommit(PreparedTransitionEventStoreInterface $store, ?HookDispatcher $hooks = null): RunCommit
+    {
+        $container = self::getContainer();
+        $bus = $container->get('agent.command.bus');
+
+        return new RunCommit(
+            activeRunContext: $container->get(ActiveRunContextInterface::class),
+            eventStore: $store,
+            logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            finalizer: new TransitionFinalizer(
+                $store,
+                new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
+                new LocalMetadataCoordinator(
+                    $container->get(ApplicationDbTransactionInterface::class),
+                    $container->get(ToolBatchStoreInterface::class),
+                    $container->get(CommandStoreInterface::class),
+                    $container->get(DeferredToolCompletionRepositoryInterface::class),
+                ),
+                new TransitionPlanFactory(),
+                $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            ),
+            hookDispatcher: $hooks,
+            tracer: null,
+            actionValidator: $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
         );
     }
 }
