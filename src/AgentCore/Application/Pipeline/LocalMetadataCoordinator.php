@@ -31,13 +31,15 @@ final readonly class LocalMetadataCoordinator
     {
         $transition = $plan->verified ?? throw new \RuntimeException('Local metadata requires verified transition evidence.');
         $batchActions = [];
-        $lifecycleActions = [];
         foreach ($plan->localActions as $action) {
             if ($action instanceof FinalizeToolBatchDTO || $action instanceof RegisterToolBatchDTO) {
                 $batchActions[] = $action;
-            } elseif ($action instanceof RecordToolInvocationLifecycleDTO) {
-                $lifecycleActions[] = $action;
-            } elseif (!$action instanceof EnqueueCommandDTO && !$action instanceof MarkCommandAppliedDTO && !$action instanceof RejectCommandDTO) {
+            } elseif (
+                !$action instanceof EnqueueCommandDTO
+                && !$action instanceof MarkCommandAppliedDTO
+                && !$action instanceof RejectCommandDTO
+                && !$action instanceof RecordToolInvocationLifecycleDTO
+            ) {
                 throw new \RuntimeException('Unsupported local metadata action '.$action::class.'.');
             }
         }
@@ -49,7 +51,7 @@ final readonly class LocalMetadataCoordinator
                 $enqueues[$index] = $this->commands->prepareEnqueue($action->command);
             }
         }
-        $this->transactions->transactional(function () use ($plan, $applyBatches, $enqueues, $lifecycleActions): void {
+        $this->transactions->transactional(function () use ($plan, $applyBatches, $enqueues): void {
             $applyBatches();
             foreach ($plan->localActions as $index => $action) {
                 if ($action instanceof EnqueueCommandDTO) {
@@ -58,10 +60,9 @@ final readonly class LocalMetadataCoordinator
                     $this->commands->markApplied($action->runId, $action->idempotencyKey);
                 } elseif ($action instanceof RejectCommandDTO) {
                     $this->commands->markRejected($action->runId, $action->idempotencyKey, $action->reason);
+                } elseif ($action instanceof RecordToolInvocationLifecycleDTO) {
+                    $this->deferredCompletions->applyLifecycleProjection($action);
                 }
-            }
-            foreach ($lifecycleActions as $lifecycleAction) {
-                $this->deferredCompletions->applyLifecycleProjection($lifecycleAction);
             }
         });
     }

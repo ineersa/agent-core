@@ -32,6 +32,11 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
             throw new \RuntimeException(\sprintf('Deferred id "%s" already registered.', $correlation->deferredId));
         }
 
+        $computedFingerprint = ToolInvocationEnvelopeFingerprint::fromCorrelation($correlation);
+        if (null !== $correlation->envelopeFingerprint && $correlation->envelopeFingerprint !== $computedFingerprint) {
+            throw new \InvalidArgumentException('Envelope fingerprint must match the immutable execution envelope.');
+        }
+
         $stored = new DeferredToolCompletionCorrelation(
             deferredId: $correlation->deferredId,
             runId: $correlation->runId,
@@ -58,7 +63,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
             deadlineMetadata: $correlation->deadlineMetadata,
             originWakeGeneration: $correlation->originWakeGeneration,
             rootWakeGeneration: $correlation->rootWakeGeneration,
-            envelopeFingerprint: $correlation->envelopeFingerprint ?? ToolInvocationEnvelopeFingerprint::fromCorrelation($correlation),
+            envelopeFingerprint: $correlation->envelopeFingerprint ?? $computedFingerprint,
             callerDisposition: $correlation->callerDisposition,
             executionObservation: $correlation->executionObservation,
         );

@@ -51,7 +51,10 @@ final readonly class DeferredToolCompletionCorrelation
         if (null !== $this->executionOwnerKind && '' === $this->executionOwnerKind) {
             throw new \InvalidArgumentException('Execution owner kind cannot be empty when present.');
         }
-        if (null !== $this->executionOwnerReference && null !== $this->executionOwnerKind && $this->executionOwnerReference->kind !== $this->executionOwnerKind) {
+        if (null !== $this->executionOwnerReference && null === $this->executionOwnerKind) {
+            throw new \InvalidArgumentException('Execution owner reference requires an owner kind.');
+        }
+        if (null !== $this->executionOwnerReference && $this->executionOwnerReference->kind !== $this->executionOwnerKind) {
             throw new \InvalidArgumentException('Execution owner kind must match the owner reference kind.');
         }
         if (null !== $this->originWakeGeneration && $this->originWakeGeneration < 0) {
@@ -59,6 +62,12 @@ final readonly class DeferredToolCompletionCorrelation
         }
         if (null !== $this->rootWakeGeneration && $this->rootWakeGeneration < 0) {
             throw new \InvalidArgumentException('Root wake generation cannot be negative.');
+        }
+        if (null !== $this->envelopeFingerprint) {
+            $expectedFingerprint = ToolInvocationEnvelopeFingerprint::fromCorrelation($this);
+            if ($this->envelopeFingerprint !== $expectedFingerprint) {
+                throw new \InvalidArgumentException('Envelope fingerprint must match the immutable execution envelope.');
+            }
         }
     }
 

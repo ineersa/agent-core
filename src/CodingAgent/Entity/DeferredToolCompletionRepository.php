@@ -42,7 +42,11 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         }
 
         $now = Clock::get()->now()->format('Y-m-d H:i:s');
-        $fingerprint = $correlation->envelopeFingerprint ?? ToolInvocationEnvelopeFingerprint::fromCorrelation($correlation);
+        $computedFingerprint = ToolInvocationEnvelopeFingerprint::fromCorrelation($correlation);
+        if (null !== $correlation->envelopeFingerprint && $correlation->envelopeFingerprint !== $computedFingerprint) {
+            throw new \InvalidArgumentException('Envelope fingerprint must match the immutable execution envelope.');
+        }
+        $fingerprint = $correlation->envelopeFingerprint ?? $computedFingerprint;
         $ownerReference = null === $correlation->executionOwnerReference
             ? null
             : json_encode($correlation->executionOwnerReference->toArray(), \JSON_THROW_ON_ERROR);
@@ -120,7 +124,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
     public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation
     {
-        $entity = $this->findOneBy(['deferredId' => $deferredId]);
+        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
 
         return $entity instanceof DeferredToolCompletion ? $this->toCorrelation($entity) : null;
     }
@@ -222,6 +226,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             throw new \RuntimeException(\sprintf('Deferred tool lifecycle projection raced for run "%s" tool call "%s".', $expected->runId, $expected->toolCallId));
         }
 
+        // DBAL write bypasses the identity map; detach any stale managed row so later find* reads fresh disposition/observation.
         $managed = $this->findOneBy(['deferredId' => $current->deferredId]);
         if ($managed instanceof DeferredToolCompletion) {
             $this->getEntityManager()->detach($managed);
@@ -262,8 +267,9 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
     /**
      * Load one row with committed field values for mutable status decisions.
      *
-     * Registration lookups keep plain findOneBy(): those fields are immutable
-     * after insert. Status-bearing reads must overwrite identity-map copies.
+     * Registration conflict lookups may keep plain findOneBy() for immutable
+     * insert fields. Status and lifecycle-bearing reads must overwrite
+     * identity-map copies after DBAL updates.
      *
      * @param array<string, mixed> $criteria
      */
