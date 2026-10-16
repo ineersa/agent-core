@@ -129,6 +129,14 @@ final class ApplicationMigrationExecutorTest extends TestCase
             'deferred_tool_completion must exist after startup executor (run_control deferred registration)',
         );
 
+        $deferredColumns = $schemaManager->listTableColumns('deferred_tool_completion');
+        $this->assertArrayHasKey('accepted_completion_id', $deferredColumns);
+        $this->assertArrayHasKey('accepted_result_fingerprint', $deferredColumns);
+        $this->assertNotFalse($connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20261016205256'],
+        ));
+
         $recordedDeferredBatch = $connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
             ['Version20260713160000'],
