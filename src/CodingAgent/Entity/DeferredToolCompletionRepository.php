@@ -16,14 +16,19 @@ use Ineersa\AgentCore\Domain\Tool\ToolInvocationEnvelopeFingerprint;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationOwnerReference;
 use Symfony\Component\Clock\Clock;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * @extends ServiceEntityRepository<DeferredToolCompletion>
  */
 final class DeferredToolCompletionRepository extends ServiceEntityRepository implements DeferredToolCompletionRepositoryInterface
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly SerializerInterface $serializer,
+    ) {
         parent::__construct($registry, DeferredToolCompletion::class);
     }
 
@@ -49,7 +54,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         $fingerprint = $correlation->envelopeFingerprint ?? $computedFingerprint;
         $ownerReference = null === $correlation->executionOwnerReference
             ? null
-            : json_encode($correlation->executionOwnerReference->toArray(), \JSON_THROW_ON_ERROR);
+            : $this->serializeOwnerReference($correlation->executionOwnerReference);
         $deadlineMetadata = null === $correlation->deadlineMetadata
             ? null
             : json_encode($correlation->deadlineMetadata, \JSON_THROW_ON_ERROR);
@@ -308,11 +313,10 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
         $ownerReference = null;
         if (null !== $entity->executionOwnerReferenceJson && '' !== $entity->executionOwnerReferenceJson) {
-            $decodedOwner = json_decode($entity->executionOwnerReferenceJson, true, 512, \JSON_THROW_ON_ERROR);
-            if (!\is_array($decodedOwner)) {
-                throw new \RuntimeException(\sprintf('Deferred tool owner reference is corrupt for "%s".', $entity->deferredId));
-            }
-            $ownerReference = ToolInvocationOwnerReference::fromArray($decodedOwner);
+            $ownerReference = $this->deserializeOwnerReference(
+                $entity->executionOwnerReferenceJson,
+                $entity->deferredId,
+            );
         }
 
         $deadlineMetadata = null;
@@ -353,5 +357,30 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             callerDisposition: ToolInvocationCallerDispositionEnum::from($entity->callerDisposition),
             executionObservation: ToolInvocationExecutionObservationEnum::from($entity->executionObservation),
         );
+    }
+
+    private function serializeOwnerReference(ToolInvocationOwnerReference $ownerReference): string
+    {
+        return $this->serializer->serialize(
+            $ownerReference,
+            'json',
+            [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+        );
+    }
+
+    private function deserializeOwnerReference(string $json, string $deferredId): ToolInvocationOwnerReference
+    {
+        try {
+            /** @var ToolInvocationOwnerReference $ownerReference */
+            $ownerReference = $this->serializer->deserialize(
+                $json,
+                ToolInvocationOwnerReference::class,
+                'json',
+            );
+        } catch (SerializerExceptionInterface|\TypeError|\ValueError|\InvalidArgumentException|\JsonException $exception) {
+            throw new \RuntimeException(\sprintf('Deferred tool owner reference is corrupt for "%s".', $deferredId), 0, $exception);
+        }
+
+        return $ownerReference;
     }
 }
