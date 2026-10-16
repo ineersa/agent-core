@@ -5,7 +5,7 @@ Main must read this procedure before doing phase work or calling `move_task`. Th
 Read [implementation-ownership.md](implementation-ownership.md) and [specification-fidelity.md](specification-fidelity.md). For TUI changes, also read [tui-proof.md](tui-proof.md).
 
 1. Inspect the worktree with `git status`, `git log`, and `git diff --stat origin/main...HEAD`.
-2. Run the reviewer subagent in the worktree. Record its role, artifact or run ID, target revision, and scope with `update_task`. Require a specification-fidelity review.
+2. Run the reviewer with only a PR identifier, a commit SHA, or both, following the independent-assignment rules in [specification-fidelity.md](specification-fidelity.md). Before a PR exists, use `Review commit <sha>.` Record its role, artifact or run ID, checkout, baseline, target revision, and full-change scope with `update_task`, not in the reviewer request. Do not accept fix-only review as approval.
 3. If the reviewer requests changes, apply the ownership decision rules to the requested fixes. Record ownership, implement the fixes, run focused validation, and repeat review until approved.
 4. Reuse applicable focused validation from implementation for the same revision and environment. Run filtered tests or individual static checks (`castor deptrac`, `castor phpstan`, `castor cs-check`) when they provide useful focused feedback or address an unresolved concern. Add controller replay or `castor test:tui` only when the required proof layer calls for it. Do not run full `castor test`; the transition runs `castor check`.
 5. Run focused `castor test:llm-real` only for provider or LLM-visible changes such as schemas, prompts, streaming, model routing, or provider compatibility.
