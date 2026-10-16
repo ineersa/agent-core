@@ -25,14 +25,19 @@ enum ProcessRoleEnum: string
     case Console = 'console';
 
     /**
-     * OS process title matched by Datadog Process Check after attribution.
+     * Stable marker appended to the original OS process title.
      *
-     * cli_set_process_title() replaces the visible cmdline, so Process Check
-     * patterns search this stable title rather than raw argv text.
+     * Datadog Process Check matches this suffix. Temporary console is for logs
+     * only and must not become a Process Check role group.
      */
-    public function processTitle(): string
+    public function processTitleMarker(): string
     {
         return 'hatfield.role.'.$this->value;
+    }
+
+    public function isProcessCheckRole(): bool
+    {
+        return self::Console !== $this;
     }
 
     public static function forAgentCommand(bool $controller, bool $headless): self

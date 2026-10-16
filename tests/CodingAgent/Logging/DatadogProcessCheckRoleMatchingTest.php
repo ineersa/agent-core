@@ -11,8 +11,8 @@ use Symfony\Component\Yaml\Yaml;
 
 /**
  * Proves ops/datadog/process.d/conf.yaml role groups match attributed process
- * titles with Datadog Process Check semantics: exact_match false uses Python
- * re.search() against the joined command line / process title.
+ * title suffixes with Datadog Process Check semantics: exact_match false uses
+ * Python re.search() against the joined command line / process title.
  */
 #[CoversNothing]
 final class DatadogProcessCheckRoleMatchingTest extends TestCase
@@ -58,12 +58,12 @@ final class DatadogProcessCheckRoleMatchingTest extends TestCase
         $this->assertCount(\count($expectedRoles), $patterns);
 
         foreach ($expectedRoles as $expected => $role) {
-            $title = $role->processTitle();
+            $marker = $role->processTitleMarker();
             $variants = [
-                $title,
-                $title."\0",
-                'php '.$title,
-                $title.' ',
+                $marker,
+                'php /opt/hatfield.phar agent --controller '.$marker,
+                'php /home/x/bin/console messenger:consume llm --no-interaction '.$marker,
+                'php /home/x/bin/console messenger:consume llm --no-interaction '.$marker."\0",
             ];
             foreach ($variants as $command) {
                 $hits = $this->matchingRoles($patterns, $command);
@@ -77,13 +77,16 @@ final class DatadogProcessCheckRoleMatchingTest extends TestCase
             'php /home/x/bin/console agent --controller',
             'php /home/x/bin/console agent --prompt=--controller',
             'php /home/x/bin/console agent --prompt="use --headless later"',
+            'php /home/x/bin/console agent --prompt=hatfield.role.controller',
             'php /home/x/bin/console messenger:consume run_control --no-interaction',
             'php /home/x/bin/console messenger:consume scheduler_default',
             'php /home/x/bin/console messenger:consume llm tool',
             'php /home/x/bin/console cache:clear',
             'hatfield.role.console',
+            'php /tmp/bin/console messenger:consume llm hatfield.role.console',
             'hatfield.role.controllerish',
             'not-hatfield.role.controller',
+            'php /tmp/app --prompt=hatfield.role.controller more',
         ];
 
         foreach ($negatives as $command) {

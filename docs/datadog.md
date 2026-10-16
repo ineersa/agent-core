@@ -44,8 +44,16 @@ contain those flag strings do not change the role. Multi-receiver
 Unrelated console commands stay unattributed.
 
 The same subscriber sets OS process title `hatfield.role.<role>` through
-Symfony `Command::setProcessTitle()` and a best-effort immediate title update
-for Messenger workers. Datadog Process Check matches that title. Keep
+Symfony `Command::setProcessTitle()` by appending the marker to the original
+OS title, plus a best-effort immediate update for Messenger workers after
+transports resolve. Temporary `console` stays a log-only role and does not
+rewrite the OS title. Datadog Process Check matches the anchored marker
+suffix only, so prompt text that contains a fake role string does not match.
+If `cli_get_process_title()` is empty, the subscriber reads only
+`/proc/self/cmdline` for this process to preserve the launch identity before
+appending the marker. If title APIs or that baseline are unavailable,
+attribution leaves the original OS identity unchanged and records intentional
+telemetry degradation. Keep
 `process_role`, `run_id`, and `session_id` in logs; do not promote
 high-cardinality IDs into custom metric tags.
 
@@ -142,12 +150,15 @@ sudo systemctl restart datadog-agent
 ```
 
 The config matches packaged `hatfield.phar` launches and source
-`bin/console` launches after they set `hatfield.role.<role>`. Each instance is
-one role group with `exact_match: false`, so Datadog applies Python
-`re.search()` to the joined process title or command line. Default launches
-that omit an explicit `agent` argument still become `screen` after attribution.
-Copy the sample config and restart `datadog-agent` after pulling this change.
-Binaries that never set `hatfield.role.*` titles do not match these instances.
+`bin/console` launches after they append `hatfield.role.<role>` to the original
+OS title. Each instance is one role group with `exact_match: false`, so Datadog
+applies Python `re.search()` to the joined process title or command line and
+matches only the anchored suffix. Original launch identity remains visible for
+orphan recovery and topology discovery (`messenger:consume <transport>`).
+Default launches that omit an explicit `agent` argument still become `screen`
+after attribution. Copy the sample config and restart `datadog-agent` after
+pulling this change. Binaries that never append `hatfield.role.*` markers do
+not match these instances.
 Instance names become `process_name` tags:
 
 - `hatfield.screen`

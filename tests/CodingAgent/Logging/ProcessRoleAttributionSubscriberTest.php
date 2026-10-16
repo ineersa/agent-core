@@ -25,10 +25,28 @@ use Symfony\Component\Process\Process;
 #[CoversClass(ProcessRoleEnum::class)]
 final class ProcessRoleAttributionSubscriberTest extends TestCase
 {
+    private ?string $originalProcessTitle = null;
+
+    protected function setUp(): void
+    {
+        if (\function_exists('cli_get_process_title')) {
+            $current = cli_get_process_title();
+            $this->originalProcessTitle = \is_string($current) ? $current : '';
+        }
+    }
+
     protected function tearDown(): void
     {
         while ([] !== RunLogContext::current()) {
             RunLogContext::leave();
+        }
+
+        if (null !== $this->originalProcessTitle && \function_exists('cli_set_process_title')) {
+            // Restoring an empty title clears /proc/self/cmdline on Linux and
+            // breaks later baseline capture. Only restore a real prior title.
+            if ('' !== $this->originalProcessTitle) {
+                @cli_set_process_title($this->originalProcessTitle);
+            }
         }
     }
 
@@ -49,7 +67,12 @@ final class ProcessRoleAttributionSubscriberTest extends TestCase
             new NullOutput(),
         ));
         $this->assertSame(ProcessRoleEnum::Controller->value, RunLogContext::current()['process_role'] ?? null);
-        $this->assertSame(ProcessRoleEnum::Controller->processTitle(), $this->readProcessTitle($command));
+        $title = (string) $this->readProcessTitle($command);
+        $marker = ProcessRoleEnum::Controller->processTitleMarker();
+        $this->assertTrue(
+            $title === $marker || str_ends_with($title, ' '.$marker),
+            $title,
+        );
 
         $subscriber->onConsoleTerminate(new ConsoleTerminateEvent(
             $command,
@@ -80,8 +103,14 @@ final class ProcessRoleAttributionSubscriberTest extends TestCase
         $this->assertSame(ProcessRoleEnum::Screen->value, RunLogContext::current()['process_role'] ?? null);
     }
 
-    public function testMessengerWorkerStartedReplacesTemporaryConsoleRole(): void
+    public function testMessengerWorkerStartedReplacesTemporaryConsoleRoleWithoutEarlyOsRename(): void
     {
+        $this->assertTrue(\function_exists('cli_get_process_title'));
+        $this->assertTrue(\function_exists('cli_set_process_title'));
+
+        $baseline = 'php /tmp/bin/console messenger:consume run_control --no-interaction';
+        cli_set_process_title($baseline);
+
         $subscriber = new ProcessRoleAttributionSubscriber();
         $command = new Command('messenger:consume');
         $subscriber->onConsoleCommand(new ConsoleCommandEvent(
@@ -90,7 +119,8 @@ final class ProcessRoleAttributionSubscriberTest extends TestCase
             new NullOutput(),
         ));
         $this->assertSame(ProcessRoleEnum::Console->value, RunLogContext::current()['process_role'] ?? null);
-        $this->assertSame(ProcessRoleEnum::Console->processTitle(), $this->readProcessTitle($command));
+        $this->assertNull($this->readProcessTitle($command));
+        $this->assertSame($baseline, cli_get_process_title());
 
         $worker = $this->createStub(Worker::class);
         $worker->method('getMetadata')->willReturn(new WorkerMetadata([
@@ -99,9 +129,10 @@ final class ProcessRoleAttributionSubscriberTest extends TestCase
         $subscriber->onWorkerStarted(new WorkerStartedEvent($worker));
 
         $this->assertSame(ProcessRoleEnum::RunControl->value, RunLogContext::current()['process_role'] ?? null);
-        if (\function_exists('cli_get_process_title')) {
-            $this->assertSame(ProcessRoleEnum::RunControl->processTitle(), cli_get_process_title());
-        }
+        $this->assertSame(
+            $baseline.' '.ProcessRoleEnum::RunControl->processTitleMarker(),
+            cli_get_process_title(),
+        );
     }
 
     public function testSchedulerTransportMapsToSchedulerRole(): void
@@ -130,6 +161,12 @@ final class ProcessRoleAttributionSubscriberTest extends TestCase
 
     public function testMultiReceiverWorkersStayUnattributedBeyondTemporaryConsole(): void
     {
+        $this->assertTrue(\function_exists('cli_get_process_title'));
+        $this->assertTrue(\function_exists('cli_set_process_title'));
+
+        $baseline = 'php /tmp/bin/console messenger:consume llm tool';
+        cli_set_process_title($baseline);
+
         $subscriber = new ProcessRoleAttributionSubscriber();
         $subscriber->onConsoleCommand(new ConsoleCommandEvent(
             new Command('messenger:consume'),
@@ -145,18 +182,73 @@ final class ProcessRoleAttributionSubscriberTest extends TestCase
         $subscriber->onWorkerStarted(new WorkerStartedEvent($worker));
 
         $this->assertSame(ProcessRoleEnum::Console->value, RunLogContext::current()['process_role'] ?? null);
+        $this->assertSame($baseline, cli_get_process_title());
     }
 
-    public function testProcessTitleIsVisibleToDatadogStyleJoinedCmdlineMatching(): void
+    public function testNestedConsoleTerminateDoesNotClearOuterRole(): void
     {
-        $title = ProcessRoleEnum::Controller->processTitle();
+        $subscriber = new ProcessRoleAttributionSubscriber();
+        $outer = new Command('agent');
+        $inner = new Command('cache:clear');
+        $definition = new InputDefinition([
+            new InputOption('controller', mode: InputOption::VALUE_NONE),
+            new InputOption('headless', mode: InputOption::VALUE_NONE),
+        ]);
+
+        $subscriber->onConsoleCommand(new ConsoleCommandEvent(
+            $outer,
+            new ArrayInput(['--controller' => true], $definition),
+            new NullOutput(),
+        ));
+        $this->assertSame(ProcessRoleEnum::Controller->value, RunLogContext::current()['process_role'] ?? null);
+
+        $subscriber->onConsoleCommand(new ConsoleCommandEvent(
+            $inner,
+            new ArrayInput([]),
+            new NullOutput(),
+        ));
+        $this->assertSame(ProcessRoleEnum::Controller->value, RunLogContext::current()['process_role'] ?? null);
+
+        $subscriber->onConsoleTerminate(new ConsoleTerminateEvent(
+            $inner,
+            new ArrayInput([]),
+            new NullOutput(),
+            0,
+        ));
+        $this->assertSame(ProcessRoleEnum::Controller->value, RunLogContext::current()['process_role'] ?? null);
+
+        $subscriber->onConsoleTerminate(new ConsoleTerminateEvent(
+            $outer,
+            new ArrayInput([], $definition),
+            new NullOutput(),
+            0,
+        ));
+        $this->assertSame([], RunLogContext::current());
+    }
+
+    public function testProcessTitleKeepsOriginalIdentityAndAnchoredRoleSuffix(): void
+    {
+        $marker = ProcessRoleEnum::Controller->processTitleMarker();
         $readyFile = sys_get_temp_dir().'/hatfield-process-title-'.bin2hex(random_bytes(8)).'.ready';
         $scriptFile = sys_get_temp_dir().'/hatfield-process-title-'.bin2hex(random_bytes(8)).'.php';
         $script = <<<'PHP'
 <?php
 declare(strict_types=1);
-cli_set_process_title($argv[1]);
-file_put_contents($argv[2], (string) getmypid());
+$marker = $argv[1];
+$ready = $argv[2];
+$beforeTitle = cli_get_process_title();
+$cmdline = (string) file_get_contents('/proc/self/cmdline');
+$baseline = is_string($beforeTitle) && '' !== $beforeTitle
+    ? $beforeTitle
+    : rtrim(str_replace("\0", ' ', $cmdline));
+cli_set_process_title($baseline.' '.$marker);
+$after = (string) file_get_contents('/proc/self/cmdline');
+file_put_contents($ready, json_encode([
+    'pid' => getmypid(),
+    'before_title' => $beforeTitle,
+    'baseline' => $baseline,
+    'after' => str_replace("\0", ' ', $after),
+], JSON_THROW_ON_ERROR));
 fwrite(STDOUT, "ready\n");
 fflush(STDOUT);
 while (true) {
@@ -165,29 +257,46 @@ while (true) {
 PHP;
         file_put_contents($scriptFile, $script);
 
-        $process = new Process([PHP_BINARY, $scriptFile, $title, $readyFile]);
+        $process = new Process([
+            PHP_BINARY,
+            $scriptFile,
+            $marker,
+            $readyFile,
+            'messenger:consume',
+            'llm',
+            '--no-interaction',
+        ]);
         $process->start();
 
         try {
             $pid = null;
+            $payload = null;
             $deadline = microtime(true) + 2.0;
             while (microtime(true) < $deadline) {
                 if (is_file($readyFile)) {
                     $contents = trim((string) file_get_contents($readyFile));
-                    if ('' !== $contents && ctype_digit($contents)) {
-                        $pid = (int) $contents;
-                        break;
+                    if ('' !== $contents) {
+                        $decoded = json_decode($contents, true);
+                        if (\is_array($decoded) && isset($decoded['pid']) && \is_int($decoded['pid'])) {
+                            $pid = $decoded['pid'];
+                            $payload = $decoded;
+                            break;
+                        }
                     }
                 }
                 usleep(20000);
             }
 
             $this->assertNotNull($pid, 'Owned probe process did not publish readiness.');
-            $cmdline = (string) file_get_contents('/proc/'.$pid.'/cmdline');
-            $joined = str_replace("\0", ' ', $cmdline);
-            $pattern = '(?:^|[\\x00\\s])hatfield\\.role\\.controller(?:[\\x00\\s]|$)';
+            $this->assertIsArray($payload);
+            $joined = (string) $payload['after'];
+            $this->assertSame('', $payload['before_title']);
+            $this->assertStringContainsString('messenger:consume', (string) $payload['baseline']);
+            $this->assertStringContainsString('messenger:consume llm', $joined);
+            $pattern = '(?:^|[\\x00\\s])hatfield\\.role\\.controller(?:[\\x00\\s]*)$';
             $this->assertSame(1, preg_match('#'.$pattern.'#', $joined), $joined);
-            $this->assertSame(0, preg_match('#(?:^|[\\x00\\s])hatfield\\.role\\.screen(?:[\\x00\\s]|$)#', $joined));
+            $this->assertSame(0, preg_match('#(?:^|[\\x00\\s])hatfield\\.role\\.screen(?:[\\x00\\s]*)$#', $joined));
+            $this->assertSame(0, preg_match('#(?:^|[\\x00\\s])hatfield\\.role\\.controller(?:[\\x00\\s]*)$#', 'php app --prompt=hatfield.role.controller more'));
         } finally {
             if ($process->isRunning()) {
                 $process->stop(0, SIGTERM);
