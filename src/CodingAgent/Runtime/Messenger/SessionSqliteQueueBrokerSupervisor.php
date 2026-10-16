@@ -52,6 +52,9 @@ final class SessionSqliteQueueBrokerSupervisor
     private bool $shuttingDown = false;
     /** True only after this supervisor successfully launched a broker for $paths. */
     private bool $ownsEndpointArtifacts = false;
+    private ?int $advertisedMaxPayload = null;
+    private ?int $advertisedMaxConnections = null;
+    private ?int $requiredMaxConnectionsForReady = null;
 
     public function __construct(
         private readonly LoggerInterface $logger,
@@ -61,6 +64,8 @@ final class SessionSqliteQueueBrokerSupervisor
         private readonly float $shutdownGraceSeconds = self::DEFAULT_SHUTDOWN_GRACE_SECONDS,
         private readonly ?int $redeliverTimeoutSeconds = null,
         private readonly ?SqliteSynchronousMode $synchronous = null,
+        private readonly ?int $maxPayload = null,
+        private readonly ?int $maxConnections = null,
     ) {
         if ($this->readyTimeoutSeconds <= 0 || !is_finite($this->readyTimeoutSeconds)) {
             throw new \InvalidArgumentException('Broker ready timeout must be positive finite seconds.');
@@ -71,12 +76,24 @@ final class SessionSqliteQueueBrokerSupervisor
         if (null !== $this->redeliverTimeoutSeconds && $this->redeliverTimeoutSeconds <= 0) {
             throw new \InvalidArgumentException('Broker redeliver timeout must be positive seconds.');
         }
+        if (null !== $this->maxPayload && $this->maxPayload < 1) {
+            throw new \InvalidArgumentException('Broker max payload must be a positive byte count.');
+        }
+        if (null !== $this->maxConnections && $this->maxConnections < 1) {
+            throw new \InvalidArgumentException('Broker max connections must be a positive integer.');
+        }
     }
 
-    public function start(SessionSqliteQueuePaths $paths): void
+    /**
+     * @param int|null $requiredMaxConnections when set, launch with that budget and fail closed if ready advertises less
+     */
+    public function start(SessionSqliteQueuePaths $paths, ?int $requiredMaxConnections = null): void
     {
         if (null !== $this->process) {
             throw new \LogicException('Session sqlite-queue broker is already started.');
+        }
+        if (null !== $requiredMaxConnections && $requiredMaxConnections < 1) {
+            throw new \InvalidArgumentException('Required broker max connections must be a positive integer.');
         }
 
         $this->shuttingDown = false;
@@ -85,6 +102,9 @@ final class SessionSqliteQueueBrokerSupervisor
         $this->stdoutCarry = '';
         $this->stderrTail = '';
         $this->paths = $paths;
+        $this->advertisedMaxPayload = null;
+        $this->advertisedMaxConnections = null;
+        $this->requiredMaxConnectionsForReady = $requiredMaxConnections ?? $this->maxConnections;
         $this->closeOwnerInput();
 
         $this->preparePrivatePaths($paths);
@@ -103,6 +123,13 @@ final class SessionSqliteQueueBrokerSupervisor
         }
         if (null !== $this->synchronous) {
             $launchCommand[] = '--synchronous='.$this->synchronous->value;
+        }
+        if (null !== $this->maxPayload) {
+            $launchCommand[] = '--max-payload='.$this->maxPayload;
+        }
+        $effectiveMaxConnections = $this->requiredMaxConnectionsForReady;
+        if (null !== $effectiveMaxConnections) {
+            $launchCommand[] = '--max-connections='.$effectiveMaxConnections;
         }
 
         // PHP's default variables_order=GPCS leaves $_ENV empty. getenv() is the
@@ -151,6 +178,8 @@ final class SessionSqliteQueueBrokerSupervisor
             'endpoint' => $paths->endpointPath,
             'synchronous_override' => $this->synchronous?->value,
             'redeliver_timeout_override_seconds' => $this->redeliverTimeoutSeconds,
+            'max_payload' => $this->advertisedMaxPayload,
+            'max_connections' => $this->advertisedMaxConnections,
         ]);
     }
 
@@ -162,6 +191,16 @@ final class SessionSqliteQueueBrokerSupervisor
     public function isReady(): bool
     {
         return $this->ready && null !== $this->process && $this->process->isRunning();
+    }
+
+    public function advertisedMaxPayload(): ?int
+    {
+        return $this->advertisedMaxPayload;
+    }
+
+    public function advertisedMaxConnections(): ?int
+    {
+        return $this->advertisedMaxConnections;
     }
 
     /**
@@ -302,6 +341,10 @@ final class SessionSqliteQueueBrokerSupervisor
         } catch (ProcessTimedOutException $exception) {
             $this->forceStopOwnedTree();
             throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" did not emit ready within %.1fs. stderr=%s stdout=%s', $paths->sessionId, $this->readyTimeoutSeconds, $this->stderrTail, $this->stdoutCarry), previous: $exception);
+        } catch (\RuntimeException $exception) {
+            $this->forceStopOwnedTree();
+
+            throw $exception;
         } finally {
             $process->setTimeout(null);
         }
@@ -371,6 +414,23 @@ final class SessionSqliteQueueBrokerSupervisor
             }
 
             if (BrokerEventEnum::Ready->value === $decoded['event']) {
+                $maxPayload = $decoded['max_payload'] ?? null;
+                $maxConnections = $decoded['max_connections'] ?? null;
+                if (!\is_int($maxPayload) || $maxPayload < 1) {
+                    throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" ready event omitted a positive max_payload.', $this->paths?->sessionId ?? 'unknown'));
+                }
+                if (!\is_int($maxConnections) || $maxConnections < 1) {
+                    throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" ready event omitted a positive max_connections.', $this->paths?->sessionId ?? 'unknown'));
+                }
+                if (null !== $this->maxPayload && $maxPayload < $this->maxPayload) {
+                    throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" advertised max_payload=%d below required %d.', $this->paths?->sessionId ?? 'unknown', $maxPayload, $this->maxPayload));
+                }
+                if (null !== $this->requiredMaxConnectionsForReady && $maxConnections < $this->requiredMaxConnectionsForReady) {
+                    throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" advertised max_connections=%d below required %d.', $this->paths?->sessionId ?? 'unknown', $maxConnections, $this->requiredMaxConnectionsForReady));
+                }
+
+                $this->advertisedMaxPayload = $maxPayload;
+                $this->advertisedMaxConnections = $maxConnections;
                 $this->ready = true;
             }
         }

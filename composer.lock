@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "e5136a8e29c401d9e970d467670d6430",
+    "content-hash": "4048ff6266ebe41d6fd5cde967f273fb",
     "packages": [
         {
             "name": "amphp/amp",
@@ -2810,16 +2810,16 @@
         },
         {
             "name": "ineersa/sqlite-queue",
-            "version": "dev-main",
+            "version": "dev-feature/configurable-broker-limits",
             "source": {
                 "type": "git",
                 "url": "https://github.com/ineersa/sqlite-queue.git",
-                "reference": "91bc0cff5ae83d8f368d70ad4ca7f61d960b3525"
+                "reference": "5f5b92117499598cef367edc93237735cb82808d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/ineersa/sqlite-queue/zipball/91bc0cff5ae83d8f368d70ad4ca7f61d960b3525",
-                "reference": "91bc0cff5ae83d8f368d70ad4ca7f61d960b3525",
+                "url": "https://api.github.com/repos/ineersa/sqlite-queue/zipball/5f5b92117499598cef367edc93237735cb82808d",
+                "reference": "5f5b92117499598cef367edc93237735cb82808d",
                 "shasum": ""
             },
             "require": {
@@ -2859,7 +2859,6 @@
                 "ext-posix": "Required to run the foreground broker with private file ownership checks.",
                 "symfony/framework-bundle": "Required for automatic transport and broker command registration in Symfony apps (^8.0)."
             },
-            "default-branch": true,
             "bin": [
                 "bin/sqlite-queue"
             ],
@@ -2886,10 +2885,10 @@
             ],
             "description": "Sqlite based queue broker",
             "support": {
-                "source": "https://github.com/ineersa/sqlite-queue/tree/main",
+                "source": "https://github.com/ineersa/sqlite-queue/tree/feature/configurable-broker-limits",
                 "issues": "https://github.com/ineersa/sqlite-queue/issues"
             },
-            "time": "2026-10-15T20:29:49+00:00"
+            "time": "2026-10-16T18:05:29+00:00"
         },
         {
             "name": "ineersa/symfony-ai-openai-chatgpt-platform",

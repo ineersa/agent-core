@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\RuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerTopology;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueEnv;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
@@ -180,10 +181,7 @@ final class HeadlessController
             $this->consumerSupervisor->launchMultiple('llm', $this->resolveLlmWorkerCount());
             // tool consumers: N parallel workers for concurrent tool execution.
             // N defaults to tools.execution.max_parallelism.
-            $effectiveWorkerCount = $this->toolWorkerCount > 0
-                ? $this->toolWorkerCount
-                : max(1, $this->toolExecutionSettings->maxParallelism());
-            $this->consumerSupervisor->launchMultiple('tool', $effectiveWorkerCount);
+            $this->consumerSupervisor->launchMultiple('tool', $this->resolveToolWorkerCount());
             // One agent consumer: parent subagent tool orchestration/polling is isolated
             // from generic tool workers so child tool calls are not starved.
             $this->consumerSupervisor->launch('agent');
@@ -589,7 +587,20 @@ final class HeadlessController
     private function startSessionBroker(): void
     {
         $paths = SessionSqliteQueueEnv::pathsFromEnvironment($this->sessionId);
-        $this->brokerSupervisor->start($paths);
+        $requiredConnections = SessionSqliteQueueBrokerTopology::requiredConnections(
+            $this->resolveLlmWorkerCount(),
+            $this->resolveToolWorkerCount(),
+        );
+        $this->brokerSupervisor->start($paths, $requiredConnections);
+
+        $advertisedPayload = $this->brokerSupervisor->advertisedMaxPayload();
+        $advertisedConnections = $this->brokerSupervisor->advertisedMaxConnections();
+        if (null === $advertisedPayload || null === $advertisedConnections) {
+            throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" became ready without advertising payload and connection budgets.', $this->sessionId));
+        }
+        if ($advertisedConnections < $requiredConnections) {
+            throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" advertised max_connections=%d below topology requirement %d.', $this->sessionId, $advertisedConnections, $requiredConnections));
+        }
     }
 
     /**
@@ -602,5 +613,17 @@ final class HeadlessController
         return $this->llmWorkerCount > 0
             ? $this->llmWorkerCount
             : $this->runtimeConfig->llmWorkerCount;
+    }
+
+    /**
+     * Resolve the tool consumer pool size once from either the constructor
+     * override or tools.execution.max_parallelism. The same value sizes the
+     * broker connection budget and launches the tool workers.
+     */
+    private function resolveToolWorkerCount(): int
+    {
+        return $this->toolWorkerCount > 0
+            ? $this->toolWorkerCount
+            : max(1, $this->toolExecutionSettings->maxParallelism());
     }
 }

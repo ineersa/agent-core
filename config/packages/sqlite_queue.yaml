@@ -1,8 +1,21 @@
 # Session-owned sqlite-queue broker defaults.
 #
-# Authoritative broker defaults for sqlite-queue:broker. The controller launches
-# the bundle command without CLI overrides so these values remain the single
-# source of truth. FULL matches Hatfield queue-commit durability expectations.
+# max_payload is the authoritative session payload budget. It matches
+# SessionBootstrapSpoolStore::MAX_BYTES (8 MiB) so prepared ExecuteLlmStep /
+# compaction envelopes that already fit that application transfer budget still
+# fit after native PhpSerializer expansion. Temporary dependency branch:
+# ineersa/sqlite-queue dev-feature/configurable-broker-limits#5f5b921.
+#
+# max_connections stays at the package default for standalone broker boots.
+# HeadlessController sizes the live session broker with --max-connections from
+# SessionSqliteQueueBrokerTopology for the resolved LLM/tool pools and fails
+# closed when the ready event advertises less than that requirement.
+parameters:
+    # Keep the typed integer for DI validation; the bundle reads the same budget.
+    hatfield.sqlite_queue.max_payload: 8388608
+
 sqlite_queue:
     synchronous: full
     redeliver_timeout: 60
+    max_payload: 8388608
+    max_connections: 64

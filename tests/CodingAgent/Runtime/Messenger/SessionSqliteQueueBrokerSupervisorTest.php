@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
@@ -11,7 +13,14 @@ use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\SqliteQueue\Client;
+use Ineersa\SqliteQueue\Exception\TransportException;
+use Ineersa\SqliteQueue\Messenger\BrokerConnection;
+use Ineersa\SqliteQueue\Messenger\Transport;
+use Ineersa\SqliteQueue\Protocol\Limits;
+use Ineersa\SqliteQueue\ValueObject\QueueName;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor
@@ -230,6 +239,97 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         } finally {
             $owner?->close();
             $other?->close();
+            $supervisor->shutdown();
+        }
+    }
+
+    public function testConfiguredPayloadRoundTripsOversizedExecuteLlmStepThroughAmpWorker(): void
+    {
+        $logger = new TestLogger();
+        $config = $this->runtimeConfig();
+        $supervisor = new SessionSqliteQueueBrokerSupervisor(
+            $logger,
+            $config,
+            readyTimeoutSeconds: 15.0,
+            shutdownGraceSeconds: 5.0,
+            maxPayload: 8_388_608,
+        );
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-payload');
+        $serializer = new PhpSerializer();
+        $bodyText = str_repeat('x', 1_200_000);
+        $envelope = new Envelope(new ExecuteLlmStep(
+            'run-payload',
+            1,
+            'step-payload',
+            1,
+            'idem-payload',
+            'tools-ref',
+            [new AgentMessage('user', [['type' => 'text', 'text' => $bodyText]])],
+        ));
+        $encoded = $serializer->encode($envelope);
+        $this->assertIsString($encoded['body']);
+        $headers = \array_key_exists('headers', $encoded) && \is_array($encoded['headers'])
+            ? json_encode($encoded['headers'], \JSON_THROW_ON_ERROR)
+            : '{}';
+        $this->assertGreaterThan(Limits::MAX_PAYLOAD, \strlen($encoded['body']) + \strlen($headers));
+        $this->assertLessThanOrEqual(8_388_608, \strlen($encoded['body']) + \strlen($headers));
+
+        $transport = null;
+        try {
+            $supervisor->start($paths);
+            $this->assertSame(8_388_608, $supervisor->advertisedMaxPayload());
+            $connect = static fn (): Client => Client::connect($paths->endpointPath);
+            $transport = new Transport(
+                new BrokerConnection($connect),
+                new QueueName('llm'),
+                $serializer,
+                new BrokerConnection($connect),
+                $paths->endpointPath,
+            );
+            $transport->send($envelope);
+            $received = iterator_to_array($transport->get());
+            $this->assertCount(1, $received);
+            $message = $received[0]->getMessage();
+            $this->assertInstanceOf(ExecuteLlmStep::class, $message);
+            $this->assertSame($bodyText, $message->messages[0]->content[0]['text'] ?? null);
+            $transport->ack($received[0]);
+        } finally {
+            $transport?->close();
+            $supervisor->shutdown();
+        }
+    }
+
+    public function testConfiguredConnectionBudgetAdmitsTopologyAndRejectsOverflow(): void
+    {
+        $logger = new TestLogger();
+        $config = $this->runtimeConfig();
+        $required = 125;
+        $supervisor = new SessionSqliteQueueBrokerSupervisor(
+            $logger,
+            $config,
+            readyTimeoutSeconds: 15.0,
+            shutdownGraceSeconds: 5.0,
+            maxPayload: 8_388_608,
+        );
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-capacity');
+        /** @var list<Client> $clients */
+        $clients = [];
+        try {
+            $supervisor->start($paths, $required);
+            $this->assertSame($required, $supervisor->advertisedMaxConnections());
+            for ($i = 0; $i < $required; ++$i) {
+                $clients[] = Client::connect($paths->endpointPath);
+            }
+            $this->assertCount($required, $clients);
+            try {
+                Client::connect($paths->endpointPath);
+                $this->fail('Configured connection capacity must reject the next client.');
+            } catch (TransportException) {
+            }
+        } finally {
+            foreach ($clients as $client) {
+                $client->close();
+            }
             $supervisor->shutdown();
         }
     }

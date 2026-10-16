@@ -596,6 +596,12 @@ services:
       # Project-scoped factory only — not the global default LockFactory.
       $sessionOwnerLockFactory: '@hatfield.controller.session_owner.lock_factory'
 
+  # YAML max_payload is authoritative. Live max_connections is sized per session
+  # by HeadlessController from the resolved LLM/tool topology.
+  Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor:
+    arguments:
+      $maxPayload: '%hatfield.sqlite_queue.max_payload%'
+
   Ineersa\CodingAgent\Config\RuntimeConfig:
     factory: ['Ineersa\CodingAgent\Config\RuntimeConfig', 'fromAppConfig']
     arguments:
