@@ -3,8 +3,12 @@
 Exploratory observations for SPEC-07. The controlled packaged resource baseline
 is incomplete. These runs do not establish a memory plateau. Not model-visible.
 
-Sanitized reproducibility artifacts for SPEC-07 live outside the repository under
+Measurement artifacts for SPEC-07 live outside the repository under
 `/home/ineersa/projects/agent-core-tasks/reports/spec07-resource-baseline/`.
+
+Error artifacts omit unreviewed exception text and terminal captures.
+`artifact-sanitization.json` records the original file hashes. Scalar measurements
+are unchanged.
 
 ## Recorded commands and conditions
 
