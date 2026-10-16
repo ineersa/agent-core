@@ -599,8 +599,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         //
         // Session-change and crash restarts use the same controller stop
         // grace (CONTROLLER_STOP_GRACE_SECONDS). It must exceed ConsumerSupervisor's
-        // default 5s shared consumer grace so parent teardown cannot SIGKILL the
-        // controller mid-consumer-shutdown (observed orphan: last of N consumers).
+        // shared consumer+broker deadline so parent teardown cannot SIGKILL the
+        // controller mid-shutdown (observed orphan: last of N consumers).
         $sessionChanged = null !== $this->sessionId
             && null !== $this->processSessionId
             && $this->sessionId !== $this->processSessionId;
@@ -1195,7 +1195,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      * Stop the controller subprocess under CONTROLLER_STOP_GRACE_SECONDS.
      *
      * One grace for all stop paths (session switch, crash recovery, close):
-     * parent must outlive ConsumerSupervisor's shared 5s consumer shutdown.
+     * parent must outlive the controller's shared 5s consumer+broker shutdown
+     * deadline (not sequential 5s+5s).
      */
     private function stopProcess(): void
     {

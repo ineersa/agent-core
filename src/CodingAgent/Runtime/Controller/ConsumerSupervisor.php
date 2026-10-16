@@ -279,17 +279,29 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
      */
     public function shutdown(): void
     {
+        $this->shutdownUntil(microtime(true) + $this->shutdownGraceSeconds);
+    }
+
+    /**
+     * Stop tracked consumers against an absolute shared deadline.
+     *
+     * Controllers that also stop the session broker must share one deadline so
+     * sequential consumer+broker grace cannot exceed the parent stop budget.
+     */
+    public function shutdownUntil(float $deadline): void
+    {
         $this->shuttingDown = true;
 
         if ([] === $this->consumers) {
             return;
         }
 
+        $remaining = max(0.0, $deadline - microtime(true));
         $this->logger->info('Shutting down messenger consumers (controller stopping)', [
             'component' => 'ConsumerSupervisor',
             'event_type' => 'consumer.shutdown_begin',
             'count' => \count($this->consumers),
-            'grace_seconds' => $this->shutdownGraceSeconds,
+            'grace_seconds' => $remaining,
         ]);
 
         // Phase 1: signal every running tracked child before any wait.
@@ -313,7 +325,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         }
 
         // Phase 2: one shared grace deadline for the whole tracked set.
-        $deadline = microtime(true) + $this->shutdownGraceSeconds;
         while (microtime(true) < $deadline) {
             $anyRunning = false;
             foreach ($this->consumers as $process) {

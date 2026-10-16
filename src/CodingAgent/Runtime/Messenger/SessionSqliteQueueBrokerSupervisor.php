@@ -10,18 +10,23 @@ use Ineersa\SqliteQueue\Sqlite\SqliteSynchronousMode;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
-use Symfony\Component\Process\ExecutableFinder;
+use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
 /**
  * Starts and stops the session-owned sqlite-queue broker for one controller.
  *
  * The broker owns an async SQLite driver child that does not publish its PID.
- * On Linux, launch uses OS `setsid` through Symfony Process so the broker and
- * that driver share one process group distinct from the controller. Shutdown
- * TERMs the broker first so it can drain, then escalates the owned group only
- * after the grace budget. Symfony's `create_process_group` option is Windows-
- * only and must not be treated as Linux isolation.
+ * The broker process itself calls posix_setsid() before Amp workers start, so
+ * isolation does not require an external `setsid` binary. The supervisor keeps
+ * a Symfony InputStream open on the broker stdin; controller hard death closes
+ * that pipe and the broker self-TERMs so durable DB lifetime locks release.
+ * Shutdown TERMs the broker first so it can drain, then escalates the owned
+ * group only after the remaining shared grace budget. Callers that also stop
+ * consumers must pass one shared deadline via shutdownUntil() so sequential
+ * consumer+broker grace cannot exceed the parent stop budget. Symfony's
+ * `create_process_group` option is Windows-only and must not be treated as
+ * Linux isolation.
  *
  * Endpoint cleanup is ownership-gated: only sockets created by a successful
  * start of this supervisor may be removed. Refused pre-existing endpoints are
@@ -40,6 +45,7 @@ final class SessionSqliteQueueBrokerSupervisor
     private ?Process $process = null;
     private ?int $processGroupId = null;
     private ?SessionSqliteQueuePaths $paths = null;
+    private ?InputStream $ownerInput = null;
     private string $stdoutCarry = '';
     private string $stderrTail = '';
     private bool $ready = false;
@@ -79,11 +85,12 @@ final class SessionSqliteQueueBrokerSupervisor
         $this->stdoutCarry = '';
         $this->stderrTail = '';
         $this->paths = $paths;
+        $this->closeOwnerInput();
 
         $this->preparePrivatePaths($paths);
         $this->refuseExistingEndpoint($paths->endpointPath);
 
-        $command = [
+        $launchCommand = [
             ...$this->runtimeConfig->executableCommand(),
             'sqlite-queue:broker',
             '--database='.$paths->databasePath,
@@ -92,34 +99,37 @@ final class SessionSqliteQueueBrokerSupervisor
             '--no-interaction',
         ];
         if (null !== $this->redeliverTimeoutSeconds) {
-            $command[] = '--redeliver-timeout='.$this->redeliverTimeoutSeconds;
+            $launchCommand[] = '--redeliver-timeout='.$this->redeliverTimeoutSeconds;
         }
         if (null !== $this->synchronous) {
-            $command[] = '--synchronous='.$this->synchronous->value;
+            $launchCommand[] = '--synchronous='.$this->synchronous->value;
         }
 
-        $launchCommand = $this->wrapWithSetsid($command);
         // PHP's default variables_order=GPCS leaves $_ENV empty. getenv() is the
         // actual process environment the controller inherited (HOME, HATFIELD_*,
         // PATH). Passing $_ENV alone boots the broker without HOME and exits 255
         // before ready inside fused/native images.
         $currentEnv = getenv();
+        $ownerInput = new InputStream();
         $process = new Process(
             $launchCommand,
             cwd: $this->runtimeConfig->runtimeCwd(),
             env: \is_array($currentEnv) ? $currentEnv : $_ENV,
+            input: $ownerInput,
             timeout: null,
         );
 
         try {
             $process->start();
         } catch (\Throwable $exception) {
+            $ownerInput->close();
             throw new \RuntimeException(\sprintf('Failed to launch session sqlite-queue broker for session "%s": %s', $paths->sessionId, $exception->getMessage()), previous: $exception);
         }
 
         // Process creation succeeded: this supervisor owns cleanup for this endpoint.
         $this->ownsEndpointArtifacts = true;
         $this->process = $process;
+        $this->ownerInput = $ownerInput;
         $pid = $process->getPid();
         if (null === $pid || $pid <= 0) {
             $this->forceStopOwnedTree();
@@ -183,30 +193,42 @@ final class SessionSqliteQueueBrokerSupervisor
 
     public function shutdown(): void
     {
+        $this->shutdownUntil(microtime(true) + $this->shutdownGraceSeconds);
+    }
+
+    /**
+     * Stop the owned broker tree against an absolute shared deadline.
+     *
+     * Controllers that also stop consumers must pass the remaining shared
+     * deadline so consumer+broker cleanup cannot exceed the parent budget.
+     */
+    public function shutdownUntil(float $deadline): void
+    {
         if ($this->shuttingDown) {
             return;
         }
 
         $this->shuttingDown = true;
         if (null === $this->process) {
+            $this->closeOwnerInput();
             $this->removeOwnedEndpointArtifacts();
 
             return;
         }
 
         $sessionId = $this->paths?->sessionId;
+        $remaining = max(0.0, $deadline - microtime(true));
         $this->logger->info('Shutting down session sqlite-queue broker', [
             'component' => 'SessionSqliteQueueBrokerSupervisor',
             'event_type' => 'sqlite_queue.broker.shutdown_begin',
             'session_id' => $sessionId,
             'pid' => $this->process->getPid(),
             'pgid' => $this->processGroupId,
-            'grace_seconds' => $this->shutdownGraceSeconds,
+            'grace_seconds' => $remaining,
         ]);
 
         // TERM the broker process first so it can drain and close its driver.
         $this->signalBroker(\SIGTERM);
-        $deadline = microtime(true) + $this->shutdownGraceSeconds;
         while (microtime(true) < $deadline) {
             $this->drainStreams();
             if (!$this->process->isRunning() && !$this->ownedTreeAlive()) {
@@ -230,6 +252,7 @@ final class SessionSqliteQueueBrokerSupervisor
         $this->process = null;
         $this->processGroupId = null;
         $this->ready = false;
+        $this->closeOwnerInput();
         $this->removeOwnedEndpointArtifacts();
 
         $this->logger->info('Session sqlite-queue broker shutdown complete', [
@@ -248,25 +271,6 @@ final class SessionSqliteQueueBrokerSupervisor
         $this->filesystem->mkdir($endpointDir, 0o700);
         @chmod($databaseDir, 0o700);
         @chmod($endpointDir, 0o700);
-    }
-
-    /**
-     * @param list<string> $command
-     *
-     * @return list<string>
-     */
-    private function wrapWithSetsid(array $command): array
-    {
-        if ('\\' === \DIRECTORY_SEPARATOR) {
-            return $command;
-        }
-
-        $setsid = (new ExecutableFinder())->find('setsid');
-        if (null === $setsid) {
-            throw new \RuntimeException('Session sqlite-queue broker requires the setsid binary to isolate the Amp SQLite driver process group on Linux.');
-        }
-
-        return [$setsid, ...$command];
     }
 
     private function waitForReady(SessionSqliteQueuePaths $paths): void
@@ -435,6 +439,7 @@ final class SessionSqliteQueueBrokerSupervisor
         $this->process = null;
         $this->processGroupId = null;
         $this->ready = false;
+        $this->closeOwnerInput();
     }
 
     private function ownedTreeAlive(): bool
@@ -462,12 +467,14 @@ final class SessionSqliteQueueBrokerSupervisor
     }
 
     /**
-     * setsid(1) execs into the broker after Process::start() returns. Sample PGID
-     * until the broker leaves the controller group (or the process dies).
+     * The broker process calls posix_setsid() after Process::start() returns.
+     * Sample PGID until the broker leaves the controller group (or the process dies).
      */
     private function awaitOwnedProcessGroupIsolation(string $sessionId, int $pid): void
     {
-        $deadline = microtime(true) + min(1.0, $this->readyTimeoutSeconds);
+        // Isolation happens after Symfony boots ConsoleEvents::COMMAND inside the
+        // broker process. Keep this wait inside the same readiness budget.
+        $deadline = microtime(true) + $this->readyTimeoutSeconds;
         $lastPgid = 0;
         do {
             if (null === $this->process || !$this->process->isRunning()) {
@@ -533,5 +540,17 @@ final class SessionSqliteQueueBrokerSupervisor
         if (file_exists($endpoint) || is_link($endpoint)) {
             @unlink($endpoint);
         }
+    }
+
+    private function closeOwnerInput(): void
+    {
+        if (null === $this->ownerInput) {
+            return;
+        }
+
+        if (!$this->ownerInput->isClosed()) {
+            $this->ownerInput->close();
+        }
+        $this->ownerInput = null;
     }
 }

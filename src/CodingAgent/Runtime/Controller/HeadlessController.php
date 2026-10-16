@@ -208,8 +208,9 @@ final class HeadlessController
             // an idle consumer is cheap relative to wiring conditional launch.
             $this->consumerSupervisor->launch('extension_agent');
         } catch (\Throwable $exception) {
-            $this->consumerSupervisor->shutdown();
-            $this->brokerSupervisor->shutdown();
+            $deadline = microtime(true) + 5.0;
+            $this->consumerSupervisor->shutdownUntil($deadline);
+            $this->brokerSupervisor->shutdownUntil($deadline);
             try {
                 $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
             } catch (\Throwable $lifecycleException) {
@@ -412,12 +413,12 @@ final class HeadlessController
     // ── Shutdown ─────────────────────────────────────────────────────────
 
     /**
-     * Reap orphaned messenger:consume processes on startup.
+     * Reap orphaned messenger:consume and sqlite-queue:broker processes on startup.
      *
      * When a previous TUI process was SIGKILL'd, the controller's onSignal
-     * handler never fires, leaving messenger:consume children adopted by init
-     * (ppid=1). These orphans hold the SQLite DB lock and prevent new
-     * controllers from booting.
+     * handler never fires, leaving children adopted by init (ppid=1). Broker
+     * orphans additionally retain exclusive durable queue lifetime locks and
+     * must be cleared before a restart can become ready.
      *
      * Only kills processes whose:
      *  - parent PID is 1 (truly orphaned, not owned by another controller)
@@ -428,58 +429,59 @@ final class HeadlessController
      */
     private function killOrphanedConsumers(): void
     {
-        // Find all messenger:consume PIDs.
-        $pgrepOutput = [];
-        $pgrepStatus = 0;
-        exec('pgrep -f messenger:consume 2>/dev/null', $pgrepOutput, $pgrepStatus);
-        if (0 !== $pgrepStatus || [] === $pgrepOutput) {
-            return;
-        }
-
         $killedPids = [];
-
-        foreach ($pgrepOutput as $line) {
-            $pid = (int) trim($line);
-            if ($pid <= 0) {
+        foreach (['messenger:consume', 'sqlite-queue:broker'] as $pattern) {
+            $pgrepOutput = [];
+            $pgrepStatus = 0;
+            exec('pgrep -f '.escapeshellarg($pattern).' 2>/dev/null', $pgrepOutput, $pgrepStatus);
+            if (0 !== $pgrepStatus || [] === $pgrepOutput) {
                 continue;
             }
 
-            $stat = @file_get_contents("/proc/{$pid}/stat");
-            if (false === $stat) {
-                continue;
+            foreach ($pgrepOutput as $line) {
+                $pid = (int) trim($line);
+                if ($pid <= 0 || isset($killedPids[$pid])) {
+                    continue;
+                }
+
+                $stat = @file_get_contents("/proc/{$pid}/stat");
+                if (false === $stat) {
+                    continue;
+                }
+
+                // ppid is the 4th space-separated field in /proc/pid/stat.
+                $fields = explode(' ', $stat);
+                $ppid = (int) ($fields[3] ?? 0);
+                // Check parent PID: only ppid=1 means orphaned.
+                if (1 !== $ppid) {
+                    // Parent still alive — belongs to another controller.
+                    continue;
+                }
+
+                // Verify this orphaned process belongs to our session by checking
+                // /proc/pid/environ for HATFIELD_SESSION_ID. \0-separated env entries.
+                $pidEnv = @file_get_contents("/proc/{$pid}/environ");
+                if (false === $pidEnv) {
+                    continue;
+                }
+
+                $sessionMarker = "HATFIELD_SESSION_ID={$this->sessionId}";
+                if (!str_contains($pidEnv, $sessionMarker)) {
+                    // Belongs to a different session — leave it alone.
+                    continue;
+                }
+
+                $this->logger->info('Reaping orphaned session process', [
+                    'pid' => $pid,
+                    'ppid' => $ppid,
+                    'pattern' => $pattern,
+                    'session_id' => $this->sessionId,
+                ]);
+
+                // Send SIGTERM, wait briefly, escalate to SIGKILL if needed.
+                @posix_kill($pid, \SIGTERM);
+                $killedPids[$pid] = $pid;
             }
-
-            // ppid is the 4th space-separated field in /proc/pid/stat.
-            $fields = explode(' ', $stat);
-            $ppid = (int) ($fields[3] ?? 0);
-            // Check parent PID: only ppid=1 means orphaned.
-            if (1 !== $ppid) {
-                // Parent still alive — belongs to another controller.
-                continue;
-            }
-
-            // Verify this orphaned consumer belongs to our session by checking
-            // /proc/pid/environ for HATFIELD_SESSION_ID. \0-separated env entries.
-            $pidEnv = @file_get_contents("/proc/{$pid}/environ");
-            if (false === $pidEnv) {
-                continue;
-            }
-
-            $sessionMarker = "HATFIELD_SESSION_ID={$this->sessionId}";
-            if (!str_contains($pidEnv, $sessionMarker)) {
-                // Belongs to a different session — leave it alone.
-                continue;
-            }
-
-            $this->logger->info('Reaping orphaned consumer', [
-                'pid' => $pid,
-                'ppid' => $ppid,
-                'session_id' => $this->sessionId,
-            ]);
-
-            // Send SIGTERM, wait briefly, escalate to SIGKILL if needed.
-            @posix_kill($pid, \SIGTERM);
-            $killedPids[] = $pid;
         }
 
         if ([] !== $killedPids) {
@@ -490,7 +492,7 @@ final class HeadlessController
                 // Check if still running.
                 if (false !== @file_get_contents("/proc/{$pid}/stat")) {
                     @posix_kill($pid, \SIGKILL);
-                    $this->logger->warning('Orphaned consumer did not stop gracefully, sent SIGKILL', [
+                    $this->logger->warning('Orphaned session process did not stop gracefully, sent SIGKILL', [
                         'pid' => $pid,
                     ]);
                 }
@@ -509,8 +511,12 @@ final class HeadlessController
 
         $this->logger->info('Controller shutting down gracefully');
 
-        $this->consumerSupervisor->shutdown();
-        $this->brokerSupervisor->shutdown();
+        // Parent JsonlProcessAgentSessionClient stop budget is 7s. Share one
+        // deadline across consumers and broker so sequential 5s+5s grace cannot
+        // outlive that parent SIGKILL.
+        $deadline = microtime(true) + 5.0;
+        $this->consumerSupervisor->shutdownUntil($deadline);
+        $this->brokerSupervisor->shutdownUntil($deadline);
 
         try {
             $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));

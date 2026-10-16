@@ -56,6 +56,36 @@ final class ConsumerSupervisorTest extends TestCase
         $this->assertSame([], $this->consumerKeysRunning($supervisor), 'shutdown must clear tracked consumers');
     }
 
+    public function testShutdownUntilEscalatesImmediatelyWhenSharedDeadlineAlreadyPassed(): void
+    {
+        $this->logger = new TestLogger();
+        $locator = $this->createStub(AppExecutableLocator::class);
+        $config = new RuntimeProcessConfig($locator, __DIR__);
+        $supervisor = new ConsumerSupervisor($this->logger, $config, shutdownGraceSeconds: 5);
+        $calls = new ShutdownProcessCallLog();
+        $hang = new RecordingShutdownProcess('hang', $calls, exitsOnTerm: false);
+
+        $ref = new \ReflectionClass($supervisor);
+        $consumers = $ref->getProperty('consumers');
+        $consumers->setValue($supervisor, [
+            'term_hang#0' => $hang,
+        ]);
+
+        $started = microtime(true);
+        $supervisor->shutdownUntil($started - 1.0);
+        $elapsed = microtime(true) - $started;
+
+        $this->assertSame([
+            'running:hang',
+            'signal:hang:'.\SIGTERM,
+            'running:hang',
+            'stop:hang:0',
+        ], $calls->entries);
+        $this->assertFalse($hang->isMarkedRunning());
+        $this->assertLessThan(1.0, $elapsed, 'expired shared deadline must escalate without waiting configured grace');
+        $this->assertSame([], $this->consumerKeysRunning($supervisor));
+    }
+
     public function testStderrTailByteBudgetDoesNotStartMidCodePoint(): void
     {
         $box = "\u{2500}";

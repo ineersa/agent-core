@@ -55,7 +55,8 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $this->assertNotNull($pid);
             $pgid = posix_getpgid($pid);
             $this->assertNotFalse($pgid);
-            $this->assertNotSame(posix_getpgid(getmypid()), $pgid, 'setsid must isolate broker PGID from the controller');
+            $this->assertNotSame(posix_getpgid(getmypid()), $pgid, 'broker posix_setsid must isolate PGID from the controller');
+            $this->assertFalse($this->processCommandLineContains($pid, 'setsid'), 'launch must not require an external setsid binary');
             $driverPids = $this->descendantPids($pid);
             $this->assertNotSame([], $driverPids, 'Amp SQLite driver child must exist after ready');
         } finally {
@@ -144,6 +145,66 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         }
     }
 
+    public function testControllerOwnerEofStopsBrokerHelperAndAllowsDurableDbRestart(): void
+    {
+        $logger = new TestLogger();
+        $config = $this->runtimeConfig();
+        $first = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0, shutdownGraceSeconds: 5.0);
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-owner-eof');
+
+        $first->start($paths);
+        $process = $this->brokerProcess($first);
+        $pid = $process->getPid();
+        $this->assertNotNull($pid);
+        $driverPids = $this->descendantPids($pid);
+        $this->assertNotSame([], $driverPids, 'Amp SQLite driver child must exist after ready');
+
+        $ownerInput = (new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'ownerInput'))->getValue($first);
+        $this->assertInstanceOf(\Symfony\Component\Process\InputStream::class, $ownerInput);
+        // Hard controller death closes the owner write end without graceful shutdown.
+        $ownerInput->close();
+
+        $deadline = microtime(true) + 5.0;
+        while (microtime(true) < $deadline && $process->isRunning()) {
+            usleep(20_000);
+        }
+        $this->assertFalse($process->isRunning(), 'broker must exit when controller owner stdin closes');
+        foreach ($driverPids as $driverPid) {
+            $this->assertFalse($this->pidAlive($driverPid), 'owned Amp helper must exit with controller hard death');
+        }
+
+        $restart = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0, shutdownGraceSeconds: 5.0);
+        try {
+            $restartPaths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-owner-eof');
+            $this->assertSame($paths->databasePath, $restartPaths->databasePath);
+            $restart->start($restartPaths);
+            $this->assertTrue($restart->isReady(), 'durable queue DB must restart after owner EOF released lifetime locks');
+        } finally {
+            $restart->shutdown();
+            $first->shutdown();
+        }
+    }
+
+    public function testShutdownUntilHonorsSharedDeadlineEscalation(): void
+    {
+        $logger = new TestLogger();
+        $config = $this->runtimeConfig();
+        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0, shutdownGraceSeconds: 5.0);
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-shared-deadline');
+
+        $supervisor->start($paths);
+        $process = $this->brokerProcess($supervisor);
+        $this->assertTrue($process->isRunning());
+
+        $started = microtime(true);
+        $supervisor->shutdownUntil($started);
+        $elapsed = microtime(true) - $started;
+
+        $this->assertFalse($process->isRunning());
+        $this->assertLessThan(1.0, $elapsed, 'shared deadline already expired must escalate without waiting full grace');
+        $this->assertFalse($supervisor->isReady());
+    }
+
     public function testClientSendRenewAndAckWithoutSecondClaim(): void
     {
         $logger = new TestLogger();
@@ -216,5 +277,15 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         }
 
         return @posix_kill($pid, 0);
+    }
+
+    private function processCommandLineContains(int $pid, string $needle): bool
+    {
+        $cmdline = @file_get_contents('/proc/'.$pid.'/cmdline');
+        if (false === $cmdline) {
+            return false;
+        }
+
+        return str_contains(str_replace("\0", ' ', $cmdline), $needle);
     }
 }
