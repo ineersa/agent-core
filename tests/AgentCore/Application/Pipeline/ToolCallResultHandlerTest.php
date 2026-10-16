@@ -1536,6 +1536,428 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame([], $replayed->pendingToolCalls);
     }
 
+    public function testDetachedTerminalAcceptanceFoldsIntoCancellingWithPendingAttachedSiblings(): void
+    {
+        $store = new TestToolBatchStore();
+        $deferred = new InMemoryDeferredToolCompletionRepository();
+        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $detachedCall = new ExecuteToolCall(
+            runId: 'run-fold',
+            turnNo: 1,
+            stepId: 'tools-old',
+            attempt: 1,
+            idempotencyKey: 'call-fold-detached-key',
+            toolCallId: 'call-fold-detached',
+            toolName: 'bash',
+            args: ['command' => 'true'],
+            orderIndex: 0,
+            mode: 'sequential',
+        );
+        $attachedCall = new ExecuteToolCall(
+            runId: 'run-fold',
+            turnNo: 2,
+            stepId: 'tools-new',
+            attempt: 1,
+            idempotencyKey: 'call-fold-attached-key',
+            toolCallId: 'call-fold-attached',
+            toolName: 'read',
+            args: ['path' => 'a.txt'],
+            orderIndex: 0,
+            mode: 'parallel',
+        );
+        TestToolBatchRegistration::register($collector, $store, 'run-fold', 1, 'tools-old', [$detachedCall]);
+        TestToolBatchRegistration::register($collector, $store, 'run-fold', 2, 'tools-new', [$attachedCall]);
+        $correlation = $this->registerBackgroundAcknowledged(
+            $deferred,
+            'run-fold',
+            'tools-old',
+            'call-fold-detached',
+            'call-fold-detached-key',
+            'inv-fold-detached',
+        );
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $message = ToolCallResultBuilder::success('run-fold')
+            ->withTurnNo(1)
+            ->withStepId('tools-old')
+            ->withIdempotencyKey('call-fold-detached-key')
+            ->withToolCallId('call-fold-detached')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'detached done']]])
+            ->build();
+        $state = RunStateBuilder::running('run-fold')
+            ->withTurnNo(2)
+            ->withActiveStepId('tools-new')
+            ->withLastSeq(8)
+            ->withPendingToolCalls(['call-fold-attached' => false])
+            ->withStatus(RunStatus::Cancelling)
+            ->withMessages([new AgentMessage(role: 'assistant', content: [], metadata: ['tool_calls' => [
+                ['id' => 'call-fold-attached', 'name' => 'read', 'arguments' => ['path' => 'a.txt'], 'order_index' => 0],
+            ]])])
+            ->build();
+
+        $result = $handler->handle($message, $state);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState?->status);
+        $types = array_map(static fn ($event): string => $event->type, $result->events);
+        $this->assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $types[0]);
+        $this->assertTrue($result->events[0]->payload['accepted_completion']['detached'] ?? false);
+        $this->assertContains(RunEventTypeEnum::ToolBatchCommitted->value, $types);
+        $this->assertSame(RunEventTypeEnum::AgentEnd->value, $types[array_key_last($types)]);
+        $lifecycleActions = array_values(array_filter(
+            $result->postCommitActions,
+            static fn ($action): bool => $action instanceof RecordToolInvocationLifecycleDTO,
+        ));
+        $this->assertCount(1, $lifecycleActions);
+        $deferred->applyLifecycleProjection($lifecycleActions[0]);
+        $this->assertSame('completed', $deferred->status($correlation->deferredId));
+        $this->assertSame('Tool execution cancelled by user.', $result->nextState?->messages[1]->content[0]['text'] ?? null);
+    }
+
+    public function testDetachedTerminalAcceptanceOnAlreadyTerminalRunPreservesStatus(): void
+    {
+        $store = new TestToolBatchStore();
+        $deferred = new InMemoryDeferredToolCompletionRepository();
+        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $call = new ExecuteToolCall(
+            runId: 'run-terminal-detach',
+            turnNo: 1,
+            stepId: 'tools-old',
+            attempt: 1,
+            idempotencyKey: 'call-terminal-detach-key',
+            toolCallId: 'call-terminal-detach',
+            toolName: 'bash',
+            args: ['command' => 'true'],
+            orderIndex: 0,
+            mode: 'sequential',
+        );
+        TestToolBatchRegistration::register($collector, $store, 'run-terminal-detach', 1, 'tools-old', [$call]);
+        $correlation = $this->registerBackgroundAcknowledged(
+            $deferred,
+            'run-terminal-detach',
+            'tools-old',
+            'call-terminal-detach',
+            'call-terminal-detach-key',
+            'inv-terminal-detach',
+        );
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $message = ToolCallResultBuilder::success('run-terminal-detach')
+            ->withTurnNo(1)
+            ->withStepId('tools-old')
+            ->withIdempotencyKey('call-terminal-detach-key')
+            ->withToolCallId('call-terminal-detach')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'late']]])
+            ->build();
+        $state = RunStateBuilder::running('run-terminal-detach')
+            ->withTurnNo(3)
+            ->withActiveStepId(null)
+            ->withLastSeq(12)
+            ->withPendingToolCalls([])
+            ->withStatus(RunStatus::Cancelled)
+            ->build();
+
+        $result = $handler->handle($message, $state);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState?->status);
+        $this->assertCount(1, $result->events);
+        $this->assertTrue($result->events[0]->payload['accepted_completion']['detached'] ?? false);
+        $this->assertFalse($result->events[0]->payload['accepted_completion']['evidence_only'] ?? true);
+        $deferred->applyLifecycleProjection($result->postCommitActions[0]);
+        $this->assertSame('completed', $deferred->status($correlation->deferredId));
+    }
+
+    public function testAttachedDeferredEvidenceOnlyAcceptanceAfterCancelledDoesNotReviveOrDuplicateModelResult(): void
+    {
+        $store = new TestToolBatchStore();
+        $deferred = new InMemoryDeferredToolCompletionRepository();
+        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $call = new ExecuteToolCall(
+            runId: 'run-evidence',
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'call-evidence-key',
+            toolCallId: 'call-evidence',
+            toolName: 'subagent',
+            args: [],
+            orderIndex: 0,
+            mode: 'sequential',
+        );
+        TestToolBatchRegistration::register($collector, $store, 'run-evidence', 1, 'tools', [$call]);
+        $base = new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440901',
+            runId: 'run-evidence',
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'call-evidence-key',
+            toolCallId: 'call-evidence',
+            toolName: 'subagent',
+            arguments: [],
+            orderIndex: 0,
+            mode: 'sequential',
+            invocationId: 'inv-evidence',
+            controllerRunId: 'run-evidence',
+            executionOwnerKind: 'subagent',
+            executionOwnerReference: new ToolInvocationOwnerReference('subagent', 'record-evidence'),
+            originalExecutionMode: 'sequential',
+        );
+        $correlation = $deferred->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: $base->deferredId,
+            runId: $base->runId,
+            turnNo: $base->turnNo,
+            stepId: $base->stepId,
+            attempt: $base->attempt,
+            idempotencyKey: $base->idempotencyKey,
+            toolCallId: $base->toolCallId,
+            toolName: $base->toolName,
+            arguments: $base->arguments,
+            orderIndex: $base->orderIndex,
+            mode: $base->mode,
+            invocationId: $base->invocationId,
+            controllerRunId: $base->controllerRunId,
+            executionOwnerKind: $base->executionOwnerKind,
+            executionOwnerReference: $base->executionOwnerReference,
+            originalExecutionMode: $base->originalExecutionMode,
+            envelopeFingerprint: ToolInvocationEnvelopeFingerprint::fromCorrelation($base),
+        ));
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $message = ToolCallResultBuilder::success('run-evidence')
+            ->withTurnNo(1)
+            ->withStepId('tools')
+            ->withIdempotencyKey('call-evidence-key')
+            ->withToolCallId('call-evidence')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'subagent', 'content' => [['type' => 'text', 'text' => 'late child']]])
+            ->build();
+        $cancelled = RunStateBuilder::running('run-evidence')
+            ->withTurnNo(2)
+            ->withActiveStepId('tools-later')
+            ->withLastSeq(9)
+            ->withPendingToolCalls([])
+            ->withStatus(RunStatus::Cancelled)
+            ->withMessages([
+                new AgentMessage(role: 'assistant', content: [], metadata: ['tool_calls' => [
+                    ['id' => 'call-evidence', 'name' => 'subagent', 'arguments' => [], 'order_index' => 0],
+                ]]),
+                new AgentMessage(
+                    role: 'tool',
+                    content: [['type' => 'text', 'text' => 'Tool execution cancelled by user.']],
+                    toolCallId: 'call-evidence',
+                    metadata: [
+                        'tool_call_id' => 'call-evidence',
+                        'order_index' => 0,
+                        'is_error' => true,
+                    ],
+                ),
+            ])
+            ->build();
+
+        $result = $handler->handle($message, $cancelled);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState?->status);
+        $this->assertCount(1, $result->events);
+        $this->assertTrue($result->events[0]->payload['accepted_completion']['evidence_only'] ?? false);
+        $this->assertFalse($result->events[0]->payload['accepted_completion']['detached'] ?? true);
+        $this->assertCount(2, $result->nextState?->messages ?? []);
+        $deferred->applyLifecycleProjection($result->postCommitActions[0]);
+        $this->assertSame('completed', $deferred->status($correlation->deferredId));
+
+        $duplicate = $handler->handle($message, $result->nextState);
+        $this->assertNull($duplicate->nextState);
+        $this->assertSame([], $duplicate->events);
+
+        $conflict = ToolCallResultBuilder::success('run-evidence')
+            ->withTurnNo(1)
+            ->withStepId('tools')
+            ->withIdempotencyKey('call-evidence-key')
+            ->withToolCallId('call-evidence')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'subagent', 'content' => [['type' => 'text', 'text' => 'other']]])
+            ->build();
+        $this->expectException(\RuntimeException::class);
+        $handler->handle($conflict, $result->nextState);
+    }
+
+    public function testAttachedDeferredEvidenceOnlyAcceptanceDuringNonPreserveIncomingCancelling(): void
+    {
+        $store = new TestToolBatchStore();
+        $deferred = new InMemoryDeferredToolCompletionRepository();
+        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $call = new ExecuteToolCall(
+            runId: 'run-evidence-cancel',
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'call-evidence-cancel-key',
+            toolCallId: 'call-evidence-cancel',
+            toolName: 'subagent',
+            args: [],
+            orderIndex: 0,
+            mode: 'sequential',
+        );
+        $sibling = new ExecuteToolCall(
+            runId: 'run-evidence-cancel',
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'call-sibling-key',
+            toolCallId: 'call-sibling',
+            toolName: 'read',
+            args: ['path' => 'b.txt'],
+            orderIndex: 1,
+            mode: 'parallel',
+        );
+        TestToolBatchRegistration::register($collector, $store, 'run-evidence-cancel', 1, 'tools', [$call, $sibling]);
+        $base = new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440902',
+            runId: 'run-evidence-cancel',
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'call-evidence-cancel-key',
+            toolCallId: 'call-evidence-cancel',
+            toolName: 'subagent',
+            arguments: [],
+            orderIndex: 0,
+            mode: 'sequential',
+            invocationId: 'inv-evidence-cancel',
+            controllerRunId: 'run-evidence-cancel',
+            executionOwnerKind: 'subagent',
+            executionOwnerReference: new ToolInvocationOwnerReference('subagent', 'record-evidence-cancel'),
+            originalExecutionMode: 'sequential',
+        );
+        $correlation = $deferred->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: $base->deferredId,
+            runId: $base->runId,
+            turnNo: $base->turnNo,
+            stepId: $base->stepId,
+            attempt: $base->attempt,
+            idempotencyKey: $base->idempotencyKey,
+            toolCallId: $base->toolCallId,
+            toolName: $base->toolName,
+            arguments: $base->arguments,
+            orderIndex: $base->orderIndex,
+            mode: $base->mode,
+            invocationId: $base->invocationId,
+            controllerRunId: $base->controllerRunId,
+            executionOwnerKind: $base->executionOwnerKind,
+            executionOwnerReference: $base->executionOwnerReference,
+            originalExecutionMode: $base->originalExecutionMode,
+            envelopeFingerprint: ToolInvocationEnvelopeFingerprint::fromCorrelation($base),
+        ));
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        // Already-true deferred call: not preserveIncoming.
+        $message = ToolCallResultBuilder::success('run-evidence-cancel')
+            ->withTurnNo(1)
+            ->withStepId('tools')
+            ->withIdempotencyKey('call-evidence-cancel-key')
+            ->withToolCallId('call-evidence-cancel')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'subagent', 'content' => [['type' => 'text', 'text' => 'true result']]])
+            ->build();
+        $state = RunStateBuilder::running('run-evidence-cancel')
+            ->withTurnNo(1)
+            ->withActiveStepId('tools')
+            ->withLastSeq(4)
+            ->withPendingToolCalls(['call-evidence-cancel' => true, 'call-sibling' => false])
+            ->withStatus(RunStatus::Cancelling)
+            ->withMessages([
+                new AgentMessage(role: 'assistant', content: [], metadata: ['tool_calls' => [
+                    ['id' => 'call-evidence-cancel', 'name' => 'subagent', 'arguments' => [], 'order_index' => 0],
+                    ['id' => 'call-sibling', 'name' => 'read', 'arguments' => ['path' => 'b.txt'], 'order_index' => 1],
+                ]]),
+                // Already projected cancel/synthetic for the deferred call; late true result must not add another.
+                new AgentMessage(
+                    role: 'tool',
+                    content: [['type' => 'text', 'text' => 'Tool execution cancelled by user.']],
+                    toolCallId: 'call-evidence-cancel',
+                    metadata: [
+                        'tool_call_id' => 'call-evidence-cancel',
+                        'order_index' => 0,
+                        'is_error' => true,
+                    ],
+                ),
+            ])
+            ->build();
+
+        $result = $handler->handle($message, $state);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState?->status);
+        $this->assertTrue($result->events[0]->payload['accepted_completion']['evidence_only'] ?? false);
+        $lifecycleActions = array_values(array_filter(
+            $result->postCommitActions,
+            static fn ($action): bool => $action instanceof RecordToolInvocationLifecycleDTO,
+        ));
+        $this->assertCount(1, $lifecycleActions);
+        $deferred->applyLifecycleProjection($lifecycleActions[0]);
+        $this->assertSame('completed', $deferred->status($correlation->deferredId));
+        $toolTexts = array_values(array_map(
+            static fn (AgentMessage $message): string => $message->content[0]['text'] ?? '',
+            array_filter($result->nextState?->messages ?? [], static fn (AgentMessage $message): bool => 'tool' === $message->role),
+        ));
+        // Evidence-only receipt is not projected as a second original-call model result.
+        // Existing projected cancel for the deferred call remains; sibling is synthesized.
+        $this->assertSame(
+            ['Tool execution cancelled by user.', 'Tool execution cancelled by user.'],
+            $toolTexts,
+        );
+
+        $sequenced = [];
+        foreach ($result->events as $i => $event) {
+            $sequenced[] = new RunEvent(
+                $event->runId,
+                $i + 3,
+                $event->turnNo,
+                $event->type,
+                $event->payload,
+            );
+        }
+        $replayed = (new RunStateReducer(
+            AttributeSerializerValidatorTestFactory::denormalizer(),
+            new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+        ))->replay(RunState::queued('run-evidence-cancel'), [
+            new RunEvent('run-evidence-cancel', 1, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
+            new RunEvent('run-evidence-cancel', 2, 1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'assistant_message' => ['role' => 'assistant', 'content' => [], 'tool_calls' => [
+                    ['id' => 'call-evidence-cancel', 'name' => 'subagent', 'arguments' => [], 'order_index' => 0],
+                    ['id' => 'call-sibling', 'name' => 'read', 'arguments' => ['path' => 'b.txt'], 'order_index' => 1],
+                ]],
+            ]),
+            ...$sequenced,
+        ]);
+        $this->assertSame(RunStatus::Cancelled, $replayed->status);
+        $this->assertSame([], $replayed->pendingToolCalls);
+        $replayToolTexts = array_values(array_map(
+            static fn (AgentMessage $message): string => $message->content[0]['text'] ?? '',
+            array_filter($replayed->messages, static fn (AgentMessage $message): bool => 'tool' === $message->role),
+        ));
+        // Cold replay stages only the cancel-synthesis sibling, not the evidence-only receipt.
+        $this->assertSame(['Tool execution cancelled by user.'], $replayToolTexts);
+    }
+
     private function registerBackgroundAcknowledged(
         InMemoryDeferredToolCompletionRepository $deferred,
         string $runId,

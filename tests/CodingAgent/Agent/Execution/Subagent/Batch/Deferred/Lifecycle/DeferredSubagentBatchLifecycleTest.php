@@ -1463,28 +1463,12 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $correlation = $deferred->findByDeferredId($lifecycle);
         $this->assertNotNull($correlation);
-        // CompleteDeferredToolCallHandler deletes the batch after transport send. Re-register
-        // the same call so owner acceptance still exercises prepareCollect + terminal acceptance.
+        // Production delete is gated by finalized=1 and no pending deferred row, so the
+        // original durable batch survives transport send and remains available for acceptance.
+        $survivingBatch = $batchStore->load($correlation->runId, $correlation->turnNo, $correlation->stepId);
+        $this->assertNotNull($survivingBatch);
+        $this->assertArrayHasKey($correlation->toolCallId, $survivingBatch->calls);
         $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore, 4, $deferred);
-        \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::register(
-            $collector,
-            $batchStore,
-            $correlation->runId,
-            $correlation->turnNo,
-            $correlation->stepId,
-            [new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall(
-                $correlation->runId,
-                $correlation->turnNo,
-                $correlation->stepId,
-                $correlation->attempt,
-                $correlation->idempotencyKey,
-                $correlation->toolCallId,
-                $correlation->toolName,
-                $correlation->arguments,
-                $correlation->orderIndex,
-                mode: $correlation->mode ?? 'sequential',
-            )],
-        );
         $handler = new \Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler(
             toolBatchCollector: $collector,
             eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
@@ -1512,6 +1496,17 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertCount(1, $lifecycleActions);
         $deferred->applyLifecycleProjection($lifecycleActions[0]);
         $this->assertSame('completed', $deferred->status($lifecycle));
+        // After verified owner acceptance, cleanup can delete the finalized batch.
+        if (null !== $accepted->postCommitActions) {
+            foreach ($accepted->postCommitActions as $action) {
+                if ($action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO) {
+                    $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $parent, 'actions' => [$action]]);
+                    $batchStore->prepareChanges([$action], $verified)();
+                }
+            }
+        }
+        $batchStore->delete($correlation->runId, $correlation->turnNo, $correlation->stepId);
+        $this->assertNull($batchStore->load($correlation->runId, $correlation->turnNo, $correlation->stepId));
         $worker($original);
         $this->assertSame(2, $notifications, 'Completed original execution redelivery is a no-op.');
         $this->assertCount(0, $workerBus->messages);

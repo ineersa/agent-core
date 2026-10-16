@@ -35,10 +35,15 @@ stale-step rejection and remain admissible during Cancelling or already-terminal
 owner states. Settlement records the accepted receipt without reviving the run,
 replacing the original acknowledgment, or staging the detached result into a
 later foreground batch. Attached deferred completions also settle on owner
-acceptance, including preserve-incoming cancellation. Deferred `status=completed`
-means verified owner acceptance, not successful transport send or caller
-detachment. Mailbox delivery, wake fencing, retained bodies, producers, and
-Ctrl+B remain later checkpoints.
+acceptance, including preserve-incoming cancellation. When the original call can
+no longer be projected (already Cancelled/stale-step, or Cancelling with the call
+absent/already true), attached acceptance is evidence-only: it journals the
+accepted receipt and lifecycle completion without adding a second original-call
+model result or touching an unrelated current batch. Replay and presentation treat
+`accepted_completion.detached=true` and `accepted_completion.evidence_only=true`
+as settlement evidence only. Deferred `status=completed` means verified owner
+acceptance, not successful transport send or caller detachment. Mailbox delivery,
+wake fencing, retained bodies, producers, and Ctrl+B remain later checkpoints.
 
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare
