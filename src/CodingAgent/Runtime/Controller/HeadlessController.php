@@ -56,6 +56,8 @@ use Symfony\Component\Lock\LockInterface;
  */
 final class HeadlessController
 {
+    private const array ORPHAN_CONSUMER_PATTERNS = ['messenger:consume'];
+
     /** 5s consumer supervision interval. */
     private const float SUPERVISE_INTERVAL = 5.0;
 
@@ -411,24 +413,21 @@ final class HeadlessController
     // ── Shutdown ─────────────────────────────────────────────────────────
 
     /**
-     * Reap orphaned messenger:consume and sqlite-queue:broker processes on startup.
+     * Reap orphaned messenger:consume processes on startup.
      *
      * When a previous TUI process was SIGKILL'd, the controller's onSignal
-     * handler never fires, leaving children adopted by init (ppid=1). Broker
-     * orphans additionally retain exclusive durable queue lifetime locks and
-     * must be cleared before a restart can become ready.
+     * handler never fires, leaving consumers adopted by init (ppid=1).
+     * Brokers instead stop on controller-owned stdin EOF. Never include them
+     * in this session-marker scan: session IDs are not unique across projects.
      *
      * Only kills processes whose:
      *  - parent PID is 1 (truly orphaned, not owned by another controller)
      *  - environment contains our session ID (HATFIELD_SESSION_ID match)
-     *
-     * Multi-instance safe: living controllers' consumers have ppid != 1
-     * and different session IDs won't match ours.
      */
     private function killOrphanedConsumers(): void
     {
         $killedPids = [];
-        foreach (['messenger:consume', 'sqlite-queue:broker'] as $pattern) {
+        foreach (self::ORPHAN_CONSUMER_PATTERNS as $pattern) {
             $pgrepOutput = [];
             $pgrepStatus = 0;
             exec('pgrep -f '.escapeshellarg($pattern).' 2>/dev/null', $pgrepOutput, $pgrepStatus);

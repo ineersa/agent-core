@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
+use Ineersa\CodingAgent\Runtime\Controller\HeadlessController;
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\ControllerReplayE2eTestCase;
 use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\Component\Clock\MonotonicClock;
+use Symfony\Component\Process\InputStream;
+use Symfony\Component\Process\Process;
 
 /**
  * Thesis: only one live controller may own a given project CWD + session ID.
@@ -50,6 +55,75 @@ final class HeadlessControllerSessionOwnerLockProcessTest extends ControllerRepl
 
         $this->spawnSecondControllerSameSession();
         $this->assertSecondControllerRejectedWithoutRuntimeReady();
+    }
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function foreignBrokerIdentities(): iterable
+    {
+        yield 'session 1 must not select session 10 in the same project' => ['10', false];
+        yield 'session 1 must not select session 1 in another project' => ['1', true];
+    }
+
+    #[DataProvider('foreignBrokerIdentities')]
+    public function testOrphanConsumerSelectorsExcludeForeignBrokers(string $brokerSessionId, bool $differentProject): void
+    {
+        if ('Linux' !== \PHP_OS_FAMILY) {
+            $this->markTestSkipped('The orphan consumer scanner uses Linux /proc.');
+        }
+
+        $cwd = $differentProject ? TestDirectoryIsolation::createProjectTempDir('foreign-broker') : $this->tempDir;
+        [$php] = AgentTestExecutable::sourceConsoleCommand();
+        $owner = new InputStream();
+        // A broker-shaped fixture proves the actual pgrep selectors exclude it
+        // before any PPID/environment checks, even if it later becomes orphaned.
+        // Close stdin to release this session-tagged fixture; never signal it.
+        $fixture = new Process(
+            [$php, '-r', 'fwrite(STDOUT, "broker-fixture-ready\n"); while (false !== fgets(STDIN)) {}', 'sqlite-queue:broker', '--database='.$cwd.'/.hatfield/sessions/'.$brokerSessionId.'/queue.sqlite'],
+            $cwd,
+            ['HATFIELD_SESSION_ID' => $brokerSessionId],
+            $owner,
+            null,
+        );
+
+        try {
+            $fixture->start();
+            $clock = new MonotonicClock();
+            $deadline = $clock->now()->modify('+5 seconds');
+            $output = '';
+            while ($fixture->isRunning() && $clock->now() < $deadline) {
+                $output .= $fixture->getIncrementalOutput();
+                if (str_contains($output, 'broker-fixture-ready')) {
+                    break;
+                }
+                $clock->sleep(0.01);
+            }
+            $this->assertStringContainsString('broker-fixture-ready', $output);
+            $pid = $fixture->getPid();
+            $this->assertNotNull($pid);
+
+            $visibleBroker = new Process(['pgrep', '-f', 'sqlite-queue:broker'], timeout: 5);
+            $visibleBroker->mustRun();
+            $this->assertContains((string) $pid, explode("\n", trim($visibleBroker->getOutput())), 'Positive control: pgrep can see the foreign broker fixture.');
+
+            $patterns = new \ReflectionClass(HeadlessController::class)->getConstant('ORPHAN_CONSUMER_PATTERNS');
+            $this->assertIsArray($patterns);
+            $this->assertNotEmpty($patterns);
+            foreach ($patterns as $pattern) {
+                $this->assertIsString($pattern);
+                $selection = new Process(['pgrep', '-f', $pattern], timeout: 5);
+                $selection->run();
+                $this->assertContains($selection->getExitCode(), [0, 1]);
+                $this->assertNotContains((string) $pid, explode("\n", trim($selection->getOutput())));
+            }
+        } finally {
+            $owner->close();
+            if ($fixture->isStarted()) {
+                $fixture->wait();
+            }
+            if ($differentProject) {
+                TestDirectoryIsolation::removeDirectory($cwd);
+            }
+        }
     }
 
     /**
