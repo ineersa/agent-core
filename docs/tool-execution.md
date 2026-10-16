@@ -29,6 +29,14 @@ mutation. Acknowledgment preparation compares the deferred envelope with the sto
 batch call and uses only durable stored aliases (or `deferredId`). C3 must route native
 finals for detached invocations before producers are enabled.
 
+C3 owner acceptance records a deterministic `completion_id` and result fingerprint
+through prepared lifecycle projection. Detached results route before ordinary
+stale-step or cancellation terminalization and do not replace the original
+acknowledgment or re-enter the original batch slot. Deferred `status=completed`
+means verified owner acceptance, not successful transport send or caller
+detachment. Mailbox delivery, wake fencing, retained bodies, producers, and
+Ctrl+B remain later checkpoints.
+
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare
 a tool-specific budget. MCP calls receive the run cancellation token and the shorter

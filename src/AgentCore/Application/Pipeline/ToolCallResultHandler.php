@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
+use Ineersa\AgentCore\Application\Handler\PreparedToolTerminalAcceptanceDTO;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -19,6 +20,7 @@ use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationAcceptedCompletionIdentity;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
@@ -59,6 +61,16 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
         if (isset($state->pendingShellToolCalls[$message->toolCallId])) {
             return $this->handleShellResult($message, $state);
+        }
+
+        // Detached true terminals route before ordinary stale-step/duplicate rejection.
+        if (!$message->isHumanInputSuspension()
+            && RunStatus::Cancelling !== $state->status
+            && !$state->status->isTerminal()) {
+            $detached = $this->tryHandleDetachedTerminalAcceptance($message, $state);
+            if (null !== $detached) {
+                return $detached;
+            }
         }
 
         // Completed or superseded tool results are harmless redeliveries. The
@@ -236,9 +248,29 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             return new HandlerResult();
         }
 
+        $eventPayload = $this->toolExecutionEndPayloadCodec->toEventPayload($message);
+        $resultFingerprint = ToolInvocationAcceptedCompletionIdentity::resultFingerprint($eventPayload['tool_result']);
+        $acceptance = $this->toolBatchCollector->prepareTerminalAcceptance($message, $resultFingerprint);
+        if ($acceptance instanceof PreparedToolTerminalAcceptanceDTO) {
+            if (!$acceptance->accepted) {
+                if ('conflicting_completion' === $acceptance->rejectionReason) {
+                    throw new \RuntimeException(\sprintf('Conflicting accepted completion for run "%s" tool call "%s".', $message->runId(), $message->toolCallId));
+                }
+
+                return new HandlerResult();
+            }
+            if ($acceptance->detached) {
+                // Detached results must not re-enter ordinary batch collection.
+                return new HandlerResult();
+            }
+            if ($acceptance->duplicate) {
+                return new HandlerResult();
+            }
+        }
+
         $eventSpecs = [[
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-            'payload' => $this->toolExecutionEndPayloadCodec->toEventPayload($message),
+            'payload' => $this->withAcceptedCompletionReceipt($eventPayload, $acceptance),
         ]];
 
         $pendingToolCalls = $state->pendingToolCalls;
@@ -255,6 +287,9 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             : RunStatus::Running;
 
         $postCommitActions = null !== $outcome->action ? [$outcome->action] : [];
+        if ($acceptance instanceof PreparedToolTerminalAcceptanceDTO && null !== $acceptance->lifecycleAction) {
+            $postCommitActions[] = $acceptance->lifecycleAction;
+        }
 
         if ($outcome->complete) {
             $interruptPayload = null;
@@ -328,6 +363,78 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             postCommitEffects: $effects,
             postCommitActions: $postCommitActions,
         );
+    }
+
+    private function tryHandleDetachedTerminalAcceptance(ToolCallResult $message, RunState $state): ?HandlerResult
+    {
+        $eventPayload = $this->toolExecutionEndPayloadCodec->toEventPayload($message);
+        $resultFingerprint = ToolInvocationAcceptedCompletionIdentity::resultFingerprint($eventPayload['tool_result']);
+        $acceptance = $this->toolBatchCollector->prepareTerminalAcceptance($message, $resultFingerprint);
+        if (!$acceptance instanceof PreparedToolTerminalAcceptanceDTO || !$acceptance->detached) {
+            return null;
+        }
+
+        if (!$acceptance->accepted) {
+            if ('conflicting_completion' === $acceptance->rejectionReason) {
+                throw new \RuntimeException(\sprintf('Conflicting accepted completion for run "%s" tool call "%s".', $message->runId(), $message->toolCallId));
+            }
+
+            return new HandlerResult();
+        }
+
+        if ($acceptance->duplicate) {
+            return new HandlerResult();
+        }
+
+        // C3 records the accepted terminal receipt under the original invocation
+        // identity. Mailbox delivery and automatic wake remain later checkpoints.
+        $eventSpecs = [[
+            'type' => RunEventTypeEnum::ToolExecutionEnd->value,
+            'payload' => $this->withAcceptedCompletionReceipt($eventPayload, $acceptance),
+            'turn_no' => $acceptance->correlation->turnNo,
+        ]];
+        $events = $this->eventFactory->eventsFromSpecs(
+            $message->runId(),
+            $state->turnNo,
+            $state->lastSeq + 1,
+            $eventSpecs,
+        );
+
+        return new HandlerResult(
+            nextState: $state->with([
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+            ]),
+            events: $events,
+            postCommitActions: null !== $acceptance->lifecycleAction ? [$acceptance->lifecycleAction] : [],
+        );
+    }
+
+    /**
+     * @param array{tool_result: array<string, mixed>} $payload
+     *
+     * @return array<string, mixed>
+     */
+    private function withAcceptedCompletionReceipt(
+        array $payload,
+        ?PreparedToolTerminalAcceptanceDTO $acceptance,
+    ): array {
+        if (!$acceptance instanceof PreparedToolTerminalAcceptanceDTO || !$acceptance->accepted) {
+            return $payload;
+        }
+
+        $payload['accepted_completion'] = [
+            'completion_id' => $acceptance->completionId,
+            'result_fingerprint' => $acceptance->resultFingerprint,
+            'origin_run_id' => $acceptance->correlation->runId,
+            'origin_turn_no' => $acceptance->correlation->turnNo,
+            'origin_step_id' => $acceptance->correlation->stepId,
+            'tool_call_id' => $acceptance->correlation->toolCallId,
+            'invocation_id' => $acceptance->correlation->invocationId ?? $acceptance->correlation->deferredId,
+            'detached' => $acceptance->detached,
+        ];
+
+        return $payload;
     }
 
     private function handleShellResult(ToolCallResult $message, RunState $state): HandlerResult

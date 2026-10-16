@@ -1456,8 +1456,27 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame(2, $notifications, 'Pending redelivery re-emits registration without reading input.');
         $terminalBus = new TestMessageBus();
         (new CompleteDeferredToolCallHandler($deferred, $terminalBus, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $batchStore, new TestLogger()))($complete);
-        $this->assertSame('completed', $deferred->status($lifecycle));
+        $this->assertSame('pending', $deferred->status($lifecycle), 'Transport send alone must not mark deferred completion.');
         $this->assertCount(1, $terminalBus->messages);
+        $toolCallResult = $terminalBus->messages[0];
+        $this->assertInstanceOf(ToolCallResult::class, $toolCallResult);
+
+        $serializer = self::getContainer()->get('serializer');
+        $this->assertInstanceOf(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class, $serializer);
+        $normalized = $serializer->normalize($toolCallResult);
+        $this->assertIsArray($normalized);
+        $fingerprint = \Ineersa\AgentCore\Domain\Tool\ToolInvocationAcceptedCompletionIdentity::resultFingerprint($normalized);
+        $correlation = $deferred->findByDeferredId($lifecycle);
+        $this->assertNotNull($correlation);
+        $completionId = \Ineersa\AgentCore\Domain\Tool\ToolInvocationAcceptedCompletionIdentity::completionIdFromCorrelation($correlation);
+        $deferred->applyLifecycleProjection(new \Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO(
+            $correlation,
+            \Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum::ForegroundResultAccepted,
+            \Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum::Terminal,
+            $completionId,
+            $fingerprint,
+        ));
+        $this->assertSame('completed', $deferred->status($lifecycle));
         $worker($original);
         $this->assertSame(2, $notifications, 'Completed original execution redelivery is a no-op.');
         $this->assertCount(0, $workerBus->messages);

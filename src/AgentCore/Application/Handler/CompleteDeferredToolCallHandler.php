@@ -11,6 +11,12 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
 
+/**
+ * Resolves a deferred correlation and publishes the ordinary ToolCallResult.
+ *
+ * Transport send is not owner acceptance. Deferred status becomes completed only
+ * when ToolCallResultHandler commits the accepted terminal lifecycle projection.
+ */
 final readonly class CompleteDeferredToolCallHandler
 {
     public function __construct(
@@ -57,14 +63,15 @@ final readonly class CompleteDeferredToolCallHandler
                 $message->isError,
                 $message->error,
             );
-            // Keep the existing pending correlation until sending succeeds. A
-            // transport loss needs explicit repair, not another publication queue.
+            // Keep the pending correlation until owner acceptance. Successful
+            // transport send alone must not mark completed. A transport loss
+            // needs explicit repair, not another publication queue.
             $this->locks->afterRelease($correlation->runId, function () use ($message, $correlation, $toolCallResult): void {
                 try {
                     $this->commandBus->dispatch($toolCallResult);
-                    $this->deferredRepository->markCompleted($message->deferredId);
-                    // Synchronous delivery may have retained the finalized batch
-                    // while its deferred correlation was still pending.
+                    // Synchronous delivery may already have accepted the terminal
+                    // outcome and completed the deferred row. Best-effort batch
+                    // cleanup remains gated by unresolved pending status.
                     $this->batches->delete($correlation->runId, $correlation->turnNo, $correlation->stepId);
                 } catch (\Throwable $exception) {
                     $this->logger->warning('deferred_tool_completion.delivery_failed', [

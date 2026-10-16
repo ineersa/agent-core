@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
@@ -24,12 +25,18 @@ use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationEnvelopeFingerprint;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationOwnerReference;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -1092,6 +1099,117 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame('saved read result', $result->nextState->messages[1]->content[0]['text']);
         $this->assertNotNull($fork->launchContext);
         $this->assertSame('fork-call', $fork->launchContext->toolCallId);
+    }
+
+    public function testDetachedTerminalAcceptanceRoutesBeforeStaleStepRejection(): void
+    {
+        $store = new TestToolBatchStore();
+        $deferred = new InMemoryDeferredToolCompletionRepository();
+        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $call = new ExecuteToolCall(
+            runId: 'run-detached',
+            turnNo: 1,
+            stepId: 'tools-old',
+            attempt: 1,
+            idempotencyKey: 'call-detached-key',
+            toolCallId: 'call-detached',
+            toolName: 'bash',
+            args: ['command' => 'true'],
+            orderIndex: 0,
+            mode: 'sequential',
+        );
+        TestToolBatchRegistration::register($collector, $store, 'run-detached', 1, 'tools-old', [$call]);
+
+        $base = new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440700',
+            runId: 'run-detached',
+            turnNo: 1,
+            stepId: 'tools-old',
+            attempt: 1,
+            idempotencyKey: 'call-detached-key',
+            toolCallId: 'call-detached',
+            toolName: 'bash',
+            arguments: ['command' => 'true'],
+            orderIndex: 0,
+            mode: 'sequential',
+            invocationId: 'inv-detached',
+            controllerRunId: 'run-detached',
+            executionOwnerKind: 'bash',
+            executionOwnerReference: new ToolInvocationOwnerReference('bash', 'record-detached', 9, '/tmp/detached.log'),
+            originalExecutionMode: 'sequential',
+        );
+        $correlation = $deferred->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: $base->deferredId,
+            runId: $base->runId,
+            turnNo: $base->turnNo,
+            stepId: $base->stepId,
+            attempt: $base->attempt,
+            idempotencyKey: $base->idempotencyKey,
+            toolCallId: $base->toolCallId,
+            toolName: $base->toolName,
+            arguments: $base->arguments,
+            orderIndex: $base->orderIndex,
+            mode: $base->mode,
+            invocationId: $base->invocationId,
+            controllerRunId: $base->controllerRunId,
+            executionOwnerKind: $base->executionOwnerKind,
+            executionOwnerReference: $base->executionOwnerReference,
+            originalExecutionMode: $base->originalExecutionMode,
+            envelopeFingerprint: ToolInvocationEnvelopeFingerprint::fromCorrelation($base),
+        ));
+        $deferred->applyLifecycleProjection(new RecordToolInvocationLifecycleDTO(
+            $correlation,
+            ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
+            ToolInvocationExecutionObservationEnum::Active,
+        ));
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+
+        $message = ToolCallResultBuilder::success('run-detached')
+            ->withTurnNo(1)
+            ->withStepId('tools-old')
+            ->withIdempotencyKey('call-detached-key')
+            ->withToolCallId('call-detached')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'done']]])
+            ->build();
+
+        // Current step advanced after background acknowledgment.
+        $state = RunStateBuilder::running('run-detached')
+            ->withTurnNo(2)
+            ->withActiveStepId('tools-new')
+            ->withLastSeq(10)
+            ->withPendingToolCalls([])
+            ->build();
+
+        $result = $handler->handle($message, $state);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $result->events[0]->type);
+        $this->assertSame(1, $result->events[0]->turnNo);
+        $this->assertSame('inv-detached', $result->events[0]->payload['accepted_completion']['invocation_id'] ?? null);
+        $this->assertTrue($result->events[0]->payload['accepted_completion']['detached'] ?? false);
+        $this->assertCount(1, $result->postCommitActions);
+        $this->assertInstanceOf(RecordToolInvocationLifecycleDTO::class, $result->postCommitActions[0]);
+
+        $deferred->applyLifecycleProjection($result->postCommitActions[0]);
+        $this->assertSame('completed', $deferred->status($correlation->deferredId));
+
+        // Duplicate late delivery is idempotent and does not reopen the batch.
+        $duplicate = $handler->handle($message, $result->nextState);
+        $this->assertNull($duplicate->nextState);
+        $this->assertSame([], $duplicate->events);
+        $this->assertSame('completed', $deferred->status($correlation->deferredId));
+
+        $batch = $store->load('run-detached', 1, 'tools-old');
+        $this->assertNotNull($batch);
+        $this->assertArrayNotHasKey('call-detached', $batch->results);
     }
 
     private function createSessionToolBatchStore(): \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface

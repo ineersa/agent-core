@@ -109,6 +109,12 @@ class DeferredToolCompletion
     #[ORM\Column(name: 'execution_observation', type: 'string', length: 64)]
     public string $executionObservation = 'active';
 
+    #[ORM\Column(name: 'accepted_completion_id', type: 'string', length: 64, nullable: true)]
+    public ?string $acceptedCompletionId = null;
+
+    #[ORM\Column(name: 'accepted_result_fingerprint', type: 'string', length: 64, nullable: true)]
+    public ?string $acceptedResultFingerprint = null;
+
     #[ORM\Column(type: 'string', length: 32)]
     public string $status = 'pending';
 

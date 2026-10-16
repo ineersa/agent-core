@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolBackgroundAcknowledgement;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationAcceptedCompletionIdentity;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationBackgroundBinding;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationBackgroundReadiness;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum;
@@ -36,6 +37,8 @@ use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
  *   3. {@see ToolCallResultHandler} calls {@see prepareCollect()} without publication.
  *   4. Background acknowledgment uses {@see prepareBackgroundAcknowledgement()} to
  *      capture wait resolution plus lifecycle projection without enabling producers.
+ *   5. Terminal acceptance uses {@see prepareTerminalAcceptance()} so deferred status
+ *      becomes completed only on verified owner acceptance.
  */
 final class ToolBatchCollector
 {
@@ -266,6 +269,96 @@ final class ToolBatchCollector
         $stored = $batch->results[$toolCallId] ?? null;
 
         return $stored instanceof ToolCallResult ? $stored : null;
+    }
+
+    /**
+     * Prepare owner acceptance of a true terminal tool result for a deferred invocation.
+     *
+     * Detached (background-acknowledged) acceptance settles lifecycle without batch collect.
+     * Attached (foreground-pending) acceptance accompanies ordinary batch collect.
+     * Mailbox delivery and wake fencing remain later checkpoints.
+     */
+    public function prepareTerminalAcceptance(
+        ToolCallResult $result,
+        string $resultFingerprint,
+    ): ?PreparedToolTerminalAcceptanceDTO {
+        if (null === $this->deferredCompletions) {
+            return null;
+        }
+        if ($result->isHumanInputSuspension()) {
+            return null;
+        }
+        if ('' === $resultFingerprint) {
+            throw new \InvalidArgumentException('Terminal acceptance requires a non-empty result fingerprint.');
+        }
+
+        $correlation = $this->deferredCompletions->findByRunAndToolCall($result->runId(), $result->toolCallId);
+        if (null === $correlation) {
+            return null;
+        }
+
+        $completionId = ToolInvocationAcceptedCompletionIdentity::completionIdFromCorrelation($correlation);
+        if (!$correlation->matchesInvocationTuple($result->runId(), $result->turnNo(), $result->stepId(), $result->toolCallId)) {
+            return PreparedToolTerminalAcceptanceDTO::rejected($correlation, $completionId, $resultFingerprint, 'stale_identity');
+        }
+
+        if ($correlation->idempotencyKey !== $result->idempotencyKey()
+            || $correlation->attempt !== $result->attempt()
+            || $correlation->orderIndex !== $result->orderIndex) {
+            return PreparedToolTerminalAcceptanceDTO::rejected($correlation, $completionId, $resultFingerprint, 'stale_identity');
+        }
+
+        if (null !== $correlation->acceptedCompletionId) {
+            if ($correlation->acceptedCompletionId === $completionId
+                && $correlation->acceptedResultFingerprint === $resultFingerprint) {
+                return new PreparedToolTerminalAcceptanceDTO(
+                    accepted: true,
+                    duplicate: true,
+                    detached: ToolInvocationCallerDispositionEnum::BackgroundAcknowledged === $correlation->callerDisposition,
+                    correlation: $correlation,
+                    completionId: $completionId,
+                    resultFingerprint: $resultFingerprint,
+                );
+            }
+
+            return PreparedToolTerminalAcceptanceDTO::rejected($correlation, $completionId, $resultFingerprint, 'conflicting_completion');
+        }
+
+        if ('pending' !== ($this->deferredCompletions->status($correlation->deferredId) ?? '')) {
+            return PreparedToolTerminalAcceptanceDTO::rejected($correlation, $completionId, $resultFingerprint, 'already_resolved');
+        }
+
+        $detached = ToolInvocationCallerDispositionEnum::BackgroundAcknowledged === $correlation->callerDisposition;
+        if (!$detached && ToolInvocationCallerDispositionEnum::ForegroundPending !== $correlation->callerDisposition) {
+            return PreparedToolTerminalAcceptanceDTO::rejected($correlation, $completionId, $resultFingerprint, 'already_resolved');
+        }
+
+        if (ToolInvocationExecutionObservationEnum::Unknown === $correlation->executionObservation) {
+            return PreparedToolTerminalAcceptanceDTO::rejected($correlation, $completionId, $resultFingerprint, 'already_resolved');
+        }
+
+        $targetDisposition = $detached
+            ? ToolInvocationCallerDispositionEnum::BackgroundAcknowledged
+            : ToolInvocationCallerDispositionEnum::ForegroundResultAccepted;
+        $targetObservation = ToolInvocationExecutionObservationEnum::Terminal;
+
+        $lifecycleAction = new RecordToolInvocationLifecycleDTO(
+            $correlation,
+            $targetDisposition,
+            $targetObservation,
+            $completionId,
+            $resultFingerprint,
+        );
+
+        return new PreparedToolTerminalAcceptanceDTO(
+            accepted: true,
+            duplicate: false,
+            detached: $detached,
+            correlation: $correlation,
+            completionId: $completionId,
+            resultFingerprint: $resultFingerprint,
+            lifecycleAction: $lifecycleAction,
+        );
     }
 
     /**

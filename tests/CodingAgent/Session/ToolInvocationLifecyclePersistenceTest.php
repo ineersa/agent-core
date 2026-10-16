@@ -29,6 +29,7 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationAcceptedCompletionIdentity;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationEnvelopeFingerprint;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
@@ -640,6 +641,151 @@ final class ToolInvocationLifecyclePersistenceTest extends IsolatedKernelTestCas
         $this->assertSame(ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, $recovered->callerDisposition);
         $this->assertSame(ToolInvocationExecutionObservationEnum::Active, $recovered->executionObservation);
         $this->assertSame('pending', $repo->status($correlation->deferredId));
+    }
+
+    public function testTerminalAcceptanceMarksCompletedAndRecoversAfterInterruptedFinalization(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('lifecycle terminal acceptance');
+        /** @var DeferredToolCompletionRepositoryInterface $repo */
+        $repo = $container->get(DeferredToolCompletionRepositoryInterface::class);
+        $correlation = $repo->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440501',
+            runId: $run,
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'lifecycle-terminal-key',
+            toolCallId: 'call-lifecycle-terminal',
+            toolName: 'fork',
+            arguments: ['prompt' => 'inspect'],
+            orderIndex: 0,
+        ));
+
+        $completionId = ToolInvocationAcceptedCompletionIdentity::completionIdFromCorrelation($correlation);
+        $fingerprint = ToolInvocationAcceptedCompletionIdentity::resultFingerprint([
+            'tool_call_id' => $correlation->toolCallId,
+            'content' => [['type' => 'text', 'text' => 'done']],
+        ]);
+        $action = new RecordToolInvocationLifecycleDTO(
+            $correlation,
+            ToolInvocationCallerDispositionEnum::ForegroundResultAccepted,
+            ToolInvocationExecutionObservationEnum::Terminal,
+            $completionId,
+            $fingerprint,
+        );
+
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $bus = $container->get('agent.command.bus');
+        $active = $container->get(ActiveRunContextInterface::class);
+        $state = new RunState(runId: $run, status: RunStatus::Running, turnNo: 1, lastSeq: 0, model: 'test-model');
+        $active->loadRecovered($state);
+
+        $interruptStore = new class($store) implements PreparedTransitionEventStoreInterface {
+            public function __construct(private PreparedTransitionEventStoreInterface $inner)
+            {
+            }
+
+            public function appendTransition(array $events, array $work): array
+            {
+                return $this->inner->appendTransition($events, $work);
+            }
+
+            public function verifiedPendingTransition(string $runId): ?VerifiedTransitionDTO
+            {
+                return $this->inner->verifiedPendingTransition($runId);
+            }
+
+            public function verifiedPendingBatch(string $runId, string $identity): array
+            {
+                return $this->inner->verifiedPendingBatch($runId, $identity);
+            }
+
+            public function finalizeVerifiedTransition(string $runId, string $identity): void
+            {
+                throw new \RuntimeException('Injected finalize failure after terminal acceptance SQL.');
+            }
+
+            public function assertTransitionReady(string $runId): void
+            {
+                $this->inner->assertTransitionReady($runId);
+            }
+
+            public function latestSequenceFor(string $runId): ?int
+            {
+                return $this->inner->latestSequenceFor($runId);
+            }
+
+            public function firstFor(string $runId): ?RunEvent
+            {
+                return $this->inner->firstFor($runId);
+            }
+
+            public function rangeFor(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                return $this->inner->rangeFor($runId, $startSeq, $endSeq);
+            }
+
+            public function reverseFor(string $runId): iterable
+            {
+                return $this->inner->reverseFor($runId);
+            }
+
+            public function allFor(string $runId): array
+            {
+                return $this->inner->allFor($runId);
+            }
+        };
+        $finalizer = new TransitionFinalizer(
+            $interruptStore,
+            new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
+            new LocalMetadataCoordinator(
+                $container->get(ApplicationDbTransactionInterface::class),
+                $container->get(ToolBatchStoreInterface::class),
+                $container->get(CommandStoreInterface::class),
+                $repo,
+            ),
+            new TransitionPlanFactory(),
+            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+        );
+        $commit = new RunCommit(
+            activeRunContext: $active,
+            eventStore: $interruptStore,
+            logger: new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            finalizer: $finalizer,
+            hookDispatcher: null,
+            tracer: null,
+            actionValidator: $container->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
+        );
+
+        try {
+            $commit->commit($state, $state, [], postCommitActions: [$action]);
+            $this->fail('Finalize interruption must retain the pending transition.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Injected finalize failure after terminal acceptance SQL.', $exception->getMessage());
+        }
+
+        $this->assertNotNull($store->verifiedPendingTransition($run));
+        $settled = $repo->findByRunAndToolCall($run, 'call-lifecycle-terminal');
+        $this->assertNotNull($settled);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::ForegroundResultAccepted, $settled->callerDisposition);
+        $this->assertSame(ToolInvocationExecutionObservationEnum::Terminal, $settled->executionObservation);
+        $this->assertSame($completionId, $settled->acceptedCompletionId);
+        $this->assertSame($fingerprint, $settled->acceptedResultFingerprint);
+        $this->assertSame('completed', $repo->status($correlation->deferredId));
+
+        $this->recovery($bus)->recover($run);
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $recovered = $repo->findByRunAndToolCall($run, 'call-lifecycle-terminal');
+        $this->assertNotNull($recovered);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::ForegroundResultAccepted, $recovered->callerDisposition);
+        $this->assertSame(ToolInvocationExecutionObservationEnum::Terminal, $recovered->executionObservation);
+        $this->assertSame($completionId, $recovered->acceptedCompletionId);
+        $this->assertSame('completed', $repo->status($correlation->deferredId));
+
+        // Matching duplicate acceptance is an exact-target no-op.
+        $repo->applyLifecycleProjection($action);
+        $this->assertSame('completed', $repo->status($correlation->deferredId));
     }
 
     private function recovery(MessageBusInterface $bus): PendingTransitionRecovery

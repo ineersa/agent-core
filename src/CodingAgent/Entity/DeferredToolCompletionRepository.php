@@ -195,25 +195,62 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
         if ($current->callerDisposition === $action->callerDisposition
             && $current->executionObservation === $action->executionObservation) {
-            return;
+            if (null !== $action->acceptedCompletionId) {
+                if ($current->acceptedCompletionId === $action->acceptedCompletionId
+                    && $current->acceptedResultFingerprint === $action->acceptedResultFingerprint
+                    && 'completed' === $entity->status) {
+                    return;
+                }
+                if (null !== $current->acceptedCompletionId
+                    && ($current->acceptedCompletionId !== $action->acceptedCompletionId
+                        || $current->acceptedResultFingerprint !== $action->acceptedResultFingerprint)) {
+                    throw new \RuntimeException(\sprintf('Conflicting accepted completion for run "%s" tool call "%s".', $expected->runId, $expected->toolCallId));
+                }
+            } else {
+                return;
+            }
         }
 
-        $next = $current->withLifecycle($action->callerDisposition, $action->executionObservation);
+        $next = $current->withLifecycle(
+            $action->callerDisposition,
+            $action->executionObservation,
+            $action->acceptedCompletionId,
+            $action->acceptedResultFingerprint,
+        );
+        $markCompleted = null !== $next->acceptedCompletionId
+            && (ToolInvocationExecutionObservationEnum::Terminal === $next->executionObservation
+                || ToolInvocationExecutionObservationEnum::Unknown === $next->executionObservation);
         $updated = $this->getEntityManager()->getConnection()->executeStatement(
             'UPDATE deferred_tool_completion
              SET caller_disposition = :caller_disposition,
                  execution_observation = :execution_observation,
+                 accepted_completion_id = :accepted_completion_id,
+                 accepted_result_fingerprint = :accepted_result_fingerprint,
+                 status = :status,
                  updated_at = :now
              WHERE deferred_id = :deferred_id
                AND caller_disposition = :expected_disposition
-               AND execution_observation = :expected_observation',
+               AND execution_observation = :expected_observation
+               AND (
+                    (:expected_completion_id IS NULL AND accepted_completion_id IS NULL)
+                    OR accepted_completion_id = :expected_completion_id
+               )
+               AND (
+                    (:expected_result_fingerprint IS NULL AND accepted_result_fingerprint IS NULL)
+                    OR accepted_result_fingerprint = :expected_result_fingerprint
+               )',
             [
                 'caller_disposition' => $next->callerDisposition->value,
                 'execution_observation' => $next->executionObservation->value,
+                'accepted_completion_id' => $next->acceptedCompletionId,
+                'accepted_result_fingerprint' => $next->acceptedResultFingerprint,
+                'status' => $markCompleted ? 'completed' : $entity->status,
                 'now' => Clock::get()->now()->format('Y-m-d H:i:s'),
                 'deferred_id' => $current->deferredId,
                 'expected_disposition' => $current->callerDisposition->value,
                 'expected_observation' => $current->executionObservation->value,
+                'expected_completion_id' => $current->acceptedCompletionId,
+                'expected_result_fingerprint' => $current->acceptedResultFingerprint,
             ],
         );
 
@@ -226,7 +263,12 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             $refreshedCorrelation->assertAcceptedImmutableBindingMatches($expected);
             if ($refreshedCorrelation->callerDisposition === $action->callerDisposition
                 && $refreshedCorrelation->executionObservation === $action->executionObservation) {
-                return;
+                if (null === $action->acceptedCompletionId
+                    || ($refreshedCorrelation->acceptedCompletionId === $action->acceptedCompletionId
+                        && $refreshedCorrelation->acceptedResultFingerprint === $action->acceptedResultFingerprint
+                        && 'completed' === $refreshed->status)) {
+                    return;
+                }
             }
 
             throw new \RuntimeException(\sprintf('Deferred tool lifecycle projection raced for run "%s" tool call "%s".', $expected->runId, $expected->toolCallId));
@@ -357,6 +399,8 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             envelopeFingerprint: $entity->envelopeFingerprint,
             callerDisposition: ToolInvocationCallerDispositionEnum::from($entity->callerDisposition),
             executionObservation: ToolInvocationExecutionObservationEnum::from($entity->executionObservation),
+            acceptedCompletionId: $entity->acceptedCompletionId,
+            acceptedResultFingerprint: $entity->acceptedResultFingerprint,
         );
     }
 

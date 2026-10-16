@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationLifecycleTransition;
 
 /**
@@ -41,6 +42,15 @@ final readonly class ToolInvocationLifecycleCoordinationValidator implements Coo
 
         if (null !== $correlation->executionOwnerReference && null === $correlation->executionOwnerKind) {
             throw new \RuntimeException('Prepared tool invocation owner reference requires an owner kind.');
+        }
+
+        if ((null === $action->acceptedCompletionId) !== (null === $action->acceptedResultFingerprint)) {
+            throw new \RuntimeException('Prepared terminal acceptance requires completion id and result fingerprint together.');
+        }
+        if (null !== $action->acceptedCompletionId
+            && ToolInvocationExecutionObservationEnum::Terminal !== $action->executionObservation
+            && ToolInvocationExecutionObservationEnum::Unknown !== $action->executionObservation) {
+            throw new \RuntimeException('Prepared terminal acceptance requires a terminal or unknown execution observation.');
         }
 
         ToolInvocationLifecycleTransition::assertAllowed(
