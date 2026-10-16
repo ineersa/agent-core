@@ -1,0 +1,414 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\AgentCore\Tests\Application\Handler;
+
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
+use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolBackgroundAcknowledgement;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationBackgroundReadiness;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationEnvelopeFingerprint;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationOwnerReference;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\Uuid;
+
+/**
+ * BG-01 C2: prepared background acknowledgment and detached logical admission.
+ *
+ * Cross-batch matrix (accepted clarification over original §10.2):
+ * - Detached Sequential releases the original logical reservation, so a later
+ *   Sequential/Parallel call in a new batch is not blocked by that old mode.
+ * - Attached Sequential and max_parallelism still govern the active batch.
+ * - Native deferred status stays pending; acknowledgment is not completion.
+ */
+final class ToolBatchCollectorBackgroundAcknowledgementTest extends TestCase
+{
+    public function testAcknowledgeReleasesCallerWaitAndDetachedSequentialDoesNotBlockLaterBatch(): void
+    {
+        [$collector, $batches, $deferred, $correlation] = $this->readyCollector(
+            runId: 'run-ack',
+            stepId: 'step-1',
+            toolCallId: 'call-1',
+            mode: 'sequential',
+            siblings: [
+                $this->call('run-ack', 'step-1', 'call-1', 0, 'sequential'),
+                $this->call('run-ack', 'step-1', 'call-2', 1, 'sequential'),
+            ],
+        );
+
+        $prepared = $collector->prepareBackgroundAcknowledgement($this->readiness($correlation));
+        $this->assertTrue($prepared->accepted);
+        $this->assertFalse($prepared->duplicate);
+        $this->assertFalse($prepared->complete);
+        $this->assertNotNull($prepared->acknowledgement);
+        $this->assertSame(ToolBackgroundAcknowledgement::STATUS, $prepared->acknowledgement->status);
+        $this->assertSame('running_in_background', null !== $prepared->acknowledgementResult?->result['content'][0]['text']
+            ? json_decode((string) $prepared->acknowledgementResult->result['content'][0]['text'], true, 512, \JSON_THROW_ON_ERROR)['status']
+            : null);
+        $this->assertCount(1, $prepared->effectsToDispatch);
+        $this->assertSame('call-2', $prepared->effectsToDispatch[0]->toolCallId);
+        $this->assertCount(2, $prepared->localActions);
+        $this->assertInstanceOf(FinalizeToolBatchDTO::class, $prepared->batchAction);
+        $this->assertInstanceOf(RecordToolInvocationLifecycleDTO::class, $prepared->lifecycleAction);
+
+        $this->applyPrepared($batches, $deferred, $prepared->localActions);
+
+        $batch = $batches->load('run-ack', 1, 'step-1');
+        $this->assertNotNull($batch);
+        $this->assertArrayNotHasKey('call-1', $batch->inFlight);
+        $this->assertArrayHasKey('call-1', $batch->results);
+        $this->assertArrayHasKey('call-2', $batch->inFlight);
+        $this->assertSame('pending', $deferred->status($correlation->deferredId));
+        $updated = $deferred->findByRunAndToolCall('run-ack', 'call-1');
+        $this->assertSame(ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, $updated?->callerDisposition);
+        $this->assertSame(ToolInvocationExecutionObservationEnum::Active, $updated?->executionObservation);
+        $this->assertSame($correlation->executionOwnerReference?->recordId, $updated?->executionOwnerReference?->recordId);
+
+        // Later batch: detached old Sequential must not block a new Sequential call.
+        $later = TestToolBatchRegistration::register(
+            $collector,
+            $batches,
+            'run-ack',
+            2,
+            'step-2',
+            [$this->call('run-ack', 'step-2', 'call-later', 0, 'sequential', null, 2)],
+        );
+        $this->assertCount(1, $later);
+        $this->assertSame('call-later', $later[0]->toolCallId);
+        $this->assertSame('pending', $deferred->status($correlation->deferredId));
+    }
+
+    public function testAcknowledgementOrdersWithSiblingResultsAndIsIdempotent(): void
+    {
+        [$collector, $batches, $deferred, $correlation] = $this->readyCollector(
+            runId: 'run-order',
+            stepId: 'step-1',
+            toolCallId: 'call-b',
+            mode: 'parallel',
+            siblings: [
+                $this->call('run-order', 'step-1', 'call-a', 0, 'parallel', 2),
+                $this->call('run-order', 'step-1', 'call-b', 1, 'parallel', 2),
+            ],
+            maxParallelism: 2,
+        );
+
+        TestToolBatchCoordination::collect(
+            $collector,
+            $batches,
+            $this->toolResult('run-order', 'step-1', 'call-a', 0, ['content' => [['type' => 'text', 'text' => 'first']]]),
+        );
+
+        $prepared = $collector->prepareBackgroundAcknowledgement($this->readiness($correlation));
+        $this->assertTrue($prepared->accepted);
+        $this->assertTrue($prepared->complete);
+        $this->assertCount(2, $prepared->orderedResults);
+        $this->assertSame(['call-a', 'call-b'], array_map(
+            static fn (ToolCallResult $result): string => $result->toolCallId,
+            $prepared->orderedResults,
+        ));
+        $this->applyPrepared($batches, $deferred, $prepared->localActions);
+
+        $again = $collector->prepareBackgroundAcknowledgement($this->readiness($correlation));
+        $this->assertTrue($again->accepted);
+        $this->assertTrue($again->duplicate);
+        $this->assertSame([], $again->localActions);
+        $this->assertSame($prepared->acknowledgement?->invocationId, $again->acknowledgement?->invocationId);
+        $this->assertSame('pending', $deferred->status($correlation->deferredId));
+    }
+
+    public function testFinalResultFirstRefusesBackgroundAcknowledgement(): void
+    {
+        [$collector, $batches, $deferred, $correlation] = $this->readyCollector(
+            runId: 'run-final-first',
+            stepId: 'step-1',
+            toolCallId: 'call-1',
+            mode: 'sequential',
+            siblings: [$this->call('run-final-first', 'step-1', 'call-1', 0, 'sequential')],
+        );
+
+        TestToolBatchCoordination::collect(
+            $collector,
+            $batches,
+            $this->toolResult('run-final-first', 'step-1', 'call-1', 0, ['content' => [['type' => 'text', 'text' => 'done']]]),
+        );
+        $deferred->applyLifecycleProjection(new RecordToolInvocationLifecycleDTO(
+            $correlation,
+            ToolInvocationCallerDispositionEnum::ForegroundResultAccepted,
+            ToolInvocationExecutionObservationEnum::Terminal,
+        ));
+
+        $prepared = $collector->prepareBackgroundAcknowledgement($this->readiness($correlation));
+        $this->assertFalse($prepared->accepted);
+        $this->assertSame('already_resolved', $prepared->rejectionReason);
+        $this->assertSame('pending', $deferred->status($correlation->deferredId));
+    }
+
+    #[DataProvider('bindingRejectionProvider')]
+    public function testBindingAndReadinessRejections(string $expectedReason, callable $mutate): void
+    {
+        [$collector, , $deferred, $correlation] = $this->readyCollector(
+            runId: 'run-bind',
+            stepId: 'step-1',
+            toolCallId: 'call-1',
+            mode: 'sequential',
+            siblings: [$this->call('run-bind', 'step-1', 'call-1', 0, 'sequential')],
+        );
+
+        $readiness = $mutate($this->readiness($correlation), $correlation, $deferred);
+        $prepared = $collector->prepareBackgroundAcknowledgement($readiness);
+        $this->assertFalse($prepared->accepted);
+        $this->assertSame($expectedReason, $prepared->rejectionReason);
+    }
+
+    /**
+     * @return iterable<string, array{0: string, 1: callable}>
+     */
+    public static function bindingRejectionProvider(): iterable
+    {
+        yield 'wrong owner record' => ['wrong_owner', static function (ToolInvocationBackgroundReadiness $readiness): ToolInvocationBackgroundReadiness {
+            return new ToolInvocationBackgroundReadiness(
+                $readiness->runId,
+                $readiness->turnNo,
+                $readiness->stepId,
+                $readiness->toolCallId,
+                $readiness->toolName,
+                new ToolInvocationOwnerReference('bash', 'other-record', 9),
+                $readiness->invocationId,
+                $readiness->controllerRunId,
+                $readiness->envelopeFingerprint,
+            );
+        }];
+        yield 'stale step identity' => ['stale_identity', static function (ToolInvocationBackgroundReadiness $readiness): ToolInvocationBackgroundReadiness {
+            return new ToolInvocationBackgroundReadiness(
+                $readiness->runId,
+                $readiness->turnNo,
+                'other-step',
+                $readiness->toolCallId,
+                $readiness->toolName,
+                $readiness->ownerReference,
+                $readiness->invocationId,
+                $readiness->controllerRunId,
+                $readiness->envelopeFingerprint,
+            );
+        }];
+        yield 'unready missing registration' => ['not_ready', static function (ToolInvocationBackgroundReadiness $readiness): ToolInvocationBackgroundReadiness {
+            return new ToolInvocationBackgroundReadiness(
+                'missing-run',
+                $readiness->turnNo,
+                $readiness->stepId,
+                $readiness->toolCallId,
+                $readiness->toolName,
+                $readiness->ownerReference,
+            );
+        }];
+        yield 'cancelling observation' => ['cancelling', static function (ToolInvocationBackgroundReadiness $readiness, DeferredToolCompletionCorrelation $correlation, InMemoryDeferredToolCompletionRepository $deferred): ToolInvocationBackgroundReadiness {
+            $acknowledged = $correlation->withLifecycle(
+                ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
+                ToolInvocationExecutionObservationEnum::Active,
+            );
+            $deferred->applyLifecycleProjection(new RecordToolInvocationLifecycleDTO(
+                $correlation,
+                ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
+                ToolInvocationExecutionObservationEnum::Active,
+            ));
+            $deferred->applyLifecycleProjection(new RecordToolInvocationLifecycleDTO(
+                $acknowledged,
+                ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
+                ToolInvocationExecutionObservationEnum::CancelRequested,
+            ));
+
+            return $readiness;
+        }];
+    }
+
+    public function testAttachedMaxParallelismStillLimitsCurrentBatchAfterSiblingAcknowledgement(): void
+    {
+        [$collector, $batches, $deferred, $correlation] = $this->readyCollector(
+            runId: 'run-cap',
+            stepId: 'step-1',
+            toolCallId: 'call-1',
+            mode: 'parallel',
+            siblings: [
+                $this->call('run-cap', 'step-1', 'call-1', 0, 'parallel', 2),
+                $this->call('run-cap', 'step-1', 'call-2', 1, 'parallel', 2),
+                $this->call('run-cap', 'step-1', 'call-3', 2, 'parallel', 2),
+            ],
+            maxParallelism: 2,
+        );
+
+        $prepared = $collector->prepareBackgroundAcknowledgement($this->readiness($correlation));
+        $this->assertTrue($prepared->accepted);
+        $this->assertCount(1, $prepared->effectsToDispatch);
+        $this->assertSame('call-3', $prepared->effectsToDispatch[0]->toolCallId);
+        $this->applyPrepared($batches, $deferred, $prepared->localActions);
+
+        $batch = $batches->load('run-cap', 1, 'step-1');
+        $this->assertNotNull($batch);
+        $this->assertSame(['call-2' => true, 'call-3' => true], $batch->inFlight);
+        $this->assertSame([], $batch->pendingQueue);
+    }
+
+    public function testAcknowledgementDoesNotMarkDeferredCompletedOrReleaseNativeOwner(): void
+    {
+        [$collector, $batches, $deferred, $correlation] = $this->readyCollector(
+            runId: 'run-native',
+            stepId: 'step-1',
+            toolCallId: 'call-1',
+            mode: 'sequential',
+            siblings: [$this->call('run-native', 'step-1', 'call-1', 0, 'sequential')],
+        );
+
+        $prepared = $collector->prepareBackgroundAcknowledgement($this->readiness($correlation));
+        $this->applyPrepared($batches, $deferred, $prepared->localActions);
+        $updated = $deferred->findByRunAndToolCall('run-native', 'call-1');
+        $this->assertSame('pending', $deferred->status($correlation->deferredId));
+        $this->assertSame('record-call-1', $updated?->executionOwnerReference?->recordId);
+        $this->assertNotSame('success', $prepared->acknowledgement?->status);
+        $this->assertNotSame('completed', $prepared->acknowledgement?->status);
+    }
+
+    /**
+     * @param list<ExecuteToolCall> $siblings
+     *
+     * @return array{0: ToolBatchCollector, 1: TestToolBatchStore, 2: InMemoryDeferredToolCompletionRepository, 3: DeferredToolCompletionCorrelation}
+     */
+    private function readyCollector(
+        string $runId,
+        string $stepId,
+        string $toolCallId,
+        string $mode,
+        array $siblings,
+        int $maxParallelism = 4,
+    ): array {
+        $batches = new TestToolBatchStore();
+        $deferred = new InMemoryDeferredToolCompletionRepository();
+        $collector = new ToolBatchCollector($batches, $maxParallelism, $deferred);
+        TestToolBatchRegistration::register($collector, $batches, $runId, 1, $stepId, $siblings);
+
+        $owner = new ToolInvocationOwnerReference('bash', 'record-'.$toolCallId, 4242, '/tmp/'.$toolCallId.'.log');
+        $correlation = new DeferredToolCompletionCorrelation(
+            deferredId: Uuid::v7()->toRfc4122(),
+            runId: $runId,
+            turnNo: 1,
+            stepId: $stepId,
+            attempt: 1,
+            idempotencyKey: $toolCallId.'-key',
+            toolCallId: $toolCallId,
+            toolName: 'bash',
+            arguments: ['command' => 'sleep 30'],
+            orderIndex: (static function () use ($siblings, $toolCallId): int {
+                foreach ($siblings as $call) {
+                    if ($call->toolCallId === $toolCallId) {
+                        return $call->orderIndex;
+                    }
+                }
+
+                return 0;
+            })(),
+            mode: $mode,
+            maxParallelism: $maxParallelism,
+            invocationId: 'inv-'.$toolCallId,
+            controllerRunId: $runId,
+            executionOwnerKind: 'bash',
+            executionOwnerReference: $owner,
+            originalExecutionMode: $mode,
+        );
+        $correlation = new DeferredToolCompletionCorrelation(
+            deferredId: $correlation->deferredId,
+            runId: $correlation->runId,
+            turnNo: $correlation->turnNo,
+            stepId: $correlation->stepId,
+            attempt: $correlation->attempt,
+            idempotencyKey: $correlation->idempotencyKey,
+            toolCallId: $correlation->toolCallId,
+            toolName: $correlation->toolName,
+            arguments: $correlation->arguments,
+            orderIndex: $correlation->orderIndex,
+            mode: $correlation->mode,
+            maxParallelism: $correlation->maxParallelism,
+            invocationId: $correlation->invocationId,
+            controllerRunId: $correlation->controllerRunId,
+            executionOwnerKind: $correlation->executionOwnerKind,
+            executionOwnerReference: $correlation->executionOwnerReference,
+            originalExecutionMode: $correlation->originalExecutionMode,
+            envelopeFingerprint: ToolInvocationEnvelopeFingerprint::fromCorrelation($correlation),
+        );
+        $correlation = $deferred->registerPending($correlation);
+
+        return [$collector, $batches, $deferred, $correlation];
+    }
+
+    private function readiness(DeferredToolCompletionCorrelation $correlation): ToolInvocationBackgroundReadiness
+    {
+        $owner = $correlation->executionOwnerReference;
+        $this->assertNotNull($owner);
+
+        return new ToolInvocationBackgroundReadiness(
+            $correlation->runId,
+            $correlation->turnNo,
+            $correlation->stepId,
+            $correlation->toolCallId,
+            $correlation->toolName,
+            $owner,
+            $correlation->invocationId,
+            $correlation->controllerRunId,
+            $correlation->envelopeFingerprint,
+        );
+    }
+
+    private function call(string $runId, string $stepId, string $toolCallId, int $order, string $mode, ?int $maxParallelism = null, int $turnNo = 1): ExecuteToolCall
+    {
+        return new ExecuteToolCall(
+            $runId,
+            $turnNo,
+            $stepId,
+            1,
+            $toolCallId.'-key',
+            $toolCallId,
+            'bash',
+            ['command' => 'sleep 1'],
+            $order,
+            mode: $mode,
+            maxParallelism: $maxParallelism,
+        );
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function toolResult(string $runId, string $stepId, string $toolCallId, int $order, array $payload): ToolCallResult
+    {
+        return new ToolCallResult($runId, 1, $stepId, 1, $toolCallId.'-key', $toolCallId, $order, $payload);
+    }
+
+    /** @param list<object> $actions */
+    private function applyPrepared(TestToolBatchStore $batches, InMemoryDeferredToolCompletionRepository $deferred, array $actions): void
+    {
+        $batchActions = [];
+        foreach ($actions as $action) {
+            if ($action instanceof FinalizeToolBatchDTO) {
+                $batchActions[] = $action;
+            }
+        }
+        if ([] !== $batchActions) {
+            $transition = new VerifiedTransitionDTO(Uuid::v7()->toRfc4122(), ['run_id' => $batchActions[0]->runId, 'actions' => $actions]);
+            $batches->prepareChanges($batchActions, $transition)();
+        }
+        foreach ($actions as $action) {
+            if ($action instanceof RecordToolInvocationLifecycleDTO) {
+                $deferred->applyLifecycleProjection($action);
+            }
+        }
+    }
+}

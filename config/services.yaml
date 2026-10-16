@@ -1017,6 +1017,10 @@ services:
   Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface:
     alias: Ineersa\CodingAgent\Session\DoctrineToolBatchStore
 
+  Ineersa\AgentCore\Application\Handler\ToolBatchCollector:
+    arguments:
+      $deferredCompletions: '@Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface'
+
   Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface:
     alias: Ineersa\CodingAgent\Session\DoctrineApplicationDbTransaction
 

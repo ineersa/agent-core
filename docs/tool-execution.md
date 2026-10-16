@@ -19,6 +19,13 @@ Each tool has: name, description, JSON Schema parameters, handler, execution mod
 Per-tool mode is owned by registration (`ToolDefinitionDTO`), not arbitrary settings overrides.
 File mutation tools are sequential.
 
+Background acknowledgment (BG-01 C2 preparation only) resolves the original caller
+wait with a `running_in_background` body and releases that call's logical Sequential
+reservation for later batches. Physical worker occupancy and attached-batch
+Sequential/`max_parallelism` limits remain. Native deferred completion stays pending
+until a later checkpoint accepts the true result. Producers, Ctrl+B, mailbox delivery,
+and capability exposure are not enabled here.
+
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare
 a tool-specific budget. MCP calls receive the run cancellation token and the shorter
