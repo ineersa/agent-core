@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Application\Pipeline\TransitionPlanFactory;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
@@ -25,6 +26,7 @@ final class TestTransitionFinalizerFactory
         ?ToolBatchStoreInterface $batches = null,
         ?CommandStoreInterface $commands = null,
         ?RunLockManager $locks = null,
+        ?DeferredToolCompletionRepositoryInterface $deferredCompletions = null,
     ): TransitionFinalizer {
         $transactions = new class implements ApplicationDbTransactionInterface {
             public function transactional(callable $callback): mixed
@@ -36,7 +38,12 @@ final class TestTransitionFinalizerFactory
         return new TransitionFinalizer(
             $store,
             $dispatcher,
-            new LocalMetadataCoordinator($transactions, $batches ?? new TestToolBatchStore(), $commands ?? new InMemoryCommandStore()),
+            new LocalMetadataCoordinator(
+                $transactions,
+                $batches ?? new TestToolBatchStore(),
+                $commands ?? new InMemoryCommandStore(),
+                $deferredCompletions ?? new InMemoryDeferredToolCompletionRepository(),
+            ),
             new TransitionPlanFactory(),
             $locks ?? new RunLockManager(new LockFactory(new InMemoryStore())),
         );

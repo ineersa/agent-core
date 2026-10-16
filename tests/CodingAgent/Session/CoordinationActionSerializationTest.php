@@ -7,9 +7,14 @@ namespace Ineersa\CodingAgent\Tests\Session;
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
+use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationOwnerReference;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage;
 use Ineersa\CodingAgent\Application\Message\ConsumeSubagentProgressDTO;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -25,11 +30,30 @@ final class CoordinationActionSerializationTest extends IsolatedKernelTestCase
         $advance = AdvanceRunCoordinationFactory::create('run', 7, 'follow-up');
         $compact = new DispatchCoordinationMessageDTO(new CompactRun('run', 7, 'compact-stable', 1, 'compact-key', trigger: 'manual', customInstructions: 'Keep context'));
         $call = new ExecuteToolCall('run', 7, 'step', 1, 'effect-key', 'call', 'bash', ['command' => 'pwd'], 0);
+        $lifecycle = new RecordToolInvocationLifecycleDTO(
+            new DeferredToolCompletionCorrelation(
+                deferredId: '550e8400-e29b-41d4-a716-446655440200',
+                runId: 'run',
+                turnNo: 7,
+                stepId: 'step',
+                attempt: 1,
+                idempotencyKey: 'effect-key',
+                toolCallId: 'call',
+                toolName: 'bash',
+                arguments: ['command' => 'pwd'],
+                orderIndex: 0,
+                executionOwnerKind: 'bash',
+                executionOwnerReference: new ToolInvocationOwnerReference('bash', 'record-1', 4242, '/tmp/bash.log'),
+            ),
+            ToolInvocationCallerDispositionEnum::ForegroundPending,
+            ToolInvocationExecutionObservationEnum::Active,
+        );
         $actions = [
             $advance,
             $compact,
             new MarkCommandAppliedDTO('run', 'source-key'),
             new RegisterToolBatchDTO('run', 7, 'step', [$call], ['call' => 0], [], ['call' => true], 1),
+            $lifecycle,
             new ConsumeSubagentProgressDTO('lifecycle', 3, true, false, new \DateTimeImmutable('2026-10-03T18:00:00Z')),
             new ConsumeSubagentProgressDTO('lifecycle', 3, false, true, new \DateTimeImmutable('2026-10-03T18:00:00Z')),
             new DeliverDeferredSubagentBatchLifecycleMessage('lifecycle'),
