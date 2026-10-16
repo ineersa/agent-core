@@ -123,7 +123,11 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         $appCommand = $this->runtimeConfig->executableCommand();
 
         try {
-            $env = $_ENV;
+            // PHP's default variables_order=GPCS leaves $_ENV empty. Inherit the
+            // real process environment so consumers keep HOME and the controller's
+            // HATFIELD_* sqlite-queue DSNs.
+            $currentEnv = getenv();
+            $env = \is_array($currentEnv) ? $currentEnv : $_ENV;
             $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = '1';
 
             $command = [

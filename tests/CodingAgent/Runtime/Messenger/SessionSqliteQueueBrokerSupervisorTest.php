@@ -124,6 +124,26 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         }
     }
 
+    public function testBrokerLaunchInheritsProcessEnvironmentWhenEnvSuperglobalEmpty(): void
+    {
+        $logger = new TestLogger();
+        $config = $this->runtimeConfig();
+        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0, shutdownGraceSeconds: 5.0);
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-env');
+
+        $previousEnv = $_ENV;
+        $_ENV = [];
+        try {
+            $this->assertNotFalse(getenv('HOME'));
+            // Empty $_ENV must not strip HOME from the broker child.
+            $supervisor->start($paths);
+            $this->assertTrue($supervisor->isReady());
+        } finally {
+            $_ENV = $previousEnv;
+            $supervisor->shutdown();
+        }
+    }
+
     public function testClientSendRenewAndAckWithoutSecondClaim(): void
     {
         $logger = new TestLogger();
@@ -156,8 +176,8 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
     private function runtimeConfig(): RuntimeProcessConfig
     {
         $locator = $this->createStub(AppExecutableLocator::class);
-        $locator->method('path')->willReturn(dirname(__DIR__, 4).'/bin/console');
-        $locator->method('command')->willReturn([\PHP_BINARY, dirname(__DIR__, 4).'/bin/console']);
+        $locator->method('path')->willReturn(\dirname(__DIR__, 4).'/bin/console');
+        $locator->method('command')->willReturn([\PHP_BINARY, \dirname(__DIR__, 4).'/bin/console']);
 
         return new RuntimeProcessConfig($locator, $this->tmpDir);
     }

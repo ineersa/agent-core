@@ -99,10 +99,15 @@ final class SessionSqliteQueueBrokerSupervisor
         }
 
         $launchCommand = $this->wrapWithSetsid($command);
+        // PHP's default variables_order=GPCS leaves $_ENV empty. getenv() is the
+        // actual process environment the controller inherited (HOME, HATFIELD_*,
+        // PATH). Passing $_ENV alone boots the broker without HOME and exits 255
+        // before ready inside fused/native images.
+        $currentEnv = getenv();
         $process = new Process(
             $launchCommand,
             cwd: $this->runtimeConfig->runtimeCwd(),
-            env: $_ENV,
+            env: \is_array($currentEnv) ? $currentEnv : $_ENV,
             timeout: null,
         );
 

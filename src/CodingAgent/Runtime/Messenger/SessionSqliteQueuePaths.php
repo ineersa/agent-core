@@ -36,11 +36,7 @@ final readonly class SessionSqliteQueuePaths
             throw new \InvalidArgumentException('SessionSqliteQueuePaths endpointPath must be an absolute filesystem path.');
         }
         if (\strlen($this->endpointPath) > self::MAX_ENDPOINT_BYTES) {
-            throw new \InvalidArgumentException(\sprintf(
-                'SessionSqliteQueuePaths endpointPath exceeds %d bytes: %s',
-                self::MAX_ENDPOINT_BYTES,
-                $this->endpointPath,
-            ));
+            throw new \InvalidArgumentException(\sprintf('SessionSqliteQueuePaths endpointPath exceeds %d bytes: %s', self::MAX_ENDPOINT_BYTES, $this->endpointPath));
         }
     }
 
