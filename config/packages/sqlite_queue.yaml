@@ -1,21 +1,23 @@
 # Session-owned sqlite-queue broker defaults.
 #
-# max_payload is the authoritative session payload budget. It matches
-# SessionBootstrapSpoolStore::MAX_BYTES (8 MiB) so prepared ExecuteLlmStep /
-# compaction envelopes that already fit that application transfer budget still
-# fit after native PhpSerializer expansion. Temporary dependency branch:
-# ineersa/sqlite-queue dev-feature/configurable-broker-limits#5f5b921.
+# max_payload is the authoritative session payload budget. It follows this
+# host's SQLite MAX_LENGTH compile option (1_000_000_000 bytes), which is the
+# practical single-value storage ceiling for queue body/header columns. That is
+# independent of SessionBootstrapSpoolStore::MAX_BYTES, which only bounds the
+# disposable UI bootstrap transfer and does not limit prepared ExecuteLlmStep /
+# compaction envelopes after native PhpSerializer expansion. Temporary
+# dependency branch: ineersa/sqlite-queue
+# dev-feature/configurable-broker-limits#5f5b921.
 #
 # max_connections stays at the package default for standalone broker boots.
 # HeadlessController sizes the live session broker with --max-connections from
 # SessionSqliteQueueBrokerTopology for the resolved LLM/tool pools and fails
 # closed when the ready event advertises less than that requirement.
 parameters:
-    # Keep the typed integer for DI validation; the bundle reads the same budget.
-    hatfield.sqlite_queue.max_payload: 8388608
+    hatfield.sqlite_queue.max_payload: 1000000000
 
 sqlite_queue:
     synchronous: full
     redeliver_timeout: 60
-    max_payload: 8388608
+    max_payload: '%hatfield.sqlite_queue.max_payload%'
     max_connections: 64

@@ -7,7 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerTopology;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
@@ -247,16 +249,18 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
     {
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
+        $maxPayload = $this->configuredMaxPayload();
         $supervisor = new SessionSqliteQueueBrokerSupervisor(
             $logger,
             $config,
             readyTimeoutSeconds: 15.0,
             shutdownGraceSeconds: 5.0,
-            maxPayload: 8_388_608,
+            maxPayload: $maxPayload,
         );
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-payload');
         $serializer = new PhpSerializer();
-        $bodyText = str_repeat('x', 1_200_000);
+        // Exceed both the UI bootstrap transfer budget and the original 1 MiB broker default.
+        $bodyText = str_repeat('x', 8_388_608 + Limits::MAX_PAYLOAD + 64);
         $envelope = new Envelope(new ExecuteLlmStep(
             'run-payload',
             1,
@@ -271,13 +275,14 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $headers = \array_key_exists('headers', $encoded) && \is_array($encoded['headers'])
             ? json_encode($encoded['headers'], \JSON_THROW_ON_ERROR)
             : '{}';
-        $this->assertGreaterThan(Limits::MAX_PAYLOAD, \strlen($encoded['body']) + \strlen($headers));
-        $this->assertLessThanOrEqual(8_388_608, \strlen($encoded['body']) + \strlen($headers));
+        $encodedBytes = \strlen($encoded['body']) + \strlen($headers);
+        $this->assertGreaterThan(8_388_608 + Limits::MAX_PAYLOAD, $encodedBytes);
+        $this->assertLessThanOrEqual($maxPayload, $encodedBytes);
 
         $transport = null;
         try {
             $supervisor->start($paths);
-            $this->assertSame(8_388_608, $supervisor->advertisedMaxPayload());
+            $this->assertSame($maxPayload, $supervisor->advertisedMaxPayload());
             $connect = static fn (): Client => Client::connect($paths->endpointPath);
             $transport = new Transport(
                 new BrokerConnection($connect),
@@ -303,13 +308,13 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
     {
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
-        $required = 125;
+        $required = SessionSqliteQueueBrokerTopology::requiredConnections(4, 32);
         $supervisor = new SessionSqliteQueueBrokerSupervisor(
             $logger,
             $config,
             readyTimeoutSeconds: 15.0,
             shutdownGraceSeconds: 5.0,
-            maxPayload: 8_388_608,
+            maxPayload: $this->configuredMaxPayload(),
         );
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-capacity');
         /** @var list<Client> $clients */
@@ -334,6 +339,44 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         }
     }
 
+    public function testReadyEventBelowTopologyRequirementFailsClosed(): void
+    {
+        $logger = new TestLogger();
+        $config = $this->runtimeConfig();
+        $maxPayload = $this->configuredMaxPayload();
+        $supervisor = new SessionSqliteQueueBrokerSupervisor(
+            $logger,
+            $config,
+            readyTimeoutSeconds: 15.0,
+            shutdownGraceSeconds: 5.0,
+            maxPayload: $maxPayload,
+        );
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-mismatch');
+
+        try {
+            $supervisor->start($paths, 64);
+            $this->assertSame(64, $supervisor->advertisedMaxConnections());
+
+            $required = new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'requiredMaxConnectionsForReady');
+            $required->setValue($supervisor, 65);
+            $ready = new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'ready');
+            $ready->setValue($supervisor, false);
+            $carry = new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'stdoutCarry');
+            $carry->setValue($supervisor, json_encode([
+                'event' => 'ready',
+                'max_payload' => $maxPayload,
+                'max_connections' => 64,
+            ], \JSON_THROW_ON_ERROR)."\n");
+
+            $consume = new \ReflectionMethod(SessionSqliteQueueBrokerSupervisor::class, 'consumeReadyEvents');
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('advertised max_connections=64 below required 65');
+            $consume->invoke($supervisor);
+        } finally {
+            $supervisor->shutdown();
+        }
+    }
+
     private function runtimeConfig(): RuntimeProcessConfig
     {
         $locator = $this->createStub(AppExecutableLocator::class);
@@ -341,6 +384,21 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $locator->method('command')->willReturn([\PHP_BINARY, \dirname(__DIR__, 4).'/bin/console']);
 
         return new RuntimeProcessConfig($locator, $this->tmpDir);
+    }
+
+    private function configuredMaxPayload(): int
+    {
+        $kernel = new Kernel('test', false);
+        $kernel->boot();
+        try {
+            $value = $kernel->getContainer()->getParameter('hatfield.sqlite_queue.max_payload');
+            $this->assertIsInt($value);
+            $this->assertSame(1_000_000_000, $value);
+
+            return $value;
+        } finally {
+            $kernel->shutdown();
+        }
     }
 
     private function brokerProcess(SessionSqliteQueueBrokerSupervisor $supervisor): \Symfony\Component\Process\Process

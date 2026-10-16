@@ -5,31 +5,43 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
 /**
- * Sizes the session broker connection budget from the live consumer topology.
+ * Sizes the session broker connection budget from the live process topology.
  *
- * Idle sqlite-queue consumers open one operations socket and one notification
- * socket each. Send-only publishers open the operations socket only. The
- * controller publishes commands onto run_control. run_control publishes
- * Execute* work to the five execution transports. Each execution worker
- * publishes results back to run_control. scheduler_default is not a
- * sqlite-queue receiver and does not consume broker connections.
+ * Every controller-owned process that inherits the six sqlite-queue Messenger
+ * DSNs can open one operations socket per transport. Broker consumers also keep
+ * one notification socket for the transport they consume. scheduler_default is
+ * not a sqlite-queue receiver, but it inherits the same DSNs and may open
+ * operations sockets for hooks or extensions. The budget therefore covers every
+ * configured broker transport in each resolved process, not only the default
+ * send routes observed in the happy path.
  */
 final class SessionSqliteQueueBrokerTopology
 {
+    /**
+     * Configured sqlite-queue Messenger transports:
+     * run_control, llm, tool, agent, mcp, extension_agent.
+     */
+    public const int BROKER_TRANSPORTS = 6;
+
     /** run_control, agent, mcp, and extension_agent — one consumer each. */
     public const int FIXED_BROKER_CONSUMERS = 4;
 
-    /** Operations and notification sockets owned by one idle consumer transport. */
-    public const int CONNECTIONS_PER_IDLE_CONSUMER = 2;
+    /** Notification socket owned by one idle broker consumer transport. */
+    public const int CONSUMER_NOTIFICATION_CONNECTIONS = 1;
 
-    /** llm, tool, agent, mcp, extension_agent — outbound from run_control. */
-    public const int RUN_CONTROL_OUTBOUND_TRANSPORTS = 5;
+    /**
+     * Upper bound for one broker consumer process: operations for every
+     * configured broker transport plus the consumer notification socket.
+     */
+    public const int CONNECTIONS_PER_BROKER_CONSUMER_PROCESS = self::BROKER_TRANSPORTS + self::CONSUMER_NOTIFICATION_CONNECTIONS;
 
-    /** Controller process publishes onto run_control. */
-    public const int CONTROLLER_PUBLISHER_TRANSPORTS = 1;
+    /**
+     * Controller and scheduler_default inherit broker DSNs. They do not consume
+     * sqlite-queue receivers, so they need only operations sockets.
+     */
+    public const int NON_CONSUMER_BROKER_PROCESSES = 2;
 
-    /** agent, mcp, and extension_agent result publishers besides llm/tool pools. */
-    public const int FIXED_EXECUTION_RESULT_PUBLISHERS = 3;
+    public const int CONNECTIONS_PER_NON_CONSUMER_PROCESS = self::BROKER_TRANSPORTS;
 
     private function __construct()
     {
@@ -38,8 +50,8 @@ final class SessionSqliteQueueBrokerTopology
     /**
      * Minimum broker connections required before runtime.ready for the resolved pools.
      *
-     * Example: 32 tool + 4 llm + 4 other consumers need 80 idle connections, then
-     * publishers add controller, run_control outbound, and execution-result sockets.
+     * Example: 32 tool + 4 llm + 4 fixed broker consumers = 40 consumer processes
+     * × 7 sockets, plus controller and scheduler × 6 operations sockets each.
      */
     public static function requiredConnections(int $llmWorkers, int $toolWorkers): int
     {
@@ -50,14 +62,17 @@ final class SessionSqliteQueueBrokerTopology
             throw new \InvalidArgumentException('Tool worker count must be a positive integer.');
         }
 
-        $brokerConsumers = $llmWorkers + $toolWorkers + self::FIXED_BROKER_CONSUMERS;
-        $idleConsumerConnections = self::CONNECTIONS_PER_IDLE_CONSUMER * $brokerConsumers;
+        $consumerProcesses = $llmWorkers + $toolWorkers + self::FIXED_BROKER_CONSUMERS;
+        $nonConsumerConnections = self::NON_CONSUMER_BROKER_PROCESSES * self::CONNECTIONS_PER_NON_CONSUMER_PROCESS;
+        $maxConsumerProcesses = intdiv(\PHP_INT_MAX - $nonConsumerConnections, self::CONNECTIONS_PER_BROKER_CONSUMER_PROCESS);
+        if ($consumerProcesses > $maxConsumerProcesses) {
+            throw new \InvalidArgumentException(\sprintf(
+                'Broker connection budget overflows for llmWorkers=%d toolWorkers=%d.',
+                $llmWorkers,
+                $toolWorkers,
+            ));
+        }
 
-        $executionResultPublishers = $llmWorkers + $toolWorkers + self::FIXED_EXECUTION_RESULT_PUBLISHERS;
-        $publisherConnections = $executionResultPublishers
-            + self::RUN_CONTROL_OUTBOUND_TRANSPORTS
-            + self::CONTROLLER_PUBLISHER_TRANSPORTS;
-
-        return $idleConsumerConnections + $publisherConnections;
+        return ($consumerProcesses * self::CONNECTIONS_PER_BROKER_CONSUMER_PROCESS) + $nonConsumerConnections;
     }
 }
