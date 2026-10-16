@@ -287,10 +287,145 @@ PHP;
         }
     }
 
+    public function testStaticInstallerInstallsMatchedOwnedPhpCliPair(): void
+    {
+        $root = ProjectDir::get();
+        $fixture = TestDirectoryIsolation::createProjectTempDir('installer-static-ok');
+        $installDir = TestDirectoryIsolation::createProjectTempDir('installer-static-dest');
+        $server = null;
+        try {
+            $platform = $this->installerPlatform();
+            $asset = 'hatfield.'.$platform;
+            $cliAsset = $asset.'.php';
+            $appPayload = "#!/bin/sh\necho \"Hatfield 9.9.9 (commit deadbeef)\"\n";
+            $cliPayload = <<<'SH'
+#!/bin/sh
+if [ "$1" = "-r" ]; then
+  eval "$2"
+  exit 0
+fi
+echo "unexpected cli invocation" >&2
+exit 1
+SH;
+            file_put_contents($fixture.'/'.$asset, $appPayload);
+            file_put_contents($fixture.'/'.$cliAsset, $cliPayload);
+            chmod($fixture.'/'.$asset, 0755);
+            chmod($fixture.'/'.$cliAsset, 0755);
+            $appHash = hash_file('sha256', $fixture.'/'.$asset);
+            $cliHash = hash_file('sha256', $fixture.'/'.$cliAsset);
+            $this->assertNotFalse($appHash);
+            $this->assertNotFalse($cliHash);
+            file_put_contents(
+                $fixture.'/SHA256SUMS',
+                $appHash.'  '.$asset."\n".$cliHash.'  '.$cliAsset."\n",
+            );
+
+            $server = $this->startServer($fixture);
+            $process = new Process([
+                'bash', $root.'/installer/bash-installer',
+                '--install-dir='.$installDir,
+                '--version=v9.9.9',
+                '--static',
+            ], $root, [
+                'HATFIELD_INSTALLER_BASE_URL' => $server['url'],
+                'PATH' => getenv('PATH') ?: '/usr/bin:/bin',
+            ]);
+            $process->setTimeout(30);
+            $process->run();
+            $this->assertTrue($process->isSuccessful(), $process->getErrorOutput()."\n".$process->getOutput());
+            $this->assertFileExists($installDir.'/hatfield');
+            $this->assertFileExists($installDir.'/hatfield-php');
+            $this->assertTrue(is_executable($installDir.'/hatfield'));
+            $this->assertTrue(is_executable($installDir.'/hatfield-php'));
+            $this->assertSame($appPayload, (string) file_get_contents($installDir.'/hatfield'));
+            $this->assertSame($cliPayload, (string) file_get_contents($installDir.'/hatfield-php'));
+            $this->assertFileDoesNotExist($installDir.'/hatfield.'.$platform.'.php');
+            $this->assertNoInstallTemps($installDir);
+        } finally {
+            $this->stopServer($server);
+            TestDirectoryIsolation::removeDirectory($fixture);
+            TestDirectoryIsolation::removeDirectory($installDir);
+        }
+    }
+
+    public function testStaticInstallerPreservesPreviousPairOnCliChecksumMismatch(): void
+    {
+        $root = ProjectDir::get();
+        $fixture = TestDirectoryIsolation::createProjectTempDir('installer-static-bad-cli');
+        $installDir = TestDirectoryIsolation::createProjectTempDir('installer-static-dest-bad');
+        $server = null;
+        try {
+            $previousApp = "#!/bin/sh\necho \"Hatfield previous-app\"\n";
+            $previousCli = "#!/bin/sh\necho ok\n";
+            file_put_contents($installDir.'/hatfield', $previousApp);
+            file_put_contents($installDir.'/hatfield-php', $previousCli);
+            chmod($installDir.'/hatfield', 0755);
+            chmod($installDir.'/hatfield-php', 0755);
+
+            $platform = $this->installerPlatform();
+            $asset = 'hatfield.'.$platform;
+            $cliAsset = $asset.'.php';
+            file_put_contents($fixture.'/'.$asset, "#!/bin/sh\necho \"Hatfield new\"\n");
+            file_put_contents($fixture.'/'.$cliAsset, "#!/bin/sh\necho bad-cli\n");
+            $appHash = hash_file('sha256', $fixture.'/'.$asset);
+            $this->assertNotFalse($appHash);
+            file_put_contents(
+                $fixture.'/SHA256SUMS',
+                $appHash.'  '.$asset."\n".str_repeat('b', 64).'  '.$cliAsset."\n",
+            );
+
+            $server = $this->startServer($fixture);
+            $process = new Process([
+                'bash', $root.'/installer/bash-installer',
+                '--install-dir='.$installDir,
+                '--static',
+            ], $root, [
+                'HATFIELD_INSTALLER_BASE_URL' => $server['url'],
+                'PATH' => getenv('PATH') ?: '/usr/bin:/bin',
+            ]);
+            $process->setTimeout(30);
+            $process->run();
+            $combined = $process->getOutput().$process->getErrorOutput();
+            $this->assertFalse($process->isSuccessful());
+            $this->assertStringContainsString('checksum mismatch', $combined);
+            $this->assertSame($previousApp, (string) file_get_contents($installDir.'/hatfield'));
+            $this->assertSame($previousCli, (string) file_get_contents($installDir.'/hatfield-php'));
+            $this->assertNoInstallTemps($installDir);
+        } finally {
+            $this->stopServer($server);
+            TestDirectoryIsolation::removeDirectory($fixture);
+            TestDirectoryIsolation::removeDirectory($installDir);
+        }
+    }
+
     private function assertNoInstallTemps(string $installDir): void
     {
         $temps = glob($installDir.'/.hatfield-install.*') ?: [];
+        $pairTemps = glob($installDir.'/.hatfield-install-pair.*') ?: [];
         $this->assertSame([], $temps, 'Install-dir temporary destinations must be cleaned up');
+        $this->assertSame([], $pairTemps, 'Install-dir pair temporary destinations must be cleaned up');
+    }
+
+    private function installerPlatform(): string
+    {
+        $kernel = php_uname('s');
+        if (str_starts_with($kernel, 'Linux')) {
+            $kernel = 'linux';
+        } elseif (str_starts_with($kernel, 'Darwin')) {
+            $kernel = 'darwin';
+        } else {
+            $this->fail('Unsupported installer platform: '.$kernel);
+        }
+        $machine = php_uname('m');
+        if (str_starts_with($machine, 'aarch64') || str_starts_with($machine, 'arm64')) {
+            $machine = 'arm64';
+        } elseif ('x86_64' === $machine || 'amd64' === $machine) {
+            $machine = 'amd64';
+        } else {
+            $this->fail('Unsupported installer architecture: '.$machine);
+        }
+
+        return $kernel.'-'.$machine;
     }
 
     /**

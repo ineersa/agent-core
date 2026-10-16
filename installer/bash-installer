@@ -7,6 +7,7 @@ set -euo pipefail
 
 HATFIELD_NAME="Hatfield"
 HATFIELD_EXECUTABLE="hatfield"
+HATFIELD_OWNED_PHP_CLI="hatfield-php"
 GITHUB_REPO="${HATFIELD_GITHUB_REPO:-ineersa/agent-core}"
 DOWNLOAD_BASE="${HATFIELD_DOWNLOAD_BASE:-https://github.com/${GITHUB_REPO}/releases}"
 # Optional test/mirror seam: when set, asset downloads use this base
@@ -27,6 +28,10 @@ static="false"
 # as well as the mktemp download workspace.
 TMPDIR_INSTALL=""
 INSTALL_TMP=""
+INSTALL_CLI_TMP=""
+INSTALL_PAIR_DIR=""
+INSTALL_APP_BAK=""
+INSTALL_CLI_BAK=""
 
 output() {
   local style_start="" style_end=""
@@ -45,6 +50,19 @@ cleanup() {
   local exit_code=$?
   if [[ -n "${INSTALL_TMP}" && -e "${INSTALL_TMP}" ]]; then
     rm -f "${INSTALL_TMP}" 2>/dev/null || true
+  fi
+  if [[ -n "${INSTALL_CLI_TMP}" && -e "${INSTALL_CLI_TMP}" ]]; then
+    rm -f "${INSTALL_CLI_TMP}" 2>/dev/null || true
+  fi
+  if [[ -n "${INSTALL_PAIR_DIR}" && -d "${INSTALL_PAIR_DIR}" ]]; then
+    rm -rf "${INSTALL_PAIR_DIR}" 2>/dev/null || true
+  fi
+  # Restore previous matched pair if activation failed mid-swap.
+  if [[ -n "${INSTALL_APP_BAK}" && -e "${INSTALL_APP_BAK}" ]]; then
+    mv -f "${INSTALL_APP_BAK}" "${install_dir}/${HATFIELD_EXECUTABLE}" 2>/dev/null || true
+  fi
+  if [[ -n "${INSTALL_CLI_BAK}" && -e "${INSTALL_CLI_BAK}" ]]; then
+    mv -f "${INSTALL_CLI_BAK}" "${install_dir}/${HATFIELD_OWNED_PHP_CLI}" 2>/dev/null || true
   fi
   if [[ -n "${TMPDIR_INSTALL}" && -d "${TMPDIR_INSTALL}" ]]; then
     rm -rf "${TMPDIR_INSTALL}" 2>/dev/null || true
@@ -174,9 +192,11 @@ output "  [*] Platform ${platform}" "success"
 
 if [[ "${static}" == "true" ]]; then
   asset="hatfield.${platform}"
+  cli_asset="hatfield.${platform}.php"
 else
   # Canonical PHAR is platform-neutral (same file for Linux/macOS/Windows with PHP).
   asset="hatfield.phar"
+  cli_asset=""
 fi
 sums_asset="SHA256SUMS"
 
@@ -184,6 +204,10 @@ if [[ -n "${INSTALLER_BASE_URL}" ]]; then
   base="${INSTALLER_BASE_URL%/}"
   download_url="${base}/${asset}"
   sums_url="${base}/${sums_asset}"
+  cli_download_url=""
+  if [[ -n "${cli_asset}" ]]; then
+    cli_download_url="${base}/${cli_asset}"
+  fi
 else
   if [[ "${version}" == "latest" ]]; then
     version_path="latest/download"
@@ -192,14 +216,26 @@ else
   fi
   download_url="${DOWNLOAD_BASE}/${version_path}/${asset}"
   sums_url="${DOWNLOAD_BASE}/${version_path}/${sums_asset}"
+  cli_download_url=""
+  if [[ -n "${cli_asset}" ]]; then
+    cli_download_url="${DOWNLOAD_BASE}/${version_path}/${cli_asset}"
+  fi
 fi
 
 output "\nDownload" "heading"
 output "  Asset: ${asset}"
 output "  URL:   ${download_url}"
+if [[ -n "${cli_asset}" ]]; then
+  output "  CLI:   ${cli_asset}"
+  output "  URL:   ${cli_download_url}"
+fi
 
 tmp_bin="${TMPDIR_INSTALL}/${asset}"
 tmp_sums="${TMPDIR_INSTALL}/${sums_asset}"
+tmp_cli=""
+if [[ -n "${cli_asset}" ]]; then
+  tmp_cli="${TMPDIR_INSTALL}/${cli_asset}"
+fi
 
 download() {
   local url="$1" dest="$2"
@@ -228,34 +264,44 @@ download() {
 
 download "${download_url}" "${tmp_bin}"
 download "${sums_url}" "${tmp_sums}"
-output "  [*] Downloaded asset and SHA256SUMS" "success"
+if [[ -n "${tmp_cli}" ]]; then
+  download "${cli_download_url}" "${tmp_cli}"
+fi
+output "  [*] Downloaded asset${tmp_cli:+, owned PHP CLI,} and SHA256SUMS" "success"
 
 output "\nVerify" "heading"
 # Exact filename match only — do not accept partial path collisions.
-expected_line="$(grep -E "^[a-f0-9]{64}  ${asset}\$" "${tmp_sums}" || true)"
-if [[ -z "${expected_line}" ]]; then
-  output "  [ ] ERROR: ${asset} not found as an exact entry in SHA256SUMS" "error"
-  exit 1
-fi
-expected_hash="${expected_line%% *}"
+verify_sha256() {
+  local path="$1"
+  local name="$2"
+  local expected_line expected_hash actual_hash
+  expected_line="$(grep -E "^[a-f0-9]{64}  ${name}\$" "${tmp_sums}" || true)"
+  if [[ -z "${expected_line}" ]]; then
+    output "  [ ] ERROR: ${name} not found as an exact entry in SHA256SUMS" "error"
+    exit 1
+  fi
+  expected_hash="${expected_line%% *}"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual_hash="$(sha256sum "${path}" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual_hash="$(shasum -a 256 "${path}" | awk '{print $1}')"
+  else
+    output "  [ ] ERROR: sha256sum or shasum is required" "error"
+    exit 1
+  fi
+  if [[ "${actual_hash}" != "${expected_hash}" ]]; then
+    output "  [ ] ERROR: checksum mismatch for ${name}" "error"
+    output "      expected ${expected_hash}" "error"
+    output "      actual   ${actual_hash}" "error"
+    exit 1
+  fi
+  output "  [*] SHA-256 verified: ${name}" "success"
+}
 
-if command -v sha256sum >/dev/null 2>&1; then
-  actual_hash="$(sha256sum "${tmp_bin}" | awk '{print $1}')"
-elif command -v shasum >/dev/null 2>&1; then
-  actual_hash="$(shasum -a 256 "${tmp_bin}" | awk '{print $1}')"
-else
-  output "  [ ] ERROR: sha256sum or shasum is required" "error"
-  exit 1
+verify_sha256 "${tmp_bin}" "${asset}"
+if [[ -n "${tmp_cli}" ]]; then
+  verify_sha256 "${tmp_cli}" "${cli_asset}"
 fi
-
-if [[ "${actual_hash}" != "${expected_hash}" ]]; then
-  output "  [ ] ERROR: checksum mismatch for ${asset}" "error"
-  output "      expected ${expected_hash}" "error"
-  output "      actual   ${actual_hash}" "error"
-  # Fail closed: do not install.
-  exit 1
-fi
-output "  [*] SHA-256 verified" "success"
 
 # Run --version against a candidate path (PHAR via host php, static direct).
 # On failure: print fail-closed message and return 1 so previous install is untouched.
@@ -269,17 +315,21 @@ output "  [*] SHA-256 verified" "success"
 #     or the persistent XDG Hatfield cache.
 #   - HOME under the install temp tree so user settings cannot leak into smoke.
 #   - CWD is a throwaway directory under TMPDIR_INSTALL for the same reason.
+#   - Static smokes require an adjacent hatfield-php helper beside the app path.
 # Cleanup trap removes TMPDIR_INSTALL (and therefore these smoke roots).
 version_smoke() {
   local path="$1"
   local fail_cmd="$2"
   local fail_content="$3"
+  local helper_path="${4:-}"
   local out=""
   local smoke_root=""
   local smoke_cache=""
   local smoke_log=""
   local smoke_home=""
   local smoke_cwd=""
+  local smoke_bin=""
+  local smoke_helper=""
   SMOKE_OUT=""
 
   if [[ -z "${TMPDIR_INSTALL}" || ! -d "${TMPDIR_INSTALL}" ]]; then
@@ -295,7 +345,18 @@ version_smoke() {
   mkdir -p "${smoke_cache}" "${smoke_log}" "${smoke_home}" "${smoke_cwd}"
 
   if [[ "${static}" == "true" ]]; then
-    out="$(cd "${smoke_cwd}" && HOME="${smoke_home}" HATFIELD_CACHE_DIR="${smoke_cache}" HATFIELD_LOG_DIR="${smoke_log}" "${path}" --version 2>&1)" || {
+    if [[ -z "${helper_path}" || ! -x "${helper_path}" ]]; then
+      output "  [ ] ERROR: static candidate smoke requires adjacent owned PHP CLI" "error"
+      return 1
+    fi
+    # Stage a disposable adjacent pair so bootstrap can resolve hatfield-php
+    # without requiring install_dir on PATH or mutating the candidate download.
+    smoke_bin="${smoke_cwd}/${HATFIELD_EXECUTABLE}"
+    smoke_helper="${smoke_cwd}/${HATFIELD_OWNED_PHP_CLI}"
+    cp "${path}" "${smoke_bin}"
+    cp "${helper_path}" "${smoke_helper}"
+    chmod +x "${smoke_bin}" "${smoke_helper}"
+    out="$(cd "${smoke_cwd}" && HOME="${smoke_home}" HATFIELD_CACHE_DIR="${smoke_cache}" HATFIELD_LOG_DIR="${smoke_log}" "./${HATFIELD_EXECUTABLE}" --version 2>&1)" || {
       output "${fail_cmd}" "error"
       return 1
     }
@@ -312,6 +373,13 @@ version_smoke() {
     fi
     return 1
   fi
+  if [[ "${static}" == "true" ]]; then
+    # Owned CLI must be a real executable interpreter, not another Hatfield app.
+    if ! "${helper_path}" -r 'echo ok;' >/dev/null 2>&1; then
+      output "  [ ] ERROR: owned PHP CLI smoke failed; previous install left unchanged" "error"
+      return 1
+    fi
+  fi
   SMOKE_OUT="${out}"
   return 0
 }
@@ -319,28 +387,73 @@ version_smoke() {
 # Candidate smoke BEFORE replacing any existing install.
 output "\nCandidate smoke" "heading"
 chmod +x "${tmp_bin}"
-if ! version_smoke "${tmp_bin}" \
-  "  [ ] ERROR: candidate --version smoke failed; previous install left unchanged" \
-  "  [ ] ERROR: candidate --version did not report Hatfield; previous install left unchanged"; then
-  exit 1
+if [[ "${static}" == "true" ]]; then
+  chmod +x "${tmp_cli}"
+  if ! version_smoke "${tmp_bin}" \
+    "  [ ] ERROR: candidate --version smoke failed; previous install left unchanged" \
+    "  [ ] ERROR: candidate --version did not report Hatfield; previous install left unchanged" \
+    "${tmp_cli}"; then
+    exit 1
+  fi
+else
+  if ! version_smoke "${tmp_bin}" \
+    "  [ ] ERROR: candidate --version smoke failed; previous install left unchanged" \
+    "  [ ] ERROR: candidate --version did not report Hatfield; previous install left unchanged"; then
+    exit 1
+  fi
 fi
 output "  [*] Candidate smoke ok: ${SMOKE_OUT}" "success"
 
 output "\nInstall" "heading"
 mkdir -p "${install_dir}"
 dest="${install_dir}/${HATFIELD_EXECUTABLE}"
-# Atomic replace: write temp name in install dir then mv only after smoke+checksum.
-INSTALL_TMP="${install_dir}/.hatfield-install.$$"
-cp "${tmp_bin}" "${INSTALL_TMP}"
-chmod +x "${INSTALL_TMP}"
-# Final installed-path smoke from the install-dir temp (same inode about to move).
-if ! version_smoke "${INSTALL_TMP}" \
-  "  [ ] ERROR: install-dir temp --version failed; previous install left unchanged" \
-  "  [ ] ERROR: install-dir temp --version invalid; previous install left unchanged"; then
-  exit 1
+cli_dest="${install_dir}/${HATFIELD_OWNED_PHP_CLI}"
+
+if [[ "${static}" == "true" ]]; then
+  # Stage a matched pair under a private install-dir temp, smoke it, then swap
+  # both destinations. Any failure before both final moves restores the previous
+  # pair via the EXIT trap.
+  INSTALL_PAIR_DIR="${install_dir}/.hatfield-install-pair.$$"
+  mkdir -p "${INSTALL_PAIR_DIR}"
+  INSTALL_TMP="${INSTALL_PAIR_DIR}/${HATFIELD_EXECUTABLE}"
+  INSTALL_CLI_TMP="${INSTALL_PAIR_DIR}/${HATFIELD_OWNED_PHP_CLI}"
+  cp "${tmp_bin}" "${INSTALL_TMP}"
+  cp "${tmp_cli}" "${INSTALL_CLI_TMP}"
+  chmod +x "${INSTALL_TMP}" "${INSTALL_CLI_TMP}"
+  if ! version_smoke "${INSTALL_TMP}" \
+    "  [ ] ERROR: install-dir temp --version failed; previous install left unchanged" \
+    "  [ ] ERROR: install-dir temp --version invalid; previous install left unchanged" \
+    "${INSTALL_CLI_TMP}"; then
+    exit 1
+  fi
+  output "Installing matched pair to ${dest} and ${cli_dest}..."
+  if [[ -e "${dest}" ]]; then
+    INSTALL_APP_BAK="${INSTALL_PAIR_DIR}/previous-${HATFIELD_EXECUTABLE}"
+    mv -f "${dest}" "${INSTALL_APP_BAK}"
+  fi
+  if [[ -e "${cli_dest}" ]]; then
+    INSTALL_CLI_BAK="${INSTALL_PAIR_DIR}/previous-${HATFIELD_OWNED_PHP_CLI}"
+    mv -f "${cli_dest}" "${INSTALL_CLI_BAK}"
+  fi
+  mv -f "${INSTALL_TMP}" "${dest}"
+  mv -f "${INSTALL_CLI_TMP}" "${cli_dest}"
+  INSTALL_TMP=""
+  INSTALL_CLI_TMP=""
+  INSTALL_APP_BAK=""
+  INSTALL_CLI_BAK=""
+  rm -rf "${INSTALL_PAIR_DIR}"
+  INSTALL_PAIR_DIR=""
+else
+  # PHAR-only: atomic single-file replace; owned CLI is not installed.
+  INSTALL_TMP="${install_dir}/.hatfield-install.$$"
+  cp "${tmp_bin}" "${INSTALL_TMP}"
+  chmod +x "${INSTALL_TMP}"
+  if ! version_smoke "${INSTALL_TMP}" \
+    "  [ ] ERROR: install-dir temp --version failed; previous install left unchanged" \
+    "  [ ] ERROR: install-dir temp --version invalid; previous install left unchanged"; then
+    exit 1
+  fi
+  output "Installing to ${dest}..."
+  mv -f "${INSTALL_TMP}" "${dest}"
+  INSTALL_TMP=""
 fi
-# Candidate + same-dir INSTALL_TMP already checksum/version-smoked.
-# Final fallible/semantic step is atomic mv; exit status is mv status only.
-# Cleanup trap safely no-ops on the moved-away INSTALL_TMP path.
-output "Installing to ${dest}..."
-mv -f "${INSTALL_TMP}" "${dest}"

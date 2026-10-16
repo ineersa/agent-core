@@ -470,8 +470,9 @@ function distribution_combine_micro(string $spcBin, string $microSfx, string $ph
 /**
  * Copy the owned static CLI next to a fused native artifact.
  *
- * Application bootstrap resolves adjacent hatfield-php / companion .php and
- * prepends it to PATH. Publish the static CLI beside each fused artifact.
+ * Application bootstrap resolves a single adjacent hatfield-php helper and
+ * prepends its directory to PATH. Publish the static CLI beside each fused
+ * artifact as hatfield.<target>.php for release checksums.
  */
 function distribution_publish_owned_php_cli(string $workDir, string $outputPath): string
 {
@@ -492,9 +493,9 @@ function distribution_publish_owned_php_cli(string $workDir, string $outputPath)
 /**
  * Place the owned CLI beside a launch path using the published companion artifact.
  *
- * Prefers the release basename hatfield.<target>.php next to the fused binary.
- * Also stages hatfield-php in that same directory for Amp PATH resolution after
- * application bootstrap.
+ * Copies the release companion hatfield.<target>.php as the canonical runtime
+ * helper name hatfield-php beside the fused binary. No temporary links/copies
+ * elsewhere; install/smoke layouts use only that adjacent basename.
  */
 function distribution_stage_owned_php_cli_beside_launch_path(string $artifactPath, string $launchPath): string
 {
@@ -506,13 +507,6 @@ function distribution_stage_owned_php_cli_beside_launch_path(string $artifactPat
     if (!is_dir($launchDir) && !mkdir($launchDir, 0755, true) && !is_dir($launchDir)) {
         throw new RuntimeException('Unable to create launch dir for owned PHP CLI: '.$launchDir);
     }
-
-    $companion = $launchDir.'/'.basename($launchPath).'.php';
-    if (is_file($companion) || is_link($companion)) {
-        \CastorTasks\remove_path_checked($companion);
-    }
-    \CastorTasks\copy_file_checked($cliSource, $companion);
-    chmod($companion, 0755);
 
     $runtimeName = $launchDir.'/'.HATFIELD_OWNED_PHP_CLI_BASENAME;
     if (is_file($runtimeName) || is_link($runtimeName)) {
