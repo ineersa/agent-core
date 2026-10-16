@@ -1,5 +1,5 @@
 tui:
-    theme: cyberpunk
+    theme: catppuccin-mocha
 tools:
     bash:
         background_prompt_threshold_seconds: 15
