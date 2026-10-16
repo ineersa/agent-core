@@ -11,10 +11,12 @@ use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -23,6 +25,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
+use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -1210,6 +1213,384 @@ final class ToolCallResultHandlerTest extends TestCase
         $batch = $store->load('run-detached', 1, 'tools-old');
         $this->assertNotNull($batch);
         $this->assertArrayNotHasKey('call-detached', $batch->results);
+    }
+
+    public function testDetachedTerminalAcceptanceSettlesDuringCancellationWithoutRevival(): void
+    {
+        $store = new TestToolBatchStore();
+        $deferred = new InMemoryDeferredToolCompletionRepository();
+        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $call = new ExecuteToolCall(
+            runId: 'run-detach-cancel',
+            turnNo: 1,
+            stepId: 'tools-old',
+            attempt: 1,
+            idempotencyKey: 'call-detach-cancel-key',
+            toolCallId: 'call-detach-cancel',
+            toolName: 'bash',
+            args: ['command' => 'true'],
+            orderIndex: 0,
+            mode: 'sequential',
+        );
+        TestToolBatchRegistration::register($collector, $store, 'run-detach-cancel', 1, 'tools-old', [$call]);
+        $correlation = $this->registerBackgroundAcknowledged(
+            $deferred,
+            'run-detach-cancel',
+            'tools-old',
+            'call-detach-cancel',
+            'call-detach-cancel-key',
+            'inv-detach-cancel',
+        );
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $message = ToolCallResultBuilder::success('run-detach-cancel')
+            ->withTurnNo(1)
+            ->withStepId('tools-old')
+            ->withIdempotencyKey('call-detach-cancel-key')
+            ->withToolCallId('call-detach-cancel')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'done']]])
+            ->build();
+        $state = RunStateBuilder::running('run-detach-cancel')
+            ->withTurnNo(2)
+            ->withActiveStepId('tools-new')
+            ->withLastSeq(10)
+            ->withPendingToolCalls([])
+            ->withStatus(RunStatus::Cancelling)
+            ->build();
+
+        $result = $handler->handle($message, $state);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
+        $this->assertSame(
+            [RunEventTypeEnum::ToolExecutionEnd->value, RunEventTypeEnum::AgentEnd->value],
+            array_map(static fn ($event): string => $event->type, $result->events),
+        );
+        $this->assertTrue($result->events[0]->payload['accepted_completion']['detached'] ?? false);
+        $this->assertContainsOnlyInstancesOf(RecordToolInvocationLifecycleDTO::class, array_values(array_filter(
+            $result->postCommitActions,
+            static fn ($action): bool => $action instanceof RecordToolInvocationLifecycleDTO,
+        )));
+        foreach ($result->postCommitActions as $action) {
+            if ($action instanceof RecordToolInvocationLifecycleDTO) {
+                $deferred->applyLifecycleProjection($action);
+            }
+        }
+        $this->assertSame('completed', $deferred->status($correlation->deferredId));
+        $this->assertSame([], $result->nextState->pendingToolCalls);
+        $this->assertCount(0, $result->nextState->messages);
+    }
+
+    public function testAttachedDeferredPreserveIncomingCancellationSettlesAcceptance(): void
+    {
+        $store = new TestToolBatchStore();
+        $deferred = new InMemoryDeferredToolCompletionRepository();
+        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $call = new ExecuteToolCall(
+            runId: 'run-attach-cancel',
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'call-attach-cancel-key',
+            toolCallId: 'call-attach-cancel',
+            toolName: 'subagent',
+            args: [],
+            orderIndex: 0,
+            mode: 'sequential',
+        );
+        TestToolBatchRegistration::register($collector, $store, 'run-attach-cancel', 1, 'tools', [$call]);
+        $base = new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440801',
+            runId: 'run-attach-cancel',
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'call-attach-cancel-key',
+            toolCallId: 'call-attach-cancel',
+            toolName: 'subagent',
+            arguments: [],
+            orderIndex: 0,
+            mode: 'sequential',
+            invocationId: 'inv-attach-cancel',
+            controllerRunId: 'run-attach-cancel',
+            executionOwnerKind: 'subagent',
+            executionOwnerReference: new ToolInvocationOwnerReference('subagent', 'record-attach-cancel'),
+            originalExecutionMode: 'sequential',
+        );
+        $correlation = $deferred->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: $base->deferredId,
+            runId: $base->runId,
+            turnNo: $base->turnNo,
+            stepId: $base->stepId,
+            attempt: $base->attempt,
+            idempotencyKey: $base->idempotencyKey,
+            toolCallId: $base->toolCallId,
+            toolName: $base->toolName,
+            arguments: $base->arguments,
+            orderIndex: $base->orderIndex,
+            mode: $base->mode,
+            invocationId: $base->invocationId,
+            controllerRunId: $base->controllerRunId,
+            executionOwnerKind: $base->executionOwnerKind,
+            executionOwnerReference: $base->executionOwnerReference,
+            originalExecutionMode: $base->originalExecutionMode,
+            envelopeFingerprint: ToolInvocationEnvelopeFingerprint::fromCorrelation($base),
+        ));
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $message = ToolCallResultBuilder::success('run-attach-cancel')
+            ->withTurnNo(1)
+            ->withStepId('tools')
+            ->withIdempotencyKey('call-attach-cancel-key')
+            ->withToolCallId('call-attach-cancel')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'subagent', 'content' => [['type' => 'text', 'text' => 'child done']]])
+            ->build();
+        $state = RunStateBuilder::running('run-attach-cancel')
+            ->withTurnNo(1)
+            ->withActiveStepId('tools')
+            ->withLastSeq(4)
+            ->withPendingToolCalls(['call-attach-cancel' => false])
+            ->withStatus(RunStatus::Cancelling)
+            ->withMessages([new AgentMessage(role: 'assistant', content: [], metadata: ['tool_calls' => [
+                ['id' => 'call-attach-cancel', 'name' => 'subagent', 'arguments' => [], 'order_index' => 0],
+            ]])])
+            ->build();
+
+        $result = $handler->handle($message, $state);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState?->status);
+        $lifecycleActions = array_values(array_filter(
+            $result->postCommitActions,
+            static fn ($action): bool => $action instanceof RecordToolInvocationLifecycleDTO,
+        ));
+        $this->assertCount(1, $lifecycleActions);
+        $deferred->applyLifecycleProjection($lifecycleActions[0]);
+        $this->assertSame('completed', $deferred->status($correlation->deferredId));
+        $accepted = $deferred->findByDeferredId($correlation->deferredId);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::ForegroundResultAccepted, $accepted?->callerDisposition);
+        $this->assertTrue(false === $result->events[0]->payload['accepted_completion']['detached']);
+        $this->assertSame('child done', $result->nextState?->messages[1]->content[0]['text'] ?? null);
+    }
+
+    public function testDetachedAcceptedReceiptDoesNotPolluteLaterForegroundBatchReplay(): void
+    {
+        $store = new TestToolBatchStore();
+        $deferred = new InMemoryDeferredToolCompletionRepository();
+        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $detachedCall = new ExecuteToolCall(
+            runId: 'run-detach-replay',
+            turnNo: 1,
+            stepId: 'tools-old',
+            attempt: 1,
+            idempotencyKey: 'call-detach-replay-key',
+            toolCallId: 'call-detach-replay',
+            toolName: 'bash',
+            args: ['command' => 'true'],
+            orderIndex: 0,
+            mode: 'sequential',
+        );
+        TestToolBatchRegistration::register($collector, $store, 'run-detach-replay', 1, 'tools-old', [$detachedCall]);
+        $this->registerBackgroundAcknowledged(
+            $deferred,
+            'run-detach-replay',
+            'tools-old',
+            'call-detach-replay',
+            'call-detach-replay-key',
+            'inv-detach-replay',
+        );
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $ackState = RunStateBuilder::running('run-detach-replay')
+            ->withTurnNo(1)
+            ->withActiveStepId('tools-old')
+            ->withLastSeq(2)
+            ->withPendingToolCalls([])
+            ->withMessages([
+                new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'ack']], metadata: []),
+                new AgentMessage(role: 'tool', content: [['type' => 'text', 'text' => 'running_in_background']], metadata: [
+                    'tool_call_id' => 'call-detach-replay',
+                    'order_index' => 0,
+                ]),
+            ])
+            ->build();
+        $detachedResult = ToolCallResultBuilder::success('run-detach-replay')
+            ->withTurnNo(1)
+            ->withStepId('tools-old')
+            ->withIdempotencyKey('call-detach-replay-key')
+            ->withToolCallId('call-detach-replay')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'background done']]])
+            ->build();
+        $accepted = $handler->handle($detachedResult, $ackState->with([
+            'turnNo' => 2,
+            'activeStepId' => 'tools-new',
+            'lastSeq' => 5,
+            'pendingToolCalls' => [],
+        ]));
+        $this->assertCount(1, $accepted->events);
+        $this->assertTrue($accepted->events[0]->payload['accepted_completion']['detached'] ?? false);
+
+        $laterCall = new ExecuteToolCall(
+            runId: 'run-detach-replay',
+            turnNo: 2,
+            stepId: 'tools-new',
+            attempt: 1,
+            idempotencyKey: 'call-later-key',
+            toolCallId: 'call-later',
+            toolName: 'read',
+            args: ['path' => 'a.txt'],
+            orderIndex: 0,
+            mode: 'parallel',
+        );
+        TestToolBatchRegistration::register($collector, $store, 'run-detach-replay', 2, 'tools-new', [$laterCall]);
+        $laterState = ($accepted->nextState ?? $ackState)->with([
+            'turnNo' => 2,
+            'activeStepId' => 'tools-new',
+            'pendingToolCalls' => ['call-later' => false],
+            'messages' => [
+                ...($accepted->nextState ?? $ackState)->messages,
+                new AgentMessage(role: 'assistant', content: [], metadata: ['tool_calls' => [
+                    ['id' => 'call-later', 'name' => 'read', 'arguments' => ['path' => 'a.txt'], 'order_index' => 0],
+                ]]),
+            ],
+        ]);
+        $laterResult = ToolCallResultBuilder::success('run-detach-replay')
+            ->withTurnNo(2)
+            ->withStepId('tools-new')
+            ->withIdempotencyKey('call-later-key')
+            ->withToolCallId('call-later')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'read', 'content' => [['type' => 'text', 'text' => 'file']]])
+            ->build();
+        $later = $handler->handle($laterResult, $laterState);
+        $this->assertNotNull($later->nextState);
+        $toolMessages = array_values(array_filter(
+            $later->nextState->messages,
+            static fn (AgentMessage $message): bool => 'tool' === $message->role,
+        ));
+        $this->assertSame(
+            ['running_in_background', 'file'],
+            array_map(static fn (AgentMessage $message): string => $message->content[0]['text'] ?? '', $toolMessages),
+        );
+
+        $events = [
+            new RunEvent('run-detach-replay', 1, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]),
+            new RunEvent('run-detach-replay', 2, 1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'ack']], 'tool_calls' => [
+                    ['id' => 'call-detach-replay', 'name' => 'bash', 'arguments' => ['command' => 'true'], 'order_index' => 0],
+                ]],
+            ]),
+            new RunEvent('run-detach-replay', 3, 1, RunEventTypeEnum::ToolBatchCommitted->value, [
+                'count' => 1,
+                'turn_no' => 1,
+                'step_id' => 'tools-old',
+            ]),
+            $accepted->events[0],
+            new RunEvent('run-detach-replay', 5, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2]),
+            new RunEvent('run-detach-replay', 6, 2, RunEventTypeEnum::LlmStepCompleted->value, [
+                'assistant_message' => ['role' => 'assistant', 'content' => [], 'tool_calls' => [
+                    ['id' => 'call-later', 'name' => 'read', 'arguments' => ['path' => 'a.txt'], 'order_index' => 0],
+                ]],
+            ]),
+            $later->events[0],
+            $later->events[1],
+        ];
+        // Fix sequences for reducer input.
+        $sequenced = [];
+        foreach ($events as $i => $event) {
+            $sequenced[] = new RunEvent(
+                $event->runId,
+                $i + 1,
+                $event->turnNo,
+                $event->type,
+                $event->payload,
+            );
+        }
+        $replayed = (new RunStateReducer(
+            AttributeSerializerValidatorTestFactory::denormalizer(),
+            new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+        ))->replay(RunState::queued('run-detach-replay'), $sequenced);
+        $replayToolTexts = array_values(array_map(
+            static fn (AgentMessage $message): string => $message->content[0]['text'] ?? '',
+            array_filter($replayed->messages, static fn (AgentMessage $message): bool => 'tool' === $message->role),
+        ));
+        $this->assertSame(['file'], $replayToolTexts);
+        $this->assertSame([], $replayed->pendingToolCalls);
+    }
+
+    private function registerBackgroundAcknowledged(
+        InMemoryDeferredToolCompletionRepository $deferred,
+        string $runId,
+        string $stepId,
+        string $toolCallId,
+        string $idempotencyKey,
+        string $invocationId,
+    ): DeferredToolCompletionCorrelation {
+        $base = new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-44665544'.substr(hash('sha256', $toolCallId), 0, 4),
+            runId: $runId,
+            turnNo: 1,
+            stepId: $stepId,
+            attempt: 1,
+            idempotencyKey: $idempotencyKey,
+            toolCallId: $toolCallId,
+            toolName: 'bash',
+            arguments: ['command' => 'true'],
+            orderIndex: 0,
+            mode: 'sequential',
+            invocationId: $invocationId,
+            controllerRunId: $runId,
+            executionOwnerKind: 'bash',
+            executionOwnerReference: new ToolInvocationOwnerReference('bash', 'record-'.$toolCallId, 9, '/tmp/'.$toolCallId.'.log'),
+            originalExecutionMode: 'sequential',
+        );
+        $correlation = $deferred->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: $base->deferredId,
+            runId: $base->runId,
+            turnNo: $base->turnNo,
+            stepId: $base->stepId,
+            attempt: $base->attempt,
+            idempotencyKey: $base->idempotencyKey,
+            toolCallId: $base->toolCallId,
+            toolName: $base->toolName,
+            arguments: $base->arguments,
+            orderIndex: $base->orderIndex,
+            mode: $base->mode,
+            invocationId: $base->invocationId,
+            controllerRunId: $base->controllerRunId,
+            executionOwnerKind: $base->executionOwnerKind,
+            executionOwnerReference: $base->executionOwnerReference,
+            originalExecutionMode: $base->originalExecutionMode,
+            envelopeFingerprint: ToolInvocationEnvelopeFingerprint::fromCorrelation($base),
+        ));
+        $deferred->applyLifecycleProjection(new RecordToolInvocationLifecycleDTO(
+            $correlation,
+            ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
+            ToolInvocationExecutionObservationEnum::Active,
+        ));
+
+        $updated = $deferred->findByDeferredId($correlation->deferredId);
+        $this->assertNotNull($updated);
+
+        return $updated;
     }
 
     private function createSessionToolBatchStore(): \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface

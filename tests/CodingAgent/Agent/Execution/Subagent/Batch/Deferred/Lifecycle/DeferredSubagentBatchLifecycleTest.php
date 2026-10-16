@@ -1461,21 +1461,56 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $toolCallResult = $terminalBus->messages[0];
         $this->assertInstanceOf(ToolCallResult::class, $toolCallResult);
 
-        $serializer = self::getContainer()->get('serializer');
-        $this->assertInstanceOf(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class, $serializer);
-        $normalized = $serializer->normalize($toolCallResult);
-        $this->assertIsArray($normalized);
-        $fingerprint = \Ineersa\AgentCore\Domain\Tool\ToolInvocationAcceptedCompletionIdentity::resultFingerprint($normalized);
         $correlation = $deferred->findByDeferredId($lifecycle);
         $this->assertNotNull($correlation);
-        $completionId = \Ineersa\AgentCore\Domain\Tool\ToolInvocationAcceptedCompletionIdentity::completionIdFromCorrelation($correlation);
-        $deferred->applyLifecycleProjection(new \Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO(
-            $correlation,
-            \Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum::ForegroundResultAccepted,
-            \Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum::Terminal,
-            $completionId,
-            $fingerprint,
+        // CompleteDeferredToolCallHandler deletes the batch after transport send. Re-register
+        // the same call so owner acceptance still exercises prepareCollect + terminal acceptance.
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore, 4, $deferred);
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::register(
+            $collector,
+            $batchStore,
+            $correlation->runId,
+            $correlation->turnNo,
+            $correlation->stepId,
+            [new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall(
+                $correlation->runId,
+                $correlation->turnNo,
+                $correlation->stepId,
+                $correlation->attempt,
+                $correlation->idempotencyKey,
+                $correlation->toolCallId,
+                $correlation->toolName,
+                $correlation->arguments,
+                $correlation->orderIndex,
+                mode: $correlation->mode ?? 'sequential',
+            )],
+        );
+        $handler = new \Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+            toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
+            messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
+            serializer: self::getContainer()->get('serializer'),
+        );
+        $ownerState = \Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parent)
+            ->withTurnNo($correlation->turnNo)
+            ->withActiveStepId($correlation->stepId)
+            ->withPendingToolCalls([$correlation->toolCallId => false])
+            ->withMessages([
+                new AgentMessage(role: 'assistant', content: [], metadata: ['tool_calls' => [
+                    ['id' => $correlation->toolCallId, 'name' => 'fork', 'arguments' => [], 'order_index' => 0],
+                ]]),
+            ])
+            ->build();
+        // Drive owner acceptance through the real result handler rather than a standalone lifecycle write.
+        $accepted = $handler->handle($toolCallResult, $ownerState);
+        $this->assertNotNull($accepted->nextState);
+        $lifecycleActions = array_values(array_filter(
+            $accepted->postCommitActions,
+            static fn ($action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO,
         ));
+        $this->assertCount(1, $lifecycleActions);
+        $deferred->applyLifecycleProjection($lifecycleActions[0]);
         $this->assertSame('completed', $deferred->status($lifecycle));
         $worker($original);
         $this->assertSame(2, $notifications, 'Completed original execution redelivery is a no-op.');

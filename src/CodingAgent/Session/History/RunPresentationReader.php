@@ -156,6 +156,11 @@ final readonly class RunPresentationReader
                         if (isset($shells[$id])) {
                             unset($shells[$id]);
                         } else {
+                            if (true === ($payload['accepted_completion']['detached'] ?? false)) {
+                                // Detached receipts do not occupy foreground pending counts.
+                                unset($result);
+                                break;
+                            }
                             $pending[$id] = true;
                             $completed[$id] = true;
                         }

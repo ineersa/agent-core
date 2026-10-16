@@ -31,8 +31,11 @@ finals for detached invocations before producers are enabled.
 
 C3 owner acceptance records a deterministic `completion_id` and result fingerprint
 through prepared lifecycle projection. Detached results route before ordinary
-stale-step or cancellation terminalization and do not replace the original
-acknowledgment or re-enter the original batch slot. Deferred `status=completed`
+stale-step rejection and remain admissible during Cancelling or already-terminal
+owner states. Settlement records the accepted receipt without reviving the run,
+replacing the original acknowledgment, or staging the detached result into a
+later foreground batch. Attached deferred completions also settle on owner
+acceptance, including preserve-incoming cancellation. Deferred `status=completed`
 means verified owner acceptance, not successful transport send or caller
 detachment. Mailbox delivery, wake fencing, retained bodies, producers, and
 Ctrl+B remain later checkpoints.

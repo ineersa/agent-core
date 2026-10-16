@@ -103,13 +103,6 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         return $this->byDeferredId[$deferredId]['status'] ?? null;
     }
 
-    public function markCompleted(string $deferredId): void
-    {
-        if (isset($this->byDeferredId[$deferredId])) {
-            $this->byDeferredId[$deferredId]['status'] = 'completed';
-        }
-    }
-
     /** Test-only mutation helper for injecting a conflicting durable correlation envelope. */
     public function replaceForTest(DeferredToolCompletionCorrelation $correlation): void
     {

@@ -141,44 +141,6 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         return $entity instanceof DeferredToolCompletion ? $entity->status : null;
     }
 
-    public function markCompleted(string $deferredId): void
-    {
-        $em = $this->getEntityManager();
-        $updated = $em->getConnection()->executeStatement(
-            'UPDATE deferred_tool_completion SET status = :completed, updated_at = :now WHERE deferred_id = :deferred_id AND status = :pending',
-            [
-                'completed' => 'completed',
-                'pending' => 'pending',
-                'deferred_id' => $deferredId,
-                'now' => Clock::get()->now()->format('Y-m-d H:i:s'),
-            ],
-        );
-
-        if ($updated > 0) {
-            // DBAL write bypasses the identity map; detach any stale managed row so status()/find* read fresh state.
-            $managed = $this->findOneBy(['deferredId' => $deferredId]);
-            if ($managed instanceof DeferredToolCompletion) {
-                $em->detach($managed);
-            }
-
-            return;
-        }
-
-        // Fallback only runs when the conditional SQL update matched zero rows.
-        // Refresh before deciding so a cached pending status cannot force a second write.
-        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
-        if (!$entity instanceof DeferredToolCompletion) {
-            return;
-        }
-
-        if ('completed' === $entity->status) {
-            return;
-        }
-
-        $entity->status = 'completed';
-        $em->flush();
-    }
-
     public function applyLifecycleProjection(RecordToolInvocationLifecycleDTO $action): void
     {
         $expected = $action->expectedCorrelation;

@@ -64,12 +64,22 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         }
 
         // Detached true terminals route before ordinary stale-step/duplicate rejection.
-        if (!$message->isHumanInputSuspension()
-            && RunStatus::Cancelling !== $state->status
-            && !$state->status->isTerminal()) {
+        // Admit them during Cancelling and already-terminal states without reviving the run.
+        $detachedSettlement = null;
+        if (!$message->isHumanInputSuspension()) {
             $detached = $this->tryHandleDetachedTerminalAcceptance($message, $state);
             if (null !== $detached) {
-                return $detached;
+                if (RunStatus::Cancelling === $state->status) {
+                    if ([] !== $state->pendingToolCalls) {
+                        // Keep cancel synthesis for remaining attached work and fold the
+                        // detached receipt/actions into that same Cancelling transition.
+                        $detachedSettlement = $detached;
+                    } else {
+                        return $this->withEmptyPendingCancellation($detached, $message, $state);
+                    }
+                } else {
+                    return $detached;
+                }
             }
         }
 
@@ -93,10 +103,20 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
         if (RunStatus::Cancelling === $state->status) {
             $eventSpecs = [];
+            if ($detachedSettlement instanceof HandlerResult) {
+                foreach ($detachedSettlement->events as $event) {
+                    $eventSpecs[] = [
+                        'type' => $event->type,
+                        'payload' => $event->payload,
+                        'turn_no' => $event->turnNo,
+                    ];
+                }
+            }
             $messages = $state->messages;
             $toolCallInfoMap = $this->buildToolCallInfoMap($state);
             $pendingToolCalls = $state->pendingToolCalls;
             $projectedToolMessageCount = 0;
+            $incomingAcceptance = null;
 
             // Suspension is not a finished tool result — never preserve its null body.
             $preserveIncoming = !$message->isHumanInputSuspension()
@@ -105,6 +125,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
             if ($preserveIncoming) {
                 $pendingToolCalls[$message->toolCallId] = true;
+                $incomingAcceptance = $this->prepareAttachedTerminalAcceptance($message);
             }
 
             // Cancellation can land after some results were accepted while the batch was
@@ -148,6 +169,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                             eventSpecs: $eventSpecs,
                             messages: $messages,
                             result: $message,
+                            acceptance: $incomingAcceptance,
                         );
                     } else {
                         // Result was accepted while Running (incomplete batch): ends already
@@ -220,10 +242,13 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 'currentOperation' => null,
             ]);
 
-            $postCommitActions = [];
+            $postCommitActions = $detachedSettlement instanceof HandlerResult ? $detachedSettlement->postCommitActions : [];
             $cancelBatch = $this->toolBatchCollector->prepareCancelFinalization($runId, $state->turnNo, $collectorStepId);
             if (null !== $cancelBatch) {
                 $postCommitActions[] = $cancelBatch;
+            }
+            if ($incomingAcceptance instanceof PreparedToolTerminalAcceptanceDTO && null !== $incomingAcceptance->lifecycleAction) {
+                $postCommitActions[] = $incomingAcceptance->lifecycleAction;
             }
             $postCancelAdvance = $this->postCancelAdvanceAction($runId, $state->turnNo);
             $postCommitActions[] = $postCancelAdvance;
@@ -407,6 +432,81 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             ]),
             events: $events,
             postCommitActions: null !== $acceptance->lifecycleAction ? [$acceptance->lifecycleAction] : [],
+        );
+    }
+
+    private function prepareAttachedTerminalAcceptance(ToolCallResult $message): ?PreparedToolTerminalAcceptanceDTO
+    {
+        $eventPayload = $this->toolExecutionEndPayloadCodec->toEventPayload($message);
+        $resultFingerprint = ToolInvocationAcceptedCompletionIdentity::resultFingerprint($eventPayload['tool_result']);
+        $acceptance = $this->toolBatchCollector->prepareTerminalAcceptance($message, $resultFingerprint);
+        if (!$acceptance instanceof PreparedToolTerminalAcceptanceDTO || $acceptance->detached) {
+            return null;
+        }
+        if (!$acceptance->accepted) {
+            if ('conflicting_completion' === $acceptance->rejectionReason) {
+                throw new \RuntimeException(\sprintf('Conflicting accepted completion for run "%s" tool call "%s".', $message->runId(), $message->toolCallId));
+            }
+
+            return null;
+        }
+        if ($acceptance->duplicate) {
+            return null;
+        }
+
+        return $acceptance;
+    }
+
+    /**
+     * Preserve sticky cancellation when a detached receipt arrives with no attached pending calls.
+     * Settlement still records the detached receipt; the run ends Cancelled without revival.
+     */
+    private function withEmptyPendingCancellation(
+        HandlerResult $detached,
+        ToolCallResult $message,
+        RunState $state,
+    ): HandlerResult {
+        $eventSpecs = [];
+        foreach ($detached->events as $event) {
+            $eventSpecs[] = [
+                'type' => $event->type,
+                'payload' => $event->payload,
+                'turn_no' => $event->turnNo,
+            ];
+        }
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::AgentEnd->value,
+            'payload' => ['reason' => 'cancelled'],
+        ];
+        $events = $this->eventFactory->eventsFromSpecs(
+            $message->runId(),
+            $state->turnNo,
+            $state->lastSeq + 1,
+            $eventSpecs,
+        );
+        $collectorStepId = $state->activeStepId ?? $message->stepId();
+        $postCommitActions = $detached->postCommitActions;
+        $cancelBatch = $this->toolBatchCollector->prepareCancelFinalization($message->runId(), $state->turnNo, $collectorStepId);
+        if (null !== $cancelBatch) {
+            $postCommitActions[] = $cancelBatch;
+        }
+        $postCommitActions[] = $this->postCancelAdvanceAction($message->runId(), $state->turnNo);
+
+        return new HandlerResult(
+            nextState: $state->with([
+                'status' => RunStatus::Cancelled,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'pendingToolCalls' => [],
+                'currentToolCalls' => [],
+                'pendingHumanInputRequests' => [],
+                'activeStepId' => null,
+                'currentOperation' => null,
+            ]),
+            events: $events,
+            postCommitActions: $postCommitActions,
         );
     }
 
@@ -644,11 +744,18 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
      * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
      * @param list<AgentMessage>                                       $messages
      */
-    private function appendCommittedToolResultEvents(array &$eventSpecs, array &$messages, ToolCallResult $result): void
-    {
+    private function appendCommittedToolResultEvents(
+        array &$eventSpecs,
+        array &$messages,
+        ToolCallResult $result,
+        ?PreparedToolTerminalAcceptanceDTO $acceptance = null,
+    ): void {
         $eventSpecs[] = [
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-            'payload' => $this->toolExecutionEndPayloadCodec->toEventPayload($result),
+            'payload' => $this->withAcceptedCompletionReceipt(
+                $this->toolExecutionEndPayloadCodec->toEventPayload($result),
+                $acceptance,
+            ),
         ];
         $this->appendToolMessage(messages: $messages, result: $result);
     }

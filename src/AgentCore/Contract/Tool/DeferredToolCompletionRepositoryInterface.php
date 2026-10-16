@@ -27,8 +27,6 @@ interface DeferredToolCompletionRepositoryInterface
      */
     public function status(string $deferredId): ?string;
 
-    public function markCompleted(string $deferredId): void;
-
     /**
      * Applies a captured lifecycle projection under verified local finalization.
      * Terminal acceptance with a completion receipt also marks status completed.
