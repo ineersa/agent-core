@@ -376,6 +376,124 @@ final class ToolInvocationLifecyclePersistenceTest extends IsolatedKernelTestCas
         $this->assertSame(0, $active->requireLoaded($run)->lastSeq);
     }
 
+    public function testIncorrectDeterministicCompletionIdIsRejectedWithoutPendingJournal(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('lifecycle bad completion id');
+        /** @var DeferredToolCompletionRepositoryInterface $repo */
+        $repo = $container->get(DeferredToolCompletionRepositoryInterface::class);
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $active = $container->get(ActiveRunContextInterface::class);
+        $correlation = $repo->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440424',
+            runId: $run,
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'lifecycle-bad-id-key',
+            toolCallId: 'call-lifecycle-bad-id',
+            toolName: 'bash',
+            arguments: ['command' => 'sleep 1'],
+            orderIndex: 0,
+        ));
+
+        $state = new RunState(runId: $run, status: RunStatus::Running, turnNo: 1, lastSeq: 0, model: 'test-model');
+        $active->loadRecovered($state);
+        $commit = $this->runCommit($store);
+        $beforeSeq = $store->latestSequenceFor($run);
+
+        try {
+            $commit->commit(
+                $state,
+                $state,
+                [],
+                postCommitActions: [new RecordToolInvocationLifecycleDTO(
+                    $correlation,
+                    ToolInvocationCallerDispositionEnum::ForegroundResultAccepted,
+                    ToolInvocationExecutionObservationEnum::Terminal,
+                    'not-the-deterministic-id',
+                    hash('sha256', 'fingerprint'),
+                )],
+            );
+            $this->fail('Incorrect completion id must fail before journaling.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Accepted completion id must match the deterministic invocation receipt.', $exception->getMessage());
+        }
+
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $this->assertSame($beforeSeq, $store->latestSequenceFor($run));
+        $unchanged = $repo->findByRunAndToolCall($run, 'call-lifecycle-bad-id');
+        $this->assertNotNull($unchanged);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::ForegroundPending, $unchanged->callerDisposition);
+        $this->assertSame(ToolInvocationExecutionObservationEnum::Active, $unchanged->executionObservation);
+        $this->assertNull($unchanged->acceptedCompletionId);
+        $this->assertSame('pending', $repo->status($correlation->deferredId));
+    }
+
+    public function testConflictingAcceptedFingerprintIsRejectedWithoutPendingJournal(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('lifecycle conflicting fingerprint');
+        /** @var DeferredToolCompletionRepositoryInterface $repo */
+        $repo = $container->get(DeferredToolCompletionRepositoryInterface::class);
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $active = $container->get(ActiveRunContextInterface::class);
+        $correlation = $repo->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440425',
+            runId: $run,
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'lifecycle-conflict-key',
+            toolCallId: 'call-lifecycle-conflict',
+            toolName: 'bash',
+            arguments: ['command' => 'sleep 1'],
+            orderIndex: 0,
+        ));
+        $completionId = ToolInvocationAcceptedCompletionIdentity::completionIdFromCorrelation($correlation);
+        $acceptedFingerprint = hash('sha256', 'accepted');
+        $repo->applyLifecycleProjection(new RecordToolInvocationLifecycleDTO(
+            $correlation,
+            ToolInvocationCallerDispositionEnum::ForegroundResultAccepted,
+            ToolInvocationExecutionObservationEnum::Terminal,
+            $completionId,
+            $acceptedFingerprint,
+        ));
+        $accepted = $repo->findByRunAndToolCall($run, 'call-lifecycle-conflict');
+        $this->assertNotNull($accepted);
+
+        $state = new RunState(runId: $run, status: RunStatus::Running, turnNo: 1, lastSeq: 0, model: 'test-model');
+        $active->loadRecovered($state);
+        $commit = $this->runCommit($store);
+        $beforeSeq = $store->latestSequenceFor($run);
+
+        try {
+            $commit->commit(
+                $state,
+                $state,
+                [],
+                postCommitActions: [new RecordToolInvocationLifecycleDTO(
+                    $accepted,
+                    ToolInvocationCallerDispositionEnum::ForegroundResultAccepted,
+                    ToolInvocationExecutionObservationEnum::Terminal,
+                    $completionId,
+                    hash('sha256', 'different'),
+                )],
+            );
+            $this->fail('Conflicting accepted fingerprint must fail before journaling.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Conflicting accepted completion', $exception->getMessage());
+        }
+
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $this->assertSame($beforeSeq, $store->latestSequenceFor($run));
+        $unchanged = $repo->findByRunAndToolCall($run, 'call-lifecycle-conflict');
+        $this->assertNotNull($unchanged);
+        $this->assertSame($completionId, $unchanged->acceptedCompletionId);
+        $this->assertSame($acceptedFingerprint, $unchanged->acceptedResultFingerprint);
+        $this->assertSame('completed', $repo->status($correlation->deferredId));
+    }
+
     public function testDuplicateLifecycleUpdatesAcrossOrdinaryAndAfterTurnActionsAreRejectedWithoutJournal(): void
     {
         $container = self::getContainer();

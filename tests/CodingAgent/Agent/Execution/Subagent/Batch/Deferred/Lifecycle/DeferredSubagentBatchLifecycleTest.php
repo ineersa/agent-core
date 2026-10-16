@@ -1455,7 +1455,13 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $worker($original);
         $this->assertSame(2, $notifications, 'Pending redelivery re-emits registration without reading input.');
         $terminalBus = new TestMessageBus();
-        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $batchStore, new TestLogger()))($complete);
+        (new CompleteDeferredToolCallHandler(
+            $deferred,
+            $terminalBus,
+            self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(self::getContainer()->get('serializer')),
+            new TestLogger(),
+        ))($complete);
         $this->assertSame('pending', $deferred->status($lifecycle), 'Transport send alone must not mark deferred completion.');
         $this->assertCount(1, $terminalBus->messages);
         $toolCallResult = $terminalBus->messages[0];
@@ -1496,7 +1502,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertCount(1, $lifecycleActions);
         $deferred->applyLifecycleProjection($lifecycleActions[0]);
         $this->assertSame('completed', $deferred->status($lifecycle));
-        // After verified owner acceptance, cleanup can delete the finalized batch.
+        // After verified owner acceptance, the production after-turn cleanup hook
+        // deletes the original finalized batch by accepted origin identity.
         if (null !== $accepted->postCommitActions) {
             foreach ($accepted->postCommitActions as $action) {
                 if ($action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO) {
@@ -1505,7 +1512,26 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 }
             }
         }
-        $batchStore->delete($correlation->runId, $correlation->turnNo, $correlation->stepId);
+        $cleanup = new \Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber(
+            $batchStore,
+            new TestLogger(),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class),
+        );
+        $cleanup->handleAfterTurnCommit(new AfterTurnCommitHookContext(
+            runId: $parent,
+            turnNo: $correlation->turnNo,
+            status: RunStatus::Running->value,
+            events: array_map(
+                static fn ($event) => new AfterTurnCommitEventSummary(
+                    $event->seq,
+                    $event->type,
+                    $event->payload,
+                ),
+                $accepted->events,
+            ),
+            effectsCount: 0,
+            runState: $accepted->nextState ?? $ownerState,
+        ));
         $this->assertNull($batchStore->load($correlation->runId, $correlation->turnNo, $correlation->stepId));
         $worker($original);
         $this->assertSame(2, $notifications, 'Completed original execution redelivery is a no-op.');
@@ -1582,7 +1608,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $deferred,
             $resultBus,
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
+            new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(self::getContainer()->get('serializer')),
             new TestLogger(),
         );
         $completionHandler($complete);

@@ -290,14 +290,22 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
         $outcome = $this->toolBatchCollector->prepareCollect($message);
         if ($outcome->duplicate) {
+            $this->assertNoConflictingAcceptedCompletion($message);
+
             return new HandlerResult();
         }
 
         if ($outcome->complete && $this->canonicalBatchAlreadyCommitted($state, $message, $outcome->orderedResults)) {
+            $this->assertNoConflictingAcceptedCompletion($message);
+
             return new HandlerResult();
         }
 
         if (!$outcome->accepted) {
+            // Batch may already be cleaned after verified acceptance. Still compare
+            // against the accepted deferred receipt so conflicting redelivery fails closed.
+            $this->assertNoConflictingAcceptedCompletion($message);
+
             return new HandlerResult();
         }
 
@@ -601,6 +609,22 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         ];
 
         return $payload;
+    }
+
+    private function assertNoConflictingAcceptedCompletion(ToolCallResult $message): void
+    {
+        if ($message->isHumanInputSuspension()) {
+            return;
+        }
+
+        $eventPayload = $this->toolExecutionEndPayloadCodec->toEventPayload($message);
+        $resultFingerprint = ToolInvocationAcceptedCompletionIdentity::resultFingerprint($eventPayload['tool_result']);
+        $acceptance = $this->toolBatchCollector->prepareTerminalAcceptance($message, $resultFingerprint);
+        if ($acceptance instanceof PreparedToolTerminalAcceptanceDTO
+            && !$acceptance->accepted
+            && 'conflicting_completion' === $acceptance->rejectionReason) {
+            throw new \RuntimeException(\sprintf('Conflicting accepted completion for run "%s" tool call "%s".', $message->runId(), $message->toolCallId));
+        }
     }
 
     private function handleShellResult(ToolCallResult $message, RunState $state): HandlerResult

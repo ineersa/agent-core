@@ -42,7 +42,10 @@ accepted receipt and lifecycle completion without adding a second original-call
 model result or touching an unrelated current batch. Replay and presentation treat
 `accepted_completion.detached=true` and `accepted_completion.evidence_only=true`
 as settlement evidence only. Deferred `status=completed` means verified owner
-acceptance, not successful transport send or caller detachment. Mailbox delivery,
+acceptance, not successful transport send or caller detachment. After that
+verified acceptance, original-batch cleanup uses the accepted receipt's origin
+identity. Matching native `CompleteDeferredToolCall` redelivery is a no-op;
+conflicting content or error after acceptance fails closed. Mailbox delivery,
 wake fencing, retained bodies, producers, and Ctrl+B remain later checkpoints.
 
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.

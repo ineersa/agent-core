@@ -35,6 +35,7 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
                 // A canonical result resolves synchronous launch failures too.
                 // Approval suspension has no terminal tool result and retains input.
                 $this->tryDeleteLaunchInput($context->runId, $event->payload['tool_result']['tool_call_id']);
+                $this->tryDeleteAcceptedOriginBatch($context->runId, $event->payload);
             }
             if (RunEventTypeEnum::ToolBatchCommitted->value !== $event->type) {
                 continue;
@@ -85,6 +86,36 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
                 'event_type' => 'tool_launch_input.cleanup_failed', 'exception_class' => $exception::class,
             ]);
         }
+    }
+
+    /**
+     * After verified owner acceptance, delete the original finalized batch by
+     * origin identity. Detached and evidence-only receipts do not emit
+     * ToolBatchCommitted, so send-time cleanup cannot wait for that event.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function tryDeleteAcceptedOriginBatch(string $runId, array $payload): void
+    {
+        $accepted = $payload['accepted_completion'] ?? null;
+        if (!\is_array($accepted)) {
+            return;
+        }
+
+        $originTurnNo = $accepted['origin_turn_no'] ?? null;
+        $originStepId = $accepted['origin_step_id'] ?? null;
+        if (!\is_int($originTurnNo) || !\is_string($originStepId) || '' === $originStepId) {
+            $this->logger->warning('tool_batch.snapshot_cleanup_skipped', [
+                'run_id' => $runId,
+                'component' => 'tool_batch_snapshot_cleanup',
+                'event_type' => 'tool_execution_end',
+                'reason' => 'missing_accepted_origin_identity',
+            ]);
+
+            return;
+        }
+
+        $this->tryDeleteBatch($runId, $originTurnNo, $originStepId);
     }
 
     private function shouldDeleteAllSnapshotsAfterTerminalCommit(AfterTurnCommitHookContext $context): bool

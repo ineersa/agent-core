@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationAcceptedCompletionIdentity;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -16,6 +19,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * Transport send is not owner acceptance. Deferred status becomes completed only
  * when ToolCallResultHandler commits the accepted terminal lifecycle projection.
+ * Original-batch cleanup runs from the after-turn hook after that verified acceptance.
  */
 final readonly class CompleteDeferredToolCallHandler
 {
@@ -23,7 +27,7 @@ final readonly class CompleteDeferredToolCallHandler
         private DeferredToolCompletionRepositoryInterface $deferredRepository,
         private MessageBusInterface $commandBus,
         private RunLockManager $locks,
-        private \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface $batches,
+        private ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
         private LoggerInterface $logger,
     ) {
     }
@@ -52,10 +56,6 @@ final readonly class CompleteDeferredToolCallHandler
         ]);
 
         try {
-            if ('completed' === $this->deferredRepository->status($message->deferredId)) {
-                return;
-            }
-
             $toolCallResult = ToolCallResultFactory::fromDeferredCorrelationAndCompletion(
                 $correlation,
                 $message->content,
@@ -63,16 +63,24 @@ final readonly class CompleteDeferredToolCallHandler
                 $message->isError,
                 $message->error,
             );
+            $toolCallResult = $this->toolExecutionEndPayloadCodec->finalizeResult($toolCallResult);
+            $incomingFingerprint = ToolInvocationAcceptedCompletionIdentity::resultFingerprint(
+                $this->toolExecutionEndPayloadCodec->toEventPayload($toolCallResult)['tool_result'],
+            );
+
+            if ('completed' === $this->deferredRepository->status($message->deferredId)) {
+                $this->assertCompletedNativeMatches($correlation, $incomingFingerprint, $message->deferredId);
+
+                return;
+            }
+
             // Keep the pending correlation until owner acceptance. Successful
-            // transport send alone must not mark completed. A transport loss
-            // needs explicit repair, not another publication queue.
+            // transport send alone must not mark completed or delete the original
+            // batch. Verified acceptance triggers origin-batch cleanup from the
+            // after-turn hook using accepted_completion origin identity.
             $this->locks->afterRelease($correlation->runId, function () use ($message, $correlation, $toolCallResult): void {
                 try {
                     $this->commandBus->dispatch($toolCallResult);
-                    // Synchronous delivery may already have accepted the terminal
-                    // outcome and completed the deferred row. Best-effort batch
-                    // cleanup remains gated by unresolved pending status.
-                    $this->batches->delete($correlation->runId, $correlation->turnNo, $correlation->stepId);
                 } catch (\Throwable $exception) {
                     $this->logger->warning('deferred_tool_completion.delivery_failed', [
                         'run_id' => $correlation->runId,
@@ -87,5 +95,22 @@ final readonly class CompleteDeferredToolCallHandler
         } finally {
             RunLogContext::leave();
         }
+    }
+
+    private function assertCompletedNativeMatches(
+        DeferredToolCompletionCorrelation $correlation,
+        string $incomingFingerprint,
+        string $deferredId,
+    ): void {
+        $acceptedFingerprint = $correlation->acceptedResultFingerprint;
+        if (null === $acceptedFingerprint || '' === $acceptedFingerprint) {
+            throw new \RuntimeException(\sprintf('Completed deferred tool "%s" is missing an accepted result fingerprint.', $deferredId));
+        }
+
+        if ($acceptedFingerprint === $incomingFingerprint) {
+            return;
+        }
+
+        throw new \RuntimeException(\sprintf('Conflicting native deferred completion for run "%s" tool call "%s".', $correlation->runId, $correlation->toolCallId));
     }
 }

@@ -1779,6 +1779,35 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertCount(2, $result->nextState?->messages ?? []);
         $deferred->applyLifecycleProjection($result->postCommitActions[0]);
         $this->assertSame('completed', $deferred->status($correlation->deferredId));
+        // Cancel finalization leaves the original batch finalized; after owner
+        // acceptance the production cleanup hook deletes it by origin identity.
+        $cancelBatch = $collector->prepareCancelFinalization('run-evidence', 1, 'tools');
+        $this->assertNotNull($cancelBatch);
+        $store->prepareChanges([$cancelBatch], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+            \Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
+            ['run_id' => 'run-evidence', 'actions' => [$cancelBatch]],
+        ))();
+        $cleanup = new \Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber(
+            $store,
+            new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class),
+        );
+        $cleanup->handleAfterTurnCommit(new \Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext(
+            runId: 'run-evidence',
+            turnNo: 2,
+            status: RunStatus::Cancelled->value,
+            events: array_map(
+                static fn ($event) => new \Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary(
+                    $event->seq,
+                    $event->type,
+                    $event->payload,
+                ),
+                $result->events,
+            ),
+            effectsCount: 0,
+            runState: $result->nextState ?? $cancelled,
+        ));
+        $this->assertNull($store->load('run-evidence', 1, 'tools'));
 
         $duplicate = $handler->handle($message, $result->nextState);
         $this->assertNull($duplicate->nextState);
@@ -1956,6 +1985,109 @@ final class ToolCallResultHandlerTest extends TestCase
         ));
         // Cold replay stages only the cancel-synthesis sibling, not the evidence-only receipt.
         $this->assertSame(['Tool execution cancelled by user.'], $replayToolTexts);
+    }
+
+    public function testActiveStepDuplicateToolCallResultRejectsConflictingAcceptedFingerprint(): void
+    {
+        $store = new TestToolBatchStore();
+        $deferred = new InMemoryDeferredToolCompletionRepository();
+        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $call = new ExecuteToolCall(
+            runId: 'run-conflict-active',
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'call-conflict-active-key',
+            toolCallId: 'call-conflict-active',
+            toolName: 'bash',
+            args: ['command' => 'true'],
+            orderIndex: 0,
+            mode: 'sequential',
+        );
+        TestToolBatchRegistration::register($collector, $store, 'run-conflict-active', 1, 'tools', [$call]);
+        $base = new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440911',
+            runId: 'run-conflict-active',
+            turnNo: 1,
+            stepId: 'tools',
+            attempt: 1,
+            idempotencyKey: 'call-conflict-active-key',
+            toolCallId: 'call-conflict-active',
+            toolName: 'bash',
+            arguments: ['command' => 'true'],
+            orderIndex: 0,
+            mode: 'sequential',
+        );
+        $correlation = $deferred->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: $base->deferredId,
+            runId: $base->runId,
+            turnNo: $base->turnNo,
+            stepId: $base->stepId,
+            attempt: $base->attempt,
+            idempotencyKey: $base->idempotencyKey,
+            toolCallId: $base->toolCallId,
+            toolName: $base->toolName,
+            arguments: $base->arguments,
+            orderIndex: $base->orderIndex,
+            mode: $base->mode,
+            envelopeFingerprint: ToolInvocationEnvelopeFingerprint::fromCorrelation($base),
+        ));
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $first = ToolCallResultBuilder::success('run-conflict-active')
+            ->withTurnNo(1)
+            ->withStepId('tools')
+            ->withIdempotencyKey('call-conflict-active-key')
+            ->withToolCallId('call-conflict-active')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'first']]])
+            ->build();
+        $accepted = $handler->handle($first, RunStateBuilder::running('run-conflict-active')
+            ->withTurnNo(1)
+            ->withActiveStepId('tools')
+            ->withPendingToolCalls(['call-conflict-active' => false])
+            ->withMessages([
+                new AgentMessage(role: 'assistant', content: [], metadata: ['tool_calls' => [
+                    ['id' => 'call-conflict-active', 'name' => 'bash', 'arguments' => ['command' => 'true'], 'order_index' => 0],
+                ]]),
+            ])
+            ->build());
+        $this->assertNotNull($accepted->nextState);
+        foreach ($accepted->postCommitActions as $action) {
+            if ($action instanceof RecordToolInvocationLifecycleDTO) {
+                $deferred->applyLifecycleProjection($action);
+            }
+            if ($action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO) {
+                $store->prepareChanges([$action], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+                    \Symfony\Component\Uid\Uuid::v7()->toRfc4122(),
+                    ['run_id' => 'run-conflict-active', 'actions' => [$action]],
+                ))();
+            }
+        }
+        $this->assertSame('completed', $deferred->status($correlation->deferredId));
+
+        // After verified acceptance the original batch can already be cleaned.
+        // Conflicting same-step redelivery must still fail closed against the receipt.
+        $store->delete('run-conflict-active', 1, 'tools');
+        $this->assertNull($store->load('run-conflict-active', 1, 'tools'));
+
+        $conflict = ToolCallResultBuilder::success('run-conflict-active')
+            ->withTurnNo(1)
+            ->withStepId('tools')
+            ->withIdempotencyKey('call-conflict-active-key')
+            ->withToolCallId('call-conflict-active')
+            ->withOrderIndex(0)
+            ->withResult(['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'different']]])
+            ->build();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Conflicting accepted completion');
+        $handler->handle($conflict, $accepted->nextState);
     }
 
     private function registerBackgroundAcknowledged(

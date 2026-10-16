@@ -113,6 +113,41 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         $this->assertNull($store->load('run-1', 1, 'step-1'));
     }
 
+    public function testAcceptedCompletionReceiptDeletesOriginalBatchByOriginIdentity(): void
+    {
+        $store = $this->createStore();
+        $this->seedBatch($store, 'run-1', 1, 'origin-step', new ToolBatchStateDTO([], [], [], [], [], true, 2));
+        $this->seedBatch($store, 'run-1', 2, 'current-step', new ToolBatchStateDTO([], [], [], [], [], false, 2));
+
+        $subscriber = new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class));
+        $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
+            runId: 'run-1',
+            turnNo: 2,
+            status: RunStatus::Cancelled->value,
+            events: [
+                new AfterTurnCommitEventSummary(10, RunEventTypeEnum::ToolExecutionEnd->value, [
+                    'tool_result' => ['tool_call_id' => 'call-origin'],
+                    'accepted_completion' => [
+                        'completion_id' => 'cid',
+                        'result_fingerprint' => 'fp',
+                        'origin_run_id' => 'run-1',
+                        'origin_turn_no' => 1,
+                        'origin_step_id' => 'origin-step',
+                        'tool_call_id' => 'call-origin',
+                        'invocation_id' => 'inv-origin',
+                        'detached' => false,
+                        'evidence_only' => true,
+                    ],
+                ]),
+            ],
+            effectsCount: 0,
+            runState: new RunState('run-1', RunStatus::Cancelled, turnNo: 2),
+        ));
+
+        $this->assertNull($store->load('run-1', 1, 'origin-step'));
+        $this->assertNotNull($store->load('run-1', 2, 'current-step'));
+    }
+
     public function testCanonicalToolResultDeletesFailedLaunchInputWithoutWaitingForSiblings(): void
     {
         $inputStore = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
