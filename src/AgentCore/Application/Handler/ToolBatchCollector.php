@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationBackgroundBinding;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationBackgroundReadiness;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationEnvelopeFingerprint;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
 
 /**
@@ -182,7 +183,18 @@ final class ToolBatchCollector
             return PreparedToolBackgroundAcknowledgementDTO::rejected('not_running');
         }
 
-        $acknowledgement = $this->buildBackgroundAcknowledgement($correlation, $readiness);
+        $storedCall = $before->calls[$readiness->toolCallId] ?? null;
+        if (!$storedCall instanceof ExecuteToolCall) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('not_running');
+        }
+
+        try {
+            $this->assertCorrelationMatchesStoredCall($correlation, $storedCall);
+        } catch (\RuntimeException) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('stale_identity');
+        }
+
+        $acknowledgement = $this->buildBackgroundAcknowledgement($correlation);
         $result = $this->backgroundAcknowledgementResult($correlation, $acknowledgement);
 
         if (ToolInvocationCallerDispositionEnum::BackgroundAcknowledged === $correlation->callerDisposition) {
@@ -719,11 +731,9 @@ final class ToolBatchCollector
 
     private function buildBackgroundAcknowledgement(
         DeferredToolCompletionCorrelation $correlation,
-        ToolInvocationBackgroundReadiness $readiness,
     ): ToolBackgroundAcknowledgement {
-        $invocationId = $correlation->invocationId
-            ?? $readiness->invocationId
-            ?? $correlation->deferredId;
+        // Prefer the durable stored alias; otherwise use deferredId. Never adopt an unpersisted request alias.
+        $invocationId = $correlation->invocationId ?? $correlation->deferredId;
         $inspection = [
             'tool' => 'bg_status',
             'invocation_id' => $invocationId,
@@ -740,6 +750,45 @@ final class ToolBatchCollector
             tool: $correlation->toolName,
             inspection: $inspection,
         );
+    }
+
+    private function assertCorrelationMatchesStoredCall(
+        DeferredToolCompletionCorrelation $correlation,
+        ExecuteToolCall $call,
+    ): void {
+        if (!$correlation->matchesInvocationTuple($call->runId(), $call->turnNo(), $call->stepId(), $call->toolCallId)) {
+            throw new \RuntimeException('stale_identity');
+        }
+
+        if ($correlation->attempt !== $call->attempt()
+            || $correlation->idempotencyKey !== $call->idempotencyKey()
+            || $correlation->toolName !== $call->toolName
+            || $correlation->orderIndex !== $call->orderIndex
+            || $correlation->toolIdempotencyKey !== $call->toolIdempotencyKey
+            || $correlation->mode !== $call->mode
+            || $correlation->timeoutSeconds !== $call->timeoutSeconds
+            || $correlation->maxParallelism !== $call->maxParallelism
+            || $correlation->argSchema !== $call->argSchema
+            || $correlation->toolsRef !== $call->toolsRef) {
+            throw new \RuntimeException('stale_identity');
+        }
+
+        $expectedFingerprint = $correlation->envelopeFingerprint
+            ?? ToolInvocationEnvelopeFingerprint::fromCorrelation($correlation);
+        $storedFingerprint = ToolInvocationEnvelopeFingerprint::compute(
+            runId: $call->runId(),
+            turnNo: $call->turnNo(),
+            stepId: $call->stepId(),
+            toolCallId: $call->toolCallId,
+            toolName: $call->toolName,
+            idempotencyKey: $call->idempotencyKey(),
+            arguments: $call->args,
+            toolIdempotencyKey: $call->toolIdempotencyKey,
+            mode: $call->mode,
+        );
+        if ($expectedFingerprint !== $storedFingerprint) {
+            throw new \RuntimeException('stale_identity');
+        }
     }
 
     private function backgroundAcknowledgementResult(

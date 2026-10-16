@@ -353,6 +353,190 @@ final class ToolBatchCollectorBackgroundAcknowledgementTest extends TestCase
         $this->assertArrayNotHasKey('call-1', $batch->results);
     }
 
+    public function testStoredCallEnvelopeMismatchRejectsWithoutMutation(): void
+    {
+        [$collector, $batches, $deferred, $correlation] = $this->readyCollector(
+            runId: 'run-mismatch',
+            stepId: 'step-1',
+            toolCallId: 'call-1',
+            mode: 'sequential',
+            siblings: [$this->call('run-mismatch', 'step-1', 'call-1', 0, 'sequential')],
+        );
+
+        $beforeBatch = $batches->load('run-mismatch', 1, 'step-1');
+        $this->assertNotNull($beforeBatch);
+        $beforeDeferred = $deferred->findByRunAndToolCall('run-mismatch', 'call-1');
+        $this->assertNotNull($beforeDeferred);
+
+        $mismatched = new DeferredToolCompletionCorrelation(
+            deferredId: $correlation->deferredId,
+            runId: $correlation->runId,
+            turnNo: $correlation->turnNo,
+            stepId: $correlation->stepId,
+            attempt: $correlation->attempt,
+            idempotencyKey: $correlation->idempotencyKey,
+            toolCallId: $correlation->toolCallId,
+            toolName: $correlation->toolName,
+            arguments: ['command' => 'sleep 30'],
+            orderIndex: $correlation->orderIndex,
+            toolIdempotencyKey: $correlation->toolIdempotencyKey,
+            mode: $correlation->mode,
+            timeoutSeconds: $correlation->timeoutSeconds,
+            maxParallelism: $correlation->maxParallelism,
+            argSchema: $correlation->argSchema,
+            toolsRef: $correlation->toolsRef,
+            invocationId: $correlation->invocationId,
+            controllerRunId: $correlation->controllerRunId,
+            executionOwnerKind: $correlation->executionOwnerKind,
+            executionOwnerReference: $correlation->executionOwnerReference,
+            originalExecutionMode: $correlation->originalExecutionMode,
+            deadlineMetadata: $correlation->deadlineMetadata,
+            originWakeGeneration: $correlation->originWakeGeneration,
+            rootWakeGeneration: $correlation->rootWakeGeneration,
+        );
+        $mismatched = new DeferredToolCompletionCorrelation(
+            deferredId: $mismatched->deferredId,
+            runId: $mismatched->runId,
+            turnNo: $mismatched->turnNo,
+            stepId: $mismatched->stepId,
+            attempt: $mismatched->attempt,
+            idempotencyKey: $mismatched->idempotencyKey,
+            toolCallId: $mismatched->toolCallId,
+            toolName: $mismatched->toolName,
+            arguments: $mismatched->arguments,
+            orderIndex: $mismatched->orderIndex,
+            toolIdempotencyKey: $mismatched->toolIdempotencyKey,
+            mode: $mismatched->mode,
+            timeoutSeconds: $mismatched->timeoutSeconds,
+            maxParallelism: $mismatched->maxParallelism,
+            argSchema: $mismatched->argSchema,
+            toolsRef: $mismatched->toolsRef,
+            invocationId: $mismatched->invocationId,
+            controllerRunId: $mismatched->controllerRunId,
+            executionOwnerKind: $mismatched->executionOwnerKind,
+            executionOwnerReference: $mismatched->executionOwnerReference,
+            originalExecutionMode: $mismatched->originalExecutionMode,
+            deadlineMetadata: $mismatched->deadlineMetadata,
+            originWakeGeneration: $mismatched->originWakeGeneration,
+            rootWakeGeneration: $mismatched->rootWakeGeneration,
+            envelopeFingerprint: ToolInvocationEnvelopeFingerprint::fromCorrelation($mismatched),
+            callerDisposition: $mismatched->callerDisposition,
+            executionObservation: $mismatched->executionObservation,
+        );
+        $deferred->replaceForTest($mismatched);
+
+        $prepared = $collector->prepareBackgroundAcknowledgement($this->readiness($mismatched));
+        $this->assertFalse($prepared->accepted);
+        $this->assertSame('stale_identity', $prepared->rejectionReason);
+        $this->assertSame([], $prepared->localActions);
+
+        $afterBatch = $batches->load('run-mismatch', 1, 'step-1');
+        $this->assertEquals($beforeBatch, $afterBatch);
+        $afterDeferred = $deferred->findByRunAndToolCall('run-mismatch', 'call-1');
+        $this->assertEquals($mismatched, $afterDeferred);
+        $this->assertSame('pending', $deferred->status($correlation->deferredId));
+        $this->assertSame(ToolInvocationCallerDispositionEnum::ForegroundPending, $afterDeferred?->callerDisposition);
+    }
+
+    public function testNullStoredAliasUsesDeferredIdAndIgnoresRequestAliasOnRetry(): void
+    {
+        [$collector, $batches, $deferred, $correlation] = $this->readyCollector(
+            runId: 'run-null-alias',
+            stepId: 'step-1',
+            toolCallId: 'call-1',
+            mode: 'sequential',
+            siblings: [$this->call('run-null-alias', 'step-1', 'call-1', 0, 'sequential')],
+            includeInvocationId: false,
+        );
+        $this->assertNull($correlation->invocationId);
+
+        $firstReadiness = new ToolInvocationBackgroundReadiness(
+            $correlation->runId,
+            $correlation->turnNo,
+            $correlation->stepId,
+            $correlation->toolCallId,
+            $correlation->toolName,
+            $correlation->executionOwnerReference,
+            'alias-A',
+            $correlation->controllerRunId,
+            $correlation->envelopeFingerprint,
+        );
+        $prepared = $collector->prepareBackgroundAcknowledgement($firstReadiness);
+        $this->assertTrue($prepared->accepted);
+        $this->assertSame($correlation->deferredId, $prepared->acknowledgement?->invocationId);
+        $this->assertSame($correlation->deferredId, $prepared->acknowledgement?->inspection['invocation_id'] ?? null);
+        $this->applyPrepared($batches, $deferred, $prepared->localActions);
+
+        $updated = $deferred->findByRunAndToolCall('run-null-alias', 'call-1');
+        $this->assertNull($updated?->invocationId);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, $updated?->callerDisposition);
+
+        $retryOmittingAlias = new ToolInvocationBackgroundReadiness(
+            $correlation->runId,
+            $correlation->turnNo,
+            $correlation->stepId,
+            $correlation->toolCallId,
+            $correlation->toolName,
+            $correlation->executionOwnerReference,
+            null,
+            $correlation->controllerRunId,
+            $correlation->envelopeFingerprint,
+        );
+        $again = $collector->prepareBackgroundAcknowledgement($retryOmittingAlias);
+        $this->assertTrue($again->accepted);
+        $this->assertTrue($again->duplicate);
+        $this->assertSame([], $again->localActions);
+        $this->assertSame($correlation->deferredId, $again->acknowledgement?->invocationId);
+        $this->assertSame(
+            $prepared->acknowledgementResult?->result['content'][0]['text'] ?? null,
+            $again->acknowledgementResult?->result['content'][0]['text'] ?? null,
+        );
+
+        $retryDifferentAlias = new ToolInvocationBackgroundReadiness(
+            $correlation->runId,
+            $correlation->turnNo,
+            $correlation->stepId,
+            $correlation->toolCallId,
+            $correlation->toolName,
+            $correlation->executionOwnerReference,
+            'alias-B',
+            $correlation->controllerRunId,
+            $correlation->envelopeFingerprint,
+        );
+        $third = $collector->prepareBackgroundAcknowledgement($retryDifferentAlias);
+        $this->assertTrue($third->accepted);
+        $this->assertTrue($third->duplicate);
+        $this->assertSame([], $third->localActions);
+        $this->assertSame($correlation->deferredId, $third->acknowledgement?->invocationId);
+    }
+
+    public function testStoredAliasMismatchStillRejects(): void
+    {
+        [$collector, , , $correlation] = $this->readyCollector(
+            runId: 'run-stored-alias',
+            stepId: 'step-1',
+            toolCallId: 'call-1',
+            mode: 'sequential',
+            siblings: [$this->call('run-stored-alias', 'step-1', 'call-1', 0, 'sequential')],
+        );
+        $this->assertSame('inv-call-1', $correlation->invocationId);
+
+        $prepared = $collector->prepareBackgroundAcknowledgement(new ToolInvocationBackgroundReadiness(
+            $correlation->runId,
+            $correlation->turnNo,
+            $correlation->stepId,
+            $correlation->toolCallId,
+            $correlation->toolName,
+            $correlation->executionOwnerReference,
+            'other-alias',
+            $correlation->controllerRunId,
+            $correlation->envelopeFingerprint,
+        ));
+        $this->assertFalse($prepared->accepted);
+        $this->assertSame('stale_identity', $prepared->rejectionReason);
+        $this->assertSame([], $prepared->localActions);
+    }
+
     /**
      * @param list<ExecuteToolCall> $siblings
      *
@@ -365,6 +549,8 @@ final class ToolBatchCollectorBackgroundAcknowledgementTest extends TestCase
         string $mode,
         array $siblings,
         int $maxParallelism = 4,
+        ?string $invocationId = null,
+        bool $includeInvocationId = true,
     ): array {
         $batches = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
@@ -372,28 +558,33 @@ final class ToolBatchCollectorBackgroundAcknowledgementTest extends TestCase
         TestToolBatchRegistration::register($collector, $batches, $runId, 1, $stepId, $siblings);
 
         $owner = new ToolInvocationOwnerReference('bash', 'record-'.$toolCallId, 4242, '/tmp/'.$toolCallId.'.log');
+        $storedCall = null;
+        foreach ($siblings as $call) {
+            if ($call->toolCallId === $toolCallId) {
+                $storedCall = $call;
+                break;
+            }
+        }
+        $this->assertInstanceOf(ExecuteToolCall::class, $storedCall);
+
         $correlation = new DeferredToolCompletionCorrelation(
             deferredId: Uuid::v7()->toRfc4122(),
             runId: $runId,
             turnNo: 1,
             stepId: $stepId,
-            attempt: 1,
-            idempotencyKey: $toolCallId.'-key',
+            attempt: $storedCall->attempt(),
+            idempotencyKey: $storedCall->idempotencyKey(),
             toolCallId: $toolCallId,
-            toolName: 'bash',
-            arguments: ['command' => 'sleep 30'],
-            orderIndex: (static function () use ($siblings, $toolCallId): int {
-                foreach ($siblings as $call) {
-                    if ($call->toolCallId === $toolCallId) {
-                        return $call->orderIndex;
-                    }
-                }
-
-                return 0;
-            })(),
-            mode: $mode,
-            maxParallelism: $maxParallelism,
-            invocationId: 'inv-'.$toolCallId,
+            toolName: $storedCall->toolName,
+            arguments: $storedCall->args,
+            orderIndex: $storedCall->orderIndex,
+            toolIdempotencyKey: $storedCall->toolIdempotencyKey,
+            mode: $storedCall->mode,
+            timeoutSeconds: $storedCall->timeoutSeconds,
+            maxParallelism: $storedCall->maxParallelism,
+            argSchema: $storedCall->argSchema,
+            toolsRef: $storedCall->toolsRef,
+            invocationId: $includeInvocationId ? ($invocationId ?? 'inv-'.$toolCallId) : null,
             controllerRunId: $runId,
             executionOwnerKind: 'bash',
             executionOwnerReference: $owner,

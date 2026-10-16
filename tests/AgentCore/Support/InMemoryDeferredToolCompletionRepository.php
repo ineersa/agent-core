@@ -109,6 +109,54 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         }
     }
 
+    /** Test-only mutation helper for injecting a conflicting durable correlation envelope. */
+    public function replaceForTest(DeferredToolCompletionCorrelation $correlation): void
+    {
+        $key = $correlation->runId.'|'.$correlation->toolCallId;
+        $existingDeferredId = $this->byRunToolCall[$key] ?? null;
+        if (null === $existingDeferredId || !isset($this->byDeferredId[$existingDeferredId])) {
+            throw new \RuntimeException(\sprintf('Deferred tool correlation missing for run "%s" tool call "%s".', $correlation->runId, $correlation->toolCallId));
+        }
+
+        if ($existingDeferredId !== $correlation->deferredId) {
+            throw new \RuntimeException('replaceForTest requires the same deferred id.');
+        }
+
+        $computedFingerprint = ToolInvocationEnvelopeFingerprint::fromCorrelation($correlation);
+        $stored = new DeferredToolCompletionCorrelation(
+            deferredId: $correlation->deferredId,
+            runId: $correlation->runId,
+            turnNo: $correlation->turnNo,
+            stepId: $correlation->stepId,
+            attempt: $correlation->attempt,
+            idempotencyKey: $correlation->idempotencyKey,
+            toolCallId: $correlation->toolCallId,
+            toolName: $correlation->toolName,
+            arguments: $correlation->arguments,
+            orderIndex: $correlation->orderIndex,
+            toolIdempotencyKey: $correlation->toolIdempotencyKey,
+            mode: $correlation->mode,
+            timeoutSeconds: $correlation->timeoutSeconds,
+            maxParallelism: $correlation->maxParallelism,
+            assistantMessage: $correlation->assistantMessage,
+            argSchema: $correlation->argSchema,
+            toolsRef: $correlation->toolsRef,
+            invocationId: $correlation->invocationId,
+            controllerRunId: $correlation->controllerRunId,
+            executionOwnerKind: $correlation->executionOwnerKind,
+            executionOwnerReference: $correlation->executionOwnerReference,
+            originalExecutionMode: $correlation->originalExecutionMode,
+            deadlineMetadata: $correlation->deadlineMetadata,
+            originWakeGeneration: $correlation->originWakeGeneration,
+            rootWakeGeneration: $correlation->rootWakeGeneration,
+            envelopeFingerprint: $correlation->envelopeFingerprint ?? $computedFingerprint,
+            callerDisposition: $correlation->callerDisposition,
+            executionObservation: $correlation->executionObservation,
+        );
+
+        $this->byDeferredId[$correlation->deferredId]['correlation'] = $stored;
+    }
+
     public function applyLifecycleProjection(RecordToolInvocationLifecycleDTO $action): void
     {
         $expected = $action->expectedCorrelation;
