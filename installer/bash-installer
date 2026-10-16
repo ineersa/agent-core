@@ -28,10 +28,8 @@ static="false"
 # as well as the mktemp download workspace.
 TMPDIR_INSTALL=""
 INSTALL_TMP=""
-INSTALL_CLI_TMP=""
-INSTALL_PAIR_DIR=""
-INSTALL_APP_BAK=""
-INSTALL_CLI_BAK=""
+INSTALL_RUNTIME_DIR=""
+INSTALL_LINK_TMP=""
 
 output() {
   local style_start="" style_end=""
@@ -51,18 +49,13 @@ cleanup() {
   if [[ -n "${INSTALL_TMP}" && -e "${INSTALL_TMP}" ]]; then
     rm -f "${INSTALL_TMP}" 2>/dev/null || true
   fi
-  if [[ -n "${INSTALL_CLI_TMP}" && -e "${INSTALL_CLI_TMP}" ]]; then
-    rm -f "${INSTALL_CLI_TMP}" 2>/dev/null || true
+  if [[ -n "${INSTALL_LINK_TMP}" && -e "${INSTALL_LINK_TMP}" ]]; then
+    rm -f "${INSTALL_LINK_TMP}" 2>/dev/null || true
   fi
-  if [[ -n "${INSTALL_PAIR_DIR}" && -d "${INSTALL_PAIR_DIR}" ]]; then
-    rm -rf "${INSTALL_PAIR_DIR}" 2>/dev/null || true
-  fi
-  # Restore previous matched pair if activation failed mid-swap.
-  if [[ -n "${INSTALL_APP_BAK}" && -e "${INSTALL_APP_BAK}" ]]; then
-    mv -f "${INSTALL_APP_BAK}" "${install_dir}/${HATFIELD_EXECUTABLE}" 2>/dev/null || true
-  fi
-  if [[ -n "${INSTALL_CLI_BAK}" && -e "${INSTALL_CLI_BAK}" ]]; then
-    mv -f "${INSTALL_CLI_BAK}" "${install_dir}/${HATFIELD_OWNED_PHP_CLI}" 2>/dev/null || true
+  # Only remove an unactivated runtime directory. Activated runtimes stay so
+  # existing processes keep their matched pair; the entry symlink is the cutover.
+  if [[ -n "${INSTALL_RUNTIME_DIR}" && -d "${INSTALL_RUNTIME_DIR}" ]]; then
+    rm -rf "${INSTALL_RUNTIME_DIR}" 2>/dev/null || true
   fi
   if [[ -n "${TMPDIR_INSTALL}" && -d "${TMPDIR_INSTALL}" ]]; then
     rm -rf "${TMPDIR_INSTALL}" 2>/dev/null || true
@@ -406,43 +399,40 @@ output "  [*] Candidate smoke ok: ${SMOKE_OUT}" "success"
 
 output "\nInstall" "heading"
 mkdir -p "${install_dir}"
+install_dir="$(cd "${install_dir}" && pwd)"
 dest="${install_dir}/${HATFIELD_EXECUTABLE}"
-cli_dest="${install_dir}/${HATFIELD_OWNED_PHP_CLI}"
 
 if [[ "${static}" == "true" ]]; then
-  # Stage a matched pair under a private install-dir temp, smoke it, then swap
-  # both destinations. Any failure before both final moves restores the previous
-  # pair via the EXIT trap.
-  INSTALL_PAIR_DIR="${install_dir}/.hatfield-install-pair.$$"
-  mkdir -p "${INSTALL_PAIR_DIR}"
-  INSTALL_TMP="${INSTALL_PAIR_DIR}/${HATFIELD_EXECUTABLE}"
-  INSTALL_CLI_TMP="${INSTALL_PAIR_DIR}/${HATFIELD_OWNED_PHP_CLI}"
-  cp "${tmp_bin}" "${INSTALL_TMP}"
-  cp "${tmp_cli}" "${INSTALL_CLI_TMP}"
-  chmod +x "${INSTALL_TMP}" "${INSTALL_CLI_TMP}"
-  if ! version_smoke "${INSTALL_TMP}" \
+  # Prepare one matched runtime directory, smoke it, then atomically retarget
+  # the public entry symlink. Old runtime directories stay so existing processes
+  # keep their matched pair; failures never move the previous entry.
+  runtime_id="$(date +%Y%m%d%H%M%S).$$"
+  INSTALL_RUNTIME_DIR="${install_dir}/.hatfield-runtime-${runtime_id}"
+  mkdir -p "${INSTALL_RUNTIME_DIR}"
+  runtime_app="${INSTALL_RUNTIME_DIR}/${HATFIELD_EXECUTABLE}"
+  runtime_cli="${INSTALL_RUNTIME_DIR}/${HATFIELD_OWNED_PHP_CLI}"
+  cp "${tmp_bin}" "${runtime_app}"
+  cp "${tmp_cli}" "${runtime_cli}"
+  chmod +x "${runtime_app}" "${runtime_cli}"
+  if ! version_smoke "${runtime_app}" \
     "  [ ] ERROR: install-dir temp --version failed; previous install left unchanged" \
     "  [ ] ERROR: install-dir temp --version invalid; previous install left unchanged" \
-    "${INSTALL_CLI_TMP}"; then
+    "${runtime_cli}"; then
     exit 1
   fi
-  output "Installing matched pair to ${dest} and ${cli_dest}..."
-  if [[ -e "${dest}" ]]; then
-    INSTALL_APP_BAK="${INSTALL_PAIR_DIR}/previous-${HATFIELD_EXECUTABLE}"
-    mv -f "${dest}" "${INSTALL_APP_BAK}"
+  # Deterministic activation-failure seam for tests. Must run after smoke and
+  # before the single entry-symlink rename so the previous install stays intact.
+  if [[ -n "${HATFIELD_INSTALLER_FAIL_ACTIVATION:-}" ]]; then
+    output "  [ ] ERROR: forced activation failure; previous install left unchanged" "error"
+    exit 1
   fi
-  if [[ -e "${cli_dest}" ]]; then
-    INSTALL_CLI_BAK="${INSTALL_PAIR_DIR}/previous-${HATFIELD_OWNED_PHP_CLI}"
-    mv -f "${cli_dest}" "${INSTALL_CLI_BAK}"
-  fi
-  mv -f "${INSTALL_TMP}" "${dest}"
-  mv -f "${INSTALL_CLI_TMP}" "${cli_dest}"
-  INSTALL_TMP=""
-  INSTALL_CLI_TMP=""
-  INSTALL_APP_BAK=""
-  INSTALL_CLI_BAK=""
-  rm -rf "${INSTALL_PAIR_DIR}"
-  INSTALL_PAIR_DIR=""
+  output "Installing matched runtime via ${dest}..."
+  INSTALL_LINK_TMP="${install_dir}/.hatfield-link.$$"
+  ln -sfn "${INSTALL_RUNTIME_DIR}/${HATFIELD_EXECUTABLE}" "${INSTALL_LINK_TMP}"
+  # Single filesystem rename publishes the whole prepared pair.
+  mv -f "${INSTALL_LINK_TMP}" "${dest}"
+  INSTALL_LINK_TMP=""
+  INSTALL_RUNTIME_DIR=""
 else
   # PHAR-only: atomic single-file replace; owned CLI is not installed.
   INSTALL_TMP="${install_dir}/.hatfield-install.$$"
