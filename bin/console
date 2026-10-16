@@ -44,6 +44,11 @@ if ($isPhar) {
 
 require_once __DIR__.'/../vendor/autoload.php';
 
+// Fused natives set micro.php_binary=hatfield-php. Amp resolves that basename
+// through PATH, so establish a secure adjacent-helper PATH before any broker
+// or Amp worker starts. Missing helpers fail closed; host PHP is never used.
+Ineersa\CodingAgent\Runtime\Process\OwnedPhpCliPathBootstrap::ensure();
+
 // ── Early --cwd resolution ───────────────────────────────────────────────
 // Resolve --cwd before Kernel/Application construction so getcwd() and
 // Kernel::boot() see the correct working directory from startup. This ensures
