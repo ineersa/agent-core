@@ -547,21 +547,27 @@ function distribution_smoke_artifact(
         } else {
             // Relative invocation from isolated smoke CWD (v0.0.2 publish regression):
             // absolute artifact path masks musl realpath(AT_EXECFN) SIGSEGV on Linux micro.
-            // Symlink keeps original dist bytes untouched; realpath of /proc/self/exe still
-            // resolves to the fused file after the pinned phpmicro self-path patch.
+            // Copy into a runtime dir + entry symlink so micro_get_self_filename()/realpath
+            // lands beside adjacent hatfield-php (installer layout), while leaving dist bytes
+            // untouched.
             $absoluteArtifact = realpath($artifactPath);
             if (false === $absoluteArtifact || !is_file($absoluteArtifact)) {
                 throw new RuntimeException('Unable to resolve absolute artifact path for relative smoke: '.$artifactPath);
             }
-            $relativeName = 'hatfield';
-            $linkPath = $tmp.'/'.$relativeName;
-            if (!symlink($absoluteArtifact, $linkPath)) {
-                throw new RuntimeException('Unable to create relative smoke symlink: '.$linkPath.' -> '.$absoluteArtifact);
+            $runtimeDir = $tmp.'/runtime';
+            if (!mkdir($runtimeDir, 0755, true) && !is_dir($runtimeDir)) {
+                throw new RuntimeException('Unable to create smoke runtime dir: '.$runtimeDir);
             }
-            // Application bootstrap resolves adjacent hatfield-php. Do not inject PATH.
-            distribution_stage_owned_php_cli_beside_launch_path($absoluteArtifact, $linkPath);
+            $runtimeApp = $runtimeDir.'/hatfield';
+            \CastorTasks\copy_file_checked($absoluteArtifact, $runtimeApp);
+            chmod($runtimeApp, 0755);
+            distribution_stage_owned_php_cli_beside_launch_path($absoluteArtifact, $runtimeApp);
+            $linkPath = $tmp.'/hatfield';
+            if (!symlink($runtimeApp, $linkPath)) {
+                throw new RuntimeException('Unable to create relative smoke entry symlink: '.$linkPath.' -> '.$runtimeApp);
+            }
             $prefix .= ' ';
-            $cmdBase = $prefix.escapeshellarg('./'.$relativeName);
+            $cmdBase = $prefix.escapeshellarg('./hatfield');
         }
 
         $version = \CastorTasks\run_checked($cmdBase.' --version 2>&1', $tmp);
@@ -1087,14 +1093,23 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
     mkdir($tmp.'/.hatfield/sessions/topo-1', 0755, true);
     \CastorTasks\write_file_checked($tmp.'/home/.hatfield/settings.yaml', "ai:\n    default_model: null\n");
 
-    // Relocate fused binary + companion away from build/install PATH so bootstrap
-    // must establish adjacent hatfield-php resolution itself.
+    // Installer layout: matched runtime dir + public entry symlink. Bootstrap
+    // resolves realpath(self) so adjacent hatfield-php works behind the entry.
     $installDir = $tmp.'/install';
     mkdir($installDir, 0755, true);
+    $runtimeDir = $installDir.'/.hatfield-runtime-topo';
+    mkdir($runtimeDir, 0755, true);
+    $runtimeApp = $runtimeDir.'/hatfield';
+    \CastorTasks\copy_file_checked($artifactPath, $runtimeApp);
+    chmod($runtimeApp, 0755);
+    distribution_stage_owned_php_cli_beside_launch_path($artifactPath, $runtimeApp);
     $launchPath = $installDir.'/hatfield';
-    \CastorTasks\copy_file_checked($artifactPath, $launchPath);
-    chmod($launchPath, 0755);
-    distribution_stage_owned_php_cli_beside_launch_path($artifactPath, $launchPath);
+    if (is_link($launchPath) || is_file($launchPath)) {
+        \CastorTasks\remove_path_checked($launchPath);
+    }
+    if (!symlink($runtimeApp, $launchPath)) {
+        throw new RuntimeException('Native topology smoke: unable to create entry symlink '.$launchPath);
+    }
 
     $sessionId = 'topo-1';
     $queuePaths = Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths::forSession(
@@ -1337,6 +1352,7 @@ function distribution_verify_sha256sums(string $distDir): void
     if (false === $lines) {
         throw new RuntimeException('Unable to read SHA256SUMS');
     }
+    $listed = [];
     foreach ($lines as $line) {
         $line = trim($line);
         if ('' === $line || str_starts_with($line, '#')) {
@@ -1353,7 +1369,40 @@ function distribution_verify_sha256sums(string $distDir): void
         if ($actual !== $m[1]) {
             throw new RuntimeException("Checksum mismatch for {$m[2]}: expected {$m[1]}, got {$actual}");
         }
+        $listed[$m[2]] = true;
     }
+
+    // Every present native fused artifact must list its owned PHP CLI companion.
+    foreach (array_keys(distribution_targets()) as $target) {
+        $native = distribution_artifact_name($target);
+        $cli = distribution_owned_php_cli_artifact_name($target);
+        $nativePath = $distDir.'/'.$native;
+        $cliPath = $distDir.'/'.$cli;
+        if (!is_file($nativePath)) {
+            continue;
+        }
+        if (!is_file($cliPath) || 0 === filesize($cliPath)) {
+            throw new RuntimeException('Native artifact present without owned PHP CLI companion: '.$cli);
+        }
+        if (!isset($listed[$native])) {
+            throw new RuntimeException('SHA256SUMS missing native artifact: '.$native);
+        }
+        if (!isset($listed[$cli])) {
+            throw new RuntimeException('SHA256SUMS missing owned PHP CLI companion: '.$cli);
+        }
+        // Companion is a PHP interpreter, not a Hatfield application binary.
+        $cliProbe = \CastorTasks\run_checked(
+            escapeshellarg($cliPath).' -r '.escapeshellarg('echo "cli-ok\n";').' 2>&1',
+            $distDir,
+        );
+        if (!str_contains($cliProbe, 'cli-ok')) {
+            throw new RuntimeException('Owned PHP CLI companion failed interpreter smoke: '.$cli);
+        }
+        if (str_contains($cliProbe, 'Hatfield')) {
+            throw new RuntimeException('Owned PHP CLI companion must not behave like a Hatfield app: '.$cli);
+        }
+    }
+
     echo "SHA256SUMS verified for {$distDir}\n";
 }
 
