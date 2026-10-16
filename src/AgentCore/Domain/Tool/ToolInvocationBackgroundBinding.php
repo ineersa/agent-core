@@ -39,21 +39,18 @@ final class ToolInvocationBackgroundBinding
             throw new \RuntimeException('wrong_owner');
         }
 
-        if (null !== $readiness->invocationId
-            && null !== $correlation->invocationId
-            && $readiness->invocationId !== $correlation->invocationId) {
+        // Stored alias/controller/fingerprint are required exact matches; omission is not a wildcard.
+        if (null !== $correlation->invocationId && $readiness->invocationId !== $correlation->invocationId) {
             throw new \RuntimeException('stale_identity');
         }
 
-        if (null !== $readiness->controllerRunId
-            && null !== $correlation->controllerRunId
-            && $readiness->controllerRunId !== $correlation->controllerRunId) {
+        if (null !== $correlation->controllerRunId && $readiness->controllerRunId !== $correlation->controllerRunId) {
             throw new \RuntimeException('stale_identity');
         }
 
         $expectedFingerprint = $correlation->envelopeFingerprint
             ?? ToolInvocationEnvelopeFingerprint::fromCorrelation($correlation);
-        if (null !== $readiness->envelopeFingerprint && $readiness->envelopeFingerprint !== $expectedFingerprint) {
+        if ($readiness->envelopeFingerprint !== $expectedFingerprint) {
             throw new \RuntimeException('stale_identity');
         }
     }

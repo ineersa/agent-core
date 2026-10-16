@@ -119,7 +119,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         }
 
         $current = $this->byDeferredId[$deferredId]['correlation'];
-        $current->assertEnvelopeMatches($expected);
+        $current->assertAcceptedImmutableBindingMatches($expected);
         if ($current->callerDisposition === $action->callerDisposition
             && $current->executionObservation === $action->executionObservation) {
             return;

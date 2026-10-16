@@ -92,6 +92,45 @@ final readonly class DeferredToolCompletionCorrelation
         }
     }
 
+    /**
+     * Compare accepted immutable owner/controller/alias/deadline bindings.
+     *
+     * Presentation PID and log path never authorize lookup or lifecycle writes.
+     * Ordinary foreground rows without these bindings remain compatible.
+     */
+    public function assertAcceptedImmutableBindingMatches(self $candidate): void
+    {
+        $this->assertEnvelopeMatches($candidate);
+
+        if ($this->executionOwnerKind !== $candidate->executionOwnerKind) {
+            throw new \RuntimeException(\sprintf('Deferred execution owner kind mismatch for run "%s" tool call "%s".', $this->runId, $this->toolCallId));
+        }
+
+        $expectedOwner = $this->executionOwnerReference;
+        $actualOwner = $candidate->executionOwnerReference;
+        if ((null === $expectedOwner) !== (null === $actualOwner)
+            || (null !== $expectedOwner && null !== $actualOwner
+                && ($expectedOwner->kind !== $actualOwner->kind || $expectedOwner->recordId !== $actualOwner->recordId))) {
+            throw new \RuntimeException(\sprintf('Deferred execution owner record mismatch for run "%s" tool call "%s".', $this->runId, $this->toolCallId));
+        }
+
+        if ($this->controllerRunId !== $candidate->controllerRunId) {
+            throw new \RuntimeException(\sprintf('Deferred controller run mismatch for run "%s" tool call "%s".', $this->runId, $this->toolCallId));
+        }
+
+        if ($this->invocationId !== $candidate->invocationId) {
+            throw new \RuntimeException(\sprintf('Deferred invocation alias mismatch for run "%s" tool call "%s".', $this->runId, $this->toolCallId));
+        }
+
+        if ($this->originalExecutionMode !== $candidate->originalExecutionMode) {
+            throw new \RuntimeException(\sprintf('Deferred original execution mode mismatch for run "%s" tool call "%s".', $this->runId, $this->toolCallId));
+        }
+
+        if ($this->deadlineMetadata !== $candidate->deadlineMetadata) {
+            throw new \RuntimeException(\sprintf('Deferred deadline metadata mismatch for run "%s" tool call "%s".', $this->runId, $this->toolCallId));
+        }
+    }
+
     public function withLifecycle(
         ToolInvocationCallerDispositionEnum $callerDisposition,
         ToolInvocationExecutionObservationEnum $executionObservation,

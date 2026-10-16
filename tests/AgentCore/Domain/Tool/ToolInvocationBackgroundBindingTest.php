@@ -43,6 +43,55 @@ final class ToolInvocationBackgroundBindingTest extends TestCase
         );
     }
 
+    public function testOmittedStoredAliasControllerOrFingerprintIsNotWildcard(): void
+    {
+        $owner = new ToolInvocationOwnerReference('bash', 'record-1', 7);
+        $correlation = $this->correlation($owner);
+
+        foreach ([
+            new ToolInvocationBackgroundReadiness(
+                $correlation->runId,
+                $correlation->turnNo,
+                $correlation->stepId,
+                $correlation->toolCallId,
+                $correlation->toolName,
+                $owner,
+                null,
+                $correlation->controllerRunId,
+                $correlation->envelopeFingerprint,
+            ),
+            new ToolInvocationBackgroundReadiness(
+                $correlation->runId,
+                $correlation->turnNo,
+                $correlation->stepId,
+                $correlation->toolCallId,
+                $correlation->toolName,
+                $owner,
+                $correlation->invocationId,
+                null,
+                $correlation->envelopeFingerprint,
+            ),
+            new ToolInvocationBackgroundReadiness(
+                $correlation->runId,
+                $correlation->turnNo,
+                $correlation->stepId,
+                $correlation->toolCallId,
+                $correlation->toolName,
+                $owner,
+                $correlation->invocationId,
+                $correlation->controllerRunId,
+                null,
+            ),
+        ] as $readiness) {
+            try {
+                ToolInvocationBackgroundBinding::assertMatches($correlation, $readiness);
+                $this->fail('Omitted stored binding fields must not act as wildcards.');
+            } catch (\RuntimeException $exception) {
+                $this->assertSame('stale_identity', $exception->getMessage());
+            }
+        }
+    }
+
     private function correlation(ToolInvocationOwnerReference $owner): DeferredToolCompletionCorrelation
     {
         $base = new DeferredToolCompletionCorrelation(

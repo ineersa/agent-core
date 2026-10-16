@@ -35,9 +35,6 @@ final readonly class ToolBackgroundAcknowledgement
         if ('automatic' !== $this->completion) {
             throw new \InvalidArgumentException('Background acknowledgment completion must be automatic.');
         }
-        if (\in_array(strtolower($this->status), ['success', 'finished', 'completed'], true)) {
-            throw new \InvalidArgumentException('Background acknowledgment must not claim terminal success.');
-        }
         if (null !== $this->inspection) {
             $tool = $this->inspection['tool'] ?? null;
             $inspectedInvocation = $this->inspection['invocation_id'] ?? null;

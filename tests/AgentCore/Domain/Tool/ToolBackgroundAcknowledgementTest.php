@@ -24,7 +24,7 @@ final class ToolBackgroundAcknowledgementTest extends TestCase
         $this->assertArrayHasKey('inspection', $ack->toResultPayload());
     }
 
-    public function testRejectsTerminalSuccessStatuses(): void
+    public function testRejectsNonRunningInBackgroundStatus(): void
     {
         $this->expectException(\InvalidArgumentException::class);
         new ToolBackgroundAcknowledgement(

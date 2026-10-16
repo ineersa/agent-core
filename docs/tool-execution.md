@@ -24,7 +24,8 @@ wait with a `running_in_background` body and releases that call's logical Sequen
 reservation for later batches. Physical worker occupancy and attached-batch
 Sequential/`max_parallelism` limits remain. Native deferred completion stays pending
 until a later checkpoint accepts the true result. Producers, Ctrl+B, mailbox delivery,
-and capability exposure are not enabled here.
+and capability exposure are not enabled here. Unanswered human waits are refused without
+mutation. C3 must route native finals for detached invocations before producers are enabled.
 
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare

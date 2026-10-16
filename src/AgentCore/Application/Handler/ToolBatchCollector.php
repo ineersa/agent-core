@@ -147,30 +147,30 @@ final class ToolBatchCollector
      */
     public function prepareBackgroundAcknowledgement(
         ToolInvocationBackgroundReadiness $readiness,
-    ): PreparedToolBackgroundAcknowledgement {
+    ): PreparedToolBackgroundAcknowledgementDTO {
         if (null === $this->deferredCompletions) {
             throw new \LogicException('Background acknowledgment requires a deferred completion repository.');
         }
 
         $correlation = $this->deferredCompletions->findByRunAndToolCall($readiness->runId, $readiness->toolCallId);
         if (null === $correlation) {
-            return PreparedToolBackgroundAcknowledgement::rejected('not_ready');
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('not_ready');
         }
 
         try {
             ToolInvocationBackgroundBinding::assertMatches($correlation, $readiness);
         } catch (\RuntimeException $exception) {
-            return PreparedToolBackgroundAcknowledgement::rejected($exception->getMessage());
+            return PreparedToolBackgroundAcknowledgementDTO::rejected($exception->getMessage());
         }
 
         if ('pending' !== ($this->deferredCompletions->status($correlation->deferredId) ?? '')) {
-            return PreparedToolBackgroundAcknowledgement::rejected('already_resolved');
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('already_resolved');
         }
 
         if (ToolInvocationExecutionObservationEnum::CancelRequested === $correlation->executionObservation
             || ToolInvocationExecutionObservationEnum::Terminal === $correlation->executionObservation
             || ToolInvocationExecutionObservationEnum::Unknown === $correlation->executionObservation) {
-            return PreparedToolBackgroundAcknowledgement::rejected(
+            return PreparedToolBackgroundAcknowledgementDTO::rejected(
                 ToolInvocationExecutionObservationEnum::CancelRequested === $correlation->executionObservation
                     ? 'cancelling'
                     : 'already_resolved',
@@ -179,7 +179,7 @@ final class ToolBatchCollector
 
         $before = $this->loadBatch($readiness->runId, $readiness->turnNo, $readiness->stepId);
         if (null === $before) {
-            return PreparedToolBackgroundAcknowledgement::rejected('not_running');
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('not_running');
         }
 
         $acknowledgement = $this->buildBackgroundAcknowledgement($correlation, $readiness);
@@ -190,21 +190,26 @@ final class ToolBatchCollector
         }
 
         if (ToolInvocationCallerDispositionEnum::ForegroundResultAccepted === $correlation->callerDisposition) {
-            return PreparedToolBackgroundAcknowledgement::rejected('already_resolved');
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('already_resolved');
         }
 
         if (isset($before->results[$readiness->toolCallId])) {
-            return PreparedToolBackgroundAcknowledgement::rejected('already_resolved');
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('already_resolved');
         }
 
-        if (!isset($before->inFlight[$readiness->toolCallId]) && !isset($before->awaitingHumanInput[$readiness->toolCallId])) {
-            return PreparedToolBackgroundAcknowledgement::rejected('not_running');
+        // Backgrounding is not an answer: refuse unanswered human waits without mutation.
+        if (isset($before->awaitingHumanInput[$readiness->toolCallId])) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('awaiting_human_input');
+        }
+
+        if (!isset($before->inFlight[$readiness->toolCallId])) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('not_running');
         }
 
         $after = clone $before;
         $outcome = $this->applyCollectToBatch($after, $result);
         if (!$outcome->accepted || $outcome->duplicate) {
-            return PreparedToolBackgroundAcknowledgement::rejected('already_resolved');
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('already_resolved');
         }
 
         $batchAction = $this->prepareDelta($readiness->runId, $readiness->turnNo, $readiness->stepId, $before, $after, $result);
@@ -218,7 +223,7 @@ final class ToolBatchCollector
             ToolInvocationExecutionObservationEnum::Active,
         );
 
-        return new PreparedToolBackgroundAcknowledgement(
+        return new PreparedToolBackgroundAcknowledgementDTO(
             accepted: true,
             duplicate: false,
             complete: $outcome->complete,
@@ -685,10 +690,10 @@ final class ToolBatchCollector
         ToolBatchStateDTO $batch,
         ToolCallResult $result,
         ToolBackgroundAcknowledgement $acknowledgement,
-    ): PreparedToolBackgroundAcknowledgement {
+    ): PreparedToolBackgroundAcknowledgementDTO {
         $stored = $batch->results[$result->toolCallId] ?? null;
         if (!$stored instanceof ToolCallResult || !$this->toolResultsEquivalent($stored, $result)) {
-            return PreparedToolBackgroundAcknowledgement::rejected('already_resolved');
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('already_resolved');
         }
 
         $orderedResults = [];
@@ -700,7 +705,7 @@ final class ToolBatchCollector
             );
         }
 
-        return new PreparedToolBackgroundAcknowledgement(
+        return new PreparedToolBackgroundAcknowledgementDTO(
             accepted: true,
             duplicate: true,
             complete: $batch->finalized,
@@ -741,7 +746,7 @@ final class ToolBatchCollector
         DeferredToolCompletionCorrelation $correlation,
         ToolBackgroundAcknowledgement $acknowledgement,
     ): ToolCallResult {
-        return new ToolCallResult(
+        return (new ToolCallResult(
             $correlation->runId,
             $correlation->turnNo,
             $correlation->stepId,
@@ -761,6 +766,6 @@ final class ToolBatchCollector
                 'tool_name' => $correlation->toolName,
             ],
             false,
-        );
+        ))->finalized();
     }
 }

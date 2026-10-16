@@ -16,7 +16,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolBackgroundAcknowledgement;
  * The batch delta and lifecycle projection must commit together under one
  * verified transition. Native execution status remains pending.
  */
-final readonly class PreparedToolBackgroundAcknowledgement
+final readonly class PreparedToolBackgroundAcknowledgementDTO
 {
     /**
      * @param list<ToolCallResult>  $orderedResults

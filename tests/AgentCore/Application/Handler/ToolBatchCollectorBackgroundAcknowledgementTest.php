@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\ToolBackgroundAcknowledgement;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationBackgroundReadiness;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationEnvelopeFingerprint;
@@ -278,6 +279,78 @@ final class ToolBatchCollectorBackgroundAcknowledgementTest extends TestCase
         $this->assertSame('record-call-1', $updated?->executionOwnerReference?->recordId);
         $this->assertNotSame('success', $prepared->acknowledgement?->status);
         $this->assertNotSame('completed', $prepared->acknowledgement?->status);
+    }
+
+    public function testAwaitingHumanInputRefusesWithoutMutationAndAnswerStillResumes(): void
+    {
+        [$collector, $batches, $deferred, $correlation] = $this->readyCollector(
+            runId: 'run-wait',
+            stepId: 'step-1',
+            toolCallId: 'call-1',
+            mode: 'sequential',
+            siblings: [
+                $this->call('run-wait', 'step-1', 'call-1', 0, 'sequential'),
+                $this->call('run-wait', 'step-1', 'call-2', 1, 'sequential'),
+            ],
+        );
+
+        $effects = TestToolBatchCoordination::suspend(
+            $collector,
+            $batches,
+            'run-wait',
+            1,
+            'step-1',
+            'call-1',
+            'question-1',
+        );
+        // Suspending the sequential head frees capacity for the next attached sibling.
+        $this->assertCount(1, $effects);
+        $this->assertSame('call-2', $effects[0]->toolCallId);
+        $before = $batches->load('run-wait', 1, 'step-1');
+        $this->assertNotNull($before);
+        $this->assertSame(['call-1' => 'question-1'], $before->awaitingHumanInput);
+        $this->assertArrayNotHasKey('call-1', $before->results);
+
+        $prepared = $collector->prepareBackgroundAcknowledgement($this->readiness($correlation));
+        $this->assertFalse($prepared->accepted);
+        $this->assertSame('awaiting_human_input', $prepared->rejectionReason);
+        $this->assertSame([], $prepared->localActions);
+
+        $after = $batches->load('run-wait', 1, 'step-1');
+        $this->assertEquals($before, $after);
+        $unchanged = $deferred->findByRunAndToolCall('run-wait', 'call-1');
+        $this->assertSame(ToolInvocationCallerDispositionEnum::ForegroundPending, $unchanged?->callerDisposition);
+        $this->assertSame('pending', $deferred->status($correlation->deferredId));
+
+        $answer = new ToolCallHumanInputAnswerDTO(
+            questionId: 'question-1',
+            answer: 'continue',
+            continuationRef: [
+                'run_id' => 'run-wait',
+                'turn_no' => 1,
+                'step_id' => 'step-1',
+                'tool_call_id' => 'call-1',
+            ],
+            requestPayload: ['question_id' => 'question-1', 'prompt' => 'Allow?'],
+        );
+        $resumed = TestToolBatchCoordination::resume(
+            $collector,
+            $batches,
+            'run-wait',
+            1,
+            'step-1',
+            'call-1',
+            'question-1',
+            $answer,
+        );
+        // Sibling call-2 still occupies the sequential slot, so call-1 is requeued without a fake ack.
+        $this->assertSame([], $resumed);
+        $batch = $batches->load('run-wait', 1, 'step-1');
+        $this->assertNotNull($batch);
+        $this->assertSame([], $batch->awaitingHumanInput);
+        $this->assertSame(['call-1'], $batch->pendingQueue);
+        $this->assertArrayHasKey('call-2', $batch->inFlight);
+        $this->assertArrayNotHasKey('call-1', $batch->results);
     }
 
     /**

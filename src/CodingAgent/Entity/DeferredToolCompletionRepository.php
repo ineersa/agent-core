@@ -191,7 +191,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         }
 
         $current = $this->toCorrelation($entity);
-        $current->assertEnvelopeMatches($expected);
+        $current->assertAcceptedImmutableBindingMatches($expected);
 
         if ($current->callerDisposition === $action->callerDisposition
             && $current->executionObservation === $action->executionObservation) {
@@ -223,6 +223,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                 throw new \RuntimeException(\sprintf('Deferred tool lifecycle projection disappeared for "%s".', $current->deferredId));
             }
             $refreshedCorrelation = $this->toCorrelation($refreshed);
+            $refreshedCorrelation->assertAcceptedImmutableBindingMatches($expected);
             if ($refreshedCorrelation->callerDisposition === $action->callerDisposition
                 && $refreshedCorrelation->executionObservation === $action->executionObservation) {
                 return;
