@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
-use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayLowLatencyMessengerConsole;
+use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplaySourceMessengerConsole;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Symfony\Component\Yaml\Yaml;
 
@@ -38,11 +38,11 @@ final class TuiE2eDatabaseEnv
     }
 
     /**
-     * Same as shellPrefix, plus HATFIELD_BINARY_PATH → low-latency messenger
+     * Same as shellPrefix, plus HATFIELD_BINARY_PATH → source messenger
      * console wrapper under the isolated project tree (source-console TUI
      * replay only; do not use for PHAR/artifact boots).
      */
-    public static function shellPrefixWithLowLatencyMessenger(
+    public static function shellPrefixWithSourceMessenger(
         string $appDbPath,
         string $testProjectDir,
     ): string {
@@ -97,7 +97,7 @@ final class TuiE2eDatabaseEnv
      * restart at fixture 0 and can serve the wrong turn. Force a single llm consumer
      * for all TUI replay isolation (same rationale as ControllerReplayE2eTestCase).
      * Also force tools.execution.max_parallelism=1: TUI replay cases do not need
-     * four idle tool consumers paying Symfony messenger --sleep=1 under contention.
+     * four idle tool consumers under contention.
      *
      * @param array<string, mixed> $settings
      *
@@ -233,7 +233,7 @@ final class TuiE2eDatabaseEnv
             return $prefix;
         }
 
-        $wrapper = ControllerReplayLowLatencyMessengerConsole::install(
+        $wrapper = ControllerReplaySourceMessengerConsole::install(
             $testProjectDir,
             ProjectDir::get().'/bin/console',
         );

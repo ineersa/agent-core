@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
-use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayLowLatencyMessengerConsole;
+use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplaySourceMessengerConsole;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 
 /**
@@ -154,11 +154,10 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         }
 
         // ConsumerSupervisor relaunches messenger:consume via HATFIELD_BINARY_PATH.
-        // Point it at a test-only wrapper that injects a small --sleep so idle
-        // queue polls do not burn the default 1s Symfony Messenger sleep under
-        // SafeGuard multi-hop / tool-start contention. Controller itself still
-        // boots from source bin/console below.
-        $messengerConsole = ControllerReplayLowLatencyMessengerConsole::install(
+        // Point it at a test-only source wrapper that preserves omitted --sleep so
+        // sqlite-queue native WAIT notifications arm like production. Controller
+        // itself still boots from source bin/console below.
+        $messengerConsole = ControllerReplaySourceMessengerConsole::install(
             $this->tempDir,
             $script,
         );

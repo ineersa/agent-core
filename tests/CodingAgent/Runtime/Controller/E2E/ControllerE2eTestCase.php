@@ -576,11 +576,31 @@ abstract class ControllerE2eTestCase extends TestCase
                         $chunks[] = '  '.($row[0] ?? 0).' messages in queue '.($row[1] ?? '?');
                     }
                 }
+                $pending = $db->query('SELECT id, queue, available_at, reserved_until, hex(owner_id) AS owner_id FROM queue_messages LIMIT 20');
+                if (false !== $pending) {
+                    foreach ($pending->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+                        $chunks[] = '  Reservation: '.json_encode($row, \JSON_THROW_ON_ERROR);
+                    }
+                }
             } catch (\Throwable $e) {
                 $chunks[] = '  Messenger transport DB read error: '.$e->getMessage();
             }
         } else {
             $chunks[] = 'Messenger transport DB: missing ('.$transportDb.')';
+        }
+
+        foreach ($this->trackedControllerPids as $pid) {
+            $status = @file_get_contents('/proc/'.$pid.'/status');
+            if (false === $status) {
+                $chunks[] = '  PID '.$pid.': exited';
+                continue;
+            }
+            $cmdline = str_replace("\0", ' ', (string) @file_get_contents('/proc/'.$pid.'/cmdline'));
+            $role = preg_match('/messenger:consume\s+(\w+)/', $cmdline, $transport) ? $transport[1]
+                : (str_contains($cmdline, 'sqlite-queue:broker') ? 'broker' : 'controller/helper');
+            preg_match('/^State:\s+(.+)$/m', $status, $state);
+            $chunks[] = '  PID '.$pid.' '.$role.': '.($state[1] ?? 'unknown')
+                .' wait='.(string) @file_get_contents('/proc/'.$pid.'/wchan');
         }
 
         return "\n\n".implode("\n", $chunks)."\n\n";

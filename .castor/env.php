@@ -15,6 +15,10 @@ use Castor\Attribute\AsTask;
 use function CastorTasks\build_idea_run_config_xml;
 use function CastorTasks\project_root_dir;
 use function CastorTasks\qa_test_home_shell_prefix;
+use function CastorTasks\check_llm_generation_ready;
+use function CastorTasks\report_path;
+use function CastorTasks\castor_cli_executable;
+use function CastorTasks\initialize_standalone_qa_run;
 
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
@@ -219,6 +223,94 @@ function diagnostic_full(): void
 }
 
 // ─── Datadog tasks ──────────────────────────────────────────────
+
+/**
+ * Private contention probe: retained-artifact controller-replay under concurrent
+ * standalone TUI + llm-real lanes with distinct QA reports.
+ *
+ * Exercises the source messenger wrapper's omitted --sleep native-wait path.
+ * Does not raise lane budgets. Keeps replay temp artifacts via HATFIELD_KEEP_TMP.
+ */
+#[AsTask(
+    name: 'controller-replay-native-wait-contention',
+    namespace: 'diag',
+    description: 'Private: retained-artifact controller-replay under concurrent TUI/live lanes',
+)]
+function diag_controller_replay_native_wait_contention(): void
+{
+    check_tmux();
+    check_llm_generation_ready();
+
+    // Parent probe report is distinct from nested lane reports.
+    initialize_standalone_qa_run();
+    $parentQaRunId = (string) getenv('HATFIELD_QA_RUN_ID');
+
+    $castorExecutable = castor_cli_executable();
+    if (null === $castorExecutable) {
+        fail_quality('Castor CLI executable not found for nested lane re-exec');
+    }
+    // Parent may already own a QA run; nested lanes must allocate distinct reports.
+    $castorBin = 'env -u HATFIELD_QA_RUN_ID -u HATFIELD_QA_REPORTS_DIR -u HATFIELD_QA_TMP_DIR '
+        .'-u HATFIELD_CACHE_DIR -u HATFIELD_TEST_DATABASE_PATH '
+        .escapeshellarg($castorExecutable);
+    $timeout = castor_test_runner_max_seconds();
+
+    echo "\n=== Private native-wait contention proof (distinct QA reports) ===\n";
+    echo 'Parent probe report: '.$parentQaRunId.\PHP_EOL.\PHP_EOL;
+
+    $results = run_commands_parallel(
+        [
+            'controller-replay' => [
+                'cmd' => 'HATFIELD_KEEP_TMP=1 '.$castorBin.' test:controller-replay',
+                'log' => report_path('diag-controller-replay-native-wait.log'),
+            ],
+            'tui' => [
+                'cmd' => $castorBin.' test:tui',
+                'log' => report_path('diag-tui-concurrent.log'),
+            ],
+            'llm-real' => [
+                'cmd' => $castorBin.' test:llm-real',
+                'log' => report_path('diag-llm-real-concurrent.log'),
+            ],
+        ],
+        [
+            'controller-replay' => $timeout,
+            'tui' => $timeout,
+            'llm-real' => $timeout,
+        ],
+    );
+
+    $failures = [];
+    foreach ($results as $step => $result) {
+        $logName = 'controller-replay' === $step
+            ? 'diag-controller-replay-native-wait.log'
+            : 'diag-'.$step.'-concurrent.log';
+        echo \sprintf(
+            "[%s] exit=%d duration=%.1fs log=%s\n",
+            $step,
+            $result['exitCode'],
+            $result['duration'],
+            report_path($logName),
+        );
+        if ('' !== trim($result['output'])) {
+            echo $result['output'].\PHP_EOL;
+        }
+        if (0 !== $result['exitCode']) {
+            $failures[$step] = \sprintf('exit %d after %.1fs', $result['exitCode'], $result['duration']);
+        }
+    }
+
+    if ([] !== $failures) {
+        $detail = [];
+        foreach ($failures as $step => $message) {
+            $detail[] = $step.': '.$message;
+        }
+        fail_quality('Native-wait contention proof failed: '.implode('; ', $detail));
+    }
+
+    echo "\nNative-wait contention proof OK\n";
+    exit(0);
+}
 
 #[AsTask(name: 'datadog:smoke', description: 'Show Datadog smoke diagnostic')]
 function datadog_smoke_diag(): void
