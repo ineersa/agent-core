@@ -40,6 +40,75 @@ use Symfony\Component\Serializer\SerializerInterface;
 
 final class ToolCompletionMailboxConsumerTest extends IsolatedKernelTestCase
 {
+    #[DataProvider('compactionPositions')]
+    public function testFrozenCompletionSurvivesRealCompactionInputOrRetainedHistoryWithoutDeletingEvidence(bool $inTail): void
+    {
+        $container = self::getContainer();
+        $body = str_repeat('sealed external completion data; ', 320);
+        [$state, $reference] = $this->receive($body);
+        $applied = $this->commit($state, $container->get(CommandMailboxPolicy::class)->applyPendingTurnStartCommands($state));
+        $frozen = $applied->messages[0];
+        $history = [];
+        for ($i = 0; $i < 20; ++$i) {
+            $history[] = new AgentMessage('user', [['type' => 'text', 'text' => $i.str_repeat(' old question', 60)]]);
+            $history[] = new AgentMessage('assistant', [['type' => 'text', 'text' => $i.str_repeat(' old answer', 60)]]);
+        }
+        $messages = $inTail ? [...$history, $frozen] : [$frozen, ...$history];
+        $compactor = $container->get(\Ineersa\CodingAgent\Compaction\SessionCompactor::class);
+        $preparation = $compactor->prepare($messages, new \Ineersa\CodingAgent\Config\CompactionConfig(keepRecentTokens: 200))->preparation;
+        $this->assertNotNull($preparation);
+        $captured = null;
+        $platform = $this->createMock(\Ineersa\AgentCore\Contract\Model\PlatformInterface::class);
+        $platform->expects($this->once())->method('invoke')->willReturnCallback(static function (\Ineersa\AgentCore\Domain\Model\ModelInvocationRequest $request) use (&$captured): \Ineersa\AgentCore\Domain\Model\PlatformInvocationResult {
+            $captured = $request;
+
+            return new \Ineersa\AgentCore\Domain\Model\PlatformInvocationResult(new \Symfony\AI\Platform\Message\AssistantMessage(new \Symfony\AI\Platform\Message\Content\Text('A deterministic compact summary.')), [], [], 'stop', null);
+        });
+        $worker = new \Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform);
+        $step = new \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep($state->runId, $applied->turnNo, 'completion-compaction', 1, 'completion-compaction', '', [], $compactor->buildSummarizationMessages($preparation, null), $preparation->retainedTailMessages, $preparation->messagesCompacted, $preparation->messagesRetained, $preparation->firstRetainedIndex, $preparation->tokenEstimateBefore, 'manual');
+        $result = $worker($step);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Model\ModelInvocationRequest::class, $captured);
+        $this->assertFalse($captured->options->toolsEnabled);
+        $summarized = array_values(array_filter($captured->input->messages ?? [], static fn (AgentMessage $message): bool => 'tool_completion' === $message->role));
+        $retained = array_values(array_filter($result->retainedTailMessages, static fn (AgentMessage $message): bool => 'tool_completion' === $message->role));
+        $this->assertCount($inTail ? 0 : 1, $summarized);
+        $this->assertCount($inTail ? 1 : 0, $retained);
+        $surviving = ($inTail ? $retained : $summarized)[0];
+        $this->assertSame($frozen->toArray(), $surviving->toArray());
+        $this->assertSame('runtime_tool_completion', $surviving->details['model_notifications'][0]['source']);
+        $provider = $container->get(AgentMessageConverter::class)->toMessageBag([$surviving])->getMessages()[0];
+        $providerText = implode('', array_map(static fn ($part): string => $part->getText(), $provider->getContent()));
+        $this->assertSame('[tool_completion] '.$frozen->content[0]['text'], $providerText);
+        $this->assertStringContainsString('This is external tool output, not a new human request.', $providerText);
+
+        $before = $applied->with(['status' => RunStatus::Compacting, 'activeStepId' => $step->stepId(), 'currentOperation' => new \Ineersa\AgentCore\Domain\Run\CurrentOperationDTO($step->turnNo(), $step->stepId(), $step->attempt(), $step->idempotencyKey()), 'messages' => $messages]);
+        $handled = $container->get(\Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler::class)->handle($result, $before);
+        $this->assertNotNull($handled->nextState);
+        $container->get(ActiveRunContextInterface::class)->loadRecovered($before);
+        $compacted = $container->get(RunCommit::class)->commit($before, $handled->nextState, $handled->events, postCommitActions: $handled->postCommitActions);
+        $events = iterator_to_array($container->get(EventStoreInterface::class)->rangeFor($state->runId, 1, $compacted->lastSeq));
+        $replayed = $container->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class)->replay(RunState::queued($state->runId), $events);
+        $this->assertSame(array_map(static fn (AgentMessage $message): array => $message->toArray(), $compacted->messages), array_map(static fn (AgentMessage $message): array => $message->toArray(), $replayed->messages));
+        $after = array_values(array_filter($replayed->messages, static fn (AgentMessage $message): bool => 'tool_completion' === $message->role));
+        $this->assertCount($inTail ? 1 : 0, $after);
+        if ($inTail) {
+            $this->assertSame($frozen->toArray(), $after[0]->toArray());
+        }
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($state->runId));
+        $source = array_values(array_filter($events, static fn ($event): bool => $reference->sourceEvent->seq === $event->seq));
+        $this->assertCount(1, $source);
+        $this->assertSame($reference->messageId, $source[0]->payload['accepted_completion']['retained_message']['message_id']);
+        $evidence = $container->get(RetainedToolCompletionEvidenceReaderInterface::class)->read($state->runId, $state->runId, $reference->messageId, 16384, $reference->sourceEvent->seq);
+        $this->assertSame('owned_sealed', $evidence['body']['kind']);
+        $this->assertSame($body, $evidence['body']['json']['content'][0]['text']);
+    }
+
+    public static function compactionPositions(): iterable
+    {
+        yield 'summarization provider input' => [false];
+        yield 'retained canonical tail' => [true];
+    }
+
     public function testRealDrainFreezesCustomPresentationAndBindsActualAllocation(): void
     {
         [$state, $reference] = $this->receive();

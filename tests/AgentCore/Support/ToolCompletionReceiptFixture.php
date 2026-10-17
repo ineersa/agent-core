@@ -20,6 +20,29 @@ use Psr\Container\ContainerInterface;
 
 final class ToolCompletionReceiptFixture
 {
+    /** @return array{string, RunEvent, ToolCompletionDeliveryReferenceDTO, \Ineersa\AgentCore\Domain\Message\AgentMessage} */
+    public static function apply(ContainerInterface $container, string $text = 'retained completion body'): array
+    {
+        [$runId, $event, $reference] = self::create($container, $text);
+        $context = $container->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class);
+        $context->loadRecovered(new \Ineersa\AgentCore\Domain\Run\RunState($runId, \Ineersa\AgentCore\Domain\Run\RunStatus::Completed, turnNo: 1, lastSeq: $event->seq));
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $owner->onReceiveToolCompletion(new \Ineersa\AgentCore\Domain\Message\ReceiveToolCompletion($reference));
+        $transport = $container->get('messenger.transport.run_control');
+        if (!$transport instanceof \Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport) {
+            throw new \LogicException('Completion fixture requires the isolated test transport.');
+        }
+        foreach ($transport->getSent() as $envelope) {
+            $advance = $envelope->getMessage();
+            if ($advance instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun && $advance->runId() === $runId) {
+                $owner->onAdvanceRun($advance);
+            }
+        }
+        $message = $context->requireLoaded($runId)->messages[0] ?? throw new \LogicException('Completion fixture did not apply its presentation.');
+
+        return [$runId, $event, $reference, $message];
+    }
+
     /** @return array{string, RunEvent} */
     public static function prepare(ContainerInterface $container, string $text = 'retained completion body', ?string $runId = null, string $callId = 'call-1'): array
     {

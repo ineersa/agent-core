@@ -31,6 +31,155 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
 {
+    public function testOriginalDetachmentThroughTrueTerminalPublishesAllocatedSourceAndOneIdleSuccessor(): void
+    {
+        $container = self::getContainer();
+        $this->resetTransports();
+        $sessions = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class);
+        $runId = $sessions->createSession('detachment-to-provider');
+        $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        $call = new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall($runId, 1, 'tools', 1, 'native-key', 'call-native', 'bash', ['command' => 'sleep 30'], 0, mode: 'sequential');
+        foreach ([
+            ['run_started', ['payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Run the command.']]]]]]],
+            ['turn_advanced', ['turn_no' => 1, 'step_id' => 'tools']],
+            ['llm_step_completed', ['step_id' => 'tools', 'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'tool_call', 'tool_call_index' => 0]], 'tool_calls' => [['id' => 'call-native', 'name' => 'bash', 'arguments' => $call->args]]]]],
+            ['tool_execution_start', ['tool_call_id' => 'call-native', 'tool_name' => 'bash', 'order_index' => 0]],
+        ] as [$type, $payload]) {
+            \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, new \Ineersa\AgentCore\Domain\Event\RunEvent($runId, 0, 1, $type, $payload));
+        }
+        $reducer = $container->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class);
+        $state = $reducer->replay(RunState::queued($runId), $store->rangeFor($runId, 1, $store->latestSequenceFor($runId)));
+        $this->assertSame(['call-native' => false], $state->pendingToolCalls);
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered($state);
+        $collector = $container->get(\Ineersa\AgentCore\Application\Handler\ToolBatchCollector::class);
+        $commit = $container->get(RunCommit::class);
+        $locks = $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class);
+        $locks->synchronized($runId, static fn () => $commit->commit($state, $state, [], dispatchAfterTurnHooks: false, postCommitActions: [$collector->prepareRegistration($runId, 1, 'tools', [$call])]));
+        $native = new \Ineersa\AgentCore\Domain\Tool\ToolInvocationOwnerReference('bash', 'native-record', 4242, '/tmp/native-proof.log');
+        $repo = $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class);
+        $correlation = $repo->registerPending(new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation('550e8400-e29b-41d4-a716-446655440799', $runId, 1, 'tools', 1, 'native-key', 'call-native', 'bash', $call->args, 0, mode: 'sequential', invocationId: 'native-invocation', controllerRunId: $runId, executionOwnerKind: 'bash', executionOwnerReference: $native, originalExecutionMode: 'sequential'));
+        $ack = $collector->prepareBackgroundAcknowledgement(new \Ineersa\AgentCore\Domain\Tool\ToolInvocationBackgroundReadiness($runId, 1, 'tools', 'call-native', 'bash', $native, $correlation->invocationId, $runId, $correlation->envelopeFingerprint));
+        $this->assertTrue($ack->accepted);
+        $this->assertTrue($ack->complete);
+        $this->assertNotNull($ack->acknowledgementResult);
+        $codec = $container->get(\Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec::class);
+        $ackEvents = $container->get(EventFactory::class)->eventsFromSpecs($runId, 1, $state->lastSeq + 1, [
+            ['type' => 'tool_execution_end', 'payload' => $codec->toEventPayload($ack->acknowledgementResult)],
+            ['type' => 'tool_batch_committed', 'payload' => ['count' => 1]],
+        ]);
+        $afterAck = $reducer->replay($state, [...$store->rangeFor($runId, 1, $state->lastSeq), ...$ackEvents]);
+        $locks->synchronized($runId, static fn () => $commit->commit($state, $afterAck, $ackEvents, postCommitActions: $ack->localActions));
+        $this->assertSame('pending', $repo->status($correlation->deferredId), 'Original wait resolution cannot finish native execution.');
+        $this->assertSame(\Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, $repo->findByDeferredId($correlation->deferredId)?->callerDisposition);
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $owner->onAdvanceRun(new \Ineersa\AgentCore\Domain\Message\AdvanceRun($runId, 1, 'after-ack', 1, 'after-ack'));
+        $beforeCompletion = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class);
+        $this->assertCount(1, $beforeCompletion);
+        $request = $beforeCompletion[0];
+        $owner->onLlmStepResult(new \Ineersa\AgentCore\Domain\Message\LlmStepResult($runId, $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(), assistantMessage: new \Symfony\AI\Platform\Message\AssistantMessage(new \Symfony\AI\Platform\Message\Content\Text('The command continues in the background.')), stopReason: 'stop'));
+        $this->assertSame(RunStatus::Completed, $context->requireLoaded($runId)->status);
+
+        $path = $sessions->resolveSessionsBasePath().'/'.$runId.'/events.jsonl';
+        file_put_contents(\Ineersa\CodingAgent\Session\FileRunSequenceAllocator::counterPathForEventsLog($path), "105\n");
+        $body = str_repeat('durable native result; ', 450);
+        $terminal = new \Ineersa\AgentCore\Domain\Message\ToolCallResult($runId, 1, 'tools', 1, 'native-key', 'call-native', 0, ['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => $body]]]);
+        $owner->onToolCallResult($terminal);
+        $this->assertSame('completed', $repo->status($correlation->deferredId));
+        $published = $this->transportMessages('run_control', ReceiveToolCompletion::class);
+        $this->assertCount(1, $published);
+        $delivery = $published[0];
+        $this->assertSame(106, $delivery->reference->sourceEvent->seq);
+        $source = array_values(iterator_to_array($store->rangeFor($runId, 106, 106)))[0];
+        $this->assertSame(106, $source->payload['accepted_completion']['retained_message']['origin']['accepted_source_event_reference']['seq']);
+        $this->assertNull($store->verifiedPendingTransition($runId), 'Publication follows verified finalization, not native send.');
+        $this->assertNull($container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($runId, $delivery->reference->messageId));
+        $owner->onReceiveToolCompletion($delivery);
+        $owner->onReceiveToolCompletion($delivery);
+        $advances = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+        $this->assertCount(1, $advances);
+        $this->assertSame(RunStatus::Completed, $context->requireLoaded($runId)->status);
+        $owner->onAdvanceRun($advances[0]);
+        $owner->onAdvanceRun($advances[0]);
+        $owner->onToolCallResult($terminal);
+        $requests = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class);
+        $this->assertCount(2, $requests, 'One post-ack request and exactly one idle-root completion successor.');
+        $messages = $requests[1]->messages;
+        $tools = array_values(array_filter($messages, static fn ($message): bool => 'tool' === $message->role));
+        $custom = array_values(array_filter($messages, static fn ($message): bool => 'tool_completion' === $message->role));
+        $this->assertCount(1, $tools);
+        $this->assertSame('call-native', $tools[0]->toolCallId);
+        $this->assertStringContainsString('running_in_background', $tools[0]->content[0]['text']);
+        $this->assertCount(1, $custom);
+        $this->assertNull($custom[0]->toolCallId);
+        $this->assertSame('runtime_tool_completion', $custom[0]->details['model_notifications'][0]['source']);
+        $this->assertStringContainsString($body, $custom[0]->content[0]['text']);
+        $container->get(\Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator::class)->validate($messages);
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
+        $evidence = $container->get(\Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionEvidenceReaderInterface::class)->read($runId, $runId, $delivery->reference->messageId, 16384, 106);
+        $this->assertSame('owned_sealed', $evidence['body']['kind']);
+        $this->assertSame($body, $evidence['body']['json']['content'][0]['text']);
+        $recipient = $container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($runId, $delivery->reference->messageId);
+        $this->assertSame(\Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryDispositionEnum::Applied, $recipient?->disposition);
+        $this->assertNotNull($recipient?->appliedSequence);
+        $appliedEvent = array_values(iterator_to_array($store->rangeFor($runId, $recipient->appliedSequence, $recipient->appliedSequence)))[0];
+        $this->assertSame($custom[0]->toArray(), $appliedEvent->payload['message'], 'Provider context uses the canonically frozen presentation.');
+        $this->assertCount(1, $this->transportMessages('run_control', ReceiveToolCompletion::class), 'Native terminal redelivery cannot publish a second completion.');
+        $replayed = $reducer->replay(RunState::queued($runId), $store->rangeFor($runId, 1, $context->requireLoaded($runId)->lastSeq));
+        $this->assertSame(array_map(static fn ($message): array => $message->toArray(), $messages), array_map(static fn ($message): array => $message->toArray(), $replayed->messages));
+        $this->assertSame([], $replayed->pendingToolCalls);
+    }
+
+    public function testAcceptedOwnerCancellationKeepsQueuedCompletionStaleAfterExplicitContinuation(): void
+    {
+        $container = self::getContainer();
+        $this->resetTransports();
+        [$runId, $source, $reference] = ToolCompletionReceiptFixture::create($container);
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $source->seq));
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+
+        // Cancel is deliberately rejected for Completed runs. Start genuine
+        // user-authorized work, then accept the receipt while its model runs.
+        $owner->onApplyCommand(new ApplyCommand($runId, 1, 'user-start', 1, 'user-start', CoreCommandKind::FollowUp, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Start authorized work.']]]]));
+        $owner->onAdvanceRun($this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class)[0]);
+        $requests = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class);
+        $this->assertCount(1, $requests);
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $request = $requests[0];
+        $owner->onLlmStepResult(new \Ineersa\AgentCore\Domain\Message\LlmStepResult($runId, $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(), assistantMessage: new \Symfony\AI\Platform\Message\AssistantMessage(new \Symfony\AI\Platform\Message\Content\Text('Stopped at a safe boundary.')), stopReason: 'stop'));
+        $automatic = array_values(array_filter($this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class), static fn ($advance): bool => null !== $advance->completionFence));
+        $this->assertCount(1, $automatic);
+        $this->assertSame(RunStatus::Running, $context->requireLoaded($runId)->status);
+        $this->assertNull($context->requireLoaded($runId)->currentOperation);
+
+        // Receipt application has queued, but has not executed, its successor.
+        $owner->onApplyCommand(new ApplyCommand($runId, $context->requireLoaded($runId)->turnNo, 'cancel', 1, 'accepted-cancel', CoreCommandKind::Cancel));
+        $this->assertSame(RunStatus::Cancelled, $context->requireLoaded($runId)->status);
+        $this->assertGreaterThan($reference->deliveryFence?->wakeGeneration, $container->get(\Ineersa\AgentCore\Contract\Tool\ToolCompletionDeliveryFenceProviderInterface::class)->capture($runId)->wakeGeneration);
+        $this->assertSame(0, $reference->deliveryFence?->wakeGeneration);
+        $owner->onAdvanceRun($automatic[0]);
+        $this->assertCount(1, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+
+        $owner->onApplyCommand(new ApplyCommand($runId, $context->requireLoaded($runId)->turnNo, 'user-resume', 1, 'user-resume', CoreCommandKind::FollowUp, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Explicitly continue after cancellation.']]]]));
+        $advances = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+        $owner->onAdvanceRun($advances[array_key_last($advances)]);
+        $resumed = $context->requireLoaded($runId);
+        $this->assertSame(RunStatus::Running, $resumed->status);
+        $this->assertCount(2, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class), 'Both requests were explicitly user-authorized; none came from the completion successor.');
+        $this->assertSame('stale_cancellation_generation', $container->get(\Ineersa\AgentCore\Application\Tool\ToolCompletionDeliveryEligibilityPolicy::class)->ineligibleReason($resumed, $reference->deliveryFence));
+        $owner->onAdvanceRun($automatic[0]);
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $this->assertSame($resumed, $context->requireLoaded($runId));
+        $this->assertSame($resumed->lastSeq, $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class)->latestSequenceFor($runId), 'Stale wake cannot append or discard canonical history.');
+        $this->assertCount(2, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+        $events = iterator_to_array($container->get(EventStoreInterface::class)->rangeFor($runId, 1, $resumed->lastSeq));
+        $this->assertCount(1, array_filter($events, static fn ($event): bool => 'agent_command_applied' === $event->type && 'cancel' === ($event->payload['kind'] ?? null)));
+        $this->assertCount(0, array_filter($events, static fn ($event): bool => 'agent_command_rejected' === $event->type));
+        $evidence = $container->get(\Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionEvidenceReaderInterface::class)->read($runId, $runId, $reference->messageId, 8192, $source->seq);
+        $this->assertSame('retained completion body', $evidence['body']['inline']['content'][0]['text']);
+    }
+
     public function testCommittedReceiptsCoalesceThroughExistingOwnerAdvanceIntoOneProviderRequest(): void
     {
         $container = self::getContainer();
@@ -247,5 +396,29 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
         }
         $this->assertNull($container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($runId, $reference->messageId));
         $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
+    }
+
+    private function resetTransports(): void
+    {
+        foreach (['run_control', 'llm'] as $name) {
+            $transport = self::getContainer()->get('messenger.transport.'.$name);
+            $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+            $transport->reset();
+        }
+    }
+
+    /**
+     * @template T of object
+     *
+     * @param class-string<T> $class
+     *
+     * @return list<T>
+     */
+    private function transportMessages(string $name, string $class): array
+    {
+        $transport = self::getContainer()->get('messenger.transport.'.$name);
+        $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+
+        return array_values(array_filter(array_map(static fn ($envelope): object => $envelope->getMessage(), $transport->getSent()), static fn (object $message): bool => $message instanceof $class));
     }
 }
