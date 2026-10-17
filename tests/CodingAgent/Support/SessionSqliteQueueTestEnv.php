@@ -15,9 +15,9 @@ final class SessionSqliteQueueTestEnv
     /**
      * @return array<string, string>
      */
-    public static function forSession(string $sessionsBasePath, string $runtimeCwd, string $sessionId): array
+    public static function forSession(string $sessionsBasePath, string $sessionId): array
     {
-        $paths = SessionSqliteQueuePaths::forSession($sessionsBasePath, $runtimeCwd, $sessionId);
+        $paths = SessionSqliteQueuePaths::forSession($sessionsBasePath, $sessionId);
 
         return SessionSqliteQueueEnv::processEnv($paths);
     }

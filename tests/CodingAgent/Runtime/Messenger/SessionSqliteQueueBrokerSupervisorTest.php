@@ -46,7 +46,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
         $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-1');
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-1');
 
         try {
             $supervisor->start($paths);
@@ -93,7 +93,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
         $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-kill');
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-kill');
 
         try {
             $supervisor->start($paths);
@@ -123,7 +123,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
         $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config);
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-2');
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-2');
         mkdir($paths->endpointDirectory(), 0o700, true);
         touch($paths->endpointPath);
 
@@ -149,7 +149,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
         $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-env');
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-env');
 
         $previousEnv = $_ENV;
         $_ENV = [];
@@ -169,7 +169,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
         $first = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-owner-eof');
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-owner-eof');
 
         $first->start($paths);
         $process = $this->brokerProcess($first);
@@ -194,7 +194,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
 
         $restart = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
         try {
-            $restartPaths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-owner-eof');
+            $restartPaths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-owner-eof');
             $this->assertSame($paths->databasePath, $restartPaths->databasePath);
             $restart->start($restartPaths);
             $this->assertTrue($this->brokerProcess($restart)->isRunning(), 'durable queue DB must restart after owner EOF released lifetime locks');
@@ -209,7 +209,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
         $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-shared-deadline');
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-shared-deadline');
 
         $supervisor->start($paths);
         $process = $this->brokerProcess($supervisor);
@@ -229,7 +229,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
         $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-client');
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-client');
 
         $owner = null;
         $other = null;
@@ -264,7 +264,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             readyTimeoutSeconds: 15.0,
             maxPayload: $maxPayload,
         );
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-payload');
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-payload');
         $serializer = new PhpSerializer();
         // Exceed both the UI bootstrap transfer budget and the original 1 MiB broker default.
         $bodyText = str_repeat('x', 8_388_608 + Limits::MAX_PAYLOAD + 64);
@@ -322,7 +322,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             readyTimeoutSeconds: 15.0,
             maxPayload: $this->configuredMaxPayload(),
         );
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-capacity');
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-capacity');
         /** @var list<Client> $clients */
         $clients = [];
         try {
@@ -356,7 +356,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             readyTimeoutSeconds: 15.0,
             maxPayload: $maxPayload,
         );
-        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-mismatch');
+        $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-mismatch');
 
         try {
             $supervisor->start($paths, 64);

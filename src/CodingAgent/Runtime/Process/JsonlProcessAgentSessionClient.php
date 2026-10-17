@@ -683,7 +683,6 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $queueSuffix = $this->sessionId ?? 'default';
         $queuePaths = SessionSqliteQueuePaths::forSession(
             $this->sessionsBasePath,
-            $runtimeCwd,
             $queueSuffix,
         );
         $env = array_merge(\is_array($currentEnv) ? $currentEnv : $_ENV, [

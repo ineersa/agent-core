@@ -220,7 +220,6 @@ abstract class ControllerE2eTestCase extends TestCase
             'LLAMA_CPP_SMOKE_TEST' => '1',
             ...\Ineersa\CodingAgent\Tests\Support\SessionSqliteQueueTestEnv::forSession(
                 $this->tempDir.'/.hatfield/sessions',
-                $this->tempDir,
                 $this->sessionId,
             ),
         ];

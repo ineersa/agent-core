@@ -42,16 +42,12 @@ final readonly class SessionSqliteQueuePaths
 
     /**
      * @param string $sessionsBasePath Absolute configured sessions directory
-     * @param string $runtimeCwd       Canonical project CWD used only for logging/isolation context
      */
-    public static function forSession(string $sessionsBasePath, string $runtimeCwd, string $sessionId): self
+    public static function forSession(string $sessionsBasePath, string $sessionId): self
     {
         self::assertSafeSessionId($sessionId);
         if ('' === $sessionsBasePath || !str_starts_with($sessionsBasePath, '/')) {
             throw new \InvalidArgumentException('Sessions base path must be an absolute filesystem path.');
-        }
-        if ('' === $runtimeCwd) {
-            throw new \InvalidArgumentException('Runtime CWD must not be empty.');
         }
 
         // Per-launch random private directory. Durable DB stays under the session path.

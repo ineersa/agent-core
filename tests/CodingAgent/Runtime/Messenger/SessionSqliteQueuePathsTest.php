@@ -16,12 +16,10 @@ final class SessionSqliteQueuePathsTest extends TestCase
     {
         $left = SessionSqliteQueuePaths::forSession(
             '/tmp/hatfield-sessions',
-            '/tmp/project-a',
             '42',
         );
         $right = SessionSqliteQueuePaths::forSession(
             '/tmp/hatfield-sessions',
-            '/tmp/project-a',
             '42',
         );
 
@@ -49,6 +47,6 @@ final class SessionSqliteQueuePathsTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Unsupported session identity');
-        SessionSqliteQueuePaths::forSession('/tmp/sessions', '/tmp/root', '../escape');
+        SessionSqliteQueuePaths::forSession('/tmp/sessions', '../escape');
     }
 }

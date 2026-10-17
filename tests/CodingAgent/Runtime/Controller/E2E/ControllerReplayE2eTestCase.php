@@ -186,7 +186,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             'HATFIELD_REPLAY_SESSION_ID' => $this->sessionId,
             ...\Ineersa\CodingAgent\Tests\Support\SessionSqliteQueueTestEnv::forSession(
                 $this->tempDir.'/.hatfield/sessions',
-                $this->tempDir,
                 $this->sessionId,
             ),
             // Replay activation — consumed by ControllerReplayHttpClientFactory

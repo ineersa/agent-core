@@ -1114,7 +1114,6 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
     $sessionId = 'topo-1';
     $queuePaths = Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths::forSession(
         $tmp.'/.hatfield/sessions',
-        $tmp,
         $sessionId,
     );
     $queueEnv = Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueEnv::processEnv($queuePaths);
