@@ -7,7 +7,10 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\ControllerReplayE2eTestCase;
 use Ineersa\CodingAgent\Tests\Support\OwnedProcessTree;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\Component\Process\InputStream;
+use Symfony\Component\Process\Process;
 
 /**
  * Thesis: controller SIGKILL must close the supervised broker owner pipe so the
@@ -101,10 +104,35 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
         );
     }
 
-    public function testBrokerDeathAfterReadyEmitsProtocolErrorAndStopsOwnedTree(): void
+    /** @return iterable<string, array{bool}> */
+    public static function brokerDeathModes(): iterable
     {
+        yield 'live output' => [false];
+        yield 'attachment waiting for mount acknowledgement' => [true];
+    }
+
+    #[DataProvider('brokerDeathModes')]
+    public function testBrokerDeathAfterReadyEmitsProtocolErrorAndStopsOwnedTree(bool $pendingMount): void
+    {
+        if ($pendingMount) {
+            $seed = new Process([\PHP_BINARY, __DIR__.'/E2E/Support/BootstrapSessionSeed.php', $this->projectDir], $this->tempDir,
+                array_merge($this->controllerSubprocessEnv(), ['APP_ENV' => 'test', 'APP_DEBUG' => '1', 'HATFIELD_CWD' => $this->tempDir, 'HOME' => $this->tempDir,
+                    'HATFIELD_SESSION_ID' => false, 'HATFIELD_TEST_DATABASE_PATH' => 'app_test-replay-'.$this->sessionId.'.sqlite',
+                ]));
+            $seed->setTimeout(5);
+            $seed->mustRun();
+            $this->runId = json_decode(trim($seed->getOutput()), true, 32, \JSON_THROW_ON_ERROR)['run_id'];
+        }
         $this->spawnController();
         $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+
+        if ($pendingMount) {
+            $this->writeCommand(['v' => 1, 'id' => 'fatal-attachment', 'type' => 'resume', 'runId' => $this->runId]);
+            $bootstrap = $this->indexByType($this->collectEventsUntil('bootstrap.end', 5));
+            $this->assertArrayHasKey('bootstrap.available', $bootstrap);
+            $this->assertArrayHasKey('bootstrap.end', $bootstrap);
+            $this->assertArrayNotHasKey('session.ready', $bootstrap, 'Mount acknowledgement is deliberately withheld.');
+        }
 
         $controllerPid = $this->controllerRootPid();
         $this->assertGreaterThan(0, $controllerPid);
@@ -141,7 +169,10 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
         $this->assertTrue(@posix_kill($brokerPid, \SIGKILL));
 
         // Safety cap around SUPERVISE_INTERVAL (5s) plus shutdown; not synchronization.
-        $error = $this->waitForEvent('protocol.error', 12.0);
+        $terminalEvents = $this->indexByType($this->collectEventsUntil('protocol.error', 12.0));
+        $this->assertArrayHasKey('protocol.error', $terminalEvents);
+        $this->assertArrayNotHasKey('session.ready', $terminalEvents, 'Fatal shutdown must not complete an attachment.');
+        $error = $terminalEvents['protocol.error'][0];
         $this->assertSame('protocol.error', $error['type'] ?? null);
         $this->assertSame('', $error['runId'] ?? null);
         $this->assertTrue($error['payload']['fatal'] ?? false, 'Broker death must explicitly fence process-client recovery.');
@@ -164,6 +195,43 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
         }
 
         $this->abandonKilledControllerHandles();
+    }
+
+    public function testStartupHookCanPublishBeforeConsumersLaunch(): void
+    {
+        $proof = $this->tempDir.'/startup-hook.json';
+        $input = new InputStream();
+        $process = new Process([\PHP_BINARY, __DIR__.'/E2E/Support/ControllerStartupHook.php', $this->projectDir, $proof], $this->tempDir,
+            array_merge($this->controllerSubprocessEnv(), [
+                'APP_ENV' => 'test', 'APP_DEBUG' => '1', 'HATFIELD_CWD' => $this->tempDir, 'HOME' => $this->tempDir,
+                'HATFIELD_SESSION_ID' => false, 'HATFIELD_REPLAY_SESSION_ID' => $this->sessionId,
+                'HATFIELD_TEST_DATABASE_PATH' => 'app_test-replay-'.$this->sessionId.'.sqlite',
+                'HATFIELD_BINARY_PATH' => E2E\Replay\ControllerReplaySourceMessengerConsole::install($this->tempDir, $this->projectDir.'/bin/console'),
+                ...\Ineersa\CodingAgent\Tests\Support\SessionSqliteQueueTestEnv::forSession($this->tempDir.'/.hatfield/sessions', $this->sessionId),
+            ]), $input, 10);
+        $tree = [];
+        try {
+            $process->start();
+            $this->assertTrue($process->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'runtime.ready')), $process->getErrorOutput());
+            $tree = OwnedProcessTree::descendants($process->getPid());
+            $result = json_decode(file_get_contents($proof), true, 16, \JSON_THROW_ON_ERROR);
+            $this->assertSame('startup-job', $result['received']);
+            $this->assertSame([], $result['consumers'], 'Session-start hooks must run after broker readiness but before consumer launch.');
+        } catch (\Throwable $exception) {
+            throw new \RuntimeException('Startup hook fixture failed: '.$process->getOutput().$process->getErrorOutput(), 0, $exception);
+        } finally {
+            $input->close();
+            $process->wait();
+        }
+        $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+        foreach ($tree as $child) {
+            $this->assertFalse(OwnedProcessTree::stillAlive($child), 'Startup fixture owned tree must exit through stdin EOF.');
+        }
+    }
+
+    protected function replayExtraEnv(): array
+    {
+        return ['HATFIELD_REPLAY_SESSION_ID' => '' !== $this->runId ? $this->runId : $this->sessionId];
     }
 
     /**

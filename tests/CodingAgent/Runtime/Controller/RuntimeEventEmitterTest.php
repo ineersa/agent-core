@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
+use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use Revolt\EventLoop;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter
@@ -130,6 +132,103 @@ final class RuntimeEventEmitterTest extends TestCase
         } finally {
             $emitter->shutdown();
             fclose($writer);
+        }
+    }
+
+    public function testTerminalDrainFinishesPartialLineWithoutBootstrapSuccessCallbacks(): void
+    {
+        [$writer, $reader] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, \STREAM_IPPROTO_IP);
+        $emitter = $this->createEmitter();
+        $reflection = new \ReflectionClass($emitter);
+        $reflection->getProperty('stdout')->setValue($emitter, $writer);
+        $emitter->beginBootstrapOutput();
+        $completed = false;
+        $after = static function () use (&$completed): void { $completed = true; };
+        $emptyFrame = new RuntimeEvent(RuntimeEventTypeEnum::BootstrapFrame->value, 'run', 0, ['data' => '']);
+        $frame = new RuntimeEvent(RuntimeEventTypeEnum::BootstrapFrame->value, 'run', 0, ['data' => str_repeat('x', 65536 - \strlen(JsonlCodec::encodeEvent($emptyFrame)))]);
+        $wire = '';
+        stream_set_blocking($reader, false);
+        $readWatcher = EventLoop::onReadable($reader, static function () use ($reader, &$wire): void { $wire .= stream_get_contents($reader); });
+        try {
+            $emitter->emitTransfer($frame, $after);
+            $pending = $reflection->getProperty('pending')->getValue($emitter);
+            // Deterministically model a kernel write ending inside a JSONL frame.
+            fwrite($writer, substr($pending[0]['line'], 0, 10));
+            $pending[0]['line'] = substr($pending[0]['line'], 10);
+            $pending[0]['started'] = true;
+            $reflection->getProperty('pending')->setValue($emitter, $pending);
+            $reflection->getProperty('pendingBytes')->setValue($emitter, \strlen($pending[0]['line']));
+            $emitter->whenDrained($after);
+            $emitter->shutdown(microtime(true) + 1, new RuntimeEvent(RuntimeEventTypeEnum::ProtocolError->value, '', 0, ['error' => 'broker died', 'fatal' => true]));
+            $wire .= stream_get_contents($reader);
+            $lines = explode("\n", trim($wire));
+            $this->assertCount(2, $lines);
+            $first = json_decode($lines[0], true, 16, \JSON_THROW_ON_ERROR);
+            $last = json_decode($lines[1], true, 16, \JSON_THROW_ON_ERROR);
+            $this->assertSame('bootstrap.frame', $first['type']);
+            $this->assertSame('protocol.error', $last['type']);
+            $this->assertSame('broker died', $last['payload']['error']);
+            $this->assertFalse($completed, 'Fatal draining cannot acknowledge bootstrap success.');
+            $this->assertTrue($emitter->isShuttingDown());
+            $this->assertSame([], $reflection->getProperty('pending')->getValue($emitter));
+        } finally {
+            EventLoop::cancel($readWatcher);
+            $emitter->shutdown();
+            fclose($writer);
+            fclose($reader);
+        }
+    }
+
+    public function testTerminalDrainSuppressesAlreadyQueuedBootstrapCallbacks(): void
+    {
+        [$writer, $reader] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, \STREAM_IPPROTO_IP);
+        $emitter = $this->createEmitter();
+        $reflection = new \ReflectionClass($emitter);
+        $reflection->getProperty('stdout')->setValue($emitter, $writer);
+        $emitter->beginBootstrapOutput();
+        $completed = false;
+        try {
+            $emitter->emitTransfer(new RuntimeEvent(RuntimeEventTypeEnum::BootstrapEnd->value, 'run', 0, []), static function () use (&$completed): void { $completed = true; });
+            $reflection->getMethod('flushBootstrap')->invoke($emitter);
+            $emitter->emitTransfer(new RuntimeEvent(RuntimeEventTypeEnum::SessionReady->value, 'run', 0, []));
+            $emitter->shutdown(microtime(true) + 1, new RuntimeEvent(RuntimeEventTypeEnum::ProtocolError->value, '', 0, ['fatal' => true]));
+            $this->assertFalse($completed, 'The callback queued before shutdown must not resume a successful attachment.');
+            stream_set_blocking($reader, false);
+            $this->assertStringNotContainsString('session.ready', stream_get_contents($reader));
+        } finally {
+            $emitter->shutdown();
+            fclose($writer);
+            fclose($reader);
+        }
+    }
+
+    public function testTerminalDrainReleasesBackpressuredOutputAtDeadline(): void
+    {
+        [$writer, $reader] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, \STREAM_IPPROTO_IP);
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with('session.terminal_output_failed', $this->isArray());
+        $emitter = new RuntimeEventEmitter($logger);
+        $reflection = new \ReflectionClass($emitter);
+        $reflection->getProperty('stdout')->setValue($emitter, $writer);
+        $emitter->beginBootstrapOutput();
+        try {
+            // Fill a real output buffer without relying on a delayed reader.
+            $written = 0;
+            for ($attempt = 0; $attempt < 16; ++$attempt) {
+                $written = fwrite($writer, str_repeat('x', 65536));
+                if (0 === $written) {
+                    break;
+                }
+            }
+            $this->assertSame(0, $written, 'The socket must be backpressured before testing the deadline.');
+            $emitter->shutdown(microtime(true), new RuntimeEvent(RuntimeEventTypeEnum::ProtocolError->value, '', 0, ['fatal' => true]));
+            $this->assertTrue($emitter->isShuttingDown());
+            $this->assertSame([], $reflection->getProperty('pending')->getValue($emitter));
+            $this->assertNull($reflection->getProperty('writeWatcher')->getValue($emitter));
+        } finally {
+            $emitter->shutdown();
+            fclose($writer);
+            fclose($reader);
         }
     }
 

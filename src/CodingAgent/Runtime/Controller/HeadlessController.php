@@ -142,8 +142,8 @@ final class HeadlessController
         $this->killOrphanedConsumers();
 
         try {
-            $this->dispatcher->dispatch(new ControllerSessionStartingEvent($this->sessionId));
             $this->startSessionBroker();
+            $this->dispatcher->dispatch(new ControllerSessionStartingEvent($this->sessionId));
         } catch (\Throwable $exception) {
             $this->brokerSupervisor->shutdownUntil(microtime(true) + 5.0);
             $this->releaseSessionOwnerLock();
@@ -293,7 +293,7 @@ final class HeadlessController
             }
 
             if (!$this->brokerSupervisor->supervise()) {
-                $this->emitter->emit(new RuntimeEvent(
+                $this->shutdown(new RuntimeEvent(
                     type: RuntimeEventTypeEnum::ProtocolError->value,
                     runId: '',
                     seq: 0,
@@ -302,7 +302,6 @@ final class HeadlessController
                         'fatal' => true,
                     ],
                 ));
-                $this->shutdown();
                 EventLoop::getDriver()->stop();
 
                 return;
@@ -518,21 +517,23 @@ final class HeadlessController
             && \in_array('HATFIELD_SESSION_ID='.$sessionId, explode("\0", $environment), true);
     }
 
-    private function shutdown(): void
+    private function shutdown(?RuntimeEvent $terminal = null): void
     {
         if ($this->shuttingDown) {
             return;
         }
 
         $this->shuttingDown = true;
-        $this->emitter->shutdown();
+
+        // Terminal output and owned-process teardown share the parent's budget.
+        $deadline = microtime(true) + 5.0;
+        $this->emitter->shutdown($deadline, $terminal);
 
         $this->logger->info('Controller shutting down gracefully');
 
         // Parent JsonlProcessAgentSessionClient stop budget is 7s. Share one
         // deadline across consumers and broker so sequential 5s+5s grace cannot
         // outlive that parent SIGKILL.
-        $deadline = microtime(true) + 5.0;
         $this->consumerSupervisor->shutdownUntil($deadline);
         $this->brokerSupervisor->shutdownUntil($deadline);
 
