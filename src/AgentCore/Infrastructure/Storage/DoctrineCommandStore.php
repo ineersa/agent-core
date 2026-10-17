@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\Storage;
 
-use Doctrine\ORM\AbstractQuery;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
@@ -58,27 +57,13 @@ final readonly class DoctrineCommandStore implements CommandStoreInterface
             ->setParameter('key', $idempotencyKey)->setMaxResults(1)->getQuery()->getScalarResult();
     }
 
-    public function pending(string $runId): array
+    public function pending(string $runId): iterable
     {
-        $query = $this->records($runId)->select('c.idempotencyKey, c.payload, c.payloadHash')
-            ->orderBy('c.id', 'ASC')->getQuery();
-        $pending = [];
-        // Scalar streaming avoids registering commands in Doctrine's identity
-        // map. Only the requested pending DTOs survive.
-        foreach ($query->toIterable([], AbstractQuery::HYDRATE_SCALAR) as $row) {
-            $payload = $row['payload'];
-            $hash = $row['payloadHash'];
-            if (!\is_string($payload) || !\is_string($hash) || !hash_equals($hash, hash('sha256', $payload))) {
-                throw new \RuntimeException('Pending command payload is missing or corrupt.');
-            }
-            $command = $this->serializer->decode(['body' => $payload])->getMessage();
-            if (!$command instanceof PendingCommand || $command->runId !== $runId || $command->idempotencyKey !== $row['idempotencyKey']) {
-                throw new \RuntimeException('Pending command payload differs from its durable identity.');
-            }
-            $pending[] = $command;
-        }
+        // Capture before returning the lazy iterator: a later enqueue belongs
+        // to the next owner boundary even when iteration has not started yet.
+        $cutoff = (int) $this->records($runId)->select('MAX(c.id)')->getQuery()->getSingleScalarResult();
 
-        return $pending;
+        return $this->iteratePending($runId, $cutoff);
     }
 
     public function countPending(string $runId): int
@@ -94,6 +79,33 @@ final readonly class DoctrineCommandStore implements CommandStoreInterface
     public function markRejected(string $runId, string $idempotencyKey, string $reason): void
     {
         $this->removePending($runId, $idempotencyKey);
+    }
+
+    /** @return \Generator<PendingCommand> */
+    private function iteratePending(string $runId, int $cutoff): \Generator
+    {
+        $after = 0;
+        do {
+            // Keyset pages also bound driver buffering. Never hydrate command
+            // entities or materialize an unbounded internal-notification queue.
+            $rows = $this->records($runId)->select('c.id, c.idempotencyKey, c.payload, c.payloadHash')
+                ->andWhere('c.id > :after AND c.id <= :cutoff')
+                ->setParameter('after', $after)->setParameter('cutoff', $cutoff)
+                ->orderBy('c.id', 'ASC')->setMaxResults(64)->getQuery()->getScalarResult();
+            foreach ($rows as $row) {
+                $after = (int) $row['id'];
+                $payload = $row['payload'];
+                $hash = $row['payloadHash'];
+                if (!\is_string($payload) || !\is_string($hash) || !hash_equals($hash, hash('sha256', $payload))) {
+                    throw new \RuntimeException('Pending command payload is missing or corrupt.');
+                }
+                $command = $this->serializer->decode(['body' => $payload])->getMessage();
+                if (!$command instanceof PendingCommand || $command->runId !== $runId || $command->idempotencyKey !== $row['idempotencyKey']) {
+                    throw new \RuntimeException('Pending command payload differs from its durable identity.');
+                }
+                yield $command;
+            }
+        } while (64 === \count($rows));
     }
 
     private function removePending(string $runId, string $idempotencyKey): void

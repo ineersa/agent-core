@@ -62,9 +62,6 @@ final readonly class CommandMailboxPolicy
         // snapshot are drained here, in store FIFO order. Later enqueues wait
         // for the next turn-start or stop boundary.
         $pendingCommands = $this->commandStore->pending($state->runId);
-        if ([] === $pendingCommands) {
-            return new CommandApplicationResult($state, [], false);
-        }
 
         $messages = $state->messages;
         $eventSpecs = [];

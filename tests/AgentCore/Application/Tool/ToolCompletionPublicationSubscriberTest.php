@@ -73,7 +73,7 @@ final class ToolCompletionPublicationSubscriberTest extends IsolatedKernelTestCa
         $this->assertNotNull($recipient);
         $this->assertSame(107, $recipient->receivedSequence);
         $this->assertSame(106, $recipient->reference->sourceEvent->seq);
-        $this->assertCount(1, $container->get(CommandStoreInterface::class)->pending($runId));
+        $this->assertSame(1, $container->get(CommandStoreInterface::class)->countPending($runId));
         $this->assertSame(RunStatus::Completed, $container->get(ActiveRunContextInterface::class)->requireLoaded($runId)->status);
         $this->assertCount(1, $published, 'Admission must not schedule unsafe continuation.');
     }

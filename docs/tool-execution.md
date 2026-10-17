@@ -111,7 +111,12 @@ The subsequent boundary consumer must recheck permission before application and
 successor dispatch. Explicit user continuation does not renew an old completion's
 automatic permission.
 
-Bounded presentations, FIFO draining, safe-boundary coalescing, parking/application
+Pending mailbox iteration captures the durable enqueue cutoff before returning a
+lazy FIFO iterator. The configured Doctrine store reads scalar keyset pages of at
+most 64 rows and decodes commands only as consumed. Stopping a boundary drain
+leaves later obligations pending; new enqueues wait for the next cutoff.
+
+Bounded presentations, notification-budget draining, safe-boundary coalescing, parking/application
 transitions, and automatic `AdvanceRun` dispatch remain C5 work. Background
 producers, child forwarding, and Ctrl+B are not enabled.
 

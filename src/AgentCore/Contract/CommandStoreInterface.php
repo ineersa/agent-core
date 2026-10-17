@@ -18,11 +18,12 @@ interface CommandStoreInterface
     public function has(string $runId, string $idempotencyKey): bool;
 
     /**
-     * Retrieves all pending commands for a specific run ID.
+     * Streams a FIFO snapshot bounded by the enqueue cutoff captured at call time.
+     * Stopping iteration leaves every unconsumed obligation pending.
      *
-     * @return list<PendingCommand>
+     * @return iterable<PendingCommand>
      */
-    public function pending(string $runId): array;
+    public function pending(string $runId): iterable;
 
     public function countPending(string $runId): int;
 

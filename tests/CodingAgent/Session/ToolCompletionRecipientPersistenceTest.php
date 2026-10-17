@@ -66,7 +66,7 @@ final class ToolCompletionRecipientPersistenceTest extends IsolatedKernelTestCas
         $this->assertNotNull($delivery);
         $this->assertSame($verified->eventSequences[0], $delivery->receivedSequence);
         $this->assertEquals($reference, $delivery->reference);
-        $this->assertCount(1, $commands->pending($runId));
+        $this->assertSame(1, $commands->countPending($runId));
     }
 
     public static function failurePoints(): iterable

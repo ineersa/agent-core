@@ -27,14 +27,14 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $this->assertTrue($store->enqueue($first));
         $this->assertTrue($other->enqueue($second));
         $this->assertFalse($other->enqueue(new PendingCommand('fifo', 'different', 'first', ['text' => 'changed'])));
-        $this->assertEquals([$first, $second], $other->pending('fifo'));
+        $this->assertEquals([$first, $second], iterator_to_array($other->pending('fifo')));
         $this->assertSame(2, $store->countPending('fifo'));
         $other->markApplied('fifo', 'first');
         $other->markApplied('fifo', 'first');
-        $this->assertEquals([$second], $store->pending('fifo'));
+        $this->assertEquals([$second], iterator_to_array($store->pending('fifo')));
         $store->markRejected('fifo', 'second', 'superseded');
         $store->markRejected('fifo', 'second', 'superseded');
-        $this->assertSame([], $other->pending('fifo'));
+        $this->assertSame([], iterator_to_array($other->pending('fifo')));
         $this->assertSame(0, $other->countPending('fifo'));
         $this->assertFalse($other->has('fifo', 'first'));
         $this->assertFalse($other->has('fifo', 'second'));
@@ -54,7 +54,7 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         foreach (['applied', 'rejected'] as $key) {
             $this->assertFalse($other->has('finalized', $key));
         }
-        $this->assertSame([], $other->pending('finalized'));
+        $this->assertSame([], iterator_to_array($other->pending('finalized')));
         $this->assertSame(0, $other->countPending('finalized'));
         $this->assertSame(0, (int) self::getContainer()->get(Connection::class)->fetchOne('SELECT COUNT(*) FROM run_command WHERE run_id = ?', ['finalized']));
         $this->assertTrue($other->enqueue(new PendingCommand('finalized', 'continue', 'applied')));
@@ -71,7 +71,7 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         self::$kernel->reboot(null);
         $fresh = self::getContainer()->get(CommandStoreInterface::class);
         $this->assertNotSame($store, $fresh);
-        $this->assertEquals([$command], $fresh->pending('cache-clear'));
+        $this->assertEquals([$command], iterator_to_array($fresh->pending('cache-clear')));
         $this->assertSame(1, $fresh->countPending('cache-clear'));
         $this->assertFalse($fresh->has('cache-clear', 'accepted'));
         $this->assertTrue($fresh->enqueue(new PendingCommand('cache-clear', 'continue', 'accepted')));
@@ -96,7 +96,7 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $fresh = $this->freshStore($serializer);
         $this->assertFalse($fresh->has('history', 'old-127'));
         $this->assertSame(1, $fresh->countPending('history'));
-        $this->assertEquals([$current], $fresh->pending('history'));
+        $this->assertEquals([$current], iterator_to_array($fresh->pending('history')));
         $this->assertFalse($fresh->has('history', 'missing'));
     }
 
@@ -109,7 +109,7 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $this->assertSame(1, $store->countPending('corrupt'));
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Pending command payload is missing or corrupt.');
-        $store->pending('corrupt');
+        iterator_to_array($store->pending('corrupt'));
     }
 
     public function testDatabaseFailurePreservesPendingAndReleasesOwnership(): void
@@ -129,13 +129,46 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
             $independent = self::getContainer()->get(LockFactory::class)->createLock('hatfield-command-failure', ttl: null);
             $this->assertTrue($independent->acquire());
             $independent->release();
-            $this->assertEquals([$command], $this->freshStore()->pending('failure'));
+            $this->assertEquals([$command], iterator_to_array($this->freshStore()->pending('failure')));
         } finally {
             $connection->executeStatement('DROP TRIGGER command_failure');
         }
         $this->freshStore()->markApplied('failure', 'key');
-        $this->assertSame([], $store->pending('failure'));
+        $this->assertSame([], iterator_to_array($store->pending('failure')));
         $this->assertFalse($store->has('failure', 'key'));
+    }
+
+    public function testPendingSnapshotKeepsCallTimeCutoffAcrossLazyKeysetPages(): void
+    {
+        $store = $this->freshStore();
+        for ($i = 0; $i < 130; ++$i) {
+            $store->enqueue(new PendingCommand('snapshot', 'tool_completion', 'item-'.$i));
+        }
+        $pending = $store->pending('snapshot');
+        $store->enqueue(new PendingCommand('snapshot', 'tool_completion', 'later-before-iteration'));
+        $keys = [];
+        foreach ($pending as $command) {
+            $keys[] = $command->idempotencyKey;
+            if (1 === \count($keys)) {
+                $store->enqueue(new PendingCommand('snapshot', 'tool_completion', 'later-during-iteration'));
+            }
+        }
+        $this->assertSame(array_map(static fn (int $i): string => 'item-'.$i, range(0, 129)), $keys);
+        $this->assertSame(132, $store->countPending('snapshot'));
+    }
+
+    public function testStoppingIterationDoesNotDecodeOrConsumeTheRemainingObligations(): void
+    {
+        $store = $this->freshStore();
+        $store->enqueue(new PendingCommand('bounded', 'tool_completion', 'first'));
+        $store->enqueue(new PendingCommand('bounded', 'tool_completion', 'unread'));
+        self::getContainer()->get(Connection::class)->executeStatement('UPDATE run_command SET payload = ? WHERE run_id = ? AND idempotency_key = ?', ['corrupt', 'bounded', 'unread']);
+        foreach ($store->pending('bounded') as $command) {
+            $this->assertSame('first', $command->idempotencyKey);
+            break;
+        }
+        $this->assertSame(2, $store->countPending('bounded'));
+        $this->assertTrue($store->has('bounded', 'unread'));
     }
 
     private function freshStore(?SerializerInterface $serializer = null): DoctrineCommandStore

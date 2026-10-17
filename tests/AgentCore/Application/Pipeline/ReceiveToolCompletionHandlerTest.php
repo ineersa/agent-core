@@ -52,7 +52,7 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
         $this->assertNotNull($accepted);
         $this->assertSame($committed->lastSeq, $accepted->receivedSequence);
         $this->assertSame($reference->payloadFingerprint, $accepted->reference->payloadFingerprint);
-        $this->assertCount(1, $commands->pending($runId));
+        $this->assertSame(1, $commands->countPending($runId));
         $canonical = iterator_to_array($container->get(EventStoreInterface::class)->rangeFor($runId, $accepted->receivedSequence, $accepted->receivedSequence));
         $this->assertCount(1, $canonical);
         $receipt = array_values($canonical)[0];
@@ -95,7 +95,7 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('internal runtime', $result->events[0]->payload['reason']);
         $this->assertSame($state->messages, $result->nextState?->messages);
         $this->assertNull($container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($runId, $reference->messageId));
-        $this->assertSame([], $container->get(CommandStoreInterface::class)->pending($runId));
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
     }
 
     public function testUncommittedSourceCannotPrepareARecipientReceipt(): void
@@ -111,6 +111,6 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
             $this->assertSame(RetainedToolCompletionFailureCodeEnum::NotFound, $failure->code());
         }
         $this->assertNull($container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($runId, $reference->messageId));
-        $this->assertSame([], $container->get(CommandStoreInterface::class)->pending($runId));
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
     }
 }
