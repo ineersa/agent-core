@@ -422,7 +422,9 @@ final class HeadlessController
      *
      * Only kills processes whose:
      *  - parent PID is 1 (truly orphaned, not owned by another controller)
-     *  - environment contains our session ID (HATFIELD_SESSION_ID match)
+     *  - UID is our non-root UID
+     *  - environment contains the exact HATFIELD_SESSION_ID entry
+     *  - canonical CWD matches this project
      */
     private function killOrphanedConsumers(): void
     {
@@ -441,37 +443,17 @@ final class HeadlessController
                     continue;
                 }
 
-                $stat = @file_get_contents("/proc/{$pid}/stat");
-                if (false === $stat) {
-                    continue;
-                }
-
-                // ppid is the 4th space-separated field in /proc/pid/stat.
-                $fields = explode(' ', $stat);
-                $ppid = (int) ($fields[3] ?? 0);
-                // Check parent PID: only ppid=1 means orphaned.
-                if (1 !== $ppid) {
-                    // Parent still alive — belongs to another controller.
-                    continue;
-                }
-
-                // Verify this orphaned process belongs to our session by checking
-                // /proc/pid/environ for HATFIELD_SESSION_ID. \0-separated env entries.
-                $pidEnv = @file_get_contents("/proc/{$pid}/environ");
-                if (false === $pidEnv) {
-                    continue;
-                }
-
-                $sessionMarker = "HATFIELD_SESSION_ID={$this->sessionId}";
-                if (!str_contains($pidEnv, $sessionMarker)) {
-                    // Belongs to a different session — leave it alone.
+                if (!$this->ownsOrphanedConsumer($pid)) {
                     continue;
                 }
 
                 $this->logger->info('Reaping orphaned session process', [
+                    'component' => 'HeadlessController',
+                    'event_type' => 'controller.orphan_consumer.term',
                     'pid' => $pid,
-                    'ppid' => $ppid,
+                    'ppid' => 1,
                     'pattern' => $pattern,
+                    'run_id' => $this->sessionId,
                     'session_id' => $this->sessionId,
                 ]);
 
@@ -486,15 +468,53 @@ final class HeadlessController
             usleep(500_000);
 
             foreach ($killedPids as $pid) {
-                // Check if still running.
-                if (false !== @file_get_contents("/proc/{$pid}/stat")) {
+                // Recheck ownership before escalation; a PID alone is not identity.
+                if ($this->ownsOrphanedConsumer($pid)) {
                     @posix_kill($pid, \SIGKILL);
                     $this->logger->warning('Orphaned session process did not stop gracefully, sent SIGKILL', [
+                        'component' => 'HeadlessController',
+                        'event_type' => 'controller.orphan_consumer.kill',
                         'pid' => $pid,
+                        'run_id' => $this->sessionId,
+                        'session_id' => $this->sessionId,
                     ]);
                 }
             }
         }
+    }
+
+    private function ownsOrphanedConsumer(int $pid): bool
+    {
+        $processDir = '/proc/'.$pid;
+        $uid = @fileowner($processDir);
+        if (false === $uid || 0 === $uid || $uid !== posix_geteuid()) {
+            return false;
+        }
+
+        $stat = @file_get_contents($processDir.'/stat');
+        if (false === $stat || false === ($commEnd = strrpos($stat, ')'))) {
+            return false;
+        }
+        // The parenthesized command may contain spaces; PPID follows the state.
+        $fields = explode(' ', substr($stat, $commEnd + 2));
+        if (1 !== (int) ($fields[1] ?? 0)) {
+            return false;
+        }
+
+        $environment = @file_get_contents($processDir.'/environ');
+        $cwd = @readlink($processDir.'/cwd');
+
+        return false !== $environment && false !== $cwd
+            && self::matchesConsumerIdentity($environment, $cwd, $this->sessionId, $this->runtimeCwd);
+    }
+
+    private static function matchesConsumerIdentity(string $environment, string $cwd, string $sessionId, string $runtimeCwd): bool
+    {
+        $project = realpath($runtimeCwd);
+
+        // Exact NUL-delimited entries prevent both value and variable-name prefixes.
+        return false !== $project && $cwd === $project
+            && \in_array('HATFIELD_SESSION_ID='.$sessionId, explode("\0", $environment), true);
     }
 
     private function shutdown(): void

@@ -17,7 +17,7 @@ use Symfony\Component\Process\Process;
 /**
  * Thesis: only one live controller may own a given project CWD + session ID.
  * A second controller for the same pair must fail without emitting runtime.ready,
- * preventing two consumer pools from sharing session Doctrine queues.
+ * preventing two consumer pools from sharing session broker queues.
  *
  * @group controller-replay
  */
@@ -62,6 +62,34 @@ final class HeadlessControllerSessionOwnerLockProcessTest extends ControllerRepl
     {
         yield 'session 1 must not select session 10 in the same project' => ['10', false];
         yield 'session 1 must not select session 1 in another project' => ['1', true];
+    }
+
+    /** @return iterable<string, array{string, bool, bool}> */
+    public static function consumerIdentities(): iterable
+    {
+        yield 'exact session and project' => ["PATH=/bin\0HATFIELD_SESSION_ID=1\0OTHER=value\0", false, true];
+        yield 'first environment entry' => ["HATFIELD_SESSION_ID=1\0PATH=/bin\0", false, true];
+        yield 'session 10 is foreign' => ["HATFIELD_SESSION_ID=10\0", false, false];
+        yield 'session 11 is foreign' => ["HATFIELD_SESSION_ID=11\0", false, false];
+        yield 'session 100 is foreign' => ["HATFIELD_SESSION_ID=100\0", false, false];
+        yield 'different environment key' => ["OTHER_HATFIELD_SESSION_ID=1\0", false, false];
+        yield 'same session in foreign project' => ["HATFIELD_SESSION_ID=1\0", true, false];
+        yield 'missing session identity' => ["PATH=/bin\0", false, false];
+    }
+
+    #[DataProvider('consumerIdentities')]
+    public function testConsumerIdentityRequiresExactEnvironmentEntryAndProject(string $environment, bool $differentProject, bool $expected): void
+    {
+        $cwd = $differentProject ? TestDirectoryIsolation::createProjectTempDir('foreign-consumer') : $this->tempDir;
+        try {
+            // Exercise the production identity predicate without signaling tagged processes.
+            $identity = new \ReflectionMethod(HeadlessController::class, 'matchesConsumerIdentity');
+            $this->assertSame($expected, $identity->invoke(null, $environment, $cwd, '1', $this->tempDir));
+        } finally {
+            if ($differentProject) {
+                TestDirectoryIsolation::removeDirectory($cwd);
+            }
+        }
     }
 
     #[DataProvider('foreignBrokerIdentities')]
