@@ -66,11 +66,7 @@ final class SessionSqliteQueueBrokerTopology
         $nonConsumerConnections = self::NON_CONSUMER_BROKER_PROCESSES * self::CONNECTIONS_PER_NON_CONSUMER_PROCESS;
         $maxConsumerProcesses = intdiv(\PHP_INT_MAX - $nonConsumerConnections, self::CONNECTIONS_PER_BROKER_CONSUMER_PROCESS);
         if ($consumerProcesses > $maxConsumerProcesses) {
-            throw new \InvalidArgumentException(\sprintf(
-                'Broker connection budget overflows for llmWorkers=%d toolWorkers=%d.',
-                $llmWorkers,
-                $toolWorkers,
-            ));
+            throw new \InvalidArgumentException(\sprintf('Broker connection budget overflows for llmWorkers=%d toolWorkers=%d.', $llmWorkers, $toolWorkers));
         }
 
         return ($consumerProcesses * self::CONNECTIONS_PER_BROKER_CONSUMER_PROCESS) + $nonConsumerConnections;
