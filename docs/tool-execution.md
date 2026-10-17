@@ -78,6 +78,21 @@ unsupported, or foreign references yield typed inspection failures and never
 re-execute tools. Mailbox delivery, wake fencing, producers, and Ctrl+B remain
 later checkpoints.
 
+C5 currently adds a source-verification foundation, not automatic delivery.
+`ToolCompletionDeliveryReferenceDTO` carries the recipient identity, message ID,
+exact canonical source location, and semantic fingerprint. Configured Symfony
+serialization owns its wire representation. `ToolCompletionDeliveryVerifier`
+checks the published source event, background acceptance, original invocation,
+retained origin, owning root, locator, and fingerprint without opening the
+referenced body. Ordinary attached foreground results are not delivery sources.
+Cross-run forwarding is not enabled.
+
+The recipient must deduplicate against its own accepted evidence before invoking
+the verifier. Verification alone neither records recipient acceptance nor grants
+permission to wake a run. Recipient projections, prepared mailbox changes,
+bounded presentations, safe-boundary coalescing, and cancellation/history/restart
+fences remain C5 work. No live completion path invokes this foundation yet.
+
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare
 a tool-specific budget. MCP calls receive the run cancellation token and the shorter
