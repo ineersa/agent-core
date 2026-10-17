@@ -21,13 +21,13 @@ require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
 
 /**
- * Doctrine transport DSN env vars exported by a live session controller
+ * Transport DSNs and broker ownership env vars exported by a live session controller
  * (JsonlProcessAgentSessionClient) into every bash command the session runs.
  *
  * QA lanes must not inherit them: config/packages/test/messenger.yaml falls
  * back to the in-memory:// transport only when the var is UNSET, so a
- * poisoned env would build a DoctrineTransport where unit tests expect
- * InMemoryTransport. E2E lanes (controller-replay, test:tui, llm-real) set
+ * poisoned env would build a broker transport where unit tests expect
+ * InMemoryTransport, or mark standalone brokers as supervised. E2E lanes set
  * their own DSNs explicitly at subprocess spawn time, so stripping these
  * vars from the shell prefix does not affect them.
  */
@@ -38,6 +38,8 @@ const QA_SESSION_TRANSPORT_DSN_VARS = [
     'HATFIELD_AGENT_TRANSPORT_DSN',
     'HATFIELD_MCP_TRANSPORT_DSN',
     'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN',
+    'HATFIELD_SQLITE_QUEUE_DATABASE',
+    'HATFIELD_SQLITE_QUEUE_ENDPOINT',
 ];
 
 /**
@@ -106,7 +108,6 @@ function qa_check_run_env_command(): string
         'HATFIELD_QA_TMP_DIR',
         'HATFIELD_CACHE_DIR',
         'HATFIELD_TEST_DATABASE_PATH',
-        'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH',
     ] as $name) {
         $value = getenv($name);
         if (false === $value || '' === trim((string) $value)) {

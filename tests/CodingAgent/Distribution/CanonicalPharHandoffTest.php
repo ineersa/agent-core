@@ -133,4 +133,31 @@ PHP;
         $this->assertNotEmpty($pin['static_php_cli_commit'] ?? null);
         $this->assertNotEmpty($pin['static_php_cli_repository'] ?? null);
     }
+
+    public function testReleaseArtifactCatalogIncludesFivePayloads(): void
+    {
+        $root = ProjectDir::get();
+        require_once $root.'/.castor/helpers.php';
+        require_once $root.'/.castor/distribution.php';
+
+        $payloads = array_values(array_filter(
+            HATFIELD_DIST_ARTIFACTS,
+            static fn (string $name): bool => 'SHA256SUMS' !== $name,
+        ));
+        $this->assertCount(5, $payloads);
+        $this->assertContains('hatfield.phar', $payloads);
+        foreach (['linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64'] as $target) {
+            $this->assertContains('hatfield.'.$target, $payloads);
+            $this->assertNotContains('hatfield.'.$target.'.php', $payloads);
+        }
+
+        $workflow = (string) file_get_contents($root.'/.github/workflows/release.yml');
+        $this->assertStringContainsString(
+            'test "$(grep -cE \'^[a-f0-9]{64}  \' var/tmp/dist/SHA256SUMS)" -eq 5',
+            $workflow,
+        );
+        $this->assertStringNotContainsString('hatfield.${{ matrix.target }}.php', $workflow);
+        $this->assertStringNotContainsString('var/tmp/dist/hatfield.linux-amd64.php', $workflow);
+        $this->assertStringNotContainsString('-eq 9', $workflow);
+    }
 }

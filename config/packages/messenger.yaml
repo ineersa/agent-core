@@ -12,9 +12,10 @@
 #                          their respective queues and dispatch results back to
 #                          agent.command.bus within the same consumer process.
 #
-# Async Doctrine transports use DBAL connection "messenger_transport"
-# (.hatfield/messenger-transport.sqlite). App/runtime ORM state stays on
-# connection "default" (.hatfield/state.sqlite). See doctrine.yaml.
+# Async transports use the session-owned sqlite-queue broker. The parent
+# process publishes HATFIELD_*_TRANSPORT_DSN plus broker database/endpoint
+# env before spawning the controller. App/runtime ORM state stays on
+# Doctrine connection "default" (.hatfield/state.sqlite). See doctrine.yaml.
 #
 # After ASYNC-05:
 # - StartRun → run_control transport (messenger:consume run_control)
@@ -37,7 +38,7 @@
 # Transient streaming deltas (thinking, text, tool-call arguments) are
 # delivered via STDOUT from the LLM consumer child process. The controller
 # reads the child's stdout pipe and forwards events to the TUI. No
-# Doctrine publish transport is needed.
+# sqlite-queue publish transport is needed.
 #
 # run_control transport uses PhpSerializer because StartRun contains complex
 # objects (StartRunPayload with AgentMessage[] and RunMetadata) that would
@@ -90,7 +91,7 @@ framework:
             mcp:         '%env(HATFIELD_MCP_TRANSPORT_DSN)%'
             # Dedicated async worker for extension-owned agent jobs (Observer, etc.).
             # Uses default Symfony Serializer (scalar/array payload only).
-            # MUST be a process transport (doctrine:// / in-memory:// for tests).
+            # MUST be a process transport (sqlite-queue:// / in-memory:// for tests).
             # ExtensionAgentJobDispatcher refuses sync:// so model work cannot run
             # inline during AfterTurnCommit / on the caller thread.
             # Uses Symfony Messenger native default max_retries (3). No failure_transport:

@@ -92,7 +92,7 @@ final class ExtensionAgentJobRegistryTest extends TestCase
         $this->assertFalse($bus->invoked);
     }
 
-    public function testDispatcherAllowsDoctrineTransport(): void
+    public function testDispatcherAllowsSqliteQueueTransport(): void
     {
         $captured = null;
         $bus = new class($captured) implements MessageBusInterface {
@@ -111,7 +111,7 @@ final class ExtensionAgentJobRegistryTest extends TestCase
         $dispatcher = new ExtensionAgentJobDispatcher(
             $bus,
             new NullLogger(),
-            'doctrine://messenger_transport?queue_name=extension_agent',
+            'sqlite-queue://extension_agent?endpoint=%2Ftmp%2Fhq-test.sock',
         );
         $dispatcher->dispatch(new ExtensionAgentJobRequestDTO(
             handlerId: 'ext.job',

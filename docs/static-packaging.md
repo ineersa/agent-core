@@ -47,3 +47,7 @@ Native binaries embed the same packaged resources as the PHAR (selected docs inc
 ## Runtime
 
 Fused binaries may present empty `PHP_BINARY` or `PHP_BINARY` equal to the artifact path. `AppExecutableLocator` treats that as native and does not prefix `php`.
+
+The session-owned sqlite-queue broker launches Amp SQLite workers through another
+invocation of the same fused binary with `--internal-sqlite-worker`. Releases ship
+one native artifact per target. There is no companion PHP CLI.

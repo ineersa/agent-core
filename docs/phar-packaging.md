@@ -11,9 +11,10 @@ Keep synchronized across `composer.json` `ext-*`, `bin/console` PHAR guard,
 
 - `php` ≥ 8.5
 - `ext-pdo_sqlite`, `ext-mbstring`, `ext-xml`, `ext-intl`, `ext-curl`, `ext-openssl`,
-  `ext-pcntl`, `ext-posix`, `ext-tokenizer`, `ext-ctype`, `ext-fileinfo`, `ext-filter`, `ext-iconv`, `ext-phar`, `ext-zstd`
+  `ext-pcntl`, `ext-posix`, `ext-tokenizer`, `ext-ctype`, `ext-fileinfo`, `ext-filter`, `ext-iconv`, `ext-phar`, `ext-zstd`,
+  `ext-sqlite3`
 
-`tools/static/pin.json` may list a deliberate SFX **superset** for native builds — not identical to this system-PHAR list.
+`ext-sqlite3` is required by the session-owned sqlite-queue broker Amp driver. `tools/static/pin.json` may still list a deliberate SFX **superset** for native builds — not identical to this system-PHAR list.
 
 ## Castor tasks
 
