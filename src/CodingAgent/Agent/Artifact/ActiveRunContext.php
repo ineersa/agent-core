@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\CodingAgent\Logging\ProcessMemorySnapshotLogger;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 
@@ -16,14 +15,11 @@ final class ActiveRunContext implements ActiveRunContextInterface
     /** @var array<string, RunState> */
     private array $states = [];
 
-    private int $lastReportedPopulation = -1;
-
     public function __construct(
         private readonly RunOperationalProjectionRepository $projectionRepository,
         private readonly HatfieldSessionStore $sessions,
         private readonly AgentChildRunDirectory $children,
         private readonly EventStoreInterface $eventStore,
-        private readonly ProcessMemorySnapshotLogger $memorySnapshots,
     ) {
     }
 
@@ -69,12 +65,7 @@ final class ActiveRunContext implements ActiveRunContextInterface
 
     public function release(string $runId): void
     {
-        if (!isset($this->states[$runId])) {
-            return;
-        }
-
         unset($this->states[$runId]);
-        $this->emitPopulationCheckpoint('owner.registry.released');
     }
 
     private function publish(RunState $state): void
@@ -86,50 +77,5 @@ final class ActiveRunContext implements ActiveRunContextInterface
             throw $exception;
         }
         $this->states[$state->runId] = $state;
-        $this->emitPopulationCheckpoint('owner.registry.retained');
-    }
-
-    private function emitPopulationCheckpoint(string $eventType): void
-    {
-        // Hot replaceCurrent paths keep the same resident map size; emit only
-        // when the population changes so telemetry stays cheap. Compare size
-        // before classifying parent/child entries.
-        $total = \count($this->states);
-        if ($total === $this->lastReportedPopulation) {
-            return;
-        }
-
-        $population = $this->populationScalars();
-        $this->lastReportedPopulation = $total;
-        $this->memorySnapshots->checkpoint($eventType, 'owner_registry', $population);
-    }
-
-    /**
-     * Count already-resident map entries only. Never hydrate, read archives,
-     * copy RunState graphs, or serialize retained state.
-     *
-     * @return array{
-     *     registry_state_count: int,
-     *     registry_parent_count: int,
-     *     registry_child_count: int
-     * }
-     */
-    private function populationScalars(): array
-    {
-        $parentCount = 0;
-        $childCount = 0;
-        foreach ($this->states as $state) {
-            if (null === $state->parentRunId) {
-                ++$parentCount;
-            } else {
-                ++$childCount;
-            }
-        }
-
-        return [
-            'registry_state_count' => \count($this->states),
-            'registry_parent_count' => $parentCount,
-            'registry_child_count' => $childCount,
-        ];
     }
 }

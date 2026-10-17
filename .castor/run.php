@@ -63,7 +63,11 @@ function run_agent(): void
 
     launch_agent_direct_terminal(
         build_agent_console_inner_command(
-            agent_runtime_env_command(),
+            agent_runtime_env_command()
+                .' HATFIELD_SESSION_RESOURCE_SAMPLER=1'
+                .' HATFIELD_TELEMETRY_ENV=dev'
+                .' HATFIELD_DOGSTATSD_HOST=127.0.0.1'
+                .' HATFIELD_DOGSTATSD_PORT=8125',
             agent_phar_invocation(),
         ),
     );

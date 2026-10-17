@@ -3,135 +3,20 @@
 # Install to:
 #   /etc/datadog-agent/conf.d/process.d/conf.yaml
 #
-# Each instance is a mutually exclusive process group. exact_match: false uses
-# Python re.search() against the joined command line (Datadog Process Check
-# source). Hatfield keeps the original OS launch identity and appends
-# hatfield.role.<role> after Symfony resolves the command, so these patterns
-# match only that anchored suffix. Keep patterns non-overlapping so CPU/RSS/I/O
-# are not double-counted. There is no leftover aggregate "hatfield" instance.
-#
-# process_name tags come from the instance name. Use them for role selectors:
-#   process_name:hatfield.screen
-#   process_name:hatfield.controller
-#   process_name:hatfield.run_control
-#
-# Process I/O metrics (system.processes.ioread_bytes(_count) and
-# iowrite_bytes(_count)) are emitted by this check when the Agent can read
-# /proc/<pid>/io. Verify both series with `datadog-agent check process` before
-# adding I/O widgets.
-#
-# Deploy note: copy this file and restart datadog-agent. Old binaries that never
-# append hatfield.role.* markers will not match these instances.
+# This integration aggregates matching Hatfield processes and emits
+# system.processes.* metrics tagged with service:hatfield and env:dev.
 
 init_config:
 
 instances:
-  - name: hatfield.controller
+  - name: hatfield
     search_string:
-      - '(?:^|[\x00\s])hatfield\.role\.controller(?:[\x00\s]*)$'
+      - hatfield.phar
+      - bin/console agent
+      - bin/console messenger:consume
     exact_match: false
     service: hatfield
     tags:
       - env:dev
       - app:hatfield
-      - process_role:controller
-    min_collection_interval: 15
-
-  - name: hatfield.headless
-    search_string:
-      - '(?:^|[\x00\s])hatfield\.role\.headless(?:[\x00\s]*)$'
-    exact_match: false
-    service: hatfield
-    tags:
-      - env:dev
-      - app:hatfield
-      - process_role:headless
-    min_collection_interval: 15
-
-  - name: hatfield.screen
-    search_string:
-      - '(?:^|[\x00\s])hatfield\.role\.screen(?:[\x00\s]*)$'
-    exact_match: false
-    service: hatfield
-    tags:
-      - env:dev
-      - app:hatfield
-      - process_role:screen
-    min_collection_interval: 15
-
-  - name: hatfield.run_control
-    search_string:
-      - '(?:^|[\x00\s])hatfield\.role\.run_control(?:[\x00\s]*)$'
-    exact_match: false
-    service: hatfield
-    tags:
-      - env:dev
-      - app:hatfield
-      - process_role:run_control
-    min_collection_interval: 15
-
-  - name: hatfield.llm
-    search_string:
-      - '(?:^|[\x00\s])hatfield\.role\.llm(?:[\x00\s]*)$'
-    exact_match: false
-    service: hatfield
-    tags:
-      - env:dev
-      - app:hatfield
-      - process_role:llm
-    min_collection_interval: 15
-
-  - name: hatfield.tool
-    search_string:
-      - '(?:^|[\x00\s])hatfield\.role\.tool(?:[\x00\s]*)$'
-    exact_match: false
-    service: hatfield
-    tags:
-      - env:dev
-      - app:hatfield
-      - process_role:tool
-    min_collection_interval: 15
-
-  - name: hatfield.agent_worker
-    search_string:
-      - '(?:^|[\x00\s])hatfield\.role\.agent_worker(?:[\x00\s]*)$'
-    exact_match: false
-    service: hatfield
-    tags:
-      - env:dev
-      - app:hatfield
-      - process_role:agent_worker
-    min_collection_interval: 15
-
-  - name: hatfield.mcp
-    search_string:
-      - '(?:^|[\x00\s])hatfield\.role\.mcp(?:[\x00\s]*)$'
-    exact_match: false
-    service: hatfield
-    tags:
-      - env:dev
-      - app:hatfield
-      - process_role:mcp
-    min_collection_interval: 15
-
-  - name: hatfield.extension_agent
-    search_string:
-      - '(?:^|[\x00\s])hatfield\.role\.extension_agent(?:[\x00\s]*)$'
-    exact_match: false
-    service: hatfield
-    tags:
-      - env:dev
-      - app:hatfield
-      - process_role:extension_agent
-    min_collection_interval: 15
-
-  - name: hatfield.scheduler
-    search_string:
-      - '(?:^|[\x00\s])hatfield\.role\.scheduler(?:[\x00\s]*)$'
-    exact_match: false
-    service: hatfield
-    tags:
-      - env:dev
-      - app:hatfield
-      - process_role:scheduler
     min_collection_interval: 15

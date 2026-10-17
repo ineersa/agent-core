@@ -13,7 +13,6 @@ metrics defined in Datadog.
 ## Principles
 
 - Structured event-style log messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`).
-  Ambient `process_role` identifies the calling process for resource attribution.
 - Normal events omit raw prompts and tool output. The bounded error-only captures in [Provider failure diagnostics](#provider-failure-diagnostics) are explicit exceptions. Never capture full session history, env secrets, or API keys.
 - Logging and application work never depend on Datadog. No Datadog client, transport, or buffer runs in the application.
 
@@ -32,39 +31,11 @@ Use `sampler_pid` for heap attribution. Ambient `pid` alone does not override
 the process sample; only an explicit call-site `pid` does. Treat `memory_peak`
 as a lifetime high-water mark, not a steady-growth signal.
 
-`ProcessRoleAttributionSubscriber` sets ambient `process_role` from Symfony
-resolved command input and Messenger receiver names for the life of that
-command or worker. It never scans raw argv. Known values are `screen`,
-`controller`, `headless`, `run_control`, `llm`, `tool`, `agent_worker`, `mcp`,
-`extension_agent`, `scheduler`, and temporary `console` during
-`messenger:consume` startup before `WorkerStartedEvent`. Controller wins when
-both `--controller` and `--headless` are set. Prompt or option values that
-contain those flag strings do not change the role. Multi-receiver
-`messenger:consume` workers keep only the temporary `console` role.
-Unrelated console commands stay unattributed.
-
-The same subscriber sets OS process title `hatfield.role.<role>` through
-Symfony `Command::setProcessTitle()` by appending the marker to the original
-OS title, plus a best-effort immediate update for Messenger workers after
-transports resolve. Temporary `console` stays a log-only role and does not
-rewrite the OS title. Datadog Process Check matches the anchored marker
-suffix only, so prompt text that contains a fake role string does not match.
-If `cli_get_process_title()` is empty, the subscriber reads only
-`/proc/self/cmdline` for this process to preserve the launch identity before
-appending the marker. If title APIs or that baseline are unavailable,
-attribution leaves the original OS identity unchanged and records intentional
-telemetry degradation. Keep
-`process_role`, `run_id`, and `session_id` in logs; do not promote
-high-cardinality IDs into custom metric tags.
-
 Lifecycle checkpoints use message `process.memory.checkpoint` with
 `event_type` values such as `tui.resume.mounted`, `compaction.retention.applied`,
 `tui.activity.terminal`, `tui.compaction.settled`, `tui.memory.idle`, and
-`tui.session.shutdown`. Owner-registry population samples use
-`owner.registry.retained` and `owner.registry.released` with
-`registry_state_count`, `registry_parent_count`, and `registry_child_count`.
-Those records carry scalar counts only (block/kind/text-byte totals, seq,
-resident map sizes). Compaction projection checkpoints also include
+`tui.session.shutdown`. Those records carry scalar counts only (block/kind/text-byte
+totals, seq). Compaction projection checkpoints also include
 `retention_floor_block_id`. TUI checkpoints label retained parent transcript
 counts with `transcript_scope: parent`, plus `visible_run_id` and `live_child_view`.
 Boundary samples use `checkpoint_phase: pre_next_frame`. The one-shot idle sample
@@ -92,10 +63,6 @@ same poll can leave the tick-end `activity` as `starting`; use
 `boundary_activity` for the terminal mark. `tui.compaction.settled` covers both
 successful compaction completion and compaction failure: settlement is the
 `isCompacting` true→false transition, not success alone.
-
-## Resource measurements
-
-Packaged-process baselines and how to reproduce them: [Resource measurements](resource-measurements.md).
 
 ## Castor helpers
 
@@ -143,8 +110,8 @@ result should cover only one checkout.
 
 ## Hatfield process metrics
 
-The Datadog Process Check emits CPU, resident memory, process count, and
-process I/O for mutually exclusive Hatfield roles. Install the sample config:
+The Datadog Process Check can aggregate CPU, resident memory, and process I/O for
+the Hatfield CLI, controller, and Messenger workers. Install the sample config:
 
 ```bash
 sudo install -o dd-agent -g dd-agent -m 0644 \
@@ -153,32 +120,9 @@ sudo install -o dd-agent -g dd-agent -m 0644 \
 sudo systemctl restart datadog-agent
 ```
 
-The config matches packaged `hatfield.phar` launches and source
-`bin/console` launches after they append `hatfield.role.<role>` to the original
-OS title. Each instance is one role group with `exact_match: false`, so Datadog
-applies Python `re.search()` to the joined process title or command line and
-matches only the anchored suffix. Original launch identity remains visible for
-orphan recovery and topology discovery (`messenger:consume <transport>`).
-Default launches that omit an explicit `agent` argument still become `screen`
-after attribution. Copy the sample config and restart `datadog-agent` after
-pulling this change. Binaries that never append `hatfield.role.*` markers do
-not match these instances.
-Instance names become `process_name` tags:
-
-- `hatfield.screen`
-- `hatfield.controller`
-- `hatfield.headless`
-- `hatfield.run_control`
-- `hatfield.llm`
-- `hatfield.tool`
-- `hatfield.agent_worker`
-- `hatfield.mcp`
-- `hatfield.extension_agent`
-- `hatfield.scheduler`
-
-Every instance also carries `service:hatfield`, `env:dev`, `app:hatfield`, and
-`process_role:<role>`. There is no overlapping aggregate instance. Do not sum
-an old one-bucket series with these role series.
+The config matches Hatfield PHAR processes and source launches through
+`bin/console`. It tags the resulting `system.processes.*` metrics with
+`service:hatfield`, `env:dev`, and `app:hatfield`.
 
 Check the integration after the Agent has completed one collection interval:
 
@@ -189,22 +133,17 @@ sudo datadog-agent check process
 Use these dashboard queries:
 
 ```text
-sum:system.processes.cpu.pct{service:hatfield AND $env} by {process_name}
-sum:system.processes.mem.rss{service:hatfield AND $env} by {process_name}
-sum:system.processes.number{service:hatfield AND $env} by {process_name}
-per_second(sum:system.processes.ioread_bytes_count{service:hatfield AND $env}) by {process_name}
-per_second(sum:system.processes.iowrite_bytes_count{service:hatfield AND $env}) by {process_name}
+sum:system.processes.cpu.pct{service:hatfield AND $env}
+sum:system.processes.mem.rss{service:hatfield AND $env}
+per_second(sum:system.processes.ioread_bytes_count{service:hatfield AND $env})
+per_second(sum:system.processes.iowrite_bytes_count{service:hatfield AND $env})
 ```
 
-Aggregate CPU across matched processes may exceed 100% when more than one core
-is busy. Aggregate RSS is the sum of matched process RSS, not a host total.
-Checkpoint `memory_usage` values are event samples, not continuous gauges.
-Never sum or average `memory_peak` across processes as if it were current
-usage. Short-lived processes can disappear before collection; Datadog
-documents `system.processes.cpu.pct` as inaccurate for processes that live for
-less than 30 seconds. Linux process I/O depends on Agent access to
-`/proc/<pid>/io`. Verify both I/O series before adding I/O widgets; absence of
-data usually means privilege or collection setup, not application code.
+The Process Check must match every Hatfield process that belongs in the total.
+Short-lived processes can disappear before collection. Datadog documents
+`system.processes.cpu.pct` as inaccurate for processes that live for less than
+30 seconds. Linux process I/O availability also depends on Agent access to
+`/proc/<pid>/io`; verify both I/O metrics before adding dashboard widgets.
 
 ## Application metrics from logs
 
@@ -293,15 +232,32 @@ Metrics API. Then verify against a narrow window and compare the counts with the
 local log file for the same day. Expect small differences from ingestion lag and from
 worktree logs that the Agent collects.
 
-### Alternatives evaluated
+### Opt-in Castor session resource gauges
 
-DogStatsD was the other candidate. The Agent's UDP listener works without the PHP
-extension (`127.0.0.1:8125`), but publishing needs a client
-(`datadog/php-datadogstatsd`, `league/statsd`, or a small emitter), a configuration
-gate, and explicit failure behavior when the Agent is down. That adds a dependency
-and a write path for signals the logs already carry, so it is not adopted here.
-Revisit DogStatsD when a required signal has no log record, for example database
-statement latency or queue depth.
+`castor run:agent` can opt in to a once-per-minute session resource sample over the
+Agent's DogStatsD UDP listener (`127.0.0.1:8125` by default). The Castor launcher
+sets `HATFIELD_SESSION_RESOURCE_SAMPLER=1`, `HATFIELD_TELEMETRY_ENV=dev`,
+`HATFIELD_DOGSTATSD_HOST`, and `HATFIELD_DOGSTATSD_PORT`. Direct binary and PHAR
+launches leave those unset, so they neither schedule the sample nor send gauges.
+
+When enabled, `SessionResourceSamplerTask` adds one job to the existing Symfony
+`default` schedule. The `scheduler_default` worker aggregates CPU percent, summed
+resident memory, and process count for the owning `HATFIELD_SESSION_ID` process
+tree (session-marked workers plus ancestors such as the TUI) and publishes:
+
+- `hatfield.session.cpu_percent`
+- `hatfield.session.rss_bytes`
+- `hatfield.session.process_count`
+
+Tags are `service:hatfield`, `env:<HATFIELD_TELEMETRY_ENV>`, and
+`session_id:<owning session UUID>`. CPU is an interval sample from `top`. RSS is
+summed resident bytes and is not unique physical memory. The minute cadence can
+miss short-lived tools and short peaks. Failures stay local: bounded logs without
+raw command output or environment contents, and non-blocking UDP that must not
+stall application work. No DogStatsD client package is used.
+
+Process Check remains the host-wide process view. Use the session gauges when you
+need per-session CPU/RSS/count from an opted-in Castor launch.
 
 ## Retained visibility and intentional loss
 
@@ -313,6 +269,10 @@ Retained:
 - The log-derived metrics listed above, if you publish them for longer retention or
   metric monitors.
 - Process Check metrics: CPU, RSS, and process I/O for matched Hatfield processes.
+
+- Opt-in Castor session gauges: `hatfield.session.cpu_percent`,
+  `hatfield.session.rss_bytes`, and `hatfield.session.process_count` when
+  `castor run:agent` enables the sampler.
 
 Intentionally lost with the extension:
 
