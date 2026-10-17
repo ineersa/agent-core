@@ -31,16 +31,6 @@ final class SessionResourceSamplerTask implements ScheduleProviderInterface
     ) {
     }
 
-    public function getSchedule(): Schedule
-    {
-        $schedule = new Schedule();
-        if ($this->isEnabled()) {
-            $schedule->add(RecurringMessage::every(self::INTERVAL_SECONDS, new SessionResourceSampleMessage()));
-        }
-
-        return $schedule;
-    }
-
     #[AsMessageHandler]
     public function __invoke(SessionResourceSampleMessage $_sample): void
     {
@@ -78,6 +68,16 @@ final class SessionResourceSamplerTask implements ScheduleProviderInterface
                 'exception_class' => $exception::class,
             ]);
         }
+    }
+
+    public function getSchedule(): Schedule
+    {
+        $schedule = new Schedule();
+        if ($this->isEnabled()) {
+            $schedule->add(RecurringMessage::every(self::INTERVAL_SECONDS, new SessionResourceSampleMessage()));
+        }
+
+        return $schedule;
     }
 
     private function isEnabled(): bool
@@ -185,7 +185,7 @@ final class SessionResourceSamplerTask implements ScheduleProviderInterface
             .self::METRIC_RSS_BYTES.':'.$sample['rss_bytes'].$tags
             .self::METRIC_PROCESS_COUNT.':'.$sample['process_count'].$tags;
         $socket = @stream_socket_client(
-            sprintf('udp://%s:%d', $this->dogstatsdHost, $this->dogstatsdPort),
+            \sprintf('udp://%s:%d', $this->dogstatsdHost, $this->dogstatsdPort),
             $errno,
             $error,
             1,
