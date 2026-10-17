@@ -265,9 +265,53 @@ function distribution_prepare_phpmicro_checkout(): string
     \CastorTasks\run_checked(
         'git -C '.escapeshellarg($checkout).' apply '.escapeshellarg($patchPath)
     );
+    foreach (['config.m4', 'php_micro.c', 'php_micro_fileinfo.c'] as $required) {
+        if (!is_file($checkout.'/'.$required)) {
+            throw new RuntimeException('Prepared phpmicro checkout is missing '.$required.' under '.$checkout);
+        }
+    }
     echo "phpmicro prepared @{$pin['phpmicro_commit']} + {$patchRel}\n";
 
     return $checkout;
+}
+
+/**
+ * Copy the durable patched phpmicro checkout into a disposable directory for SPC.
+ *
+ * SPC --custom-local=php-micro:<dir> symlinks source/php-src/sapi/micro to that
+ * directory. On hash mismatch the extractor removes the target and follows the
+ * symlink, deleting the live git checkout. A throwaway copy keeps the durable
+ * cache under var/tmp/static-php-cli/phpmicro/<commit> intact across rebuilds.
+ */
+function distribution_stage_phpmicro_for_spc(string $checkout, string $commit): string
+{
+    $stageRoot = distribution_root().'/var/tmp/static-php-cli/phpmicro-disposable';
+    if (!is_dir($stageRoot) && !mkdir($stageRoot, 0755, true) && !is_dir($stageRoot)) {
+        throw new RuntimeException('Unable to create phpmicro disposable staging dir: '.$stageRoot);
+    }
+    $stage = $stageRoot.'/'.$commit.'-'.bin2hex(random_bytes(4));
+    if (is_dir($stage) || is_link($stage)) {
+        \CastorTasks\remove_path_checked($stage);
+    }
+    // Use Symfony Filesystem/Finder (already imported by helpers.php) instead of a
+    // hand-rolled RecursiveIterator copy. ignoreVCS skips the durable .git metadata.
+    $filesystem = new \Symfony\Component\Filesystem\Filesystem();
+    $filesystem->mkdir($stage);
+    $entries = (new \Symfony\Component\Finder\Finder())
+        ->in($checkout)
+        ->ignoreDotFiles(false)
+        ->ignoreVCS(true);
+    $filesystem->mirror($checkout, $stage, $entries);
+
+    foreach (['config.m4', 'php_micro.c', 'php_micro_fileinfo.c'] as $required) {
+        if (!is_file($stage.'/'.$required)) {
+            throw new RuntimeException('Disposable phpmicro stage is missing '.$required.' under '.$stage);
+        }
+    }
+
+    echo "phpmicro disposable stage: {$stage}\n";
+
+    return $stage;
 }
 
 /**
@@ -381,7 +425,13 @@ function distribution_build_micro_sfx(string $target): array
     }
 
     $phpmicroPath = distribution_prepare_phpmicro_checkout();
-    $customLocal = 'php-micro:'.$phpmicroPath;
+    // SPC --custom-local for php-micro symlinks source/php-src/sapi/micro to the
+    // provided directory. On hash mismatch its extractor removes that target and
+    // follows the symlink, wiping the live git checkout. Hand SPC a disposable
+    // copy so the durable cache under var/tmp/static-php-cli/phpmicro/<commit>
+    // survives rebuilds.
+    $phpmicroForSpc = distribution_stage_phpmicro_for_spc($phpmicroPath, $pin['phpmicro_commit']);
+    $customLocal = 'php-micro:'.$phpmicroForSpc;
 
     echo "SPC download extensions={$extensions} php={$pin['php_version']} phpmicro={$pin['phpmicro_commit']} patch={$pin['phpmicro_patch']}...\n";
     \CastorTasks\run_checked(
@@ -393,6 +443,12 @@ function distribution_build_micro_sfx(string $target): array
         $workDir
     );
     distribution_assert_php_source_sha256($workDir, $pin['php_version'], $pin['php_source_sha256']);
+
+    // SPC patches phar.c only for make micro, then restores the backup. An interrupted
+    // micro stage can leave phar.c.bak + a micro_get_filename() reference behind. The
+    // next make cli then links that patched object and fails with an undefined symbol.
+    // Restore before every build so release rebuilds do not depend on leftover tree state.
+    distribution_restore_interrupted_spc_phar_patch($workDir);
 
     $buildArgs = escapeshellarg($spcBin).' build '.escapeshellarg($extensions)
         .' --build-cli --build-micro'
@@ -423,6 +479,42 @@ function distribution_build_micro_sfx(string $target): array
     }
 
     return ['spc' => $spcBin, 'micro_sfx' => $microSfx, 'work_dir' => $workDir];
+}
+
+/**
+ * Undo a leftover SPC micro-only phar.c patch before CLI/micro rebuilds.
+ *
+ * SPC's SourcePatcher::patchMicroPhar() writes phar.c.bak and injects
+ * micro_get_filename(); unpatchMicroPhar() restores it after make micro.
+ * If that restore never ran, make cli fails linking the patched object.
+ */
+function distribution_restore_interrupted_spc_phar_patch(string $workDir): void
+{
+    $pharC = $workDir.'/source/php-src/ext/phar/phar.c';
+    $backup = $pharC.'.bak';
+    if (!is_file($backup)) {
+        return;
+    }
+    if (!is_file($pharC)) {
+        throw new RuntimeException('Interrupted SPC phar patch backup exists but phar.c is missing: '.$pharC);
+    }
+
+    $backupContents = (string) file_get_contents($backup);
+    if ('' === $backupContents) {
+        throw new RuntimeException('Interrupted SPC phar.c.bak is empty; refusing restore: '.$backup);
+    }
+    if (str_contains($backupContents, 'micro_get_filename')) {
+        throw new RuntimeException('Interrupted SPC phar.c.bak still references micro_get_filename; refusing restore: '.$backup);
+    }
+
+    echo "Restoring interrupted SPC phar.c patch before CLI/micro rebuild...\n";
+    \CastorTasks\copy_file_checked($backup, $pharC);
+    \CastorTasks\remove_path_checked($backup);
+
+    $restored = (string) file_get_contents($pharC);
+    if (str_contains($restored, 'micro_get_filename')) {
+        throw new RuntimeException('Interrupted SPC phar.c restore still references micro_get_filename: '.$pharC);
+    }
 }
 
 function distribution_combine_micro(string $spcBin, string $microSfx, string $pharPath, string $outputPath, string $workDir): void
@@ -1155,11 +1247,14 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
         // Prove the same broker can enqueue/reserve/ack through the Amp worker.
         $client = Ineersa\SqliteQueue\Client::connect($queuePaths->endpointPath, 5.0);
         try {
-            $messageId = $client->send('run_control', 'native-topology-proof');
+            // Isolated queue: Messenger consumers never select this name, so the
+            // host Client cannot race the live run_control worker for the body.
+            $proofQueue = 'native_topology_proof';
+            $messageId = $client->send($proofQueue, 'native-topology-proof');
             if ($messageId < 1) {
                 throw new RuntimeException('Native topology smoke: SEND returned non-positive id '.$messageId);
             }
-            $delivery = $client->receive('run_control');
+            $delivery = $client->receive($proofQueue);
             if (null === $delivery) {
                 throw new RuntimeException('Native topology smoke: RECEIVE returned empty after SEND');
             }
@@ -1167,7 +1262,7 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
                 throw new RuntimeException('Native topology smoke: RECEIVE did not return the sent payload');
             }
             $client->acknowledge($delivery->receipt);
-            if (null !== $client->receive('run_control')) {
+            if (null !== $client->receive($proofQueue)) {
                 throw new RuntimeException('Native topology smoke: queue still had a delivery after ACK');
             }
             echo "  native topology: enqueue/reserve/ack ok (id={$messageId})\n";
