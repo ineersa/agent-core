@@ -1,0 +1,381 @@
+# Session-first Hatfield dashboard; update the existing ordered/fixed target.
+# Supply Datadog tool telemetry metadata separately at application time.
+
+dashboard_id: xza-j7r-e4s
+title: 'Hatfield sessions'
+description: 'Session-first resource diagnostics. Resource gauges are emitted by the opted-in once-per-minute scheduler sampler. CPU is a short interval sample, RSS is a process-tree sum that can double-count shared pages, and process count covers only live sampled tree members. Last-observed values are not proof that a process is still active. New session gauges may show no data until the branch is deployed. Normal binary/PHAR launches remain off. The env tag is telemetry environment, not APP_ENV.'
+tags:
+  - 'ai:modified_with_ai'
+template_variables:
+  -
+    name: env
+    prefix: env
+    available_values:
+      - dev
+    defaults:
+      - dev
+  -
+    name: session
+    prefix: session_id
+    defaults:
+      - '*'
+widgets:
+  -
+    definition:
+      type: note
+      content: 'Collection: `castor run:agent` may opt in to a once-per-minute scheduler resource sample. Gauges: `hatfield.session.cpu_percent` (% short interval sample), `hatfield.session.rss_bytes` (bytes, summed process-tree RSS; shared pages may be double-counted), and `hatfield.session.process_count` (live sampled tree members). Tags: `service:hatfield`, `env:dev`, and `session_id:<owning session UUID>`. Selector defaults to all sessions. Normal binary/PHAR launches remain off; `env:dev` is the telemetry environment, not `APP_ENV`. Missing short tools and peaks are accepted. Last-observed samples do not prove process liveness.'
+      background_color: '#e6f1ff'
+      font_size: '12'
+      text_align: left
+      vertical_align: center
+      has_padding: true
+    layout:
+      x: 0
+      'y': 0
+      width: 12
+      height: 2
+  -
+    definition:
+      type: query_value
+      title: 'Last observed sampled CPU total (%)'
+      description: 'Last received sum across selected session CPU gauges. This is a sampled total, not a liveness indicator.'
+      custom_unit: '%'
+      precision: 2
+      requests:
+        -
+          queries:
+            -
+              data_source: metrics
+              name: cpu
+              query: 'sum:hatfield.session.cpu_percent{service:hatfield AND $env AND $session}'
+          formulas:
+            -
+              formula: cpu
+          response_format: scalar
+          aggregator: last
+    layout:
+      x: 0
+      'y': 2
+      width: 4
+      height: 3
+  -
+    definition:
+      type: query_value
+      title: 'Last observed sampled RSS total (bytes)'
+      description: 'Last received sum across selected process-tree RSS gauges. Shared pages may be counted in more than one process tree.'
+      custom_unit: bytes
+      precision: 2
+      requests:
+        -
+          queries:
+            -
+              data_source: metrics
+              name: rss
+              query: 'sum:hatfield.session.rss_bytes{service:hatfield AND $env AND $session}'
+          formulas:
+            -
+              formula: rss
+          response_format: scalar
+          aggregator: last
+    layout:
+      x: 4
+      'y': 2
+      width: 4
+      height: 3
+  -
+    definition:
+      type: query_value
+      title: 'Last observed sampled process population total'
+      description: 'Last received sum across selected sampled live-member counts. It is not a current process inventory.'
+      custom_unit: processes
+      precision: 2
+      requests:
+        -
+          queries:
+            -
+              data_source: metrics
+              name: count
+              query: 'sum:hatfield.session.process_count{service:hatfield AND $env AND $session}'
+          formulas:
+            -
+              formula: count
+          response_format: scalar
+          aggregator: last
+    layout:
+      x: 8
+      'y': 2
+      width: 4
+      height: 3
+  -
+    definition:
+      type: timeseries
+      title: 'Sampled CPU by session'
+      description: 'Per-session short-interval CPU samples emitted about once per minute. No minute-average claim.'
+      show_legend: true
+      requests:
+        -
+          display_type: line
+          formulas:
+            -
+              formula: cpu
+          queries:
+            -
+              data_source: metrics
+              name: cpu
+              query: 'avg:hatfield.session.cpu_percent{service:hatfield AND $env AND $session} by {session_id}'
+          response_format: timeseries
+    layout:
+      x: 0
+      'y': 5
+      width: 6
+      height: 6
+  -
+    definition:
+      type: timeseries
+      title: 'Sampled RSS by session'
+      description: 'Per-session process-tree RSS gauge samples. The sampler sum can double-count shared pages.'
+      show_legend: true
+      requests:
+        -
+          display_type: line
+          formulas:
+            -
+              formula: rss
+          queries:
+            -
+              data_source: metrics
+              name: rss
+              query: 'avg:hatfield.session.rss_bytes{service:hatfield AND $env AND $session} by {session_id}'
+          response_format: timeseries
+      yaxis:
+        include_zero: false
+        label: bytes
+        scale: linear
+    layout:
+      x: 6
+      'y': 5
+      width: 6
+      height: 6
+  -
+    definition:
+      type: timeseries
+      title: 'Sampled process count by session'
+      description: 'Per-session count from the live process tree at each sample. Short-lived processes can be missed.'
+      show_legend: true
+      requests:
+        -
+          display_type: line
+          formulas:
+            -
+              formula: count
+          queries:
+            -
+              data_source: metrics
+              name: count
+              query: 'avg:hatfield.session.process_count{service:hatfield AND $env AND $session} by {session_id}'
+          response_format: timeseries
+      yaxis:
+        include_zero: true
+        label: processes
+        scale: linear
+    layout:
+      x: 0
+      'y': 11
+      width: 6
+      height: 6
+  -
+    definition:
+      type: query_table
+      title: 'Last observed gauges by session'
+      description: 'Last received gauge values by session. Each native metric query uses aggregator:last; the request also uses native aggregator:last for scalar reduction. Staleness is possible; this table does not assert that a process tree is active.'
+      has_search_bar: auto
+      requests:
+        -
+          queries:
+            -
+              data_source: metrics
+              name: cpu
+              query: 'avg:hatfield.session.cpu_percent{service:hatfield AND $env AND $session} by {session_id}'
+              aggregator: last
+            -
+              data_source: metrics
+              name: rss
+              query: 'avg:hatfield.session.rss_bytes{service:hatfield AND $env AND $session} by {session_id}'
+              aggregator: last
+            -
+              data_source: metrics
+              name: count
+              query: 'avg:hatfield.session.process_count{service:hatfield AND $env AND $session} by {session_id}'
+              aggregator: last
+          formulas:
+            -
+              formula: cpu
+            -
+              formula: rss
+            -
+              formula: count
+          response_format: scalar
+          aggregator: last
+          limit: 50
+    layout:
+      x: 6
+      'y': 11
+      width: 6
+      height: 6
+  -
+    definition:
+      type: timeseries
+      title: 'Session-filtered LLM request outcomes'
+      description: 'Log-backed counts with the session selector applied. Only completed and failed request events are shown.'
+      show_legend: true
+      requests:
+        -
+          display_type: line
+          formulas:
+            -
+              formula: completed
+            -
+              formula: failed
+          queries:
+            -
+              compute:
+                aggregation: count
+              data_source: logs
+              indexes:
+                - '*'
+              name: completed
+              search:
+                query: 'service:hatfield $env @extra.session_id:$session.value @context.event_type:llm.request.completed'
+              group_by:
+                -
+                  facet: '@extra.session_id'
+                  limit: 50
+                  sort:
+                    aggregation: count
+                    order: desc
+            -
+              compute:
+                aggregation: count
+              data_source: logs
+              indexes:
+                - '*'
+              name: failed
+              search:
+                query: 'service:hatfield $env @extra.session_id:$session.value @context.event_type:llm.request.failed'
+              group_by:
+                -
+                  facet: '@extra.session_id'
+                  limit: 50
+                  sort:
+                    aggregation: count
+                    order: desc
+          response_format: timeseries
+    layout:
+      x: 0
+      'y': 17
+      width: 6
+      height: 6
+  -
+    definition:
+      type: list_stream
+      title: 'Session-filtered warnings and errors'
+      requests:
+        -
+          response_format: event_list
+          columns:
+            -
+              field: status_line
+              width: auto
+            -
+              field: timestamp
+              width: auto
+            -
+              field: service
+              width: auto
+            -
+              field: status
+              width: auto
+            -
+              field: message
+              width: auto
+          query:
+            data_source: logs_stream
+            indexes: {}
+            query_string: 'service:hatfield $env @extra.session_id:$session.value source:php status:(warn OR error OR critical OR alert OR emergency)'
+            sort:
+              column: timestamp
+              order: desc
+            storage: hot
+    layout:
+      x: 6
+      'y': 17
+      width: 6
+      height: 6
+  -
+    definition:
+      type: toplist
+      title: 'Session-filtered tool failures by tool'
+      description: 'Warning records for failed tool execution, filtered by the selected session. Tool span status is not used as a failure signal.'
+      requests:
+        -
+          formulas:
+            -
+              formula: failures
+          queries:
+            -
+              compute:
+                aggregation: count
+              data_source: logs
+              indexes:
+                - '*'
+              name: failures
+              search:
+                query: 'service:hatfield $env @extra.session_id:$session.value status:warn "Failed to execute tool"'
+              group_by:
+                -
+                  facet: '@extra.tool_name'
+                  limit: 50
+                  sort:
+                    aggregation: count
+                    order: desc
+          response_format: scalar
+    layout:
+      x: 0
+      'y': 23
+      width: 6
+      height: 5
+  -
+    definition:
+      type: timeseries
+      title: 'Session-filtered logs by status'
+      description: 'Count of structured logs carrying the selected session_id.'
+      show_legend: true
+      requests:
+        -
+          display_type: line
+          formulas:
+            -
+              formula: logs
+          queries:
+            -
+              compute:
+                aggregation: count
+              data_source: logs
+              indexes:
+                - '*'
+              name: logs
+              search:
+                query: 'service:hatfield $env @extra.session_id:$session.value'
+              group_by:
+                -
+                  facet: status
+                  limit: 50
+                  sort:
+                    aggregation: count
+                    order: desc
+          response_format: timeseries
+    layout:
+      x: 6
+      'y': 23
+      width: 6
+      height: 5
