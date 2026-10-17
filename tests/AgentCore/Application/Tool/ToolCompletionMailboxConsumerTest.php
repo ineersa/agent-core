@@ -40,6 +40,93 @@ use Symfony\Component\Serializer\SerializerInterface;
 
 final class ToolCompletionMailboxConsumerTest extends IsolatedKernelTestCase
 {
+    #[DataProvider('damagedBodyTails')]
+    public function testDamagedHeadRejectsAtomicallyAndDrainsValidCompletionOrHumanCommand(bool $corrupt, bool $human): void
+    {
+        $container = self::getContainer();
+        [$state, $broken] = $this->receive(str_repeat('private sealed evidence ', 500));
+        ToolCompletionReceiptFixture::damageSealedBody($container, $broken, $corrupt);
+        $valid = null;
+        if ($human) {
+            $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class)->onApplyCommand(new \Ineersa\AgentCore\Domain\Message\ApplyCommand($state->runId, $state->turnNo, 'human', 1, 'human-tail', 'follow_up', ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Authorized human continuation.']]]]));
+            $state = $container->get(ActiveRunContextInterface::class)->requireLoaded($state->runId);
+        } else {
+            [$state, $valid] = $this->receive('valid completion tail', $state->runId, 'valid-tail');
+        }
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $eligibility = $container->get(ToolCompletionDeliveryEligibilityPolicy::class);
+        $consumer = new ToolCompletionMailboxConsumer($container->get(ToolCompletionRecipientRepositoryInterface::class), $eligibility, $container->get(ToolCompletionNotificationRenderer::class), $container->get(NormalizerInterface::class), $logger);
+        $policy = new CommandMailboxPolicy($container->get(CommandStoreInterface::class), $container->get(CommandRouter::class), $consumer, $eligibility);
+        $prepared = $policy->applyPendingTurnStartCommands($state);
+        $this->assertSame(2, $container->get(CommandStoreInterface::class)->countPending($state->runId));
+        $this->assertSame(ToolCompletionDeliveryDispositionEnum::Pending, $container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($state->runId, $broken->messageId)?->disposition);
+        $this->assertSame('agent_command_rejected', $prepared->eventSpecs[0]['type']);
+        $reason = $corrupt ? 'body_corrupt' : 'body_missing';
+        $this->assertSame($reason, $prepared->eventSpecs[0]['payload']['reason']);
+        $this->assertSame('rejected', $prepared->eventSpecs[0]['payload']['delivery_disposition']);
+        $committed = $this->commit($state, $prepared);
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($state->runId));
+        $rejected = $container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($state->runId, $broken->messageId);
+        $this->assertSame(ToolCompletionDeliveryDispositionEnum::Rejected, $rejected?->disposition);
+        $this->assertSame($reason, $rejected?->stateReason);
+        $this->assertNull($rejected?->appliedSequence);
+        $this->assertCount(1, $committed->messages);
+        $this->assertSame($human ? 'user' : 'tool_completion', $committed->messages[0]->role);
+        $this->assertStringContainsString($human ? 'Authorized human continuation.' : 'valid completion tail', $committed->messages[0]->content[0]['text']);
+        if (null !== $valid) {
+            $this->assertSame(ToolCompletionDeliveryDispositionEnum::Applied, $container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($state->runId, $valid->messageId)?->disposition);
+        }
+        $replayed = $container->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class)->replay(RunState::queued($state->runId), $container->get(EventStoreInterface::class)->rangeFor($state->runId, 1, $committed->lastSeq));
+        $this->assertNull($committed->errorMessage);
+        $this->assertSame($committed->errorMessage, $replayed->errorMessage);
+        $this->assertSame([[
+            'level' => 'warning',
+            'message' => 'tool_completion.delivery_rejected',
+            'context' => ['run_id' => $state->runId, 'session_id' => $state->runId, 'component' => 'tool_completion_mailbox', 'event_type' => 'tool_completion.delivery_rejected', 'message_id' => $broken->messageId, 'failure_code' => $reason, 'exception_class' => \Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailure::class],
+        ]], $logger->records, 'Local degradation logs correlation only, never body/path/exception-message data.');
+        $this->assertSame([], $policy->applyPendingTurnStartCommands($committed)->eventSpecs);
+        $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class)->onReceiveToolCompletion(new ReceiveToolCompletion($broken));
+        $this->assertSame($committed, $container->get(ActiveRunContextInterface::class)->requireLoaded($state->runId), 'Rejected receipt retries remain pre-fetch no-ops.');
+    }
+
+    public static function damagedBodyTails(): iterable
+    {
+        foreach ([false, true] as $corrupt) {
+            foreach ([false, true] as $human) {
+                yield ($corrupt ? 'corrupt' : 'missing').' before '.($human ? 'human' : 'completion') => [$corrupt, $human];
+            }
+        }
+    }
+
+    #[DataProvider('invariantFailures')]
+    public function testInspectionInvariantsAndUnexpectedExceptionsStillPropagate(\RuntimeException $failure): void
+    {
+        [$state] = $this->receive();
+        $container = self::getContainer();
+        $reader = $this->createMock(RetainedToolCompletionEvidenceReaderInterface::class);
+        $reader->expects($this->once())->method('read')->willThrowException($failure);
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $eligibility = $container->get(ToolCompletionDeliveryEligibilityPolicy::class);
+        $consumer = new ToolCompletionMailboxConsumer($container->get(ToolCompletionRecipientRepositoryInterface::class), $eligibility, new ToolCompletionNotificationRenderer($container->get(ToolCompletionDeliveryVerifier::class), $reader, $container->get(SerializerInterface::class)), $container->get(NormalizerInterface::class), $logger);
+        $policy = new CommandMailboxPolicy($container->get(CommandStoreInterface::class), $container->get(CommandRouter::class), $consumer, $eligibility);
+        try {
+            $policy->applyPendingTurnStartCommands($state);
+            $this->fail('Inspection invariants and unexpected failures must propagate unchanged.');
+        } catch (\RuntimeException $actual) {
+            $this->assertSame($failure, $actual);
+        }
+        $this->assertSame([], $logger->records);
+        $this->assertSame(1, $container->get(CommandStoreInterface::class)->countPending($state->runId));
+    }
+
+    public static function invariantFailures(): iterable
+    {
+        foreach ([\Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEnum::Conflict, \Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEnum::ForeignScope, \Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEnum::Unsupported, \Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEnum::NotFound] as $code) {
+            yield $code->value => [new \Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailure($code, 'private invariant detail')];
+        }
+        yield 'unexpected failure' => [new \RuntimeException('private unexpected failure')];
+    }
+
     #[DataProvider('compactionPositions')]
     public function testFrozenCompletionSurvivesRealCompactionInputOrRetainedHistoryWithoutDeletingEvidence(bool $inTail): void
     {
@@ -319,6 +406,6 @@ final class ToolCompletionMailboxConsumerTest extends IsolatedKernelTestCase
             $eligibility = new ToolCompletionDeliveryEligibilityPolicy($provider);
         }
 
-        return new CommandMailboxPolicy($container->get(CommandStoreInterface::class), $container->get(CommandRouter::class), new ToolCompletionMailboxConsumer($container->get(ToolCompletionRecipientRepositoryInterface::class), $eligibility, $renderer, $container->get(NormalizerInterface::class)), $eligibility);
+        return new CommandMailboxPolicy($container->get(CommandStoreInterface::class), $container->get(CommandRouter::class), new ToolCompletionMailboxConsumer($container->get(ToolCompletionRecipientRepositoryInterface::class), $eligibility, $renderer, $container->get(NormalizerInterface::class), new \Psr\Log\NullLogger()), $eligibility);
     }
 }

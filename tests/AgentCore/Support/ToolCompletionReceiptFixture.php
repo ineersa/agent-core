@@ -20,6 +20,23 @@ use Psr\Container\ContainerInterface;
 
 final class ToolCompletionReceiptFixture
 {
+    public static function damageSealedBody(ContainerInterface $container, ToolCompletionDeliveryReferenceDTO $reference, bool $corrupt): void
+    {
+        $envelope = $container->get(\Ineersa\AgentCore\Application\Tool\ToolCompletionDeliveryVerifier::class)->verify($reference->destinationRunId, $reference);
+        if (\Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBodyKindEnum::OwnedSealed !== $envelope->body->kind) {
+            throw new \LogicException('Body damage fixture requires an actual sealed body.');
+        }
+        $path = $container->get(HatfieldSessionStore::class)->resolveSessionsBasePath().'/'.$envelope->body->owningRootSessionId.'/runtime/retained-tool-completions/'.$envelope->body->ownedBodyId.'.json';
+        if (!is_file($path)) {
+            throw new \LogicException('Body damage fixture requires the published sealed file.');
+        }
+        if ($corrupt) {
+            file_put_contents($path, 'private corrupted evidence');
+        } else {
+            unlink($path);
+        }
+    }
+
     /** @return array{string, RunEvent, ToolCompletionDeliveryReferenceDTO, \Ineersa\AgentCore\Domain\Message\AgentMessage} */
     public static function apply(ContainerInterface $container, string $text = 'retained completion body'): array
     {

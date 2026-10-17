@@ -15,9 +15,12 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailure;
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEnum;
 use Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryDispositionEnum;
 use Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryReferenceDTO;
 use Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionRecipientDTO;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /** Prepares one mailbox decision; only verified metadata finalization mutates stores. */
@@ -32,6 +35,7 @@ final readonly class ToolCompletionMailboxConsumer
         private ToolCompletionDeliveryEligibilityPolicy $eligibility,
         private ToolCompletionNotificationRenderer $renderer,
         private NormalizerInterface $normalizer,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -73,7 +77,31 @@ final readonly class ToolCompletionMailboxConsumer
             || $budget < ToolCompletionNotificationRenderer::MIN_BYTES + self::PROVIDER_PREFIX_BYTES) {
             return new CommandApplicationResult($state, []);
         }
-        $notification = $this->renderer->render($reference, $budget - self::PROVIDER_PREFIX_BYTES);
+        try {
+            $notification = $this->renderer->render($reference, $budget - self::PROVIDER_PREFIX_BYTES);
+        } catch (RetainedToolCompletionFailure $failure) {
+            // A broken retained body must not poison every later mailbox drain.
+            // Identity/scope conflicts and unexpected exceptions still fail closed.
+            if (!\in_array($failure->code(), [RetainedToolCompletionFailureCodeEnum::BodyMissing, RetainedToolCompletionFailureCodeEnum::BodyCorrupt], true)) {
+                throw $failure;
+            }
+            $reason = $failure->code()->value;
+            $this->logger->warning('tool_completion.delivery_rejected', [
+                'run_id' => $state->runId,
+                'session_id' => $state->runId,
+                'component' => 'tool_completion_mailbox',
+                'event_type' => 'tool_completion.delivery_rejected',
+                'message_id' => $reference->messageId,
+                'failure_code' => $reason,
+                'exception_class' => $failure::class,
+            ]);
+            $rejected = new ToolCompletionRecipientDTO($reference, $delivery->receivedTurnNo, $delivery->receivedSequence, ToolCompletionDeliveryDispositionEnum::Rejected, $reason);
+
+            return new CommandApplicationResult($state, [[
+                'type' => RunEventTypeEnum::AgentCommandRejected->value,
+                'payload' => ['kind' => CoreCommandKind::ToolCompletion, 'idempotency_key' => $reference->messageId, 'reason' => $reason, 'delivery_disposition' => 'rejected'],
+            ]], postCommitActions: [new RecordToolCompletionDeliveryDTO($rejected, ToolCompletionDeliveryDispositionEnum::Pending)]);
+        }
         $normalized = $this->normalizer->normalize($notification);
         if (!\is_array($normalized)) {
             throw new \LogicException('Completion notification must normalize to an object.');

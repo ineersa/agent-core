@@ -130,6 +130,14 @@ updates recipient disposition and consumes the mailbox instruction atomically;
 the applied location binds to the actual canonical allocation. Accepted provider
 stop results close their old operation before this boundary is evaluated.
 
+If retained-body inspection reports `body_missing` or `body_corrupt`, the consumer
+rejects that recipient delivery and atomically consumes its mailbox instruction.
+Later completions and human commands can still progress. Rejection alone cannot
+wake the model, and delivery parking/rejection does not replace the run's error
+state during live execution or replay. A correlated warning records only the
+message identity and failure code, not body or path data. Scope/identity conflicts
+and unexpected exceptions still propagate; stale-fence parking is unchanged.
+
 Automatic successors revalidate captured generations under the owner lock before
 draining. They never trigger the pre-handler forward-history discard. A bounded
 parked-only prefix captures another metadata drain through the same `AdvanceRun`

@@ -31,6 +31,48 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
 {
+    #[\PHPUnit\Framework\Attributes\DataProvider('damagedBodies')]
+    public function testDamagedEvidenceAloneCannotWakeAndLaterExplicitUserContinuationStillRuns(bool $corrupt): void
+    {
+        $container = self::getContainer();
+        $this->resetTransports();
+        [$runId, $source, $reference] = ToolCompletionReceiptFixture::create($container, str_repeat('private sealed evidence ', 500));
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $source->seq));
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        ToolCompletionReceiptFixture::damageSealedBody($container, $reference, $corrupt);
+        $advance = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class)[0];
+        $owner->onAdvanceRun($advance);
+        $settled = $context->requireLoaded($runId);
+        $this->assertSame(RunStatus::Completed, $settled->status);
+        $this->assertSame([], $settled->messages);
+        $this->assertNull($settled->errorMessage);
+        $this->assertCount(0, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class), 'Rejection alone never authorizes a model request.');
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
+        $recipient = $container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($runId, $reference->messageId);
+        $this->assertSame(\Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryDispositionEnum::Rejected, $recipient?->disposition);
+        $this->assertSame($corrupt ? 'body_corrupt' : 'body_missing', $recipient?->stateReason);
+        $replayed = $container->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class)->replay(RunState::queued($runId), $container->get(EventStoreInterface::class)->rangeFor($runId, 1, $settled->lastSeq));
+        $this->assertSame($settled->errorMessage, $replayed->errorMessage);
+        $owner->onAdvanceRun($advance);
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $this->assertSame($settled, $context->requireLoaded($runId));
+        $owner->onApplyCommand(new ApplyCommand($runId, $settled->turnNo, 'human', 1, 'human-after-rejection', CoreCommandKind::FollowUp, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Explicit continuation after damaged evidence.']]]]));
+        $advances = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+        $owner->onAdvanceRun($advances[array_key_last($advances)]);
+        $requests = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class);
+        $this->assertCount(1, $requests);
+        $this->assertSame(['user'], array_map(static fn ($message): string => $message->role, $requests[0]->messages));
+        $this->assertSame(RunStatus::Running, $context->requireLoaded($runId)->status);
+    }
+
+    public static function damagedBodies(): iterable
+    {
+        yield 'missing' => [false];
+        yield 'corrupt' => [true];
+    }
+
     public function testOriginalDetachmentThroughTrueTerminalPublishesAllocatedSourceAndOneIdleSuccessor(): void
     {
         $container = self::getContainer();

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Replay;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -390,6 +391,11 @@ final readonly class RunStateReducer
      */
     private function applyCommandRejected(array $payload, RunState $state): RunState
     {
+        // Delivery bookkeeping does not fail the run or replace a prior error.
+        if (CoreCommandKind::ToolCompletion === ($payload['kind'] ?? null)
+            && \in_array($payload['delivery_disposition'] ?? null, ['parked', 'rejected'], true)) {
+            return $state;
+        }
         $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
 
         return $state->with(['errorMessage' => $reason ?? $state->errorMessage]);
