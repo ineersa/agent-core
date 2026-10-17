@@ -36,6 +36,7 @@ final readonly class ToolCompletionRecipientDTO
         $accepted = $this->reference;
         if ($accepted->destinationRunId !== $reference->destinationRunId
             || $accepted->messageId !== $reference->messageId
+            || !ToolCompletionDeliveryFenceDTO::same($accepted->deliveryFence, $reference->deliveryFence)
             || $accepted->payloadFingerprint !== $reference->payloadFingerprint
             || $accepted->sourceEvent->runId !== $reference->sourceEvent->runId
             || $accepted->sourceEvent->seq !== $reference->sourceEvent->seq

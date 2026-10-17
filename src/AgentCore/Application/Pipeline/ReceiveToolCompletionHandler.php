@@ -25,6 +25,7 @@ final readonly class ReceiveToolCompletionHandler implements RunMessageHandler
         private ToolCompletionDeliveryVerifier $verifier,
         private EventFactory $events,
         private NormalizerInterface $serializer,
+        private \Ineersa\AgentCore\Application\Tool\ToolCompletionDeliveryEligibilityPolicy $eligibility,
     ) {
     }
 
@@ -48,7 +49,7 @@ final readonly class ReceiveToolCompletionHandler implements RunMessageHandler
             return new HandlerResult();
         }
         $this->verifier->verify($state->runId, $reference);
-        $delivery = new ToolCompletionRecipientDTO($reference, $state->turnNo);
+        $delivery = new ToolCompletionRecipientDTO($reference, $state->turnNo, stateReason: $this->eligibility->ineligibleReason($state, $reference->deliveryFence) ?? 'awaiting_safe_boundary');
         $payload = $this->serializer->normalize($delivery);
         if (!\is_array($payload)) {
             throw new \LogicException('Completion recipient must normalize to a canonical record.');

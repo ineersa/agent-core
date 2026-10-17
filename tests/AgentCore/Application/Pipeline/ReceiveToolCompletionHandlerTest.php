@@ -68,7 +68,7 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
 
         $noReads = $this->createMock(EventStoreInterface::class);
         $noReads->expects($this->never())->method('rangeFor');
-        $retryHandler = new ReceiveToolCompletionHandler($recipients, new ToolCompletionDeliveryVerifier($noReads, $container->get(RetainedToolCompletionEnvelopeCodec::class), $container->get(OwningRootSessionResolverInterface::class)), $container->get(EventFactory::class), $container->get(NormalizerInterface::class));
+        $retryHandler = new ReceiveToolCompletionHandler($recipients, new ToolCompletionDeliveryVerifier($noReads, $container->get(RetainedToolCompletionEnvelopeCodec::class), $container->get(OwningRootSessionResolverInterface::class)), $container->get(EventFactory::class), $container->get(NormalizerInterface::class), $container->get(\Ineersa\AgentCore\Application\Tool\ToolCompletionDeliveryEligibilityPolicy::class));
         $this->assertNull($retryHandler->handle(new ReceiveToolCompletion($reference), $committed)->nextState);
         $this->assertFalse($commands->has($runId, $reference->messageId));
         foreach ([

@@ -251,7 +251,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
 
     public function testCancelDeferredToolContinuationTerminalizesNotCancelling(): void
     {
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($store = new \Ineersa\AgentCore\Tests\Support\TestToolBatchStore());
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store = new \Ineersa\AgentCore\Tests\Support\TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $store, 'run-tool-cancel', 1, 'step-t', [
             new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall('run-tool-cancel', 1, 'step-t', 1, 'idemp-t', 'call-t', 'bash', ['command' => 'ls'], 0),
         ]);

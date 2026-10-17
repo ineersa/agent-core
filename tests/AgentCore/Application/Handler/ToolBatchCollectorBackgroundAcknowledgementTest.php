@@ -554,7 +554,7 @@ final class ToolBatchCollectorBackgroundAcknowledgementTest extends TestCase
     ): array {
         $batches = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($batches, $maxParallelism, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batches, $maxParallelism, $deferred);
         TestToolBatchRegistration::register($collector, $batches, $runId, 1, $stepId, $siblings);
 
         $owner = new ToolInvocationOwnerReference('bash', 'record-'.$toolCallId, 4242, '/tmp/'.$toolCallId.'.log');

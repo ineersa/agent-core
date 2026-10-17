@@ -42,6 +42,7 @@ final class ToolCompletionReceiptFixture
                 orderIndex: 0,
                 invocationId: 'inv-1',
                 executionOwnerKind: 'bash',
+                deliveryFence: new \Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryFenceDTO(0, 0, 0),
             ),
             result: $message,
             normalizedToolResult: $payload['tool_result'],
@@ -70,6 +71,6 @@ final class ToolCompletionReceiptFixture
         $event = PreparedEventStoreSeeder::append($container->get(PreparedTransitionEventStoreInterface::class), $event);
         $envelope = $container->get(RetainedToolCompletionEnvelopeCodec::class)->denormalize($event->payload['accepted_completion']['retained_message']);
 
-        return [$runId, $event, new ToolCompletionDeliveryReferenceDTO($runId, $envelope->messageId, new RetainedToolCompletionSourceEventReference($runId, $event->seq, $event->turnNo), $envelope->integrity->payloadFingerprint)];
+        return [$runId, $event, new ToolCompletionDeliveryReferenceDTO($runId, $envelope->messageId, new RetainedToolCompletionSourceEventReference($runId, $event->seq, $event->turnNo), $envelope->integrity->payloadFingerprint, $envelope->origin->deliveryFence)];
     }
 }

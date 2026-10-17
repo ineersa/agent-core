@@ -140,6 +140,9 @@ final class ApplicationMigrationExecutorTest extends TestCase
         $deferredColumns = $schemaManager->listTableColumns('deferred_tool_completion');
         $this->assertArrayHasKey('accepted_completion_id', $deferredColumns);
         $this->assertArrayHasKey('accepted_result_fingerprint', $deferredColumns);
+        $this->assertArrayHasKey('delivery_fence_json', $deferredColumns);
+        $this->assertArrayHasKey('controller_generation', $schemaManager->listTableColumns('hatfield_session'));
+        $this->assertNotFalse($connection->fetchOne('SELECT 1 FROM doctrine_migration_versions WHERE version = ?', ['Version20261017210000']));
         $this->assertNotFalse($connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
             ['Version20261016205256'],

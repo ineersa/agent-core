@@ -70,6 +70,7 @@ final readonly class ToolCompletionDeliveryVerifier
                 throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Completion receipt and retained origin disagree.');
             }
             if ($reference->messageId !== $envelope->messageId
+                || !\Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryFenceDTO::same($reference->deliveryFence, $origin->deliveryFence)
                 || $reference->payloadFingerprint !== $envelope->integrity->payloadFingerprint
                 || $this->codec->payloadFingerprint($envelope) !== $reference->payloadFingerprint
             ) {

@@ -171,7 +171,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->assertSame($expected, $index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows']);
             $db = $this->db();
             try {
-                $this->assertSame(5, (int) $db->fetchOne('SELECT version FROM index_meta'));
+                $this->assertSame(6, (int) $db->fetchOne('SELECT version FROM index_meta'));
                 $this->assertSame('CREATE INDEX turn_answers ON turn_anchor (answer_seq) WHERE retained = 1 AND answer_seq IS NOT NULL', $db->fetchOne("SELECT sql FROM sqlite_master WHERE name = 'turn_answers'"));
             } finally {
                 $db->close();

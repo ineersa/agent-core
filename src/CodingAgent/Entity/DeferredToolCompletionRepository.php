@@ -90,6 +90,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                 'deadline_metadata_json' => $deadlineMetadata,
                 'origin_wake_generation' => $correlation->originWakeGeneration,
                 'root_wake_generation' => $correlation->rootWakeGeneration,
+                'delivery_fence_json' => null === $correlation->deliveryFence ? null : $this->serializer->serialize($correlation->deliveryFence, 'json'),
                 'envelope_fingerprint' => $fingerprint,
                 'caller_disposition' => $correlation->callerDisposition->value,
                 'execution_observation' => $correlation->executionObservation->value,
@@ -153,7 +154,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         }
 
         $current = $this->toCorrelation($entity);
-        $current->assertAcceptedImmutableBindingMatches($expected);
+        $action->assertCurrentBindingMatches($current);
 
         if ($current->callerDisposition === $action->callerDisposition
             && $current->executionObservation === $action->executionObservation) {
@@ -178,6 +179,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             $action->executionObservation,
             $action->acceptedCompletionId,
             $action->acceptedResultFingerprint,
+            $action->deliveryFence,
         );
         $markCompleted = null !== $next->acceptedCompletionId
             && (ToolInvocationExecutionObservationEnum::Terminal === $next->executionObservation
@@ -188,6 +190,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                  execution_observation = :execution_observation,
                  accepted_completion_id = :accepted_completion_id,
                  accepted_result_fingerprint = :accepted_result_fingerprint,
+                 delivery_fence_json = :delivery_fence_json,
                  status = :status,
                  updated_at = :now
              WHERE deferred_id = :deferred_id
@@ -206,6 +209,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                 'execution_observation' => $next->executionObservation->value,
                 'accepted_completion_id' => $next->acceptedCompletionId,
                 'accepted_result_fingerprint' => $next->acceptedResultFingerprint,
+                'delivery_fence_json' => null === $next->deliveryFence ? null : $this->serializer->serialize($next->deliveryFence, 'json'),
                 'status' => $markCompleted ? 'completed' : $entity->status,
                 'now' => Clock::get()->now()->format('Y-m-d H:i:s'),
                 'deferred_id' => $current->deferredId,
@@ -222,7 +226,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                 throw new \RuntimeException(\sprintf('Deferred tool lifecycle projection disappeared for "%s".', $current->deferredId));
             }
             $refreshedCorrelation = $this->toCorrelation($refreshed);
-            $refreshedCorrelation->assertAcceptedImmutableBindingMatches($expected);
+            $action->assertCurrentBindingMatches($refreshedCorrelation);
             if ($refreshedCorrelation->callerDisposition === $action->callerDisposition
                 && $refreshedCorrelation->executionObservation === $action->executionObservation) {
                 if (null === $action->acceptedCompletionId
@@ -358,6 +362,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             deadlineMetadata: $deadlineMetadata,
             originWakeGeneration: $entity->originWakeGeneration,
             rootWakeGeneration: $entity->rootWakeGeneration,
+            deliveryFence: null === $entity->deliveryFenceJson ? null : $this->serializer->deserialize($entity->deliveryFenceJson, \Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryFenceDTO::class, 'json'),
             envelopeFingerprint: $entity->envelopeFingerprint,
             callerDisposition: ToolInvocationCallerDispositionEnum::from($entity->callerDisposition),
             executionObservation: ToolInvocationExecutionObservationEnum::from($entity->executionObservation),

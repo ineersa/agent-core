@@ -34,7 +34,7 @@ final readonly class ToolCompletionPublicationSubscriber implements EssentialAft
             if ($envelope->origin->sourceRunId !== $context->runId) {
                 throw new \RuntimeException('Completion publication differs from its source owner.');
             }
-            $actions[] = new PublishToolCompletionDTO($context->runId, $event->turnNo, $envelope->messageId, $envelope->integrity->payloadFingerprint, $ordinal);
+            $actions[] = new PublishToolCompletionDTO($context->runId, $event->turnNo, $envelope->messageId, $envelope->integrity->payloadFingerprint, $ordinal, $envelope->origin->deliveryFence);
         }
 
         return $actions;

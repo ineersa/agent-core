@@ -14,6 +14,27 @@ use PHPUnit\Framework\TestCase;
 
 final class ToolInvocationLifecycleCoordinationValidatorTest extends TestCase
 {
+    public function testCapturedDeliveryFenceCannotBeRenewedByAnotherPreparedAction(): void
+    {
+        $pending = new DeferredToolCompletionCorrelation('550e8400-e29b-41d4-a716-446655440504', 'root', 1, 'step', 1, 'key', 'call', 'bash', [], 0);
+        $first = new \Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryFenceDTO(1, 2, 3);
+        $captured = $pending->withLifecycle(ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, ToolInvocationExecutionObservationEnum::Active, deliveryFence: $first);
+        $validator = new ToolInvocationLifecycleCoordinationValidator();
+        $validator->validate(new RecordToolInvocationLifecycleDTO($pending, ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, ToolInvocationExecutionObservationEnum::Active, deliveryFence: $first));
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('delivery fence is immutable');
+        $validator->validate(new RecordToolInvocationLifecycleDTO($captured, ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, ToolInvocationExecutionObservationEnum::Active, deliveryFence: new \Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryFenceDTO(1, 2, 4)));
+    }
+
+    public function testMissingPermissionCannotBeCapturedAtTerminalAcceptance(): void
+    {
+        $pending = new DeferredToolCompletionCorrelation('550e8400-e29b-41d4-a716-446655440505', 'root', 1, 'step', 1, 'key', 'call', 'bash', [], 0);
+        $detached = $pending->withLifecycle(ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, ToolInvocationExecutionObservationEnum::Active);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('only be captured at detachment');
+        (new ToolInvocationLifecycleCoordinationValidator())->validate(new RecordToolInvocationLifecycleDTO($detached, ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, ToolInvocationExecutionObservationEnum::Terminal, deliveryFence: new \Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryFenceDTO(1, 2, 3)));
+    }
+
     public function testIllegalTransitionIsRejectedBeforePlanAcceptance(): void
     {
         $validator = new ToolInvocationLifecycleCoordinationValidator();

@@ -37,11 +37,12 @@ final class ToolBackgroundAcknowledgementPersistenceTest extends IsolatedKernelT
     {
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('bg ack persistence');
+        $seed = \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($container->get(PreparedTransitionEventStoreInterface::class), new \Ineersa\AgentCore\Domain\Event\RunEvent($run, 0, 0, 'run_started', []));
         /** @var ToolBatchStoreInterface $batches */
         $batches = $container->get(ToolBatchStoreInterface::class);
         /** @var DeferredToolCompletionRepositoryInterface $repo */
         $repo = $container->get(DeferredToolCompletionRepositoryInterface::class);
-        $collector = new ToolBatchCollector($batches, 4, $repo);
+        $collector = $container->get(ToolBatchCollector::class);
 
         $call = new ExecuteToolCall($run, 1, 'tools', 1, 'ack-key', 'call-ack', 'bash', ['command' => 'sleep 30'], 0, mode: 'sequential');
         $register = $collector->prepareRegistration($run, 1, 'tools', [$call]);
@@ -103,9 +104,10 @@ final class ToolBackgroundAcknowledgementPersistenceTest extends IsolatedKernelT
         $this->assertNotNull($prepared->lifecycleAction);
 
         $store = $container->get(PreparedTransitionEventStoreInterface::class);
-        $store->appendTransition([], ['run_id' => $run, 'predecessor_seq' => 0, 'actions' => $prepared->localActions]);
+        $store->appendTransition([], ['run_id' => $run, 'predecessor_seq' => $seed->seq, 'actions' => $prepared->localActions]);
         $pending = $store->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
+        $container->get(\Ineersa\CodingAgent\Entity\HatfieldSessionRepository::class)->advanceControllerGeneration($run);
 
         $coordinator = new LocalMetadataCoordinator(
             $container->get(ApplicationDbTransactionInterface::class),
@@ -133,6 +135,8 @@ final class ToolBackgroundAcknowledgementPersistenceTest extends IsolatedKernelT
         $this->assertSame(ToolInvocationExecutionObservationEnum::Active, $recovered?->executionObservation);
         $this->assertSame('pending', $repo->status($correlation->deferredId));
         $this->assertSame('record-ack', $recovered?->executionOwnerReference?->recordId);
+        $this->assertEquals(new \Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryFenceDTO(0, 0, 0), $recovered?->deliveryFence);
+        $this->assertSame('stale_controller_generation', $container->get(\Ineersa\AgentCore\Application\Tool\ToolCompletionDeliveryEligibilityPolicy::class)->ineligibleReason(new \Ineersa\AgentCore\Domain\Run\RunState($run, \Ineersa\AgentCore\Domain\Run\RunStatus::Running), $recovered?->deliveryFence));
 
         $again = $collector->prepareBackgroundAcknowledgement(new ToolInvocationBackgroundReadiness(
             $correlation->runId,
@@ -148,6 +152,29 @@ final class ToolBackgroundAcknowledgementPersistenceTest extends IsolatedKernelT
         $this->assertTrue($again->accepted);
         $this->assertTrue($again->duplicate);
         $this->assertSame([], $again->localActions);
+
+        // A terminal outcome after restart must publish the old permission,
+        // not recapture the controller's current generation at completion.
+        $state = new \Ineersa\AgentCore\Domain\Run\RunState($run, \Ineersa\AgentCore\Domain\Run\RunStatus::Running, turnNo: 2, lastSeq: $seed->seq);
+        $result = $container->get(\Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler::class)->handle(
+            new \Ineersa\AgentCore\Domain\Message\ToolCallResult($run, 1, 'tools', 1, 'ack-key', 'call-ack', 0, ['content' => [['type' => 'text', 'text' => 'finished after restart']]]),
+            $state,
+        );
+        $this->assertNotNull($result->nextState);
+        $container->get(ActiveRunContextInterface::class)->loadRecovered($state);
+        $committed = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class)->commit($state, $result->nextState, $result->events, dispatchAfterTurnHooks: false, postCommitActions: $result->postCommitActions);
+        $source = iterator_to_array($container->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class)->rangeFor($run, $committed->lastSeq, $committed->lastSeq))[0];
+        $actions = $container->get(\Ineersa\AgentCore\Application\Tool\ToolCompletionPublicationSubscriber::class)->prepareAfterTurnCommit(
+            \Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext::fromRunState($committed, [$source], 0), $seed->seq,
+        );
+        $this->assertCount(1, $actions);
+        $dispatch = $actions[0]->bindCanonicalSequences([$source->seq]);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO::class, $dispatch);
+        $receive = $dispatch->message;
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ReceiveToolCompletion::class, $receive);
+        $this->assertEquals($recovered?->deliveryFence, $receive->reference->deliveryFence);
+        $delivery = $container->get(\Ineersa\AgentCore\Application\Pipeline\ReceiveToolCompletionHandler::class)->handle($receive, $committed);
+        $this->assertSame('stale_controller_generation', $delivery->events[0]->payload['state_reason']);
     }
 
     private function recovery(MessageBusInterface $bus): PendingTransitionRecovery

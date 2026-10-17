@@ -310,7 +310,7 @@ final class ToolCallResultHandlerRetainedCompletionTest extends IsolatedKernelTe
     {
         $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
-        $collector = new ToolBatchCollector($batches, 4, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batches, 4, $deferred);
         if (null === $outputCapPromoter) {
             $handler = new ToolCallResultHandler(
                 toolBatchCollector: $collector,

@@ -49,6 +49,7 @@ final readonly class DeferredToolCompletionCorrelation
         public ToolInvocationExecutionObservationEnum $executionObservation = ToolInvocationExecutionObservationEnum::Active,
         public ?string $acceptedCompletionId = null,
         public ?string $acceptedResultFingerprint = null,
+        public ?Completion\ToolCompletionDeliveryFenceDTO $deliveryFence = null,
     ) {
         if (null !== $this->executionOwnerKind && '' === $this->executionOwnerKind) {
             throw new \InvalidArgumentException('Execution owner kind cannot be empty when present.');
@@ -145,6 +146,9 @@ final readonly class DeferredToolCompletionCorrelation
         if ($this->deadlineMetadata !== $candidate->deadlineMetadata) {
             throw new \RuntimeException(\sprintf('Deferred deadline metadata mismatch for run "%s" tool call "%s".', $this->runId, $this->toolCallId));
         }
+        if (!Completion\ToolCompletionDeliveryFenceDTO::same($this->deliveryFence, $candidate->deliveryFence)) {
+            throw new \RuntimeException('Deferred delivery permission mismatch.');
+        }
     }
 
     public function withLifecycle(
@@ -152,7 +156,16 @@ final readonly class DeferredToolCompletionCorrelation
         ToolInvocationExecutionObservationEnum $executionObservation,
         ?string $acceptedCompletionId = null,
         ?string $acceptedResultFingerprint = null,
+        ?Completion\ToolCompletionDeliveryFenceDTO $deliveryFence = null,
     ): self {
+        if (null !== $deliveryFence) {
+            if (null !== $this->deliveryFence && !Completion\ToolCompletionDeliveryFenceDTO::same($this->deliveryFence, $deliveryFence)) {
+                throw new \RuntimeException('Accepted completion delivery fence is immutable.');
+            }
+            if (null === $this->deliveryFence && (ToolInvocationCallerDispositionEnum::ForegroundPending !== $this->callerDisposition || ToolInvocationCallerDispositionEnum::BackgroundAcknowledged !== $callerDisposition)) {
+                throw new \RuntimeException('Completion delivery permission can only be captured at detachment.');
+            }
+        }
         ToolInvocationLifecycleTransition::assertAllowed(
             $this->callerDisposition,
             $this->executionObservation,
@@ -212,6 +225,7 @@ final readonly class DeferredToolCompletionCorrelation
             executionObservation: $executionObservation,
             acceptedCompletionId: $nextCompletionId,
             acceptedResultFingerprint: $nextResultFingerprint,
+            deliveryFence: $deliveryFence ?? $this->deliveryFence,
         );
     }
 }

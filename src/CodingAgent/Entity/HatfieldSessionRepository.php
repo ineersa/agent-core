@@ -30,6 +30,23 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
         parent::__construct($registry, HatfieldSession::class);
     }
 
+    public function controllerGeneration(string $sessionId): int
+    {
+        $generation = $this->getEntityManager()->getConnection()->fetchOne('SELECT controller_generation FROM hatfield_session WHERE id = ?', [$sessionId]);
+        if (false === $generation) {
+            throw new \RuntimeException('Completion controller session does not exist.');
+        }
+
+        return (int) $generation;
+    }
+
+    public function advanceControllerGeneration(string $sessionId): void
+    {
+        if (1 !== $this->getEntityManager()->getConnection()->executeStatement('UPDATE hatfield_session SET controller_generation = controller_generation + 1 WHERE id = ?', [$sessionId])) {
+            throw new \RuntimeException('Cannot start a controller for a missing session.');
+        }
+    }
+
     /**
      * Return all sessions sorted by updated_at DESC for catalog/picker display.
      *

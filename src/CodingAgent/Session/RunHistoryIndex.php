@@ -18,7 +18,7 @@ final readonly class RunHistoryIndex
 {
     public const int PAGE_SIZE = 32;
     public const int PREVIEW_BYTES = 240;
-    private const int VERSION = 5;
+    private const int VERSION = 6;
 
     public function __construct(private LockFactory $locks, private LoggerInterface $logger)
     {
@@ -35,6 +35,32 @@ final readonly class RunHistoryIndex
             // rebuild this disposable file before using it again, never trust stale rows.
             $this->logger->warning('history_index.publication_failed', $this->context($runId) + ['exception_class' => $exception::class]);
             $this->markUnavailable($path, $runId);
+        }
+    }
+
+    /**
+     * Canonical sequence numbers are monotonic generations, including controls
+     * outside selected history. Normal turn progression never revokes permission.
+     *
+     * @return array{wake: int, history: int}
+     */
+    public function completionDeliveryGenerations(JsonlRunEventLog $log, string $path, string $runId): array
+    {
+        $lock = $this->locks->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+        try {
+            $db = $this->synchronize($log, $path, $runId);
+            $generations = ['wake' => 0, 'history' => 0];
+            foreach ($db->fetchAllAssociative('SELECT kind, sequence FROM completion_delivery_fence') as $row) {
+                $generations[$row['kind']] = (int) $row['sequence'];
+            }
+
+            return $generations;
+        } finally {
+            if (isset($db)) {
+                $db->close();
+            }
+            $lock->release();
         }
     }
 
@@ -350,6 +376,7 @@ final readonly class RunHistoryIndex
         $db->executeStatement('CREATE INDEX IF NOT EXISTS unresolved_commands ON command_record (target_anchor, suppressed, source_anchor)');
         $db->executeStatement('CREATE TABLE IF NOT EXISTS command_resolution (identity_hash TEXT PRIMARY KEY, sequence INTEGER NOT NULL)');
         $db->executeStatement('CREATE TABLE IF NOT EXISTS history_change (seq INTEGER PRIMARY KEY, kind TEXT NOT NULL, anchor INTEGER NOT NULL)');
+        $db->executeStatement('CREATE TABLE IF NOT EXISTS completion_delivery_fence (kind TEXT PRIMARY KEY, sequence INTEGER NOT NULL)');
         $db->executeStatement('CREATE TABLE IF NOT EXISTS context_checkpoint_location (seq INTEGER PRIMARY KEY, anchor INTEGER NOT NULL, offset INTEGER NOT NULL, length INTEGER NOT NULL)');
     }
 
@@ -416,7 +443,7 @@ final readonly class RunHistoryIndex
             $db->beginTransaction();
             try {
                 if (!$valid) {
-                    foreach (['index_meta', 'event_location', 'turn_anchor', 'pending_prompt', 'command_record', 'command_resolution', 'history_change', 'context_checkpoint_location'] as $table) {
+                    foreach (['index_meta', 'event_location', 'turn_anchor', 'pending_prompt', 'command_record', 'command_resolution', 'history_change', 'completion_delivery_fence', 'context_checkpoint_location'] as $table) {
                         $db->executeStatement('DELETE FROM '.$table);
                     }
                 }
@@ -482,6 +509,12 @@ final readonly class RunHistoryIndex
         $type = $record['type'];
         $turn = $record['turn_no'];
         $payload = $record['payload'];
+        $fence = 'agent_command_applied' === $type && 'cancel' === ($payload['kind'] ?? null)
+            ? 'wake'
+            : (('history_tail_discarded' === $type || ('history_position_set' === $type && 'history_select' === ($payload['reason'] ?? null))) ? 'history' : null);
+        if (null !== $fence) {
+            $db->executeStatement('INSERT INTO completion_delivery_fence (kind, sequence) VALUES (?, ?) ON CONFLICT (kind) DO UPDATE SET sequence = excluded.sequence', [$fence, $seq]);
+        }
         $promptText = HistoryPromptTextExtractor::extract($type, $payload);
         if ('' !== $promptText) {
             $kind = 'run_started' === $type ? 'initial' : 'human';

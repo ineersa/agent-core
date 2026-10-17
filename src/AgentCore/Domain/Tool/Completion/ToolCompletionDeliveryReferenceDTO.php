@@ -12,6 +12,7 @@ final readonly class ToolCompletionDeliveryReferenceDTO
         public string $messageId,
         public RetainedToolCompletionSourceEventReference $sourceEvent,
         public string $payloadFingerprint,
+        public ?ToolCompletionDeliveryFenceDTO $deliveryFence = null,
     ) {
         if ('' === trim($destinationRunId) || '' === trim($messageId)
             || \strlen($destinationRunId) > 255 || \strlen($messageId) > 255 || \strlen($sourceEvent->runId) > 255) {

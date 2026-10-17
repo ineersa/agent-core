@@ -75,23 +75,45 @@ fails closed as soon as actual bytes exceed the sealed length, and returns a
 bounded preview only when the body fits the caller budget. The internal reader uses
 canonical source locators or a bounded newest-first scan. Missing, corrupt,
 unsupported, or foreign references yield typed inspection failures and never
-re-execute tools. Mailbox delivery, wake fencing, producers, and Ctrl+B remain
-later checkpoints.
+re-execute tools. Model-bound delivery, producers, and Ctrl+B remain disabled.
 
-C5 currently adds a source-verification foundation, not automatic delivery.
+C5 currently retains verified recipient obligations and delivery fences, but
+does not apply messages to model context or automatically wake a run.
 `ToolCompletionDeliveryReferenceDTO` carries the recipient identity, message ID,
-exact canonical source location, and semantic fingerprint. Configured Symfony
-serialization owns its wire representation. `ToolCompletionDeliveryVerifier`
+exact canonical source location, semantic fingerprint, and captured delivery
+fence. Configured Symfony serialization owns its wire representation.
+`ToolCompletionDeliveryVerifier`
 checks the published source event, background acceptance, original invocation,
 retained origin, owning root, locator, and fingerprint without opening the
 referenced body. Ordinary attached foreground results are not delivery sources.
 Cross-run forwarding is not enabled.
 
-The recipient must deduplicate against its own accepted evidence before invoking
-the verifier. Verification alone neither records recipient acceptance nor grants
-permission to wake a run. Recipient projections, prepared mailbox changes,
-bounded presentations, safe-boundary coalescing, and cancellation/history/restart
-fences remain C5 work. No live completion path invokes this foundation yet.
+The source publishes its reference only after verified terminal acceptance.
+The recipient deduplicates against retained canonical-derived identity before
+fetching its source. Its received event and internal mailbox obligation finalize
+together through prepared coordination. Consuming a mailbox row does not erase
+recipient dedupe or the retained source body.
+
+Detachment captures cancellation, history, and controller generations. The last
+canonical accepted cancellation sequence is the wake generation; explicit history
+selection or tail discard advances a separate history generation. Normal later
+turns and compaction do not advance either fence. The existing scalar history
+index rebuilds these facts from all canonical controls, including controls outside
+the selected branch. Controller startup separately increments a durable session
+generation before disposable operational rows are cleared and consumers start.
+
+The immutable deferred binding, terminal envelope, allocated source reference,
+and recipient evidence preserve the captured fence. Completion never renews it.
+`ToolCompletionDeliveryEligibilityPolicy` rejects stale generations, cancelled or
+failed runs, terminal children, and missing permission. Admission records the
+ineligibility reason without discarding evidence; the obligation remains pending.
+The subsequent boundary consumer must recheck permission before application and
+successor dispatch. Explicit user continuation does not renew an old completion's
+automatic permission.
+
+Bounded presentations, FIFO draining, safe-boundary coalescing, parking/application
+transitions, and automatic `AdvanceRun` dispatch remain C5 work. Background
+producers, child forwarding, and Ctrl+B are not enabled.
 
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare
