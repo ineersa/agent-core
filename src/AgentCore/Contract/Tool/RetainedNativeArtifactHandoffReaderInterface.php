@@ -14,9 +14,15 @@ namespace Ineersa\AgentCore\Contract\Tool;
 interface RetainedNativeArtifactHandoffReaderInterface
 {
     /**
-     * @return array{bytes: int, sha256: string, media_type: string, text: string}
+     * @return array{
+     *     bytes: int,
+     *     sha256: string,
+     *     media_type: string,
+     *     truncated: bool,
+     *     text?: string
+     * }
      */
-    public function readHandoff(
+    public function inspectHandoff(
         string $authorizedRootSessionId,
         string $parentRunId,
         string $artifactId,
@@ -24,5 +30,6 @@ interface RetainedNativeArtifactHandoffReaderInterface
         int $expectedBytes,
         string $expectedSha256,
         string $expectedMediaType,
+        ?int $maxDecodeBytes = null,
     ): array;
 }

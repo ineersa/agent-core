@@ -40,6 +40,7 @@ use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\AgentCore\Tests\Support\RetainedCompletionTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -70,6 +71,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
         $state = RunStateBuilder::running('run-shell')
             ->withVersion(3)
@@ -211,6 +214,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $state = RunStateBuilder::running('run-tool-handler-1')
@@ -281,6 +286,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $state = RunStateBuilder::running('run-untracked-current-token')
@@ -313,6 +320,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -381,6 +390,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -429,6 +440,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -525,6 +538,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -660,6 +675,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -758,6 +775,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -822,6 +841,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -895,6 +916,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $message = ToolCallResultBuilder::success('run-redeliver-post')
@@ -959,6 +982,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $message = ToolCallResultBuilder::success('run-redeliver-pre')
@@ -1009,6 +1034,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $assistantMsg = new AgentMessage(
@@ -1089,6 +1116,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolBatchCollector: $collector, eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(), messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
         $state = RunStateBuilder::running($runId)->withTurnNo(1)->withActiveStepId('tools')
             ->withPendingToolCalls(['read-call' => true, 'fork-call' => false])
@@ -1172,6 +1201,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $message = ToolCallResultBuilder::success('run-detached')
@@ -1248,6 +1279,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
         $message = ToolCallResultBuilder::success('run-detach-cancel')
             ->withTurnNo(1)
@@ -1349,6 +1382,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
         $message = ToolCallResultBuilder::success('run-attach-cancel')
             ->withTurnNo(1)
@@ -1417,6 +1452,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
         $ackState = RunStateBuilder::running('run-detach-replay')
             ->withTurnNo(1)
@@ -1582,6 +1619,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
         $message = ToolCallResultBuilder::success('run-fold')
             ->withTurnNo(1)
@@ -1651,6 +1690,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
         $message = ToolCallResultBuilder::success('run-terminal-detach')
             ->withTurnNo(1)
@@ -1739,6 +1780,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
         $message = ToolCallResultBuilder::success('run-evidence')
             ->withTurnNo(1)
@@ -1898,6 +1941,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
         // Already-true deferred call: not preserveIncoming.
         $message = ToolCallResultBuilder::success('run-evidence-cancel')
@@ -2038,6 +2083,8 @@ final class ToolCallResultHandlerTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
         $first = ToolCallResultBuilder::success('run-conflict-active')
             ->withTurnNo(1)

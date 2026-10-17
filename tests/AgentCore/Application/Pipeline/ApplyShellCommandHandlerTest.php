@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\RetainedCompletionTestFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -252,6 +253,8 @@ final class ApplyShellCommandHandlerTest extends TestCase
             eventFactory: new EventFactory(), toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
             messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
         $end = $resultHandler->handle($completion, $start->nextState);
         $this->assertNotNull($end->nextState);

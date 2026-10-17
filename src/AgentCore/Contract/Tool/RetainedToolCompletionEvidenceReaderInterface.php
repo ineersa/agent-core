@@ -23,11 +23,18 @@ interface RetainedToolCompletionEvidenceReaderInterface
      *         media_type: string,
      *         bytes: int,
      *         sha256: string,
+     *         truncated: bool,
      *         inline?: array<string, mixed>,
      *         json?: array<string, mixed>,
      *         text?: string
      *     }
      * }
      */
-    public function read(string $authorizedRootSessionId, string $sourceRunId, string $messageId): array;
+    public function read(
+        string $authorizedRootSessionId,
+        string $sourceRunId,
+        string $messageId,
+        ?int $maxBodyBytes = null,
+        ?int $acceptedSourceSeq = null,
+    ): array;
 }

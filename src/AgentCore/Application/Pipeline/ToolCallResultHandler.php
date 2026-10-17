@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\PreparedToolTerminalAcceptanceDTO;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeCodec;
 use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeFactory;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -38,7 +39,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         private ToolCallExtractor $toolCallExtractor,
         private AgentMessageNormalizer $messageNormalizer,
         private NormalizerInterface&DenormalizerInterface $serializer,
-        private ?RetainedToolCompletionEnvelopeFactory $retainedCompletionFactory = null,
+        private RetainedToolCompletionEnvelopeFactory $retainedCompletionFactory,
+        private RetainedToolCompletionEnvelopeCodec $retainedCompletionCodec,
     ) {
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
@@ -645,7 +647,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         ];
 
         if ($result instanceof ToolCallResult
-            && null !== $this->retainedCompletionFactory
             && \is_array($payload['tool_result'] ?? null)) {
             $ownerReference = $acceptance->correlation->executionOwnerReference;
             $ownerKind = $acceptance->correlation->executionOwnerKind
@@ -668,7 +669,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                     ),
                 );
             }
-            $payload['accepted_completion']['retained_message'] = $envelope->toArray();
+            $payload['accepted_completion']['retained_message'] = $this->retainedCompletionCodec->normalize($envelope);
         }
 
         return $payload;

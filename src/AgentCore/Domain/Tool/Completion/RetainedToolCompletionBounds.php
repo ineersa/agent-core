@@ -19,6 +19,12 @@ final class RetainedToolCompletionBounds
 
     public const int ENVELOPE_MAX_BYTES = 16384;
 
+    /** Maximum retained body bytes decoded into PHP for one inspection call. */
+    public const int INSPECTION_BODY_MAX_BYTES = 262144;
+
+    /** Maximum events scanned newest-first when locating one retained receipt. */
+    public const int SOURCE_LOOKUP_MAX_EVENTS = 4096;
+
     public const int SCHEMA_VERSION = 1;
 
     public const string KIND_TOOL_COMPLETION = 'tool_completion';

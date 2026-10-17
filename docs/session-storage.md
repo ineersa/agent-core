@@ -251,9 +251,10 @@ Compaction rewrites the LLM-visible history while retaining a recent raw tail an
 
 ## Retained tool-completion bodies
 
-BG-01 C4 seals oversized accepted detached/attached completion bodies under
-`<session>/runtime/retained-tool-completions/<completion_id>.json`. These files
-are retained evidence for the root session lifetime. Explicit root-session
+BG-01 C4 streams oversized accepted detached/attached completion bodies under
+`<session>/runtime/retained-tool-completions/<completion_id>.json`. Reads enforce
+exact owned containment through session/runtime/body ancestors (no symlink
+escape). These files are retained evidence for the root session lifetime. Explicit root-session
 deletion removes them with the session tree. Ordinary controller shutdown and
 output-cap cleanup do not delete them. Canonical receipts keep only bounded
 envelope metadata and integrity references.

@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionBodyStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionEvidenceReaderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBodyKindEnum;
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBounds;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionEnvelope;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailure;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEnum;
@@ -24,13 +25,19 @@ final readonly class RetainedToolCompletionEvidenceReader implements RetainedToo
 {
     public function __construct(
         private EventStoreInterface $events,
-        private ?RetainedToolCompletionBodyStoreInterface $bodyStore = null,
-        private ?RetainedNativeArtifactHandoffReaderInterface $nativeHandoffs = null,
+        private RetainedToolCompletionEnvelopeCodec $codec,
+        private RetainedToolCompletionBodyStoreInterface $bodyStore,
+        private RetainedNativeArtifactHandoffReaderInterface $nativeHandoffs,
     ) {
     }
 
-    public function read(string $authorizedRootSessionId, string $sourceRunId, string $messageId): array
-    {
+    public function read(
+        string $authorizedRootSessionId,
+        string $sourceRunId,
+        string $messageId,
+        ?int $maxBodyBytes = null,
+        ?int $acceptedSourceSeq = null,
+    ): array {
         if ('' === trim($authorizedRootSessionId) || '' === trim($sourceRunId) || '' === trim($messageId)) {
             throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Retained completion lookup identity is incomplete.');
         }
@@ -41,44 +48,27 @@ final readonly class RetainedToolCompletionEvidenceReader implements RetainedToo
         }
 
         $envelope = null;
-        foreach ($this->events->rangeFor($sourceRunId, 1, \PHP_INT_MAX) as $event) {
-            if (RunEventTypeEnum::ToolExecutionEnd->value !== $event->type) {
-                continue;
+        if (null !== $acceptedSourceSeq) {
+            if ($acceptedSourceSeq < 1) {
+                throw new \InvalidArgumentException('acceptedSourceSeq must be positive when provided.');
             }
-            $retained = $event->payload['accepted_completion']['retained_message'] ?? null;
-            if (!\is_array($retained)) {
-                continue;
+            foreach ($this->events->rangeFor($sourceRunId, $acceptedSourceSeq, $acceptedSourceSeq) as $event) {
+                $envelope = $this->envelopeFromEvent($event->type, $event->payload, $authorizedRootSessionId, $sourceRunId, $messageId);
+                break;
             }
-            $candidateId = $retained['message_id'] ?? null;
-            if ($candidateId !== $messageId) {
-                continue;
+        } else {
+            $scanned = 0;
+            foreach ($this->events->reverseFor($sourceRunId) as $event) {
+                ++$scanned;
+                if ($scanned > RetainedToolCompletionBounds::SOURCE_LOOKUP_MAX_EVENTS) {
+                    throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::NotFound, \sprintf('Retained completion "%s" was not found within the bounded source lookup window for run "%s".', $messageId, $sourceRunId));
+                }
+                $candidate = $this->envelopeFromEvent($event->type, $event->payload, $authorizedRootSessionId, $sourceRunId, $messageId);
+                if (null !== $candidate) {
+                    $envelope = $candidate;
+                    break;
+                }
             }
-
-            try {
-                $decoded = RetainedToolCompletionEnvelope::fromArray($retained);
-            } catch (RetainedToolCompletionFailure $failure) {
-                throw $failure;
-            } catch (\Throwable $exception) {
-                throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Retained completion envelope is corrupt.', $exception);
-            }
-
-            if ($decoded->origin->controllerRunId !== $authorizedRootSessionId) {
-                throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Retained completion controller scope does not match the authorized root session.');
-            }
-            if ($decoded->origin->sourceRunId !== $sourceRunId) {
-                throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Retained completion source run does not match the lookup run.');
-            }
-
-            $expectedFingerprint = hash(
-                'sha256',
-                json_encode($decoded->semanticFingerprintPayload(), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES),
-            );
-            if ($expectedFingerprint !== $decoded->payloadFingerprint) {
-                throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Retained completion envelope failed semantic fingerprint validation.');
-            }
-
-            $envelope = $decoded;
-            break;
         }
 
         if (null === $envelope) {
@@ -87,8 +77,46 @@ final readonly class RetainedToolCompletionEvidenceReader implements RetainedToo
 
         return [
             'envelope' => $envelope,
-            'body' => $this->resolveBody($envelope, $authorizedRootSessionId),
+            'body' => $this->resolveBody($envelope, $authorizedRootSessionId, $maxBodyBytes),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function envelopeFromEvent(
+        string $type,
+        array $payload,
+        string $authorizedRootSessionId,
+        string $sourceRunId,
+        string $messageId,
+    ): ?RetainedToolCompletionEnvelope {
+        if (RunEventTypeEnum::ToolExecutionEnd->value !== $type) {
+            return null;
+        }
+        $retained = $payload['accepted_completion']['retained_message'] ?? null;
+        if (!\is_array($retained)) {
+            return null;
+        }
+        $candidateId = $retained['message_id'] ?? null;
+        if ($candidateId !== $messageId) {
+            return null;
+        }
+
+        $decoded = $this->codec->denormalize($retained);
+        if ($decoded->origin->controllerRunId !== $authorizedRootSessionId) {
+            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Retained completion controller scope does not match the authorized root session.');
+        }
+        if ($decoded->origin->sourceRunId !== $sourceRunId) {
+            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Retained completion source run does not match the lookup run.');
+        }
+
+        $expectedFingerprint = $this->codec->payloadFingerprint($decoded);
+        if ($expectedFingerprint !== $decoded->integrity->payloadFingerprint) {
+            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Retained completion envelope failed semantic fingerprint validation.');
+        }
+
+        return $decoded;
     }
 
     /**
@@ -97,14 +125,22 @@ final readonly class RetainedToolCompletionEvidenceReader implements RetainedToo
      *     media_type: string,
      *     bytes: int,
      *     sha256: string,
+     *     truncated: bool,
      *     inline?: array<string, mixed>,
      *     json?: array<string, mixed>,
      *     text?: string
      * }
      */
-    private function resolveBody(RetainedToolCompletionEnvelope $envelope, string $authorizedRootSessionId): array
-    {
+    private function resolveBody(
+        RetainedToolCompletionEnvelope $envelope,
+        string $authorizedRootSessionId,
+        ?int $maxBodyBytes,
+    ): array {
         $body = $envelope->body;
+        $budget = $maxBodyBytes ?? RetainedToolCompletionBounds::INSPECTION_BODY_MAX_BYTES;
+        if ($budget < 0) {
+            throw new \InvalidArgumentException('maxBodyBytes must be non-negative.');
+        }
 
         return match ($body->kind) {
             RetainedToolCompletionBodyKindEnum::Inline => [
@@ -112,42 +148,47 @@ final readonly class RetainedToolCompletionEvidenceReader implements RetainedToo
                 'media_type' => $body->mediaType,
                 'bytes' => $body->bytes,
                 'sha256' => $body->sha256,
-                'inline' => $body->inline ?? [],
+                'truncated' => $body->bytes > $budget,
+                'inline' => $body->bytes > $budget ? [] : ($body->inline ?? []),
             ],
-            RetainedToolCompletionBodyKindEnum::OwnedSealed => $this->resolveOwnedSealed($envelope, $authorizedRootSessionId),
-            RetainedToolCompletionBodyKindEnum::NativeArtifactHandoff => $this->resolveNative($envelope, $authorizedRootSessionId),
+            RetainedToolCompletionBodyKindEnum::OwnedSealed => $this->resolveOwnedSealed($envelope, $authorizedRootSessionId, $budget),
+            RetainedToolCompletionBodyKindEnum::NativeArtifactHandoff => $this->resolveNative($envelope, $authorizedRootSessionId, $budget),
         };
     }
 
     /**
-     * @return array{kind: string, media_type: string, bytes: int, sha256: string, json: array<string, mixed>}
+     * @return array{kind: string, media_type: string, bytes: int, sha256: string, truncated: bool, json?: array<string, mixed>}
      */
-    private function resolveOwnedSealed(RetainedToolCompletionEnvelope $envelope, string $authorizedRootSessionId): array
-    {
-        if (null === $this->bodyStore) {
-            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::Unsupported, 'Owned sealed retained bodies are unavailable.');
-        }
-        $read = $this->bodyStore->readJson($envelope->body, $authorizedRootSessionId);
-
-        return [
+    private function resolveOwnedSealed(
+        RetainedToolCompletionEnvelope $envelope,
+        string $authorizedRootSessionId,
+        int $budget,
+    ): array {
+        $read = $this->bodyStore->inspectJson($envelope->body, $authorizedRootSessionId, $budget);
+        $result = [
             'kind' => $envelope->body->kind->value,
             'media_type' => $read['media_type'],
             'bytes' => $read['bytes'],
             'sha256' => $read['sha256'],
-            'json' => $read['json'],
+            'truncated' => $read['truncated'],
         ];
+        if (isset($read['json']) && \is_array($read['json'])) {
+            $result['json'] = $read['json'];
+        }
+
+        return $result;
     }
 
     /**
-     * @return array{kind: string, media_type: string, bytes: int, sha256: string, text: string}
+     * @return array{kind: string, media_type: string, bytes: int, sha256: string, truncated: bool, text?: string}
      */
-    private function resolveNative(RetainedToolCompletionEnvelope $envelope, string $authorizedRootSessionId): array
-    {
-        if (null === $this->nativeHandoffs) {
-            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::Unsupported, 'Native artifact handoff retained bodies are unavailable.');
-        }
+    private function resolveNative(
+        RetainedToolCompletionEnvelope $envelope,
+        string $authorizedRootSessionId,
+        int $budget,
+    ): array {
         $body = $envelope->body;
-        $read = $this->nativeHandoffs->readHandoff(
+        $read = $this->nativeHandoffs->inspectHandoff(
             authorizedRootSessionId: $authorizedRootSessionId,
             parentRunId: (string) $body->nativeParentRunId,
             artifactId: (string) $body->nativeArtifactId,
@@ -155,14 +196,20 @@ final readonly class RetainedToolCompletionEvidenceReader implements RetainedToo
             expectedBytes: $body->bytes,
             expectedSha256: $body->sha256,
             expectedMediaType: $body->mediaType,
+            maxDecodeBytes: $budget,
         );
 
-        return [
+        $result = [
             'kind' => $body->kind->value,
             'media_type' => $read['media_type'],
             'bytes' => $read['bytes'],
             'sha256' => $read['sha256'],
-            'text' => $read['text'],
+            'truncated' => $read['truncated'],
         ];
+        if (isset($read['text']) && \is_string($read['text'])) {
+            $result['text'] = $read['text'];
+        }
+
+        return $result;
     }
 }

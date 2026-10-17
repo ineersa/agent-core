@@ -30,15 +30,4 @@ final readonly class RetainedToolCompletionSourceEventReference
             throw new \InvalidArgumentException('Source event type must be nonblank.');
         }
     }
-
-    /** @return array{run_id: string, seq: int, turn_no: int, type: string} */
-    public function toArray(): array
-    {
-        return [
-            'run_id' => $this->runId,
-            'seq' => $this->seq,
-            'turn_no' => $this->turnNo,
-            'type' => $this->type,
-        ];
-    }
 }

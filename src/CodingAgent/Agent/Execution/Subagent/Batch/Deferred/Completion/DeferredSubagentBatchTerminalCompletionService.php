@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
@@ -63,7 +64,7 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
 
         $identity = $this->outcomeFactory->identityFromChild($batch, $child);
         $artifactOutcome = $this->outcomeFactory->buildNaturalArtifactOutcome($identity, $projection);
-        $this->lifecycleListener->finalizeTerminalOutcome(
+        $generation = $this->lifecycleListener->finalizeTerminalOutcome(
             ChildRunTerminalFinalizationRequestDTO::persistOnly($artifactOutcome),
         );
 
@@ -76,12 +77,15 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
             presentation: $presentation,
             isError: false,
             errorEnvelope: null,
+            nativeHandoffs: [$generation],
         );
     }
 
     private function completeParallelIfAllTerminal(DeferredSubagentBatchProjectionDTO $batch): void
     {
         $items = [];
+        /** @var list<RetainedNativeHandoffGeneration> $nativeHandoffs */
+        $nativeHandoffs = [];
         foreach ($batch->children as $child) {
             $projection = $child->childLifecycleProjection;
             if (null === $projection || !$projection->childStatus->isTerminal()) {
@@ -90,7 +94,7 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
 
             $identity = $this->outcomeFactory->identityFromChild($batch, $child);
             $artifactOutcome = $this->outcomeFactory->buildNaturalArtifactOutcome($identity, $projection);
-            $this->lifecycleListener->finalizeTerminalOutcome(
+            $nativeHandoffs[] = $this->lifecycleListener->finalizeTerminalOutcome(
                 ChildRunTerminalFinalizationRequestDTO::persistOnly($artifactOutcome),
             );
 
@@ -128,6 +132,7 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
                 presentation: $presentation,
                 isError: false,
                 errorEnvelope: null,
+                nativeHandoffs: $nativeHandoffs,
             );
         } else {
             $message = $this->parallelFormatter->formatReport($result, 'Parallel subagent execution failed for one or more children.');
@@ -152,6 +157,7 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
                 presentation: $message,
                 isError: true,
                 errorEnvelope: $errorEnvelope,
+                nativeHandoffs: $nativeHandoffs,
             );
         }
     }

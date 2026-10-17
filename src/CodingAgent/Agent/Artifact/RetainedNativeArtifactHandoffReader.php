@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Contract\Tool\RetainedNativeArtifactHandoffReaderInterface;
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBounds;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailure;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEnum;
 
@@ -21,7 +22,7 @@ final readonly class RetainedNativeArtifactHandoffReader implements RetainedNati
     ) {
     }
 
-    public function readHandoff(
+    public function inspectHandoff(
         string $authorizedRootSessionId,
         string $parentRunId,
         string $artifactId,
@@ -29,6 +30,7 @@ final readonly class RetainedNativeArtifactHandoffReader implements RetainedNati
         int $expectedBytes,
         string $expectedSha256,
         string $expectedMediaType,
+        ?int $maxDecodeBytes = null,
     ): array {
         if ('' === trim($authorizedRootSessionId) || '' === trim($parentRunId)
             || '' === trim($artifactId) || '' === trim($handoffId)) {
@@ -63,11 +65,20 @@ final readonly class RetainedNativeArtifactHandoffReader implements RetainedNati
             throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Native handoff generation failed integrity validation.');
         }
 
-        return [
+        $budget = $maxDecodeBytes ?? RetainedToolCompletionBounds::INSPECTION_BODY_MAX_BYTES;
+        if ($budget < 0) {
+            throw new \InvalidArgumentException('maxDecodeBytes must be non-negative.');
+        }
+        $result = [
             'bytes' => $bytes,
             'sha256' => $sha256,
             'media_type' => $expectedMediaType,
-            'text' => $text,
+            'truncated' => $bytes > $budget,
         ];
+        if ($bytes <= $budget) {
+            $result['text'] = $text;
+        }
+
+        return $result;
     }
 }

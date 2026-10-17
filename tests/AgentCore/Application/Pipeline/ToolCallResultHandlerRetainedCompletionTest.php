@@ -24,6 +24,7 @@ use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeRetainedToolCompletionBodyStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\AgentCore\Tests\Support\RetainedCompletionTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
 use PHPUnit\Framework\TestCase;
@@ -99,7 +100,8 @@ final class ToolCallResultHandlerRetainedCompletionTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            retainedCompletionFactory: new RetainedToolCompletionEnvelopeFactory($bodies),
+            retainedCompletionFactory: new RetainedToolCompletionEnvelopeFactory($bodies, RetainedCompletionTestFactory::codec()),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 
         $message = ToolCallResultBuilder::success('run-retained')

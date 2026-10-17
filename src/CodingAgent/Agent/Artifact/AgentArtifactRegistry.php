@@ -487,7 +487,7 @@ final class AgentArtifactRegistry
         string $content,
         ?AgentArtifactStatusEnum $status = null,
         ?string $summary = null,
-    ): string {
+    ): \Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
 
@@ -696,13 +696,15 @@ final class AgentArtifactRegistry
         string $content,
         ?AgentArtifactStatusEnum $status,
         ?string $summary,
-    ): string {
+    ): \Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration {
         $this->ensureArtifactDir($parentRunId, $artifactId);
 
         $handoffId = UuidV7::v7()->toRfc4122();
         $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
         $relative = "{$paths->artifactDir}/handoffs/{$handoffId}.md";
         $absolute = $this->pathResolver->absolutePath($parentRunId, $relative);
+        $bytes = \strlen($content);
+        $sha256 = hash('sha256', $content);
 
         try {
             AtomicFileWriter::write($absolute, $content, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
@@ -723,6 +725,9 @@ final class AgentArtifactRegistry
             'status' => $status?->value,
             'summary' => $summary,
             'path' => $relative,
+            'bytes' => $bytes,
+            'sha256' => $sha256,
+            'media_type' => 'text/markdown',
         ];
 
         $this->writeHandoffIndex($parentRunId, $artifactId, [
@@ -730,7 +735,14 @@ final class AgentArtifactRegistry
             'entries' => $entries,
         ]);
 
-        return $handoffId;
+        return new \Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration(
+            parentRunId: $parentRunId,
+            artifactId: $artifactId,
+            handoffId: $handoffId,
+            bytes: $bytes,
+            sha256: $sha256,
+            mediaType: 'text/markdown',
+        );
     }
 
     /**

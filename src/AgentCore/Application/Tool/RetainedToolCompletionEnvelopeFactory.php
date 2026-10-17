@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Tool;
 
+use Ineersa\AgentCore\Contract\Tool\RetainedOutputCapBodyPromoterInterface;
 use Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionBodyStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBodyReference;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBounds;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionEnvelope;
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionIntegrity;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionOrigin;
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionPresentation;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionUtf8;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
@@ -17,14 +21,16 @@ use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 /**
  * Builds immutable retained tool_completion envelopes at owner acceptance.
  *
- * Prefers existing native immutable handoff generations when present. Otherwise
- * keeps small validated bodies inline or seals oversized bodies into owned
- * session storage before native/output-cap cleanup may reclaim temps.
+ * Prefers host-authored immutable native handoff generations. Otherwise keeps
+ * small validated bodies inline or streams oversized bodies into owned session
+ * storage before native/output-cap cleanup may reclaim temps.
  */
 final readonly class RetainedToolCompletionEnvelopeFactory
 {
     public function __construct(
-        private ?RetainedToolCompletionBodyStoreInterface $bodyStore = null,
+        private RetainedToolCompletionBodyStoreInterface $bodyStore,
+        private RetainedToolCompletionEnvelopeCodec $codec,
+        private ?RetainedOutputCapBodyPromoterInterface $outputCapPromoter = null,
     ) {
     }
 
@@ -57,12 +63,37 @@ final readonly class RetainedToolCompletionEnvelopeFactory
         );
 
         $attachments = [];
-        $native = $this->nativeArtifactHandoffReference($normalizedToolResult);
-        if (null !== $native) {
-            $body = $native['body'];
-            $attachments[] = $native['attachment'];
+        $nativeGenerations = $this->hostAuthoredNativeGenerations($normalizedToolResult);
+        if ([] !== $nativeGenerations) {
+            if (1 === \count($nativeGenerations)) {
+                $body = RetainedToolCompletionBodyReference::fromNativeGeneration($nativeGenerations[0]);
+            } else {
+                $body = $this->sealNativeManifest($completionId, $controllerRunId, $nativeGenerations);
+            }
+            foreach ($nativeGenerations as $generation) {
+                $attachments[] = [
+                    'kind' => 'native_artifact_handoff',
+                    'reference' => [
+                        'parent_run_id' => $generation->parentRunId,
+                        'artifact_id' => $generation->artifactId,
+                        'handoff_id' => $generation->handoffId,
+                        'bytes' => $generation->bytes,
+                        'sha256' => $generation->sha256,
+                        'media_type' => $generation->mediaType,
+                    ],
+                ];
+            }
         } else {
-            $body = $this->inlineOrOwnedBody(
+            $promoted = null;
+            if (null !== $this->outputCapPromoter) {
+                $promoted = $this->outputCapPromoter->promoteIfOwned(
+                    owningRootSessionId: $controllerRunId,
+                    messageId: $completionId,
+                    normalizedToolResult: $normalizedToolResult,
+                    sourceRunId: $correlation->runId,
+                );
+            }
+            $body = $promoted ?? $this->inlineOrOwnedBody(
                 $completionId,
                 $controllerRunId,
                 $normalizedToolResult,
@@ -78,52 +109,86 @@ final readonly class RetainedToolCompletionEnvelopeFactory
             invocationId: $correlation->invocationId ?? $correlation->deferredId,
             executionOwnerKind: $executionOwnerKind,
         );
+        $presentation = new RetainedToolCompletionPresentation(
+            severity: 'info',
+            terminalOutcome: $terminalOutcome,
+            subject: $subject,
+            boundedSummary: $summary,
+        );
 
         $draft = new RetainedToolCompletionEnvelope(
             messageId: $completionId,
             origin: $origin,
-            terminalOutcome: $terminalOutcome,
-            subject: $subject,
-            boundedSummary: $summary,
+            presentation: $presentation,
             body: $body,
-            payloadFingerprint: str_repeat('0', 64),
+            integrity: new RetainedToolCompletionIntegrity(str_repeat('0', 64)),
             attachments: $attachments,
         );
-        $fingerprint = hash(
-            'sha256',
-            json_encode($draft->semanticFingerprintPayload(), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES),
-        );
-
-        return new RetainedToolCompletionEnvelope(
+        $fingerprint = $this->codec->payloadFingerprint($draft);
+        $envelope = new RetainedToolCompletionEnvelope(
             messageId: $completionId,
             origin: $origin,
-            terminalOutcome: $terminalOutcome,
-            subject: $subject,
-            boundedSummary: $summary,
+            presentation: $presentation,
             body: $body,
-            payloadFingerprint: $fingerprint,
+            integrity: new RetainedToolCompletionIntegrity($fingerprint),
             attachments: $attachments,
         );
+
+        $serialized = json_encode($this->codec->normalize($envelope), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
+        if (\strlen($serialized) > RetainedToolCompletionBounds::ENVELOPE_MAX_BYTES) {
+            throw new \InvalidArgumentException('Retained envelope exceeds 16 KiB budget.');
+        }
+
+        return $envelope;
     }
 
     /**
      * @param array<string, mixed> $normalizedToolResult
      *
-     * @return array{body: RetainedToolCompletionBodyReference, attachment: array{kind: string, reference: array<string, mixed>}}|null
+     * @return list<RetainedNativeHandoffGeneration>
      */
-    private function nativeArtifactHandoffReference(array $normalizedToolResult): ?array
+    private function hostAuthoredNativeGenerations(array $normalizedToolResult): array
     {
         $details = $normalizedToolResult['details'] ?? null;
         if (!\is_array($details)) {
-            return null;
+            return [];
         }
 
-        $artifactId = $details['artifact_id'] ?? null;
-        $handoffId = $details['handoff_id'] ?? null;
-        $parentRunId = $details['parent_run_id'] ?? ($details['artifact_parent_run_id'] ?? null);
-        $bytes = $details['handoff_bytes'] ?? null;
-        $sha256 = $details['handoff_sha256'] ?? null;
-        $mediaType = $details['handoff_media_type'] ?? 'text/markdown';
+        $rawList = $details['native_artifact_handoffs'] ?? null;
+        if (!\is_array($rawList) || [] === $rawList) {
+            // Single-child host fields written by DeferredSubagentBatchCompletionDispatcher.
+            $single = $this->tryNativeGeneration($details);
+
+            return null === $single ? [] : [$single];
+        }
+
+        $generations = [];
+        foreach ($rawList as $entry) {
+            if (!\is_array($entry)) {
+                return [];
+            }
+            $generation = $this->tryNativeGeneration($entry);
+            if (null === $generation) {
+                // Incomplete host metadata is ignored as a whole; do not invent generations.
+                return [];
+            }
+            $generations[] = $generation;
+        }
+
+        return $generations;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function tryNativeGeneration(array $payload): ?RetainedNativeHandoffGeneration
+    {
+        $artifactId = $payload['artifact_id'] ?? null;
+        $handoffId = $payload['handoff_id'] ?? null;
+        $parentRunId = $payload['parent_run_id'] ?? null;
+        $bytes = $payload['handoff_bytes'] ?? ($payload['bytes'] ?? null);
+        $sha256 = $payload['handoff_sha256'] ?? ($payload['sha256'] ?? null);
+        $mediaType = $payload['handoff_media_type'] ?? ($payload['media_type'] ?? 'text/markdown');
 
         if (!\is_string($artifactId) || '' === trim($artifactId)
             || !\is_string($handoffId) || '' === trim($handoffId)
@@ -131,34 +196,65 @@ final readonly class RetainedToolCompletionEnvelopeFactory
             || !\is_int($bytes) || $bytes < 0
             || !\is_string($sha256) || 64 !== \strlen($sha256) || 1 !== preg_match('/^[a-f0-9]{64}$/', $sha256)
             || !\is_string($mediaType) || '' === trim($mediaType)) {
-            // Incomplete native metadata is ignored; do not invent generations or
-            // scrape presentation text for paths/IDs.
             return null;
         }
 
-        $body = RetainedToolCompletionBodyReference::nativeArtifactHandoff(
-            nativeParentRunId: $parentRunId,
-            nativeArtifactId: $artifactId,
-            nativeHandoffId: $handoffId,
-            mediaType: $mediaType,
-            bytes: $bytes,
-            sha256: $sha256,
-        );
+        try {
+            return new RetainedNativeHandoffGeneration(
+                parentRunId: $parentRunId,
+                artifactId: $artifactId,
+                handoffId: $handoffId,
+                bytes: $bytes,
+                sha256: $sha256,
+                mediaType: $mediaType,
+            );
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+    }
 
-        return [
-            'body' => $body,
-            'attachment' => [
-                'kind' => 'native_artifact_handoff',
-                'reference' => [
-                    'parent_run_id' => $parentRunId,
-                    'artifact_id' => $artifactId,
-                    'handoff_id' => $handoffId,
-                    'bytes' => $bytes,
-                    'sha256' => $sha256,
-                    'media_type' => $mediaType,
+    /**
+     * @param list<RetainedNativeHandoffGeneration> $generations
+     */
+    private function sealNativeManifest(
+        string $completionId,
+        string $controllerRunId,
+        array $generations,
+    ): RetainedToolCompletionBodyReference {
+        $manifest = [
+            'kind' => 'native_artifact_handoff_manifest',
+            'entries' => array_map(
+                static fn (RetainedNativeHandoffGeneration $generation): array => [
+                    'parent_run_id' => $generation->parentRunId,
+                    'artifact_id' => $generation->artifactId,
+                    'handoff_id' => $generation->handoffId,
+                    'bytes' => $generation->bytes,
+                    'sha256' => $generation->sha256,
+                    'media_type' => $generation->mediaType,
                 ],
-            ],
+                $generations,
+            ),
         ];
+        $encoded = json_encode($manifest, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
+        $stream = fopen('php://temp', 'r+b');
+        if (false === $stream) {
+            throw new \RuntimeException('Unable to allocate temporary stream for native handoff manifest.');
+        }
+        try {
+            fwrite($stream, $encoded);
+            rewind($stream);
+
+            return $this->bodyStore->sealJsonStream(
+                owningRootSessionId: $controllerRunId,
+                messageId: $completionId,
+                jsonStream: $stream,
+                mediaType: RetainedToolCompletionBounds::MEDIA_TYPE_JSON,
+                expectedBytes: \strlen($encoded),
+                expectedSha256: hash('sha256', $encoded),
+            );
+        } finally {
+            fclose($stream);
+        }
     }
 
     /**
@@ -182,16 +278,35 @@ final readonly class RetainedToolCompletionEnvelopeFactory
             );
         }
 
-        if (null === $this->bodyStore) {
-            throw new \LogicException('Large retained completion bodies require a sealed body store.');
+        $stream = fopen('php://temp', 'r+b');
+        if (false === $stream) {
+            throw new \RuntimeException('Unable to allocate temporary stream for retained completion body.');
         }
+        try {
+            // Stream the already-serialized JSON rather than re-encoding later.
+            $offset = 0;
+            $length = \strlen($encoded);
+            while ($offset < $length) {
+                $written = fwrite($stream, substr($encoded, $offset, 8192));
+                if (false === $written) {
+                    throw new \RuntimeException('Failed to buffer retained completion body for sealing.');
+                }
+                $offset += $written;
+            }
+            rewind($stream);
 
-        return $this->bodyStore->sealJson(
-            owningRootSessionId: $controllerRunId,
-            messageId: $completionId,
-            json: $encoded,
-            mediaType: RetainedToolCompletionBounds::MEDIA_TYPE_JSON,
-        );
+            return $this->bodyStore->sealJsonStream(
+                owningRootSessionId: $controllerRunId,
+                messageId: $completionId,
+                jsonStream: $stream,
+                mediaType: RetainedToolCompletionBounds::MEDIA_TYPE_JSON,
+                expectedBytes: $bytes,
+                expectedSha256: $sha256,
+            );
+        } finally {
+            fclose($stream);
+            unset($encoded);
+        }
     }
 
     /**
