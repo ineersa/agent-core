@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Support;
 
 use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeCodec;
 use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeFactory;
-use Ineersa\AgentCore\Application\Tool\SourceRunOwningRootSessionResolver;
 use Ineersa\AgentCore\Contract\Tool\OwningRootSessionResolverInterface;
 use Ineersa\AgentCore\Contract\Tool\RetainedNativeHandoffBodyPromoterInterface;
 use Ineersa\AgentCore\Contract\Tool\RetainedOutputCapBodyPromoterInterface;
@@ -29,7 +28,7 @@ final class RetainedCompletionTestFactory
         return new RetainedToolCompletionEnvelopeFactory(
             $bodies,
             $codec,
-            $owningRoots ?? new SourceRunOwningRootSessionResolver(),
+            $owningRoots ?? new IdentityOwningRootSessionResolver(),
             $promoter,
             $nativeHandoffPromoter,
             $logger ?? new NullLogger(),

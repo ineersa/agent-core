@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Application\Tool;
+namespace Ineersa\AgentCore\Tests\Support;
 
 use Ineersa\AgentCore\Contract\Tool\OwningRootSessionResolverInterface;
 
 /**
- * Identity fallback used when no host ownership graph is available.
+ * Tests-only identity owning-root resolver.
  *
- * CodingAgent replaces this with the durable artifact/session parent walk.
+ * Production wiring uses CodingAgent's durable artifact/deferred/session walk.
  */
-final class SourceRunOwningRootSessionResolver implements OwningRootSessionResolverInterface
+final class IdentityOwningRootSessionResolver implements OwningRootSessionResolverInterface
 {
     public function resolveOwningRootSessionId(string $sourceRunId): string
     {

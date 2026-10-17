@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Ineersa\AgentCore\Contract\Tool\OwningRootSessionResolverInterface;
 use Ineersa\AgentCore\Contract\Tool\RetainedNativeHandoffBodyPromoterInterface;
 use Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionBodyStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration;
@@ -17,12 +18,15 @@ use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
  *
  * Does not invent a new artifact layout. Physical handoffs remain under their
  * parent run directories; the sealed copy is the C4 body promised to the root.
+ * Authorization is the owning root resolved from the generation parent, not the
+ * host-authored details alone.
  */
 final readonly class RetainedNativeHandoffBodyPromoter implements RetainedNativeHandoffBodyPromoterInterface
 {
     public function __construct(
         private SessionAgentArtifactPathResolver $paths,
         private RetainedToolCompletionBodyStoreInterface $bodyStore,
+        private OwningRootSessionResolverInterface $owningRoots,
     ) {
     }
 
@@ -31,6 +35,15 @@ final readonly class RetainedNativeHandoffBodyPromoter implements RetainedNative
         string $messageId,
         RetainedNativeHandoffGeneration $generation,
     ): RetainedToolCompletionBodyReference {
+        try {
+            $resolvedRoot = $this->owningRoots->resolveOwningRootSessionId($generation->parentRunId);
+        } catch (\InvalidArgumentException $exception) {
+            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Native handoff parent identity is invalid for root-owned seal.', $exception);
+        }
+        if ($resolvedRoot !== $owningRootSessionId) {
+            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Native handoff is outside the authorized root session for root-owned seal.');
+        }
+
         $paths = AgentArtifactPathsDTO::forArtifactId($generation->artifactId);
         $relative = "{$paths->artifactDir}/handoffs/{$generation->handoffId}.md";
         $absolute = $this->paths->absolutePath($generation->parentRunId, $relative);
