@@ -23,6 +23,10 @@ generations before draining. Ordinary human and foreground successors retain
 their existing semantics without these fields.
 An already-applied provider-stop continuation also carries `appliedCompletion`
 so the owner verifies the finalized recipient before using that intent.
+`CompactRun`, `ExecuteCompactionStep`, and `CompactionStepResult` carry that
+original applied `AdvanceRun` as `completionContinuation`. Compaction preserves
+the reference and immutable fence through transport and canonical repair evidence.
+Automatic compaction requests cannot authorize pre-handler history-tail discard.
 
 **Owner-local processor messages** (no Messenger route):
 

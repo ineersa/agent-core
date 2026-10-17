@@ -50,6 +50,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         private ExtensionCompactionHookDispatcher $extensionHookDispatcher,
         private RunRelationshipReaderInterface $relationshipReader,
         private NormalizerInterface $normalizer,
+        private \Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy $commandMailboxPolicy,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -69,7 +70,17 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
         if (!$message instanceof CompactRun) {
             throw new \InvalidArgumentException('CompactRunHandler can only handle CompactRun messages.');
         }
+        if (null !== $message->completionContinuation
+            && RunStatus::Cancelling !== $state->status
+            && null !== $this->commandMailboxPolicy->completionContinuationIneligibleReason($state, $message->completionContinuation)) {
+            return new HandlerResult();
+        }
 
+        return $this->commandMailboxPolicy->afterCompactionSettlement($this->handleCompactionMessage($message, $state), $message->completionContinuation);
+    }
+
+    private function handleCompactionMessage(CompactRun $message, RunState $state): HandlerResult
+    {
         $runId = $message->runId();
 
         // A compaction request has one bounded authoritative lifecycle. Never
@@ -331,6 +342,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             trigger: $message->trigger,
             continueAfterCompaction: $message->continueAfterCompaction,
             hookMetadata: [] !== $sanitisedHookMetadata ? $sanitisedHookMetadata : null,
+            completionContinuation: $message->completionContinuation,
         );
         $startedEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [[
             'type' => RunEventTypeEnum::ContextCompactionStarted->value,

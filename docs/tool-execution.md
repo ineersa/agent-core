@@ -118,6 +118,10 @@ Pending mailbox iteration captures the durable enqueue cutoff before returning a
 lazy FIFO iterator. The configured Doctrine store reads scalar keyset pages of at
 most 64 rows and decodes commands only as consumed. Stopping a boundary drain
 leaves later obligations pending; new enqueues wait for the next cutoff.
+Internal completion obligations do not consume external-command admission capacity.
+The external cap still counts every pending human or extension command. A boundary
+that exhausts its completion budget skips further internal rows without consuming
+them, so later human controls remain visible in the same snapshot.
 
 The consumer freezes runtime provenance and escaped external data in a custom
 `tool_completion` message plus `ModelNotificationDTO`. Small validated bodies fit
@@ -146,6 +150,20 @@ application or an explicit queued human continuation supplies that intent.
 When a provider-stop boundary already applied the completion, its successor
 carries the accepted reference and rechecks both the finalized recipient
 disposition and its original fence. Application does not renew wake permission.
+Pre-LLM compaction carries this applied reference and the original automatic
+continuation through its request, canonical worker evidence, serialized worker
+result, and settlement successor. Automatic compaction requests also bypass
+pre-handler history-tail discard and validate the original fence before preparation.
+Success, model failure, empty or ineffective summaries, structural skips, and hook
+cancellation or replacement all preserve that authority rather than issuing a
+fresh unscoped advance. Cancellation still settles an active compaction without
+continuing the run.
+
+Maintenance compaction settlement checks pending completion references without
+opening bodies. An eligible pending delivery schedules the same coalesced idle-root
+advance used at receipt admission. Arrivals during maintenance therefore do not
+need another receipt or human command. Stale or cancelled deliveries do not wake
+the run, and settlement never recaptures their fences.
 Bodies larger than 8 KiB still arrive in full when their encoded presentation
 fits the remaining boundary budget.
 

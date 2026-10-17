@@ -440,6 +440,347 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
         $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
     }
 
+    #[\PHPUnit\Framework\Attributes\DataProvider('compactionSettlements')]
+    public function testAutomaticCompletionCompactionPreservesIntentAcrossEverySettlement(string $outcome): void
+    {
+        $container = self::getContainer();
+        $this->resetTransports();
+        [$runId, $source, $reference] = ToolCompletionReceiptFixture::create($container);
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $source->seq, messages: $this->compactionHistory()));
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $processor = $this->compactionProcessor($outcome);
+        $arrival = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class)[0];
+        $processor->process('completion-compaction', $arrival);
+        $compact = $this->roundTrip($this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\CompactRun::class)[0]);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\CompactRun::class, $compact);
+        $this->assertEquals($reference, $compact->completionContinuation?->appliedCompletion);
+        $this->assertEquals($reference->deliveryFence, $compact->completionContinuation?->completionFence);
+        $processor->process('completion-compaction', $compact);
+        if (!\in_array($outcome, ['skip', 'hook_cancel', 'replacement'], true)) {
+            $step = $this->roundTrip($this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class)[0]);
+            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class, $step);
+            $this->assertEquals($compact->completionContinuation, $step->completionContinuation);
+            $json = $container->get(NormalizerInterface::class)->normalize($step);
+            $repairStep = $container->get(\Symfony\Component\Serializer\Normalizer\DenormalizerInterface::class)->denormalize($json, \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class);
+            $this->assertEquals($step, $repairStep, 'Canonical start evidence also preserves the immutable continuation for repair.');
+            $result = $this->compactionWorkerResult($step, $outcome);
+            $this->assertEquals($step->completionContinuation, $result->completionContinuation);
+            $processor->process('completion-compaction', $result);
+            $beforeRetry = $context->requireLoaded($runId);
+            $processor->process('completion-compaction', $result);
+            $this->assertSame($beforeRetry, $context->requireLoaded($runId));
+        }
+        $advances = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+        $this->assertCount(2, $advances, 'One arrival and exactly one settlement continuation.');
+        $successor = $this->roundTrip($advances[1]);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $successor);
+        $this->assertEquals($reference, $successor->appliedCompletion);
+        $this->assertEquals($arrival->completionFence, $successor->completionFence);
+        $this->assertFalse($successor->completionMailboxDrain);
+        $processor->process('completion-compaction', $successor);
+        $processor->process('completion-compaction', $successor);
+        $this->assertCount(1, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
+    }
+
+    public static function compactionSettlements(): iterable
+    {
+        foreach (['success', 'error', 'throw', 'empty', 'ineffective', 'skip', 'hook_cancel', 'replacement'] as $outcome) {
+            yield $outcome => [$outcome];
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('compactionFenceBoundaries')]
+    public function testSelectedEarlierHistoryRejectsAutomaticCompactionBeforeAnyForwardMutation(string $boundary): void
+    {
+        $container = self::getContainer();
+        $this->resetTransports();
+        [$runId, $source, $reference] = ToolCompletionReceiptFixture::create($container);
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $source->seq, messages: $this->compactionHistory()));
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $processor = $this->compactionProcessor();
+        $processor->process('completion-compaction', $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class)[0]);
+        $queued = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\CompactRun::class)[0];
+        if ('request' !== $boundary) {
+            $processor->process('completion-compaction', $queued);
+            $step = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class)[0];
+            $queued = $this->compactionWorkerResult($step);
+            if ('successor' === $boundary) {
+                $processor->process('completion-compaction', $queued);
+                $queued = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class)[1];
+            }
+        }
+        $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        foreach ([
+            ['run_started', 0, ['payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'First retained prompt']]]]]]],
+            ['turn_advanced', 1, ['turn_no' => 1]],
+            ['turn_advanced', 2, ['turn_no' => 2]],
+            ['agent_command_applied', 2, ['kind' => 'follow_up', 'text' => 'Forward prompt', 'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Forward prompt']]]]],
+            ['turn_advanced', 3, ['turn_no' => 3]],
+        ] as [$type, $turn, $payload]) {
+            $event = \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, new \Ineersa\AgentCore\Domain\Event\RunEvent($runId, 0, $turn, $type, $payload));
+        }
+        $context->loadRecovered($context->requireLoaded($runId)->with(['turnNo' => 3, 'lastSeq' => $event->seq]));
+        $selection = $container->get(\Ineersa\AgentCore\Contract\History\HistorySelectionServiceInterface::class)->selectEntry($runId, 3, 'select-forward-prompt');
+        $before = $selection['rebuiltState'];
+        $this->assertSame(2, $before->turnNo);
+        $history = $container->get(\Ineersa\CodingAgent\Session\SessionRunEventStore::class);
+        $this->assertTrue($history->hasForwardTail($runId, $before->turnNo));
+        $queued = $this->roundTrip($queued);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage::class, $queued);
+        $processor->process('completion-compaction', $queued);
+        $this->assertSame($before, $context->requireLoaded($runId));
+        $this->assertSame($before->lastSeq, $store->latestSequenceFor($runId));
+        $this->assertTrue($history->hasForwardTail($runId, $before->turnNo));
+        $this->assertCount(0, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+    }
+
+    public static function compactionFenceBoundaries(): iterable
+    {
+        foreach (['request', 'result', 'successor'] as $boundary) {
+            yield $boundary => [$boundary];
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('maintenanceSettlements')]
+    public function testReceiptDuringMaintenanceSchedulesOneEligibleContinuationAtSettlement(string $outcome, string $fence): void
+    {
+        $container = self::getContainer();
+        $this->resetTransports();
+        [$runId, $source] = ToolCompletionReceiptFixture::create($container);
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $source->seq, messages: $this->compactionHistory()));
+        $processor = $this->compactionProcessor($outcome, false);
+        $compact = new \Ineersa\AgentCore\Domain\Message\CompactRun($runId, 1, 'maintenance', 1, 'maintenance');
+        $processor->process('maintenance', $compact);
+        $this->assertSame(RunStatus::Compacting, $context->requireLoaded($runId)->status);
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $references = [];
+        for ($i = 0; $i < 2; ++$i) {
+            [, $event, $reference] = ToolCompletionReceiptFixture::create($container, 'arrived during maintenance '.$i, $runId, 'during-'.$i);
+            $context->loadRecovered($context->requireLoaded($runId)->with(['lastSeq' => $event->seq]));
+            $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+            $references[] = $reference;
+        }
+        $this->assertCount(0, $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class));
+        if ('restart' === $fence) {
+            $container->get(\Doctrine\DBAL\Connection::class)->executeStatement('UPDATE hatfield_session SET controller_generation = 1 WHERE id = ?', [$runId]);
+        } elseif ('cancel' === $fence) {
+            $owner->onApplyCommand(new ApplyCommand($runId, 1, 'cancel-maintenance', 1, 'cancel-maintenance', CoreCommandKind::Cancel));
+            $this->assertSame(RunStatus::Cancelling, $context->requireLoaded($runId)->status);
+        }
+        $step = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class)[0];
+        $result = $this->compactionWorkerResult($step, $outcome);
+        $processor->process('maintenance', $result);
+        $processor->process('maintenance', $result);
+        $advances = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+        if ('eligible' !== $fence) {
+            $this->assertCount(0, $advances);
+            $this->assertCount(0, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+            $this->assertSame(2, $container->get(CommandStoreInterface::class)->countPending($runId));
+
+            return;
+        }
+        $this->assertCount(1, $advances);
+        $this->assertEquals($references[0]->deliveryFence, $advances[0]->completionFence);
+        $processor->process('maintenance', $advances[0]);
+        $processor->process('maintenance', $advances[0]);
+        $requests = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class);
+        $this->assertCount(1, $requests);
+        $custom = array_values(array_filter($requests[0]->messages, static fn ($message): bool => 'tool_completion' === $message->role));
+        $this->assertCount(2, $custom);
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
+    }
+
+    public static function maintenanceSettlements(): iterable
+    {
+        foreach (['success', 'error', 'empty', 'ineffective'] as $outcome) {
+            yield $outcome => [$outcome, 'eligible'];
+        }
+        yield 'restart' => ['success', 'restart'];
+        yield 'cancel' => ['success', 'cancel'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('humanControlsBehindCompletions')]
+    public function testOneHundredInternalReceiptsDoNotConsumeHumanAdmissionCapacity(string $kind, bool $stale): void
+    {
+        $container = self::getContainer();
+        $this->resetTransports();
+        $runId = $container->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('internal-quota');
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, $stale ? RunStatus::Completed : RunStatus::WaitingHuman, turnNo: 1, pendingHumanInputRequests: $stale ? [] : [\Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO::modelTurnFromInterruptPayload(['question_id' => 'human-q', 'prompt' => 'Answer?'])]));
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        for ($i = 0; $i < 100; ++$i) {
+            [, $event, $reference] = ToolCompletionReceiptFixture::create($container, 'pending '.$i, $runId, 'pending-'.$i);
+            $context->loadRecovered($context->requireLoaded($runId)->with(['lastSeq' => $event->seq]));
+            $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        }
+        $commands = $container->get(CommandStoreInterface::class);
+        $this->assertSame(100, $commands->countPending($runId));
+        $this->assertSame(0, $commands->countPendingExternal($runId));
+        if ($stale) {
+            $container->get(\Doctrine\DBAL\Connection::class)->executeStatement('UPDATE hatfield_session SET controller_generation = 1 WHERE id = ?', [$runId]);
+        }
+        $owner->onApplyCommand(new ApplyCommand($runId, 1, 'human-control', 1, 'human-control', $kind, ['question_id' => 'human-q', 'answer' => 'yes', 'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Human follow-up remains admissible.']]]]));
+        $state = $context->requireLoaded($runId);
+        $events = iterator_to_array($container->get(EventStoreInterface::class)->rangeFor($runId, 1, $state->lastSeq));
+        $human = array_values(array_filter($events, static fn ($event): bool => 'human-control' === ($event->payload['idempotency_key'] ?? null)));
+        $this->assertCount(1, $human);
+        $this->assertContains($human[0]->type, ['agent_command_applied', 'agent_command_queued']);
+        $this->assertSame(100, $commands->countPending($runId) - $commands->countPendingExternal($runId), 'Admission never discards delivery obligations.');
+        if (CoreCommandKind::FollowUp === $kind) {
+            $advances = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+            $owner->onAdvanceRun($advances[array_key_last($advances)]);
+            $requests = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class);
+            $this->assertCount(1, $requests, 'A bounded internal prefix cannot hide an explicit follow-up.');
+            $this->assertStringContainsString('Human follow-up remains admissible.', implode(' ', array_map(static fn ($message): string => $message->content[0]['text'] ?? '', $requests[0]->messages)));
+        }
+    }
+
+    public static function humanControlsBehindCompletions(): iterable
+    {
+        yield 'answer during waiting human' => [CoreCommandKind::HumanResponse, false];
+        yield 'follow-up during waiting human' => [CoreCommandKind::FollowUp, false];
+        yield 'compact during waiting human' => [CoreCommandKind::Compact, false];
+        yield 'stale completed root follow-up' => [CoreCommandKind::FollowUp, true];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('automaticCompactionInvalidations')]
+    public function testOriginalCompletionFenceCannotBeRenewedAcrossCompaction(string $boundary, string $invalidation): void
+    {
+        $container = self::getContainer();
+        $this->resetTransports();
+        [$runId, $source, $reference] = ToolCompletionReceiptFixture::create($container);
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $source->seq, messages: $this->compactionHistory()));
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $processor = $this->compactionProcessor();
+        $processor->process('fenced-compaction', $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class)[0]);
+        $queued = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\CompactRun::class)[0];
+        if ('request' !== $boundary) {
+            $processor->process('fenced-compaction', $queued);
+            $queued = $this->compactionWorkerResult($this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class)[0]);
+            if ('successor' === $boundary) {
+                $processor->process('fenced-compaction', $queued);
+                $queued = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class)[1];
+            }
+        }
+        if ('restart' === $invalidation) {
+            $container->get(\Doctrine\DBAL\Connection::class)->executeStatement('UPDATE hatfield_session SET controller_generation = 1 WHERE id = ?', [$runId]);
+        } else {
+            $owner->onApplyCommand(new ApplyCommand($runId, 1, 'cancel-auto', 1, 'cancel-auto', CoreCommandKind::Cancel));
+        }
+        $before = $context->requireLoaded($runId);
+        $processor->process('fenced-compaction', $queued);
+        $after = $context->requireLoaded($runId);
+        if ('cancel' === $invalidation && 'result' === $boundary) {
+            $this->assertSame(RunStatus::Cancelled, $after->status, 'A cancelled active compaction still settles its operation.');
+            $this->assertNull($after->currentOperation);
+        } else {
+            $this->assertSame($before, $after);
+        }
+        $this->assertCount('successor' === $boundary ? 2 : 1, $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class));
+        $this->assertCount(0, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+        $recipient = $container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($runId, $reference->messageId);
+        $this->assertEquals($reference->deliveryFence, $recipient?->reference->deliveryFence);
+    }
+
+    public static function automaticCompactionInvalidations(): iterable
+    {
+        foreach (['request', 'result', 'successor'] as $boundary) {
+            foreach (['cancel', 'restart'] as $fence) {
+                yield $boundary.' '.$fence => [$boundary, $fence];
+            }
+        }
+    }
+
+    /** @return list<\Ineersa\AgentCore\Domain\Message\AgentMessage> */
+    private function compactionHistory(): array
+    {
+        $messages = [];
+        for ($i = 0; $i < 20; ++$i) {
+            $messages[] = new \Ineersa\AgentCore\Domain\Message\AgentMessage('user', [['type' => 'text', 'text' => $i.str_repeat(' old question', 60)]]);
+            $messages[] = new \Ineersa\AgentCore\Domain\Message\AgentMessage('assistant', [['type' => 'text', 'text' => $i.str_repeat(' old answer', 60)]]);
+        }
+
+        return $messages;
+    }
+
+    private function roundTrip(object $message): object
+    {
+        $serializer = self::getContainer()->get('messenger.transport.native_php_serializer');
+
+        return $serializer->decode($serializer->encode(new \Symfony\Component\Messenger\Envelope($message)))->getMessage();
+    }
+
+    private function compactionWorkerResult(\Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep $step, string $outcome = 'success'): \Ineersa\AgentCore\Domain\Message\CompactionStepResult
+    {
+        $platform = $this->createMock(\Ineersa\AgentCore\Contract\Model\PlatformInterface::class);
+        if ('throw' === $outcome) {
+            $platform->expects($this->once())->method('invoke')->willThrowException(new \RuntimeException('deterministic compaction failure'));
+        } else {
+            $text = match ($outcome) {
+                'empty' => ' ', 'ineffective' => str_repeat('larger summary ', 12000), default => 'A compact deterministic summary.',
+            };
+            $platform->expects($this->once())->method('invoke')->willReturn(new \Ineersa\AgentCore\Domain\Model\PlatformInvocationResult(new \Symfony\AI\Platform\Message\AssistantMessage(new \Symfony\AI\Platform\Message\Content\Text($text)), [], [], 'stop', 'error' === $outcome ? ['type' => 'deterministic', 'message' => 'Compaction failed.'] : null));
+        }
+        $step = $this->roundTrip($step);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class, $step);
+        $worker = new \Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform);
+        $result = $this->roundTrip($worker($step));
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\CompactionStepResult::class, $result);
+
+        return $result;
+    }
+
+    private function compactionProcessor(string $outcome = 'success', bool $preLlm = true): \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor
+    {
+        $container = self::getContainer();
+        $real = $container->get(\Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface::class);
+        $compactor = $container->get(\Ineersa\CodingAgent\Compaction\SessionCompactor::class);
+        $service = $this->createStub(\Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface::class);
+        $service->method('prepare')->willReturnCallback(static function (array $messages) use ($compactor, $outcome) {
+            if ('skip' === $outcome) {
+                return \Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult::failed('too_few_messages');
+            }
+            $prepared = $compactor->prepare($messages, new \Ineersa\CodingAgent\Config\CompactionConfig(keepRecentTokens: 200))->preparation;
+            if (null === $prepared) {
+                throw new \LogicException('Fixture must produce a real compaction partition.');
+            }
+
+            return \Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult::ready($prepared->messagesToSummarize, $prepared->retainedTailMessages, $prepared->tokenEstimateBefore, $prepared->messagesCompacted, $prepared->messagesRetained, $prepared->firstRetainedIndex, $prepared->priorSummaryPresent);
+        });
+        $service->method('buildSummarizationMessages')->willReturnCallback($real->buildSummarizationMessages(...));
+        $service->method('buildCompactedMessages')->willReturnCallback($real->buildCompactedMessages(...));
+        $hooks = [];
+        if (\in_array($outcome, ['hook_cancel', 'replacement'], true)) {
+            $hook = $this->createStub(\Ineersa\CodingAgent\Compaction\BeforeCompactionHookInterface::class);
+            $hook->method('beforeCompaction')->willReturn(new \Ineersa\CodingAgent\Compaction\CompactionHookResultDTO(cancelReason: 'hook_cancel' === $outcome ? 'deterministic cancellation' : null, replacementSummary: 'replacement' === $outcome ? 'Replacement summary.' : null));
+            $hooks[] = $hook;
+        }
+        $dispatcher = new \Ineersa\CodingAgent\Compaction\CompactionHookDispatcher($hooks);
+        $guard = $this->createStub(\Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface::class);
+        $guard->method('shouldCompactBeforeLlmStep')->willReturnOnConsecutiveCalls($preLlm, false);
+
+        return new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
+            $container->get(ActiveRunContextInterface::class),
+            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            $container->get(RunCommit::class),
+            [
+                new \Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler($container->get(CommandMailboxPolicy::class), new EventFactory(), preLlmCompactionGuard: $guard),
+                new \Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler($service, $container->get(\Ineersa\CodingAgent\Config\AppConfig::class), new EventFactory(), $dispatcher, new \Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher($container->get(\Ineersa\CodingAgent\Extension\ExtensionHookRegistry::class), $dispatcher, new \Psr\Log\NullLogger()), $container->get(\Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface::class), $container->get(NormalizerInterface::class), $container->get(CommandMailboxPolicy::class)),
+                $container->get(\Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler::class),
+            ],
+            $container->get(CommandStoreInterface::class),
+            $container->get(\Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface::class),
+        );
+    }
+
     private function resetTransports(): void
     {
         foreach (['run_control', 'llm'] as $name) {

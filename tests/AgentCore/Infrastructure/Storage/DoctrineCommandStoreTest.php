@@ -17,6 +17,31 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 
 final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
 {
+    public function testExternalAdmissionCapCountsOnlyExternalCommandsWithoutDeletingInternalObligations(): void
+    {
+        $container = self::getContainer();
+        $store = $container->get(CommandStoreInterface::class);
+        for ($i = 0; $i < 100; ++$i) {
+            $store->enqueue(new PendingCommand('quota', \Ineersa\AgentCore\Domain\Command\CoreCommandKind::ToolCompletion, 'internal-'.$i));
+        }
+        for ($i = 0; $i < 99; ++$i) {
+            $store->enqueue(new PendingCommand('quota', 'follow_up', 'external-'.$i));
+        }
+        $this->assertSame(199, $store->countPending('quota'));
+        $this->assertSame(99, $store->countPendingExternal('quota'));
+        $handler = $container->get(\Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler::class);
+        $state = new \Ineersa\AgentCore\Domain\Run\RunState('quota', \Ineersa\AgentCore\Domain\Run\RunStatus::WaitingHuman);
+        $command = new \Ineersa\AgentCore\Domain\Message\ApplyCommand('quota', 1, 'control', 1, 'control', 'follow_up', ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'One remaining external slot.']]]]);
+        $accepted = $handler->handle($command, $state);
+        $this->assertSame('agent_command_queued', $accepted->events[0]->type);
+        $store->enqueue(new PendingCommand('quota', 'follow_up', 'external-99'));
+        $rejected = $handler->handle($command, $state);
+        $this->assertSame('agent_command_rejected', $rejected->events[0]->type);
+        $this->assertStringContainsString('cap (100)', $rejected->events[0]->payload['reason']);
+        $this->assertSame(100, $store->countPendingExternal('quota'));
+        $this->assertSame(200, $store->countPending('quota'));
+    }
+
     public function testConfiguredStoreSharesFifoPendingCommandsAndDeletesCompletedRows(): void
     {
         $store = self::getContainer()->get(CommandStoreInterface::class);

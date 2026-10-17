@@ -30,4 +30,16 @@ readonly class CommandApplicationResult
         public int $completionBytes = 0,
     ) {
     }
+
+    public function appliedCompletion(): ?\Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryReferenceDTO
+    {
+        foreach ($this->postCommitActions as $action) {
+            if ($action instanceof \Ineersa\AgentCore\Domain\Coordination\RecordToolCompletionDeliveryDTO
+                && \Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryDispositionEnum::Applied === $action->delivery->disposition) {
+                return $action->delivery->reference;
+            }
+        }
+
+        return null;
+    }
 }

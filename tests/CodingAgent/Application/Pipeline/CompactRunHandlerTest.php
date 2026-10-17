@@ -96,7 +96,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(isChild: true),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $result = $handler->handle(
             new CompactRun(
@@ -128,7 +128,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
         $result = $handler->handle(new CompactRun('run-1', 5, 'step-1', 1, 'key-1', 'auto', continueAfterCompaction: true), $state);
         $this->assertNull($result->nextState);
         $this->assertSame([], $result->events);
@@ -171,7 +171,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(runId: 'run-pre-llm-compact'),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
         $started = $handler->handle($request, $advanceResult->nextState);
 
         $this->assertCount(1, $started->effects);
@@ -217,7 +217,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$hook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
         $request = new CompactRun('run-1', 5, 'step-1', 1, 'key-1', 'manual');
 
         $first = $handler->handle($request, $state);
@@ -283,7 +283,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $result = $handler->handle(
             new CompactRun(
@@ -372,7 +372,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $result = $handler->handle(
             new CompactRun(
@@ -416,7 +416,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $result = $handler->handle(
             new CompactRun(
@@ -478,7 +478,7 @@ final class CompactRunHandlerTest extends TestCase
                 $this->extensionHooks([]),
                 $this->metadataReader(),
                 AttributeSerializerValidatorTestFactory::create()[0],
-            );
+                commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
             $result = $handler->handle(
                 new CompactRun(
@@ -540,7 +540,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$cancelHook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $result = $handler->handle(
             new CompactRun(
@@ -623,7 +623,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$replaceHook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $result = $handler->handle(
             new CompactRun(
@@ -935,7 +935,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$hook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $handler->handle(
             new CompactRun(
@@ -990,7 +990,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$hook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $result = $handler->handle(
             new CompactRun(
@@ -1061,7 +1061,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$cancelHook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $result = $handler->handle(
             new CompactRun(
@@ -1124,7 +1124,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $result = $handler->handle(
             new CompactRun(
@@ -1171,7 +1171,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $result = $handler->handle(
             new CompactRun(
@@ -1249,7 +1249,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([$cancelHook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $result = $handler->handle(
             new CompactRun(
@@ -1354,7 +1354,7 @@ final class CompactRunHandlerTest extends TestCase
             $this->extensionHooks([], [$publicHook]),
             $this->metadataReader(),
             AttributeSerializerValidatorTestFactory::create()[0],
-        );
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])));
 
         $result = $handler->handle(
             new CompactRun(

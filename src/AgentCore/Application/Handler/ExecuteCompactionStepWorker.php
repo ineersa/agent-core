@@ -162,6 +162,7 @@ final readonly class ExecuteCompactionStepWorker
                 model: $model,
                 modelOptions: $message->modelOptions,
                 hookMetadata: $message->hookMetadata,
+                completionContinuation: $message->completionContinuation,
             );
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
@@ -203,6 +204,7 @@ final readonly class ExecuteCompactionStepWorker
                 model: $model,
                 modelOptions: $message->modelOptions,
                 hookMetadata: $message->hookMetadata,
+                completionContinuation: $message->completionContinuation,
             );
         } finally {
             RunLogContext::leave();

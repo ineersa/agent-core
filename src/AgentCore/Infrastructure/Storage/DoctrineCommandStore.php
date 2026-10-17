@@ -71,6 +71,18 @@ final readonly class DoctrineCommandStore implements CommandStoreInterface
         return (int) $this->records($runId)->select('COUNT(c.id)')->getQuery()->getSingleScalarResult();
     }
 
+    public function countPendingExternal(string $runId): int
+    {
+        $count = 0;
+        foreach ($this->pending($runId) as $command) {
+            if (\Ineersa\AgentCore\Domain\Command\CoreCommandKind::ToolCompletion !== $command->kind) {
+                ++$count;
+            }
+        }
+
+        return $count;
+    }
+
     public function markApplied(string $runId, string $idempotencyKey): void
     {
         $this->removePending($runId, $idempotencyKey);

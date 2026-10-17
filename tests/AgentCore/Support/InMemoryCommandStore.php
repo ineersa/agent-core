@@ -42,6 +42,18 @@ final class InMemoryCommandStore implements CommandStoreInterface
         return \count($this->commandsByRun[$runId] ?? []);
     }
 
+    public function countPendingExternal(string $runId): int
+    {
+        $count = 0;
+        foreach ($this->pending($runId) as $command) {
+            if (\Ineersa\AgentCore\Domain\Command\CoreCommandKind::ToolCompletion !== $command->kind) {
+                ++$count;
+            }
+        }
+
+        return $count;
+    }
+
     public function markApplied(string $runId, string $idempotencyKey): void
     {
         unset($this->commandsByRun[$runId][$idempotencyKey]);

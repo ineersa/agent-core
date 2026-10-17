@@ -46,7 +46,7 @@ final class CompactionStepResultHandlerTest extends TestCase
 
         $fakeService = $this->stubCompactionService($compactedMessages);
 
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -92,7 +92,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $state = $this->createRunState($originalMessages, turnNo: 5, activeStepId: 'step-1');
 
         $fakeService = $this->createNoOpStub();
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -136,7 +136,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $state = $this->createRunState($originalMessages, turnNo: 5, activeStepId: 'step-1');
 
         $fakeService = $this->createNoOpStub();
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -181,7 +181,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $state = $this->createRunState($originalMessages, turnNo: 5, activeStepId: 'step-5');
 
         $fakeService = $this->createNoOpStub();
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -218,7 +218,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $state = $this->createRunState($originalMessages, turnNo: 10, activeStepId: 'step-5');
 
         $fakeService = $this->createNoOpStub();
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -270,7 +270,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $compactedMessages = [$summaryMsg, ...$retained];
 
         $fakeService = $this->stubCompactionService($compactedMessages);
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -333,7 +333,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $compactedMessages = [$summaryMsg, ...$retained];
 
         $fakeService = $this->stubCompactionService($compactedMessages);
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -393,7 +393,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $compactedMessages = [$summaryMsg, ...$retained];
 
         $fakeService = $this->stubCompactionService($compactedMessages);
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -446,7 +446,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $compactedMessages = [$summaryMsg, ...$retained];
 
         $fakeService = $this->stubCompactionService($compactedMessages);
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -495,7 +495,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $state = $this->createRunState($originalMessages, turnNo: 5, activeStepId: 'step-1');
 
         $fakeService = $this->createNoOpStub();
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -550,7 +550,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $compactedMessages = [$summaryMsg, ...$originalMessages];
 
         $fakeService = $this->stubCompactionService($compactedMessages);
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -601,7 +601,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $compactedMessages = [$summaryMsg, ...$originalMessages];
 
         $fakeService = $this->stubCompactionService($compactedMessages);
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -651,7 +651,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $compactedMessages = [$summaryMsg, ...$originalMessages];
 
         $fakeService = $this->stubCompactionService($compactedMessages);
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -697,7 +697,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             $this->assistantMsg('a'),
         ], activeStepId: 'step-1');
 
-        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
+        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -742,7 +742,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             $this->assistantMsg('a'),
         ], activeStepId: 'step-1');
 
-        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
+        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -797,7 +797,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
             model: 'test-model');
 
-        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
+        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -858,7 +858,7 @@ final class CompactionStepResultHandlerTest extends TestCase
     {
         $state = $this->createRunState([$this->userMsg('hi')], turnNo: 5, activeStepId: 'step-1');
 
-        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
+        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -910,7 +910,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             messages: [$this->userMsg('q')],
             model: 'test-model');
 
-        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
+        $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -995,7 +995,7 @@ final class CompactionStepResultHandlerTest extends TestCase
         $compactedMessages = [$summaryMsg, ...$retained];
 
         $fakeService = $this->stubCompactionService($compactedMessages);
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -1089,7 +1089,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             tokenEstimateAfter: 100,
         );
 
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -1171,7 +1171,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             tokenEstimateAfter: 51000,
         );
 
-        $handler = new CompactionStepResultHandler($fakeService, new EventFactory());
+        $handler = new CompactionStepResultHandler($fakeService, new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
 
         $result = $handler->handle(
             new CompactionStepResult(
@@ -1224,7 +1224,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             currentOperation: new CurrentOperationDTO(5, 'step-1', 1, 'key-1'),
         );
         $summary = $this->userMsg('summary');
-        $handler = new CompactionStepResultHandler($this->stubCompactionService([$summary]), new EventFactory());
+        $handler = new CompactionStepResultHandler($this->stubCompactionService([$summary]), new EventFactory(), commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), new \Ineersa\AgentCore\Application\Handler\CommandRouter([])));
         $matching = new CompactionStepResult(
             runId: 'run-1', turnNo: 5, stepId: 'step-1', attempt: 1, idempotencyKey: 'key-1',
             summaryText: 'summary', error: null, retainedTailMessages: [], messagesCompacted: 1,

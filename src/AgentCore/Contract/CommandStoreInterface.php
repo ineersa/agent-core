@@ -27,6 +27,9 @@ interface CommandStoreInterface
 
     public function countPending(string $runId): int;
 
+    /** Internal delivery obligations do not consume human-command admission capacity. */
+    public function countPendingExternal(string $runId): int;
+
     public function markApplied(string $runId, string $idempotencyKey): void;
 
     public function markRejected(string $runId, string $idempotencyKey, string $reason): void;

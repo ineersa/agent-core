@@ -85,7 +85,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             return $this->rejectCommand($state, $message, $reason);
         }
 
-        if (CoreCommandKind::Cancel !== $message->kind && $this->commandStore->countPending($runId) >= $this->maxPendingCommands) {
+        if (CoreCommandKind::Cancel !== $message->kind && $this->commandStore->countPendingExternal($runId) >= $this->maxPendingCommands) {
             return $this->rejectCommand(
                 $state,
                 $message,

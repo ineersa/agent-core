@@ -54,7 +54,11 @@ final readonly class CompactionStepResult extends AbstractAgentBusMessage
         public string $model = '',
         public array $modelOptions = [],
         public ?array $hookMetadata = null,
+        public ?AdvanceRun $completionContinuation = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
+        if (null !== $completionContinuation && ($completionContinuation->runId() !== $runId || null === $completionContinuation->completionFence || null === $completionContinuation->appliedCompletion)) {
+            throw new \InvalidArgumentException('Compaction continuation requires its applied completion and original fence.');
+        }
     }
 }

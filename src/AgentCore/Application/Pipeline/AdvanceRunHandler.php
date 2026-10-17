@@ -297,6 +297,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 // This request holds the next LLM turn but does not advance the
                 // state turn until that LLM execution is actually scheduled.
                 $compactRequestTurnNo = $preparedState->turnNo;
+                $appliedCompletion = $message->appliedCompletion ?? $mailboxResult->appliedCompletion();
                 $compactEffect = new CompactRun(
                     runId: $runId,
                     turnNo: $compactRequestTurnNo,
@@ -305,6 +306,15 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     idempotencyKey: hash('sha256', \sprintf('%s|compact|%d|%s', $runId, $compactRequestTurnNo, $compactStepId)),
                     trigger: 'auto',
                     continueAfterCompaction: true,
+                    completionContinuation: null === $message->completionFence || null === $appliedCompletion ? null : new AdvanceRun(
+                        runId: $runId,
+                        turnNo: $message->turnNo(),
+                        stepId: $message->stepId(),
+                        attempt: $message->attempt(),
+                        idempotencyKey: $message->idempotencyKey(),
+                        completionFence: $message->completionFence,
+                        appliedCompletion: $appliedCompletion,
+                    ),
                 );
 
                 // Persist the request separately from actual compaction start:

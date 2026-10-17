@@ -37,7 +37,11 @@ final readonly class CompactRun extends AbstractAgentBusMessage implements RunCo
         public string $trigger = 'manual',
         public bool $continueAfterCompaction = false,
         public ?string $customInstructions = null,
+        public ?AdvanceRun $completionContinuation = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
+        if (null !== $completionContinuation && ($completionContinuation->runId() !== $runId || null === $completionContinuation->completionFence || null === $completionContinuation->appliedCompletion)) {
+            throw new \InvalidArgumentException('Compaction continuation requires its applied completion and original fence.');
+        }
     }
 }

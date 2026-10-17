@@ -47,6 +47,11 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 `AdvanceRunHandler` evaluates automatic compaction before the next LLM request, including after a completed tool batch. Unresolved tools and human-input waits stop advancement before this boundary. Parent input usage at or above the independent compaction threshold holds the request with `continueAfterCompaction=true`; result handling resumes it on compacted history. Children never compact. The after-turn hook retains maintenance scheduling and does not race post-tool advancement.
 
 Continuation compaction revalidates cancellation when the owner consumes `CompactRun`. Hook-provided `context_compacted` events persist continuation intent so cold replay matches the live lifecycle. Explicit terminal-session maintenance remains available without continuation.
+Completion-driven compaction carries the original applied reference and fence
+through `completionContinuation`. Both compaction handlers use
+`CommandMailboxPolicy::afterCompactionSettlement()` for all settlement paths.
+It preserves fenced continuation and reuses the idle-root advance for eligible
+receipts admitted during maintenance. Cancellation does not schedule a successor.
 
 ## Subagent progress ownership
 
@@ -183,6 +188,9 @@ Mailbox preparation does not enqueue, consume, or reject commands. Prepared even
 `ToolBatchCollector` prepares registration, collection, suspension, answers, redrive, and background acknowledgment on a private clone. `FinalizeToolBatchDTO` captures original results, acknowledgments, or answers plus queue and membership decisions. One active SQL batch owns calls, collected sibling results, FIFO queue, in-flight membership, and human waits. Approval revisions retain their exact current call identities. Finalized cleanup retains unresolved human and deferred work.
 
 `RunMessageProcessor` checks pending `ApplyCommand` IDs before history discard or handler preparation. The pending mailbox stores no completed identities or source-acceptance markers. Application or rejection deletes the whole command row. Submitting a completed ID again is allowed.
+External admission uses `countPendingExternal()` without counting internal
+completion obligations. Completion budget exhaustion leaves internal rows pending
+and continues scanning for human controls rather than hiding them behind the prefix.
 
 Attach completes cancellation and context refresh before follow-up handling. Maintenance commands use no separate accepted-source identity history. Selection and repair still commit through the owner and shared finalizer.
 

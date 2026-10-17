@@ -34,6 +34,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
     public function __construct(
         private CompactionServiceInterface $compactionService,
         private EventFactory $eventFactory,
+        private \Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy $commandMailboxPolicy,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -53,7 +54,17 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
         if (!$message instanceof CompactionStepResult) {
             throw new \InvalidArgumentException('CompactionStepResultHandler can only handle CompactionStepResult messages.');
         }
+        if (null !== $message->completionContinuation
+            && RunStatus::Cancelling !== $state->status
+            && null !== $this->commandMailboxPolicy->completionContinuationIneligibleReason($state, $message->completionContinuation)) {
+            return new HandlerResult();
+        }
 
+        return $this->commandMailboxPolicy->afterCompactionSettlement($this->handleCompactionMessage($message, $state), $message->completionContinuation);
+    }
+
+    private function handleCompactionMessage(CompactionStepResult $message, RunState $state): HandlerResult
+    {
         $runId = $message->runId();
 
         // Exact active-operation validation makes completed, stale, and

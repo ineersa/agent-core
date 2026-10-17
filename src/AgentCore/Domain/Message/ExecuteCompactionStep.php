@@ -48,7 +48,11 @@ final readonly class ExecuteCompactionStep extends AbstractAgentBusMessage
         public string $trigger,
         public bool $continueAfterCompaction = false,
         public ?array $hookMetadata = null,
+        public ?AdvanceRun $completionContinuation = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
+        if (null !== $completionContinuation && ($completionContinuation->runId() !== $runId || null === $completionContinuation->completionFence || null === $completionContinuation->appliedCompletion)) {
+            throw new \InvalidArgumentException('Compaction continuation requires its applied completion and original fence.');
+        }
     }
 }

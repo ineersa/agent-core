@@ -38,6 +38,43 @@ final readonly class CommandMailboxPolicy
             : $this->completionEligibility->ineligibleReason($state, $message->completionFence);
     }
 
+    /** Preserve automatic intent on every compaction settlement, including skips and failures. */
+    public function afterCompactionSettlement(HandlerResult $result, ?\Ineersa\AgentCore\Domain\Message\AdvanceRun $continuation): HandlerResult
+    {
+        $state = $result->nextState;
+        if (null === $state || [] === $result->events || null !== $state->currentOperation
+            || \Ineersa\AgentCore\Domain\Run\RunStatus::Compacting === $state->status) {
+            return $result;
+        }
+        $effects = $result->effects;
+        $actions = $result->postCommitActions;
+        if (null !== $continuation) {
+            // A held completion turn is not a fresh human continuation. Never
+            // replace its cancellation/history/controller authority at settlement.
+            $effects = array_values(array_filter($effects, static fn (object $effect): bool => !$effect instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun));
+            if (null === $this->completionContinuationIneligibleReason($state, $continuation)) {
+                $actions[] = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::forCompletion($state, $continuation->completionFence, appliedCompletion: $continuation->appliedCompletion);
+            }
+        } elseif (\Ineersa\AgentCore\Domain\Run\RunStatus::Completed === $state->status
+            && null === $state->parentRunId
+            && [] === $state->pendingHumanInputRequests && !$state->isStreaming) {
+            // Receipts admitted during maintenance could not schedule an idle
+            // successor. Reuse that same coalesced path once maintenance settles.
+            foreach ($this->commandStore->pending($state->runId) as $command) {
+                $reference = $command->payload['reference'] ?? null;
+                if (CoreCommandKind::ToolCompletion === $command->kind
+                    && $reference instanceof \Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryReferenceDTO
+                    && null !== $reference->deliveryFence
+                    && null === $this->completionEligibility->ineligibleReason($state, $reference->deliveryFence)) {
+                    $actions[] = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::forCompletion($state, $reference->deliveryFence);
+                    break;
+                }
+            }
+        }
+
+        return new HandlerResult($state, $result->events, $effects, $result->postCommitEffects, $actions);
+    }
+
     public function applyPendingTurnStartCommands(RunState $state): CommandApplicationResult
     {
         $result = $this->applyPendingCommands($state, CommandApplicationBoundary::TurnStart);
@@ -86,14 +123,18 @@ final readonly class CommandMailboxPolicy
         $actions = [];
         $completionBytes = 0;
         $completionDecisions = 0;
+        $completionDrainScheduled = false;
 
         foreach ($pendingCommands as $pendingCommand) {
             if (CoreCommandKind::ToolCompletion === $pendingCommand->kind) {
                 if (++$completionDecisions > 64 || 16384 - $completionBytes < \Ineersa\AgentCore\Application\Tool\ToolCompletionNotificationRenderer::MIN_BYTES + \Ineersa\AgentCore\Application\Tool\ToolCompletionMailboxConsumer::PROVIDER_PREFIX_BYTES) {
-                    if (0 === $completionBytes && [] !== $eventSpecs && null === $state->parentRunId) {
+                    if (!$completionDrainScheduled && 0 === $completionBytes && [] !== $eventSpecs && null === $state->parentRunId) {
                         $actions[] = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::forCompletion($state, $this->completionEligibility->capture($state->runId), mailboxDrain: true);
+                        $completionDrainScheduled = true;
                     }
-                    break;
+                    // Presentation/decision bounds do not let internal rows
+                    // hide later human controls. Unvisited deliveries stay pending.
+                    continue;
                 }
                 $decision = $this->toolCompletions->apply($pendingCommand, $state->with(['messages' => $messages]), 16384 - $completionBytes);
                 $messages = $decision->state->messages;
