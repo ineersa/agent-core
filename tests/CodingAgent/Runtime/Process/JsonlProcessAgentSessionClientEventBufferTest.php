@@ -353,12 +353,12 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $this->assertSame([], iterator_to_array($client->events($parentRunId)));
     }
 
-    public function testGeneratedRunIdFromRunStartedSetsPrimaryForChildFirstPollRetention(): void
+    public function testAcknowledgedRunIdSetsPrimaryForChildFirstPollRetention(): void
     {
         $generatedRunId = 'generated-parent-'.bin2hex(random_bytes(4));
         $childRunId = 'child-agent-run';
         $client = $this->createStartBatchFakeControllerClient($generatedRunId);
-        $handle = $client->start(new StartRunRequest(prompt: 'hello', runId: ''));
+        $handle = $client->start(new StartRunRequest(prompt: 'hello', runId: $generatedRunId));
 
         $this->assertSame($generatedRunId, $handle->runId);
 
@@ -747,7 +747,7 @@ PHP);
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: $logger ?? new TestLogger(),
-            sessionsBasePath: sys_get_temp_dir().'/hatfield-sessions',
+            sessionStore: \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(\Doctrine\ORM\EntityManagerInterface::class), $this->tmpDir),
         );
     }
 

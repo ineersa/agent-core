@@ -12,14 +12,13 @@ use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
-use PHPUnit\Framework\TestCase;
 
 /**
  * Controller subprocess env must publish session-owned sqlite-queue broker paths and DSNs.
  *
  * @covers \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient
  */
-final class JsonlProcessAgentSessionClientTransportDsnTest extends TestCase
+final class JsonlProcessAgentSessionClientTransportDsnTest extends \Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase
 {
     private string $tmpDir;
 
@@ -27,6 +26,7 @@ final class JsonlProcessAgentSessionClientTransportDsnTest extends TestCase
 
     protected function setUp(): void
     {
+        parent::setUp();
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('jsonl-dsn');
         $this->fakeScript = $this->tmpDir.'/controller.php';
 
@@ -56,6 +56,7 @@ $keys = [
     'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN',
     'HATFIELD_SQLITE_QUEUE_DATABASE',
     'HATFIELD_SQLITE_QUEUE_ENDPOINT',
+    'HATFIELD_SESSION_ID',
     'HATFIELD_TEST_DATABASE_PATH',
 ];
 $out = [];
@@ -67,7 +68,9 @@ file_put_contents($dumpFile, json_encode($out));
 fwrite(STDOUT, json_encode(['type' => 'runtime.ready', 'runId' => '', 'seq' => 0, 'payload' => ['version' => '1.0']]) . "\n");
 fflush(STDOUT);
 $line = fgets(STDIN);
-fwrite(STDOUT, json_encode(['type' => 'run.started', 'runId' => 'test-run', 'seq' => 1, 'payload' => ['status' => 'running']]) . "\n");
+$command = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+file_put_contents($dumpFile.'.command', json_encode($command));
+fwrite(STDOUT, json_encode(['type' => 'run.started', 'runId' => $command['runId'], 'seq' => 1, 'payload' => ['status' => 'running']]) . "\n");
 exit(0);
 PHP);
         chmod($this->fakeScript, 0o755);
@@ -76,6 +79,7 @@ PHP);
     protected function tearDown(): void
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        parent::tearDown();
     }
 
     public function testSpawnedControllerUsesSessionSqliteQueueTransportDsns(): void
@@ -109,7 +113,7 @@ PHP);
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
-            sessionsBasePath: sys_get_temp_dir().'/hatfield-sessions',
+            sessionStore: self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class),
         );
 
         $client->start(new StartRunRequest(
@@ -150,6 +154,61 @@ PHP);
         $this->assertStringEndsWith('/session-42/messenger-queue.sqlite', $env['HATFIELD_SQLITE_QUEUE_DATABASE']);
         $this->assertMatchesRegularExpression('#^/tmp/hq-[0-9a-f]{16}/q\\.sock$#', $env['HATFIELD_SQLITE_QUEUE_ENDPOINT']);
         $this->assertStringNotContainsString('doctrine://', implode(' ', $env));
+    }
+
+    // DAMA rolls back at the next in-process TestStarted event. Keep this DB
+    // writer isolated so a following separate-process TUI test cannot inherit
+    // the parent's still-open write transaction and block on the shared QA DB.
+    #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
+    #[\PHPUnit\Framework\Attributes\PreserveGlobalState(false)]
+    public function testAnonymousStartsAllocateDistinctCanonicalQueuesAndRecoverTheSameIdentity(): void
+    {
+        $store = self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class);
+        $firstDump = $this->tmpDir.'/anonymous-first.json';
+        $secondDump = $this->tmpDir.'/anonymous-second.json';
+        $first = $this->createClientWithEnvDump($firstDump);
+        $second = $this->createClientWithEnvDump($secondDump);
+        try {
+            $one = $first->start(new StartRunRequest(prompt: 'first anonymous prompt'));
+            $two = $second->start(new StartRunRequest(prompt: 'second anonymous prompt'));
+            $this->assertMatchesRegularExpression('/^[0-9]+$/', $one->runId);
+            $this->assertNotSame($one->runId, $two->runId);
+            $this->assertSame('first anonymous prompt', $store->findSession($one->runId)?->prompt);
+            $this->assertSame('second anonymous prompt', $store->findSession($two->runId)?->prompt);
+            $env = $this->waitForEnvDump($firstDump);
+            $otherEnv = $this->waitForEnvDump($secondDump);
+            $expected = $store->resolveSessionsBasePath().'/'.$one->runId.'/messenger-queue.sqlite';
+            $this->assertSame($expected, $env['HATFIELD_SQLITE_QUEUE_DATABASE']);
+            $this->assertNotSame($expected, $otherEnv['HATFIELD_SQLITE_QUEUE_DATABASE']);
+            $this->assertSame($one->runId, $env['HATFIELD_SESSION_ID']);
+            $this->assertFileExists($store->resolveSessionsBasePath().'/'.$one->runId.'/events.jsonl');
+            $command = json_decode((string) file_get_contents($firstDump.'.command'), true, 512, \JSON_THROW_ON_ERROR);
+            $this->assertSame($one->runId, $command['runId']);
+
+            // The fixture exits after acknowledging start. Wait for actual death,
+            // then exercise transparent recovery through the public event poll.
+            $running = new \ReflectionMethod($first, 'isProcessRunning');
+            $deadline = microtime(true) + 2.0;
+            while (true === $running->invoke($first) && microtime(true) < $deadline) {
+                usleep(10_000);
+            }
+            $this->assertFalse($running->invoke($first));
+            unlink($firstDump.'.command');
+            iterator_to_array($first->events($one->runId));
+            while (!is_file($firstDump.'.command') && microtime(true) < $deadline) {
+                usleep(10_000);
+            }
+            $this->assertFileExists($firstDump.'.command');
+            $resume = json_decode((string) file_get_contents($firstDump.'.command'), true, 512, \JSON_THROW_ON_ERROR);
+            $this->assertSame('resume', $resume['type']);
+            $this->assertSame($one->runId, $resume['runId']);
+            $recoveredEnv = $this->waitForEnvDump($firstDump);
+            $this->assertSame($expected, $recoveredEnv['HATFIELD_SQLITE_QUEUE_DATABASE']);
+            $this->assertSame($one->runId, $recoveredEnv['HATFIELD_SESSION_ID']);
+        } finally {
+            $first->shutdown();
+            $second->shutdown();
+        }
     }
 
     public function testSpawnedControllerDefaultsToProductionKernelEnv(): void
@@ -257,7 +316,7 @@ PHP);
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
-            sessionsBasePath: sys_get_temp_dir().'/hatfield-sessions',
+            sessionStore: self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class),
         );
     }
 

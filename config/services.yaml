@@ -567,10 +567,6 @@ services:
     arguments:
       $runtimeConfig: '@Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig'
 
-  Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient:
-    arguments:
-      $sessionsBasePath: '@=service("Ineersa\\CodingAgent\\Session\\HatfieldSessionStore").resolveSessionsBasePath()'
-
   # ─── Controller event loop ───
 
   # Command handlers (ControllerCommandEvent listeners) receive the

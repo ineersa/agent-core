@@ -68,7 +68,18 @@ final class SessionSqliteQueueBrokerOwnerSubscriberTest extends TestCase
             $this->markTestSkipped('posix process-group isolation is unavailable on this host');
         }
 
-        $process = $this->startOwnerProbe(supervised: false, owner: $owner = new InputStream());
+        // Poison the PHPUnit process itself: outer QA sanitization must not hide
+        // Symfony Process inheriting ownership keys omitted from its env array.
+        $previousDatabase = getenv(SessionSqliteQueueEnv::DATABASE_PATH);
+        $previousEndpoint = getenv(SessionSqliteQueueEnv::ENDPOINT_PATH);
+        try {
+            putenv(SessionSqliteQueueEnv::DATABASE_PATH.'=/tmp/standalone-poison-db');
+            putenv(SessionSqliteQueueEnv::ENDPOINT_PATH.'=/tmp/standalone-poison.sock');
+            $process = $this->startOwnerProbe(supervised: false, owner: $owner = new InputStream());
+        } finally {
+            putenv(false === $previousDatabase ? SessionSqliteQueueEnv::DATABASE_PATH : SessionSqliteQueueEnv::DATABASE_PATH.'='.$previousDatabase);
+            putenv(false === $previousEndpoint ? SessionSqliteQueueEnv::ENDPOINT_PATH : SessionSqliteQueueEnv::ENDPOINT_PATH.'='.$previousEndpoint);
+        }
         try {
             $payload = $this->awaitIsolationPayload($process);
             $this->assertTrue($payload['isolated']);
@@ -173,7 +184,8 @@ PHP);
             'HATFIELD_PROBE_PARENT_PGID' => (string) $parentPgid,
             'HATFIELD_PROBE_TMP' => $tmp,
         ]);
-        unset($env[SessionSqliteQueueEnv::DATABASE_PATH], $env[SessionSqliteQueueEnv::ENDPOINT_PATH]);
+        $env[SessionSqliteQueueEnv::DATABASE_PATH] = false;
+        $env[SessionSqliteQueueEnv::ENDPOINT_PATH] = false;
         if ($supervised) {
             $env[SessionSqliteQueueEnv::DATABASE_PATH] = $tmp.'/messenger-queue.sqlite';
             $env[SessionSqliteQueueEnv::ENDPOINT_PATH] = $tmp.'/q.sock';

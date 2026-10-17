@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\RepairResultNormalizer;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use Psr\Log\LoggerInterface;
@@ -150,11 +151,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         private readonly PromptTemplatesRuntimeConfig $promptTemplatesConfig,
         private readonly ToolFilterRuntimeConfig $toolFilterConfig,
         private readonly LoggerInterface $logger,
-        private readonly string $sessionsBasePath,
+        private readonly HatfieldSessionStore $sessionStore,
     ) {
-        if ('' === $this->sessionsBasePath || !str_starts_with($this->sessionsBasePath, '/')) {
-            throw new \InvalidArgumentException('JsonlProcessAgentSessionClient requires an absolute sessionsBasePath.');
-        }
         $this->compactEventBuffer = new RuntimeEventPerRunCompactBuffer();
         $this->eventBufferWatermarkActive = false;
         $this->eventBufferWatermarkLastLoggedAt = null;
@@ -194,11 +192,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->bootstrapEnded = false;
         $this->resetSuffix();
 
-        // Select the session-owned broker from the request runId before
-        // spawning the controller process, so its env vars carry the right DSNs.
-        // session_id === run_id per AGENTS.md — no truncation needed.
-        $runId = '' !== $request->runId ? $request->runId : null;
+        // Allocate anonymous starts before choosing the broker DB. Startup and
+        // recovery must share the canonical DB-issued session_id === run_id.
+        $runId = '' !== $request->runId ? $request->runId : $this->sessionStore->createSession($request->prompt);
         $this->sessionId = $runId;
+        $this->activeRunId = $runId;
+        $this->primaryRunId = $runId;
 
         $this->ensureProcessRunning();
 
@@ -213,7 +212,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 'component' => 'JsonlProcessAgentSessionClient',
                 'event_type' => 'start_process_cleanup',
                 'session_id' => $this->sessionId ?? '',
-                'run_id' => $runId ?? '',
+                'run_id' => $runId,
                 'error' => $e->getMessage(),
             ]);
             $this->stopProcess();
@@ -221,18 +220,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             throw $e;
         }
 
-        // activeRunId was set above from the request runId for crash recovery
-        // before spawning the process, so if the controller dies before
-        // run.started arrives, auto-resume will target it.
-        if (null !== $runId) {
-            $this->activeRunId = $runId;
-            $this->primaryRunId = $runId;
-        }
-
         $cmd = new RuntimeCommand(
             id: uniqid('cmd_', true),
             type: 'start_run',
-            runId: $runId ?? '',
+            runId: $runId,
             payload: array_filter([
                 'prompt' => $request->prompt,
                 'cwd' => $request->cwd,
@@ -289,7 +280,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 'component' => 'JsonlProcessAgentSessionClient',
                 'event_type' => 'start_process_cleanup',
                 'session_id' => $this->sessionId ?? '',
-                'run_id' => $runId ?? '',
+                'run_id' => $runId,
                 'error' => $e->getMessage(),
             ]);
             $this->stopProcess();
@@ -302,7 +293,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'component' => 'JsonlProcessAgentSessionClient',
             'event_type' => 'start_process_cleanup',
             'session_id' => $this->sessionId ?? '',
-            'run_id' => $runId ?? '',
+            'run_id' => $runId,
             'timeout_seconds' => $timeout,
         ]);
         $this->stopProcess();
@@ -680,10 +671,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         ];
 
         $currentEnv = getenv();
-        $queueSuffix = $this->sessionId ?? 'default';
+        if (null === $this->sessionId || '' === $this->sessionId) {
+            throw new \LogicException('Controller startup requires a session identity.');
+        }
         $queuePaths = SessionSqliteQueuePaths::forSession(
-            $this->sessionsBasePath,
-            $queueSuffix,
+            $this->sessionStore->resolveSessionsBasePath(),
+            $this->sessionId,
         );
         $env = array_merge(\is_array($currentEnv) ? $currentEnv : $_ENV, [
             'APP_ENV' => $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? 'prod',
@@ -693,7 +686,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             ...SessionSqliteQueueEnv::processEnv($queuePaths),
             // Pass session ID so the controller can identify and reap its own
             // orphaned consumers when a previous session was SIGKILL'd.
-            'HATFIELD_SESSION_ID' => $this->sessionId ?? 'unknown',
+            'HATFIELD_SESSION_ID' => $this->sessionId,
             // Signal an approval channel so SafeGuard (and future approval-
             // capable extensions) can prompt instead of auto-blocking. The
             // controller and its messenger consumers inherit this env var.

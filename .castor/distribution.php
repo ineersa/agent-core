@@ -697,13 +697,38 @@ function distribution_read_process_cmdline(int $pid): string
     return trim(implode(' ', $ps));
 }
 
+/** Start identity protects title-rewritten workers against PID reuse. */
+function distribution_process_start_identity(int $pid): string
+{
+    $stat = @file_get_contents('/proc/'.$pid.'/stat');
+    if (false !== $stat && false !== ($end = strrpos($stat, ')'))) {
+        $fields = explode(' ', trim(substr($stat, $end + 1)));
+
+        return $fields[19] ?? '';
+    }
+    $output = [];
+    exec('ps -p '.escapeshellarg((string) $pid).' -o lstart= 2>/dev/null', $output);
+
+    return trim(implode("\n", $output));
+}
+
+/** Never signal root, foreign-UID, or live-session-tagged processes. */
+function distribution_can_signal_owned_pid(int $pid): bool
+{
+    if (0 === posix_geteuid() || @fileowner('/proc/'.$pid) !== posix_geteuid()) {
+        return false;
+    }
+    $env = @file_get_contents('/proc/'.$pid.'/environ');
+
+    return false !== $env && !preg_match('/(?:^|\x00)HATFIELD_SESSION_ID=/', $env);
+}
 /**
  * True when pid is alive AND still matches the captured cmdline.
  *
  * PID reuse with a different cmdline is treated as gone (not a leak).
  * /proc preferred; portable `ps` fallback for macOS.
  */
-function distribution_owned_pid_still_alive(int $pid, string $expectedCmdline): bool
+function distribution_owned_pid_still_alive(int $pid, string $expectedCmdline, ?string $start = null): bool
 {
     if ($pid <= 0) {
         return false;
@@ -716,6 +741,9 @@ function distribution_owned_pid_still_alive(int $pid, string $expectedCmdline): 
         $alive = [] !== $ps && '' !== trim(implode('', $ps));
     }
     if (!$alive) {
+        return false;
+    }
+    if (null !== $start && distribution_process_start_identity($pid) !== $start) {
         return false;
     }
     $current = distribution_read_process_cmdline($pid);
@@ -767,85 +795,15 @@ function distribution_pgrep_children(int $ppid): array
 }
 
 /**
- * Portable ps column names: Linux uses sid/args, macOS uses sess/command.
- *
- * @return array{session: string, command: string}
- */
-function distribution_ps_columns(): array
-{
-    if ('Darwin' === \PHP_OS_FAMILY) {
-        return ['session' => 'sess', 'command' => 'command'];
-    }
-
-    return ['session' => 'sid', 'command' => 'args'];
-}
-
-/**
- * Parse one `ps -axo pid=,session=,command=` line into pid/session/cmd.
- *
- * @return array{pid: int, session: int, cmdline: string}|null
- */
-function distribution_parse_ps_process_line(string $line): ?array
-{
-    $line = trim($line);
-    if ('' === $line) {
-        return null;
-    }
-    $parts = preg_split('/\s+/', $line, 3);
-    if (!is_array($parts) || count($parts) < 2) {
-        return null;
-    }
-    $pid = (int) $parts[0];
-    if ($pid <= 0) {
-        return null;
-    }
-
-    return [
-        'pid' => $pid,
-        'session' => (int) $parts[1],
-        'cmdline' => $parts[2] ?? '',
-    ];
-}
-
-/**
- * Session id for a live process. Hard-fails when ps fails (never silent zero).
- */
-function distribution_process_session_id(int $pid): int
-{
-    if ($pid <= 0) {
-        throw new RuntimeException('Native topology smoke: invalid pid for session lookup');
-    }
-    $cols = distribution_ps_columns();
-    $output = [];
-    $exit = 0;
-    $cmd = 'ps -axo pid=,'.escapeshellarg($cols['session']).'= -p '.escapeshellarg((string) $pid).' 2>&1';
-    exec($cmd, $output, $exit);
-    if (0 !== $exit) {
-        throw new RuntimeException('Native topology smoke: ps session lookup failed (exit '.$exit.') for pid '.$pid.".\ncmd: {$cmd}\n".implode("\n", $output));
-    }
-    foreach ($output as $line) {
-        $parts = preg_split('/\s+/', trim($line), 2);
-        if (!is_array($parts) || count($parts) < 2) {
-            continue;
-        }
-        if ((int) $parts[0] === $pid) {
-            return (int) $parts[1];
-        }
-    }
-
-    throw new RuntimeException('Native topology smoke: ps session lookup returned no row for pid '.$pid.".\n".implode("\n", $output));
-}
-
-/**
  * Collect descendant process command lines for a controller pid.
  *
- * Walks pgrep -P depth-first and also scans session members so separate-PGID
- * messenger children are still visible. Inconclusive inspection must fail.
+ * Walks pgrep -P through the full tree, including separate-PGID descendants.
+ * Inconclusive inspection must fail. Session siblings are not owned children.
  *
  * Capture owned PIDs WHILE THE CONTROLLER IS ALIVE. After exit, orphans are
  * reparented so pgrep -P <dead-controller> returns nothing and can false-pass.
  *
- * @return list<array{pid: int, cmdline: string}>
+ * @return list<array{pid: int, cmdline: string, start?: string}>
  */
 function distribution_collect_descendant_cmdlines(int $rootPid): array
 {
@@ -865,39 +823,12 @@ function distribution_collect_descendant_cmdlines(int $rootPid): array
             $seen[$child] = true;
             $queue[] = $child;
             $cmd = distribution_read_process_cmdline($child);
-            $found[] = ['pid' => $child, 'cmdline' => $cmd];
+            $found[] = ['pid' => $child, 'cmdline' => $cmd, 'start' => distribution_process_start_identity($child)];
         }
     }
 
-    // Session scan catches reparented/separate-PGID messenger children.
-    // Portable: Linux sid+args, Darwin sess+command via ps -axo.
-    $sessionId = distribution_process_session_id($rootPid);
-    if ($sessionId > 0) {
-        $cols = distribution_ps_columns();
-        $sessionLines = [];
-        $exit = 0;
-        $psCmd = 'ps -axo pid=,'.escapeshellarg($cols['session']).'='.
-            ','.escapeshellarg($cols['command']).'= 2>&1';
-        exec($psCmd, $sessionLines, $exit);
-        if (0 !== $exit) {
-            throw new RuntimeException('Native topology smoke: ps session scan failed (exit '.$exit.")\ncmd: {$psCmd}\n".implode("\n", $sessionLines));
-        }
-        if ([] === $sessionLines) {
-            throw new RuntimeException('Native topology smoke: ps session scan returned zero rows (unsupported/empty ps).'."\ncmd: ".$psCmd);
-        }
-        foreach ($sessionLines as $line) {
-            $parsed = distribution_parse_ps_process_line($line);
-            if (null === $parsed) {
-                continue;
-            }
-            $pid = $parsed['pid'];
-            if ($pid === $rootPid || $parsed['session'] !== $sessionId || isset($seen[$pid])) {
-                continue;
-            }
-            $seen[$pid] = true;
-            $found[] = ['pid' => $pid, 'cmdline' => $parsed['cmdline']];
-        }
-    }
+    // Process groups do not change parentage. A session-wide scan would also
+    // capture unrelated siblings when this controller inherits the QA session.
 
     return $found;
 }
@@ -911,7 +842,7 @@ function distribution_collect_descendant_cmdlines(int $rootPid): array
  * current cmdline still matches the snapshot (PID-reuse protected). Never
  * broad pgrep/session/process-group kills; never root/unrelated/session workers.
  *
- * @param list<array{pid: int, cmdline: string}> $ownedSnapshot
+ * @param list<array{pid: int, cmdline: string, start?: string}> $ownedSnapshot
  */
 function distribution_assert_owned_pids_gone(array $ownedSnapshot, int $controllerPid, string $controllerCmdline, float $waitSeconds = 5.0): void
 {
@@ -928,7 +859,7 @@ function distribution_assert_owned_pids_gone(array $ownedSnapshot, int $controll
             if ($pid <= 0) {
                 continue;
             }
-            if (distribution_owned_pid_still_alive($pid, $cmdline)) {
+            if (distribution_owned_pid_still_alive($pid, $cmdline, $row['start'] ?? null)) {
                 $survivors[] = '#'.$pid.' '.$cmdline.' (now: '.distribution_read_process_cmdline($pid).')';
             }
         }
@@ -952,11 +883,11 @@ function distribution_assert_owned_pids_gone(array $ownedSnapshot, int $controll
  * reuse cannot hit an unrelated process. Scoped to the smoke-owned snapshot
  * only — never process groups, sessions, or discovery via pgrep.
  *
- * @param list<array{pid: int, cmdline: string}> $ownedSnapshot
+ * @param list<array{pid: int, cmdline: string, start?: string}> $ownedSnapshot
  */
 function distribution_signal_pre_captured_owned_survivors(array $ownedSnapshot, int $controllerPid, string $controllerCmdline): void
 {
-    /** @var list<array{pid: int, cmdline: string}> $targets */
+    /** @var list<array{pid: int, cmdline: string, start?: string}> $targets */
     $targets = [];
     if ($controllerPid > 0) {
         $targets[] = ['pid' => $controllerPid, 'cmdline' => $controllerCmdline];
@@ -970,10 +901,12 @@ function distribution_signal_pre_captured_owned_survivors(array $ownedSnapshot, 
     foreach ($targets as $row) {
         $pid = $row['pid'];
         $cmdline = $row['cmdline'];
-        if (!distribution_owned_pid_still_alive($pid, $cmdline)) {
+        if (!distribution_owned_pid_still_alive($pid, $cmdline, $row['start'] ?? null)) {
             continue;
         }
-        @posix_kill($pid, \SIGTERM);
+        if (distribution_can_signal_owned_pid($pid)) {
+            @posix_kill($pid, \SIGTERM);
+        }
     }
 
     usleep(200_000);
@@ -981,17 +914,42 @@ function distribution_signal_pre_captured_owned_survivors(array $ownedSnapshot, 
     foreach ($targets as $row) {
         $pid = $row['pid'];
         $cmdline = $row['cmdline'];
-        if (!distribution_owned_pid_still_alive($pid, $cmdline)) {
+        if (!distribution_owned_pid_still_alive($pid, $cmdline, $row['start'] ?? null)) {
             continue;
         }
-        @posix_kill($pid, \SIGKILL);
+        if (distribution_can_signal_owned_pid($pid)) {
+            @posix_kill($pid, \SIGKILL);
+        }
     }
 }
 
+/** Executable identity survives Amp's process-title rewrite. */
+function distribution_read_process_executable(int $pid): string
+{
+    if (is_dir('/proc')) {
+        $path = @readlink('/proc/'.$pid.'/exe');
+        if (false === $path) {
+            throw new RuntimeException('Native topology smoke: cannot read executable for PID '.$pid);
+        }
+
+        return $path;
+    }
+    $output = [];
+    $exit = 0;
+    exec('ps -p '.escapeshellarg((string) $pid).' -o comm= 2>&1', $output, $exit);
+    if (0 !== $exit || [] === $output) {
+        throw new RuntimeException('Native topology smoke: cannot inspect executable for PID '.$pid);
+    }
+    $path = trim(implode("\n", $output));
+
+    $resolved = realpath($path);
+
+    return false !== $resolved ? $resolved : $path;
+}
 /**
  * Assert every expected messenger transport relaunches through the native binary.
  *
- * @param list<array{pid: int, cmdline: string}> $descendants
+ * @param list<array{pid: int, cmdline: string, start?: string}> $descendants
  */
 function distribution_assert_native_messenger_topology(string $artifactPath, array $descendants): void
 {
@@ -1015,8 +973,13 @@ function distribution_assert_native_messenger_topology(string $artifactPath, arr
         if (str_contains($row['cmdline'], 'sqlite-queue:broker')) {
             $brokerLines[] = $row['cmdline'];
         }
-        if (str_contains($row['cmdline'], '--internal-sqlite-worker')) {
+        if ('amp-process' === trim($row['cmdline'])) {
+            $workerExecutable = distribution_read_process_executable($row['pid']);
+            if ($workerExecutable !== $resolvedArtifact) {
+                throw new RuntimeException('Native topology smoke: actual Amp worker executable mismatch: '.$workerExecutable);
+            }
             $helperLines[] = $row['cmdline'];
+            echo '  native topology: actual Amp worker #'.$row['pid'].' exe='.$workerExecutable."\n";
         }
         if (str_contains($row['cmdline'], 'messenger:consume')) {
             $consumeLines[] = $row['cmdline'];
@@ -1054,26 +1017,6 @@ function distribution_assert_native_messenger_topology(string $artifactPath, arr
         }
         if (!$usesArtifact) {
             throw new RuntimeException("Native topology smoke: controller child does not reference native artifact path.\n".'expected artifact: '.$resolvedArtifact."\n".'line: '.$line);
-        }
-    }
-
-    foreach ($helperLines as $line) {
-        $usesArtifact = str_contains($line, $resolvedArtifact) || str_contains($line, $artifactBase);
-        $usesSystemPhpPrefix = (bool) preg_match('#(?:^|\s)(?:/usr/bin/php|/usr/local/bin/php|php)\s+#', $line)
-            && !str_starts_with(trim($line), $resolvedArtifact)
-            && !str_starts_with(trim($line), $artifactBase);
-        if ($usesSystemPhpPrefix) {
-            throw new RuntimeException("Native topology smoke: Amp SQLite worker relaunched via system PHP instead of fused native binary.\n".'line: '.$line);
-        }
-        if (!$usesArtifact) {
-            throw new RuntimeException("Native topology smoke: Amp SQLite worker does not reference native artifact path.\n".'expected artifact: '.$resolvedArtifact."\n".'line: '.$line);
-        }
-        if (!str_contains($line, '--internal-sqlite-worker')
-            && !str_contains($line, 'amp-process-runner')
-            && !str_contains($line, 'amphp-sqlite3')
-            && !str_contains($line, 'worker.php')
-        ) {
-            throw new RuntimeException("Native topology smoke: Amp SQLite worker cmdline missing worker markers.\n".'line: '.$line);
         }
     }
 }
@@ -1157,7 +1100,7 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
     $ready = false;
     $controllerPid = 0;
     $controllerCmdline = '';
-    /** @var list<array{pid: int, cmdline: string}> $ownedSnapshot */
+    /** @var list<array{pid: int, cmdline: string, start?: string}> $ownedSnapshot */
     $ownedSnapshot = [];
     try {
         while (microtime(true) < $deadline) {
@@ -1271,18 +1214,9 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
 
         // Capture owned PIDs WHILE controller is still alive. After exit, orphans
         // reparent and pgrep -P <dead-controller> false-passes.
-        $ownedSnapshot = [];
-        foreach ($descendants as $row) {
-            if (
-                str_contains($row['cmdline'], $launchPath)
-                || str_contains($row['cmdline'], 'messenger:consume')
-                || str_contains($row['cmdline'], 'sqlite-queue:broker')
-                || str_contains($row['cmdline'], '--internal-sqlite-worker')
-                || str_contains($row['cmdline'], basename($launchPath))
-            ) {
-                $ownedSnapshot[] = $row;
-            }
-        }
+        // Keep the entire captured descendant tree, including title-rewritten
+        // amp-process workers. Command markers alone only identify wrappers.
+        $ownedSnapshot = $descendants;
         if ([] === $ownedSnapshot) {
             throw new RuntimeException('Native topology smoke: topology passed but owned PID snapshot is empty');
         }

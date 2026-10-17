@@ -1159,7 +1159,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             new \Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig(),
             new \Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig(),
             $logger ?? $this->logger,
-            $directory.'/.hatfield/sessions',
+            \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(\Doctrine\ORM\EntityManagerInterface::class), $directory),
         );
 
         return [$client, $directory];

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\ControllerReplayE2eTestCase;
+use Ineersa\CodingAgent\Tests\Support\OwnedProcessTree;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -49,7 +50,9 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
         $broker = $this->waitForOwnedBroker($controllerPid, 5.0);
         $this->assertNotNull($broker, 'supervised sqlite-queue:broker must exist after runtime.ready');
         $brokerPid = $broker['pid'];
-        $driverPids = $this->descendantPids($brokerPid);
+        $driverTree = OwnedProcessTree::descendants($brokerPid);
+        $driverPids = array_column($driverTree, 'pid');
+        $this->assertActualAmpWorker($driverTree);
         $this->assertNotSame([], $driverPids, 'Amp SQLite helper must exist under the broker after ready');
         $durableDb = $this->configuredMessengerTransportDbPath();
         $this->assertFileExists($durableDb);
@@ -57,7 +60,7 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
         // Capture the owned tree before hard death so orphaned consumers can be
         // reaped by PID ownership after the controller is gone.
         $this->refreshTrackedControllerPids();
-        $ownedBeforeKill = $this->trackedControllerPids;
+        $ownedBeforeKill = OwnedProcessTree::descendants($controllerPid);
 
         // Literal hard death of the owned QA controller only. Broker has its own
         // PGID, so killing the controller PID must not directly reap it.
@@ -73,8 +76,8 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
             usleep(20_000);
         }
         $this->assertFalse($this->isControllerPidAlive($brokerPid), 'broker must exit after controller hard death closes owner stdin');
-        foreach ($driverPids as $driverPid) {
-            $this->assertFalse($this->isControllerPidAlive($driverPid), 'Amp helper must exit with the supervised broker');
+        foreach ($driverTree as $driver) {
+            $this->assertFalse(OwnedProcessTree::stillAlive($driver), 'Actual owned Amp tree must exit before cleanup: '.json_encode($driver));
         }
         $this->assertFileExists($durableDb, 'durable queue DB must survive controller hard death');
 
@@ -120,7 +123,9 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
             'owned broker must stay untagged; never signal HATFIELD_SESSION_ID processes',
         );
 
-        $driverPids = $this->descendantPids($brokerPid);
+        $driverTree = OwnedProcessTree::descendants($brokerPid);
+        $driverPids = array_column($driverTree, 'pid');
+        $this->assertActualAmpWorker($driverTree);
         $this->assertNotSame([], $driverPids, 'Amp SQLite helper must exist under the broker after ready');
         $consumerPids = $this->findOwnedConsumers($controllerPid);
         $this->assertNotSame([], $consumerPids, 'messenger consumers must exist after runtime.ready');
@@ -149,8 +154,8 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
         }
         $this->assertFalse($this->isControllerPidAlive($controllerPid), 'controller must stop after broker death');
         $this->assertFalse($this->isControllerPidAlive($brokerPid), 'killed broker must stay dead');
-        foreach ($driverPids as $driverPid) {
-            $this->assertFalse($this->isControllerPidAlive($driverPid), 'Amp helper must exit with the broker');
+        foreach ($driverTree as $driver) {
+            $this->assertFalse(OwnedProcessTree::stillAlive($driver), 'Actual owned Amp tree must exit before cleanup: '.json_encode($driver));
         }
         foreach ($consumerPids as $consumerPid) {
             $this->assertFalse($this->isControllerPidAlive($consumerPid), 'owned consumers must exit with controller shutdown');
@@ -249,24 +254,6 @@ YAML;
         return null;
     }
 
-    /**
-     * @return list<int>
-     */
-    private function descendantPids(int $pid): array
-    {
-        $output = [];
-        exec('pgrep -P '.escapeshellarg((string) $pid), $output);
-        $pids = [];
-        foreach ($output as $line) {
-            $child = (int) trim($line);
-            if ($child > 0 && $this->isSameUidProcess($child)) {
-                $pids[] = $child;
-            }
-        }
-
-        return $pids;
-    }
-
     private function processEnvironContains(int $pid, string $needle): bool
     {
         $environ = @file_get_contents("/proc/{$pid}/environ");
@@ -296,19 +283,20 @@ YAML;
     }
 
     /**
-     * @param list<int> $ownedPids
-     * @param list<int> $alreadyDead
+     * @param list<array{pid:int, start:string, cmdline:string, exe:string}> $ownedPids
+     * @param list<int>                                                      $alreadyDead
      */
     private function reapOwnedLeftovers(array $ownedPids, array $alreadyDead): void
     {
         $skip = array_fill_keys($alreadyDead, true);
         $alive = [];
-        foreach (array_values(array_unique($ownedPids)) as $pid) {
+        foreach ($ownedPids as $row) {
+            $pid = $row['pid'];
             if ($pid <= 1 || isset($skip[$pid])) {
                 continue;
             }
-            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
-                $alive[] = $pid;
+            if (OwnedProcessTree::canSignal($row)) {
+                $alive[] = $row;
                 @posix_kill($pid, \SIGTERM);
             }
         }
@@ -316,8 +304,9 @@ YAML;
         $deadline = microtime(true) + 0.2;
         while (microtime(true) < $deadline) {
             $still = false;
-            foreach ($alive as $pid) {
-                if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
+            foreach ($alive as $row) {
+                $pid = $row['pid'];
+                if (OwnedProcessTree::canSignal($row)) {
                     $still = true;
                     break;
                 }
@@ -328,10 +317,21 @@ YAML;
             usleep(10_000);
         }
 
-        foreach ($alive as $pid) {
-            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
+        foreach ($alive as $row) {
+            $pid = $row['pid'];
+            if (OwnedProcessTree::canSignal($row)) {
                 @posix_kill($pid, \SIGKILL);
             }
+        }
+    }
+
+    /** @param list<array{pid:int, start:string, cmdline:string, exe:string}> $tree */
+    private function assertActualAmpWorker(array $tree): void
+    {
+        $workers = array_filter($tree, static fn (array $row): bool => 'amp-process' === trim($row['cmdline']));
+        $this->assertNotSame([], $workers, 'Actual Amp runner with rewritten process title must exist, not only its shell wrapper');
+        foreach ($workers as $worker) {
+            $this->assertSame(realpath(\PHP_BINARY), $worker['exe'], 'Actual source worker must execute the selected PHP interpreter');
         }
     }
 }

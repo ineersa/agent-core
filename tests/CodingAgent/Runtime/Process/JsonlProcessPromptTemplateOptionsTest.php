@@ -170,7 +170,7 @@ PHP);
             promptTemplatesConfig: $promptConfig,
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
-            sessionsBasePath: sys_get_temp_dir().'/hatfield-sessions',
+            sessionStore: \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(\Doctrine\ORM\EntityManagerInterface::class), $this->tmpDir),
         );
 
         $handle = $client->start(new StartRunRequest(

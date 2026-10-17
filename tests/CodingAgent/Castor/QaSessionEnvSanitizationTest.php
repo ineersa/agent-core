@@ -8,8 +8,8 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Thesis: QA lane shell prefixes strip the six session-controller doctrine
- * transport DSNs (exported into every bash command by a live Hatfield session)
+ * Thesis: QA lane shell prefixes strip session transport DSNs and broker
+ * ownership keys exported into bash commands by a live Hatfield session
  * so unit lanes always resolve the documented in-memory transports, while a
  * control var still passes through.
  */
@@ -22,6 +22,8 @@ final class QaSessionEnvSanitizationTest extends TestCase
         'HATFIELD_AGENT_TRANSPORT_DSN',
         'HATFIELD_MCP_TRANSPORT_DSN',
         'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN',
+        'HATFIELD_SQLITE_QUEUE_DATABASE',
+        'HATFIELD_SQLITE_QUEUE_ENDPOINT',
     ];
 
     private const CONTROL_VAR = 'HATFIELD_SESSION_ID';
@@ -45,7 +47,7 @@ final class QaSessionEnvSanitizationTest extends TestCase
         }
     }
 
-    public function testObservabilityPrefixUnsetsAllSixSessionTransportDsns(): void
+    public function testObservabilityPrefixUnsetsSessionTransportAndOwnershipEnv(): void
     {
         self::requireCastorFiles();
 
@@ -58,7 +60,7 @@ final class QaSessionEnvSanitizationTest extends TestCase
         $this->assertSame(
             \count(self::DSN_VARS),
             substr_count($prefix, ' -u '),
-            'exactly the six DSN vars must be unset, no more',
+            'exactly the transport and broker ownership vars must be unset, no more',
         );
     }
 
@@ -78,11 +80,11 @@ final class QaSessionEnvSanitizationTest extends TestCase
         $this->assertSame(
             \count(self::DSN_VARS),
             substr_count($prefix, ' -u '),
-            'exactly the six DSN vars must be unset, no more',
+            'exactly the transport and broker ownership vars must be unset, no more',
         );
     }
 
-    public function testCheckParatestCommandUnsetsAllSixSessionTransportDsns(): void
+    public function testCheckParatestCommandUnsetsSessionTransportAndOwnershipEnv(): void
     {
         self::requireCastorFiles();
 

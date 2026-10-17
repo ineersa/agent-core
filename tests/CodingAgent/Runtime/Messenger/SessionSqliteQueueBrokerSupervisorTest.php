@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerTopology;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Tests\Support\OwnedProcessTree;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\SqliteQueue\Client;
 use Ineersa\SqliteQueue\Exception\TransportException;
@@ -68,7 +69,9 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $this->assertNotFalse($pgid);
             $this->assertNotSame(posix_getpgid(getmypid()), $pgid, 'broker posix_setsid must isolate PGID from the controller');
             $this->assertFalse($this->processCommandLineContains($pid, 'setsid'), 'launch must not require an external setsid binary');
-            $driverPids = $this->descendantPids($pid);
+            $driverTree = OwnedProcessTree::descendants($pid);
+            $driverPids = array_column($driverTree, 'pid');
+            $this->assertActualAmpWorker($driverTree);
             $this->assertNotSame([], $driverPids, 'Amp SQLite driver child must exist after ready');
             $workerSeen = false;
             foreach ($driverPids as $driverPid) {
@@ -82,6 +85,9 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $supervisor->shutdownUntil(microtime(true) + 5.0);
         }
 
+        foreach ($driverTree as $driver) {
+            $this->assertFalse(OwnedProcessTree::stillAlive($driver), 'Entire Amp worker tree must exit after normal shutdown');
+        }
         $this->assertFalse($this->brokerProcessAlive($supervisor));
         clearstatcache(true, $paths->endpointPath);
         $this->assertFalse(file_exists($paths->endpointPath), 'normal shutdown must remove owned socket');
@@ -103,14 +109,16 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $pgid = posix_getpgid($pid);
             $this->assertNotFalse($pgid);
             $this->assertNotSame(posix_getpgid(getmypid()), $pgid);
-            $driverPids = $this->descendantPids($pid);
+            $driverTree = OwnedProcessTree::descendants($pid);
+            $driverPids = array_column($driverTree, 'pid');
+            $this->assertActualAmpWorker($driverTree);
             $this->assertNotSame([], $driverPids);
 
             // Escalate owned group immediately. Driver children must exit.
             $supervisor->shutdownUntil(microtime(true));
 
-            foreach ($driverPids as $driverPid) {
-                $this->assertFalse($this->pidAlive($driverPid), 'owned Amp driver must exit with forced broker death');
+            foreach ($driverTree as $driver) {
+                $this->assertFalse(OwnedProcessTree::stillAlive($driver), 'Actual owned Amp tree must exit before cleanup: '.json_encode($driver));
             }
             $this->assertFalse($process->isRunning());
         } finally {
@@ -171,29 +179,31 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         $first = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-owner-eof');
 
-        $first->start($paths);
-        $process = $this->brokerProcess($first);
-        $pid = $process->getPid();
-        $this->assertNotNull($pid);
-        $driverPids = $this->descendantPids($pid);
-        $this->assertNotSame([], $driverPids, 'Amp SQLite driver child must exist after ready');
-
-        $ownerInput = (new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'ownerInput'))->getValue($first);
-        $this->assertInstanceOf(\Symfony\Component\Process\InputStream::class, $ownerInput);
-        // Hard controller death closes the owner write end without graceful shutdown.
-        $ownerInput->close();
-
-        $deadline = microtime(true) + 5.0;
-        while (microtime(true) < $deadline && $process->isRunning()) {
-            usleep(20_000);
-        }
-        $this->assertFalse($process->isRunning(), 'broker must exit when controller owner stdin closes');
-        foreach ($driverPids as $driverPid) {
-            $this->assertFalse($this->pidAlive($driverPid), 'owned Amp helper must exit with controller hard death');
-        }
-
         $restart = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
         try {
+            $first->start($paths);
+            $process = $this->brokerProcess($first);
+            $pid = $process->getPid();
+            $this->assertNotNull($pid);
+            $driverTree = OwnedProcessTree::descendants($pid);
+            $driverPids = array_column($driverTree, 'pid');
+            $this->assertActualAmpWorker($driverTree);
+            $this->assertNotSame([], $driverPids, 'Amp SQLite driver child must exist after ready');
+
+            $ownerInput = (new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'ownerInput'))->getValue($first);
+            $this->assertInstanceOf(\Symfony\Component\Process\InputStream::class, $ownerInput);
+            // Hard controller death closes the owner write end without graceful shutdown.
+            $ownerInput->close();
+
+            $deadline = microtime(true) + 5.0;
+            while (microtime(true) < $deadline && $process->isRunning()) {
+                usleep(20_000);
+            }
+            $this->assertFalse($process->isRunning(), 'broker must exit when controller owner stdin closes');
+            foreach ($driverTree as $driver) {
+                $this->assertFalse(OwnedProcessTree::stillAlive($driver), 'Actual owned Amp tree must exit before cleanup: '.json_encode($driver));
+            }
+
             $restartPaths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', 'broker-owner-eof');
             $this->assertSame($paths->databasePath, $restartPaths->databasePath);
             $restart->start($restartPaths);
@@ -332,11 +342,8 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
                 $clients[] = Client::connect($paths->endpointPath);
             }
             $this->assertCount($required, $clients);
-            try {
-                Client::connect($paths->endpointPath);
-                $this->fail('Configured connection capacity must reject the next client.');
-            } catch (TransportException) {
-            }
+            $this->expectException(TransportException::class);
+            Client::connect($paths->endpointPath);
         } finally {
             foreach ($clients as $client) {
                 $client->close();
@@ -423,33 +430,6 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         return $process;
     }
 
-    /**
-     * @return list<int>
-     */
-    private function descendantPids(int $pid): array
-    {
-        $output = [];
-        exec('pgrep -P '.escapeshellarg((string) $pid), $output);
-        $pids = [];
-        foreach ($output as $line) {
-            $child = (int) trim($line);
-            if ($child > 0) {
-                $pids[] = $child;
-            }
-        }
-
-        return $pids;
-    }
-
-    private function pidAlive(int $pid): bool
-    {
-        if ($pid <= 0) {
-            return false;
-        }
-
-        return @posix_kill($pid, 0);
-    }
-
     private function processCommandLineContains(int $pid, string $needle): bool
     {
         $cmdline = @file_get_contents('/proc/'.$pid.'/cmdline');
@@ -458,5 +438,15 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         }
 
         return str_contains(str_replace("\0", ' ', $cmdline), $needle);
+    }
+
+    /** @param list<array{pid:int, start:string, cmdline:string, exe:string}> $tree */
+    private function assertActualAmpWorker(array $tree): void
+    {
+        $workers = array_filter($tree, static fn (array $row): bool => 'amp-process' === trim($row['cmdline']));
+        $this->assertNotSame([], $workers, 'Actual Amp runner with rewritten process title must exist, not only its shell wrapper');
+        foreach ($workers as $worker) {
+            $this->assertSame(realpath(\PHP_BINARY), $worker['exe'], 'Actual source worker must execute the selected PHP interpreter');
+        }
     }
 }

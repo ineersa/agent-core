@@ -108,7 +108,7 @@ final class ControllerReplayBootstrapDeliveryTest extends ControllerReplayE2eTes
             new PromptTemplatesRuntimeConfig(),
             new ToolFilterRuntimeConfig(),
             new TestLogger(),
-            sys_get_temp_dir().'/hatfield-sessions',
+            \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(\Doctrine\ORM\EntityManagerInterface::class), $this->tempDir),
         );
         $reflection = new \ReflectionClass($client);
         foreach (['process' => $this->process, 'pipes' => $this->pipes, 'activeRunId' => $this->runId,
