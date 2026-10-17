@@ -39,7 +39,12 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $failingCommands->method('prepareEnqueue')->willReturn(static function (): bool {
             throw new \RuntimeException('Injected mailbox failure.');
         });
-        $coordinator = new LocalMetadataCoordinator($container->get(ApplicationDbTransactionInterface::class), $batches, $failingCommands);
+        $coordinator = new LocalMetadataCoordinator(
+            $container->get(ApplicationDbTransactionInterface::class),
+            $batches,
+            $failingCommands,
+            $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
+        );
         try {
             $coordinator->apply($plan);
             $this->fail('Mailbox failure must roll back batch registration.');

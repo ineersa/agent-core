@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract\Tool;
 
+use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 
 /**
@@ -27,4 +28,10 @@ interface DeferredToolCompletionRepositoryInterface
     public function status(string $deferredId): ?string;
 
     public function markCompleted(string $deferredId): void;
+
+    /**
+     * Applies a captured lifecycle projection under verified local finalization.
+     * Does not change markCompleted semantics or enable background capability.
+     */
+    public function applyLifecycleProjection(RecordToolInvocationLifecycleDTO $action): void;
 }

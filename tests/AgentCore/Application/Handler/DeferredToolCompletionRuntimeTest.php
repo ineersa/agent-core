@@ -181,21 +181,41 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->assertSame(30, $loaded->timeoutSeconds);
         $this->assertSame('pending', $repo->status($correlation->deferredId));
 
+        try {
+            $repo->registerPending(new DeferredToolCompletionCorrelation(
+                deferredId: '660e8400-e29b-41d4-a716-446655440001',
+                runId: 'run-db-1',
+                turnNo: 9,
+                stepId: 'other-step',
+                attempt: 9,
+                idempotencyKey: 'other-key',
+                toolCallId: 'call-db',
+                toolName: 'write',
+                arguments: ['path' => './b.txt'],
+                orderIndex: 2,
+            ));
+            $this->fail('Mismatched execution envelope must not reuse the existing deferred registration.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('tuple mismatch', $exception->getMessage());
+        }
+
         $canonical = $repo->registerPending(new DeferredToolCompletionCorrelation(
             deferredId: '660e8400-e29b-41d4-a716-446655440001',
             runId: 'run-db-1',
-            turnNo: 9,
-            stepId: 'other-step',
-            attempt: 9,
-            idempotencyKey: 'other-key',
+            turnNo: 1,
+            stepId: 'turn-1-tools-1',
+            attempt: 1,
+            idempotencyKey: 'idemp-db',
             toolCallId: 'call-db',
-            toolName: 'write',
-            arguments: ['path' => './b.txt'],
-            orderIndex: 2,
+            toolName: 'read',
+            arguments: ['path' => './a.txt'],
+            orderIndex: 0,
+            timeoutSeconds: 30,
         ));
 
         $this->assertSame($correlation->deferredId, $canonical->deferredId);
         $this->assertSame('read', $canonical->toolName);
+        $this->assertSame(1, $canonical->turnNo);
     }
 
     public function testDoctrineRegisterPendingRejectsConflictingDeferredIdForDifferentRunToolCall(): void
@@ -404,5 +424,10 @@ final class MarkCompletedFailsOnceRepository implements DeferredToolCompletionRe
         }
 
         $this->inner->markCompleted($deferredId);
+    }
+
+    public function applyLifecycleProjection(\Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO $action): void
+    {
+        $this->inner->applyLifecycleProjection($action);
     }
 }

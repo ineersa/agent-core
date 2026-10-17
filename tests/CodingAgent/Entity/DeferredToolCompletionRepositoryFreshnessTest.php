@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Tests\Entity;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletion;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -14,8 +16,8 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Mutable deferred-tool status reads must observe DBAL writes from another
- * connection without refreshing immutable registration fields.
+ * Mutable deferred-tool status and lifecycle reads must observe DBAL writes
+ * from another connection without refreshing immutable registration fields.
  */
 #[Group('db')]
 final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernelTestCase
@@ -130,7 +132,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
     }
 
     #[Test]
-    public function findByDeferredIdKeepsImmutableRegistrationWithoutStatusRefreshRequirement(): void
+    public function findByDeferredIdSeesLifecycleCommittedOutsideIdentityMap(): void
     {
         $correlation = $this->repository->registerPending(new DeferredToolCompletionCorrelation(
             deferredId: '550e8400-e29b-41d4-a716-446655440102',
@@ -151,5 +153,34 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
         $this->assertSame('bash', $loaded->toolName);
         $this->assertSame(15, $loaded->timeoutSeconds);
         $this->assertSame('run-fresh-3', $loaded->runId);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::ForegroundPending, $loaded->callerDisposition);
+        $this->assertSame(ToolInvocationExecutionObservationEnum::Active, $loaded->executionObservation);
+
+        $managed = $this->entityManager->getRepository(DeferredToolCompletion::class)->findOneBy([
+            'deferredId' => $correlation->deferredId,
+        ]);
+        $this->assertInstanceOf(DeferredToolCompletion::class, $managed);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::ForegroundPending->value, $managed->callerDisposition);
+
+        $this->connection->executeStatement(
+            'UPDATE deferred_tool_completion
+             SET caller_disposition = :disposition,
+                 execution_observation = :observation,
+                 updated_at = :now
+             WHERE deferred_id = :deferred_id',
+            [
+                'disposition' => ToolInvocationCallerDispositionEnum::BackgroundAcknowledged->value,
+                'observation' => ToolInvocationExecutionObservationEnum::CancelRequested->value,
+                'now' => '2026-09-16 12:12:00',
+                'deferred_id' => $correlation->deferredId,
+            ],
+        );
+
+        $refreshed = $this->repository->findByDeferredId($correlation->deferredId);
+        $this->assertNotNull($refreshed);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::BackgroundAcknowledged, $refreshed->callerDisposition);
+        $this->assertSame(ToolInvocationExecutionObservationEnum::CancelRequested, $refreshed->executionObservation);
+        $this->assertSame(ToolInvocationCallerDispositionEnum::BackgroundAcknowledged->value, $managed->callerDisposition);
+        $this->assertSame(ToolInvocationExecutionObservationEnum::CancelRequested->value, $managed->executionObservation);
     }
 }

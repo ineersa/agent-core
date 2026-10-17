@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
+use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -19,6 +20,31 @@ final readonly class CoordinationActionValidator
     /** @param iterable<CoordinationActionValidatorInterface> $validators */
     public function __construct(#[AutowireIterator('agent_core.coordination_action_validator')] private iterable $validators = [])
     {
+    }
+
+    /**
+     * Validate the complete captured plan before journaling or recovery.
+     *
+     * @param list<object> $actions
+     */
+    public function validatePlan(array $actions): void
+    {
+        /** @var array<string, true> $lifecycleInvocations */
+        $lifecycleInvocations = [];
+        foreach ($actions as $action) {
+            $this->validate($action);
+            if (!$action instanceof RecordToolInvocationLifecycleDTO) {
+                continue;
+            }
+
+            $correlation = $action->expectedCorrelation;
+            // Match the deferred_tool_completion unique store key (run_id, tool_call_id).
+            $key = $this->lifecycleStoreIdentityKey($correlation->runId, $correlation->toolCallId);
+            if (isset($lifecycleInvocations[$key])) {
+                throw new \RuntimeException(\sprintf('Prepared plan may contain only one lifecycle update for run "%s" tool call "%s".', $correlation->runId, $correlation->toolCallId));
+            }
+            $lifecycleInvocations[$key] = true;
+        }
     }
 
     public function validate(object $action): void
@@ -77,5 +103,10 @@ final readonly class CoordinationActionValidator
         }
 
         throw new \RuntimeException('Owner transition requires coordination recovery for unsupported action.');
+    }
+
+    private function lifecycleStoreIdentityKey(string $runId, string $toolCallId): string
+    {
+        return json_encode([$runId, $toolCallId], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
     }
 }

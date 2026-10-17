@@ -33,9 +33,7 @@ final readonly class PendingTransitionRecovery
         $actions = $work['actions'] ?? [];
         $afterTurnActions = $work['after_turn_actions'] ?? [];
         // Validate the entire recovery plan before applying any coordination.
-        foreach ([...$actions, ...$afterTurnActions] as $action) {
-            $this->actionValidator->validate($action);
-        }
+        $this->actionValidator->validatePlan([...$actions, ...$afterTurnActions]);
         $finalized = false;
         try {
             $this->finalizer->complete($runId, $pending, $effects, $actions, $afterTurnActions);

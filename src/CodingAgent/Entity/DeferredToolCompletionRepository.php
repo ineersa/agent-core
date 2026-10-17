@@ -9,16 +9,26 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationEnvelopeFingerprint;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationOwnerReference;
 use Symfony\Component\Clock\Clock;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * @extends ServiceEntityRepository<DeferredToolCompletion>
  */
 final class DeferredToolCompletionRepository extends ServiceEntityRepository implements DeferredToolCompletionRepositoryInterface
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly SerializerInterface $serializer,
+    ) {
         parent::__construct($registry, DeferredToolCompletion::class);
     }
 
@@ -30,10 +40,24 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         ]);
 
         if ($existing instanceof DeferredToolCompletion) {
-            return $this->toCorrelation($existing);
+            $current = $this->toCorrelation($existing);
+            $current->assertEnvelopeMatches($correlation);
+
+            return $current;
         }
 
         $now = Clock::get()->now()->format('Y-m-d H:i:s');
+        $computedFingerprint = ToolInvocationEnvelopeFingerprint::fromCorrelation($correlation);
+        if (null !== $correlation->envelopeFingerprint && $correlation->envelopeFingerprint !== $computedFingerprint) {
+            throw new \InvalidArgumentException('Envelope fingerprint must match the immutable execution envelope.');
+        }
+        $fingerprint = $correlation->envelopeFingerprint ?? $computedFingerprint;
+        $ownerReference = null === $correlation->executionOwnerReference
+            ? null
+            : $this->serializeOwnerReference($correlation->executionOwnerReference);
+        $deadlineMetadata = null === $correlation->deadlineMetadata
+            ? null
+            : json_encode($correlation->deadlineMetadata, \JSON_THROW_ON_ERROR);
 
         try {
             $this->getEntityManager()->getConnection()->insert('deferred_tool_completion', [
@@ -58,6 +82,17 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                     ? json_encode($correlation->argSchema, \JSON_THROW_ON_ERROR)
                     : null,
                 'tools_ref' => $correlation->toolsRef,
+                'invocation_id' => $correlation->invocationId,
+                'controller_run_id' => $correlation->controllerRunId,
+                'execution_owner_kind' => $correlation->executionOwnerKind,
+                'execution_owner_reference_json' => $ownerReference,
+                'original_execution_mode' => $correlation->originalExecutionMode,
+                'deadline_metadata_json' => $deadlineMetadata,
+                'origin_wake_generation' => $correlation->originWakeGeneration,
+                'root_wake_generation' => $correlation->rootWakeGeneration,
+                'envelope_fingerprint' => $fingerprint,
+                'caller_disposition' => $correlation->callerDisposition->value,
+                'execution_observation' => $correlation->executionObservation->value,
                 'status' => 'pending',
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -94,7 +129,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
     public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation
     {
-        $entity = $this->findOneBy(['deferredId' => $deferredId]);
+        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
 
         return $entity instanceof DeferredToolCompletion ? $this->toCorrelation($entity) : null;
     }
@@ -144,6 +179,65 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         $em->flush();
     }
 
+    public function applyLifecycleProjection(RecordToolInvocationLifecycleDTO $action): void
+    {
+        $expected = $action->expectedCorrelation;
+        $entity = $this->findFreshOneBy([
+            'runId' => $expected->runId,
+            'toolCallId' => $expected->toolCallId,
+        ]);
+        if (!$entity instanceof DeferredToolCompletion) {
+            throw new \RuntimeException(\sprintf('Deferred tool lifecycle projection missing for run "%s" tool call "%s".', $expected->runId, $expected->toolCallId));
+        }
+
+        $current = $this->toCorrelation($entity);
+        $current->assertEnvelopeMatches($expected);
+
+        if ($current->callerDisposition === $action->callerDisposition
+            && $current->executionObservation === $action->executionObservation) {
+            return;
+        }
+
+        $next = $current->withLifecycle($action->callerDisposition, $action->executionObservation);
+        $updated = $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE deferred_tool_completion
+             SET caller_disposition = :caller_disposition,
+                 execution_observation = :execution_observation,
+                 updated_at = :now
+             WHERE deferred_id = :deferred_id
+               AND caller_disposition = :expected_disposition
+               AND execution_observation = :expected_observation',
+            [
+                'caller_disposition' => $next->callerDisposition->value,
+                'execution_observation' => $next->executionObservation->value,
+                'now' => Clock::get()->now()->format('Y-m-d H:i:s'),
+                'deferred_id' => $current->deferredId,
+                'expected_disposition' => $current->callerDisposition->value,
+                'expected_observation' => $current->executionObservation->value,
+            ],
+        );
+
+        if (0 === $updated) {
+            $refreshed = $this->findFreshOneBy(['deferredId' => $current->deferredId]);
+            if (!$refreshed instanceof DeferredToolCompletion) {
+                throw new \RuntimeException(\sprintf('Deferred tool lifecycle projection disappeared for "%s".', $current->deferredId));
+            }
+            $refreshedCorrelation = $this->toCorrelation($refreshed);
+            if ($refreshedCorrelation->callerDisposition === $action->callerDisposition
+                && $refreshedCorrelation->executionObservation === $action->executionObservation) {
+                return;
+            }
+
+            throw new \RuntimeException(\sprintf('Deferred tool lifecycle projection raced for run "%s" tool call "%s".', $expected->runId, $expected->toolCallId));
+        }
+
+        // DBAL write bypasses the identity map; detach any stale managed row so later find* reads fresh disposition/observation.
+        $managed = $this->findOneBy(['deferredId' => $current->deferredId]);
+        if ($managed instanceof DeferredToolCompletion) {
+            $this->getEntityManager()->detach($managed);
+        }
+    }
+
     private function resolveRegistrationConflict(
         DeferredToolCompletionCorrelation $correlation,
         UniqueConstraintViolationException $exception,
@@ -154,7 +248,10 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         ]);
 
         if ($byRunTool instanceof DeferredToolCompletion) {
-            return $this->toCorrelation($byRunTool);
+            $current = $this->toCorrelation($byRunTool);
+            $current->assertEnvelopeMatches($correlation);
+
+            return $current;
         }
 
         $byDeferredId = $this->findOneBy(['deferredId' => $correlation->deferredId]);
@@ -163,7 +260,10 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                 throw new \RuntimeException(\sprintf('Deferred id "%s" is already registered for run "%s" tool call "%s"; cannot register run "%s" tool call "%s".', $correlation->deferredId, $byDeferredId->runId, $byDeferredId->toolCallId, $correlation->runId, $correlation->toolCallId));
             }
 
-            return $this->toCorrelation($byDeferredId);
+            $current = $this->toCorrelation($byDeferredId);
+            $current->assertEnvelopeMatches($correlation);
+
+            return $current;
         }
 
         throw $exception;
@@ -172,8 +272,9 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
     /**
      * Load one row with committed field values for mutable status decisions.
      *
-     * Registration lookups keep plain findOneBy(): those fields are immutable
-     * after insert. Status-bearing reads must overwrite identity-map copies.
+     * Registration conflict lookups may keep plain findOneBy() for immutable
+     * insert fields. Status and lifecycle-bearing reads must overwrite
+     * identity-map copies after DBAL updates.
      *
      * @param array<string, mixed> $criteria
      */
@@ -210,6 +311,22 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             $argSchema = json_decode($entity->argSchema, true, 512, \JSON_THROW_ON_ERROR);
         }
 
+        $ownerReference = null;
+        if (null !== $entity->executionOwnerReferenceJson && '' !== $entity->executionOwnerReferenceJson) {
+            $ownerReference = $this->deserializeOwnerReference(
+                $entity->executionOwnerReferenceJson,
+                $entity->deferredId,
+            );
+        }
+
+        $deadlineMetadata = null;
+        if (null !== $entity->deadlineMetadataJson && '' !== $entity->deadlineMetadataJson) {
+            $deadlineMetadata = json_decode($entity->deadlineMetadataJson, true, 512, \JSON_THROW_ON_ERROR);
+            if (!\is_array($deadlineMetadata)) {
+                throw new \RuntimeException(\sprintf('Deferred tool deadline metadata is corrupt for "%s".', $entity->deferredId));
+            }
+        }
+
         return new DeferredToolCompletionCorrelation(
             deferredId: $entity->deferredId,
             runId: $entity->runId,
@@ -228,6 +345,42 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             assistantMessage: \is_array($assistantMessage) ? $assistantMessage : null,
             argSchema: \is_array($argSchema) ? $argSchema : null,
             toolsRef: $entity->toolsRef,
+            invocationId: $entity->invocationId,
+            controllerRunId: $entity->controllerRunId,
+            executionOwnerKind: $entity->executionOwnerKind,
+            executionOwnerReference: $ownerReference,
+            originalExecutionMode: $entity->originalExecutionMode,
+            deadlineMetadata: $deadlineMetadata,
+            originWakeGeneration: $entity->originWakeGeneration,
+            rootWakeGeneration: $entity->rootWakeGeneration,
+            envelopeFingerprint: $entity->envelopeFingerprint,
+            callerDisposition: ToolInvocationCallerDispositionEnum::from($entity->callerDisposition),
+            executionObservation: ToolInvocationExecutionObservationEnum::from($entity->executionObservation),
         );
+    }
+
+    private function serializeOwnerReference(ToolInvocationOwnerReference $ownerReference): string
+    {
+        return $this->serializer->serialize(
+            $ownerReference,
+            'json',
+            [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+        );
+    }
+
+    private function deserializeOwnerReference(string $json, string $deferredId): ToolInvocationOwnerReference
+    {
+        try {
+            /** @var ToolInvocationOwnerReference $ownerReference */
+            $ownerReference = $this->serializer->deserialize(
+                $json,
+                ToolInvocationOwnerReference::class,
+                'json',
+            );
+        } catch (SerializerExceptionInterface|\TypeError|\ValueError|\InvalidArgumentException|\JsonException $exception) {
+            throw new \RuntimeException(\sprintf('Deferred tool owner reference is corrupt for "%s".', $deferredId), 0, $exception);
+        }
+
+        return $ownerReference;
     }
 }

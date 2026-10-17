@@ -74,6 +74,41 @@ class DeferredToolCompletion
     #[ORM\Column(name: 'tools_ref', type: 'string', length: 255, nullable: true)]
     public ?string $toolsRef = null;
 
+    #[ORM\Column(name: 'invocation_id', type: 'string', length: 64, nullable: true)]
+    public ?string $invocationId = null;
+
+    #[ORM\Column(name: 'controller_run_id', type: 'string', length: 255, nullable: true)]
+    public ?string $controllerRunId = null;
+
+    #[ORM\Column(name: 'execution_owner_kind', type: 'string', length: 64, nullable: true)]
+    public ?string $executionOwnerKind = null;
+
+    /** @var string|null JSON */
+    #[ORM\Column(name: 'execution_owner_reference_json', type: 'text', nullable: true)]
+    public ?string $executionOwnerReferenceJson = null;
+
+    #[ORM\Column(name: 'original_execution_mode', type: 'string', length: 32, nullable: true)]
+    public ?string $originalExecutionMode = null;
+
+    /** @var string|null JSON */
+    #[ORM\Column(name: 'deadline_metadata_json', type: 'text', nullable: true)]
+    public ?string $deadlineMetadataJson = null;
+
+    #[ORM\Column(name: 'origin_wake_generation', type: 'integer', nullable: true)]
+    public ?int $originWakeGeneration = null;
+
+    #[ORM\Column(name: 'root_wake_generation', type: 'integer', nullable: true)]
+    public ?int $rootWakeGeneration = null;
+
+    #[ORM\Column(name: 'envelope_fingerprint', type: 'string', length: 64, nullable: true)]
+    public ?string $envelopeFingerprint = null;
+
+    #[ORM\Column(name: 'caller_disposition', type: 'string', length: 64)]
+    public string $callerDisposition = 'foreground_pending';
+
+    #[ORM\Column(name: 'execution_observation', type: 'string', length: 64)]
+    public string $executionObservation = 'active';
+
     #[ORM\Column(type: 'string', length: 32)]
     public string $status = 'pending';
 

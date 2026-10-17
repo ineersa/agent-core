@@ -6,21 +6,24 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
+use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\TransitionPlan;
 
-/** Applies captured batch and mailbox changes together after verified append. */
+/** Applies captured batch, mailbox, and lifecycle projection changes after verified append. */
 final readonly class LocalMetadataCoordinator
 {
     public function __construct(
         private ApplicationDbTransactionInterface $transactions,
         private ToolBatchStoreInterface $batches,
         private CommandStoreInterface $commands,
+        private DeferredToolCompletionRepositoryInterface $deferredCompletions,
     ) {
     }
 
@@ -31,7 +34,12 @@ final readonly class LocalMetadataCoordinator
         foreach ($plan->localActions as $action) {
             if ($action instanceof FinalizeToolBatchDTO || $action instanceof RegisterToolBatchDTO) {
                 $batchActions[] = $action;
-            } elseif (!$action instanceof EnqueueCommandDTO && !$action instanceof MarkCommandAppliedDTO && !$action instanceof RejectCommandDTO) {
+            } elseif (
+                !$action instanceof EnqueueCommandDTO
+                && !$action instanceof MarkCommandAppliedDTO
+                && !$action instanceof RejectCommandDTO
+                && !$action instanceof RecordToolInvocationLifecycleDTO
+            ) {
                 throw new \RuntimeException('Unsupported local metadata action '.$action::class.'.');
             }
         }
@@ -52,6 +60,8 @@ final readonly class LocalMetadataCoordinator
                     $this->commands->markApplied($action->runId, $action->idempotencyKey);
                 } elseif ($action instanceof RejectCommandDTO) {
                     $this->commands->markRejected($action->runId, $action->idempotencyKey, $action->reason);
+                } elseif ($action instanceof RecordToolInvocationLifecycleDTO) {
+                    $this->deferredCompletions->applyLifecycleProjection($action);
                 }
             }
         });
