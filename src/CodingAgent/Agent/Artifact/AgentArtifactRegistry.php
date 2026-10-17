@@ -545,6 +545,101 @@ final class AgentArtifactRegistry
         throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
     }
 
+    /**
+     * Stream-hash one immutable handoff generation and optionally return a bounded preview.
+     *
+     * @return array{bytes: int, sha256: string, media_type: string, truncated: bool, text?: string}
+     */
+    public function inspectHandoffHistoryEntry(
+        string $parentRunId,
+        string $artifactId,
+        string $handoffId,
+        int $expectedBytes,
+        string $expectedSha256,
+        string $expectedMediaType,
+        ?int $maxDecodeBytes = null,
+    ): array {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+        $handoffId = trim($handoffId);
+        if ('' === $handoffId) {
+            throw new \InvalidArgumentException('Handoff id must not be blank.');
+        }
+        $this->pathResolver->validatePathComponent($handoffId, 'handoffId');
+        if ($expectedBytes < 0) {
+            throw new \InvalidArgumentException('expectedBytes must be non-negative.');
+        }
+        if (64 !== \strlen($expectedSha256) || 1 !== preg_match('/^[a-f0-9]{64}$/', $expectedSha256)) {
+            throw new \InvalidArgumentException('expectedSha256 must be a lowercase hex digest.');
+        }
+        if ('' === trim($expectedMediaType)) {
+            throw new \InvalidArgumentException('expectedMediaType must be nonblank.');
+        }
+        $budget = $maxDecodeBytes ?? \PHP_INT_MAX;
+        if ($budget < 0) {
+            throw new \InvalidArgumentException('maxDecodeBytes must be non-negative.');
+        }
+
+        $found = false;
+        foreach ($this->normalizedHandoffEntries($parentRunId, $artifactId) as $entry) {
+            if ($entry['id'] === $handoffId) {
+                $found = true;
+                break;
+            }
+        }
+        if (!$found) {
+            throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
+        }
+
+        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+        $relative = "{$paths->artifactDir}/handoffs/{$handoffId}.md";
+        $path = $this->pathResolver->absolutePath($parentRunId, $relative);
+        if (!is_file($path) || is_link($path)) {
+            throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
+        }
+        $stream = fopen($path, 'rb');
+        if (false === $stream) {
+            throw new \RuntimeException(\sprintf('Handoff "%s" for artifact "%s" parent "%s" is not readable.', $handoffId, $artifactId, $parentRunId));
+        }
+        try {
+            $hash = hash_init('sha256');
+            $bytes = 0;
+            $preview = '';
+            $capturePreview = $expectedBytes <= $budget;
+            while (!feof($stream)) {
+                $chunk = fread($stream, 8192);
+                if (false === $chunk) {
+                    throw new \RuntimeException(\sprintf('Failed while streaming handoff "%s" for artifact "%s".', $handoffId, $artifactId));
+                }
+                if ('' === $chunk) {
+                    continue;
+                }
+                hash_update($hash, $chunk);
+                $bytes += \strlen($chunk);
+                if ($capturePreview) {
+                    $preview .= $chunk;
+                }
+            }
+            $sha256 = hash_final($hash);
+            if ($bytes !== $expectedBytes || $sha256 !== $expectedSha256) {
+                throw new \RuntimeException(\sprintf('Handoff "%s" for artifact "%s" failed integrity validation.', $handoffId, $artifactId));
+            }
+            $result = [
+                'bytes' => $bytes,
+                'sha256' => $sha256,
+                'media_type' => $expectedMediaType,
+                'truncated' => $bytes > $budget,
+            ];
+            if ($capturePreview) {
+                $result['text'] = $preview;
+            }
+
+            return $result;
+        } finally {
+            fclose($stream);
+        }
+    }
+
     // ── Internal read/write methods ─────────────────────────────────────
 
     private function buildPendingEntry(

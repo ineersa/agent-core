@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
-use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeFactory;
 use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -100,7 +99,7 @@ final class ToolCallResultHandlerRetainedCompletionTest extends TestCase
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
             serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
-            retainedCompletionFactory: new RetainedToolCompletionEnvelopeFactory($bodies, RetainedCompletionTestFactory::codec()),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory($bodies),
             retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
 

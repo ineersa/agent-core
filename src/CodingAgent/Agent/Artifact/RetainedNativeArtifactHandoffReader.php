@@ -19,6 +19,7 @@ final readonly class RetainedNativeArtifactHandoffReader implements RetainedNati
 {
     public function __construct(
         private AgentArtifactRegistry $artifacts,
+        private OwningRootSessionResolver $owningRoots,
     ) {
     }
 
@@ -36,49 +37,40 @@ final readonly class RetainedNativeArtifactHandoffReader implements RetainedNati
             || '' === trim($artifactId) || '' === trim($handoffId)) {
             throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Native handoff identity is incomplete.');
         }
-        if ($parentRunId !== $authorizedRootSessionId) {
-            // Child artifacts live under the parent/root session. Foreign parents
-            // are rejected rather than walking arbitrary registries.
-            $owned = false;
-            foreach ($this->artifacts->list($authorizedRootSessionId) as $entry) {
-                if ($entry->artifactId === $artifactId && $entry->parentRunId === $parentRunId) {
-                    $owned = true;
-                    break;
-                }
-            }
-            if (!$owned) {
-                throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Native handoff is outside the authorized root session.');
-            }
-        }
 
         try {
-            $text = $this->artifacts->readHandoffHistoryEntry($parentRunId, $artifactId, $handoffId);
+            $resolvedRoot = $this->owningRoots->resolveOwningRootSessionId($parentRunId);
         } catch (\InvalidArgumentException $exception) {
-            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyMissing, 'Native handoff generation is missing.', $exception);
-        } catch (\Throwable $exception) {
-            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Native handoff generation is unreadable.', $exception);
+            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Native handoff parent identity is invalid.', $exception);
+        }
+        if ($resolvedRoot !== $authorizedRootSessionId) {
+            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Native handoff is outside the authorized root session.');
         }
 
-        $bytes = \strlen($text);
-        $sha256 = hash('sha256', $text);
-        if ($bytes !== $expectedBytes || $sha256 !== $expectedSha256) {
-            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Native handoff generation failed integrity validation.');
+        $entry = $this->artifacts->get($parentRunId, $artifactId);
+        if (null === $entry) {
+            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Native handoff artifact is outside the authorized root session.');
         }
 
         $budget = $maxDecodeBytes ?? RetainedToolCompletionBounds::INSPECTION_BODY_MAX_BYTES;
         if ($budget < 0) {
             throw new \InvalidArgumentException('maxDecodeBytes must be non-negative.');
         }
-        $result = [
-            'bytes' => $bytes,
-            'sha256' => $sha256,
-            'media_type' => $expectedMediaType,
-            'truncated' => $bytes > $budget,
-        ];
-        if ($bytes <= $budget) {
-            $result['text'] = $text;
-        }
 
-        return $result;
+        try {
+            return $this->artifacts->inspectHandoffHistoryEntry(
+                parentRunId: $parentRunId,
+                artifactId: $artifactId,
+                handoffId: $handoffId,
+                expectedBytes: $expectedBytes,
+                expectedSha256: $expectedSha256,
+                expectedMediaType: $expectedMediaType,
+                maxDecodeBytes: $budget,
+            );
+        } catch (\InvalidArgumentException $exception) {
+            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyMissing, 'Native handoff generation is missing.', $exception);
+        } catch (\Throwable $exception) {
+            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Native handoff generation is unreadable.', $exception);
+        }
     }
 }

@@ -198,6 +198,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                             result: $message,
                             acceptance: $incomingAcceptance,
                             sourceEventSeq: $nextSeq,
+                            sourceEventTurnNo: $state->turnNo,
                         );
                         ++$nextSeq;
                     } else {
@@ -235,6 +236,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                     messages: $messages,
                     result: $syntheticResult,
                     sourceEventSeq: $nextSeq,
+                    sourceEventTurnNo: $state->turnNo,
                 );
                 ++$nextSeq;
                 ++$projectedToolMessageCount;
@@ -347,10 +349,10 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 $acceptance,
                 result: $message,
                 controllerRunId: $acceptance instanceof PreparedToolTerminalAcceptanceDTO
-                    ? ($acceptance->correlation->controllerRunId ?? $acceptance->correlation->runId)
-                    : $message->runId(),
+                    ? $acceptance->correlation->controllerRunId
+                    : null,
                 sourceEventSeq: $sourceSeq,
-                sourceEventTurnNo: $message->turnNo(),
+                sourceEventTurnNo: $state->turnNo,
             ),
         ]];
 
@@ -477,7 +479,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 $eventPayload,
                 $acceptance,
                 result: $message,
-                controllerRunId: $acceptance->correlation->controllerRunId ?? $acceptance->correlation->runId,
+                controllerRunId: $acceptance->correlation->controllerRunId,
                 sourceEventSeq: $sourceSeq,
                 sourceEventTurnNo: $acceptance->correlation->turnNo,
             ),
@@ -515,7 +517,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             $acceptance,
             evidenceOnly: true,
             result: $message,
-            controllerRunId: $acceptance->correlation->controllerRunId ?? $acceptance->correlation->runId,
+            controllerRunId: $acceptance->correlation->controllerRunId,
             sourceEventSeq: $sourceSeq,
             sourceEventTurnNo: $acceptance->correlation->turnNo,
         );
@@ -657,8 +659,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 correlation: $acceptance->correlation,
                 result: $result,
                 normalizedToolResult: $payload['tool_result'],
-                controllerRunId: $controllerRunId ?? $acceptance->correlation->runId,
                 executionOwnerKind: $ownerKind,
+                controllerRunId: $controllerRunId,
             );
             if (null !== $sourceEventSeq && null !== $sourceEventTurnNo) {
                 $envelope = $envelope->withAcceptedSourceEventReference(
@@ -904,6 +906,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         ToolCallResult $result,
         ?PreparedToolTerminalAcceptanceDTO $acceptance = null,
         ?int $sourceEventSeq = null,
+        ?int $sourceEventTurnNo = null,
     ): void {
         $eventSpecs[] = [
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
@@ -912,10 +915,10 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 $acceptance,
                 result: $result,
                 controllerRunId: $acceptance instanceof PreparedToolTerminalAcceptanceDTO
-                    ? ($acceptance->correlation->controllerRunId ?? $acceptance->correlation->runId)
-                    : $result->runId(),
+                    ? $acceptance->correlation->controllerRunId
+                    : null,
                 sourceEventSeq: $sourceEventSeq,
-                sourceEventTurnNo: null !== $sourceEventSeq ? $result->turnNo() : null,
+                sourceEventTurnNo: $sourceEventTurnNo,
             ),
         ];
         $this->appendToolMessage(messages: $messages, result: $result);

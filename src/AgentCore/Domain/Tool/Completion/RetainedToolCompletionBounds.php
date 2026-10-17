@@ -25,6 +25,12 @@ final class RetainedToolCompletionBounds
     /** Maximum events scanned newest-first when locating one retained receipt. */
     public const int SOURCE_LOOKUP_MAX_EVENTS = 4096;
 
+    /**
+     * Maximum native handoff attachment entries kept inline on the envelope.
+     * Larger batches seal the full generation list into an owned manifest body.
+     */
+    public const int INLINE_NATIVE_ATTACHMENT_MAX = 8;
+
     public const int SCHEMA_VERSION = 1;
 
     public const string KIND_TOOL_COMPLETION = 'tool_completion';

@@ -43,7 +43,8 @@ interface RetainedToolCompletionBodyStoreInterface
      *     sha256: string,
      *     media_type: string,
      *     truncated: bool,
-     *     json?: array<string, mixed>
+     *     json?: array<string, mixed>,
+     *     text?: string
      * }
      */
     public function inspectJson(

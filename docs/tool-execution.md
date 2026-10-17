@@ -51,17 +51,21 @@ wake fencing, producers, and Ctrl+B remain later checkpoints.
 C4 retains an immutable versioned `tool_completion` envelope on the accepted
 receipt (`message_id = completion_id`). Runtime origin/provenance and the
 allocated `accepted_source_event_reference` are owner-authored, not taken from
-tool output. Envelope array/JSON mapping uses the configured Symfony Serializer.
-Small validated bodies stay inline; oversized bodies are streamed into sealed
-storage under the owning root session at
-`runtime/retained-tool-completions/<message_id>.json` with bytes/hash/media type.
-Host-authored native handoff generations (including parallel child manifests)
-and owned output-cap full bodies are bound/promoted before ordinary cleanup can
-reclaim temps. The internal reader uses canonical source locators or a bounded
-newest-first scan and never allocates unbounded body previews. Missing,
-corrupt, unsupported, or foreign references yield typed inspection failures and
-never re-execute tools. Mailbox delivery, wake fencing, producers, and Ctrl+B
-remain later checkpoints.
+tool output. `controller_run_id` is the durable owning root session resolved from
+child-artifact/session parent links; nested evidence seals under that root, not a
+phantom `sessions/<childRunId>` directory. Envelope array/JSON mapping uses the
+configured Symfony Serializer. Small validated bodies stay inline; oversized
+bodies stream the already-resident encoded JSON into sealed storage under the
+owning root at `runtime/retained-tool-completions/<message_id>.json` with
+bytes/hash/media type. Host-authored native handoff generations keep full lists
+in an owned streamed manifest when parallel batches exceed the inline attachment
+budget, and owned output-cap full bodies are promoted before ordinary cleanup can
+reclaim temps. Native inspect stream-hashes generations and returns a bounded
+preview only when the body fits the caller budget. The internal reader uses
+canonical source locators or a bounded newest-first scan. Missing, corrupt,
+unsupported, or foreign references yield typed inspection failures and never
+re-execute tools. Mailbox delivery, wake fencing, producers, and Ctrl+B remain
+later checkpoints.
 
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare

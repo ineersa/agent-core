@@ -40,8 +40,8 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
             correlation: $correlation,
             result: $result,
             normalizedToolResult: $normalized,
-            controllerRunId: 'run-1',
             executionOwnerKind: 'bash',
+            controllerRunId: 'run-1',
         );
         $this->assertSame('completion-1', $envelope->messageId);
         $this->assertSame(RetainedToolCompletionBodyKindEnum::Inline, $envelope->body->kind);
@@ -72,8 +72,8 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
             correlation: $this->correlation(),
             result: new ToolCallResult('run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $normalized),
             normalizedToolResult: $normalized,
-            controllerRunId: 'run-1',
             executionOwnerKind: 'bash',
+            controllerRunId: 'run-1',
         );
         $this->assertSame(RetainedToolCompletionBodyKindEnum::OwnedSealed, $envelope->body->kind);
         $this->assertLessThanOrEqual(RetainedToolCompletionBounds::SUBJECT_MAX_BYTES, \strlen($envelope->presentation->subject));
@@ -104,12 +104,55 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
             correlation: $this->correlation(),
             result: new ToolCallResult('run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $normalized),
             normalizedToolResult: $normalized,
-            controllerRunId: 'run-1',
             executionOwnerKind: 'subagent',
+            controllerRunId: 'run-1',
         );
         $this->assertSame(RetainedToolCompletionBodyKindEnum::NativeArtifactHandoff, $envelope->body->kind);
         $this->assertSame('0199aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee', $envelope->body->nativeHandoffId);
         $this->assertSame('native_artifact_handoff', $envelope->attachments[0]['kind']);
+    }
+
+    public function testLargeNativeBatchSealsManifestAndBoundsInlineAttachments(): void
+    {
+        $store = new FakeRetainedToolCompletionBodyStore();
+        $factory = RetainedCompletionTestFactory::envelopeFactory($store);
+        $entries = [];
+        for ($i = 0; $i < 60; ++$i) {
+            $entries[] = [
+                'parent_run_id' => 'run-1',
+                'artifact_id' => 'agent_'.str_pad((string) $i, 3, '0', \STR_PAD_LEFT),
+                'handoff_id' => \sprintf('0199aaaa-bbbb-7ccc-8ddd-%012d', $i),
+                'bytes' => 4,
+                'sha256' => hash('sha256', 'body-'.$i),
+                'media_type' => 'text/markdown',
+            ];
+        }
+        $normalized = [
+            'tool_name' => 'tasks',
+            'content' => [['type' => 'text', 'text' => 'batch done']],
+            'is_error' => false,
+            'details' => [
+                'native_artifact_handoffs' => $entries,
+            ],
+        ];
+        $envelope = $factory->build(
+            completionId: 'completion-native-batch',
+            correlation: $this->correlation(),
+            result: new ToolCallResult('run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $normalized),
+            normalizedToolResult: $normalized,
+            executionOwnerKind: 'subagent',
+            controllerRunId: 'run-1',
+        );
+        $this->assertSame(RetainedToolCompletionBodyKindEnum::OwnedSealed, $envelope->body->kind);
+        $this->assertLessThanOrEqual(RetainedToolCompletionBounds::INLINE_NATIVE_ATTACHMENT_MAX, \count($envelope->attachments));
+        $this->assertLessThanOrEqual(
+            RetainedToolCompletionBounds::ENVELOPE_MAX_BYTES,
+            \strlen(json_encode(RetainedCompletionTestFactory::codec()->normalize($envelope), \JSON_THROW_ON_ERROR)),
+        );
+        $this->assertTrue($store->isHeld('run-1', 'completion-native-batch'));
+        $manifest = $store->inspectJson($envelope->body, 'run-1');
+        $this->assertSame(60, $manifest['json']['count']);
+        $this->assertCount(60, $manifest['json']['entries']);
     }
 
     public function testSerializerRejectsWrongOwnerTypes(): void
@@ -126,8 +169,8 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
             correlation: $this->correlation(),
             result: new ToolCallResult('run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $normalized),
             normalizedToolResult: $normalized,
-            controllerRunId: 'run-1',
             executionOwnerKind: 'bash',
+            controllerRunId: 'run-1',
         );
         $payload = $codec->normalize($envelope);
         $payload['origin']['origin_turn_no'] = '1';

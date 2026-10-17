@@ -137,6 +137,11 @@ final readonly class SessionRetainedToolCompletionBodyStore implements RetainedT
                 bytes: $bytes,
                 sha256: $sha256,
             );
+        } catch (\Throwable $exception) {
+            if (isset($tmpPath) && is_file($tmpPath)) {
+                @unlink($tmpPath);
+            }
+            throw $exception;
         } finally {
             $lock->release();
         }
@@ -364,14 +369,17 @@ final readonly class SessionRetainedToolCompletionBodyStore implements RetainedT
             // already written on disk; callers must not keep the decoded tree.
             $raw = stream_get_contents($stream);
             if (!\is_string($raw) || '' === $raw) {
+                @unlink($path);
                 throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Temporary retained completion body is empty.');
             }
             try {
                 $decoded = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
             } catch (\JsonException $exception) {
+                @unlink($path);
                 throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Sealed retained completion body JSON is corrupt.', $exception);
             }
             if (!\is_array($decoded)) {
+                @unlink($path);
                 throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Sealed retained completion body JSON must decode to an array.');
             }
             unset($decoded, $raw);
