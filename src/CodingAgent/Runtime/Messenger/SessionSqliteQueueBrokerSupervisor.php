@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Runtime\Messenger;
 
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\SqliteQueue\Broker\BrokerEventEnum;
-use Ineersa\SqliteQueue\Sqlite\SqliteSynchronousMode;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
@@ -60,22 +59,13 @@ final class SessionSqliteQueueBrokerSupervisor
         private readonly RuntimeProcessConfig $runtimeConfig,
         private readonly Filesystem $filesystem = new Filesystem(),
         private readonly float $readyTimeoutSeconds = self::DEFAULT_READY_TIMEOUT_SECONDS,
-        private readonly ?int $redeliverTimeoutSeconds = null,
-        private readonly ?SqliteSynchronousMode $synchronous = null,
         private readonly ?int $maxPayload = null,
-        private readonly ?int $maxConnections = null,
     ) {
         if ($this->readyTimeoutSeconds <= 0 || !is_finite($this->readyTimeoutSeconds)) {
             throw new \InvalidArgumentException('Broker ready timeout must be positive finite seconds.');
         }
-        if (null !== $this->redeliverTimeoutSeconds && $this->redeliverTimeoutSeconds <= 0) {
-            throw new \InvalidArgumentException('Broker redeliver timeout must be positive seconds.');
-        }
         if (null !== $this->maxPayload && $this->maxPayload < 1) {
             throw new \InvalidArgumentException('Broker max payload must be a positive byte count.');
-        }
-        if (null !== $this->maxConnections && $this->maxConnections < 1) {
-            throw new \InvalidArgumentException('Broker max connections must be a positive integer.');
         }
     }
 
@@ -99,7 +89,7 @@ final class SessionSqliteQueueBrokerSupervisor
         $this->paths = $paths;
         $this->advertisedMaxPayload = null;
         $this->advertisedMaxConnections = null;
-        $this->requiredMaxConnectionsForReady = $requiredMaxConnections ?? $this->maxConnections;
+        $this->requiredMaxConnectionsForReady = $requiredMaxConnections;
         $this->closeOwnerInput();
 
         $this->preparePrivatePaths($paths);
@@ -113,12 +103,6 @@ final class SessionSqliteQueueBrokerSupervisor
             '--no-ansi',
             '--no-interaction',
         ];
-        if (null !== $this->redeliverTimeoutSeconds) {
-            $launchCommand[] = '--redeliver-timeout='.$this->redeliverTimeoutSeconds;
-        }
-        if (null !== $this->synchronous) {
-            $launchCommand[] = '--synchronous='.$this->synchronous->value;
-        }
         if (null !== $this->maxPayload) {
             $launchCommand[] = '--max-payload='.$this->maxPayload;
         }
@@ -171,8 +155,6 @@ final class SessionSqliteQueueBrokerSupervisor
             'pgid' => $this->processGroupId,
             'database' => $paths->databasePath,
             'endpoint' => $paths->endpointPath,
-            'synchronous_override' => $this->synchronous?->value,
-            'redeliver_timeout_override_seconds' => $this->redeliverTimeoutSeconds,
             'max_payload' => $this->advertisedMaxPayload,
             'max_connections' => $this->advertisedMaxConnections,
         ]);
