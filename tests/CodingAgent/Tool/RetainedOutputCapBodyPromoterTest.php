@@ -103,4 +103,49 @@ final class RetainedOutputCapBodyPromoterTest extends IsolatedKernelTestCase
             TestDirectoryIsolation::removeDirectory($tmp);
         }
     }
+
+    public function testRejectsOwnedScopeDirectorySymlinkToSiblingRun(): void
+    {
+        /** @var HatfieldSessionStore $sessions */
+        $sessions = self::getContainer()->get(HatfieldSessionStore::class);
+        $root = $sessions->createSession('retained-output-cap-scope-redirect');
+        /** @var SessionRetainedToolCompletionBodyStore $store */
+        $store = self::getContainer()->get(SessionRetainedToolCompletionBodyStore::class);
+
+        $tmp = TestDirectoryIsolation::createOsTempDir('hatfield-retained-output-cap-redirect');
+        try {
+            $config = new OutputCapConfig(storageDir: $tmp);
+            $promoter = new RetainedOutputCapBodyPromoter($config, $store);
+            $sourceRunId = 'child-run-'.bin2hex(random_bytes(4));
+            $foreignRunId = 'foreign-run-'.bin2hex(random_bytes(4));
+            $ownedScopeName = 'run-'.hash('sha256', $sourceRunId);
+            $foreignScope = $tmp.'/run-'.hash('sha256', $foreignRunId);
+            (new Filesystem())->mkdir($foreignScope, 0700);
+            $foreignPath = $foreignScope.'/foreign-full-output.txt';
+            file_put_contents($foreignPath, 'foreign-owned-output');
+            symlink($foreignScope, $tmp.'/'.$ownedScopeName);
+            $redirectedPath = $tmp.'/'.$ownedScopeName.'/foreign-full-output.txt';
+
+            $this->assertNull($promoter->promoteIfOwned(
+                owningRootSessionId: $root,
+                messageId: 'completion-scope-redirect',
+                normalizedToolResult: [
+                    'tool_name' => 'bash',
+                    'content' => [['type' => 'text', 'text' => 'capped']],
+                    'is_error' => false,
+                    'details' => [
+                        'output_cap' => [
+                            'capped' => true,
+                            'saved_path' => $redirectedPath,
+                        ],
+                    ],
+                ],
+                sourceRunId: $sourceRunId,
+            ));
+            $this->assertFalse($store->isHeld($root, 'completion-scope-redirect'));
+            $this->assertFileExists($foreignPath);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($tmp);
+        }
+    }
 }

@@ -137,6 +137,68 @@ final class RetainedNativeHandoffBodyPromoterTest extends IsolatedKernelTestCase
         $sessions->deleteSession($foreign);
     }
 
+    public function testRejectsHandoffsDirectorySymlinkRedirectionBeforeSeal(): void
+    {
+        /** @var HatfieldSessionStore $sessions */
+        $sessions = self::getContainer()->get(HatfieldSessionStore::class);
+        /** @var AgentArtifactRegistry $registry */
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        /** @var SessionAgentArtifactPathResolver $paths */
+        $paths = self::getContainer()->get(SessionAgentArtifactPathResolver::class);
+        /** @var SessionRetainedToolCompletionBodyStore $store */
+        $store = self::getContainer()->get(SessionRetainedToolCompletionBodyStore::class);
+        /** @var DeferredSubagentBatchRepository $batches */
+        $batches = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        /** @var DeferredSubagentChildRepository $deferredChildren */
+        $deferredChildren = self::getContainer()->get(DeferredSubagentChildRepository::class);
+
+        $root = $sessions->createSession('native-promoter-handoffs-redirect-root');
+        $foreign = $sessions->createSession('native-promoter-handoffs-redirect-foreign');
+        $coldChildren = new AgentChildRunDirectory($sessions, $registry, new NullLogger());
+        $resolver = new OwningRootSessionResolver($coldChildren, $sessions, $deferredChildren, $batches);
+        $promoter = new RetainedNativeHandoffBodyPromoter($paths, $store, $resolver);
+
+        $ownedArtifactId = 'agent_owned_dir_'.bin2hex(random_bytes(3));
+        $registry->create($root, $ownedArtifactId, 'child-owned-dir-'.bin2hex(random_bytes(3)), 'scout', AgentArtifactKindEnum::Subagent);
+        $ownedGeneration = $registry->writeHandoff($root, $ownedArtifactId, 'owned-before-redirect', summary: 'owned');
+
+        $foreignArtifactId = 'agent_foreign_dir_'.bin2hex(random_bytes(3));
+        $registry->create($foreign, $foreignArtifactId, 'child-foreign-dir-'.bin2hex(random_bytes(3)), 'scout', AgentArtifactKindEnum::Subagent);
+        $foreignGeneration = $registry->writeHandoff($foreign, $foreignArtifactId, 'foreign-redirect-body', summary: 'foreign');
+
+        $sessionsBase = $sessions->resolveSessionsBasePath();
+        $ownedHandoffs = $sessionsBase.'/'.$root.'/artifacts/agents/'.$ownedArtifactId.'/handoffs';
+        $foreignHandoffs = $sessionsBase.'/'.$foreign.'/artifacts/agents/'.$foreignArtifactId.'/handoffs';
+        foreach (scandir($ownedHandoffs) ?: [] as $entry) {
+            if ('.' === $entry || '..' === $entry) {
+                continue;
+            }
+            unlink($ownedHandoffs.'/'.$entry);
+        }
+        rmdir($ownedHandoffs);
+        symlink($foreignHandoffs, $ownedHandoffs);
+
+        $generation = new RetainedNativeHandoffGeneration(
+            parentRunId: $root,
+            artifactId: $ownedArtifactId,
+            handoffId: $foreignGeneration->handoffId,
+            bytes: $foreignGeneration->bytes,
+            sha256: $foreignGeneration->sha256,
+            mediaType: $foreignGeneration->mediaType,
+        );
+        $before = $this->listRetainedBodies($sessionsBase.'/'.$root);
+        try {
+            $promoter->sealOwnedCopy($root, 'completion-handoffs-redirect', $generation);
+            $this->fail('Expected redirected handoffs ancestry rejection.');
+        } catch (RetainedToolCompletionFailure $failure) {
+            $this->assertSame(RetainedToolCompletionFailureCodeEnum::BodyMissing, $failure->code());
+        }
+        $this->assertSame($before, $this->listRetainedBodies($sessionsBase.'/'.$root));
+        $this->assertFalse($store->isHeld($root, 'completion-handoffs-redirect'));
+        $this->assertFileExists($foreignHandoffs.'/'.$foreignGeneration->handoffId.'.md');
+        unlink($ownedHandoffs);
+    }
+
     /**
      * @return list<string>
      */

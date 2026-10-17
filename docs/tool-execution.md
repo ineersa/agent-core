@@ -51,7 +51,11 @@ wake fencing, producers, and Ctrl+B remain later checkpoints.
 C4 retains an immutable versioned `tool_completion` envelope on the accepted
 receipt (`message_id = completion_id`). Runtime origin/provenance and the
 allocated `accepted_source_event_reference` are owner-authored, not taken from
-tool output. `controller_run_id` is the durable owning root session resolved from
+tool output. The reference is bound from the durable event allocator when the
+canonical receipt is sequenced, not guessed from in-memory `lastSeq`. Retained
+body promotion and presentation read the nested worker outcome under
+`tool_result.result` when the configured serializer emits the MESSAGE shape;
+accepted-result fingerprints remain over the full outer `tool_result`. `controller_run_id` is the durable owning root session resolved from
 child-artifact links, durable deferred batch parent edges, and session parent
 links; nested evidence seals under that root, not a phantom
 `sessions/<childRunId>` directory. Cold workers resolve depth-2+ UUID children
@@ -65,9 +69,10 @@ in an owned streamed manifest when parallel batches exceed the inline attachment
 budget. A single native generation under a non-root UUID parent is sealed as a
 root-owned copy so authorized root deletion reclaims the promised body without
 claiming external UUID artifact paths. Owned output-cap full bodies are promoted
-before ordinary cleanup can reclaim temps. Native inspect stream-hashes
-generations and returns a bounded
-preview only when the body fits the caller budget. The internal reader uses
+before ordinary cleanup can reclaim temps. Native and output-cap source paths refuse leaf and ancestor symlink
+redirection before open or copy. Native inspect stream-hashes generations,
+fails closed as soon as actual bytes exceed the sealed length, and returns a
+bounded preview only when the body fits the caller budget. The internal reader uses
 canonical source locators or a bounded newest-first scan. Missing, corrupt,
 unsupported, or foreign references yield typed inspection failures and never
 re-execute tools. Mailbox delivery, wake fencing, producers, and Ctrl+B remain

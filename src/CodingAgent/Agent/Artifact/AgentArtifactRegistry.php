@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Ineersa\AgentCore\Infrastructure\Filesystem\PathSymlinkGuard;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use Ineersa\CodingAgent\Utility\AtomicFileWriterException;
@@ -594,10 +595,18 @@ final class AgentArtifactRegistry
         $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
         $relative = "{$paths->artifactDir}/handoffs/{$handoffId}.md";
         $path = $this->pathResolver->absolutePath($parentRunId, $relative);
-        if (!is_file($path) || is_link($path)) {
+        $sessionDir = \dirname($this->pathResolver->resolveArtifactsBasePath($parentRunId), 2);
+        $sessionReal = realpath($sessionDir);
+        if (false === $sessionReal || !is_dir($sessionReal) || is_link($sessionDir)
+            || PathSymlinkGuard::pathHasSymlinkAncestor($path, $sessionReal)
+            || !is_file($path) || is_link($path)) {
             throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
         }
-        $stream = fopen($path, 'rb');
+        $pathReal = PathSymlinkGuard::resolveContainedRegularFile($sessionReal, $path);
+        if (null === $pathReal) {
+            throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
+        }
+        $stream = fopen($pathReal, 'rb');
         if (false === $stream) {
             throw new \RuntimeException(\sprintf('Handoff "%s" for artifact "%s" parent "%s" is not readable.', $handoffId, $artifactId, $parentRunId));
         }
@@ -605,7 +614,7 @@ final class AgentArtifactRegistry
             $hash = hash_init('sha256');
             $bytes = 0;
             $preview = '';
-            $capturePreview = $expectedBytes <= $budget;
+            $previewBudget = min($budget, $expectedBytes);
             while (!feof($stream)) {
                 $chunk = fread($stream, 8192);
                 if (false === $chunk) {
@@ -614,10 +623,17 @@ final class AgentArtifactRegistry
                 if ('' === $chunk) {
                     continue;
                 }
+                $chunkLen = \strlen($chunk);
+                // Fail closed as soon as the actual stream exceeds the sealed generation length.
+                if ($bytes + $chunkLen > $expectedBytes) {
+                    throw new \RuntimeException(\sprintf('Handoff "%s" for artifact "%s" exceeded expected length.', $handoffId, $artifactId));
+                }
                 hash_update($hash, $chunk);
-                $bytes += \strlen($chunk);
-                if ($capturePreview) {
+                $bytes += $chunkLen;
+                if ($bytes <= $previewBudget) {
                     $preview .= $chunk;
+                } elseif (\strlen($preview) < $previewBudget) {
+                    $preview .= substr($chunk, 0, $previewBudget - \strlen($preview));
                 }
             }
             $sha256 = hash_final($hash);
@@ -630,7 +646,7 @@ final class AgentArtifactRegistry
                 'media_type' => $expectedMediaType,
                 'truncated' => $bytes > $budget,
             ];
-            if ($capturePreview) {
+            if ($expectedBytes <= $budget) {
                 $result['text'] = $preview;
             }
 

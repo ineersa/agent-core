@@ -22,7 +22,6 @@ use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionSourceEventReference;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationAcceptedCompletionIdentity;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -153,8 +152,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                     }
                 }
             }
-            $nextSeq = $state->lastSeq + 1 + \count($eventSpecs);
-
             // Cancellation can land after some results were accepted while the batch was
             // still incomplete. Those ids are pendingToolCalls===true with durable
             // result_received + execution_end, but their tool messages were deferred until
@@ -197,10 +194,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                             messages: $messages,
                             result: $message,
                             acceptance: $incomingAcceptance,
-                            sourceEventSeq: $nextSeq,
-                            sourceEventTurnNo: $state->turnNo,
                         );
-                        ++$nextSeq;
                     } else {
                         // Result was accepted while Running (incomplete batch): ends already
                         // durable in prior events; project only the deferred tool message.
@@ -235,10 +229,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                     eventSpecs: $eventSpecs,
                     messages: $messages,
                     result: $syntheticResult,
-                    sourceEventSeq: $nextSeq,
-                    sourceEventTurnNo: $state->turnNo,
                 );
-                ++$nextSeq;
                 ++$projectedToolMessageCount;
             }
 
@@ -341,7 +332,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             }
         }
 
-        $sourceSeq = $state->lastSeq + 1;
         $eventSpecs = [[
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
             'payload' => $this->withAcceptedCompletionReceipt(
@@ -351,8 +341,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 controllerRunId: $acceptance instanceof PreparedToolTerminalAcceptanceDTO
                     ? $acceptance->correlation->controllerRunId
                     : null,
-                sourceEventSeq: $sourceSeq,
-                sourceEventTurnNo: $state->turnNo,
             ),
         ]];
 
@@ -472,7 +460,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         // C3 records the accepted terminal receipt under the original invocation
         // identity. C4 retains the immutable completion envelope on that receipt.
         // Mailbox delivery and automatic wake remain later checkpoints.
-        $sourceSeq = $state->lastSeq + 1;
         $eventSpecs = [[
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
             'payload' => $this->withAcceptedCompletionReceipt(
@@ -480,8 +467,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 $acceptance,
                 result: $message,
                 controllerRunId: $acceptance->correlation->controllerRunId,
-                sourceEventSeq: $sourceSeq,
-                sourceEventTurnNo: $acceptance->correlation->turnNo,
             ),
             'turn_no' => $acceptance->correlation->turnNo,
         ]];
@@ -511,15 +496,12 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
         // Evidence-only settlement records the accepted receipt without projecting the
         // original call into model history or reviving a cancelled/stale owner state.
-        $sourceSeq = $state->lastSeq + 1;
         $eventPayload = $this->withAcceptedCompletionReceipt(
             $this->toolExecutionEndPayloadCodec->toEventPayload($message),
             $acceptance,
             evidenceOnly: true,
             result: $message,
             controllerRunId: $acceptance->correlation->controllerRunId,
-            sourceEventSeq: $sourceSeq,
-            sourceEventTurnNo: $acceptance->correlation->turnNo,
         );
         $eventSpecs = [[
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
@@ -629,8 +611,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         bool $evidenceOnly = false,
         ?ToolCallResult $result = null,
         ?string $controllerRunId = null,
-        ?int $sourceEventSeq = null,
-        ?int $sourceEventTurnNo = null,
     ): array {
         if (!$acceptance instanceof PreparedToolTerminalAcceptanceDTO || !$acceptance->accepted) {
             return $payload;
@@ -662,15 +642,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 executionOwnerKind: $ownerKind,
                 controllerRunId: $controllerRunId,
             );
-            if (null !== $sourceEventSeq && null !== $sourceEventTurnNo) {
-                $envelope = $envelope->withAcceptedSourceEventReference(
-                    new RetainedToolCompletionSourceEventReference(
-                        runId: $acceptance->correlation->runId,
-                        seq: $sourceEventSeq,
-                        turnNo: $sourceEventTurnNo,
-                    ),
-                );
-            }
+            // accepted_source_event_reference is bound from the allocated canonical seq in
+            // JsonlRunEventLog::withSeq before journal append. Do not guess from lastSeq.
             $payload['accepted_completion']['retained_message'] = $this->retainedCompletionCodec->normalize($envelope);
         }
 
@@ -905,8 +878,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         array &$messages,
         ToolCallResult $result,
         ?PreparedToolTerminalAcceptanceDTO $acceptance = null,
-        ?int $sourceEventSeq = null,
-        ?int $sourceEventTurnNo = null,
     ): void {
         $eventSpecs[] = [
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
@@ -917,8 +888,6 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 controllerRunId: $acceptance instanceof PreparedToolTerminalAcceptanceDTO
                     ? $acceptance->correlation->controllerRunId
                     : null,
-                sourceEventSeq: $sourceEventSeq,
-                sourceEventTurnNo: $sourceEventTurnNo,
             ),
         ];
         $this->appendToolMessage(messages: $messages, result: $result);

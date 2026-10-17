@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionBodyStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBodyReference;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailure;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEnum;
+use Ineersa\AgentCore\Infrastructure\Filesystem\PathSymlinkGuard;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 
 /**
@@ -16,6 +17,7 @@ use Ineersa\CodingAgent\Config\OutputCapConfig;
  *
  * Arbitrary saved_path values outside the exact run-owned output-cap scope are ignored.
  * The sealed body is the exact capped text stream (text/plain), not a re-encoded preview.
+ * Directory-level scope redirection (owned name → sibling run scope) is refused before open.
  */
 final readonly class RetainedOutputCapBodyPromoter implements RetainedOutputCapBodyPromoterInterface
 {
@@ -45,19 +47,16 @@ final readonly class RetainedOutputCapBodyPromoter implements RetainedOutputCapB
         }
 
         $canonicalRoot = realpath($this->config->storageDir);
-        if (false === $canonicalRoot || !is_dir($canonicalRoot)) {
+        if (false === $canonicalRoot || !is_dir($canonicalRoot) || is_link($this->config->storageDir)) {
             return null;
         }
         $scopeName = 'run-'.hash('sha256', $sourceRunId);
-        $scopeReal = realpath($canonicalRoot.'/'.$scopeName);
-        if (false === $scopeReal || !is_dir($scopeReal) || \dirname($scopeReal) !== $canonicalRoot) {
+        $scopeReal = PathSymlinkGuard::resolveDirectChildDirectory($canonicalRoot, $scopeName);
+        if (null === $scopeReal) {
             return null;
         }
-        if (is_link($savedPath)) {
-            return null;
-        }
-        $savedReal = realpath($savedPath);
-        if (false === $savedReal || !is_file($savedReal) || !str_starts_with($savedReal, $scopeReal.'/')) {
+        $savedReal = PathSymlinkGuard::resolveContainedRegularFile($scopeReal, $savedPath);
+        if (null === $savedReal) {
             return null;
         }
 

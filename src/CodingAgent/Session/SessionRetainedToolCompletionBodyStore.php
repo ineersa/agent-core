@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBodyReference
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBounds;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailure;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEnum;
+use Ineersa\AgentCore\Infrastructure\Filesystem\PathSymlinkGuard;
 use Ineersa\CodingAgent\Utility\AtomicFileWriterException;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
@@ -104,7 +105,7 @@ final readonly class SessionRetainedToolCompletionBodyStore implements RetainedT
                 $this->assertValidJsonFile($tmpPath);
             }
 
-            if (is_link($path) || $this->pathHasSymlinkAncestor($path, $this->sessionsBaseRealpath())) {
+            if (is_link($path) || PathSymlinkGuard::pathHasSymlinkAncestor($path, $this->sessionsBaseRealpath())) {
                 @unlink($tmpPath);
                 throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Retained completion body cannot be a symbolic link.');
             }
@@ -158,7 +159,7 @@ final readonly class SessionRetainedToolCompletionBodyStore implements RetainedT
         $lock->acquire(true);
         try {
             $this->assertOwnedPathContainment($reference->owningRootSessionId, $path, createParents: false);
-            if (!is_file($path) || is_link($path) || $this->pathHasSymlinkAncestor($path, $this->sessionsBaseRealpath())) {
+            if (!is_file($path) || is_link($path) || PathSymlinkGuard::pathHasSymlinkAncestor($path, $this->sessionsBaseRealpath())) {
                 throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyMissing, 'Retained completion body is missing.');
             }
             $stream = fopen($path, 'rb');
@@ -232,7 +233,7 @@ final readonly class SessionRetainedToolCompletionBodyStore implements RetainedT
             return false;
         }
 
-        return is_file($path) && !is_link($path) && !$this->pathHasSymlinkAncestor($path, $this->sessionsBaseRealpath());
+        return is_file($path) && !is_link($path) && !PathSymlinkGuard::pathHasSymlinkAncestor($path, $this->sessionsBaseRealpath());
     }
 
     public function isHeld(string $authorizedRootSessionId, string $messageId): bool
@@ -246,7 +247,7 @@ final readonly class SessionRetainedToolCompletionBodyStore implements RetainedT
             return false;
         }
 
-        return is_file($path) && !is_link($path) && !$this->pathHasSymlinkAncestor($path, $this->sessionsBaseRealpath());
+        return is_file($path) && !is_link($path) && !PathSymlinkGuard::pathHasSymlinkAncestor($path, $this->sessionsBaseRealpath());
     }
 
     private function assertOwnedReference(
@@ -322,7 +323,7 @@ final readonly class SessionRetainedToolCompletionBodyStore implements RetainedT
             }
         }
 
-        if ($this->pathHasSymlinkAncestor($path, $sessionsBase)) {
+        if (PathSymlinkGuard::pathHasSymlinkAncestor($path, $sessionsBase)) {
             throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Retained completion path has a symbolic-link ancestor.');
         }
 
@@ -335,25 +336,6 @@ final readonly class SessionRetainedToolCompletionBodyStore implements RetainedT
             if (false === $pathReal || !str_starts_with($pathReal, $parentReal.'/')) {
                 throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Retained completion leaf escapes the owning body directory.');
             }
-        }
-    }
-
-    private function pathHasSymlinkAncestor(string $path, string $stopAtRealpath): bool
-    {
-        $current = $path;
-        while (true) {
-            if (is_link($current)) {
-                return true;
-            }
-            $parent = \dirname($current);
-            if ($parent === $current) {
-                return false;
-            }
-            $parentReal = realpath($parent);
-            if (false !== $parentReal && ($parentReal === $stopAtRealpath || !str_starts_with($parentReal.'/', $stopAtRealpath.'/'))) {
-                return is_link($parent);
-            }
-            $current = $parent;
         }
     }
 

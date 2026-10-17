@@ -116,6 +116,26 @@ final class RetainedNativeArtifactHandoffReaderTest extends IsolatedKernelTestCa
             $this->assertSame(RetainedToolCompletionFailureCodeEnum::ForeignScope, $failure->code());
         }
 
+        $oversized = str_repeat('X', max(1_000_000, $generation->bytes * 50));
+        $handoffPath = $sessions->resolveSessionsBasePath().'/'.$root.'/artifacts/agents/'.$artifactId.'/handoffs/'.$generation->handoffId.'.md';
+        file_put_contents($handoffPath, $oversized);
+        try {
+            $reader->inspectHandoff(
+                authorizedRootSessionId: $root,
+                parentRunId: $root,
+                artifactId: $artifactId,
+                handoffId: $generation->handoffId,
+                expectedBytes: $generation->bytes,
+                expectedSha256: $generation->sha256,
+                expectedMediaType: $generation->mediaType,
+                maxDecodeBytes: $generation->bytes,
+            );
+            $this->fail('Expected oversized replacement to fail closed without full capture.');
+        } catch (RetainedToolCompletionFailure $failure) {
+            $this->assertSame(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, $failure->code());
+        }
+        file_put_contents($handoffPath, $body);
+
         $second = $registry->writeHandoff($root, $artifactId, $body.'-v2', summary: 'second');
         $firstAgain = $reader->inspectHandoff(
             authorizedRootSessionId: $root,

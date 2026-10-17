@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBodyReference;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailure;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEnum;
+use Ineersa\AgentCore\Infrastructure\Filesystem\PathSymlinkGuard;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 
 /**
@@ -47,11 +48,21 @@ final readonly class RetainedNativeHandoffBodyPromoter implements RetainedNative
         $paths = AgentArtifactPathsDTO::forArtifactId($generation->artifactId);
         $relative = "{$paths->artifactDir}/handoffs/{$generation->handoffId}.md";
         $absolute = $this->paths->absolutePath($generation->parentRunId, $relative);
-        if (!is_file($absolute) || is_link($absolute)) {
+        // Walk from the parent session root, not only the artifacts leaf, so a redirected
+        // session/artifact/handoffs ancestor cannot masquerade as an owned generation.
+        $sessionDir = \dirname($this->paths->resolveArtifactsBasePath($generation->parentRunId), 2);
+        $sessionReal = realpath($sessionDir);
+        if (false === $sessionReal || !is_dir($sessionReal) || is_link($sessionDir)
+            || PathSymlinkGuard::pathHasSymlinkAncestor($absolute, $sessionReal)
+            || !is_file($absolute) || is_link($absolute)) {
+            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyMissing, 'Native handoff generation is missing for root-owned seal.');
+        }
+        $absoluteReal = PathSymlinkGuard::resolveContainedRegularFile($sessionReal, $absolute);
+        if (null === $absoluteReal) {
             throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyMissing, 'Native handoff generation is missing for root-owned seal.');
         }
 
-        $stream = fopen($absolute, 'rb');
+        $stream = fopen($absoluteReal, 'rb');
         if (false === $stream) {
             throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Native handoff generation is unreadable for root-owned seal.');
         }

@@ -78,6 +78,55 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         $this->assertStringContainsString('"seq":106', $lines[1]);
     }
 
+    public function testAppendBindsRetainedAcceptedSourceEventFromAllocatedCursor(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        TestDirectoryIsolation::ensureDirectory(\dirname($eventsPath));
+        file_put_contents($eventsPath, '{"schema_version":"1.0","run_id":"'.$runId.'","seq":99,"turn_no":0,"type":"run_started","payload":[]}'."\n");
+        $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($eventsPath);
+        file_put_contents($counterPath, "105\n");
+
+        $persisted = PreparedEventStoreSeeder::append($this->store, new RunEvent(
+            runId: $runId,
+            seq: 0,
+            turnNo: 1,
+            type: 'tool_execution_end',
+            payload: [
+                'tool_result' => ['tool_call_id' => 'call-1'],
+                'accepted_completion' => [
+                    'completion_id' => 'completion-1',
+                    'retained_message' => [
+                        'message_id' => 'completion-1',
+                        'origin' => [
+                            'controller_run_id' => $runId,
+                            'source_run_id' => $runId,
+                        ],
+                    ],
+                ],
+            ],
+        ));
+
+        $this->assertSame(106, $persisted->seq);
+        $reference = $persisted->payload['accepted_completion']['retained_message']['origin']['accepted_source_event_reference'];
+        $this->assertSame([
+            'run_id' => $runId,
+            'seq' => 106,
+            'turn_no' => 1,
+        ], $reference);
+
+        $loaded = null;
+        foreach ($this->store->rangeFor($runId, 106, 106) as $event) {
+            $loaded = $event;
+            break;
+        }
+        $this->assertNotNull($loaded);
+        $this->assertSame(
+            106,
+            $loaded->payload['accepted_completion']['retained_message']['origin']['accepted_source_event_reference']['seq'],
+        );
+    }
+
     public function testCursorBehindCanonicalHistoryCannotAppend(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));

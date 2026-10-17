@@ -55,22 +55,27 @@ final readonly class RetainedToolCompletionEnvelopeFactory
             throw new \InvalidArgumentException('Retained completion requires a validated terminal tool_result.');
         }
 
+        // Canonical ToolExecutionEnd payload nests the worker outcome under tool_result.result.
+        // Outer identity/fingerprint stay on the full MESSAGE representation; body promotion
+        // and presentation read the nested outcome when present.
+        $outcome = $this->outcomePayload($normalizedToolResult);
+
         $owningRoot = $this->resolveOwningRoot($correlation, $controllerRunId);
-        $terminalOutcome = $this->terminalOutcome($result, $normalizedToolResult);
-        $toolName = \is_string($normalizedToolResult['tool_name'] ?? null) && '' !== $normalizedToolResult['tool_name']
-            ? $normalizedToolResult['tool_name']
+        $terminalOutcome = $this->terminalOutcome($result, $outcome, $normalizedToolResult);
+        $toolName = \is_string($outcome['tool_name'] ?? null) && '' !== $outcome['tool_name']
+            ? $outcome['tool_name']
             : $correlation->toolName;
         $subject = RetainedToolCompletionUtf8::truncate(
             \sprintf('%s %s', $toolName, $terminalOutcome),
             RetainedToolCompletionBounds::SUBJECT_MAX_BYTES,
         );
         $summary = RetainedToolCompletionUtf8::truncate(
-            $this->boundedSummary($normalizedToolResult, $terminalOutcome, $toolName),
+            $this->boundedSummary($outcome, $terminalOutcome, $toolName),
             RetainedToolCompletionBounds::SUMMARY_MAX_BYTES,
         );
 
         $attachments = [];
-        $nativeGenerations = $this->hostAuthoredNativeGenerations($normalizedToolResult);
+        $nativeGenerations = $this->hostAuthoredNativeGenerations($outcome);
         if ([] !== $nativeGenerations) {
             $body = $this->bodyForNativeGenerations($completionId, $owningRoot, $nativeGenerations);
             $attachments = $this->boundedNativeAttachments($nativeGenerations);
@@ -80,14 +85,14 @@ final readonly class RetainedToolCompletionEnvelopeFactory
                 $promoted = $this->outputCapPromoter->promoteIfOwned(
                     owningRootSessionId: $owningRoot,
                     messageId: $completionId,
-                    normalizedToolResult: $normalizedToolResult,
+                    normalizedToolResult: $outcome,
                     sourceRunId: $correlation->runId,
                 );
             }
             $body = $promoted ?? $this->inlineOrOwnedBody(
                 $completionId,
                 $owningRoot,
-                $normalizedToolResult,
+                $outcome,
             );
         }
 
@@ -404,11 +409,35 @@ final readonly class RetainedToolCompletionEnvelopeFactory
 
     /**
      * @param array<string, mixed> $normalizedToolResult
+     *
+     * @return array<string, mixed>
      */
-    private function terminalOutcome(ToolCallResult $result, array $normalizedToolResult): string
+    private function outcomePayload(array $normalizedToolResult): array
     {
-        if ($result->isError || true === ($normalizedToolResult['is_error'] ?? false)) {
-            $details = $normalizedToolResult['details'] ?? null;
+        $nested = $normalizedToolResult['result'] ?? null;
+        if (\is_array($nested) && (
+            \array_key_exists('content', $nested)
+            || \array_key_exists('details', $nested)
+            || \array_key_exists('tool_name', $nested)
+            || \array_key_exists('is_error', $nested)
+        )) {
+            return $nested;
+        }
+
+        return $normalizedToolResult;
+    }
+
+    /**
+     * @param array<string, mixed> $outcome
+     * @param array<string, mixed> $normalizedToolResult
+     */
+    private function terminalOutcome(ToolCallResult $result, array $outcome, array $normalizedToolResult): string
+    {
+        $isError = $result->isError
+            || true === ($outcome['is_error'] ?? false)
+            || true === ($normalizedToolResult['is_error'] ?? false);
+        if ($isError) {
+            $details = $outcome['details'] ?? ($normalizedToolResult['details'] ?? null);
             if (\is_array($details) && true === ($details['cancelled'] ?? false)) {
                 return 'cancelled';
             }
