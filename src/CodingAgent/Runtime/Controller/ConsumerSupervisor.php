@@ -34,7 +34,7 @@ use Symfony\Component\Process\Process;
  *   broker's 60-second lease. Failed keepalive does not stop a running
  *   handler; ownership loss remains at-least-once and still needs explicit
  *   `/repair` for interrupted sessions
- * - scheduler_default keeps native Scheduler transport behavior and omits
+ * - scheduler_default retains its 50ms idle polling interval and omits
  *   --keepalive (that receiver is not a sqlite-queue KeepaliveReceiver)
  * - Supervision: polls isRunning() every 5s; exit code 0 is treated as
  *   normal memory-limit (or other graceful) recycle with immediate relaunch;
@@ -64,6 +64,9 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
 
     /** Native Messenger keepalive interval in seconds; must stay below the broker lease. */
     private const int CONSUMER_KEEPALIVE_SECONDS = 5;
+
+    /** Preserve the existing idle polling interval for receivers without broker WAIT. */
+    private const float NON_BROKER_SLEEP_SECONDS = 0.05;
 
     /** Transports that consume sqlite-queue receivers and need lease renewal. */
     private const array BROKER_KEEPALIVE_TRANSPORTS = [
@@ -137,6 +140,9 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
             if (\in_array($transportName, self::BROKER_KEEPALIVE_TRANSPORTS, true)) {
                 // Omit --sleep so sqlite-queue native WAIT notifications wake idle workers.
                 $command[] = '--keepalive='.self::CONSUMER_KEEPALIVE_SECONDS;
+            } else {
+                // Scheduler has no broker WAIT hook; avoid Symfony's one-second default.
+                $command[] = '--sleep='.self::NON_BROKER_SLEEP_SECONDS;
             }
 
             $process = new Process(

@@ -143,7 +143,7 @@ final class ConsumerSupervisorTest extends TestCase
         }
     }
 
-    public function testSchedulerTransportOmitsKeepalive(): void
+    public function testSchedulerTransportKeepsPollingIntervalWithoutKeepalive(): void
     {
         $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-argv-');
         $this->assertNotFalse($argvFile);
@@ -158,6 +158,7 @@ final class ConsumerSupervisorTest extends TestCase
             $argv = json_decode((string) file_get_contents($argvFile), true, 512, \JSON_THROW_ON_ERROR);
             $this->assertIsArray($argv);
             $this->assertContains('scheduler_default', $argv);
+            $this->assertContains('--sleep=0.05', $argv);
             $this->assertNotContains('--keepalive=5', $argv);
             $this->assertFalse(array_reduce($argv, static fn (bool $found, mixed $arg): bool => $found || (\is_string($arg) && str_starts_with($arg, '--keepalive')), false));
         } finally {
