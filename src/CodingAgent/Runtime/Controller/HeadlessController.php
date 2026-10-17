@@ -145,7 +145,7 @@ final class HeadlessController
             $this->dispatcher->dispatch(new ControllerSessionStartingEvent($this->sessionId));
             $this->startSessionBroker();
         } catch (\Throwable $exception) {
-            $this->brokerSupervisor->shutdown();
+            $this->brokerSupervisor->shutdownUntil(microtime(true) + 5.0);
             $this->releaseSessionOwnerLock();
 
             throw $exception;

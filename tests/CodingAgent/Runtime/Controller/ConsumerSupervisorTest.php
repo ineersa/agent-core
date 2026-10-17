@@ -28,7 +28,7 @@ final class ConsumerSupervisorTest extends TestCase
         $this->logger = new TestLogger();
         $locator = $this->createStub(AppExecutableLocator::class);
         $config = new RuntimeProcessConfig($locator, __DIR__);
-        $supervisor = new ConsumerSupervisor($this->logger, $config, shutdownGraceSeconds: 0);
+        $supervisor = new ConsumerSupervisor($this->logger, $config);
         $calls = new ShutdownProcessCallLog();
         $hang = new RecordingShutdownProcess('hang', $calls, exitsOnTerm: false);
         $exit = new RecordingShutdownProcess('exit', $calls, exitsOnTerm: true);
@@ -40,7 +40,7 @@ final class ConsumerSupervisorTest extends TestCase
             'term_exit#0' => $exit,
         ]);
 
-        $supervisor->shutdown();
+        $supervisor->shutdownUntil(microtime(true));
 
         $this->assertSame([
             'running:hang',
@@ -61,7 +61,7 @@ final class ConsumerSupervisorTest extends TestCase
         $this->logger = new TestLogger();
         $locator = $this->createStub(AppExecutableLocator::class);
         $config = new RuntimeProcessConfig($locator, __DIR__);
-        $supervisor = new ConsumerSupervisor($this->logger, $config, shutdownGraceSeconds: 5);
+        $supervisor = new ConsumerSupervisor($this->logger, $config);
         $calls = new ShutdownProcessCallLog();
         $hang = new RecordingShutdownProcess('hang', $calls, exitsOnTerm: false);
 

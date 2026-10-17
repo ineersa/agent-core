@@ -15,7 +15,16 @@ use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Process\Process;
 
-/** Real owner/controller pipes must continue processing results while a large view is unread. */
+/**
+ * Real owner/controller pipes must continue processing results while a large view is unread.
+ *
+ * Unique process contract: only a live OS pipe backlog larger than Linux's pipe
+ * capacity proves the controller keeps consuming owner results while stdout is
+ * stalled. Lower layers cannot recreate that unread-kernel-buffer pressure.
+ * The 5s waits below are safety caps around positive readiness/result markers,
+ * not synchronization; under concurrent castor check load this case can exceed
+ * the ordinary 10s soft target without being flaky or timing-window based.
+ */
 #[Group('controller-replay')]
 final class ControllerReplayBootstrapDeliveryTest extends ControllerReplayE2eTestCase
 {

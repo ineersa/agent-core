@@ -1157,7 +1157,10 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $client = new \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient(
             new \Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig($locator, $directory),
             new \Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig(),
-            new \Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig(), $logger ?? $this->logger);
+            new \Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig(),
+            $logger ?? $this->logger,
+            $directory.'/.hatfield/sessions',
+        );
 
         return [$client, $directory];
     }

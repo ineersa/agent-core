@@ -45,12 +45,12 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
     {
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
-        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0, shutdownGraceSeconds: 5.0);
+        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-1');
 
         try {
             $supervisor->start($paths);
-            $this->assertTrue($supervisor->isReady());
+            $this->assertTrue($this->brokerProcess($supervisor)->isRunning());
             $this->assertTrue($supervisor->supervise());
             $this->assertFileExists($paths->databasePath);
             $this->assertDirectoryExists($paths->endpointDirectory());
@@ -71,10 +71,10 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $driverPids = $this->descendantPids($pid);
             $this->assertNotSame([], $driverPids, 'Amp SQLite driver child must exist after ready');
         } finally {
-            $supervisor->shutdown();
+            $supervisor->shutdownUntil(microtime(true) + 5.0);
         }
 
-        $this->assertFalse($supervisor->isReady());
+        $this->assertFalse($this->brokerProcessAlive($supervisor));
         clearstatcache(true, $paths->endpointPath);
         $this->assertFalse(file_exists($paths->endpointPath), 'normal shutdown must remove owned socket');
         $this->assertFileExists($paths->databasePath, 'queue database must survive ordinary shutdown');
@@ -84,7 +84,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
     {
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
-        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0, shutdownGraceSeconds: 0.0);
+        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-kill');
 
         try {
@@ -98,15 +98,15 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $driverPids = $this->descendantPids($pid);
             $this->assertNotSame([], $driverPids);
 
-            // Escalate owned group immediately (grace=0). Driver children must exit.
-            $supervisor->shutdown();
+            // Escalate owned group immediately. Driver children must exit.
+            $supervisor->shutdownUntil(microtime(true));
 
             foreach ($driverPids as $driverPid) {
                 $this->assertFalse($this->pidAlive($driverPid), 'owned Amp driver must exit with forced broker death');
             }
             $this->assertFalse($process->isRunning());
         } finally {
-            $supervisor->shutdown();
+            $supervisor->shutdownUntil(microtime(true) + 5.0);
         }
     }
 
@@ -128,7 +128,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             }
 
             // Controller catch paths call shutdown after start failures.
-            $supervisor->shutdown();
+            $supervisor->shutdownUntil(microtime(true) + 5.0);
             $this->assertFileExists($paths->endpointPath, 'refused foreign/pre-existing endpoint must survive shutdown');
         } finally {
             @unlink($paths->endpointPath);
@@ -140,7 +140,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
     {
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
-        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0, shutdownGraceSeconds: 5.0);
+        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-env');
 
         $previousEnv = $_ENV;
@@ -149,10 +149,10 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $this->assertNotFalse(getenv('HOME'));
             // Empty $_ENV must not strip HOME from the broker child.
             $supervisor->start($paths);
-            $this->assertTrue($supervisor->isReady());
+            $this->assertTrue($this->brokerProcess($supervisor)->isRunning());
         } finally {
             $_ENV = $previousEnv;
-            $supervisor->shutdown();
+            $supervisor->shutdownUntil(microtime(true) + 5.0);
         }
     }
 
@@ -160,7 +160,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
     {
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
-        $first = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0, shutdownGraceSeconds: 5.0);
+        $first = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-owner-eof');
 
         $first->start($paths);
@@ -184,15 +184,15 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $this->assertFalse($this->pidAlive($driverPid), 'owned Amp helper must exit with controller hard death');
         }
 
-        $restart = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0, shutdownGraceSeconds: 5.0);
+        $restart = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
         try {
             $restartPaths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-owner-eof');
             $this->assertSame($paths->databasePath, $restartPaths->databasePath);
             $restart->start($restartPaths);
-            $this->assertTrue($restart->isReady(), 'durable queue DB must restart after owner EOF released lifetime locks');
+            $this->assertTrue($this->brokerProcess($restart)->isRunning(), 'durable queue DB must restart after owner EOF released lifetime locks');
         } finally {
-            $restart->shutdown();
-            $first->shutdown();
+            $restart->shutdownUntil(microtime(true) + 5.0);
+            $first->shutdownUntil(microtime(true) + 5.0);
         }
     }
 
@@ -200,7 +200,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
     {
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
-        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0, shutdownGraceSeconds: 5.0);
+        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-shared-deadline');
 
         $supervisor->start($paths);
@@ -213,14 +213,14 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
 
         $this->assertFalse($process->isRunning());
         $this->assertLessThan(1.0, $elapsed, 'shared deadline already expired must escalate without waiting full grace');
-        $this->assertFalse($supervisor->isReady());
+        $this->assertFalse($this->brokerProcessAlive($supervisor));
     }
 
     public function testClientSendRenewAndAckWithoutSecondClaim(): void
     {
         $logger = new TestLogger();
         $config = $this->runtimeConfig();
-        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0, shutdownGraceSeconds: 5.0);
+        $supervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config, readyTimeoutSeconds: 15.0);
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-client');
 
         $owner = null;
@@ -241,7 +241,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         } finally {
             $owner?->close();
             $other?->close();
-            $supervisor->shutdown();
+            $supervisor->shutdownUntil(microtime(true) + 5.0);
         }
     }
 
@@ -254,7 +254,6 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $logger,
             $config,
             readyTimeoutSeconds: 15.0,
-            shutdownGraceSeconds: 5.0,
             maxPayload: $maxPayload,
         );
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-payload');
@@ -300,7 +299,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $transport->ack($received[0]);
         } finally {
             $transport?->close();
-            $supervisor->shutdown();
+            $supervisor->shutdownUntil(microtime(true) + 5.0);
         }
     }
 
@@ -313,7 +312,6 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $logger,
             $config,
             readyTimeoutSeconds: 15.0,
-            shutdownGraceSeconds: 5.0,
             maxPayload: $this->configuredMaxPayload(),
         );
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-capacity');
@@ -335,7 +333,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             foreach ($clients as $client) {
                 $client->close();
             }
-            $supervisor->shutdown();
+            $supervisor->shutdownUntil(microtime(true) + 5.0);
         }
     }
 
@@ -348,7 +346,6 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $logger,
             $config,
             readyTimeoutSeconds: 15.0,
-            shutdownGraceSeconds: 5.0,
             maxPayload: $maxPayload,
         );
         $paths = SessionSqliteQueuePaths::forSession($this->tmpDir.'/.hatfield/sessions', $this->tmpDir, 'broker-mismatch');
@@ -373,7 +370,7 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $this->expectExceptionMessage('advertised max_connections=64 below required 65');
             $consume->invoke($supervisor);
         } finally {
-            $supervisor->shutdown();
+            $supervisor->shutdownUntil(microtime(true) + 5.0);
         }
     }
 
@@ -399,6 +396,14 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
         } finally {
             $kernel->shutdown();
         }
+    }
+
+    private function brokerProcessAlive(SessionSqliteQueueBrokerSupervisor $supervisor): bool
+    {
+        $property = new \ReflectionProperty(SessionSqliteQueueBrokerSupervisor::class, 'process');
+        $process = $property->getValue($supervisor);
+
+        return $process instanceof \Symfony\Component\Process\Process && $process->isRunning();
     }
 
     private function brokerProcess(SessionSqliteQueueBrokerSupervisor $supervisor): \Symfony\Component\Process\Process

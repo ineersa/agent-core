@@ -105,7 +105,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly RuntimeProcessConfig $runtimeConfig,
-        private readonly int $shutdownGraceSeconds = 5,
     ) {
     }
 
@@ -260,7 +259,8 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     }
 
     /**
-     * Gracefully stop all tracked messenger consumer processes.
+     * Gracefully stop all tracked messenger consumer processes against an
+     * absolute shared deadline.
      *
      * This is for controller/runtime shutdown only (e.g. when the user
      * exits the agent or the controller process is stopping). It is NOT
@@ -269,22 +269,13 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
      *
      * Two-phase shutdown under ONE shared grace deadline:
      * 1) SIGTERM every currently running tracked Process first (no wait),
-     * 2) poll until all exit or shutdownGraceSeconds elapses,
+     * 2) poll until all exit or the shared deadline elapses,
      * 3) escalate only remaining tracked children with Process::stop(0).
-     *
-     * Sequential Process::stop(grace) per child would delay the last consumer
-     * by N×grace and orphan the tail of a large pool under parent timeout.
-     */
-    public function shutdown(): void
-    {
-        $this->shutdownUntil(microtime(true) + $this->shutdownGraceSeconds);
-    }
-
-    /**
-     * Stop tracked consumers against an absolute shared deadline.
      *
      * Controllers that also stop the session broker must share one deadline so
      * sequential consumer+broker grace cannot exceed the parent stop budget.
+     * Sequential Process::stop(grace) per child would delay the last consumer
+     * by N×grace and orphan the tail of a large pool under parent timeout.
      */
     public function shutdownUntil(float $deadline): void
     {
