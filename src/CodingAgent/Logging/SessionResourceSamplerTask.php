@@ -13,8 +13,7 @@ use Symfony\Component\Scheduler\Schedule;
 use Symfony\Component\Scheduler\ScheduleProviderInterface;
 
 /** Opt-in session resource trends for castor run:agent, not complete process accounting. */
-#[AsSchedule('default')]
-final class SessionResourceSamplerTask implements ScheduleProviderInterface
+final class SessionResourceSamplerTask
 {
     public const int INTERVAL_SECONDS = 60;
     public const string METRIC_CPU_PERCENT = 'hatfield.session.cpu_percent';
@@ -68,16 +67,6 @@ final class SessionResourceSamplerTask implements ScheduleProviderInterface
                 'exception_class' => $exception::class,
             ]);
         }
-    }
-
-    public function getSchedule(): Schedule
-    {
-        $schedule = new Schedule();
-        if ($this->isEnabled()) {
-            $schedule->add(RecurringMessage::every(self::INTERVAL_SECONDS, new SessionResourceSampleMessage()));
-        }
-
-        return $schedule;
     }
 
     private function isEnabled(): bool
@@ -200,6 +189,35 @@ final class SessionResourceSamplerTask implements ScheduleProviderInterface
         } finally {
             fclose($socket);
         }
+    }
+}
+
+/**
+ * Registers the sampler message on the default schedule.
+ *
+ * Kept separate from {@see SessionResourceSamplerTask}: AddScheduleMessengerPass
+ * decorates schedule providers with Schedule, which must not be the Messenger handler.
+ */
+#[AsSchedule('default')]
+final class SessionResourceSamplerSchedule implements ScheduleProviderInterface
+{
+    public function __construct(
+        private readonly bool $enabled,
+        private readonly string $sessionId,
+    ) {
+    }
+
+    public function getSchedule(): Schedule
+    {
+        $schedule = new Schedule();
+        if ($this->enabled && '' !== $this->sessionId && 'unknown' !== $this->sessionId) {
+            $schedule->add(RecurringMessage::every(
+                SessionResourceSamplerTask::INTERVAL_SECONDS,
+                new SessionResourceSampleMessage(),
+            ));
+        }
+
+        return $schedule;
     }
 }
 
