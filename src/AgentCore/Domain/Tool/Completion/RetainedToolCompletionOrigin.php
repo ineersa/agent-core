@@ -16,6 +16,7 @@ final readonly class RetainedToolCompletionOrigin
         public string $invocationId,
         public string $executionOwnerKind,
         public ?RetainedToolCompletionSourceEventReference $acceptedSourceEventReference = null,
+        public ?ToolCompletionDeliveryFenceDTO $deliveryFence = null,
     ) {
         foreach ([
             'controllerRunId' => $this->controllerRunId,
@@ -45,6 +46,7 @@ final readonly class RetainedToolCompletionOrigin
             invocationId: $this->invocationId,
             executionOwnerKind: $this->executionOwnerKind,
             acceptedSourceEventReference: $reference,
+            deliveryFence: $this->deliveryFence,
         );
     }
 
@@ -65,6 +67,7 @@ final readonly class RetainedToolCompletionOrigin
             toolCallId: $this->toolCallId,
             invocationId: $this->invocationId,
             executionOwnerKind: $this->executionOwnerKind,
+            deliveryFence: $this->deliveryFence,
         );
     }
 }

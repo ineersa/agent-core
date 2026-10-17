@@ -101,7 +101,7 @@ final class ToolBatchCollectorTerminalAcceptanceTest extends TestCase
     {
         $batches = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($batches, 4, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batches, 4, $deferred);
         $call = $this->call('run-term', 'step-1', 'call-1', 0);
         TestToolBatchRegistration::register($collector, $batches, 'run-term', 1, 'step-1', [$call]);
         $correlation = $deferred->registerPending($this->correlationFromCall($call));
@@ -121,7 +121,7 @@ final class ToolBatchCollectorTerminalAcceptanceTest extends TestCase
     {
         $batches = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($batches, 4, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batches, 4, $deferred);
         $call = $this->call('run-bg', 'step-1', 'call-bg', 0);
         TestToolBatchRegistration::register($collector, $batches, 'run-bg', 1, 'step-1', [$call]);
         $correlation = $deferred->registerPending($this->correlationFromCall($call));

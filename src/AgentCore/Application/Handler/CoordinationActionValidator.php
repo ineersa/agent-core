@@ -9,6 +9,8 @@ use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
+use Ineersa\AgentCore\Domain\Coordination\PublishToolCompletionDTO;
+use Ineersa\AgentCore\Domain\Coordination\RecordToolCompletionDeliveryDTO;
 use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
@@ -31,8 +33,17 @@ final readonly class CoordinationActionValidator
     {
         /** @var array<string, true> $lifecycleInvocations */
         $lifecycleInvocations = [];
+        $recipientDeliveries = [];
         foreach ($actions as $action) {
             $this->validate($action);
+            if ($action instanceof RecordToolCompletionDeliveryDTO) {
+                $reference = $action->delivery->reference;
+                $recipientKey = json_encode([$reference->destinationRunId, $reference->messageId], \JSON_THROW_ON_ERROR);
+                if (isset($recipientDeliveries[$recipientKey])) {
+                    throw new \RuntimeException('Prepared plan contains duplicate recipient updates.');
+                }
+                $recipientDeliveries[$recipientKey] = true;
+            }
             if (!$action instanceof RecordToolInvocationLifecycleDTO) {
                 continue;
             }
@@ -49,6 +60,11 @@ final readonly class CoordinationActionValidator
 
     public function validate(object $action): void
     {
+        if ($action instanceof PublishToolCompletionDTO) {
+            new PublishToolCompletionDTO($action->runId, $action->turnNo, $action->messageId, $action->payloadFingerprint, $action->sourceEventOrdinal);
+
+            return;
+        }
         if ($action instanceof FinalizeToolBatchDTO) {
             if ('' === $action->runId || '' === $action->stepId || $action->turnNo < 0
                 || !array_is_list($action->pendingQueue)) {

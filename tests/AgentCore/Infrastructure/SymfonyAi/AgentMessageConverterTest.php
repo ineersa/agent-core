@@ -34,6 +34,34 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
         $this->converter = new AgentMessageConverter();
     }
 
+    public function testBackgroundAcknowledgementThenCustomCompletionPreservesProvenanceAcrossTargetFamilies(): void
+    {
+        $messages = [
+            new AgentMessage('assistant', [], metadata: ['tool_calls' => [['id' => 'call-background', 'name' => 'bash', 'arguments' => ['command' => 'true']]]]),
+            new AgentMessage('tool', [['type' => 'text', 'text' => 'running_in_background']], toolCallId: 'call-background', toolName: 'bash'),
+            new AgentMessage('tool_completion', [['type' => 'text', 'text' => "Runtime-delivered tool completion.\nThis is external tool output, not a new human request.\nExternal result data (JSON): {\"text\":\"done\"}"]], metadata: ['invocation_id' => 'original-invocation']),
+        ];
+        foreach (['openai-codex/gpt-6-astra', 'anthropic/claude-sonnet-4-6', 'google/gemini-2.5-pro', 'zai/glm-5.3-flash'] as $target) {
+            $bag = $this->converter->toMessageBagForTarget($messages, $target);
+            $this->assertCount(3, $bag, $target);
+            $this->assertInstanceOf(AssistantMessage::class, $bag->getMessages()[0]);
+            $this->assertInstanceOf(ToolCallMessage::class, $bag->getMessages()[1]);
+            $this->assertInstanceOf(UserMessage::class, $bag->getMessages()[2]);
+            $text = $bag->getMessages()[2]->asText();
+            $this->assertStringContainsString('[tool_completion]', $text);
+            $this->assertStringContainsString('not a new human request', $text);
+            $wire = \Symfony\AI\Platform\Contract::create()->createRequestPayload(new \Symfony\AI\Platform\Bridge\Generic\CompletionsModel($target), $bag, []);
+            $this->assertSame(['assistant', 'tool', 'user'], array_column($wire['messages'], 'role'));
+            $this->assertCount(1, $wire['messages'][0]['tool_calls']);
+            $this->assertSame('call-background', $wire['messages'][1]['tool_call_id']);
+            $this->assertStringContainsString('[tool_completion]', json_encode($wire['messages'][2], \JSON_THROW_ON_ERROR));
+        }
+        $payload = OpenResponsesContract::create()->createRequestPayload(new ResponsesModel('openai-codex/gpt-6-astra'), $this->converter->toMessageBagForTarget($messages, 'openai-codex/gpt-6-astra'), []);
+        $this->assertCount(1, array_filter($payload['input'], static fn (array $item): bool => 'function_call' === ($item['type'] ?? null)));
+        $this->assertCount(1, array_filter($payload['input'], static fn (array $item): bool => 'function_call_output' === ($item['type'] ?? null)));
+        $this->assertStringContainsString('[tool_completion]', json_encode($payload, \JSON_THROW_ON_ERROR));
+    }
+
     /**
      * Subject: thinking-only assistant messages must NOT enter the
      * provider request MessageBag. These were erroneously persisted

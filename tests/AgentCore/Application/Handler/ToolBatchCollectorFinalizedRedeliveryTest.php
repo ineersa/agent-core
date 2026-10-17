@@ -21,7 +21,7 @@ final class ToolBatchCollectorFinalizedRedeliveryTest extends TestCase
     public function testFinalizedSnapshotRedeliveryReplaysAcceptedComplete(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector($store, 4);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4);
 
         TestToolBatchRegistration::register($collector, $store, 'run-1', 1, 'step-1', [
             $this->executeToolCall('call-1', 0),

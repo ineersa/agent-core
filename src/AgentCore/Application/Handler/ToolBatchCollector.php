@@ -43,6 +43,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
 final class ToolBatchCollector
 {
     public function __construct(
+        private readonly \Ineersa\AgentCore\Contract\Tool\ToolCompletionDeliveryFenceProviderInterface $deliveryFences,
         private readonly ToolBatchStoreInterface $store,
         private readonly int $defaultMaxParallelism = 4,
         private readonly ?DeferredToolCompletionRepositoryInterface $deferredCompletions = null,
@@ -236,6 +237,7 @@ final class ToolBatchCollector
             $correlation,
             ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
             ToolInvocationExecutionObservationEnum::Active,
+            deliveryFence: $this->deliveryFences->capture($correlation->runId),
         );
 
         return new PreparedToolBackgroundAcknowledgementDTO(

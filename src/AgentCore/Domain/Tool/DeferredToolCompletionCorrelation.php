@@ -42,13 +42,12 @@ final readonly class DeferredToolCompletionCorrelation
         public ?ToolInvocationOwnerReference $executionOwnerReference = null,
         public ?string $originalExecutionMode = null,
         public ?array $deadlineMetadata = null,
-        public ?int $originWakeGeneration = null,
-        public ?int $rootWakeGeneration = null,
         public ?string $envelopeFingerprint = null,
         public ToolInvocationCallerDispositionEnum $callerDisposition = ToolInvocationCallerDispositionEnum::ForegroundPending,
         public ToolInvocationExecutionObservationEnum $executionObservation = ToolInvocationExecutionObservationEnum::Active,
         public ?string $acceptedCompletionId = null,
         public ?string $acceptedResultFingerprint = null,
+        public ?Completion\ToolCompletionDeliveryFenceDTO $deliveryFence = null,
     ) {
         if (null !== $this->executionOwnerKind && '' === $this->executionOwnerKind) {
             throw new \InvalidArgumentException('Execution owner kind cannot be empty when present.');
@@ -58,12 +57,6 @@ final readonly class DeferredToolCompletionCorrelation
         }
         if (null !== $this->executionOwnerReference && $this->executionOwnerReference->kind !== $this->executionOwnerKind) {
             throw new \InvalidArgumentException('Execution owner kind must match the owner reference kind.');
-        }
-        if (null !== $this->originWakeGeneration && $this->originWakeGeneration < 0) {
-            throw new \InvalidArgumentException('Origin wake generation cannot be negative.');
-        }
-        if (null !== $this->rootWakeGeneration && $this->rootWakeGeneration < 0) {
-            throw new \InvalidArgumentException('Root wake generation cannot be negative.');
         }
         if (null !== $this->envelopeFingerprint) {
             $expectedFingerprint = ToolInvocationEnvelopeFingerprint::fromCorrelation($this);
@@ -145,6 +138,9 @@ final readonly class DeferredToolCompletionCorrelation
         if ($this->deadlineMetadata !== $candidate->deadlineMetadata) {
             throw new \RuntimeException(\sprintf('Deferred deadline metadata mismatch for run "%s" tool call "%s".', $this->runId, $this->toolCallId));
         }
+        if (!Completion\ToolCompletionDeliveryFenceDTO::same($this->deliveryFence, $candidate->deliveryFence)) {
+            throw new \RuntimeException('Deferred delivery permission mismatch.');
+        }
     }
 
     public function withLifecycle(
@@ -152,7 +148,16 @@ final readonly class DeferredToolCompletionCorrelation
         ToolInvocationExecutionObservationEnum $executionObservation,
         ?string $acceptedCompletionId = null,
         ?string $acceptedResultFingerprint = null,
+        ?Completion\ToolCompletionDeliveryFenceDTO $deliveryFence = null,
     ): self {
+        if (null !== $deliveryFence) {
+            if (null !== $this->deliveryFence && !Completion\ToolCompletionDeliveryFenceDTO::same($this->deliveryFence, $deliveryFence)) {
+                throw new \RuntimeException('Accepted completion delivery fence is immutable.');
+            }
+            if (null === $this->deliveryFence && (ToolInvocationCallerDispositionEnum::ForegroundPending !== $this->callerDisposition || ToolInvocationCallerDispositionEnum::BackgroundAcknowledged !== $callerDisposition)) {
+                throw new \RuntimeException('Completion delivery permission can only be captured at detachment.');
+            }
+        }
         ToolInvocationLifecycleTransition::assertAllowed(
             $this->callerDisposition,
             $this->executionObservation,
@@ -205,13 +210,12 @@ final readonly class DeferredToolCompletionCorrelation
             executionOwnerReference: $this->executionOwnerReference,
             originalExecutionMode: $this->originalExecutionMode,
             deadlineMetadata: $this->deadlineMetadata,
-            originWakeGeneration: $this->originWakeGeneration,
-            rootWakeGeneration: $this->rootWakeGeneration,
             envelopeFingerprint: $this->envelopeFingerprint,
             callerDisposition: $callerDisposition,
             executionObservation: $executionObservation,
             acceptedCompletionId: $nextCompletionId,
             acceptedResultFingerprint: $nextResultFingerprint,
+            deliveryFence: $deliveryFence ?? $this->deliveryFence,
         );
     }
 }

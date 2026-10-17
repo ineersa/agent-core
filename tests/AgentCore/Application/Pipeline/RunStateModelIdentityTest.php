@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
-use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
@@ -61,7 +60,7 @@ final class RunStateModelIdentityTest extends TestCase
 
         $commandStore = new InMemoryCommandStore();
         $handler = new AdvanceRunHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter([]),
             ),
@@ -203,7 +202,7 @@ final class RunStateModelIdentityTest extends TestCase
         $guard = $this->createStub(PreLlmCompactionGuardInterface::class);
         $guard->method('shouldCompactBeforeLlmStep')->willReturn(true);
         $handler = new AdvanceRunHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(new InMemoryCommandStore(), new CommandRouter([])),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])),
             eventFactory: new EventFactory(),
             preLlmCompactionGuard: $guard,
         );
@@ -247,7 +246,7 @@ final class RunStateModelIdentityTest extends TestCase
         $runId = 'run-model-missing';
         $state = new RunState(runId: $runId, status: RunStatus::Running, model: null);
         $handler = new AdvanceRunHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
             ),

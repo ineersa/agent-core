@@ -102,6 +102,7 @@ final readonly class RetainedToolCompletionEnvelopeFactory
             toolCallId: $correlation->toolCallId,
             invocationId: $correlation->invocationId ?? $correlation->deferredId,
             executionOwnerKind: $executionOwnerKind,
+            deliveryFence: $correlation->deliveryFence,
         );
         $presentation = new RetainedToolCompletionPresentation(
             severity: 'info',

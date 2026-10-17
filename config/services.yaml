@@ -109,6 +109,12 @@ services:
   Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface:
     alias: Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository
 
+  Ineersa\AgentCore\Contract\Tool\ToolCompletionRecipientRepositoryInterface:
+    alias: Ineersa\CodingAgent\Entity\ToolCompletionRecipientRepository
+
+  Ineersa\AgentCore\Contract\Tool\ToolCompletionDeliveryFenceProviderInterface:
+    alias: Ineersa\CodingAgent\Session\CanonicalToolCompletionDeliveryFenceProvider
+
   Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface:
     alias: Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository
 

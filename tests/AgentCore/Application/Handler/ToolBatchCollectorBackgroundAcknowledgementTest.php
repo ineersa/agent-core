@@ -391,8 +391,6 @@ final class ToolBatchCollectorBackgroundAcknowledgementTest extends TestCase
             executionOwnerReference: $correlation->executionOwnerReference,
             originalExecutionMode: $correlation->originalExecutionMode,
             deadlineMetadata: $correlation->deadlineMetadata,
-            originWakeGeneration: $correlation->originWakeGeneration,
-            rootWakeGeneration: $correlation->rootWakeGeneration,
         );
         $mismatched = new DeferredToolCompletionCorrelation(
             deferredId: $mismatched->deferredId,
@@ -417,8 +415,6 @@ final class ToolBatchCollectorBackgroundAcknowledgementTest extends TestCase
             executionOwnerReference: $mismatched->executionOwnerReference,
             originalExecutionMode: $mismatched->originalExecutionMode,
             deadlineMetadata: $mismatched->deadlineMetadata,
-            originWakeGeneration: $mismatched->originWakeGeneration,
-            rootWakeGeneration: $mismatched->rootWakeGeneration,
             envelopeFingerprint: ToolInvocationEnvelopeFingerprint::fromCorrelation($mismatched),
             callerDisposition: $mismatched->callerDisposition,
             executionObservation: $mismatched->executionObservation,
@@ -554,7 +550,7 @@ final class ToolBatchCollectorBackgroundAcknowledgementTest extends TestCase
     ): array {
         $batches = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($batches, $maxParallelism, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batches, $maxParallelism, $deferred);
         TestToolBatchRegistration::register($collector, $batches, $runId, 1, $stepId, $siblings);
 
         $owner = new ToolInvocationOwnerReference('bash', 'record-'.$toolCallId, 4242, '/tmp/'.$toolCallId.'.log');

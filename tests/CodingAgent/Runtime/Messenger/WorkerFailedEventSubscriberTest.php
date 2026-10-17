@@ -359,7 +359,7 @@ final class WorkerFailedEventSubscriberTest extends IsolatedKernelTestCase
     {
         $active = new TestActiveRunContext();
         $active->loadRecovered(RunState::queued(self::RUN_ID));
-        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store = new TestToolBatchStore());
         $request = new ExecuteToolCall(self::RUN_ID, 1, 'step', 1, 'identity', 'call', 'read', [], 0);
         TestToolBatchRegistration::register($collector, $store, self::RUN_ID, 1, 'step', [$request]);
         $this->assertNotNull($store->load(self::RUN_ID, 1, 'step'));

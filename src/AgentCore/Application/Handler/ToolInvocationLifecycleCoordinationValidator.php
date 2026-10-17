@@ -61,6 +61,7 @@ final readonly class ToolInvocationLifecycleCoordinationValidator implements Coo
                 $action->executionObservation,
                 $action->acceptedCompletionId,
                 $action->acceptedResultFingerprint,
+                $action->deliveryFence,
             );
         } catch (\InvalidArgumentException|\RuntimeException $exception) {
             throw new \RuntimeException($exception->getMessage(), 0, $exception);

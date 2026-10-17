@@ -26,11 +26,11 @@ final class ToolBatchCollectorDurableTest extends TestCase
             $this->executeToolCall('run-register', 'step-register', 'call-1', 0, 'sequential'),
             $this->executeToolCall('run-register', 'step-register', 'call-2', 1, 'sequential'),
         ];
-        $collector = new ToolBatchCollector($store);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store);
         $this->assertCount(1, TestToolBatchRegistration::register($collector, $store, 'run-register', 1, 'step-register', $calls));
         \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $this->toolResult('run-register', 'step-register', 'call-1', 0));
         $before = $store->load('run-register', 1, 'step-register');
-        $restored = new ToolBatchCollector($store);
+        $restored = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store);
         $this->assertSame([], TestToolBatchRegistration::register($restored, $store, 'run-register', 1, 'step-register', $calls));
         $this->assertEquals($before, $store->load('run-register', 1, 'step-register'));
         \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($restored, $store, $this->toolResult('run-register', 'step-register', 'call-2', 1));
@@ -42,7 +42,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testConflictingRegistrationCannotReplaceExistingBatch(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector($store);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store);
         TestToolBatchRegistration::register($collector, $store, 'run-conflict', 1, 'step-conflict', [$this->executeToolCall('run-conflict', 'step-conflict', 'call', 0, 'sequential')]);
         $before = $store->load('run-conflict', 1, 'step-conflict');
         try {
@@ -57,7 +57,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testRegisterAndCollectWithStore(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector($store, 4);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4);
 
         $initial = TestToolBatchRegistration::register($collector, $store, 'run-1', 1, 'step-1', [
             $this->executeToolCall('run-1', 'step-1', 'call-1', 0, 'sequential'),
@@ -90,7 +90,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testCrossProcessRecoveryWithStore(): void
     {
         $store = $this->createStore();
-        $registrar = new ToolBatchCollector($store, 4);
+        $registrar = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4);
 
         $initial = TestToolBatchRegistration::register($registrar, $store, 'run-2', 1, 'step-1', [
             $this->executeToolCall('run-2', 'step-1', 'call-1', 0, 'parallel', maxParallelism: 2),
@@ -99,7 +99,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $this->assertCount(2, $initial);
         unset($registrar);
 
-        $recovering = new ToolBatchCollector($store, 4);
+        $recovering = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4);
         $firstOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($recovering, $store, $this->toolResult('run-2', 'step-1', 'call-1', 0));
         $this->assertTrue($firstOutcome->accepted);
         $this->assertFalse($firstOutcome->complete);
@@ -113,7 +113,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testCrossProcessRecoveryDispatchesPendingCalls(): void
     {
         $store = $this->createStore();
-        $registrar = new ToolBatchCollector($store, 2);
+        $registrar = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 2);
 
         $initial = TestToolBatchRegistration::register($registrar, $store, 'run-3', 1, 'step-1', [
             $this->executeToolCall('run-3', 'step-1', 'call-1', 0, 'parallel', maxParallelism: 2),
@@ -123,7 +123,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $this->assertCount(2, $initial);
         unset($registrar);
 
-        $recovering = new ToolBatchCollector($store, 2);
+        $recovering = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 2);
         $firstOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($recovering, $store, $this->toolResult('run-3', 'step-1', 'call-1', 0));
         $this->assertTrue($firstOutcome->accepted);
         $this->assertFalse($firstOutcome->complete);
@@ -134,7 +134,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testRejectedWhenStoreIsEmpty(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector($store);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store);
         $outcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $store, $this->toolResult('run-nonexistent', 'step-1', 'call-1', 0));
         $this->assertFalse($outcome->accepted);
         $this->assertFalse($outcome->duplicate);
@@ -143,7 +143,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testDuplicateResultWithStore(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector($store, 4);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4);
         TestToolBatchRegistration::register($collector, $store, 'run-4', 1, 'step-1', [
             $this->executeToolCall('run-4', 'step-1', 'call-1', 0, 'sequential'),
         ]);
@@ -160,7 +160,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testCrossProcessParallelDispatchRecovery(): void
     {
         $store = $this->createStore();
-        $registrar = new ToolBatchCollector($store, 4);
+        $registrar = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4);
         $initial = TestToolBatchRegistration::register($registrar, $store, 'run-5', 1, 'step-1', [
             $this->executeToolCall('run-5', 'step-1', 'call-1', 0, 'sequential'),
             $this->executeToolCall('run-5', 'step-1', 'call-2', 1, 'parallel', maxParallelism: 4),
@@ -169,7 +169,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $this->assertCount(1, $initial);
         unset($registrar);
 
-        $recovering = new ToolBatchCollector($store, 4);
+        $recovering = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4);
         $firstOutcome = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($recovering, $store, $this->toolResult('run-5', 'step-1', 'call-1', 0));
         $this->assertTrue($firstOutcome->accepted);
         $this->assertFalse($firstOutcome->complete);
@@ -219,7 +219,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
             }
         };
 
-        $collector = new ToolBatchCollector($store, 4);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4);
         TestToolBatchRegistration::register($collector, $store, 'run-6', 1, 'step-1', [
             $this->executeToolCall('run-6', 'step-1', 'call-1', 0, 'sequential'),
         ]);
@@ -242,7 +242,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testDurableHumanInputAdmitResumeRedrivePersistsThroughMutate(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector($store, 1);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 1);
         TestToolBatchRegistration::register($collector, $store, 'run-hi', 1, 'step-hi', [
             $this->executeToolCall('run-hi', 'step-hi', 'call-1', 0, 'sequential'),
         ]);
@@ -278,7 +278,7 @@ final class ToolBatchCollectorDurableTest extends TestCase
     public function testDurableHumanInputMissingBatchPreservesExactErrors(): void
     {
         $store = $this->createStore();
-        $collector = new ToolBatchCollector($store, 1);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 1);
 
         $cases = [
             [

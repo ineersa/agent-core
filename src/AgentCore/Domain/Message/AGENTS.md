@@ -9,11 +9,20 @@ Immutable bus payloads and owner-local processor messages under `Ineersa\AgentCo
 - `StartRun`, `ApplyCommand`, `ApplyShellCommand`
 - `LlmStepResult`, `ToolCallResult`, `CompactionStepResult`
 - `CompleteDeferredToolCall` (deferred completion; identity from durable record)
+- `ReceiveToolCompletion` (runtime-only committed source reference; retained recipient dedupe and pending mailbox admission, never human input)
 - `CommitSubagentProgress` (frozen normalized progress, durable lifecycle and revision identity; App handler commits under the parent owner lock)
 
 **Run-control transitions** (transport `run_control` on `agent.command.bus`):
 
 - `AdvanceRun`, `CompactRun` — state transitions handled only by the dedicated run_control consumer
+
+Runtime completion continuations use `AdvanceRun.completionFence`; bounded
+metadata-only progress also sets `completionMailboxDrain`. These tokens never
+authorize pre-handler history-tail discard and must revalidate the captured
+generations before draining. Ordinary human and foreground successors retain
+their existing semantics without these fields.
+An already-applied provider-stop continuation also carries `appliedCompletion`
+so the owner verifies the finalized recipient before using that intent.
 
 **Owner-local processor messages** (no Messenger route):
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Replay;
 
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -281,6 +282,19 @@ final readonly class RunStateReducer
             return $state->with($changes);
         }
 
+        // Runtime completion is custom-role data, not a user continuation and
+        // must never clear a question or independently revive terminal state.
+        if ('tool_completion' === $kind) {
+            $messagePayload = $payload['message'] ?? null;
+            $message = \is_array($messagePayload) ? AgentMessage::fromPayload($messagePayload) : null;
+            if (null === $message || 'tool_completion' !== $message->role) {
+                throw new \UnexpectedValueException('Applied completion lacks its frozen custom message.');
+            }
+            $messages[] = $message;
+
+            return $state;
+        }
+
         // steer / follow_up / append_message: append message to prompt context.
         // These lifecycle advances abandon any outstanding human-input queue so a
         // later response cannot target a superseded question behind a new wait.
@@ -377,6 +391,11 @@ final readonly class RunStateReducer
      */
     private function applyCommandRejected(array $payload, RunState $state): RunState
     {
+        // Delivery bookkeeping does not fail the run or replace a prior error.
+        if (CoreCommandKind::ToolCompletion === ($payload['kind'] ?? null)
+            && \in_array($payload['delivery_disposition'] ?? null, ['parked', 'rejected'], true)) {
+            return $state;
+        }
         $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
 
         return $state->with(['errorMessage' => $reason ?? $state->errorMessage]);

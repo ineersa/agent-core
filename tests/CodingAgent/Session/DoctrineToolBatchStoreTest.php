@@ -44,6 +44,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
             $batches,
             $failingCommands,
             $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolCompletionRecipientRepositoryInterface::class),
         );
         try {
             $coordinator->apply($plan);

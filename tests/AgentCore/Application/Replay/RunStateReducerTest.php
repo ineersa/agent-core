@@ -14,6 +14,42 @@ use PHPUnit\Framework\TestCase;
 
 final class RunStateReducerTest extends TestCase
 {
+    #[\PHPUnit\Framework\Attributes\DataProvider('completionRejections')]
+    public function testCompletionRejectionPreservesHealthyOrExistingRunError(string $disposition, ?string $priorError): void
+    {
+        $events = [new RunEvent('run', 1, 1, 'turn_advanced', ['turn_no' => 1])];
+        if (null !== $priorError) {
+            $events[] = new RunEvent('run', 2, 1, 'agent_command_rejected', ['kind' => 'follow_up', 'reason' => $priorError]);
+        }
+        $events[] = new RunEvent('run', 3, 1, 'agent_command_rejected', ['kind' => 'tool_completion', 'reason' => 'body_missing', 'delivery_disposition' => $disposition]);
+
+        $state = $this->reducer()->replay(RunState::queued('run'), $events);
+
+        $this->assertSame(RunStatus::Running, $state->status);
+        $this->assertSame($priorError, $state->errorMessage);
+    }
+
+    public static function completionRejections(): iterable
+    {
+        foreach (['parked', 'rejected'] as $disposition) {
+            yield $disposition.' healthy' => [$disposition, null];
+            yield $disposition.' prior error' => [$disposition, 'ordinary command failed'];
+        }
+    }
+
+    public function testOrdinaryCommandRejectionStillSetsAndPreservesItsError(): void
+    {
+        $state = $this->reducer()->replay(RunState::queued('run'), [
+            new RunEvent('run', 1, 1, 'agent_command_rejected', ['kind' => 'follow_up', 'reason' => 'invalid user command']),
+            new RunEvent('run', 2, 1, 'agent_command_rejected', ['kind' => 'steer']),
+        ]);
+        $this->assertSame('invalid user command', $state->errorMessage);
+        $publicInjection = $this->reducer()->replay(RunState::queued('run'), [
+            new RunEvent('run', 1, 1, 'agent_command_rejected', ['kind' => 'tool_completion', 'reason' => 'Internal runtime command cannot be submitted publicly.']),
+        ]);
+        $this->assertSame('Internal runtime command cannot be submitted publicly.', $publicInjection->errorMessage);
+    }
+
     public function testStreamingReplayReleasesProcessedRecordsAndKeepsActualSequence(): void
     {
         $events = (static function (): \Generator {

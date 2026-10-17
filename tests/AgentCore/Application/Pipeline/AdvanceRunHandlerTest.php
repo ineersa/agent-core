@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
-use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -28,7 +27,7 @@ final class AdvanceRunHandlerTest extends TestCase
     public function testHandleProducesTurnAdvanceEventAndLlmExecutionEffect(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -82,7 +81,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $runId = 'run-advance-redelivery';
         $commandStore = new InMemoryCommandStore();
         $handler = new AdvanceRunHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, new CommandRouter([])),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($commandStore, new CommandRouter([])),
             eventFactory: new EventFactory(),
         );
         $first = AdvanceRunMessageBuilder::create($runId)
@@ -140,7 +139,7 @@ final class AdvanceRunHandlerTest extends TestCase
             options: new CommandCancellationOptions(safe: false),
         ));
 
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -196,7 +195,7 @@ final class AdvanceRunHandlerTest extends TestCase
             options: new CommandCancellationOptions(safe: false),
         ));
 
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -246,7 +245,7 @@ final class AdvanceRunHandlerTest extends TestCase
     public function testHandleFirstTurnHasNullParentTurnNo(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -288,7 +287,7 @@ final class AdvanceRunHandlerTest extends TestCase
     public function testCancelledRunWithNoPendingCommandsIsNoOp(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -323,7 +322,7 @@ final class AdvanceRunHandlerTest extends TestCase
     public function testAdvanceWithUnresolvedPendingToolCallsIsNoOp(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -362,7 +361,7 @@ final class AdvanceRunHandlerTest extends TestCase
     public function testAdvanceWithMixedUnresolvedPendingToolCallsIsNoOp(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -405,7 +404,7 @@ final class AdvanceRunHandlerTest extends TestCase
     public function testAdvanceWithAllResolvedPendingToolCallsProceeds(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -466,7 +465,7 @@ final class AdvanceRunHandlerTest extends TestCase
             options: new CommandCancellationOptions(safe: false),
         ));
 
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -554,7 +553,7 @@ final class AdvanceRunHandlerTest extends TestCase
             options: new CommandCancellationOptions(safe: false),
         ));
 
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -599,7 +598,7 @@ final class AdvanceRunHandlerTest extends TestCase
             options: new CommandCancellationOptions(safe: false),
         ));
 
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -665,7 +664,7 @@ final class AdvanceRunHandlerTest extends TestCase
             options: new CommandCancellationOptions(safe: false),
         ));
 
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -711,7 +710,7 @@ final class AdvanceRunHandlerTest extends TestCase
             options: new CommandCancellationOptions(safe: false),
         ));
 
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -754,7 +753,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $runId = 'run-history-alloc-test';
         $commandStore = new InMemoryCommandStore();
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );

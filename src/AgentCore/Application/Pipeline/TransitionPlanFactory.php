@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
+use Ineersa\AgentCore\Domain\Coordination\RecordToolCompletionDeliveryDTO;
 use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\TransitionPlan;
@@ -28,7 +29,7 @@ final readonly class TransitionPlanFactory
         $sync = [];
         $messages = $effects;
         foreach ([...$actions, ...$afterTurnActions] as $action) {
-            if ($action instanceof FinalizeToolBatchDTO || $action instanceof RegisterToolBatchDTO || $action instanceof RecordToolInvocationLifecycleDTO || CommandMailboxCoordinationFactory::isMailboxAction($action)) {
+            if ($action instanceof FinalizeToolBatchDTO || $action instanceof RegisterToolBatchDTO || $action instanceof RecordToolInvocationLifecycleDTO || $action instanceof RecordToolCompletionDeliveryDTO || CommandMailboxCoordinationFactory::isMailboxAction($action)) {
                 $local[] = $action;
                 if ($action instanceof RegisterToolBatchDTO) {
                     // Initial admission was decided by the collector. Queued calls

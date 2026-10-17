@@ -77,7 +77,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
     public function testBatchAdmissionIsIdempotentAndFreesDispatchCapacity(): void
     {
-        $collector = new ToolBatchCollector($store = new TestToolBatchStore(), 1);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store = new TestToolBatchStore(), 1);
         TestToolBatchRegistration::register($collector, $store, 'run-b', 1, 'step-b', [
             $this->call('run-b', 'step-b', 'call-1', 0),
             $this->call('run-b', 'step-b', 'call-2', 1),
@@ -90,7 +90,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
     public function testHandlerAdmitsWaitingHumanAndReplayReconstructsToolCallRequest(): void
     {
-        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $store, 'run-h', 3, 'step-h', [$this->call('run-h', 'step-h', 'call-h', 0, 3)]);
         $request = PendingHumanInputRequestDTO::toolCallFromPayload(
             ['question_id' => 'q-h', 'prompt' => 'Allow id?'],
@@ -150,7 +150,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
     public function testOrdinarySiblingResultWhileSuspendedPreservesWaitingHumanWithoutBatchCommit(): void
     {
-        $collector = new ToolBatchCollector($store = new TestToolBatchStore(), 2);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store = new TestToolBatchStore(), 2);
         TestToolBatchRegistration::register($collector, $store, 'run-par', 1, 'step-par', [
             $this->call('run-par', 'step-par', 'call-1', 0, mode: 'parallel', maxParallelism: 2),
             $this->call('run-par', 'step-par', 'call-2', 1, mode: 'parallel', maxParallelism: 2),
@@ -209,7 +209,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
     public function testResumeRequeuesExactCallWithoutModelMessage(): void
     {
-        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore(), 1);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batchStore = new TestToolBatchStore(), 1);
         $call = $this->call('run-r', 'step-r', 'call-r', 0, 1);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-r', 1, 'step-r', [$call]);
         \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-r', 1, 'step-r', 'call-r', 'q-r');
@@ -228,13 +228,13 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
         $store = new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore();
         $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter([]);
-        $collector2 = new ToolBatchCollector($batchStore2 = new TestToolBatchStore());
+        $collector2 = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batchStore2 = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector2, $batchStore2, 'run-h2', 2, 'step-h2', [$this->call('run-h2', 'step-h2', 'call-h2', 0, 2)]);
         \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector2, $batchStore2, 'run-h2', 2, 'step-h2', 'call-h2', 'q-h2');
         $handler2 = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
             commandStore: $store,
             commandRouter: $router,
-            commandMailboxPolicy: new \Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy($store, $router),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($store, $router),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -319,13 +319,13 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
     {
         $store = new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore();
         $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter([]);
-        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batchStore = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $batchStore, 'run-x', 1, 'step-x', [$this->call('run-x', 'step-x', 'call-x', 0)]);
         \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-x', 1, 'step-x', 'call-x', 'q-x');
         $handler = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
             commandStore: $store,
             commandRouter: $router,
-            commandMailboxPolicy: new \Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy($store, $router),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($store, $router),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -362,7 +362,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
     {
         $activeRunContext = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
         $eventStore = new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore();
-        $collector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batchStore = new TestToolBatchStore());
         $execute = $this->call('run-seq', 'step-seq', 'call-seq', 0);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-seq', 1, 'step-seq', [$execute]);
 

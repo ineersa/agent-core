@@ -19,7 +19,23 @@ final readonly class CommandMailboxPolicy
     public function __construct(
         private CommandStoreInterface $commandStore,
         private CommandRouter $commandRouter,
+        private \Ineersa\AgentCore\Application\Tool\ToolCompletionMailboxConsumer $toolCompletions,
+        private \Ineersa\AgentCore\Application\Tool\ToolCompletionDeliveryEligibilityPolicy $completionEligibility,
     ) {
+    }
+
+    public function completionContinuationIneligibleReason(RunState $state, \Ineersa\AgentCore\Domain\Message\AdvanceRun $message): ?string
+    {
+        if (null === $message->completionFence) {
+            return null;
+        }
+        if (null !== $message->appliedCompletion && !$this->toolCompletions->isAppliedContinuation($state->runId, $message->appliedCompletion)) {
+            return 'completion_not_applied';
+        }
+
+        return $message->completionMailboxDrain
+            ? $this->completionEligibility->fenceIneligibleReason($state->runId, $message->completionFence)
+            : $this->completionEligibility->ineligibleReason($state, $message->completionFence);
     }
 
     public function applyPendingTurnStartCommands(RunState $state): CommandApplicationResult
@@ -62,16 +78,33 @@ final readonly class CommandMailboxPolicy
         // snapshot are drained here, in store FIFO order. Later enqueues wait
         // for the next turn-start or stop boundary.
         $pendingCommands = $this->commandStore->pending($state->runId);
-        if ([] === $pendingCommands) {
-            return new CommandApplicationResult($state, [], false);
-        }
 
         $messages = $state->messages;
         $eventSpecs = [];
         $effects = [];
         $shouldContinue = false;
+        $actions = [];
+        $completionBytes = 0;
+        $completionDecisions = 0;
 
         foreach ($pendingCommands as $pendingCommand) {
+            if (CoreCommandKind::ToolCompletion === $pendingCommand->kind) {
+                if (++$completionDecisions > 64 || 16384 - $completionBytes < \Ineersa\AgentCore\Application\Tool\ToolCompletionNotificationRenderer::MIN_BYTES + \Ineersa\AgentCore\Application\Tool\ToolCompletionMailboxConsumer::PROVIDER_PREFIX_BYTES) {
+                    if (0 === $completionBytes && [] !== $eventSpecs && null === $state->parentRunId) {
+                        $actions[] = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::forCompletion($state, $this->completionEligibility->capture($state->runId), mailboxDrain: true);
+                    }
+                    break;
+                }
+                $decision = $this->toolCompletions->apply($pendingCommand, $state->with(['messages' => $messages]), 16384 - $completionBytes);
+                $messages = $decision->state->messages;
+                $eventSpecs = [...$eventSpecs, ...$decision->eventSpecs];
+                $actions = [...$actions, ...$decision->postCommitActions];
+                $completionBytes += $decision->completionBytes;
+                if (CommandApplicationBoundary::StopBoundary === $boundary && $decision->shouldContinue) {
+                    $shouldContinue = true;
+                }
+                continue;
+            }
             if (\in_array($pendingCommand->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
                 $messagePayload = $pendingCommand->payload['message'] ?? null;
                 if (!\is_array($messagePayload)) {
@@ -160,6 +193,8 @@ final readonly class CommandMailboxPolicy
             $eventSpecs,
             $shouldContinue,
             $effects,
+            $actions,
+            $completionBytes,
         );
     }
 

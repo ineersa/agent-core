@@ -22,5 +22,8 @@ Ordering constraints are enforced at each event write/commit call site; there is
 
 `ContextRefreshed` records generated instruction messages on session attach. Replay
 replaces only the generated context; conversation and compaction summaries remain.
+`ToolCompletionReceived` records a verified retained reference and initial recipient
+disposition. Its own allocated sequence is the receipt location; the event does
+not add a model message or authorize automatic continuation.
 
 When event types or subscriber contracts change, update this file and `../../Application/AGENTS.md` in the same change.

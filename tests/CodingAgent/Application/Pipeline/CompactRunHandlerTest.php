@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
-use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
@@ -151,7 +150,7 @@ final class CompactRunHandlerTest extends TestCase
         $guard = $this->createStub(PreLlmCompactionGuardInterface::class);
         $guard->method('shouldCompactBeforeLlmStep')->willReturn(true);
         $advance = new AdvanceRunHandler(
-            new CommandMailboxPolicy(new InMemoryCommandStore(), new CommandRouter([])),
+            \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(new InMemoryCommandStore(), new CommandRouter([])),
             new EventFactory(),
             preLlmCompactionGuard: $guard,
         );

@@ -62,8 +62,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
             executionOwnerReference: $correlation->executionOwnerReference,
             originalExecutionMode: $correlation->originalExecutionMode,
             deadlineMetadata: $correlation->deadlineMetadata,
-            originWakeGeneration: $correlation->originWakeGeneration,
-            rootWakeGeneration: $correlation->rootWakeGeneration,
+            deliveryFence: $correlation->deliveryFence,
             envelopeFingerprint: $correlation->envelopeFingerprint ?? $computedFingerprint,
             callerDisposition: $correlation->callerDisposition,
             executionObservation: $correlation->executionObservation,
@@ -141,8 +140,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
             executionOwnerReference: $correlation->executionOwnerReference,
             originalExecutionMode: $correlation->originalExecutionMode,
             deadlineMetadata: $correlation->deadlineMetadata,
-            originWakeGeneration: $correlation->originWakeGeneration,
-            rootWakeGeneration: $correlation->rootWakeGeneration,
+            deliveryFence: $correlation->deliveryFence,
             envelopeFingerprint: $correlation->envelopeFingerprint ?? $computedFingerprint,
             callerDisposition: $correlation->callerDisposition,
             executionObservation: $correlation->executionObservation,
@@ -161,7 +159,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         }
 
         $current = $this->byDeferredId[$deferredId]['correlation'];
-        $current->assertAcceptedImmutableBindingMatches($expected);
+        $action->assertCurrentBindingMatches($current);
         if ($current->callerDisposition === $action->callerDisposition
             && $current->executionObservation === $action->executionObservation) {
             if (null !== $action->acceptedCompletionId) {
@@ -185,6 +183,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
             $action->executionObservation,
             $action->acceptedCompletionId,
             $action->acceptedResultFingerprint,
+            $action->deliveryFence,
         );
         $this->byDeferredId[$deferredId]['correlation'] = $next;
         if (null !== $next->acceptedCompletionId

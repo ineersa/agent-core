@@ -20,6 +20,25 @@ final class CommandMailboxCoordinationFactory
     public static function finalize(HandlerResult $result): HandlerResult
     {
         $actions = [];
+        $captured = $result->postCommitActions;
+        foreach ($captured as $key => $action) {
+            if (!$action instanceof \Ineersa\AgentCore\Domain\Coordination\RecordToolCompletionDeliveryDTO || null === $action->appliedEventOrdinal) {
+                continue;
+            }
+            $ordinal = null;
+            foreach ($result->events as $index => $event) {
+                if (RunEventTypeEnum::AgentCommandApplied->value === $event->type
+                    && 'tool_completion' === ($event->payload['kind'] ?? null)
+                    && $action->delivery->reference->messageId === ($event->payload['idempotency_key'] ?? null)) {
+                    $ordinal = $index;
+                    break;
+                }
+            }
+            if (null === $ordinal) {
+                throw new \LogicException('Applied completion lacks its frozen presentation event.');
+            }
+            $captured[$key] = new \Ineersa\AgentCore\Domain\Coordination\RecordToolCompletionDeliveryDTO($action->delivery, $action->expectedDisposition, appliedEventOrdinal: $ordinal);
+        }
         foreach ($result->events as $event) {
             $key = $event->payload['idempotency_key'] ?? null;
             if (!\is_string($key)) {
@@ -38,6 +57,6 @@ final class CommandMailboxCoordinationFactory
             }
         }
 
-        return new HandlerResult($result->nextState, $result->events, $result->effects, $result->postCommitEffects, [...$actions, ...$result->postCommitActions]);
+        return new HandlerResult($result->nextState, $result->events, $result->effects, $result->postCommitEffects, [...$actions, ...$captured]);
     }
 }

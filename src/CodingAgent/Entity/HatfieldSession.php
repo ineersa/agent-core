@@ -55,6 +55,10 @@ class HatfieldSession
     #[ORM\Column(name: 'root_id', type: 'string', nullable: true)]
     public ?string $rootId = null;
 
+    /** Durable controller lifetime; never cleared with run operational projections. */
+    #[ORM\Column(name: 'controller_generation', type: 'integer', options: ['default' => 0])]
+    public int $controllerGeneration = 0;
+
     /** Selected model reference (e.g. "deepseek/deepseek-v4-pro"). */
     #[ORM\Column(type: 'string', nullable: true)]
     public ?string $model = null;

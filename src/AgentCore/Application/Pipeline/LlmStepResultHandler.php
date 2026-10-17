@@ -324,6 +324,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             $stateAfterAssistant = $state->with([
                 'pendingToolCalls' => [],
                 'currentToolCalls' => [],
+                // The accepted provider result closes this operation. A stop
+                // boundary is safe even when its incoming stream flag was set.
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'currentOperation' => null,
                 'errorMessage' => null,
                 'messages' => $messages,
             ]);
@@ -373,10 +378,22 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'errorMessage' => null,
             ]);
 
-            $postCommitActions = [];
+            $postCommitActions = $mailboxResult->postCommitActions;
 
             if ($shouldContinue) {
-                $postCommitActions[] = $this->followUpAdvanceAction($runId, $state->turnNo, 'stop-boundary-follow-up');
+                $appliedCompletion = null;
+                $hasExplicitContinuation = array_any($boundaryEventSpecs, static fn (array $spec): bool => RunEventTypeEnum::AgentCommandApplied->value === $spec['type'] && !\in_array($spec['payload']['kind'] ?? null, ['tool_completion', 'compact'], true));
+                if (!$hasExplicitContinuation) {
+                    foreach ($mailboxResult->postCommitActions as $action) {
+                        if ($action instanceof \Ineersa\AgentCore\Domain\Coordination\RecordToolCompletionDeliveryDTO && \Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryDispositionEnum::Applied === $action->delivery->disposition) {
+                            $appliedCompletion = $action->delivery->reference;
+                            break;
+                        }
+                    }
+                }
+                $postCommitActions[] = null === $appliedCompletion
+                    ? $this->followUpAdvanceAction($runId, $state->turnNo, 'stop-boundary-follow-up')
+                    : AdvanceRunCoordinationFactory::forCompletion($nextState, $appliedCompletion->deliveryFence, appliedCompletion: $appliedCompletion);
             }
 
             return new HandlerResult(

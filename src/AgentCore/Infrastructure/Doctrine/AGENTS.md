@@ -2,7 +2,7 @@
 
 `CommandRecord` stores framework command identities and pending payloads. Application wiring maps this directory without introducing a dependency from AgentCore to CodingAgent.
 
-`Infrastructure/Storage/DoctrineCommandStore` uses indexed scalar queries for identity, pending count, and FIFO payload selection. Application or rejection deletes the whole row, including its identity and payload. Pending IDs prevent duplicate enqueue; completed IDs can be submitted again. Pending rows have no TTL and survive worker restarts and cache clearing. Missing or corrupt pending payloads fail instead of producing an empty mailbox.
+`Infrastructure/Storage/DoctrineCommandStore` uses indexed scalar queries for identity, pending count, and FIFO payload selection. `pending()` captures the maximum queued row ID at call time and returns a lazy iterator over scalar keyset pages of at most 64 rows. Commands are decoded only as consumed; stopping iteration leaves unread obligations pending. Application or rejection deletes the whole row, including its identity and payload. Pending IDs prevent duplicate enqueue; completed IDs can be submitted again. Pending rows have no TTL and survive worker restarts and cache clearing. Missing or corrupt consumed payloads fail instead of producing an empty mailbox.
 
 Configuration and migrations live at the project root:
 

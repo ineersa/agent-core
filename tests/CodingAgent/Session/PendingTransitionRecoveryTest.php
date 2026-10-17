@@ -27,7 +27,7 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $state = new \Ineersa\AgentCore\Domain\Run\RunState(runId: $run, status: \Ineersa\AgentCore\Domain\Run\RunStatus::Running, turnNo: 1);
         $result = $handler->handle($message, $state);
         $this->assertFalse($commands->has($run, $message->idempotencyKey()), 'Failure before intent must not reserve or consume the source command.');
-        $this->assertSame([], $commands->pending($run));
+        $this->assertSame(0, $commands->countPending($run));
         $retry = $handler->handle($message, $state);
         $this->assertEquals($result->postCommitActions, $retry->postCommitActions);
         $store = $container->get(PreparedTransitionEventStoreInterface::class);
@@ -36,13 +36,13 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $bus = $container->get('agent.command.bus');
         $this->recovery($bus)->recover($run);
         $this->assertNull($store->verifiedPendingTransition($run));
-        $pending = $commands->pending($run);
+        $pending = iterator_to_array($commands->pending($run));
         $this->assertCount(1, $pending);
         $this->assertSame($message->idempotencyKey(), $pending[0]->idempotencyKey);
         $this->assertSame($message->payload, $pending[0]->payload);
         $this->assertSame(1, $store->latestSequenceFor($run));
         $this->recovery($bus)->recover($run);
-        $this->assertEquals($pending, $commands->pending($run));
+        $this->assertEquals($pending, iterator_to_array($commands->pending($run)));
     }
 
     public function testUnsupportedActionIsRejectedBeforeAnyMailboxFinalization(): void
@@ -104,24 +104,24 @@ final class PendingTransitionRecoveryTest extends IsolatedKernelTestCase
         $commands->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand($run, 'steer', 'second', $payload));
         $state = new \Ineersa\AgentCore\Domain\Run\RunState(runId: $run, status: \Ineersa\AgentCore\Domain\Run\RunStatus::Running, turnNo: 1);
         $prepared = $container->get(\Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy::class)->applyPendingTurnStartCommands($state);
-        $this->assertSame(['first', 'second'], array_column($commands->pending($run), 'idempotencyKey'));
+        $this->assertSame(['first', 'second'], array_column(iterator_to_array($commands->pending($run)), 'idempotencyKey'));
         $events = $container->get(\Ineersa\AgentCore\Domain\Event\EventFactory::class)->eventsFromSpecs($run, 1, 1, $prepared->eventSpecs);
         $decision = \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::finalize(new \Ineersa\AgentCore\Application\Pipeline\HandlerResult(events: $events));
         $this->assertSame(['first', 'second'], array_map(static fn ($event): string => $event->payload['idempotency_key'], $events));
         $store = $container->get(PreparedTransitionEventStoreInterface::class);
         $store->appendTransition($events, ['run_id' => $run, 'predecessor_seq' => 0, 'actions' => $decision->postCommitActions]);
-        $this->assertCount(2, $commands->pending($run));
+        $this->assertSame(2, $commands->countPending($run));
         // This later enqueue is outside the captured cutoff and must survive recovery.
         $commands->enqueue(new \Ineersa\AgentCore\Domain\Command\PendingCommand($run, 'steer', 'later', $payload));
         $bus = $container->get('agent.command.bus');
         $this->recovery($bus)->recover($run);
-        $this->assertSame(['later'], array_column($commands->pending($run), 'idempotencyKey'));
+        $this->assertSame(['later'], array_column(iterator_to_array($commands->pending($run)), 'idempotencyKey'));
         $this->assertFalse($commands->has($run, 'first'));
         $this->assertFalse($commands->has($run, 'second'));
         $this->assertNull($store->verifiedPendingTransition($run));
         $this->assertSame(2, $store->latestSequenceFor($run));
         $this->recovery($bus)->recover($run);
-        $this->assertSame(['later'], array_column($commands->pending($run), 'idempotencyKey'));
+        $this->assertSame(['later'], array_column(iterator_to_array($commands->pending($run)), 'idempotencyKey'));
     }
 
     private function recovery(MessageBusInterface $bus, ?\Ineersa\AgentCore\Application\Handler\RunLockManager $locks = null): PendingTransitionRecovery

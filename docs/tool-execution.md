@@ -75,8 +75,82 @@ fails closed as soon as actual bytes exceed the sealed length, and returns a
 bounded preview only when the body fits the caller budget. The internal reader uses
 canonical source locators or a bounded newest-first scan. Missing, corrupt,
 unsupported, or foreign references yield typed inspection failures and never
-re-execute tools. Mailbox delivery, wake fencing, producers, and Ctrl+B remain
-later checkpoints.
+re-execute tools. Background producers and Ctrl+B remain disabled.
+
+C5 retains verified recipient obligations and delivery fences, and applies useful
+custom-role messages at safe owner boundaries. Eligible receipt arrivals for a
+healthy completed root capture the existing `AdvanceRun` continuation. Arrivals
+in the same idle epoch share its identity; repeated receipts and successor
+deliveries cannot start a second model request.
+`ToolCompletionDeliveryReferenceDTO` carries the recipient identity, message ID,
+exact canonical source location, semantic fingerprint, and captured delivery
+fence. Configured Symfony serialization owns its wire representation.
+`ToolCompletionDeliveryVerifier`
+checks the published source event, background acceptance, original invocation,
+retained origin, owning root, locator, and fingerprint without opening the
+referenced body. Ordinary attached foreground results are not delivery sources.
+Cross-run forwarding is not enabled.
+
+The source publishes its reference only after verified terminal acceptance.
+The recipient deduplicates against retained canonical-derived identity before
+fetching its source. Its received event and internal mailbox obligation finalize
+together through prepared coordination. Consuming a mailbox row does not erase
+recipient dedupe or the retained source body.
+
+Detachment captures cancellation, history, and controller generations. The last
+canonical accepted cancellation sequence is the wake generation; explicit history
+selection or tail discard advances a separate history generation. Normal later
+turns and compaction do not advance either fence. The existing scalar history
+index rebuilds these facts from all canonical controls, including controls outside
+the selected branch. Controller startup separately increments a durable session
+generation before disposable operational rows are cleared and consumers start.
+
+The immutable deferred binding, terminal envelope, allocated source reference,
+and recipient evidence preserve the captured fence. Completion never renews it.
+`ToolCompletionDeliveryEligibilityPolicy` rejects stale generations, cancelled or
+failed runs, terminal children, and missing permission. Admission records the
+ineligibility reason without discarding evidence; the obligation remains pending.
+The boundary consumer rechecks permission before application. Successor scheduling
+must also revalidate permission before release. Explicit user continuation does not renew an old completion's
+automatic permission.
+
+Pending mailbox iteration captures the durable enqueue cutoff before returning a
+lazy FIFO iterator. The configured Doctrine store reads scalar keyset pages of at
+most 64 rows and decodes commands only as consumed. Stopping a boundary drain
+leaves later obligations pending; new enqueues wait for the next cutoff.
+
+The consumer freezes runtime provenance and escaped external data in a custom
+`tool_completion` message plus `ModelNotificationDTO`. Small validated bodies fit
+in full; larger bodies use bounded summaries and retained references. Each boundary
+adds at most 16 KiB of completion text and considers at most 64 completion decisions.
+Excess obligations remain pending in FIFO order. Human questions, live provider
+operations, streaming, unresolved tools, and compaction defer application. Stale
+permissions park the recipient without reading its body. Verified finalization
+updates recipient disposition and consumes the mailbox instruction atomically;
+the applied location binds to the actual canonical allocation. Accepted provider
+stop results close their old operation before this boundary is evaluated.
+
+If retained-body inspection reports `body_missing` or `body_corrupt`, the consumer
+rejects that recipient delivery and atomically consumes its mailbox instruction.
+Later completions and human commands can still progress. Rejection alone cannot
+wake the model, and delivery parking/rejection does not replace the run's error
+state during live execution or replay. A correlated warning records only the
+message identity and failure code, not body or path data. Scope/identity conflicts
+and unexpected exceptions still propagate; stale-fence parking is unchanged.
+
+Automatic successors revalidate captured generations under the owner lock before
+draining. They never trigger the pre-handler forward-history discard. A bounded
+parked-only prefix captures another metadata drain through the same `AdvanceRun`
+path; rejection alone does not authorize a model request. Eligible completion
+application or an explicit queued human continuation supplies that intent.
+When a provider-stop boundary already applied the completion, its successor
+carries the accepted reference and rechecks both the finalized recipient
+disposition and its original fence. Application does not renew wake permission.
+Bodies larger than 8 KiB still arrive in full when their encoded presentation
+fits the remaining boundary budget.
+
+This checkpoint does not enable native background producers, child forwarding,
+or Ctrl+B. Native lifetime and descendant-stop policies remain separate gates.
 
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare

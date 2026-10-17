@@ -18,13 +18,16 @@ readonly class CommandApplicationResult
 {
     /**
      * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
-     * @param list<object>                                             $effects    Outbound messages to dispatch post-commit (e.g. CompactRun)
+     * @param list<object>                                             $effects           Outbound messages to dispatch post-commit (e.g. CompactRun)
+     * @param list<object>                                             $postCommitActions Captured verified local metadata actions
      */
     public function __construct(
         public RunState $state,
         public array $eventSpecs,
         public bool $shouldContinue = false,
         public array $effects = [],
+        public array $postCommitActions = [],
+        public int $completionBytes = 0,
     ) {
     }
 }

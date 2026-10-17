@@ -1483,7 +1483,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $survivingBatch = $batchStore->load($correlation->runId, $correlation->turnNo, $correlation->stepId);
         $this->assertNotNull($survivingBatch);
         $this->assertArrayHasKey($correlation->toolCallId, $survivingBatch->calls);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore, 4, $deferred);
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batchStore, 4, $deferred);
         $handler = new \Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler(
             toolBatchCollector: $collector,
             eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),

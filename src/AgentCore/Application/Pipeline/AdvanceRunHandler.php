@@ -43,6 +43,13 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         }
 
         $runId = $message->runId();
+        if (null !== $message->completionFence
+            && (null !== $this->commandMailboxPolicy->completionContinuationIneligibleReason($state, $message)
+                || [] !== $state->pendingHumanInputRequests || $state->isStreaming || [] !== $state->pendingShellToolCalls
+                || \in_array($state->status, [RunStatus::WaitingHuman, RunStatus::Compacting, RunStatus::Cancelling], true)
+                || (null !== $state->parentRunId && RunStatus::Completed === $state->status))) {
+            return new HandlerResult();
+        }
 
         // AdvanceRun consumes the exact current turn. A prior committed
         // transition must stop before it drains commands queued afterward.
@@ -130,6 +137,22 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         $preparedState = $mailboxResult->state;
         $boundaryEventSpecs = $this->withAdvanceToken($mailboxResult->eventSpecs, $message->idempotencyKey());
         $mailboxEffects = $mailboxResult->effects;
+        // An automatic metadata drain is not permission to run a model. Only
+        // an applied eligible completion or an explicit human command can
+        // provide continuation intent; parked/rejected prefixes cannot.
+        if (null !== $message->completionFence && null === $message->appliedCompletion && [] === $mailboxEffects
+            && !array_any($boundaryEventSpecs, static fn (array $spec): bool => RunEventTypeEnum::AgentCommandApplied->value === $spec['type'])) {
+            if ([] === $boundaryEventSpecs) {
+                return new HandlerResult(postCommitActions: $mailboxResult->postCommitActions);
+            }
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
+
+            return new HandlerResult(
+                nextState: $preparedState->with(['version' => $state->version + 1, 'lastSeq' => $state->lastSeq + \count($events), 'lastAppliedAdvanceKey' => $message->idempotencyKey()]),
+                events: $events,
+                postCommitActions: $mailboxResult->postCommitActions,
+            );
+        }
 
         // When pending commands (steer/follow-up/append_message) added new messages while
         // the run was Completed, Failed, Cancelled, or WaitingHuman, transition to Running
@@ -144,24 +167,26 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             $hasNonCompactBoundaryEvent = false;
             foreach ($boundaryEventSpecs as $spec) {
                 $kind = (string) ($spec['payload']['kind'] ?? '');
-                if ('compact' !== $kind) {
+                if ('compact' !== $kind && 'tool_completion' !== $kind) {
                     $hasNonCompactBoundaryEvent = true;
                     break;
                 }
             }
 
-            if ($hasNonCompactBoundaryEvent && [] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
+            $hasCompletionApplication = array_any($boundaryEventSpecs, static fn (array $spec): bool => RunEventTypeEnum::AgentCommandApplied->value === $spec['type'] && 'tool_completion' === ($spec['payload']['kind'] ?? null));
+            $canResumeCompletion = RunStatus::Completed === $preparedState->status && null === $preparedState->parentRunId && $hasCompletionApplication;
+            if (($hasNonCompactBoundaryEvent || $canResumeCompletion) && [] !== $boundaryEventSpecs) {
                 $preparedState = $preparedState->with([
                     'status' => RunStatus::Running,
                     'errorMessage' => null,
                     // Follow-up / steer / append abandon outstanding human waits so
                     // a newly displayed question cannot sit behind an orphaned one.
-                    'pendingHumanInputRequests' => [],
+                    'pendingHumanInputRequests' => $hasNonCompactBoundaryEvent ? [] : $preparedState->pendingHumanInputRequests,
                 ]);
             // Fall through to the turn-advance code below.
             } else {
                 if ([] === $boundaryEventSpecs) {
-                    return new HandlerResult();
+                    return new HandlerResult(postCommitActions: $mailboxResult->postCommitActions);
                 }
 
                 $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
@@ -175,6 +200,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     nextState: $nextState,
                     events: $events,
                     effects: $mailboxEffects,
+                    postCommitActions: $mailboxResult->postCommitActions,
                 );
             }
         }
@@ -196,6 +222,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 nextState: $nextState,
                 events: $events,
                 effects: $mailboxEffects,
+                postCommitActions: $mailboxResult->postCommitActions,
             );
         }
 
@@ -207,7 +234,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         // history_position_set mid-compaction, confusing the event log.
         if (RunStatus::Compacting === $preparedState->status) {
             if ([] === $boundaryEventSpecs) {
-                return new HandlerResult();
+                return new HandlerResult(postCommitActions: $mailboxResult->postCommitActions);
             }
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
@@ -219,6 +246,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     'lastAppliedAdvanceKey' => $message->idempotencyKey(),
                 ]),
                 events: $events,
+                postCommitActions: $mailboxResult->postCommitActions,
             );
         }
 
@@ -313,6 +341,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     nextState: $compactedState,
                     events: $events,
                     effects: [$compactEffect],
+                    postCommitActions: $mailboxResult->postCommitActions,
                 );
             }
         }
@@ -376,6 +405,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             nextState: $nextState,
             events: $events,
             effects: [$effect],
+            postCommitActions: $mailboxResult->postCommitActions,
         );
     }
 

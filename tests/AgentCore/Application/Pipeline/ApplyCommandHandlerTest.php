@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
-use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
@@ -38,7 +37,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -95,7 +94,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -145,7 +144,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -194,7 +193,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -256,7 +255,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -301,7 +300,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -359,7 +358,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -410,7 +409,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -469,7 +468,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -569,7 +568,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -646,7 +645,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -713,7 +712,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -762,7 +761,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -813,7 +812,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -906,7 +905,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -972,7 +971,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1028,7 +1027,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1080,7 +1079,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1155,7 +1154,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1218,7 +1217,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1277,7 +1276,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1341,7 +1340,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1396,7 +1395,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1443,7 +1442,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1489,7 +1488,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore = new TestToolBatchStore());
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batchStore = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $batchStore, 'run-deferred-cancel', 1, 'step-d', [
             new ExecuteToolCall(
                 'run-deferred-cancel',
@@ -1508,7 +1507,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($commandStore, $commandRouter),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1586,7 +1585,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batchStore = new TestToolBatchStore(), 2);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-multi-d', 1, 'step-m', [
             new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
             new ExecuteToolCall('run-multi-d', 1, 'step-m', 1, 'idemp-b', 'call-b', 'bash', ['command' => 'b'], 1),
@@ -1597,7 +1596,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($commandStore, $commandRouter),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1665,7 +1664,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batchStore = new TestToolBatchStore(), 2);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-partial-d', 1, 'step-p', [
             new ExecuteToolCall('run-partial-d', 1, 'step-p', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0),
             new ExecuteToolCall('run-partial-d', 1, 'step-p', 1, 'idemp-b', 'call-b', 'ask_human', ['prompt' => 'B?'], 1),
@@ -1709,7 +1708,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($commandStore, $commandRouter),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1866,7 +1865,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $serializer = AttributeSerializerValidatorTestFactory::serializer();
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore = new TestToolBatchStore(), 2);
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $batchStore = new TestToolBatchStore(), 2);
         TestToolBatchRegistration::register($collector, $batchStore, 'run-missing-store', 1, 'step-m', [
             new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-a', 'call-a', 'bash', ['command' => 'a'], 0, mode: 'parallel', maxParallelism: 2),
             new ExecuteToolCall('run-missing-store', 1, 'step-m', 1, 'idemp-b', 'call-b', 'ask_human', ['prompt' => 'B?'], 1, mode: 'parallel', maxParallelism: 2),
@@ -1876,7 +1875,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($commandStore, $commandRouter),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,

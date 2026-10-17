@@ -12,6 +12,7 @@ final class CoreCommandKind
     public const string Cancel = 'cancel';
     public const string HumanResponse = 'human_response';
     public const string Compact = 'compact';
+    public const string ToolCompletion = 'tool_completion';
 
     /** @var list<string> */
     public const array ALL = [
@@ -21,6 +22,7 @@ final class CoreCommandKind
         self::Cancel,
         self::HumanResponse,
         self::Compact,
+        self::ToolCompletion,
     ];
 
     public static function isCore(string $kind): bool

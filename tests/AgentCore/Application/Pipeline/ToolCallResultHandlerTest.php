@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
-use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
@@ -66,7 +65,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testStandaloneShellCompletionPreservesAttachedShellAndWakesMailbox(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolBatchCollector: new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -137,7 +136,7 @@ final class ToolCallResultHandlerTest extends TestCase
             options: new CommandCancellationOptions(safe: false),
         ));
         $advance = new AdvanceRunHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, new CommandRouter([])),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($commandStore, new CommandRouter([])),
             eventFactory: new EventFactory(),
         );
         $woken = $advance->handle(AdvanceRunMessageBuilder::create('run-shell')
@@ -174,7 +173,7 @@ final class ToolCallResultHandlerTest extends TestCase
 
     public function testHandleAcceptedPendingResultReturnsPostCommitEffectsForNextToolCall(): void
     {
-        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store = new TestToolBatchStore());
 
         TestToolBatchRegistration::register($collector, $store,
             runId: 'run-tool-handler-1',
@@ -281,7 +280,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testUntrackedCurrentTokenRedeliveryIsIdempotentNoOp(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolBatchCollector: new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -315,7 +314,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testCancellingWithPendingToolCallsSynthesizesToolMessages(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolBatchCollector: new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -385,7 +384,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testCancellingWithEmptyPendingCallsDoesNotSynthesize(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolBatchCollector: new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -435,7 +434,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testCancellingWithMultiplePendingToolCallsSynthesizesAll(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolBatchCollector: new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -497,7 +496,7 @@ final class ToolCallResultHandlerTest extends TestCase
 
     public function testCancellingWithPartialCompleteClosesAll(): void
     {
-        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $store,
             runId: 'run-cancel-partial',
             turnNo: 1,
@@ -634,7 +633,7 @@ final class ToolCallResultHandlerTest extends TestCase
 
     public function testCancellingPreserveIncomingProjectsDeferredSiblingMessageOnly(): void
     {
-        $collector = new ToolBatchCollector($store = new TestToolBatchStore());
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store = new TestToolBatchStore());
         TestToolBatchRegistration::register($collector, $store,
             runId: 'run-cancel-preserve',
             turnNo: 1,
@@ -770,7 +769,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testCancellingSyntheticMessagesPassValidator(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolBatchCollector: new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -836,7 +835,7 @@ final class ToolCallResultHandlerTest extends TestCase
         ]);
 
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolBatchCollector: new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -893,7 +892,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testFinalizedRedeliveryAfterCanonicalCommitIsIdempotentNoOp(): void
     {
         $store = $this->createSessionToolBatchStore();
-        $collector = new ToolBatchCollector($store, 4);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4);
 
         TestToolBatchRegistration::register($collector, $store, 'run-redeliver-post', 1, 'step-1', [
             new ExecuteToolCall(
@@ -959,7 +958,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testFinalizedRedeliveryBeforeCanonicalCommitRecoversOnce(): void
     {
         $store = $this->createSessionToolBatchStore();
-        $collector = new ToolBatchCollector($store, 4);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4);
 
         TestToolBatchRegistration::register($collector, $store, 'run-redeliver-pre', 1, 'step-1', [
             new ExecuteToolCall(
@@ -1029,7 +1028,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testCancellingSyntheticUnresolvedToolExecutionEndHasResultAndCancellationMetadata(): void
     {
         $handler = new ToolCallResultHandler(
-            toolBatchCollector: new ToolBatchCollector(new TestToolBatchStore()),
+            toolBatchCollector: new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), new TestToolBatchStore()),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
             messageNormalizer: new AgentMessageNormalizer(),
@@ -1089,7 +1088,7 @@ final class ToolCallResultHandlerTest extends TestCase
     public function testMixedForkCancellationPreservesCompletedSiblingResult(): void
     {
         $store = $this->createSessionToolBatchStore();
-        $collector = new ToolBatchCollector($store);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store);
         $runId = 'run-cancel-fork-retention';
         $fork = new ExecuteToolCall(
             runId: $runId, turnNo: 1, stepId: 'tools', attempt: 1,
@@ -1137,7 +1136,7 @@ final class ToolCallResultHandlerTest extends TestCase
     {
         $store = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4, $deferred);
         $call = new ExecuteToolCall(
             runId: 'run-detached',
             turnNo: 1,
@@ -1250,7 +1249,7 @@ final class ToolCallResultHandlerTest extends TestCase
     {
         $store = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4, $deferred);
         $call = new ExecuteToolCall(
             runId: 'run-detach-cancel',
             turnNo: 1,
@@ -1324,7 +1323,7 @@ final class ToolCallResultHandlerTest extends TestCase
     {
         $store = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4, $deferred);
         $call = new ExecuteToolCall(
             runId: 'run-attach-cancel',
             turnNo: 1,
@@ -1423,7 +1422,7 @@ final class ToolCallResultHandlerTest extends TestCase
     {
         $store = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4, $deferred);
         $detachedCall = new ExecuteToolCall(
             runId: 'run-detach-replay',
             turnNo: 1,
@@ -1577,7 +1576,7 @@ final class ToolCallResultHandlerTest extends TestCase
     {
         $store = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4, $deferred);
         $detachedCall = new ExecuteToolCall(
             runId: 'run-fold',
             turnNo: 1,
@@ -1662,7 +1661,7 @@ final class ToolCallResultHandlerTest extends TestCase
     {
         $store = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4, $deferred);
         $call = new ExecuteToolCall(
             runId: 'run-terminal-detach',
             turnNo: 1,
@@ -1722,7 +1721,7 @@ final class ToolCallResultHandlerTest extends TestCase
     {
         $store = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4, $deferred);
         $call = new ExecuteToolCall(
             runId: 'run-evidence',
             turnNo: 1,
@@ -1872,7 +1871,7 @@ final class ToolCallResultHandlerTest extends TestCase
     {
         $store = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4, $deferred);
         $call = new ExecuteToolCall(
             runId: 'run-evidence-cancel',
             turnNo: 1,
@@ -2036,7 +2035,7 @@ final class ToolCallResultHandlerTest extends TestCase
     {
         $store = new TestToolBatchStore();
         $deferred = new InMemoryDeferredToolCompletionRepository();
-        $collector = new ToolBatchCollector($store, 4, $deferred);
+        $collector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $store, 4, $deferred);
         $call = new ExecuteToolCall(
             runId: 'run-conflict-active',
             turnNo: 1,
