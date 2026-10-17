@@ -4,13 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
+use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolBackgroundAcknowledgement;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationBackgroundBinding;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationBackgroundReadiness;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationEnvelopeFingerprint;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
 
 /**
  * Per-run/per-turn/per-step tool batch preparation coordinator.
@@ -25,12 +34,15 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
  *   2. Local metadata applies that exact membership; later collect/human deltas
  *      arm subsequent calls through the same store.
  *   3. {@see ToolCallResultHandler} calls {@see prepareCollect()} without publication.
+ *   4. Background acknowledgment uses {@see prepareBackgroundAcknowledgement()} to
+ *      capture wait resolution plus lifecycle projection without enabling producers.
  */
 final class ToolBatchCollector
 {
     public function __construct(
         private readonly ToolBatchStoreInterface $store,
         private readonly int $defaultMaxParallelism = 4,
+        private readonly ?DeferredToolCompletionRepositoryInterface $deferredCompletions = null,
     ) {
     }
 
@@ -124,6 +136,116 @@ final class ToolBatchCollector
             $outcome->accepted, $outcome->duplicate, $outcome->complete,
             $outcome->orderedResults, $outcome->effectsToDispatch,
             $this->prepareDelta($result->runId(), $result->turnNo(), $result->stepId(), $before, $after, $result),
+        );
+    }
+
+    /**
+     * Prepare original-call wait resolution for a background acknowledgment.
+     *
+     * Releases the caller's batch wait and the original logical Sequential
+     * reservation. Native deferred status, owner reference, and physical worker
+     * occupancy remain unchanged. Producers and Ctrl+B remain later checkpoints.
+     */
+    public function prepareBackgroundAcknowledgement(
+        ToolInvocationBackgroundReadiness $readiness,
+    ): PreparedToolBackgroundAcknowledgementDTO {
+        if (null === $this->deferredCompletions) {
+            throw new \LogicException('Background acknowledgment requires a deferred completion repository.');
+        }
+
+        $correlation = $this->deferredCompletions->findByRunAndToolCall($readiness->runId, $readiness->toolCallId);
+        if (null === $correlation) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('not_ready');
+        }
+
+        try {
+            ToolInvocationBackgroundBinding::assertMatches($correlation, $readiness);
+        } catch (\RuntimeException $exception) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected($exception->getMessage());
+        }
+
+        if ('pending' !== ($this->deferredCompletions->status($correlation->deferredId) ?? '')) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('already_resolved');
+        }
+
+        if (ToolInvocationExecutionObservationEnum::CancelRequested === $correlation->executionObservation
+            || ToolInvocationExecutionObservationEnum::Terminal === $correlation->executionObservation
+            || ToolInvocationExecutionObservationEnum::Unknown === $correlation->executionObservation) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected(
+                ToolInvocationExecutionObservationEnum::CancelRequested === $correlation->executionObservation
+                    ? 'cancelling'
+                    : 'already_resolved',
+            );
+        }
+
+        $before = $this->loadBatch($readiness->runId, $readiness->turnNo, $readiness->stepId);
+        if (null === $before) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('not_running');
+        }
+
+        $storedCall = $before->calls[$readiness->toolCallId] ?? null;
+        if (!$storedCall instanceof ExecuteToolCall) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('not_running');
+        }
+
+        try {
+            $this->assertCorrelationMatchesStoredCall($correlation, $storedCall);
+        } catch (\RuntimeException) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('stale_identity');
+        }
+
+        $acknowledgement = $this->buildBackgroundAcknowledgement($correlation);
+        $result = $this->backgroundAcknowledgementResult($correlation, $acknowledgement);
+
+        if (ToolInvocationCallerDispositionEnum::BackgroundAcknowledged === $correlation->callerDisposition) {
+            return $this->duplicateBackgroundAcknowledgement($before, $result, $acknowledgement);
+        }
+
+        if (ToolInvocationCallerDispositionEnum::ForegroundResultAccepted === $correlation->callerDisposition) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('already_resolved');
+        }
+
+        if (isset($before->results[$readiness->toolCallId])) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('already_resolved');
+        }
+
+        // Backgrounding is not an answer: refuse unanswered human waits without mutation.
+        if (isset($before->awaitingHumanInput[$readiness->toolCallId])) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('awaiting_human_input');
+        }
+
+        if (!isset($before->inFlight[$readiness->toolCallId])) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('not_running');
+        }
+
+        $after = clone $before;
+        $outcome = $this->applyCollectToBatch($after, $result);
+        if (!$outcome->accepted || $outcome->duplicate) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('already_resolved');
+        }
+
+        $batchAction = $this->prepareDelta($readiness->runId, $readiness->turnNo, $readiness->stepId, $before, $after, $result);
+        if (null === $batchAction) {
+            throw new \LogicException('Background acknowledgment must capture a batch wait-resolution delta.');
+        }
+
+        $lifecycleAction = new RecordToolInvocationLifecycleDTO(
+            $correlation,
+            ToolInvocationCallerDispositionEnum::BackgroundAcknowledged,
+            ToolInvocationExecutionObservationEnum::Active,
+        );
+
+        return new PreparedToolBackgroundAcknowledgementDTO(
+            accepted: true,
+            duplicate: false,
+            complete: $outcome->complete,
+            acknowledgementResult: $result,
+            acknowledgement: $acknowledgement,
+            orderedResults: $outcome->orderedResults,
+            effectsToDispatch: $outcome->effectsToDispatch,
+            localActions: [$batchAction, $lifecycleAction],
+            batchAction: $batchAction,
+            lifecycleAction: $lifecycleAction,
         );
     }
 
@@ -574,5 +696,125 @@ final class ToolBatchCollector
     private function loadBatch(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO
     {
         return $this->store->load($runId, $turnNo, $stepId);
+    }
+
+    private function duplicateBackgroundAcknowledgement(
+        ToolBatchStateDTO $batch,
+        ToolCallResult $result,
+        ToolBackgroundAcknowledgement $acknowledgement,
+    ): PreparedToolBackgroundAcknowledgementDTO {
+        $stored = $batch->results[$result->toolCallId] ?? null;
+        if (!$stored instanceof ToolCallResult || !$this->toolResultsEquivalent($stored, $result)) {
+            return PreparedToolBackgroundAcknowledgementDTO::rejected('already_resolved');
+        }
+
+        $orderedResults = [];
+        if ($batch->finalized) {
+            $orderedResults = array_values($batch->results);
+            usort(
+                $orderedResults,
+                static fn (ToolCallResult $left, ToolCallResult $right): int => $left->orderIndex <=> $right->orderIndex,
+            );
+        }
+
+        return new PreparedToolBackgroundAcknowledgementDTO(
+            accepted: true,
+            duplicate: true,
+            complete: $batch->finalized,
+            acknowledgementResult: $stored,
+            acknowledgement: $acknowledgement,
+            orderedResults: $orderedResults,
+            effectsToDispatch: [],
+            localActions: [],
+        );
+    }
+
+    private function buildBackgroundAcknowledgement(
+        DeferredToolCompletionCorrelation $correlation,
+    ): ToolBackgroundAcknowledgement {
+        // Prefer the durable stored alias; otherwise use deferredId. Never adopt an unpersisted request alias.
+        $invocationId = $correlation->invocationId ?? $correlation->deferredId;
+        $inspection = [
+            'tool' => 'bg_status',
+            'invocation_id' => $invocationId,
+        ];
+        $pid = $correlation->executionOwnerReference?->presentationPid;
+        if (null !== $pid) {
+            $inspection['pid'] = $pid;
+        }
+
+        return new ToolBackgroundAcknowledgement(
+            invocationId: $invocationId,
+            originRunId: $correlation->runId,
+            toolCallId: $correlation->toolCallId,
+            tool: $correlation->toolName,
+            inspection: $inspection,
+        );
+    }
+
+    private function assertCorrelationMatchesStoredCall(
+        DeferredToolCompletionCorrelation $correlation,
+        ExecuteToolCall $call,
+    ): void {
+        if (!$correlation->matchesInvocationTuple($call->runId(), $call->turnNo(), $call->stepId(), $call->toolCallId)) {
+            throw new \RuntimeException('stale_identity');
+        }
+
+        if ($correlation->attempt !== $call->attempt()
+            || $correlation->idempotencyKey !== $call->idempotencyKey()
+            || $correlation->toolName !== $call->toolName
+            || $correlation->orderIndex !== $call->orderIndex
+            || $correlation->toolIdempotencyKey !== $call->toolIdempotencyKey
+            || $correlation->mode !== $call->mode
+            || $correlation->timeoutSeconds !== $call->timeoutSeconds
+            || $correlation->maxParallelism !== $call->maxParallelism
+            || $correlation->argSchema !== $call->argSchema
+            || $correlation->toolsRef !== $call->toolsRef) {
+            throw new \RuntimeException('stale_identity');
+        }
+
+        $expectedFingerprint = $correlation->envelopeFingerprint
+            ?? ToolInvocationEnvelopeFingerprint::fromCorrelation($correlation);
+        $storedFingerprint = ToolInvocationEnvelopeFingerprint::compute(
+            runId: $call->runId(),
+            turnNo: $call->turnNo(),
+            stepId: $call->stepId(),
+            toolCallId: $call->toolCallId,
+            toolName: $call->toolName,
+            idempotencyKey: $call->idempotencyKey(),
+            arguments: $call->args,
+            toolIdempotencyKey: $call->toolIdempotencyKey,
+            mode: $call->mode,
+        );
+        if ($expectedFingerprint !== $storedFingerprint) {
+            throw new \RuntimeException('stale_identity');
+        }
+    }
+
+    private function backgroundAcknowledgementResult(
+        DeferredToolCompletionCorrelation $correlation,
+        ToolBackgroundAcknowledgement $acknowledgement,
+    ): ToolCallResult {
+        return (new ToolCallResult(
+            $correlation->runId,
+            $correlation->turnNo,
+            $correlation->stepId,
+            $correlation->attempt,
+            $correlation->idempotencyKey,
+            $correlation->toolCallId,
+            $correlation->orderIndex,
+            [
+                'content' => [[
+                    'type' => 'text',
+                    'text' => json_encode($acknowledgement->toResultPayload(), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES),
+                ]],
+                'details' => [
+                    'background_acknowledgement' => true,
+                    'retryable' => false,
+                ],
+                'tool_name' => $correlation->toolName,
+            ],
+            false,
+        ))->finalized();
     }
 }
