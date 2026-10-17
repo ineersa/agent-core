@@ -8,13 +8,13 @@ Hatfield does not use the ddtrace PHP extension. It was retired on 2026-09-05 af
 extension disabled. The application emits no APM spans, no `trace.*` metrics, no
 profiling data, and no log trace correlation. Observability comes from structured
 JSONL logs, the Datadog Agent's file collection and Process Check, and log-derived
-metrics defined in Datadog.
+metrics defined in Datadog. `castor run:agent` also opts in to session resource gauges.
 
 ## Principles
 
 - Structured event-style log messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`).
 - Normal events omit raw prompts and tool output. The bounded error-only captures in [Provider failure diagnostics](#provider-failure-diagnostics) are explicit exceptions. Never capture full session history, env secrets, or API keys.
-- Logging and application work never depend on Datadog. No Datadog client, transport, or buffer runs in the application.
+- Application work never depends on Datadog. Normal launches run no Datadog transport or buffer. The opt-in Castor sampler sends best-effort UDP without a client package.
 
 ### Process memory samples
 
@@ -234,30 +234,47 @@ worktree logs that the Agent collects.
 
 ### Opt-in Castor session resource gauges
 
-`castor run:agent` can opt in to a once-per-minute session resource sample over the
+`castor run:agent` enables a once-per-minute session resource sample over the
 Agent's DogStatsD UDP listener (`127.0.0.1:8125` by default). The Castor launcher
 sets `HATFIELD_SESSION_RESOURCE_SAMPLER=1`, `HATFIELD_TELEMETRY_ENV=dev`,
 `HATFIELD_DOGSTATSD_HOST`, and `HATFIELD_DOGSTATSD_PORT`. Direct binary and PHAR
-launches leave those unset, so they neither schedule the sample nor send gauges.
+launches do not enable sampling by default. These are developer-launch parameters,
+not persistent Hatfield settings. The UDP listener must be reachable from the sandbox.
 
 When enabled, `SessionResourceSamplerTask` adds one job to the existing Symfony
 `default` schedule. The `scheduler_default` worker aggregates CPU percent, summed
 resident memory, and process count for the owning `HATFIELD_SESSION_ID` process
-tree (session-marked workers plus ancestors such as the TUI) and publishes:
+tree. It includes the TUI, controller, consumers and descendant tools, but not the
+Castor, shell or tmux ancestors shared with other work. It sends:
 
 - `hatfield.session.cpu_percent`
 - `hatfield.session.rss_bytes`
 - `hatfield.session.process_count`
 
 Tags are `service:hatfield`, `env:<HATFIELD_TELEMETRY_ENV>`, and
-`session_id:<owning session UUID>`. CPU is an interval sample from `top`. RSS is
-summed resident bytes and is not unique physical memory. The minute cadence can
-miss short-lived tools and short peaks. Failures stay local: bounded logs without
-raw command output or environment contents, and non-blocking UDP that must not
-stall application work. No DogStatsD client package is used.
+`session_id:<owning session UUID>`. Session tags create custom metric series per
+session. CPU comes from the second `top` refresh over roughly 0.2 seconds; it is
+not a minute average. RSS is summed resident bytes, not unique physical memory.
+The minute cadence can miss short-lived tools and short peaks. Failures stay
+local: bounded logs without raw command output or environment contents. UDP sends
+are non-blocking and do not acknowledge Datadog ingestion.
 
 Process Check remains the host-wide process view. Use the session gauges when you
 need per-session CPU/RSS/count from an opted-in Castor launch.
+
+### Session resource dashboard
+
+[The dashboard definition](../ops/datadog/dashboard.yaml) updates the existing
+`xza-j7r-e4s` dashboard in place. The `env` selector defaults to `dev`; this is the
+telemetry environment, not `APP_ENV`. The `session` selector defaults to all
+sessions and filters resource metrics by `session_id` and logs by
+`@extra.session_id`.
+
+The dashboard shows last-observed totals, CPU/RSS/process-count trends by session,
+a session comparison table, and session-filtered LLM outcomes and errors.
+Last-observed samples do not prove that processes remain alive. New gauges have
+no historical backfill; session choices appear after a new sampler-enabled launch
+sends data. Secondary log panels can show earlier session activity.
 
 ## Retained visibility and intentional loss
 
@@ -269,7 +286,6 @@ Retained:
 - The log-derived metrics listed above, if you publish them for longer retention or
   metric monitors.
 - Process Check metrics: CPU, RSS, and process I/O for matched Hatfield processes.
-
 - Opt-in Castor session gauges: `hatfield.session.cpu_percent`,
   `hatfield.session.rss_bytes`, and `hatfield.session.process_count` when
   `castor run:agent` enables the sampler.
