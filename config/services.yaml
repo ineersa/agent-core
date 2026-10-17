@@ -28,6 +28,17 @@ parameters:
     # on env for every messenger:consume subprocess it launches.
     env(HATFIELD_CONSUMER_STDOUT_EVENTS): '0'
 
+    # Opt-in session resource sampler for castor run:agent only.
+    # Normal binary/PHAR launches leave this unset/false and never schedule sampling.
+    env(HATFIELD_SESSION_RESOURCE_SAMPLER): '0'
+    env(HATFIELD_TELEMETRY_ENV): 'dev'
+    env(HATFIELD_DOGSTATSD_HOST): '127.0.0.1'
+    env(HATFIELD_DOGSTATSD_PORT): '8125'
+    app.session_resource_sampler.enabled: '%env(bool:HATFIELD_SESSION_RESOURCE_SAMPLER)%'
+    app.telemetry_env: '%env(string:HATFIELD_TELEMETRY_ENV)%'
+    app.dogstatsd.host: '%env(string:HATFIELD_DOGSTATSD_HOST)%'
+    app.dogstatsd.port: '%env(int:HATFIELD_DOGSTATSD_PORT)%'
+
     # Single source of truth for the file mention completion index path.
     # Built from %app.cwd% so it respects --cwd.  Injected into
     # FileMentionIndexReader and CompletionFileIndexRefreshCommand
@@ -315,6 +326,17 @@ services:
   Ineersa\CodingAgent\Logging\LogContextProcessor:
     tags:
       - { name: monolog.processor }
+
+  # Opt-in once-per-minute session CPU/RSS/process-count sample over DogStatsD.
+  # #[AsSchedule('default')] lets AddScheduleMessengerPass decorate this provider
+  # with the existing AsPeriodicTask jobs on the same schedule.
+  Ineersa\CodingAgent\Logging\SessionResourceSamplerTask:
+    arguments:
+      $enabled: '%app.session_resource_sampler.enabled%'
+      $sessionId: '%env(HATFIELD_SESSION_ID)%'
+      $telemetryEnv: '%app.telemetry_env%'
+      $dogstatsdHost: '%app.dogstatsd.host%'
+      $dogstatsdPort: '%app.dogstatsd.port%'
 
   # OutputCapConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\OutputCapConfig:

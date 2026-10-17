@@ -105,7 +105,10 @@
             "Ineersa\\HatfieldExt\\TaskWorkflow\\": ".hatfield/extensions/task-workflow/src/",
             "Ineersa\\HatfieldExt\\FileRewind\\": ".hatfield/extensions/file-rewind/src/",
             "Ineersa\\HatfieldExt\\ObservationalMemory\\": ".hatfield/extensions/observational-memory/src/"
-        }
+        },
+        "classmap": [
+            "src/CodingAgent/Logging/SessionResourceSamplerTask.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {
