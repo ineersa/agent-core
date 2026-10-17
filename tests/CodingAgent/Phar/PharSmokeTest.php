@@ -13,17 +13,15 @@ use Symfony\Component\Process\Process;
 /**
  * Built PHAR smoke test.
  *
- * Validates that the PHAR exists (e.g. `var/tmp/phar/hatfield.phar` when
- * HATFIELD_BINARY_PATH is set by Castor) and that it boots sufficiently to
- * respond to `php hatfield.phar list` with the expected agent command.
+ * Validates packaged commands and real controller/broker/Amp-worker startup,
+ * queue operations and owned-tree teardown without a model request.
  *
- * This test is NOT in the llm-real group because it does not need
- * llama.cpp. It is not in any group by default — run it explicitly:
+ * Run these model-free packaging tests explicitly:
  *
  *   castor phar:build
  *   castor test --filter=PharSmokeTest
  *
- * Castor sets HATFIELD_BINARY_PATH to the worktree-local PHAR when running the group.
+ * Castor sets HATFIELD_BINARY_PATH to the worktree-local PHAR.
  */
 #[Group('phar')]
 final class PharSmokeTest extends TestCase
@@ -97,6 +95,33 @@ final class PharSmokeTest extends TestCase
         $this->assertNotNull($output);
         $this->assertStringContainsString('Hatfield', $output);
         $this->assertStringContainsString('commit', $output);
+    }
+
+    public function testPharControllerStartsPackagedBrokerAndActualWorker(): void
+    {
+        [, $pharPath] = $this->resolveArtifactCommand();
+        if (!str_ends_with($pharPath, '.phar')) {
+            $this->markTestSkipped('Requires the built PHAR.');
+        }
+
+        require_once \dirname(__DIR__, 3).'/.castor/distribution.php';
+        $this->assertFileExists($pharPath);
+
+        // Only a packaged process journey proves PHAR worker-path resolution.
+        // Readiness and process predicates synchronize; timeouts are safety caps.
+        distribution_smoke_packaged_process_topology($pharPath, isPhar: true);
+    }
+
+    public function testPharWorkerWrapperAloneCannotSatisfyReadiness(): void
+    {
+        require_once \dirname(__DIR__, 3).'/.castor/distribution.php';
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('no Amp SQLite worker');
+        distribution_assert_packaged_messenger_topology('/test/hatfield.phar', [
+            ['pid' => 10, 'cmdline' => \PHP_BINARY.' /test/hatfield.phar sqlite-queue:broker'],
+            ['pid' => 11, 'cmdline' => 'sh -c '.\PHP_BINARY.' /test/hatfield.phar --internal-sqlite-worker phar:///test/hatfield.phar/vendor/fabpot/amphp-sqlite3/src/Internal/worker.php'],
+            ['pid' => 12, 'cmdline' => \PHP_BINARY.' /test/hatfield.phar messenger:consume run_control'],
+        ], isPhar: true);
     }
 
     public function testPharAgentHelp(): void

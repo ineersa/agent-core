@@ -953,8 +953,20 @@ function distribution_read_process_executable(int $pid): string
  */
 function distribution_assert_native_messenger_topology(string $artifactPath, array $descendants): void
 {
+    distribution_assert_packaged_messenger_topology($artifactPath, $descendants, isPhar: false);
+}
+
+/**
+ * Validate worker identity and command shapes for native and PHP + PHAR launches.
+ *
+ * @param list<array{pid: int, cmdline: string, start?: string}> $descendants
+ */
+function distribution_assert_packaged_messenger_topology(string $artifactPath, array $descendants, bool $isPhar): void
+{
     $resolved = realpath($artifactPath);
     $resolvedArtifact = false !== $resolved ? $resolved : $artifactPath;
+    $resolvedPhp = realpath(\PHP_BINARY);
+    $expectedWorkerExecutable = $isPhar ? (false !== $resolvedPhp ? $resolvedPhp : \PHP_BINARY) : $resolvedArtifact;
     $artifactBase = basename($resolvedArtifact);
     $dump = [];
     foreach ($descendants as $row) {
@@ -968,6 +980,8 @@ function distribution_assert_native_messenger_topology(string $artifactPath, arr
 
     $brokerLines = [];
     $helperLines = [];
+    $workerPids = [];
+    $workerLaunchers = [];
     $consumeLines = [];
     foreach ($descendants as $row) {
         if (str_contains($row['cmdline'], 'sqlite-queue:broker')) {
@@ -975,11 +989,18 @@ function distribution_assert_native_messenger_topology(string $artifactPath, arr
         }
         if ('amp-process' === trim($row['cmdline'])) {
             $workerExecutable = distribution_read_process_executable($row['pid']);
-            if ($workerExecutable !== $resolvedArtifact) {
+            if ($workerExecutable !== $expectedWorkerExecutable) {
                 throw new RuntimeException('Native topology smoke: actual Amp worker executable mismatch: '.$workerExecutable);
             }
             $helperLines[] = $row['cmdline'];
-            echo '  native topology: actual Amp worker #'.$row['pid'].' exe='.$workerExecutable."\n";
+            $workerPids[] = $row['pid'];
+            echo '  packaged topology: actual Amp worker #'.$row['pid'].' exe='.$workerExecutable."\n";
+        }
+        if ($isPhar && str_contains($row['cmdline'], '--internal-sqlite-worker')
+            && str_contains($row['cmdline'], $resolvedArtifact)
+            && str_contains($row['cmdline'], 'phar://')
+            && str_contains($row['cmdline'], '/vendor/fabpot/amphp-sqlite3/src/Internal/worker.php')) {
+            $workerLaunchers[] = $row;
         }
         if (str_contains($row['cmdline'], 'messenger:consume')) {
             $consumeLines[] = $row['cmdline'];
@@ -990,6 +1011,21 @@ function distribution_assert_native_messenger_topology(string $artifactPath, arr
     }
     if ([] === $helperLines) {
         throw new RuntimeException("Native topology smoke: no Amp SQLite worker launched through the same Hatfield binary after runtime.ready.\nDescendants:\n".$dumpText);
+    }
+    if ($isPhar) {
+        // Amp's POSIX shell waits for the title-rewritten worker. Correlate its
+        // packaged argv with the actual worker, not merely an unrelated wrapper.
+        $packagedWorkerObserved = false;
+        foreach ($workerLaunchers as $launcher) {
+            if ([] !== array_intersect($workerPids, distribution_pgrep_children($launcher['pid']))) {
+                $packagedWorkerObserved = true;
+                echo '  packaged topology: launcher #'.$launcher['pid']." uses PHP + PHAR --internal-sqlite-worker with the bundled SQLite worker\n";
+                break;
+            }
+        }
+        if (!$packagedWorkerObserved) {
+            throw new RuntimeException("PHAR topology smoke: actual Amp worker has no packaged internal-worker launcher with a bundled PHAR SQLite worker.\nDescendants:\n".$dumpText);
+        }
     }
     if ([] === $consumeLines) {
         throw new RuntimeException("Native topology smoke: no messenger:consume descendants observed.\nDescendants:\n".$dumpText);
@@ -1012,8 +1048,11 @@ function distribution_assert_native_messenger_topology(string $artifactPath, arr
         if ($usesSource && !$usesArtifact) {
             throw new RuntimeException("Native topology smoke: controller child uses source bin/console instead of native artifact.\n".'line: '.$line);
         }
-        if ($usesSystemPhpPrefix) {
+        if (!$isPhar && $usesSystemPhpPrefix) {
             throw new RuntimeException("Native topology smoke: controller child relaunched via system PHP instead of fused native binary.\n".'line: '.$line);
+        }
+        if ($isPhar && !str_starts_with(trim($line), $expectedWorkerExecutable.' '.$resolvedArtifact.' ')) {
+            throw new RuntimeException("PHAR topology smoke: controller child does not use the packaged PHP + PHAR argv.\nline: ".$line);
         }
         if (!$usesArtifact) {
             throw new RuntimeException("Native topology smoke: controller child does not reference native artifact path.\n".'expected artifact: '.$resolvedArtifact."\n".'line: '.$line);
@@ -1032,13 +1071,19 @@ function distribution_assert_native_messenger_topology(string $artifactPath, arr
  */
 function distribution_smoke_native_process_topology(string $artifactPath): void
 {
+    distribution_smoke_packaged_process_topology($artifactPath, isPhar: false);
+}
+
+/** Prove packaged broker/worker operation and full-tree shutdown without a model call. */
+function distribution_smoke_packaged_process_topology(string $artifactPath, bool $isPhar): void
+{
     if (!is_file($artifactPath)) {
         throw new RuntimeException('Native topology smoke: artifact missing: '.$artifactPath);
     }
     $resolvedArtifactPath = realpath($artifactPath);
     $artifactPath = false !== $resolvedArtifactPath ? $resolvedArtifactPath : $artifactPath;
 
-    $tmp = sys_get_temp_dir().'/hatfield-native-topo-'.bin2hex(random_bytes(6));
+    $tmp = sys_get_temp_dir().'/hatfield-packaged-topo-'.bin2hex(random_bytes(6));
     if (!mkdir($tmp, 0755, true) && !is_dir($tmp)) {
         throw new RuntimeException('Native topology smoke: unable to create temp dir');
     }
@@ -1046,11 +1091,11 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
     mkdir($tmp.'/.hatfield/sessions/topo-1', 0755, true);
     \CastorTasks\write_file_checked($tmp.'/home/.hatfield/settings.yaml', "ai:\n    default_model: null\n");
 
-    // Acceptance layout: copy the fused binary alone into a fresh directory and
-    // rename it so relaunch cannot depend on the original dist path or helpers.
+    // Relocate and rename the artifact so children cannot depend on its build path.
+    // Native acceptance still copies only the one executable, with no interpreter.
     $installDir = $tmp.'/install';
     mkdir($installDir, 0755, true);
-    $launchPath = $installDir.'/hatfield-renamed';
+    $launchPath = $installDir.'/hatfield-renamed'.($isPhar ? '.phar' : '');
     \CastorTasks\copy_file_checked($artifactPath, $launchPath);
     chmod($launchPath, 0755);
 
@@ -1085,7 +1130,7 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
         $fullEnv[$k] = $v;
     }
 
-    $cmd = [$launchPath, 'agent', '--controller', '--cwd='.$tmp];
+    $cmd = [...($isPhar ? [\PHP_BINARY] : []), $launchPath, 'agent', '--controller', '--cwd='.$tmp];
     $proc = proc_open($cmd, $descriptors, $pipes, $tmp, $fullEnv);
     if (!is_resource($proc)) {
         \CastorTasks\remove_path_checked($tmp);
@@ -1170,7 +1215,11 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
             }
             try {
                 $descendants = distribution_collect_descendant_cmdlines($controllerPid);
-                distribution_assert_native_messenger_topology($launchPath, $descendants);
+                if ($isPhar) {
+                    distribution_assert_packaged_messenger_topology($launchPath, $descendants, isPhar: true);
+                } else {
+                    distribution_assert_native_messenger_topology($launchPath, $descendants);
+                }
                 $transportsReady = true;
                 break;
             } catch (Throwable $e) {
@@ -1186,12 +1235,14 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
             throw new RuntimeException("Native topology smoke: failed after runtime.ready while waiting for messenger consumers.\n".$msg."\nstdout:\n".substr($stdout, -2000)."\nstderr:\n".substr($stderr, -2000));
         }
 
+        $ownedSnapshot = $descendants;
+
         // Prove the same broker can enqueue/reserve/ack through the Amp worker.
         $client = Ineersa\SqliteQueue\Client::connect($queuePaths->endpointPath, 5.0);
         try {
             // Isolated queue: Messenger consumers never select this name, so the
             // host Client cannot race the live run_control worker for the body.
-            $proofQueue = 'native_topology_proof';
+            $proofQueue = 'packaged_topology_proof';
             $messageId = $client->send($proofQueue, 'native-topology-proof');
             if ($messageId < 1) {
                 throw new RuntimeException('Native topology smoke: SEND returned non-positive id '.$messageId);
@@ -1207,7 +1258,7 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
             if (null !== $client->receive($proofQueue)) {
                 throw new RuntimeException('Native topology smoke: queue still had a delivery after ACK');
             }
-            echo "  native topology: enqueue/reserve/ack ok (id={$messageId})\n";
+            echo "  packaged topology: enqueue/reserve/ack ok (id={$messageId})\n";
         } finally {
             $client->close();
         }
@@ -1220,13 +1271,11 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
         if ([] === $ownedSnapshot) {
             throw new RuntimeException('Native topology smoke: topology passed but owned PID snapshot is empty');
         }
-        echo "  native topology: runtime.ready + broker/worker/consumers via renamed {$launchPath}\n";
-        echo '  native topology: captured '.count($ownedSnapshot)." owned descendant PIDs before shutdown\n";
+        echo "  packaged topology: runtime.ready + broker/worker/consumers via renamed {$launchPath}\n";
+        echo '  packaged topology: captured '.count($ownedSnapshot)." owned descendant PIDs before shutdown\n";
     } finally {
-        foreach ([0, 1, 2] as $fd) {
-            if (isset($pipes[$fd]) && is_resource($pipes[$fd])) {
-                fclose($pipes[$fd]);
-            }
+        if (is_resource($pipes[0])) {
+            fclose($pipes[0]);
         }
         $status = proc_get_status($proc);
         if ($status['running']) {
@@ -1235,6 +1284,10 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
             // Retain the parent's 7s stop budget for the shared 5s consumer/broker drain.
             $waitUntil = microtime(true) + 7.0;
             while (microtime(true) < $waitUntil) {
+                // Keep output pipes open and drained during normal EOF shutdown.
+                // Closing them early can turn a graceful log write into SIGPIPE.
+                $stdout .= stream_get_contents($pipes[1]);
+                $stderr .= stream_get_contents($pipes[2]);
                 $status = proc_get_status($proc);
                 if (!$status['running']) {
                     break;
@@ -1246,26 +1299,32 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
                 throw new RuntimeException('Native topology smoke: controller did not stop after stdin EOF; retained runtime '.$tmp.' (pid '.$status['pid'].')');
             }
         }
-        proc_close($proc);
+        foreach ([1, 2] as $fd) {
+            fclose($pipes[$fd]);
+        }
+        $exitCode = $status['exitcode'];
+        $closeCode = proc_close($proc);
+        if (-1 === $exitCode) {
+            $exitCode = $closeCode;
+        }
 
         // Assert pre-captured owned PIDs are gone (or PID reused with different cmdline).
         if ($controllerPid > 0 && [] !== $ownedSnapshot) {
             try {
                 distribution_assert_owned_pids_gone($ownedSnapshot, $controllerPid, $controllerCmdline, 5.0);
             } catch (Throwable $e) {
-                try {
-                    \CastorTasks\remove_path_checked($tmp);
-                } catch (Throwable $cleanupError) {
-                    fwrite(\STDERR, 'native topology cleanup warning: '.$cleanupError->getMessage()."\n");
-                }
-                throw $e;
+                throw new RuntimeException($e->getMessage().'; retained runtime '.$tmp, previous: $e);
             }
         }
+        if (0 !== $exitCode) {
+            throw new RuntimeException('Packaged topology smoke: controller exit '.$exitCode.' after stdin EOF; retained runtime '.$tmp."\nstderr:\n".substr($stderr, -2000));
+        }
+        echo '  packaged topology: stdin EOF exit=0; captured owned tree stopped before cleanup'."\n";
 
         try {
             \CastorTasks\remove_path_checked($tmp);
         } catch (Throwable $e) {
-            fwrite(\STDERR, 'native topology cleanup warning: '.$e->getMessage()."\n");
+            fwrite(\STDERR, 'packaged topology cleanup warning: '.$e->getMessage()."\n");
         }
     }
 }
@@ -1496,6 +1555,7 @@ function distribution_verify(
         distribution_smoke_artifact($phar, isPhar: true);
         // Hard packaged-content proof: defaults/themes/migrations/selected docs present.
         distribution_assert_phar_bundled_resources($phar);
+        distribution_smoke_packaged_process_topology($phar, isPhar: true);
     } elseif (!$allowMissingPhar) {
         throw new RuntimeException('distribution:verify requires hatfield.phar in '.$dist);
     } else {
@@ -1536,6 +1596,8 @@ function distribution_assert_phar_bundled_resources(string $pharPath): void
         'config/hatfield.defaults.yaml',
         'config/themes/catppuccin-mocha.yaml',
         'migrations/application/Version20260601152619.php',
+        'vendor/amphp/parallel/src/Context/Internal/process-runner.php',
+        'vendor/fabpot/amphp-sqlite3/src/Internal/worker.php',
     ];
     foreach ($required as $entry) {
         if (!isset($phar[$entry])) {
