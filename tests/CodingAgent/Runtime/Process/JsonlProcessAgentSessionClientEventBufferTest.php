@@ -6,15 +6,18 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\ControlledJsonlControllerFixture;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -27,12 +30,17 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
 
     protected function setUp(): void
     {
+        if (0 === posix_geteuid()) {
+            $this->markTestSkipped('Controller pipe fixtures require a non-root process owner.');
+        }
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('jsonl-event-buffer');
     }
 
     protected function tearDown(): void
     {
-        TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        if (isset($this->tmpDir)) {
+            TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        }
     }
 
     public function testStartBuffersLaterEventsFromSameStdoutReadChunk(): void
@@ -647,8 +655,232 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $reflection->getProperty('suffixCursor')->setValue($client, 50);
         $reflection->getProperty('bootstrapAcknowledged')->setValue($client, true);
         $payload['index'] = 2;
-        $this->expectException(\Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException::class);
+        $this->expectException(RuntimeTransportException::class);
         $decode->invoke($client, new RuntimeEvent('bootstrap.suffix', 'parent-run', 0, $payload));
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function fatalControllerPolls(): iterable
+    {
+        foreach (['alive', 'exited', 'partial-exited'] as $lifecycle) {
+            foreach (['parent-run', 'child-run', ''] as $runId) {
+                yield $lifecycle.'-'.('' === $runId ? 'session-wide' : $runId) => [$lifecycle, $runId];
+            }
+        }
+    }
+
+    #[DataProvider('fatalControllerPolls')]
+    public function testFatalControllerOutcomeFencesRecoveryAcrossEveryPoll(string $lifecycle, string $runId): void
+    {
+        $fixture = new ControlledJsonlControllerFixture($this->tmpDir);
+        $client = $this->createClientWithFakeScript($fixture->script);
+        try {
+            $client->attach('parent-run');
+            $fixture->connect();
+            $fatal = $this->fatalControllerLine();
+            if ('partial-exited' === $lifecycle) {
+                $fixture->emit(substr($fatal, 0, 45));
+                $this->assertSame([], iterator_to_array($client->events($runId)));
+                $fatal = substr($fatal, 45);
+            }
+            // Terminal and foreign-run frames share the read. They must neither
+            // hide a session-wide failure nor let compaction discard it.
+            $fixture->emit($fatal.$this->jsonlEvent('run.completed', 'child-run', 3)."\n", 'alive' !== $lifecycle);
+            if ('alive' !== $lifecycle) {
+                $fixture->awaitExit($client);
+            }
+            foreach ([$runId, 'child-run', 'parent-run', ''] as $pollRunId) {
+                $this->assertFatalControllerEvents($client, $pollRunId);
+            }
+            $this->assertSame(['spawn', 'resume'], $fixture->commandTypes());
+
+            $this->expectException(RuntimeTransportException::class);
+            $this->expectExceptionMessage('Broker died; uncertain deliveries must not be replayed.');
+            $client->cancel('child-run');
+        } finally {
+            try {
+                $this->assertSame(['spawn', 'resume'], $fixture->commandTypes());
+            } finally {
+                $fixture->close();
+                $client->shutdown();
+            }
+        }
+    }
+
+    public function testFatalStartBatchRetainsDiagnosticAfterStartupCleanup(): void
+    {
+        $fixture = new ControlledJsonlControllerFixture($this->tmpDir);
+        $client = $this->createClientWithFakeScript($fixture->script);
+        file_put_contents($this->tmpDir.'/start-tail.jsonl', $this->fatalControllerLine());
+        try {
+            $this->expectException(RuntimeTransportException::class);
+            $this->expectExceptionMessage('Broker died; uncertain deliveries must not be replayed.');
+            $client->start(new StartRunRequest(prompt: 'start', runId: 'parent-run'));
+        } finally {
+            try {
+                $this->assertFatalControllerEvents($client, 'child-run');
+                $this->assertSame(['spawn', 'start_run'], $fixture->commandTypes());
+            } finally {
+                $fixture->close();
+                $client->shutdown();
+            }
+        }
+    }
+
+    public function testAbandoningEventsGeneratorCannotHideLaterFatalFrameFromSameRead(): void
+    {
+        $fixture = new ControlledJsonlControllerFixture($this->tmpDir);
+        $client = $this->createClientWithFakeScript($fixture->script);
+        try {
+            $client->attach('parent-run');
+            $fixture->connect();
+            $fixture->emit($this->jsonlEvent('turn.started', 'parent-run', 1)."\n".$this->fatalControllerLine());
+            foreach ($client->events('parent-run') as $event) {
+                $this->assertTrue($event->isFatalProtocolError());
+                break;
+            }
+            $fixture->emit('', exit: true);
+            $fixture->awaitExit($client);
+            $this->assertFatalControllerEvents($client, 'child-run');
+            $this->assertSame(['spawn', 'resume'], $fixture->commandTypes());
+        } finally {
+            $fixture->close();
+            $client->shutdown();
+        }
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function fatalExitInspections(): iterable
+    {
+        yield 'broken-write retry' => ['writeCommandWithRetry'];
+        yield 'exit after a readiness read' => ['assertProcessStillRunning'];
+    }
+
+    #[DataProvider('fatalExitInspections')]
+    public function testExitAndCommandRetryDrainFatalUnreadPipeBeforeRecovery(string $inspection): void
+    {
+        $fixture = new ControlledJsonlControllerFixture($this->tmpDir);
+        $client = $this->createClientWithFakeScript($fixture->script);
+        try {
+            $client->attach('parent-run');
+            $fixture->connect();
+            $fixture->emit($this->fatalControllerLine(), exit: true);
+            $fixture->awaitExit($client);
+
+            // Enter the real retry or final liveness check before events() or
+            // a public command's ensureProcessRunning() has inspected stdout.
+            $this->expectException(RuntimeTransportException::class);
+            $this->expectExceptionMessage('Broker died; uncertain deliveries must not be replayed.');
+            $argument = 'writeCommandWithRetry' === $inspection
+                ? new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand('retry-command', 'cancel', 'parent-run')
+                : 'waiting for runtime.ready';
+            new \ReflectionMethod($client, $inspection)->invoke($client, $argument);
+        } finally {
+            try {
+                $this->assertFatalControllerEvents($client, 'parent-run');
+                $this->assertFatalControllerEvents($client, 'child-run');
+                $this->assertSame(['spawn', 'resume'], $fixture->commandTypes());
+            } finally {
+                $fixture->close();
+                $client->shutdown();
+            }
+        }
+    }
+
+    public function testOrdinaryControllerExitStillRecoversWithOneResumeAndReplacementIdentity(): void
+    {
+        $fixture = new ControlledJsonlControllerFixture($this->tmpDir);
+        $client = $this->createClientWithFakeScript($fixture->script);
+        try {
+            $client->attach('parent-run');
+            $fixture->connect();
+            $fixture->emit('', exit: true);
+            $fixture->awaitExit($client);
+
+            $events = iterator_to_array($client->events('parent-run'));
+            $fixture->connect();
+            $this->assertSame([RuntimeEventTypeEnum::SessionRestoring->value], array_column($events, 'type'));
+            $this->assertSame(['spawn', 'resume', 'spawn', 'resume'], $fixture->commandTypes());
+            $this->assertSame([], iterator_to_array($client->events('parent-run')));
+        } finally {
+            $fixture->close();
+            $client->shutdown();
+        }
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function explicitFatalBoundaries(): iterable
+    {
+        yield 'attach' => ['attach'];
+        yield 'start' => ['start'];
+        yield 'shutdown then attach' => ['shutdown'];
+    }
+
+    #[DataProvider('explicitFatalBoundaries')]
+    public function testExplicitLifecycleBoundaryClearsFatalOutcome(string $boundary): void
+    {
+        $fixture = new ControlledJsonlControllerFixture($this->tmpDir);
+        $client = $this->createClientWithFakeScript($fixture->script);
+        try {
+            $client->attach('parent-run');
+            $fixture->connect();
+            $fixture->emit($this->fatalControllerLine());
+            $this->assertFatalControllerEvents($client, 'child-run');
+
+            if ('start' === $boundary) {
+                $client->start(new StartRunRequest(prompt: 'new run', runId: 'next-run'));
+            } else {
+                if ('shutdown' === $boundary) {
+                    $client->shutdown();
+                }
+                $client->attach('parent-run');
+            }
+            $fixture->connect();
+            $this->assertSame(['spawn', 'resume', 'spawn', 'start' === $boundary ? 'start_run' : 'resume'], $fixture->commandTypes());
+            $this->assertSame([], iterator_to_array($client->events('parent-run')));
+        } finally {
+            $fixture->close();
+            $client->shutdown();
+        }
+    }
+
+    public function testNonfatalProtocolErrorDoesNotFenceCommandsOrRecovery(): void
+    {
+        $fixture = new ControlledJsonlControllerFixture($this->tmpDir);
+        $client = $this->createClientWithFakeScript($fixture->script);
+        try {
+            $client->attach('parent-run');
+            $fixture->connect();
+            $fixture->emit($this->jsonlEvent('protocol.error', 'parent-run', 0)."\n");
+            $events = iterator_to_array($client->events('parent-run'));
+            $this->assertCount(1, $events);
+            $this->assertFalse($events[0]->isFatalProtocolError());
+            $client->cancel('parent-run');
+            $fixture->emit('', exit: true);
+            $fixture->awaitExit($client);
+            $events = iterator_to_array($client->events('parent-run'));
+            $fixture->connect();
+            $this->assertSame([RuntimeEventTypeEnum::SessionRestoring->value], array_column($events, 'type'));
+        } finally {
+            $fixture->close();
+            $client->shutdown();
+        }
+    }
+
+    private function fatalControllerLine(): string
+    {
+        return json_encode(['type' => 'protocol.error', 'runId' => '', 'seq' => 0,
+            'payload' => ['fatal' => true, 'error' => 'Broker died; uncertain deliveries must not be replayed.']], \JSON_THROW_ON_ERROR)."\n";
+    }
+
+    private function assertFatalControllerEvents(JsonlProcessAgentSessionClient $client, string $runId): void
+    {
+        $events = iterator_to_array($client->events($runId, afterSeq: 999));
+        $this->assertCount(1, $events);
+        $this->assertSame('', $events[0]->runId);
+        $this->assertSame(0, $events[0]->seq);
+        $this->assertTrue($events[0]->isFatalProtocolError());
+        $this->assertSame('Broker died; uncertain deliveries must not be replayed.', $events[0]->payload['error']);
     }
 
     private function createStartBatchFakeControllerClient(?string $generatedRunId = null): JsonlProcessAgentSessionClient
@@ -733,7 +965,9 @@ PHP);
 
             public function command(): array
             {
-                return [\PHP_BINARY, $this->script];
+                // Strip the production marker before exec, so fixture teardown
+                // never signals a HATFIELD_SESSION_ID-tagged process.
+                return ['/usr/bin/env', '-u', 'HATFIELD_SESSION_ID', \PHP_BINARY, $this->script];
             }
 
             public function path(): string

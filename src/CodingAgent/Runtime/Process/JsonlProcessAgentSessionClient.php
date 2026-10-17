@@ -116,6 +116,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     // retain their resume obligation independently of identity publication.
     private bool $recoveryPending = false;
 
+    // A controller-declared session failure is not a crash. Retain its wire
+    // diagnostic outside per-run compaction until an explicit lifecycle reset.
+    private ?RuntimeEvent $fatalProtocolError = null;
+
     /**
      * Whether ensureProcessRunning() auto-resumed the active run during
      * this restart cycle. Used to prevent duplicate resume commands when
@@ -180,6 +184,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function start(StartRunRequest $request): RunHandle
     {
+        if (null !== $this->fatalProtocolError) {
+            $this->shutdown();
+        }
         // New run — clear stale state from any previous run or crash.
         $this->recoveryPending = false;
         $this->pendingSessionRestoring = null;
@@ -263,6 +270,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                     $this->bufferEvent($event, 'read_events');
                 }
 
+                $this->assertSessionNotFailed();
                 if ($foundStarted) {
                     return new RunHandle(runId: $this->activeRunId, status: 'running');
                 }
@@ -303,6 +311,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function attach(string $runId): RunHandle
     {
+        if (null !== $this->fatalProtocolError) {
+            $this->shutdown();
+        }
         $this->recoveryPending = false;
         $this->pendingSessionRestoring = null;
         $this->bootstrapCommandId = null;
@@ -434,6 +445,16 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // Transparently restart the controller process if it died.
         $this->ensureProcessRunning();
 
+        // Decode the whole read before yielding: callers may abandon an events()
+        // generator mid-batch, but a fatal outcome must already fence recovery.
+        $events = null === $this->fatalProtocolError ? $this->readEventBatch() : [];
+        if (null !== $this->fatalProtocolError) {
+            // Session-wide failure is visible from parent and child polls alike.
+            yield $this->fatalProtocolError;
+
+            return;
+        }
+
         if (null !== $this->pendingSessionRestoring && $this->pendingSessionRestoring->runId === $runId) {
             $restoring = $this->pendingSessionRestoring;
             $this->pendingSessionRestoring = null;
@@ -446,7 +467,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         // Read new events from the process.
-        foreach ($this->readEvents() as $event) {
+        foreach ($events as $event) {
             if ($event->runId === $runId) {
                 yield $event;
             } else {
@@ -580,6 +601,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function ensureProcessRunning(): void
     {
+        if (null !== $this->fatalProtocolError) {
+            return;
+        }
         // Force a restart when the session has changed so the controller
         // and its consumer subprocesses are launched with the new session's
         // env vars (queue DSNs, HATFIELD_SESSION_ID).
@@ -601,6 +625,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         if (null !== $this->process && $this->isProcessRunning() && !$this->recoveryPending) {
+            return;
+        }
+
+        // An exited controller may have left the fatal diagnostic unread. Drain
+        // all remaining bytes, including a partial line from an earlier poll,
+        // before closing its pipes or allowing canonical crash recovery.
+        $this->readEventBatch(drain: true);
+        if (null !== $this->fatalProtocolError) {
             return;
         }
 
@@ -760,6 +792,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function waitForRuntimeReady(): void
     {
+        $this->assertSessionNotFailed();
         if ($this->runtimeReadyReceived) {
             return;
         }
@@ -778,6 +811,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 $this->bufferEvent($event, 'read_events');
             }
 
+            $this->assertSessionNotFailed();
             if ($this->runtimeReadyReceived) {
                 return;
             }
@@ -819,6 +853,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
             // A read batch can contain events after the repair response. Buffer
             // the entire batch before returning so live updates are not lost.
+            $this->assertSessionNotFailed();
             if (null !== $repairResultEvent) {
                 if (RuntimeEventTypeEnum::CommandRejected->value === $repairResultEvent->type
                     || 'completed' !== ($repairResultEvent->payload['status'] ?? null)) {
@@ -849,6 +884,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function bufferEvent(RuntimeEvent $event, string $reason): void
     {
+        if ($event->isFatalProtocolError()) {
+            return;
+        }
         $observed = isset($this->observedChildRunIds[$event->runId])
             || ('' !== $event->runId && $event->runId === ($this->primaryRunId ?? ''));
         $this->compactEventBuffer->ingest($event, $observed);
@@ -936,6 +974,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function writeCommand(RuntimeCommand $command): void
     {
+        $this->assertSessionNotFailed();
         if (null === $this->process || !isset($this->pipes[0]) || !\is_resource($this->pipes[0])) {
             throw new RuntimeTransportException('Controller stdin pipe is not available. '.$this->diagnosticOutput());
         }
@@ -954,6 +993,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function writeCommandWithRetry(RuntimeCommand $command): void
     {
+        $this->assertSessionNotFailed();
         try {
             $this->writeCommand($command);
         } catch (\RuntimeException $e) {
@@ -989,10 +1029,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      *
      * @return list<RuntimeEvent>
      */
-    private function readEventBatch(): array
+    private function readEventBatch(bool $drain = false): array
     {
         $events = [];
-        foreach ($this->readEvents() as $event) {
+        foreach ($this->readEvents($drain) as $event) {
             $events[] = $event;
         }
 
@@ -1002,7 +1042,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     /**
      * @return iterable<RuntimeEvent>
      */
-    private function readEvents(): iterable
+    private function readEvents(bool $drain): iterable
     {
         if (null === $this->process) {
             return;
@@ -1014,7 +1054,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             return;
         }
 
-        $chunk = fread($this->pipes[1], 65536);
+        $chunk = $drain ? stream_get_contents($this->pipes[1]) : fread($this->pipes[1], 65536);
         if (false === $chunk || '' === $chunk) {
             return;
         }
@@ -1044,6 +1084,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             if (RuntimeEventTypeEnum::SessionRestoring->value === $event->type) {
                 // Replacement identity is trusted local lifecycle, never wire input.
                 continue;
+            }
+            if ($event->isFatalProtocolError()) {
+                $this->fatalProtocolError ??= $event;
             }
             if (RuntimeEventTypeEnum::BootstrapAvailable->value === $event->type) {
                 if (!$this->runtimeReadyReceived || null === $this->bootstrapCommandId || ($event->payload['command_id'] ?? null) !== $this->bootstrapCommandId) {
@@ -1138,11 +1181,24 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function assertProcessStillRunning(string $context): void
     {
+        $this->assertSessionNotFailed();
         if (null === $this->process || $this->isProcessRunning()) {
             return;
         }
 
+        // Exit can race the preceding non-blocking read in a readiness/start
+        // wait. Preserve a final fatal frame before its cleanup closes stdout.
+        $this->readEventBatch(drain: true);
+        $this->assertSessionNotFailed();
+
         throw new RuntimeTransportException(\sprintf('Controller process exited while %s. %s', $context, $this->diagnosticOutput()));
+    }
+
+    private function assertSessionNotFailed(): void
+    {
+        if (null !== $this->fatalProtocolError) {
+            throw new RuntimeTransportException((string) ($this->fatalProtocolError->payload['error'] ?? 'Controller reported a fatal session failure.'));
+        }
     }
 
     /** @phpstan-impure */
@@ -1227,6 +1283,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function resetSessionBoundaryState(): void
     {
+        $this->fatalProtocolError = null;
         $this->recoveryPending = false;
         $this->pendingSessionRestoring = null;
         $this->bootstrapCommandId = null;

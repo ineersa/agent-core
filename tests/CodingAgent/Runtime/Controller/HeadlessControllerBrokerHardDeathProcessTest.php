@@ -143,6 +143,8 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
         // Safety cap around SUPERVISE_INTERVAL (5s) plus shutdown; not synchronization.
         $error = $this->waitForEvent('protocol.error', 12.0);
         $this->assertSame('protocol.error', $error['type'] ?? null);
+        $this->assertSame('', $error['runId'] ?? null);
+        $this->assertTrue($error['payload']['fatal'] ?? false, 'Broker death must explicitly fence process-client recovery.');
         $this->assertStringContainsString(
             'Session sqlite-queue broker exited after readiness',
             (string) ($error['payload']['error'] ?? ''),

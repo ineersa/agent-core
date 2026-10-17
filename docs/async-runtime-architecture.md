@@ -59,6 +59,8 @@ Controller-owned messenger consumers use these invariants:
 - Shared consumer graceful shutdown grace defaults to **5s**; stderr tail retained for crash diagnostics (**16_384** bytes). Incomplete consumer stdout JSONL lines are retained until their newline arrives so large valid events survive pipe segmentation.
 - Consumer memory recycle threshold **256M** via Messenger worker options.
 
+Broker death emits `protocol.error` with `payload.fatal: true` before controller shutdown. This is a terminal session outcome, not an unexpected controller crash eligible for transparent recovery. `JsonlProcessAgentSessionClient` drains an exited controller's unread stdout before replacing its pipes and retains the fatal diagnostic outside per-run compaction. Its `events()` method delivers that original diagnostic on parent, child and session-wide polls until an explicit start, attach or shutdown resets the boundary. Commands fail with `RuntimeTransportException` instead of reconnecting or resuming the durable queue. The TUI marks the viewed session failed and displays the original diagnostic. Other protocol errors remain nonfatal unless explicitly marked.
+
 Other notes:
 
 - `HATFIELD_BINARY_PATH` selects the executable used for subprocesses (PHAR/static/tests).

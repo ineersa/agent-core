@@ -329,6 +329,38 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertStringContainsString('Runtime transport error', $result->upserts[0]->text);
     }
 
+    /** @return iterable<string, array{bool, string}> */
+    public static function fatalProtocolViews(): iterable
+    {
+        yield 'ready parent' => [true, 'test-run'];
+        yield 'ready child' => [true, 'child-run'];
+        yield 'attaching parent' => [false, 'test-run'];
+        yield 'attaching child' => [false, 'child-run'];
+    }
+
+    #[DataProvider('fatalProtocolViews')]
+    public function testFatalProtocolOutcomeShowsOriginalDiagnosticAndFailsViewedSession(bool $ready, string $viewRunId): void
+    {
+        $this->state->handle = new RunHandle($viewRunId, 'bootstrapping', 'attach-command');
+        $this->state->sessionReady = $ready;
+        $this->state->activity = RunActivityStateEnum::Running;
+        $event = new RuntimeEvent(RuntimeEventTypeEnum::ProtocolError->value, '', 0,
+            ['fatal' => true, 'error' => 'Session broker died. Queue execution is uncertain.']);
+        $this->client->expects($this->exactly($ready ? 2 : 1))->method('events')->with($viewRunId, $this->anything())->willReturn([$event]);
+        $this->projector->expects($this->never())->method('accept');
+
+        $result = $this->poller->poll($this->state, $this->client);
+
+        $this->assertInstanceOf(TranscriptChangeSet::class, $result);
+        $this->assertSame(RunActivityStateEnum::Failed, $this->state->activity);
+        $this->assertSame('Session broker died. Queue execution is uncertain.', $this->state->lastRuntimePollError);
+        $this->assertStringContainsString('Session broker died. Queue execution is uncertain.', $result->upserts[0]->text);
+        $count = \count($this->state->transcript);
+        $this->state->lastPoll = 0;
+        $this->assertNull($this->poller->poll($this->state, $this->client));
+        $this->assertCount($count, $this->state->transcript, 'Sticky failure must not append the same error every tick.');
+    }
+
     public function testPlainRuntimeExceptionWithTransportKeywordsStaysRetryable(): void
     {
         // Regression: the old message-substring fatal classification would

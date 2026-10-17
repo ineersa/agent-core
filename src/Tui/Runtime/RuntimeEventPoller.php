@@ -120,6 +120,20 @@ final class RuntimeEventPoller
                 return $retryingDeferredInput ? $this->applyProjectedChanges($state) : null;
             }
 
+            // Fatal protocol outcomes apply to the whole controller, even while
+            // attaching or viewing a child. Keep the producer's diagnostic.
+            foreach ($events as $event) {
+                if (!$event->isFatalProtocolError()) {
+                    continue;
+                }
+                $message = (string) ($event->payload['error'] ?? 'Controller reported a fatal session failure.');
+                if (RunActivityStateEnum::Failed === $state->activity && $state->lastRuntimePollError === $message) {
+                    return null;
+                }
+
+                throw new RuntimeTransportException($message);
+            }
+
             // A fresh pipe read clears an old error episode. Retained suffixes
             // deliberately do not: a deterministic apply failure must reach the
             // existing three-strike escape rather than retry forever. An unsent

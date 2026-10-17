@@ -299,6 +299,7 @@ final class HeadlessController
                     seq: 0,
                     payload: [
                         'error' => 'Session sqlite-queue broker exited after readiness. Stopping the session without reconnecting or replaying uncertain queue operations.',
+                        'fatal' => true,
                     ],
                 ));
                 $this->shutdown();
