@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\PreparedToolTerminalAcceptanceDTO;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeFactory;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -20,6 +21,7 @@ use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionSourceEventReference;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationAcceptedCompletionIdentity;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -36,6 +38,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         private ToolCallExtractor $toolCallExtractor,
         private AgentMessageNormalizer $messageNormalizer,
         private NormalizerInterface&DenormalizerInterface $serializer,
+        private ?RetainedToolCompletionEnvelopeFactory $retainedCompletionFactory = null,
     ) {
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
@@ -148,6 +151,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                     }
                 }
             }
+            $nextSeq = $state->lastSeq + 1 + \count($eventSpecs);
 
             // Cancellation can land after some results were accepted while the batch was
             // still incomplete. Those ids are pendingToolCalls===true with durable
@@ -191,7 +195,9 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                             messages: $messages,
                             result: $message,
                             acceptance: $incomingAcceptance,
+                            sourceEventSeq: $nextSeq,
                         );
+                        ++$nextSeq;
                     } else {
                         // Result was accepted while Running (incomplete batch): ends already
                         // durable in prior events; project only the deferred tool message.
@@ -226,7 +232,9 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                     eventSpecs: $eventSpecs,
                     messages: $messages,
                     result: $syntheticResult,
+                    sourceEventSeq: $nextSeq,
                 );
+                ++$nextSeq;
                 ++$projectedToolMessageCount;
             }
 
@@ -329,9 +337,19 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             }
         }
 
+        $sourceSeq = $state->lastSeq + 1;
         $eventSpecs = [[
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-            'payload' => $this->withAcceptedCompletionReceipt($eventPayload, $acceptance),
+            'payload' => $this->withAcceptedCompletionReceipt(
+                $eventPayload,
+                $acceptance,
+                result: $message,
+                controllerRunId: $acceptance instanceof PreparedToolTerminalAcceptanceDTO
+                    ? ($acceptance->correlation->controllerRunId ?? $acceptance->correlation->runId)
+                    : $message->runId(),
+                sourceEventSeq: $sourceSeq,
+                sourceEventTurnNo: $message->turnNo(),
+            ),
         ]];
 
         $pendingToolCalls = $state->pendingToolCalls;
@@ -448,10 +466,19 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         }
 
         // C3 records the accepted terminal receipt under the original invocation
-        // identity. Mailbox delivery and automatic wake remain later checkpoints.
+        // identity. C4 retains the immutable completion envelope on that receipt.
+        // Mailbox delivery and automatic wake remain later checkpoints.
+        $sourceSeq = $state->lastSeq + 1;
         $eventSpecs = [[
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-            'payload' => $this->withAcceptedCompletionReceipt($eventPayload, $acceptance),
+            'payload' => $this->withAcceptedCompletionReceipt(
+                $eventPayload,
+                $acceptance,
+                result: $message,
+                controllerRunId: $acceptance->correlation->controllerRunId ?? $acceptance->correlation->runId,
+                sourceEventSeq: $sourceSeq,
+                sourceEventTurnNo: $acceptance->correlation->turnNo,
+            ),
             'turn_no' => $acceptance->correlation->turnNo,
         ]];
         $events = $this->eventFactory->eventsFromSpecs(
@@ -480,10 +507,15 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
         // Evidence-only settlement records the accepted receipt without projecting the
         // original call into model history or reviving a cancelled/stale owner state.
+        $sourceSeq = $state->lastSeq + 1;
         $eventPayload = $this->withAcceptedCompletionReceipt(
             $this->toolExecutionEndPayloadCodec->toEventPayload($message),
             $acceptance,
             evidenceOnly: true,
+            result: $message,
+            controllerRunId: $acceptance->correlation->controllerRunId ?? $acceptance->correlation->runId,
+            sourceEventSeq: $sourceSeq,
+            sourceEventTurnNo: $acceptance->correlation->turnNo,
         );
         $eventSpecs = [[
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
@@ -591,6 +623,10 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         array $payload,
         ?PreparedToolTerminalAcceptanceDTO $acceptance,
         bool $evidenceOnly = false,
+        ?ToolCallResult $result = null,
+        ?string $controllerRunId = null,
+        ?int $sourceEventSeq = null,
+        ?int $sourceEventTurnNo = null,
     ): array {
         if (!$acceptance instanceof PreparedToolTerminalAcceptanceDTO || !$acceptance->accepted) {
             return $payload;
@@ -607,6 +643,33 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
             'detached' => $acceptance->detached,
             'evidence_only' => $evidenceOnly,
         ];
+
+        if ($result instanceof ToolCallResult
+            && null !== $this->retainedCompletionFactory
+            && \is_array($payload['tool_result'] ?? null)) {
+            $ownerReference = $acceptance->correlation->executionOwnerReference;
+            $ownerKind = $acceptance->correlation->executionOwnerKind
+                ?? (null !== $ownerReference ? $ownerReference->kind : null)
+                ?? ($acceptance->detached ? 'detached' : 'foreground');
+            $envelope = $this->retainedCompletionFactory->build(
+                completionId: $acceptance->completionId,
+                correlation: $acceptance->correlation,
+                result: $result,
+                normalizedToolResult: $payload['tool_result'],
+                controllerRunId: $controllerRunId ?? $acceptance->correlation->runId,
+                executionOwnerKind: $ownerKind,
+            );
+            if (null !== $sourceEventSeq && null !== $sourceEventTurnNo) {
+                $envelope = $envelope->withAcceptedSourceEventReference(
+                    new RetainedToolCompletionSourceEventReference(
+                        runId: $acceptance->correlation->runId,
+                        seq: $sourceEventSeq,
+                        turnNo: $sourceEventTurnNo,
+                    ),
+                );
+            }
+            $payload['accepted_completion']['retained_message'] = $envelope->toArray();
+        }
 
         return $payload;
     }
@@ -839,12 +902,19 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         array &$messages,
         ToolCallResult $result,
         ?PreparedToolTerminalAcceptanceDTO $acceptance = null,
+        ?int $sourceEventSeq = null,
     ): void {
         $eventSpecs[] = [
             'type' => RunEventTypeEnum::ToolExecutionEnd->value,
             'payload' => $this->withAcceptedCompletionReceipt(
                 $this->toolExecutionEndPayloadCodec->toEventPayload($result),
                 $acceptance,
+                result: $result,
+                controllerRunId: $acceptance instanceof PreparedToolTerminalAcceptanceDTO
+                    ? ($acceptance->correlation->controllerRunId ?? $acceptance->correlation->runId)
+                    : $result->runId(),
+                sourceEventSeq: $sourceEventSeq,
+                sourceEventTurnNo: null !== $sourceEventSeq ? $result->turnNo() : null,
             ),
         ];
         $this->appendToolMessage(messages: $messages, result: $result);

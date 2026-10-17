@@ -1010,6 +1010,16 @@ services:
   Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface:
     alias: Ineersa\CodingAgent\Session\SessionToolLaunchInputStore
 
+  Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionBodyStoreInterface:
+    alias: Ineersa\CodingAgent\Session\SessionRetainedToolCompletionBodyStore
+
+  Ineersa\AgentCore\Contract\Tool\RetainedNativeArtifactHandoffReaderInterface:
+    alias: Ineersa\CodingAgent\Agent\Artifact\RetainedNativeArtifactHandoffReader
+
+  Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionEvidenceReaderInterface:
+    alias: Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEvidenceReader
+
+
   # Durable tool-batch scheduling lives in application SQLite; payload paths remain for launch/execution files.
   Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface:
     alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareToolBatchRunStoragePaths
@@ -1020,6 +1030,15 @@ services:
   Ineersa\AgentCore\Application\Handler\ToolBatchCollector:
     arguments:
       $deferredCompletions: '@Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface'
+
+  Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeFactory:
+    arguments:
+      $bodyStore: '@Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionBodyStoreInterface'
+
+  Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler:
+    arguments:
+      $retainedCompletionFactory: '@Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeFactory'
+
 
   Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface:
     alias: Ineersa\CodingAgent\Session\DoctrineApplicationDbTransaction

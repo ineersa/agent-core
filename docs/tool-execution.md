@@ -46,7 +46,18 @@ acceptance, not successful transport send or caller detachment. After that
 verified acceptance, original-batch cleanup uses the accepted receipt's origin
 identity. Matching native `CompleteDeferredToolCall` redelivery is a no-op;
 conflicting content or error after acceptance fails closed. Mailbox delivery,
-wake fencing, retained bodies, producers, and Ctrl+B remain later checkpoints.
+wake fencing, producers, and Ctrl+B remain later checkpoints.
+
+C4 retains an immutable versioned `tool_completion` envelope on the accepted
+receipt (`message_id = completion_id`). Runtime origin/provenance and the
+allocated `accepted_source_event_reference` are owner-authored, not taken from
+tool output. Small validated bodies stay inline; oversized bodies are sealed
+under the owning root session at
+`runtime/retained-tool-completions/<message_id>.json` with bytes/hash/media type.
+An internal scope-authorized reader resolves that evidence without loading full
+session/model state. Missing, corrupt, unsupported, or foreign references yield
+typed inspection failures and never re-execute tools. Mailbox delivery, wake
+fencing, producers, and Ctrl+B remain later checkpoints.
 
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare
