@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
@@ -77,7 +78,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             ? $this->resolveTimeoutSeconds($batch)
             : 0;
         $artifactOutcome = $this->buildSingleInterruptionArtifactOutcome($identity, $kind, $timeoutSecs);
-        $this->lifecycleListener->finalizeTerminalOutcome(
+        $generation = $this->lifecycleListener->finalizeTerminalOutcome(
             ChildRunTerminalFinalizationRequestDTO::persistOnly($artifactOutcome),
         );
 
@@ -96,6 +97,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
                 presentation: $presentation,
                 isError: false,
                 errorEnvelope: null,
+                nativeHandoffs: [$generation],
             );
 
             return;
@@ -111,6 +113,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             presentation: $presentation,
             isError: true,
             errorEnvelope: $errorEnvelope,
+            nativeHandoffs: [$generation],
         );
     }
 
@@ -135,10 +138,12 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             : 0;
 
         $items = [];
+        /** @var list<RetainedNativeHandoffGeneration> $nativeHandoffs */
+        $nativeHandoffs = [];
         foreach ($batch->children as $child) {
             $identity = $this->outcomeFactory->identityFromChild($batch, $child);
             $artifactOutcome = $this->buildParallelInterruptionArtifactOutcome($identity, $child, $kind, $timeoutSecs);
-            $this->lifecycleListener->finalizeTerminalOutcome(
+            $nativeHandoffs[] = $this->lifecycleListener->finalizeTerminalOutcome(
                 ChildRunTerminalFinalizationRequestDTO::persistOnly($artifactOutcome),
             );
 
@@ -170,6 +175,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             presentation: $message,
             isError: true,
             errorEnvelope: $errorEnvelope,
+            nativeHandoffs: $nativeHandoffs,
         );
     }
 

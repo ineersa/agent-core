@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Ineersa\AgentCore\Infrastructure\Filesystem\PathSymlinkGuard;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use Ineersa\CodingAgent\Utility\AtomicFileWriterException;
@@ -487,7 +488,7 @@ final class AgentArtifactRegistry
         string $content,
         ?AgentArtifactStatusEnum $status = null,
         ?string $summary = null,
-    ): string {
+    ): \Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
 
@@ -543,6 +544,116 @@ final class AgentArtifactRegistry
         }
 
         throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
+    }
+
+    /**
+     * Stream-hash one immutable handoff generation and optionally return a bounded preview.
+     *
+     * @return array{bytes: int, sha256: string, media_type: string, truncated: bool, text?: string}
+     */
+    public function inspectHandoffHistoryEntry(
+        string $parentRunId,
+        string $artifactId,
+        string $handoffId,
+        int $expectedBytes,
+        string $expectedSha256,
+        string $expectedMediaType,
+        ?int $maxDecodeBytes = null,
+    ): array {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+        $handoffId = trim($handoffId);
+        if ('' === $handoffId) {
+            throw new \InvalidArgumentException('Handoff id must not be blank.');
+        }
+        $this->pathResolver->validatePathComponent($handoffId, 'handoffId');
+        if ($expectedBytes < 0) {
+            throw new \InvalidArgumentException('expectedBytes must be non-negative.');
+        }
+        if (64 !== \strlen($expectedSha256) || 1 !== preg_match('/^[a-f0-9]{64}$/', $expectedSha256)) {
+            throw new \InvalidArgumentException('expectedSha256 must be a lowercase hex digest.');
+        }
+        if ('' === trim($expectedMediaType)) {
+            throw new \InvalidArgumentException('expectedMediaType must be nonblank.');
+        }
+        $budget = $maxDecodeBytes ?? \PHP_INT_MAX;
+        if ($budget < 0) {
+            throw new \InvalidArgumentException('maxDecodeBytes must be non-negative.');
+        }
+
+        $found = false;
+        foreach ($this->normalizedHandoffEntries($parentRunId, $artifactId) as $entry) {
+            if ($entry['id'] === $handoffId) {
+                $found = true;
+                break;
+            }
+        }
+        if (!$found) {
+            throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
+        }
+
+        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+        $relative = "{$paths->artifactDir}/handoffs/{$handoffId}.md";
+        $path = $this->pathResolver->absolutePath($parentRunId, $relative);
+        $sessionDir = \dirname($this->pathResolver->resolveArtifactsBasePath($parentRunId), 2);
+        $sessionReal = realpath($sessionDir);
+        if (false === $sessionReal || !is_dir($sessionReal) || is_link($sessionDir)
+            || PathSymlinkGuard::pathHasSymlinkAncestor($path, $sessionReal)
+            || !is_file($path) || is_link($path)) {
+            throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
+        }
+        $pathReal = PathSymlinkGuard::resolveContainedRegularFile($sessionReal, $path);
+        if (null === $pathReal) {
+            throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
+        }
+        $stream = fopen($pathReal, 'rb');
+        if (false === $stream) {
+            throw new \RuntimeException(\sprintf('Handoff "%s" for artifact "%s" parent "%s" is not readable.', $handoffId, $artifactId, $parentRunId));
+        }
+        try {
+            $hash = hash_init('sha256');
+            $bytes = 0;
+            $preview = '';
+            $previewBudget = min($budget, $expectedBytes);
+            while (!feof($stream)) {
+                $chunk = fread($stream, 8192);
+                if (false === $chunk) {
+                    throw new \RuntimeException(\sprintf('Failed while streaming handoff "%s" for artifact "%s".', $handoffId, $artifactId));
+                }
+                if ('' === $chunk) {
+                    continue;
+                }
+                $chunkLen = \strlen($chunk);
+                // Fail closed as soon as the actual stream exceeds the sealed generation length.
+                if ($bytes + $chunkLen > $expectedBytes) {
+                    throw new \RuntimeException(\sprintf('Handoff "%s" for artifact "%s" exceeded expected length.', $handoffId, $artifactId));
+                }
+                hash_update($hash, $chunk);
+                $bytes += $chunkLen;
+                if ($bytes <= $previewBudget) {
+                    $preview .= $chunk;
+                } elseif (\strlen($preview) < $previewBudget) {
+                    $preview .= substr($chunk, 0, $previewBudget - \strlen($preview));
+                }
+            }
+            $sha256 = hash_final($hash);
+            if ($bytes !== $expectedBytes || $sha256 !== $expectedSha256) {
+                throw new \RuntimeException(\sprintf('Handoff "%s" for artifact "%s" failed integrity validation.', $handoffId, $artifactId));
+            }
+            $result = [
+                'bytes' => $bytes,
+                'sha256' => $sha256,
+                'media_type' => $expectedMediaType,
+                'truncated' => $bytes > $budget,
+            ];
+            if ($expectedBytes <= $budget) {
+                $result['text'] = $preview;
+            }
+
+            return $result;
+        } finally {
+            fclose($stream);
+        }
     }
 
     // ── Internal read/write methods ─────────────────────────────────────
@@ -696,13 +807,15 @@ final class AgentArtifactRegistry
         string $content,
         ?AgentArtifactStatusEnum $status,
         ?string $summary,
-    ): string {
+    ): \Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration {
         $this->ensureArtifactDir($parentRunId, $artifactId);
 
         $handoffId = UuidV7::v7()->toRfc4122();
         $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
         $relative = "{$paths->artifactDir}/handoffs/{$handoffId}.md";
         $absolute = $this->pathResolver->absolutePath($parentRunId, $relative);
+        $bytes = \strlen($content);
+        $sha256 = hash('sha256', $content);
 
         try {
             AtomicFileWriter::write($absolute, $content, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
@@ -723,6 +836,9 @@ final class AgentArtifactRegistry
             'status' => $status?->value,
             'summary' => $summary,
             'path' => $relative,
+            'bytes' => $bytes,
+            'sha256' => $sha256,
+            'media_type' => 'text/markdown',
         ];
 
         $this->writeHandoffIndex($parentRunId, $artifactId, [
@@ -730,7 +846,14 @@ final class AgentArtifactRegistry
             'entries' => $entries,
         ]);
 
-        return $handoffId;
+        return new \Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration(
+            parentRunId: $parentRunId,
+            artifactId: $artifactId,
+            handoffId: $handoffId,
+            bytes: $bytes,
+            sha256: $sha256,
+            mediaType: 'text/markdown',
+        );
     }
 
     /**

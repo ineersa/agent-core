@@ -554,13 +554,52 @@ final class JsonlRunEventLog
 
     private function withSeq(RunEvent $event, int $seq): RunEvent
     {
+        $payload = $this->bindAcceptedSourceEventReference($event->payload, $event->runId, $seq, $event->turnNo);
+
         return new RunEvent(
             runId: $event->runId,
             seq: $seq,
             turnNo: $event->turnNo,
             type: $event->type,
-            payload: $event->payload,
+            payload: $payload,
             createdAt: $event->createdAt,
         );
+    }
+
+    /**
+     * Bind retained accepted_source_event_reference from the allocated canonical seq.
+     *
+     * Handler drafts must not guess from RunState.lastSeq: durable cursors can be ahead
+     * of the in-memory predecessor, and withSeq previously replaced only the top-level seq.
+     *
+     * @param array<string, mixed> $payload
+     *
+     * @return array<string, mixed>
+     */
+    private function bindAcceptedSourceEventReference(array $payload, string $runId, int $seq, int $turnNo): array
+    {
+        $accepted = $payload['accepted_completion'] ?? null;
+        if (!\is_array($accepted)) {
+            return $payload;
+        }
+        $retained = $accepted['retained_message'] ?? null;
+        if (!\is_array($retained)) {
+            return $payload;
+        }
+        $origin = $retained['origin'] ?? null;
+        if (!\is_array($origin)) {
+            return $payload;
+        }
+
+        $origin['accepted_source_event_reference'] = [
+            'run_id' => $runId,
+            'seq' => $seq,
+            'turn_no' => $turnNo,
+        ];
+        $retained['origin'] = $origin;
+        $accepted['retained_message'] = $retained;
+        $payload['accepted_completion'] = $accepted;
+
+        return $payload;
     }
 }

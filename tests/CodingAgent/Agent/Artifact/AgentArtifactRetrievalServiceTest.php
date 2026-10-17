@@ -378,7 +378,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $artifactId = 'agent_hist_retrieve';
         $childRun = 'child-hist-retrieve';
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
-        $firstId = $this->registry->writeHandoff(
+        $firstGeneration = $this->registry->writeHandoff(
             $parent,
             $artifactId,
             '# First archive body',
@@ -400,7 +400,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             'mode' => 'handoff_history',
         ]));
         $this->assertStringContainsString('Handoffs (oldest → newest)', $list);
-        $this->assertStringContainsString('id='.$firstId, $list);
+        $this->assertStringContainsString('id='.$firstGeneration->handoffId, $list);
         $this->assertStringContainsString('status=completed', $list);
         $this->assertStringContainsString('first done', $list);
         $this->assertStringNotContainsString('# Latest handoff body', $list);
@@ -408,9 +408,9 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $body = $service->retrieve($parent, $this->args([
             'artifact_id' => $artifactId,
             'mode' => 'handoff_history',
-            'handoff_id' => $firstId,
+            'handoff_id' => $firstGeneration->handoffId,
         ]));
-        $this->assertStringContainsString('## Handoff '.$firstId, $body);
+        $this->assertStringContainsString('## Handoff '.$firstGeneration->handoffId, $body);
         $this->assertStringContainsString('# First archive body', $body);
 
         $latest = $service->retrieve($parent, $this->args([

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun;
 
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationRequestDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
@@ -17,18 +18,18 @@ final class SubagentChildRunBatchLifecycleListener implements ChildRunBatchLifec
     ) {
     }
 
-    public function finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO $request): void
+    public function finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO $request): RetainedNativeHandoffGeneration
     {
-        $this->persistArtifactOutcome($request->artifactOutcome);
+        return $this->persistArtifactOutcome($request->artifactOutcome);
     }
 
-    private function persistArtifactOutcome(ChildRunTerminalOutcomeDTO $outcome): void
+    private function persistArtifactOutcome(ChildRunTerminalOutcomeDTO $outcome): RetainedNativeHandoffGeneration
     {
         if (AgentArtifactStatusEnum::Cancelled === $outcome->status) {
             // Keep logging on the finalizer path used by persist-only cancelled outcomes.
             $this->artifactFinalizer->logChildCancelled($outcome->identity);
         }
 
-        $this->artifactFinalizer->apply($outcome);
+        return $this->artifactFinalizer->apply($outcome);
     }
 }

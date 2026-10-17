@@ -23,6 +23,7 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
+use Ineersa\AgentCore\Tests\Support\RetainedCompletionTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
@@ -873,7 +874,13 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertInstanceOf(CompleteDeferredToolCall::class, $complete);
         $this->assertFalse($complete->isError);
         $this->assertNull($complete->error);
-        $this->assertNull($complete->details);
+        $this->assertIsArray($complete->details);
+        $this->assertSame($c1['artifactId'], $complete->details['artifact_id']);
+        $this->assertIsString($complete->details['handoff_id']);
+        $this->assertSame(64, \strlen($complete->details['handoff_sha256']));
+        $this->assertIsInt($complete->details['handoff_bytes']);
+        $this->assertSame($parent, $complete->details['parent_run_id']);
+        $this->assertCount(1, $complete->details['native_artifact_handoffs']);
         $presentation = $complete->content[0]['text'];
 
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
@@ -1101,7 +1108,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         if ('timeout' === $kind) {
             $this->assertFalse($complete->isError);
             $this->assertNull($complete->error);
-            $this->assertNull($complete->details);
+            $this->assertIsArray($complete->details);
+            $this->assertSame($c1['artifactId'], $complete->details['artifact_id']);
+            $this->assertIsString($complete->details['handoff_id']);
             $this->assertStringStartsWith('Subagent s-int timed out after '.$timeoutSecs.' seconds.', $presentation);
             $this->assertSame(AgentArtifactStatusEnum::Failed, $art->status);
             $this->assertSame('Child run timed out.', $art->failureReason);
@@ -1481,6 +1490,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
             messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
             serializer: self::getContainer()->get('serializer'),
+            retainedCompletionFactory: RetainedCompletionTestFactory::envelopeFactory(),
+            retainedCompletionCodec: RetainedCompletionTestFactory::codec(),
         );
         $ownerState = \Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parent)
             ->withTurnNo($correlation->turnNo)

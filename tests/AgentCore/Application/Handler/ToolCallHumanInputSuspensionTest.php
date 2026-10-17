@@ -30,6 +30,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\AgentCore\Tests\Support\RetainedCompletionTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
@@ -104,7 +105,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 1,
             )],
         ]);
-        $result = (new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer()))->handle(
+        $result = (new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer(), RetainedCompletionTestFactory::envelopeFactory(), RetainedCompletionTestFactory::codec()))->handle(
             ToolCallResultFactory::fromExecuteToolCallAndHumanInputSuspension(
                 $this->call('run-h', 'step-h', 'call-h', 0, 3),
                 new ToolExecutionHumanInputSuspension($request),
@@ -155,7 +156,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             $this->call('run-par', 'step-par', 'call-2', 1, mode: 'parallel', maxParallelism: 2),
         ]);
 
-        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer());
+        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer(), RetainedCompletionTestFactory::envelopeFactory(), RetainedCompletionTestFactory::codec());
         $state = RunStateBuilder::running('run-par')
             ->withTurnNo(1)
             ->withLastSeq(3)
@@ -374,7 +375,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             ->build();
         $activeRunContext->loadRecovered($running);
 
-        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer());
+        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer(), AttributeSerializerValidatorTestFactory::denormalizer(), RetainedCompletionTestFactory::envelopeFactory(), RetainedCompletionTestFactory::codec());
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             activeRunContext: $activeRunContext,
             runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),

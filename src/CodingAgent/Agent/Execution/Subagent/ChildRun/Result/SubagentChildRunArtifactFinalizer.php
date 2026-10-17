@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result;
 
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
@@ -18,7 +19,7 @@ final class SubagentChildRunArtifactFinalizer
     ) {
     }
 
-    public function apply(ChildRunTerminalOutcomeDTO $outcome): void
+    public function apply(ChildRunTerminalOutcomeDTO $outcome): RetainedNativeHandoffGeneration
     {
         $identity = $outcome->identity;
         $completedAt = new \DateTimeImmutable();
@@ -45,7 +46,7 @@ final class SubagentChildRunArtifactFinalizer
         );
 
         // Append immutable handoff with the status/summary known at this finalize.
-        $this->artifactRegistry->writeHandoff(
+        return $this->artifactRegistry->writeHandoff(
             $identity->parentRunId,
             $identity->artifactId,
             $handoff,

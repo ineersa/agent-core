@@ -249,6 +249,22 @@ them, and they are not a repair mechanism.
 
 Compaction rewrites the LLM-visible history while retaining a recent raw tail and recording compaction events. Resume after compaction replays the compacted view correctly — see [compaction.md](compaction.md).
 
+## Retained tool-completion bodies
+
+BG-01 C4 streams oversized accepted detached/attached completion bodies under
+`<session>/runtime/retained-tool-completions/<completion_id>.json`. Reads enforce
+exact owned containment through session/runtime/body ancestors (no symlink
+escape). These files are retained evidence for the root session lifetime. Explicit root-session
+deletion removes them with the session tree. Ordinary controller shutdown and
+output-cap cleanup do not delete them. Canonical receipts keep only bounded
+envelope metadata and integrity references. Owning-root resolution for nested
+UUID children uses durable deferred batch parent edges in addition to artifact
+and session parent links, so cold workers do not invent phantom
+`sessions/<childRunId>` directories. Native handoffs physically stored under a
+UUID parent are sealed as root-owned copies when they are the promised C4 body;
+root deletion removes those sealed copies and does not claim external UUID
+artifact trees.
+
 ## Ephemeral output-cap artifacts
 
 Oversized tool output is saved under `tools.output_cap.path/run-<sha256(run_id)>/` only while a controller owns that session. Controller start/resume clears prior parent and child scopes; controller shutdown and explicit deletion dispatch the same cleanup before canonical session metadata is removed. Completion, cancellation, and failure remain resumable boundaries and do not clear these artifacts. Saved output-cap paths in canonical notices are metadata only: replay, repair, and projection never read the artifact, so historical notices can refer to deleted files. A 24-hour first-use stale cleanup remains the crash/orphan fallback.

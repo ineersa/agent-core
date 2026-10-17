@@ -798,14 +798,14 @@ Done.', $this->registry->readHandoff($parentRunId, $artifactId));
         $agentRunId = 'child-'.bin2hex(random_bytes(4));
 
         $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
-        $firstId = $this->registry->writeHandoff(
+        $firstGeneration = $this->registry->writeHandoff(
             $parentRunId,
             $artifactId,
             '# First',
             status: AgentArtifactStatusEnum::Completed,
             summary: 'first done',
         );
-        $secondId = $this->registry->writeHandoff(
+        $secondGeneration = $this->registry->writeHandoff(
             $parentRunId,
             $artifactId,
             '# Second',
@@ -813,22 +813,22 @@ Done.', $this->registry->readHandoff($parentRunId, $artifactId));
             summary: 'second done',
         );
 
-        $this->assertNotSame($firstId, $secondId);
+        $this->assertNotSame($firstGeneration->handoffId, $secondGeneration->handoffId);
         $this->assertSame('# Second', $this->registry->readHandoff($parentRunId, $artifactId));
 
         $history = $this->registry->listHandoffHistory($parentRunId, $artifactId);
         $this->assertCount(2, $history);
-        $this->assertSame($firstId, $history[0]['id']);
+        $this->assertSame($firstGeneration->handoffId, $history[0]['id']);
         $this->assertSame(AgentArtifactStatusEnum::Completed->value, $history[0]['status']);
         $this->assertSame('first done', $history[0]['summary']);
-        $this->assertSame($secondId, $history[1]['id']);
+        $this->assertSame($secondGeneration->handoffId, $history[1]['id']);
         $this->assertSame('second done', $history[1]['summary']);
 
         $base = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/'.$artifactId.'/handoffs';
-        $this->assertFileExists($base.'/'.$firstId.'.md');
-        $this->assertFileExists($base.'/'.$secondId.'.md');
-        $this->assertSame('# First', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $firstId));
-        $this->assertSame('# Second', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $secondId));
+        $this->assertFileExists($base.'/'.$firstGeneration->handoffId.'.md');
+        $this->assertFileExists($base.'/'.$secondGeneration->handoffId.'.md');
+        $this->assertSame('# First', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $firstGeneration->handoffId));
+        $this->assertSame('# Second', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $secondGeneration->handoffId));
     }
 
     public function testReadHandoffIgnoresTamperedIndexPath(): void
@@ -838,7 +838,7 @@ Done.', $this->registry->readHandoff($parentRunId, $artifactId));
         $agentRunId = 'child-'.bin2hex(random_bytes(4));
 
         $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
-        $handoffId = $this->registry->writeHandoff(
+        $handoffGeneration = $this->registry->writeHandoff(
             $parentRunId,
             $artifactId,
             '# Canonical body',
@@ -856,7 +856,7 @@ Done.', $this->registry->readHandoff($parentRunId, $artifactId));
         );
 
         $this->assertSame('# Canonical body', $this->registry->readHandoff($parentRunId, $artifactId));
-        $this->assertSame('# Canonical body', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $handoffId));
+        $this->assertSame('# Canonical body', $this->registry->readHandoffHistoryEntry($parentRunId, $artifactId, $handoffGeneration->handoffId));
     }
 
     public function testReadHandoffRejectsPathTraversalArtifactId(): void

@@ -8,6 +8,7 @@ use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
+use Ineersa\AgentCore\Domain\Tool\Completion\RetainedNativeHandoffGeneration;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
@@ -30,6 +31,7 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
 
     /**
      * @param array{error: array<string, mixed>, details: array<string, mixed>}|null $errorEnvelope
+     * @param list<RetainedNativeHandoffGeneration>                                  $nativeHandoffs
      */
     public function dispatchCompletion(
         string $lifecycleId,
@@ -39,6 +41,7 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
         string $presentation,
         bool $isError,
         ?array $errorEnvelope,
+        array $nativeHandoffs = [],
     ): void {
         $deferredStatus = $this->deferredToolCompletionRepository->status($lifecycleId);
         if (null === $deferredStatus) {
@@ -76,10 +79,35 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
         }
 
         try {
+            $details = $errorEnvelope['details'] ?? [];
+            if (!\is_array($details)) {
+                $details = [];
+            }
+            if ([] !== $nativeHandoffs) {
+                $details['native_artifact_handoffs'] = array_map(
+                    static fn (RetainedNativeHandoffGeneration $generation): array => [
+                        'parent_run_id' => $generation->parentRunId,
+                        'artifact_id' => $generation->artifactId,
+                        'handoff_id' => $generation->handoffId,
+                        'bytes' => $generation->bytes,
+                        'sha256' => $generation->sha256,
+                        'media_type' => $generation->mediaType,
+                    ],
+                    $nativeHandoffs,
+                );
+                // Single-child convenience fields for the authoritative first generation.
+                $first = $nativeHandoffs[0];
+                $details['artifact_id'] = $first->artifactId;
+                $details['handoff_id'] = $first->handoffId;
+                $details['handoff_bytes'] = $first->bytes;
+                $details['handoff_sha256'] = $first->sha256;
+                $details['handoff_media_type'] = $first->mediaType;
+                $details['parent_run_id'] = $first->parentRunId;
+            }
             $this->commandBus->dispatch(new CompleteDeferredToolCall(
                 deferredId: $lifecycleId,
                 content: [['type' => 'text', 'text' => $presentation]],
-                details: $errorEnvelope['details'] ?? null,
+                details: [] === $details ? null : $details,
                 isError: $isError,
                 error: $errorEnvelope['error'] ?? null,
             ));

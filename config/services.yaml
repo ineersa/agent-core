@@ -1032,6 +1032,25 @@ services:
   Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface:
     alias: Ineersa\CodingAgent\Session\SessionToolLaunchInputStore
 
+  Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionBodyStoreInterface:
+    alias: Ineersa\CodingAgent\Session\SessionRetainedToolCompletionBodyStore
+
+  Ineersa\AgentCore\Contract\Tool\RetainedNativeArtifactHandoffReaderInterface:
+    alias: Ineersa\CodingAgent\Agent\Artifact\RetainedNativeArtifactHandoffReader
+
+  Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionEvidenceReaderInterface:
+    alias: Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEvidenceReader
+
+  Ineersa\AgentCore\Contract\Tool\RetainedOutputCapBodyPromoterInterface:
+    alias: Ineersa\CodingAgent\Tool\RetainedOutputCapBodyPromoter
+
+  Ineersa\AgentCore\Contract\Tool\RetainedNativeHandoffBodyPromoterInterface:
+    alias: Ineersa\CodingAgent\Agent\Artifact\RetainedNativeHandoffBodyPromoter
+
+  Ineersa\AgentCore\Contract\Tool\OwningRootSessionResolverInterface:
+    alias: Ineersa\CodingAgent\Agent\Artifact\OwningRootSessionResolver
+
+
   # Durable tool-batch scheduling lives in application SQLite; payload paths remain for launch/execution files.
   Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface:
     alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareToolBatchRunStoragePaths
@@ -1042,6 +1061,31 @@ services:
   Ineersa\AgentCore\Application\Handler\ToolBatchCollector:
     arguments:
       $deferredCompletions: '@Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface'
+
+  Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeCodec:
+    arguments:
+      $serializer: '@serializer'
+
+  Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeFactory:
+    arguments:
+      $bodyStore: '@Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionBodyStoreInterface'
+      $codec: '@Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeCodec'
+      $owningRootSessionResolver: '@Ineersa\AgentCore\Contract\Tool\OwningRootSessionResolverInterface'
+      $outputCapPromoter: '@Ineersa\AgentCore\Contract\Tool\RetainedOutputCapBodyPromoterInterface'
+      $nativeHandoffPromoter: '@Ineersa\AgentCore\Contract\Tool\RetainedNativeHandoffBodyPromoterInterface'
+
+  Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEvidenceReader:
+    arguments:
+      $events: '@Ineersa\AgentCore\Contract\EventStoreInterface'
+      $codec: '@Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeCodec'
+      $bodyStore: '@Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionBodyStoreInterface'
+      $nativeHandoffs: '@Ineersa\AgentCore\Contract\Tool\RetainedNativeArtifactHandoffReaderInterface'
+
+  Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler:
+    arguments:
+      $retainedCompletionFactory: '@Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeFactory'
+      $retainedCompletionCodec: '@Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeCodec'
+
 
   Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface:
     alias: Ineersa\CodingAgent\Session\DoctrineApplicationDbTransaction
