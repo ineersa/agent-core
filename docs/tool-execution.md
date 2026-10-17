@@ -75,10 +75,11 @@ fails closed as soon as actual bytes exceed the sealed length, and returns a
 bounded preview only when the body fits the caller budget. The internal reader uses
 canonical source locators or a bounded newest-first scan. Missing, corrupt,
 unsupported, or foreign references yield typed inspection failures and never
-re-execute tools. Model-bound delivery, producers, and Ctrl+B remain disabled.
+re-execute tools. Background producers and Ctrl+B remain disabled.
 
-C5 currently retains verified recipient obligations and delivery fences, but
-does not apply messages to model context or automatically wake a run.
+C5 retains verified recipient obligations and delivery fences, and applies useful
+custom-role messages at safe owner boundaries. Receipt arrival does not yet
+schedule an automatic idle-root continuation.
 `ToolCompletionDeliveryReferenceDTO` carries the recipient identity, message ID,
 exact canonical source location, semantic fingerprint, and captured delivery
 fence. Configured Symfony serialization owns its wire representation.
@@ -107,8 +108,8 @@ and recipient evidence preserve the captured fence. Completion never renews it.
 `ToolCompletionDeliveryEligibilityPolicy` rejects stale generations, cancelled or
 failed runs, terminal children, and missing permission. Admission records the
 ineligibility reason without discarding evidence; the obligation remains pending.
-The subsequent boundary consumer must recheck permission before application and
-successor dispatch. Explicit user continuation does not renew an old completion's
+The boundary consumer rechecks permission before application. Successor scheduling
+must also revalidate permission before release. Explicit user continuation does not renew an old completion's
 automatic permission.
 
 Pending mailbox iteration captures the durable enqueue cutoff before returning a
@@ -116,9 +117,19 @@ lazy FIFO iterator. The configured Doctrine store reads scalar keyset pages of a
 most 64 rows and decodes commands only as consumed. Stopping a boundary drain
 leaves later obligations pending; new enqueues wait for the next cutoff.
 
-Bounded presentations, notification-budget draining, safe-boundary coalescing, parking/application
-transitions, and automatic `AdvanceRun` dispatch remain C5 work. Background
-producers, child forwarding, and Ctrl+B are not enabled.
+The consumer freezes runtime provenance and escaped external data in a custom
+`tool_completion` message plus `ModelNotificationDTO`. Small validated bodies fit
+in full; larger bodies use bounded summaries and retained references. Each boundary
+adds at most 16 KiB of completion text and considers at most 64 completion decisions.
+Excess obligations remain pending in FIFO order. Human questions, live provider
+operations, streaming, unresolved tools, and compaction defer application. Stale
+permissions park the recipient without reading its body. Verified finalization
+updates recipient disposition and consumes the mailbox instruction atomically;
+the applied location binds to the actual canonical allocation. Accepted provider
+stop results close their old operation before this boundary is evaluated.
+
+Automatic idle-root wake scheduling, successor fencing, and full checkpoint proof
+remain C5 work. Background producers, child forwarding, and Ctrl+B are not enabled.
 
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare

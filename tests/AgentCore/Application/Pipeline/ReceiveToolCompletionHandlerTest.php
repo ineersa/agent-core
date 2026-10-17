@@ -58,10 +58,10 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
         $receipt = array_values($canonical)[0];
         $rebuilt = $container->get(\Symfony\Component\Serializer\Normalizer\DenormalizerInterface::class)->denormalize($receipt->payload, \Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionRecipientDTO::class);
         $this->assertEquals($accepted, $rebuilt->withReceivedSequence($receipt->seq), 'Canonical receipt payload plus its allocated event location must reproduce the projection.');
-        // This slice retains the instruction; only the later safe-boundary
-        // presentation slice may consume it or schedule automatic continuation.
+        // Boundary preparation freezes presentation without consuming the row
+        // until the corresponding canonical transition is finalized.
         $boundary = $container->get(CommandMailboxPolicy::class)->applyPendingTurnStartCommands($committed);
-        $this->assertSame([], $boundary->eventSpecs);
+        $this->assertCount(2, $boundary->eventSpecs);
         $this->assertFalse($boundary->shouldContinue);
         $commands->markApplied($runId, $reference->messageId);
         $this->assertFalse($commands->has($runId, $reference->messageId));

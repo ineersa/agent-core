@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
-use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
@@ -137,7 +136,7 @@ final class ToolCallResultHandlerTest extends TestCase
             options: new CommandCancellationOptions(safe: false),
         ));
         $advance = new AdvanceRunHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, new CommandRouter([])),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($commandStore, new CommandRouter([])),
             eventFactory: new EventFactory(),
         );
         $woken = $advance->handle(AdvanceRunMessageBuilder::create('run-shell')

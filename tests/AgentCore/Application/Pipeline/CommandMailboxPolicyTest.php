@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
-use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
@@ -341,7 +340,7 @@ final class CommandMailboxPolicyTest extends TestCase
     public function testMailboxApplicationJoinsMultipartTextWithNewline(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $policy = new CommandMailboxPolicy(
+        $policy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
@@ -387,7 +386,7 @@ final class CommandMailboxPolicyTest extends TestCase
     public function testMissingAndMalformedMessageEnvelopesAreRejectedWithExactReasons(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $policy = new CommandMailboxPolicy($commandStore, new CommandRouter([]));
+        $policy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($commandStore, new CommandRouter([]));
         $runId = 'run-mailbox-envelope';
 
         $commandStore->enqueue(new PendingCommand(runId: $runId, kind: 'steer', idempotencyKey: 'env-missing'));
@@ -426,7 +425,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $executionBus = new TestMessageBus();
 
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );

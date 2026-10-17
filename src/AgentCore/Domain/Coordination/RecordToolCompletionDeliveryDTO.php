@@ -15,7 +15,11 @@ final readonly class RecordToolCompletionDeliveryDTO implements CanonicalSequenc
         public ToolCompletionRecipientDTO $delivery,
         public ?ToolCompletionDeliveryDispositionEnum $expectedDisposition = null,
         public ?int $receiptEventOrdinal = null,
+        public ?int $appliedEventOrdinal = null,
     ) {
+        if (null !== $appliedEventOrdinal && ($appliedEventOrdinal < 0 || ToolCompletionDeliveryDispositionEnum::Applied !== $delivery->disposition || null === $expectedDisposition)) {
+            throw new \InvalidArgumentException('Only an applied delivery can bind its presentation event.');
+        }
         if (null !== $receiptEventOrdinal && ($receiptEventOrdinal < 0 || null !== $expectedDisposition)) {
             throw new \InvalidArgumentException('Only a new recipient receipt can bind its event ordinal.');
         }
@@ -29,6 +33,12 @@ final readonly class RecordToolCompletionDeliveryDTO implements CanonicalSequenc
 
     public function bindCanonicalSequences(array $sequences): object
     {
+        if (null !== $this->appliedEventOrdinal) {
+            $sequence = $sequences[$this->appliedEventOrdinal] ?? throw new \RuntimeException('Applied completion ordinal is outside its transition.');
+            $delivery = $this->delivery;
+
+            return new self(new ToolCompletionRecipientDTO($delivery->reference, $delivery->receivedTurnNo, $delivery->receivedSequence, $delivery->disposition, $delivery->stateReason, $sequence), $this->expectedDisposition, appliedEventOrdinal: $this->appliedEventOrdinal);
+        }
         if (null === $this->receiptEventOrdinal) {
             return $this;
         }

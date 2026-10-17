@@ -21,12 +21,12 @@ use Psr\Container\ContainerInterface;
 final class ToolCompletionReceiptFixture
 {
     /** @return array{string, RunEvent} */
-    public static function prepare(ContainerInterface $container): array
+    public static function prepare(ContainerInterface $container, string $text = 'retained completion body', ?string $runId = null, string $callId = 'call-1'): array
     {
-        $runId = $container->get(HatfieldSessionStore::class)->createSession('completion-delivery-source');
-        $message = new ToolCallResult($runId, 1, 'step-1', 1, 'key-1', 'call-1', 0, ['content' => [['type' => 'text', 'text' => 'retained completion body']]]);
+        $runId ??= $container->get(HatfieldSessionStore::class)->createSession('completion-delivery-source');
+        $message = new ToolCallResult($runId, 1, 'step-1', 1, 'key-1', $callId, 0, ['content' => [['type' => 'text', 'text' => $text]]]);
         $payload = $container->get(ToolExecutionEndPayloadCodec::class)->toEventPayload($message);
-        $completionId = ToolInvocationAcceptedCompletionIdentity::completionId($runId, 1, 'step-1', 'call-1');
+        $completionId = ToolInvocationAcceptedCompletionIdentity::completionId($runId, 1, 'step-1', $callId);
         $envelope = $container->get(RetainedToolCompletionEnvelopeFactory::class)->build(
             completionId: $completionId,
             correlation: new DeferredToolCompletionCorrelation(
@@ -36,7 +36,7 @@ final class ToolCompletionReceiptFixture
                 stepId: 'step-1',
                 attempt: 1,
                 idempotencyKey: 'key-1',
-                toolCallId: 'call-1',
+                toolCallId: $callId,
                 toolName: 'bash',
                 arguments: ['command' => 'true'],
                 orderIndex: 0,
@@ -54,7 +54,7 @@ final class ToolCompletionReceiptFixture
             'origin_run_id' => $runId,
             'origin_turn_no' => 1,
             'origin_step_id' => 'step-1',
-            'tool_call_id' => 'call-1',
+            'tool_call_id' => $callId,
             'invocation_id' => 'inv-1',
             'detached' => true,
             'evidence_only' => false,
@@ -65,9 +65,9 @@ final class ToolCompletionReceiptFixture
     }
 
     /** @return array{string, RunEvent, ToolCompletionDeliveryReferenceDTO} */
-    public static function create(ContainerInterface $container): array
+    public static function create(ContainerInterface $container, string $text = 'retained completion body', ?string $runId = null, string $callId = 'call-1'): array
     {
-        [$runId, $event] = self::prepare($container);
+        [$runId, $event] = self::prepare($container, $text, $runId, $callId);
         $event = PreparedEventStoreSeeder::append($container->get(PreparedTransitionEventStoreInterface::class), $event);
         $envelope = $container->get(RetainedToolCompletionEnvelopeCodec::class)->denormalize($event->payload['accepted_completion']['retained_message']);
 

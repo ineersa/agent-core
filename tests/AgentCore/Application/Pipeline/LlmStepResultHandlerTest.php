@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
-use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
@@ -44,7 +43,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $coordinationCollector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $coordinationBatches);
         $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter([]),
             ),
@@ -137,7 +136,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $coordinationCollector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $coordinationBatches);
         $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter([]),
             ),
@@ -232,7 +231,7 @@ final class LlmStepResultHandlerTest extends TestCase
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter([]),
             ),
@@ -318,7 +317,7 @@ final class LlmStepResultHandlerTest extends TestCase
         ));
 
         $handler = new LlmStepResultHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter([]),
             ),
@@ -394,7 +393,7 @@ final class LlmStepResultHandlerTest extends TestCase
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter([]),
             ),
@@ -491,7 +490,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $classifier = new \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier();
 
         $handler = new LlmStepResultHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
             ),
@@ -562,7 +561,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $coordinationCollector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $coordinationBatches);
         $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
             ),
@@ -647,7 +646,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $coordinationCollector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $coordinationBatches);
         $coordinationDispatcher = new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
         $handler = new LlmStepResultHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
             ),
@@ -731,7 +730,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $coordinationCollector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $coordinationBatches);
         $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
             ),
@@ -825,7 +824,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $coordinationCollector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $coordinationBatches);
         $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
             ),
@@ -906,7 +905,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $coordinationCollector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $coordinationBatches);
         $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
             ),
@@ -985,7 +984,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $coordinationCollector = new ToolBatchCollector(new \Ineersa\AgentCore\Tests\Support\StaticToolCompletionDeliveryFenceProvider(), $coordinationBatches);
         $coordinationDispatcher = $stepDispatcher;
         $handler = new LlmStepResultHandler(
-            commandMailboxPolicy: new CommandMailboxPolicy(
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),
             ),

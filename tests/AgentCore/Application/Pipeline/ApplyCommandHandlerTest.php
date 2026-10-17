@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
-use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
@@ -38,7 +37,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -95,7 +94,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -145,7 +144,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -194,7 +193,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -256,7 +255,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -301,7 +300,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -359,7 +358,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -410,7 +409,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -469,7 +468,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -569,7 +568,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -646,7 +645,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -713,7 +712,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -762,7 +761,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -813,7 +812,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -906,7 +905,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -972,7 +971,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1028,7 +1027,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1080,7 +1079,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1155,7 +1154,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1218,7 +1217,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1277,7 +1276,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1341,7 +1340,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1396,7 +1395,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1443,7 +1442,7 @@ final class ApplyCommandHandlerTest extends TestCase
     {
         $commandStore = new InMemoryCommandStore();
         $commandRouter = new CommandRouter([]);
-        $commandMailboxPolicy = new CommandMailboxPolicy(
+        $commandMailboxPolicy = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
@@ -1508,7 +1507,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($commandStore, $commandRouter),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1597,7 +1596,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($commandStore, $commandRouter),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1709,7 +1708,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($commandStore, $commandRouter),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -1876,7 +1875,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
-            commandMailboxPolicy: new CommandMailboxPolicy($commandStore, $commandRouter),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($commandStore, $commandRouter),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,

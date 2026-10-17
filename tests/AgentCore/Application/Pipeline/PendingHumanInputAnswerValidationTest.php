@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
-use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
@@ -171,7 +170,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
     {
         $store = new InMemoryCommandStore();
         $router = new CommandRouter([]);
-        $mailbox = new CommandMailboxPolicy($store, $router);
+        $mailbox = \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($store, $router);
         $handler = new \Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler(
             commandMailboxPolicy: $mailbox,
             eventFactory: new EventFactory(),
@@ -262,7 +261,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         $handler = new ApplyCommandHandler(
             commandStore: $store,
             commandRouter: $router,
-            commandMailboxPolicy: new CommandMailboxPolicy($store, $router),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($store, $router),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -356,7 +355,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         return new ApplyCommandHandler(
             commandStore: $store,
             commandRouter: $router,
-            commandMailboxPolicy: new CommandMailboxPolicy($store, $router),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($store, $router),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,

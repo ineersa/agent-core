@@ -281,6 +281,19 @@ final readonly class RunStateReducer
             return $state->with($changes);
         }
 
+        // Runtime completion is custom-role data, not a user continuation and
+        // must never clear a question or independently revive terminal state.
+        if ('tool_completion' === $kind) {
+            $messagePayload = $payload['message'] ?? null;
+            $message = \is_array($messagePayload) ? AgentMessage::fromPayload($messagePayload) : null;
+            if (null === $message || 'tool_completion' !== $message->role) {
+                throw new \UnexpectedValueException('Applied completion lacks its frozen custom message.');
+            }
+            $messages[] = $message;
+
+            return $state;
+        }
+
         // steer / follow_up / append_message: append message to prompt context.
         // These lifecycle advances abandon any outstanding human-input queue so a
         // later response cannot target a superseded question behind a new wait.

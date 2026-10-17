@@ -324,6 +324,11 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
             $stateAfterAssistant = $state->with([
                 'pendingToolCalls' => [],
                 'currentToolCalls' => [],
+                // The accepted provider result closes this operation. A stop
+                // boundary is safe even when its incoming stream flag was set.
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'currentOperation' => null,
                 'errorMessage' => null,
                 'messages' => $messages,
             ]);
@@ -373,7 +378,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 'errorMessage' => null,
             ]);
 
-            $postCommitActions = [];
+            $postCommitActions = $mailboxResult->postCommitActions;
 
             if ($shouldContinue) {
                 $postCommitActions[] = $this->followUpAdvanceAction($runId, $state->turnNo, 'stop-boundary-follow-up');

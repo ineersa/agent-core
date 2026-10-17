@@ -34,7 +34,7 @@ final readonly class ToolCompletionDeliveryCoordinationValidator implements Coor
         // Native-PHP journal decoding does not invoke DTO constructors.
         new ToolCompletionDeliveryReferenceDTO($reference->destinationRunId, $reference->messageId, $reference->sourceEvent, $reference->payloadFingerprint);
         new ToolCompletionRecipientDTO($reference, $delivery->receivedTurnNo, $delivery->receivedSequence, $delivery->disposition, $delivery->stateReason, $delivery->appliedSequence);
-        new RecordToolCompletionDeliveryDTO($delivery, $action->expectedDisposition, $action->receiptEventOrdinal);
+        new RecordToolCompletionDeliveryDTO($delivery, $action->expectedDisposition, $action->receiptEventOrdinal, $action->appliedEventOrdinal);
         $current = $this->recipients->findDelivery($reference->destinationRunId, $reference->messageId);
         if (null === $current) {
             if (null !== $action->expectedDisposition || null === $action->receiptEventOrdinal) {
