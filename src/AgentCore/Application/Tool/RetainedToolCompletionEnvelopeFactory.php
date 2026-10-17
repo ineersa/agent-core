@@ -73,7 +73,7 @@ final readonly class RetainedToolCompletionEnvelopeFactory
         );
 
         $attachments = [];
-        $nativeGenerations = \is_array($outcome) ? $this->hostAuthoredNativeGenerations($outcome) : [];
+        $nativeGenerations = \is_array($outcome) ? $this->hostAuthoredNativeGenerations($outcome, $correlation->runId) : [];
         if ([] !== $nativeGenerations) {
             $body = $this->bodyForNativeGenerations($completionId, $owningRoot, $nativeGenerations);
             $attachments = $this->boundedNativeAttachments($nativeGenerations);
@@ -180,7 +180,7 @@ final readonly class RetainedToolCompletionEnvelopeFactory
      *
      * @return list<RetainedNativeHandoffGeneration>
      */
-    private function hostAuthoredNativeGenerations(array $normalizedToolResult): array
+    private function hostAuthoredNativeGenerations(array $normalizedToolResult, string $runId): array
     {
         $details = $normalizedToolResult['details'] ?? null;
         if (!\is_array($details)) {
@@ -190,7 +190,7 @@ final readonly class RetainedToolCompletionEnvelopeFactory
         $rawList = $details['native_artifact_handoffs'] ?? null;
         if (!\is_array($rawList) || [] === $rawList) {
             // Single-child host fields written by DeferredSubagentBatchCompletionDispatcher.
-            $single = $this->tryNativeGeneration($details);
+            $single = $this->tryNativeGeneration($details, $runId);
 
             return null === $single ? [] : [$single];
         }
@@ -200,7 +200,7 @@ final readonly class RetainedToolCompletionEnvelopeFactory
             if (!\is_array($entry)) {
                 return [];
             }
-            $generation = $this->tryNativeGeneration($entry);
+            $generation = $this->tryNativeGeneration($entry, $runId);
             if (null === $generation) {
                 // Incomplete host metadata is ignored as a whole; do not invent generations.
                 return [];
@@ -214,7 +214,7 @@ final readonly class RetainedToolCompletionEnvelopeFactory
     /**
      * @param array<string, mixed> $payload
      */
-    private function tryNativeGeneration(array $payload): ?RetainedNativeHandoffGeneration
+    private function tryNativeGeneration(array $payload, string $runId): ?RetainedNativeHandoffGeneration
     {
         $artifactId = $payload['artifact_id'] ?? null;
         $handoffId = $payload['handoff_id'] ?? null;
@@ -244,6 +244,8 @@ final readonly class RetainedToolCompletionEnvelopeFactory
         } catch (\InvalidArgumentException $exception) {
             // Intentional local degradation: incomplete host metadata must not invent a generation.
             $this->logger?->warning('retained_completion.native_generation_rejected', [
+                'run_id' => $runId,
+                'session_id' => $runId,
                 'component' => 'tool.retained_completion',
                 'event_type' => 'retained_completion.native_generation_rejected',
                 'exception_class' => $exception::class,

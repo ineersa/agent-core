@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionSourceEventRe
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeRetainedToolCompletionBodyStore;
 use Ineersa\AgentCore\Tests\Support\RetainedCompletionTestFactory;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 
 final class RetainedToolCompletionEnvelopeTest extends TestCase
@@ -206,6 +207,47 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
             $inspect = $store->inspectJson($envelope->body, 'run-1');
             $this->assertSame($outcome, $inspect['json']);
         }
+    }
+
+    public function testRejectedNativeGenerationLogsCorrelatedDegradationWithoutBodyData(): void
+    {
+        $logger = new TestLogger();
+        $factory = RetainedCompletionTestFactory::envelopeFactory(logger: $logger);
+        [$result, $normalized] = RetainedCompletionTestFactory::messageAndToolResult(
+            'run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0,
+            [
+                'content' => [['type' => 'text', 'text' => 'private tool content']],
+                'details' => ['native_artifact_handoffs' => [[
+                    'parent_run_id' => 'run-1',
+                    'artifact_id' => '../foreign',
+                    'handoff_id' => 'handoff-1',
+                    'bytes' => 10,
+                    'sha256' => str_repeat('a', 64),
+                    'media_type' => 'text/markdown',
+                ]]],
+            ],
+        );
+        $envelope = $factory->build(
+            completionId: 'completion-rejected-native',
+            correlation: $this->correlation(),
+            result: $result,
+            normalizedToolResult: $normalized,
+            executionOwnerKind: 'bash',
+            controllerRunId: 'run-1',
+        );
+
+        $this->assertSame([], $envelope->attachments);
+        $this->assertSame([[
+            'level' => 'warning',
+            'message' => 'retained_completion.native_generation_rejected',
+            'context' => [
+                'run_id' => 'run-1',
+                'session_id' => 'run-1',
+                'component' => 'tool.retained_completion',
+                'event_type' => 'retained_completion.native_generation_rejected',
+                'exception_class' => \InvalidArgumentException::class,
+            ],
+        ]], $logger->records);
     }
 
     private function correlation(): DeferredToolCompletionCorrelation
