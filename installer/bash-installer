@@ -420,12 +420,6 @@ if [[ "${static}" == "true" ]]; then
     "${runtime_cli}"; then
     exit 1
   fi
-  # Deterministic activation-failure seam for tests. Must run after smoke and
-  # before the single entry-symlink rename so the previous install stays intact.
-  if [[ -n "${HATFIELD_INSTALLER_FAIL_ACTIVATION:-}" ]]; then
-    output "  [ ] ERROR: forced activation failure; previous install left unchanged" "error"
-    exit 1
-  fi
   output "Installing matched runtime via ${dest}..."
   INSTALL_LINK_TMP="${install_dir}/.hatfield-link.$$"
   ln -sfn "${INSTALL_RUNTIME_DIR}/${HATFIELD_EXECUTABLE}" "${INSTALL_LINK_TMP}"

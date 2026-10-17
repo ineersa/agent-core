@@ -98,6 +98,67 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
         );
     }
 
+    public function testBrokerDeathAfterReadyEmitsProtocolErrorAndStopsOwnedTree(): void
+    {
+        $this->spawnController();
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+
+        $controllerPid = $this->controllerRootPid();
+        $this->assertGreaterThan(0, $controllerPid);
+        $this->assertTrue($this->isSameUidProcess($controllerPid));
+        $this->assertFalse(
+            $this->processEnvironContains($controllerPid, 'HATFIELD_SESSION_ID='),
+            'harness controller must stay untagged for teardown safety',
+        );
+
+        $broker = $this->waitForOwnedBroker($controllerPid, 5.0);
+        $this->assertNotNull($broker, 'supervised sqlite-queue:broker must exist after runtime.ready');
+        $brokerPid = $broker['pid'];
+        $this->assertTrue($this->isSameUidProcess($brokerPid));
+        $this->assertFalse(
+            $this->processEnvironContains($brokerPid, 'HATFIELD_SESSION_ID='),
+            'owned broker must stay untagged; never signal HATFIELD_SESSION_ID processes',
+        );
+
+        $driverPids = $this->descendantPids($brokerPid);
+        $this->assertNotSame([], $driverPids, 'Amp SQLite helper must exist under the broker after ready');
+        $consumerPids = $this->findOwnedConsumers($controllerPid);
+        $this->assertNotSame([], $consumerPids, 'messenger consumers must exist after runtime.ready');
+        foreach ($consumerPids as $consumerPid) {
+            $this->assertTrue($this->isSameUidProcess($consumerPid));
+            $this->assertFalse($this->processEnvironContains($consumerPid, 'HATFIELD_SESSION_ID='));
+        }
+
+        $this->refreshTrackedControllerPids();
+
+        // Kill only the owned same-UID untagged broker. Controller must observe
+        // death via supervise() and fail closed with protocol.error.
+        $this->assertTrue(@posix_kill($brokerPid, \SIGKILL));
+
+        // Safety cap around SUPERVISE_INTERVAL (5s) plus shutdown; not synchronization.
+        $error = $this->waitForEvent('protocol.error', 12.0);
+        $this->assertSame('protocol.error', $error['type'] ?? null);
+        $this->assertStringContainsString(
+            'Session sqlite-queue broker exited after readiness',
+            (string) ($error['payload']['error'] ?? ''),
+        );
+
+        $deadline = microtime(true) + 7.0;
+        while (microtime(true) < $deadline && $this->isControllerPidAlive($controllerPid)) {
+            usleep(20_000);
+        }
+        $this->assertFalse($this->isControllerPidAlive($controllerPid), 'controller must stop after broker death');
+        $this->assertFalse($this->isControllerPidAlive($brokerPid), 'killed broker must stay dead');
+        foreach ($driverPids as $driverPid) {
+            $this->assertFalse($this->isControllerPidAlive($driverPid), 'Amp helper must exit with the broker');
+        }
+        foreach ($consumerPids as $consumerPid) {
+            $this->assertFalse($this->isControllerPidAlive($consumerPid), 'owned consumers must exit with controller shutdown');
+        }
+
+        $this->abandonKilledControllerHandles();
+    }
+
     /**
      * @return list<array<string, mixed>>
      */
@@ -144,6 +205,27 @@ YAML;
         }
 
         return $last;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function findOwnedConsumers(int $controllerPid): array
+    {
+        $pids = [];
+        foreach ($this->discoverControllerProcessTreePids($controllerPid) as $pid) {
+            $cmdline = (string) @file_get_contents("/proc/{$pid}/cmdline");
+            $cmd = str_replace("\0", ' ', $cmdline);
+            if (!str_contains($cmd, 'messenger:consume')) {
+                continue;
+            }
+            if (!$this->isSameUidProcess($pid) || !$this->isControllerPidAlive($pid)) {
+                continue;
+            }
+            $pids[] = $pid;
+        }
+
+        return $pids;
     }
 
     /**

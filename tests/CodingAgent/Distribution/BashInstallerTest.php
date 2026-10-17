@@ -412,6 +412,7 @@ SH;
         $root = ProjectDir::get();
         $fixture = TestDirectoryIsolation::createProjectTempDir('installer-static-fail-activation');
         $installDir = TestDirectoryIsolation::createProjectTempDir('installer-static-dest-fail-activation');
+        $binDir = TestDirectoryIsolation::createProjectTempDir('installer-static-fail-activation-bin');
         $server = null;
         try {
             $previous = $this->seedStaticInstall($installDir, 'keep-app', 'keep-cli');
@@ -442,6 +443,24 @@ SH;
                 $appHash.'  '.$asset."\n".$cliHash.'  '.$cliAsset."\n",
             );
 
+            // Test-local process injection: fail only the final activation rename.
+            // No production env seam; other installer mv operations still use /bin/mv.
+            $fakeMv = $binDir.'/mv';
+            file_put_contents($fakeMv, <<<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${#}" -ge 2 ]]; then
+  src="${*: -2:1}"
+  dest="${*: -1}"
+  if [[ "${src}" == *'/.hatfield-link.'* && "$(basename "${dest}")" == 'hatfield' ]]; then
+    echo "mv: simulated activation failure" >&2
+    exit 1
+  fi
+fi
+exec /bin/mv "$@"
+BASH);
+            chmod($fakeMv, 0755);
+
             $server = $this->startServer($fixture);
             $process = new Process([
                 'bash', $root.'/installer/bash-installer',
@@ -449,20 +468,20 @@ SH;
                 '--static',
             ], $root, [
                 'HATFIELD_INSTALLER_BASE_URL' => $server['url'],
-                'HATFIELD_INSTALLER_FAIL_ACTIVATION' => '1',
-                'PATH' => getenv('PATH') ?: '/usr/bin:/bin',
+                'PATH' => $binDir.':'.(getenv('PATH') ?: '/usr/bin:/bin'),
             ]);
             $process->setTimeout(30);
             $process->run();
             $combined = $process->getOutput().$process->getErrorOutput();
             $this->assertFalse($process->isSuccessful());
-            $this->assertStringContainsString('forced activation failure', $combined);
+            $this->assertStringContainsString('simulated activation failure', $combined);
             $this->assertStaticInstallUnchanged($installDir, $previous);
             $this->assertNoInstallTemps($installDir);
         } finally {
             $this->stopServer($server);
             TestDirectoryIsolation::removeDirectory($fixture);
             TestDirectoryIsolation::removeDirectory($installDir);
+            TestDirectoryIsolation::removeDirectory($binDir);
         }
     }
 

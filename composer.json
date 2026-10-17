@@ -82,7 +82,7 @@
         "centamiv/vektor": "^2.0",
         "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/zstd-originator#cfb64a2a9859e9f4e930ccc91c0880d94e71a60f",
         "ineersa/sqlite-queue": "dev-main#f6c6bd497d3a13279c042f7b6d682cb24c746efa",
-        "fabpot/amphp-sqlite3": "dev-development"
+        "fabpot/amphp-sqlite3": "dev-development#2cf3d23e6a4645133954052d7356c19c30a2a7d8"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
