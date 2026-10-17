@@ -66,8 +66,8 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process {
                 file_put_contents($plainPhar, '<?php // plain phar');
                 chmod($fused, 0755);
 
-                // Simulate evaluation packaging: PHP_BINARY is an owned static CLI,
-                // while the resolved artifact is the fused self-executable.
+                // Simulate fused packaging: PHP_BINARY may differ from the resolved
+                // fused self-executable while micro_get_self_filename() reports self.
                 $GLOBALS['hatfield_test_micro_self'] = $fused;
                 putenv('HATFIELD_BINARY_PATH='.$fused);
                 $fusedCmd = (new ConfigExecutableLocator($dir))->command();

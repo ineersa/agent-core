@@ -541,6 +541,10 @@ services:
       $executableLocator: '@Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator'
       $runtimeCwd: '%app.cwd%'
 
+  Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueConnectorFactory:
+    arguments:
+      $runtimeConfig: '@Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig'
+
   Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient:
     arguments:
       $sessionsBasePath: '@=service("Ineersa\\CodingAgent\\Session\\HatfieldSessionStore").resolveSessionsBasePath()'

@@ -19,3 +19,9 @@ sqlite_queue:
     redeliver_timeout: 60
     max_payload: '%hatfield.sqlite_queue.max_payload%'
     max_connections: 64
+
+# Replace the bundle default connector so Amp SQLite workers relaunch through
+# RuntimeProcessConfig::executableCommand() plus --internal-sqlite-worker.
+services:
+    Fabpot\Amp\Sqlite\SqliteConnector:
+        factory: ['@Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueConnectorFactory', '__invoke']

@@ -22,18 +22,11 @@ const HATFIELD_DIST_DIR_DEFAULT = 'var/tmp/dist';
 const HATFIELD_DIST_ARTIFACTS = [
     'hatfield.phar',
     'hatfield.linux-amd64',
-    'hatfield.linux-amd64.php',
     'hatfield.linux-arm64',
-    'hatfield.linux-arm64.php',
     'hatfield.darwin-amd64',
-    'hatfield.darwin-amd64.php',
     'hatfield.darwin-arm64',
-    'hatfield.darwin-arm64.php',
     'SHA256SUMS',
 ];
-
-/** Basename Amp ProcessContext resolves via PATH for the owned static CLI. */
-const HATFIELD_OWNED_PHP_CLI_BASENAME = 'hatfield-php';
 
 /**
  * Supported static targets: name => [os, arch, host_os, host_arch].
@@ -75,16 +68,6 @@ function distribution_artifact_name(string $target): string
     }
 
     return 'hatfield.'.$target;
-}
-
-/** Companion static CLI published beside each fused native artifact. */
-function distribution_owned_php_cli_artifact_name(string $target): string
-{
-    if (!isset(distribution_targets()[$target])) {
-        throw new InvalidArgumentException('Unknown static target for owned PHP CLI: '.$target);
-    }
-
-    return distribution_artifact_name($target).'.php';
 }
 
 /**
@@ -455,7 +438,6 @@ function distribution_combine_micro(string $spcBin, string $microSfx, string $ph
     \CastorTasks\run_checked(
         escapeshellarg($spcBin).' micro:combine '.escapeshellarg($pharPath)
         .' --with-micro='.escapeshellarg($microSfx)
-        .' -I '.escapeshellarg('micro.php_binary='.HATFIELD_OWNED_PHP_CLI_BASENAME)
         .' --output='.escapeshellarg($outputPath)
         .' 2>&1',
         $workDir
@@ -465,57 +447,6 @@ function distribution_combine_micro(string $spcBin, string $microSfx, string $ph
         throw new RuntimeException('Static combine produced empty/missing artifact: '.$outputPath);
     }
     chmod($outputPath, 0755);
-}
-
-/**
- * Copy the owned static CLI next to a fused native artifact.
- *
- * Application bootstrap resolves a single adjacent hatfield-php helper and
- * prepends its directory to PATH. Publish the static CLI beside each fused
- * artifact as hatfield.<target>.php for release checksums.
- */
-function distribution_publish_owned_php_cli(string $workDir, string $outputPath): string
-{
-    $cliSource = $workDir.'/buildroot/bin/php';
-    if (!is_file($cliSource) || 0 === filesize($cliSource)) {
-        throw new RuntimeException('Owned static PHP CLI missing after SPC build: '.$cliSource);
-    }
-    $cliDest = $outputPath.'.php';
-    if (is_file($cliDest) || is_link($cliDest)) {
-        \CastorTasks\remove_path_checked($cliDest);
-    }
-    \CastorTasks\copy_file_checked($cliSource, $cliDest);
-    chmod($cliDest, 0755);
-
-    return $cliDest;
-}
-
-/**
- * Place the owned CLI beside a launch path using the published companion artifact.
- *
- * Copies the release companion hatfield.<target>.php as the canonical runtime
- * helper name hatfield-php beside the fused binary. No temporary links/copies
- * elsewhere; install/smoke layouts use only that adjacent basename.
- */
-function distribution_stage_owned_php_cli_beside_launch_path(string $artifactPath, string $launchPath): string
-{
-    $cliSource = $artifactPath.'.php';
-    if (!is_file($cliSource) || 0 === filesize($cliSource)) {
-        throw new RuntimeException('Owned static PHP CLI companion missing beside '.$artifactPath);
-    }
-    $launchDir = dirname($launchPath);
-    if (!is_dir($launchDir) && !mkdir($launchDir, 0755, true) && !is_dir($launchDir)) {
-        throw new RuntimeException('Unable to create launch dir for owned PHP CLI: '.$launchDir);
-    }
-
-    $runtimeName = $launchDir.'/'.HATFIELD_OWNED_PHP_CLI_BASENAME;
-    if (is_file($runtimeName) || is_link($runtimeName)) {
-        \CastorTasks\remove_path_checked($runtimeName);
-    }
-    \CastorTasks\copy_file_checked($cliSource, $runtimeName);
-    chmod($runtimeName, 0755);
-
-    return $runtimeName;
 }
 
 /**
@@ -547,27 +478,19 @@ function distribution_smoke_artifact(
         } else {
             // Relative invocation from isolated smoke CWD (v0.0.2 publish regression):
             // absolute artifact path masks musl realpath(AT_EXECFN) SIGSEGV on Linux micro.
-            // Copy into a runtime dir + entry symlink so micro_get_self_filename()/realpath
-            // lands beside adjacent hatfield-php (installer layout), while leaving dist bytes
-            // untouched.
+            // Symlink keeps original dist bytes untouched; realpath of /proc/self/exe still
+            // resolves to the fused file after the pinned phpmicro self-path patch.
             $absoluteArtifact = realpath($artifactPath);
             if (false === $absoluteArtifact || !is_file($absoluteArtifact)) {
                 throw new RuntimeException('Unable to resolve absolute artifact path for relative smoke: '.$artifactPath);
             }
-            $runtimeDir = $tmp.'/runtime';
-            if (!mkdir($runtimeDir, 0755, true) && !is_dir($runtimeDir)) {
-                throw new RuntimeException('Unable to create smoke runtime dir: '.$runtimeDir);
-            }
-            $runtimeApp = $runtimeDir.'/hatfield';
-            \CastorTasks\copy_file_checked($absoluteArtifact, $runtimeApp);
-            chmod($runtimeApp, 0755);
-            distribution_stage_owned_php_cli_beside_launch_path($absoluteArtifact, $runtimeApp);
-            $linkPath = $tmp.'/hatfield';
-            if (!symlink($runtimeApp, $linkPath)) {
-                throw new RuntimeException('Unable to create relative smoke entry symlink: '.$linkPath.' -> '.$runtimeApp);
+            $relativeName = 'hatfield';
+            $linkPath = $tmp.'/'.$relativeName;
+            if (!symlink($absoluteArtifact, $linkPath)) {
+                throw new RuntimeException('Unable to create relative smoke symlink: '.$linkPath.' -> '.$absoluteArtifact);
             }
             $prefix .= ' ';
-            $cmdBase = $prefix.escapeshellarg('./hatfield');
+            $cmdBase = $prefix.escapeshellarg('./'.$relativeName);
         }
 
         $version = \CastorTasks\run_checked($cmdBase.' --version 2>&1', $tmp);
@@ -1000,14 +923,7 @@ function distribution_assert_native_messenger_topology(string $artifactPath, arr
         if (str_contains($row['cmdline'], 'sqlite-queue:broker')) {
             $brokerLines[] = $row['cmdline'];
         }
-        if (
-            str_contains($row['cmdline'], HATFIELD_OWNED_PHP_CLI_BASENAME)
-            && (
-                str_contains($row['cmdline'], 'amp-process-runner')
-                || str_contains($row['cmdline'], 'amphp-sqlite3')
-                || str_contains($row['cmdline'], 'worker.php')
-            )
-        ) {
+        if (str_contains($row['cmdline'], '--internal-sqlite-worker')) {
             $helperLines[] = $row['cmdline'];
         }
         if (str_contains($row['cmdline'], 'messenger:consume')) {
@@ -1018,7 +934,7 @@ function distribution_assert_native_messenger_topology(string $artifactPath, arr
         throw new RuntimeException("Native topology smoke: no sqlite-queue:broker descendant observed after runtime.ready.\nDescendants:\n".$dumpText);
     }
     if ([] === $helperLines) {
-        throw new RuntimeException('Native topology smoke: no owned Amp SQLite helper ('.HATFIELD_OWNED_PHP_CLI_BASENAME.") observed after runtime.ready.\nDescendants:\n".$dumpText);
+        throw new RuntimeException("Native topology smoke: no Amp SQLite worker launched through the same Hatfield binary after runtime.ready.\nDescendants:\n".$dumpText);
     }
     if ([] === $consumeLines) {
         throw new RuntimeException("Native topology smoke: no messenger:consume descendants observed.\nDescendants:\n".$dumpText);
@@ -1050,17 +966,22 @@ function distribution_assert_native_messenger_topology(string $artifactPath, arr
     }
 
     foreach ($helperLines as $line) {
-        if ((bool) preg_match('#(?:^|\s)(?:/usr/bin/php|/usr/local/bin/php)\s+#', $line)) {
-            throw new RuntimeException('Native topology smoke: Amp helper used system PHP instead of owned '.HATFIELD_OWNED_PHP_CLI_BASENAME.".\n".'line: '.$line);
+        $usesArtifact = str_contains($line, $resolvedArtifact) || str_contains($line, $artifactBase);
+        $usesSystemPhpPrefix = (bool) preg_match('#(?:^|\s)(?:/usr/bin/php|/usr/local/bin/php|php)\s+#', $line)
+            && !str_starts_with(trim($line), $resolvedArtifact)
+            && !str_starts_with(trim($line), $artifactBase);
+        if ($usesSystemPhpPrefix) {
+            throw new RuntimeException("Native topology smoke: Amp SQLite worker relaunched via system PHP instead of fused native binary.\n".'line: '.$line);
         }
-        if (
-            (bool) preg_match('#(?:^|\s)php\s+#', $line)
-            && !str_contains($line, HATFIELD_OWNED_PHP_CLI_BASENAME)
+        if (!$usesArtifact) {
+            throw new RuntimeException("Native topology smoke: Amp SQLite worker does not reference native artifact path.\n".'expected artifact: '.$resolvedArtifact."\n".'line: '.$line);
+        }
+        if (!str_contains($line, '--internal-sqlite-worker')
+            && !str_contains($line, 'amp-process-runner')
+            && !str_contains($line, 'amphp-sqlite3')
+            && !str_contains($line, 'worker.php')
         ) {
-            throw new RuntimeException('Native topology smoke: Amp helper used bare php instead of owned '.HATFIELD_OWNED_PHP_CLI_BASENAME.".\n".'line: '.$line);
-        }
-        if (!str_contains($line, HATFIELD_OWNED_PHP_CLI_BASENAME)) {
-            throw new RuntimeException("Native topology smoke: Amp helper cmdline missing owned CLI basename.\n".'line: '.$line);
+            throw new RuntimeException("Native topology smoke: Amp SQLite worker cmdline missing worker markers.\n".'line: '.$line);
         }
     }
 }
@@ -1081,9 +1002,6 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
     }
     $resolvedArtifactPath = realpath($artifactPath);
     $artifactPath = false !== $resolvedArtifactPath ? $resolvedArtifactPath : $artifactPath;
-    if (!is_file($artifactPath.'.php') || 0 === filesize($artifactPath.'.php')) {
-        throw new RuntimeException('Native topology smoke: owned PHP CLI companion missing beside '.$artifactPath);
-    }
 
     $tmp = sys_get_temp_dir().'/hatfield-native-topo-'.bin2hex(random_bytes(6));
     if (!mkdir($tmp, 0755, true) && !is_dir($tmp)) {
@@ -1093,23 +1011,13 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
     mkdir($tmp.'/.hatfield/sessions/topo-1', 0755, true);
     \CastorTasks\write_file_checked($tmp.'/home/.hatfield/settings.yaml', "ai:\n    default_model: null\n");
 
-    // Installer layout: matched runtime dir + public entry symlink. Bootstrap
-    // resolves realpath(self) so adjacent hatfield-php works behind the entry.
+    // Acceptance layout: copy the fused binary alone into a fresh directory and
+    // rename it so relaunch cannot depend on the original dist path or helpers.
     $installDir = $tmp.'/install';
     mkdir($installDir, 0755, true);
-    $runtimeDir = $installDir.'/.hatfield-runtime-topo';
-    mkdir($runtimeDir, 0755, true);
-    $runtimeApp = $runtimeDir.'/hatfield';
-    \CastorTasks\copy_file_checked($artifactPath, $runtimeApp);
-    chmod($runtimeApp, 0755);
-    distribution_stage_owned_php_cli_beside_launch_path($artifactPath, $runtimeApp);
-    $launchPath = $installDir.'/hatfield';
-    if (is_link($launchPath) || is_file($launchPath)) {
-        \CastorTasks\remove_path_checked($launchPath);
-    }
-    if (!symlink($runtimeApp, $launchPath)) {
-        throw new RuntimeException('Native topology smoke: unable to create entry symlink '.$launchPath);
-    }
+    $launchPath = $installDir.'/hatfield-renamed';
+    \CastorTasks\copy_file_checked($artifactPath, $launchPath);
+    chmod($launchPath, 0755);
 
     $sessionId = 'topo-1';
     $queuePaths = Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths::forSession(
@@ -1137,9 +1045,8 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
     foreach (getenv() as $k => $v) {
         $fullEnv[$k] = $v;
     }
-    // Strip caller PATH entries that could resolve a host/build PHP before owned helper.
-    $safePath = '/usr/bin:/bin';
-    $fullEnv['PATH'] = $safePath;
+    // Keep PATH free of host PHP interpreters so the fused binary cannot fall back.
+    $fullEnv['PATH'] = '/usr/bin:/bin';
     foreach ($env as $k => $v) {
         $fullEnv[$k] = $v;
     }
@@ -1245,6 +1152,29 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
             throw new RuntimeException("Native topology smoke: failed after runtime.ready while waiting for messenger consumers.\n".$msg."\nstdout:\n".substr($stdout, -2000)."\nstderr:\n".substr($stderr, -2000));
         }
 
+        // Prove the same broker can enqueue/reserve/ack through the Amp worker.
+        $client = Ineersa\SqliteQueue\Client::connect($queuePaths->endpointPath, 5.0);
+        try {
+            $messageId = $client->send('run_control', 'native-topology-proof');
+            if ($messageId < 1) {
+                throw new RuntimeException('Native topology smoke: SEND returned non-positive id '.$messageId);
+            }
+            $delivery = $client->receive('run_control');
+            if (null === $delivery) {
+                throw new RuntimeException('Native topology smoke: RECEIVE returned empty after SEND');
+            }
+            if ($delivery->id !== $messageId || 'native-topology-proof' !== $delivery->body) {
+                throw new RuntimeException('Native topology smoke: RECEIVE did not return the sent payload');
+            }
+            $client->acknowledge($delivery->receipt);
+            if (null !== $client->receive('run_control')) {
+                throw new RuntimeException('Native topology smoke: queue still had a delivery after ACK');
+            }
+            echo "  native topology: enqueue/reserve/ack ok (id={$messageId})\n";
+        } finally {
+            $client->close();
+        }
+
         // Capture owned PIDs WHILE controller is still alive. After exit, orphans
         // reparent and pgrep -P <dead-controller> false-passes.
         $ownedSnapshot = [];
@@ -1253,7 +1183,7 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
                 str_contains($row['cmdline'], $launchPath)
                 || str_contains($row['cmdline'], 'messenger:consume')
                 || str_contains($row['cmdline'], 'sqlite-queue:broker')
-                || str_contains($row['cmdline'], HATFIELD_OWNED_PHP_CLI_BASENAME)
+                || str_contains($row['cmdline'], '--internal-sqlite-worker')
                 || str_contains($row['cmdline'], basename($launchPath))
             ) {
                 $ownedSnapshot[] = $row;
@@ -1262,7 +1192,7 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
         if ([] === $ownedSnapshot) {
             throw new RuntimeException('Native topology smoke: topology passed but owned PID snapshot is empty');
         }
-        echo "  native topology: runtime.ready + broker/helper/consumers via relocated {$launchPath}\n";
+        echo "  native topology: runtime.ready + broker/worker/consumers via renamed {$launchPath}\n";
         echo '  native topology: captured '.count($ownedSnapshot)." owned descendant PIDs before shutdown\n";
     } finally {
         foreach ([0, 1, 2] as $fd) {
@@ -1372,34 +1302,16 @@ function distribution_verify_sha256sums(string $distDir): void
         $listed[$m[2]] = true;
     }
 
-    // Every present native fused artifact must list its owned PHP CLI companion.
+    // Require checksum coverage for every present native artifact. Execution of
+    // foreign-platform binaries stays on matching matrix runners / host smoke.
     foreach (array_keys(distribution_targets()) as $target) {
         $native = distribution_artifact_name($target);
-        $cli = distribution_owned_php_cli_artifact_name($target);
         $nativePath = $distDir.'/'.$native;
-        $cliPath = $distDir.'/'.$cli;
         if (!is_file($nativePath)) {
             continue;
         }
-        if (!is_file($cliPath) || 0 === filesize($cliPath)) {
-            throw new RuntimeException('Native artifact present without owned PHP CLI companion: '.$cli);
-        }
         if (!isset($listed[$native])) {
             throw new RuntimeException('SHA256SUMS missing native artifact: '.$native);
-        }
-        if (!isset($listed[$cli])) {
-            throw new RuntimeException('SHA256SUMS missing owned PHP CLI companion: '.$cli);
-        }
-        // Companion is a PHP interpreter, not a Hatfield application binary.
-        $cliProbe = \CastorTasks\run_checked(
-            escapeshellarg($cliPath).' -r '.escapeshellarg('echo "cli-ok\n";').' 2>&1',
-            $distDir,
-        );
-        if (!str_contains($cliProbe, 'cli-ok')) {
-            throw new RuntimeException('Owned PHP CLI companion failed interpreter smoke: '.$cli);
-        }
-        if (str_contains($cliProbe, 'Hatfield')) {
-            throw new RuntimeException('Owned PHP CLI companion must not behave like a Hatfield app: '.$cli);
         }
     }
 
@@ -1507,7 +1419,6 @@ function distribution_build_static(
     $built = distribution_build_micro_sfx($target);
     $out = $dist.'/'.distribution_artifact_name($target);
     distribution_combine_micro($built['spc'], $built['micro_sfx'], $pharDest, $out, $built['work_dir']);
-    distribution_publish_owned_php_cli($built['work_dir'], $out);
     distribution_smoke_artifact(
         $out,
         isPhar: false,

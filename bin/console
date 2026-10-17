@@ -44,11 +44,13 @@ if ($isPhar) {
 
 require_once __DIR__.'/../vendor/autoload.php';
 
-// Fused natives set micro.php_binary=hatfield-php. Amp resolves that basename
-// through PATH, so prepend the adjacent hatfield-php directory before any
-// broker or Amp worker starts. Missing helpers fail closed; host PHP is never
-// used. No temporary staging directories.
-Ineersa\CodingAgent\Runtime\Process\OwnedPhpCliPathBootstrap::ensure();
+// Amp SQLite workers relaunch the same Hatfield executable with this flag.
+// Handle them before Kernel boot so fused natives do not need a second PHP CLI.
+$workerArgv = $_SERVER['argv'] ?? [];
+if (Ineersa\CodingAgent\Runtime\Messenger\InternalSqliteWorkerBootstrap::matches($workerArgv)) {
+    Ineersa\CodingAgent\Runtime\Messenger\InternalSqliteWorkerBootstrap::tryRun($workerArgv);
+}
+unset($workerArgv);
 
 // ── Early --cwd resolution ───────────────────────────────────────────────
 // Resolve --cwd before Kernel/Application construction so getcwd() and

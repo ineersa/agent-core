@@ -46,12 +46,10 @@ final class ConfigExecutableLocator implements AppExecutableLocator
     /**
      * True when $path is the fused native self.
      *
-     * Prefer PHP-micro's self path when available: micro.php_binary may point
-     * at a separate owned static CLI, so nonempty PHP_BINARY alone must not
-     * force "[php, fused-binary]". A HATFIELD_BINARY_PATH override that is not
-     * the running self (plain PHAR/script) stays "[php, path]". Empty
-     * PHP_BINARY remains the legacy fused-native signal when the micro helper
-     * is unavailable.
+     * Prefer PHP-micro's self path when available. A HATFIELD_BINARY_PATH
+     * override that is not the running self (plain PHAR/script) stays
+     * "[php, path]". Empty PHP_BINARY remains the fused-native signal when the
+     * micro helper is unavailable.
      */
     private static function isFusedNativeExecutable(string $path): bool
     {

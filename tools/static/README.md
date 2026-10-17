@@ -43,15 +43,10 @@ Remove once upstream no longer realpaths AT_EXECFN on Linux.
    `nghttp2` enables cURL HTTP/2 support so Symfony selects cURL instead of Amp.
    The build fails if the compiled CLI does not report `CURL_VERSION_HTTP2`.
 5. `spc micro:combine <phar> --with-micro=buildroot/bin/micro.sfx --output=<artifact>`.
-6. Publish `buildroot/bin/php` beside the fused artifact as `hatfield.<target>.php`.
-   Fuse with `micro.php_binary=hatfield-php`. The companion is an owned PHP CLI, not a
-   Hatfield app.
-7. Native fused-artifact smoke stages adjacent `hatfield-php` and runs `./hatfield` from
-   an isolated CWD so relative-invocation crashes cannot be masked by absolute paths.
-8. Topology smoke uses the installer layout: `.hatfield-runtime-*/{hatfield,hatfield-php}`
-   plus an entry symlink. Bootstrap resolves `realpath(self)`.
-9. `castor distribution:verify` checks version/list, companion interpreter smoke, checksum
-   coverage for every present native+companion pair, and topology.
+6. Native fused-artifact smoke runs `./hatfield` via a symlink in an isolated CWD so the
+   relative-invocation crash cannot be masked by absolute paths.
+7. `castor distribution:verify` (version/list + topology). Topology proves the same
+   renamed fused binary launches broker, Amp SQLite worker, and messenger consumers.
 
 Release cache path includes `var/tmp/static-php-cli` (SPC + phpmicro) and
 `var/tmp/static-build`, keyed by `pin.json`, `composer.lock`, and

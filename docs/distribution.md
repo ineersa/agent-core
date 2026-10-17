@@ -13,14 +13,13 @@ Internals: [phar-packaging.md](phar-packaging.md) · [static-packaging.md](stati
 |---|---|
 | `hatfield.phar` | Portable PHAR (system PHP ≥ 8.5) |
 | `hatfield.linux-amd64` | Fused PHP-micro native (Linux x86_64) |
-| `hatfield.linux-amd64.php` | Owned static PHP CLI companion |
 | `hatfield.linux-arm64` | Fused PHP-micro native (Linux aarch64) |
-| `hatfield.linux-arm64.php` | Owned static PHP CLI companion |
 | `hatfield.darwin-amd64` | Fused PHP-micro native (macOS x86_64) |
-| `hatfield.darwin-amd64.php` | Owned static PHP CLI companion |
 | `hatfield.darwin-arm64` | Fused PHP-micro native (macOS arm64) |
-| `hatfield.darwin-arm64.php` | Owned static PHP CLI companion |
 | `SHA256SUMS` | SHA-256 for every release asset |
+
+Native releases are single-file per target. Amp SQLite workers relaunch the same
+fused binary through `--internal-sqlite-worker`.
 
 **Windows / non-POSIX:** the Bash installer and native matrix are **Linux/macOS only**. There is no
 Windows native binary and no Windows installer path. The PHAR is platform-neutral in packaging, but
@@ -106,18 +105,12 @@ bash installer/bash-installer --static --version=latest
 Run the installer again to upgrade or reinstall. It performs these steps:
 
 - Resolves GitHub release assets for the requested version (`latest` or explicit tag).
-- Downloads the payload asset(s) plus `SHA256SUMS`, verifies checksums, then **smokes**
-  the candidate in an isolated temp HOME/cache/log tree.
-- PHAR installs replace one file atomically.
-- Static installs download the fused binary and its `hatfield.<platform>.php` companion,
-  smoke both, then publish `install_dir/hatfield` as an entry symlink onto a prepared
-  `.hatfield-runtime-<id>/{hatfield,hatfield-php}` pair. The companion is a PHP CLI, not
-  a second Hatfield app.
+- Downloads the asset plus `SHA256SUMS`, verifies the checksum, then **smokes** the
+  candidate (`--version`) in an isolated temp HOME/cache/log tree.
+- Installs with atomic replace into `--install-dir` (default `~/.local/bin`).
 - Failures must not replace a previous good install.
-- Previous static runtime directories remain for in-flight processes; remove stale
-  `.hatfield-runtime-*` directories manually after those processes exit.
 - Re-running for the same or newer version is the supported upgrade/reinstall path
-  (download → verify → smoke → atomic publish).
+  (download → verify → smoke → atomic install).
 
 ### Installer troubleshooting
 

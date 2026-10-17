@@ -70,6 +70,14 @@ final class SessionSqliteQueueBrokerSupervisorTest extends TestCase
             $this->assertFalse($this->processCommandLineContains($pid, 'setsid'), 'launch must not require an external setsid binary');
             $driverPids = $this->descendantPids($pid);
             $this->assertNotSame([], $driverPids, 'Amp SQLite driver child must exist after ready');
+            $workerSeen = false;
+            foreach ($driverPids as $driverPid) {
+                if ($this->processCommandLineContains($driverPid, '--internal-sqlite-worker')) {
+                    $workerSeen = true;
+                    break;
+                }
+            }
+            $this->assertTrue($workerSeen, 'Amp SQLite worker must relaunch through --internal-sqlite-worker');
         } finally {
             $supervisor->shutdownUntil(microtime(true) + 5.0);
         }

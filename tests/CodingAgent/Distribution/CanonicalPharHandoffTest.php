@@ -134,58 +134,7 @@ PHP;
         $this->assertNotEmpty($pin['static_php_cli_repository'] ?? null);
     }
 
-    public function testSha256SumsRequireCompanionForPresentNativesAndRejectAppLikeCli(): void
-    {
-        $root = ProjectDir::get();
-        require_once $root.'/.castor/helpers.php';
-        require_once $root.'/.castor/distribution.php';
-
-        $work = TestDirectoryIsolation::createProjectTempDir('dist-sha-companions');
-        $dist = $work.'/dist';
-        mkdir($dist, 0755, true);
-
-        $native = $dist.'/hatfield.linux-amd64';
-        $cli = $dist.'/hatfield.linux-amd64.php';
-        $phar = $dist.'/hatfield.phar';
-        file_put_contents($native, str_repeat('N', 2048));
-        file_put_contents($phar, str_repeat('P', 2048));
-        // Companion must be a PHP interpreter fixture, not a Hatfield app.
-        file_put_contents($cli, "#!/usr/bin/env php\n<?php\nif ((\$argv[1] ?? '') === '-r') { eval(\$argv[2]); exit(0);} echo \"unexpected\\n\"; exit(1);\n");
-        chmod($cli, 0755);
-
-        try {
-            distribution_write_sha256sums($dist, ['hatfield.phar', 'hatfield.linux-amd64', 'hatfield.linux-amd64.php']);
-            distribution_verify_sha256sums($dist);
-
-            // Missing companion checksum fails closed.
-            distribution_write_sha256sums($dist, ['hatfield.phar', 'hatfield.linux-amd64']);
-            try {
-                distribution_verify_sha256sums($dist);
-                $this->fail('Expected missing companion checksum to fail');
-            } catch (\RuntimeException $e) {
-                $this->assertStringContainsString('owned PHP CLI companion', $e->getMessage());
-            }
-
-            // Companion that prints Hatfield is rejected.
-            file_put_contents($cli, "#!/bin/sh\necho \"Hatfield fake\"\n");
-            chmod($cli, 0755);
-            distribution_write_sha256sums($dist, ['hatfield.phar', 'hatfield.linux-amd64', 'hatfield.linux-amd64.php']);
-            try {
-                distribution_verify_sha256sums($dist);
-                $this->fail('Expected Hatfield-like CLI companion to fail');
-            } catch (\RuntimeException $e) {
-                $this->assertTrue(
-                    str_contains($e->getMessage(), 'must not behave like a Hatfield app')
-                    || str_contains($e->getMessage(), 'failed interpreter smoke'),
-                    $e->getMessage(),
-                );
-            }
-        } finally {
-            TestDirectoryIsolation::removeDirectory($work);
-        }
-    }
-
-    public function testReleaseArtifactCatalogIncludesNinePayloads(): void
+    public function testReleaseArtifactCatalogIncludesFivePayloads(): void
     {
         $root = ProjectDir::get();
         require_once $root.'/.castor/helpers.php';
@@ -195,21 +144,20 @@ PHP;
             HATFIELD_DIST_ARTIFACTS,
             static fn (string $name): bool => 'SHA256SUMS' !== $name,
         ));
-        $this->assertCount(9, $payloads);
+        $this->assertCount(5, $payloads);
         $this->assertContains('hatfield.phar', $payloads);
         foreach (['linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64'] as $target) {
             $this->assertContains('hatfield.'.$target, $payloads);
-            $this->assertContains('hatfield.'.$target.'.php', $payloads);
-            $this->assertSame(
-                'hatfield.'.$target.'.php',
-                distribution_owned_php_cli_artifact_name($target),
-            );
+            $this->assertNotContains('hatfield.'.$target.'.php', $payloads);
         }
 
         $workflow = (string) file_get_contents($root.'/.github/workflows/release.yml');
-        $this->assertStringContainsString('test "$(grep -cE \'^[a-f0-9]{64}  \' var/tmp/dist/SHA256SUMS)" -eq 9', $workflow);
-        $this->assertStringContainsString('hatfield.${{ matrix.target }}.php', $workflow);
-        $this->assertStringContainsString('var/tmp/dist/hatfield.linux-amd64.php', $workflow);
-        $this->assertStringNotContainsString('-eq 5', $workflow);
+        $this->assertStringContainsString(
+            'test "$(grep -cE \'^[a-f0-9]{64}  \' var/tmp/dist/SHA256SUMS)" -eq 5',
+            $workflow,
+        );
+        $this->assertStringNotContainsString('hatfield.${{ matrix.target }}.php', $workflow);
+        $this->assertStringNotContainsString('var/tmp/dist/hatfield.linux-amd64.php', $workflow);
+        $this->assertStringNotContainsString('-eq 9', $workflow);
     }
 }
