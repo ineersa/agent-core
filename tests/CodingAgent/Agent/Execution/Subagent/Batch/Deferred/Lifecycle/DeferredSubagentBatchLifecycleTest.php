@@ -1455,9 +1455,84 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $worker($original);
         $this->assertSame(2, $notifications, 'Pending redelivery re-emits registration without reading input.');
         $terminalBus = new TestMessageBus();
-        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $batchStore, new TestLogger()))($complete);
-        $this->assertSame('completed', $deferred->status($lifecycle));
+        (new CompleteDeferredToolCallHandler(
+            $deferred,
+            $terminalBus,
+            self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(self::getContainer()->get('serializer')),
+            new TestLogger(),
+        ))($complete);
+        $this->assertSame('pending', $deferred->status($lifecycle), 'Transport send alone must not mark deferred completion.');
         $this->assertCount(1, $terminalBus->messages);
+        $toolCallResult = $terminalBus->messages[0];
+        $this->assertInstanceOf(ToolCallResult::class, $toolCallResult);
+
+        $correlation = $deferred->findByDeferredId($lifecycle);
+        $this->assertNotNull($correlation);
+        // Production delete is gated by finalized=1 and no pending deferred row, so the
+        // original durable batch survives transport send and remains available for acceptance.
+        $survivingBatch = $batchStore->load($correlation->runId, $correlation->turnNo, $correlation->stepId);
+        $this->assertNotNull($survivingBatch);
+        $this->assertArrayHasKey($correlation->toolCallId, $survivingBatch->calls);
+        $collector = new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore, 4, $deferred);
+        $handler = new \Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+            toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
+            messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
+            serializer: self::getContainer()->get('serializer'),
+        );
+        $ownerState = \Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder::running($parent)
+            ->withTurnNo($correlation->turnNo)
+            ->withActiveStepId($correlation->stepId)
+            ->withPendingToolCalls([$correlation->toolCallId => false])
+            ->withMessages([
+                new AgentMessage(role: 'assistant', content: [], metadata: ['tool_calls' => [
+                    ['id' => $correlation->toolCallId, 'name' => 'fork', 'arguments' => [], 'order_index' => 0],
+                ]]),
+            ])
+            ->build();
+        // Drive owner acceptance through the real result handler rather than a standalone lifecycle write.
+        $accepted = $handler->handle($toolCallResult, $ownerState);
+        $this->assertNotNull($accepted->nextState);
+        $lifecycleActions = array_values(array_filter(
+            $accepted->postCommitActions,
+            static fn ($action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO,
+        ));
+        $this->assertCount(1, $lifecycleActions);
+        $deferred->applyLifecycleProjection($lifecycleActions[0]);
+        $this->assertSame('completed', $deferred->status($lifecycle));
+        // After verified owner acceptance, the production after-turn cleanup hook
+        // deletes the original finalized batch by accepted origin identity.
+        if (null !== $accepted->postCommitActions) {
+            foreach ($accepted->postCommitActions as $action) {
+                if ($action instanceof \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO) {
+                    $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $parent, 'actions' => [$action]]);
+                    $batchStore->prepareChanges([$action], $verified)();
+                }
+            }
+        }
+        $cleanup = new \Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber(
+            $batchStore,
+            new TestLogger(),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class),
+        );
+        $cleanup->handleAfterTurnCommit(new AfterTurnCommitHookContext(
+            runId: $parent,
+            turnNo: $correlation->turnNo,
+            status: RunStatus::Running->value,
+            events: array_map(
+                static fn ($event) => new AfterTurnCommitEventSummary(
+                    $event->seq,
+                    $event->type,
+                    $event->payload,
+                ),
+                $accepted->events,
+            ),
+            effectsCount: 0,
+            runState: $accepted->nextState ?? $ownerState,
+        ));
+        $this->assertNull($batchStore->load($correlation->runId, $correlation->turnNo, $correlation->stepId));
         $worker($original);
         $this->assertSame(2, $notifications, 'Completed original execution redelivery is a no-op.');
         $this->assertCount(0, $workerBus->messages);
@@ -1533,7 +1608,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $deferred,
             $resultBus,
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
+            new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(self::getContainer()->get('serializer')),
             new TestLogger(),
         );
         $completionHandler($complete);

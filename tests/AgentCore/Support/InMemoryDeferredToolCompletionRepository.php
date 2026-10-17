@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationEnvelopeFingerprint;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
 
 final class InMemoryDeferredToolCompletionRepository implements DeferredToolCompletionRepositoryInterface
 {
@@ -102,13 +103,6 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         return $this->byDeferredId[$deferredId]['status'] ?? null;
     }
 
-    public function markCompleted(string $deferredId): void
-    {
-        if (isset($this->byDeferredId[$deferredId])) {
-            $this->byDeferredId[$deferredId]['status'] = 'completed';
-        }
-    }
-
     /** Test-only mutation helper for injecting a conflicting durable correlation envelope. */
     public function replaceForTest(DeferredToolCompletionCorrelation $correlation): void
     {
@@ -170,12 +164,33 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         $current->assertAcceptedImmutableBindingMatches($expected);
         if ($current->callerDisposition === $action->callerDisposition
             && $current->executionObservation === $action->executionObservation) {
-            return;
+            if (null !== $action->acceptedCompletionId) {
+                if ($current->acceptedCompletionId === $action->acceptedCompletionId
+                    && $current->acceptedResultFingerprint === $action->acceptedResultFingerprint
+                    && 'completed' === $this->byDeferredId[$deferredId]['status']) {
+                    return;
+                }
+                if (null !== $current->acceptedCompletionId
+                    && ($current->acceptedCompletionId !== $action->acceptedCompletionId
+                        || $current->acceptedResultFingerprint !== $action->acceptedResultFingerprint)) {
+                    throw new \RuntimeException(\sprintf('Conflicting accepted completion for run "%s" tool call "%s".', $expected->runId, $expected->toolCallId));
+                }
+            } else {
+                return;
+            }
         }
 
-        $this->byDeferredId[$deferredId]['correlation'] = $current->withLifecycle(
+        $next = $current->withLifecycle(
             $action->callerDisposition,
             $action->executionObservation,
+            $action->acceptedCompletionId,
+            $action->acceptedResultFingerprint,
         );
+        $this->byDeferredId[$deferredId]['correlation'] = $next;
+        if (null !== $next->acceptedCompletionId
+            && (ToolInvocationExecutionObservationEnum::Terminal === $next->executionObservation
+                || ToolInvocationExecutionObservationEnum::Unknown === $next->executionObservation)) {
+            $this->byDeferredId[$deferredId]['status'] = 'completed';
+        }
     }
 }

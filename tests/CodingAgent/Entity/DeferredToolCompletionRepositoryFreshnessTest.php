@@ -6,7 +6,9 @@ namespace Ineersa\CodingAgent\Tests\Entity;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationAcceptedCompletionIdentity;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationCallerDispositionEnum;
 use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletion;
@@ -84,7 +86,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
     }
 
     #[Test]
-    public function markCompletedFallbackDoesNotRewriteAlreadyCompletedRowFromStaleCache(): void
+    public function acceptedLifecycleProjectionDoesNotRewriteAlreadyCompletedRowFromStaleCache(): void
     {
         $correlation = $this->repository->registerPending(new DeferredToolCompletionCorrelation(
             deferredId: '550e8400-e29b-41d4-a716-446655440101',
@@ -105,29 +107,49 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
         $this->assertInstanceOf(DeferredToolCompletion::class, $managed);
         $this->assertSame('pending', $managed->status);
 
-        // External writer completes the row while this EM still caches pending.
+        $completionId = ToolInvocationAcceptedCompletionIdentity::completionIdFromCorrelation($correlation);
+        $fingerprint = hash('sha256', 'accepted-lifecycle-freshness');
+
+        // External writer settles the row while this EM still caches pending.
         $this->connection->executeStatement(
             'UPDATE deferred_tool_completion
-             SET status = :completed, updated_at = :now
+             SET status = :completed,
+                 caller_disposition = :disposition,
+                 execution_observation = :observation,
+                 accepted_completion_id = :completion_id,
+                 accepted_result_fingerprint = :fingerprint,
+                 updated_at = :now
              WHERE deferred_id = :deferred_id AND status = :pending',
             [
                 'completed' => 'completed',
                 'pending' => 'pending',
+                'disposition' => ToolInvocationCallerDispositionEnum::ForegroundResultAccepted->value,
+                'observation' => ToolInvocationExecutionObservationEnum::Terminal->value,
+                'completion_id' => $completionId,
+                'fingerprint' => $fingerprint,
                 'now' => '2026-09-16 12:11:00',
                 'deferred_id' => $correlation->deferredId,
             ],
         );
 
-        // Local markCompleted SQL matches zero rows; fallback must refresh before deciding.
-        $this->repository->markCompleted($correlation->deferredId);
+        // Local accepted projection must refresh before deciding and leave the external stamp intact.
+        $this->repository->applyLifecycleProjection(new RecordToolInvocationLifecycleDTO(
+            $correlation,
+            ToolInvocationCallerDispositionEnum::ForegroundResultAccepted,
+            ToolInvocationExecutionObservationEnum::Terminal,
+            $completionId,
+            $fingerprint,
+        ));
 
         $row = $this->connection->fetchAssociative(
-            'SELECT status, updated_at FROM deferred_tool_completion WHERE deferred_id = :deferred_id',
+            'SELECT status, updated_at, accepted_completion_id, accepted_result_fingerprint FROM deferred_tool_completion WHERE deferred_id = :deferred_id',
             ['deferred_id' => $correlation->deferredId],
         );
         $this->assertIsArray($row);
         $this->assertSame('completed', $row['status']);
         $this->assertSame('2026-09-16 12:11:00', $row['updated_at']);
+        $this->assertSame($completionId, $row['accepted_completion_id']);
+        $this->assertSame($fingerprint, $row['accepted_result_fingerprint']);
         $this->assertSame('completed', $managed->status);
     }
 

@@ -6,7 +6,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Domain\Coordination\RecordToolInvocationLifecycleDTO;
-use Ineersa\AgentCore\Domain\Tool\ToolInvocationLifecycleTransition;
+use Ineersa\AgentCore\Domain\Tool\ToolInvocationExecutionObservationEnum;
 
 /**
  * Validates captured tool-invocation lifecycle projection actions before recovery or commit.
@@ -43,11 +43,27 @@ final readonly class ToolInvocationLifecycleCoordinationValidator implements Coo
             throw new \RuntimeException('Prepared tool invocation owner reference requires an owner kind.');
         }
 
-        ToolInvocationLifecycleTransition::assertAllowed(
-            $correlation->callerDisposition,
-            $correlation->executionObservation,
-            $action->callerDisposition,
-            $action->executionObservation,
-        );
+        if ((null === $action->acceptedCompletionId) !== (null === $action->acceptedResultFingerprint)) {
+            throw new \RuntimeException('Prepared terminal acceptance requires completion id and result fingerprint together.');
+        }
+        if (null !== $action->acceptedCompletionId
+            && ToolInvocationExecutionObservationEnum::Terminal !== $action->executionObservation
+            && ToolInvocationExecutionObservationEnum::Unknown !== $action->executionObservation) {
+            throw new \RuntimeException('Prepared terminal acceptance requires a terminal or unknown execution observation.');
+        }
+
+        // Reuse the complete domain receipt/transition rules before journaling.
+        // withLifecycle rejects incorrect deterministic IDs and conflicting accepted
+        // fingerprints; projection must not be the first place those fail.
+        try {
+            $correlation->withLifecycle(
+                $action->callerDisposition,
+                $action->executionObservation,
+                $action->acceptedCompletionId,
+                $action->acceptedResultFingerprint,
+            );
+        } catch (\InvalidArgumentException|\RuntimeException $exception) {
+            throw new \RuntimeException($exception->getMessage(), 0, $exception);
+        }
     }
 }

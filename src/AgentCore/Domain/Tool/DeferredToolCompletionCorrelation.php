@@ -47,6 +47,8 @@ final readonly class DeferredToolCompletionCorrelation
         public ?string $envelopeFingerprint = null,
         public ToolInvocationCallerDispositionEnum $callerDisposition = ToolInvocationCallerDispositionEnum::ForegroundPending,
         public ToolInvocationExecutionObservationEnum $executionObservation = ToolInvocationExecutionObservationEnum::Active,
+        public ?string $acceptedCompletionId = null,
+        public ?string $acceptedResultFingerprint = null,
     ) {
         if (null !== $this->executionOwnerKind && '' === $this->executionOwnerKind) {
             throw new \InvalidArgumentException('Execution owner kind cannot be empty when present.');
@@ -68,6 +70,20 @@ final readonly class DeferredToolCompletionCorrelation
             if ($this->envelopeFingerprint !== $expectedFingerprint) {
                 throw new \InvalidArgumentException('Envelope fingerprint must match the immutable execution envelope.');
             }
+        }
+        if ((null === $this->acceptedCompletionId) !== (null === $this->acceptedResultFingerprint)) {
+            throw new \InvalidArgumentException('Accepted completion id and result fingerprint must be recorded together.');
+        }
+        if (null !== $this->acceptedCompletionId && '' === $this->acceptedCompletionId) {
+            throw new \InvalidArgumentException('Accepted completion id cannot be empty when present.');
+        }
+        if (null !== $this->acceptedResultFingerprint && '' === $this->acceptedResultFingerprint) {
+            throw new \InvalidArgumentException('Accepted result fingerprint cannot be empty when present.');
+        }
+        if (null !== $this->acceptedCompletionId
+            && ToolInvocationExecutionObservationEnum::Terminal !== $this->executionObservation
+            && ToolInvocationExecutionObservationEnum::Unknown !== $this->executionObservation) {
+            throw new \InvalidArgumentException('Accepted completion identity requires a terminal or unknown execution observation.');
         }
     }
 
@@ -134,6 +150,8 @@ final readonly class DeferredToolCompletionCorrelation
     public function withLifecycle(
         ToolInvocationCallerDispositionEnum $callerDisposition,
         ToolInvocationExecutionObservationEnum $executionObservation,
+        ?string $acceptedCompletionId = null,
+        ?string $acceptedResultFingerprint = null,
     ): self {
         ToolInvocationLifecycleTransition::assertAllowed(
             $this->callerDisposition,
@@ -141,6 +159,27 @@ final readonly class DeferredToolCompletionCorrelation
             $callerDisposition,
             $executionObservation,
         );
+
+        $nextCompletionId = $this->acceptedCompletionId;
+        $nextResultFingerprint = $this->acceptedResultFingerprint;
+        if (null !== $acceptedCompletionId || null !== $acceptedResultFingerprint) {
+            if (null === $acceptedCompletionId || null === $acceptedResultFingerprint) {
+                throw new \InvalidArgumentException('Accepted completion id and result fingerprint must be supplied together.');
+            }
+            if (null !== $this->acceptedCompletionId) {
+                if ($this->acceptedCompletionId !== $acceptedCompletionId
+                    || $this->acceptedResultFingerprint !== $acceptedResultFingerprint) {
+                    throw new \RuntimeException(\sprintf('Conflicting accepted completion for run "%s" tool call "%s".', $this->runId, $this->toolCallId));
+                }
+            } else {
+                $expectedCompletionId = ToolInvocationAcceptedCompletionIdentity::completionIdFromCorrelation($this);
+                if ($acceptedCompletionId !== $expectedCompletionId) {
+                    throw new \InvalidArgumentException('Accepted completion id must match the deterministic invocation receipt.');
+                }
+                $nextCompletionId = $acceptedCompletionId;
+                $nextResultFingerprint = $acceptedResultFingerprint;
+            }
+        }
 
         return new self(
             deferredId: $this->deferredId,
@@ -171,6 +210,8 @@ final readonly class DeferredToolCompletionCorrelation
             envelopeFingerprint: $this->envelopeFingerprint,
             callerDisposition: $callerDisposition,
             executionObservation: $executionObservation,
+            acceptedCompletionId: $nextCompletionId,
+            acceptedResultFingerprint: $nextResultFingerprint,
         );
     }
 }

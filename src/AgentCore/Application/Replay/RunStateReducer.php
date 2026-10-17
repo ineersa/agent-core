@@ -513,6 +513,14 @@ final readonly class RunStateReducer
             ]);
         }
 
+        // Detached accepted receipts are settlement evidence only. They must not
+        // stage into ordinary foreground batch accumulation or later ToolBatchCommitted
+        // projection; mailbox delivery remains a later checkpoint.
+        if (true === ($payload['accepted_completion']['detached'] ?? false)
+            || true === ($payload['accepted_completion']['evidence_only'] ?? false)) {
+            return $state;
+        }
+
         $pendingToolCalls[$toolCallId] = true;
         $completedToolResultsByCallId[$toolCallId] = $result;
 

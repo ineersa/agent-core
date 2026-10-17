@@ -26,7 +26,17 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
 
     public function delete(string $runId, int $turnNo, string $stepId): void
     {
-        unset($this->batches[$this->key($runId, $turnNo, $stepId)], $this->applied[$this->key($runId, $turnNo, $stepId)]);
+        $key = $this->key($runId, $turnNo, $stepId);
+        $batch = $this->batches[$key] ?? null;
+        if (!$batch instanceof ToolBatchStateDTO) {
+            return;
+        }
+        // Mirror DoctrineToolBatchStore: only delete finalized batches with no unresolved work.
+        if (!$batch->finalized || [] !== $batch->awaitingHumanInput || [] !== $batch->pendingQueue || [] !== $batch->inFlight) {
+            return;
+        }
+
+        unset($this->batches[$key], $this->applied[$key]);
     }
 
     public function deleteAllForRun(string $runId): void

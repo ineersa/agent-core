@@ -18,6 +18,17 @@ final readonly class RecordToolInvocationLifecycleDTO
         public DeferredToolCompletionCorrelation $expectedCorrelation,
         public ToolInvocationCallerDispositionEnum $callerDisposition,
         public ToolInvocationExecutionObservationEnum $executionObservation,
+        public ?string $acceptedCompletionId = null,
+        public ?string $acceptedResultFingerprint = null,
     ) {
+        if ((null === $this->acceptedCompletionId) !== (null === $this->acceptedResultFingerprint)) {
+            throw new \InvalidArgumentException('Accepted completion id and result fingerprint must be recorded together.');
+        }
+        if (null !== $this->acceptedCompletionId && '' === $this->acceptedCompletionId) {
+            throw new \InvalidArgumentException('Accepted completion id cannot be empty when present.');
+        }
+        if (null !== $this->acceptedResultFingerprint && '' === $this->acceptedResultFingerprint) {
+            throw new \InvalidArgumentException('Accepted result fingerprint cannot be empty when present.');
+        }
     }
 }

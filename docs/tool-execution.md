@@ -29,6 +29,25 @@ mutation. Acknowledgment preparation compares the deferred envelope with the sto
 batch call and uses only durable stored aliases (or `deferredId`). C3 must route native
 finals for detached invocations before producers are enabled.
 
+C3 owner acceptance records a deterministic `completion_id` and result fingerprint
+through prepared lifecycle projection. Detached results route before ordinary
+stale-step rejection and remain admissible during Cancelling or already-terminal
+owner states. Settlement records the accepted receipt without reviving the run,
+replacing the original acknowledgment, or staging the detached result into a
+later foreground batch. Attached deferred completions also settle on owner
+acceptance, including preserve-incoming cancellation. When the original call can
+no longer be projected (already Cancelled/stale-step, or Cancelling with the call
+absent/already true), attached acceptance is evidence-only: it journals the
+accepted receipt and lifecycle completion without adding a second original-call
+model result or touching an unrelated current batch. Replay and presentation treat
+`accepted_completion.detached=true` and `accepted_completion.evidence_only=true`
+as settlement evidence only. Deferred `status=completed` means verified owner
+acceptance, not successful transport send or caller detachment. After that
+verified acceptance, original-batch cleanup uses the accepted receipt's origin
+identity. Matching native `CompleteDeferredToolCall` redelivery is a no-op;
+conflicting content or error after acceptance fails closed. Mailbox delivery,
+wake fencing, retained bodies, producers, and Ctrl+B remain later checkpoints.
+
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare
 a tool-specific budget. MCP calls receive the run cancellation token and the shorter
