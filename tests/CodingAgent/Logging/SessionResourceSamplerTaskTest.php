@@ -333,6 +333,14 @@ final class SessionResourceSamplerTaskTest extends TestCase
         $dashboard = Yaml::parseFile(\dirname(__DIR__, 3).'/ops/datadog/dashboard.yaml');
         $this->assertSame('session_key', $dashboard['template_variables'][1]['prefix']);
         $this->assertSame(['*'], $dashboard['template_variables'][1]['defaults']);
+        // Preserve mapping/list types: the native list-stream schema requires
+        // indexes to be a list, but default YAML parsing turns both {} and [] into [].
+        $typedDashboard = Yaml::parseFile(\dirname(__DIR__, 3).'/ops/datadog/dashboard.yaml', Yaml::PARSE_OBJECT_FOR_MAP);
+        foreach ($typedDashboard->widgets as $widget) {
+            if ('list_stream' === $widget->definition->type) {
+                $this->assertSame([], $widget->definition->requests[0]->query->indexes);
+            }
+        }
         foreach (new \RecursiveIteratorIterator(new \RecursiveArrayIterator($dashboard['widgets'])) as $field => $value) {
             if (!\is_string($value) || !\in_array($field, ['query', 'query_string', 'facet'], true)) {
                 continue;

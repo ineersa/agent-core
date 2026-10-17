@@ -300,7 +300,7 @@ widgets:
               width: auto
           query:
             data_source: logs_stream
-            indexes: {}
+            indexes: []
             query_string: 'service:hatfield $env @extra.session_key:$session.value source:php status:(warn OR error OR critical OR alert OR emergency)'
             sort:
               column: timestamp
