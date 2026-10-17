@@ -30,6 +30,7 @@ enum RunEventTypeEnum: string
     case AgentCommandQueued = 'agent_command_queued';
     case ToolBatchCommitted = 'tool_batch_committed';
     case ModelNotification = 'model_notification';
+    case ToolCompletionReceived = 'tool_completion_received';
     case ContextRefreshed = 'context_refreshed';
     // ── Compaction events ──────────────────────────────────────────────
     case ContextCompactionRequested = 'context_compaction_requested';

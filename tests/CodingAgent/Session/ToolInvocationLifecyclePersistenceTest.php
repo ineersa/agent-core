@@ -85,6 +85,7 @@ final class ToolInvocationLifecyclePersistenceTest extends IsolatedKernelTestCas
             $container->get(ToolBatchStoreInterface::class),
             $container->get(CommandStoreInterface::class),
             $repo,
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolCompletionRecipientRepositoryInterface::class),
         );
         $coordinator->apply(new TransitionPlan($run, $pending, [$action], [], []));
         $store->finalizeVerifiedTransition($run, $pending->identity);
@@ -178,6 +179,7 @@ final class ToolInvocationLifecyclePersistenceTest extends IsolatedKernelTestCas
             $container->get(ToolBatchStoreInterface::class),
             $failingCommands,
             $repo,
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolCompletionRecipientRepositoryInterface::class),
         );
 
         try {
@@ -725,6 +727,7 @@ final class ToolInvocationLifecyclePersistenceTest extends IsolatedKernelTestCas
                 $container->get(ToolBatchStoreInterface::class),
                 $container->get(CommandStoreInterface::class),
                 $repo,
+                self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolCompletionRecipientRepositoryInterface::class),
             ),
             new TransitionPlanFactory(),
             $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
@@ -862,6 +865,7 @@ final class ToolInvocationLifecyclePersistenceTest extends IsolatedKernelTestCas
                 $container->get(ToolBatchStoreInterface::class),
                 $container->get(CommandStoreInterface::class),
                 $repo,
+                self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolCompletionRecipientRepositoryInterface::class),
             ),
             new TransitionPlanFactory(),
             $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
@@ -942,6 +946,7 @@ final class ToolInvocationLifecyclePersistenceTest extends IsolatedKernelTestCas
                     $container->get(ToolBatchStoreInterface::class),
                     $container->get(CommandStoreInterface::class),
                     $container->get(DeferredToolCompletionRepositoryInterface::class),
+                    self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolCompletionRecipientRepositoryInterface::class),
                 ),
                 new TransitionPlanFactory(),
                 $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),

@@ -43,6 +43,7 @@ final class TestTransitionFinalizerFactory
                 $batches ?? new TestToolBatchStore(),
                 $commands ?? new InMemoryCommandStore(),
                 $deferredCompletions ?? new InMemoryDeferredToolCompletionRepository(),
+                new InMemoryToolCompletionRecipientRepository(),
             ),
             new TransitionPlanFactory(),
             $locks ?? new RunLockManager(new LockFactory(new InMemoryStore())),

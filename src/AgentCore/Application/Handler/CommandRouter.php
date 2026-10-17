@@ -26,6 +26,10 @@ final class CommandRouter
 
     public function route(ApplyCommand $command): RoutedCommand
     {
+        if (CoreCommandKind::ToolCompletion === $command->kind) {
+            return RoutedCommand::rejected('Tool completion is reserved for internal runtime delivery.');
+        }
+
         $optionValidationError = $this->validateOptionKeys($command);
         if (null !== $optionValidationError) {
             return RoutedCommand::rejected($optionValidationError);

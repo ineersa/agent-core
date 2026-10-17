@@ -7,10 +7,11 @@ namespace Ineersa\AgentCore\Domain\Coordination;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Domain\Message\ReceiveToolCompletion;
 
 final readonly class DispatchCoordinationMessageDTO
 {
-    public function __construct(public AdvanceRun|CompactRun|ApplyCommand $message)
+    public function __construct(public AdvanceRun|CompactRun|ApplyCommand|ReceiveToolCompletion $message)
     {
     }
 }

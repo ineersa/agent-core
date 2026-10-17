@@ -13,7 +13,8 @@ final readonly class ToolCompletionDeliveryReferenceDTO
         public RetainedToolCompletionSourceEventReference $sourceEvent,
         public string $payloadFingerprint,
     ) {
-        if ('' === trim($destinationRunId) || '' === trim($messageId)) {
+        if ('' === trim($destinationRunId) || '' === trim($messageId)
+            || \strlen($destinationRunId) > 255 || \strlen($messageId) > 255 || \strlen($sourceEvent->runId) > 255) {
             throw new \InvalidArgumentException('Completion delivery requires destination and message identities.');
         }
         if (1 !== preg_match('/^[a-f0-9]{64}$/D', $payloadFingerprint)) {

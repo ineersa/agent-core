@@ -45,6 +45,14 @@ final class ApplicationMigrationExecutorTest extends TestCase
 
         $executor();
 
+        $recipientColumns = $connection->createSchemaManager()->listTableColumns('tool_completion_recipient');
+        foreach (['destination_run_id', 'message_id', 'reference_json', 'received_turn_no', 'received_sequence', 'disposition', 'state_reason', 'applied_sequence'] as $column) {
+            $this->assertArrayHasKey($column, $recipientColumns);
+        }
+        $recipientIndexes = $connection->createSchemaManager()->listTableIndexes('tool_completion_recipient');
+        $this->assertSame(['destination_run_id', 'message_id'], $recipientIndexes['primary']->getColumns());
+        $this->assertNotFalse($connection->fetchOne('SELECT 1 FROM doctrine_migration_versions WHERE version = ?', ['Version20261017195000']));
+
         $this->assertFalse(
             $connection->createSchemaManager()->tablesExist(['messenger_messages']),
             'messenger_messages must not be created on the default app connection (queue uses messenger_transport DB)',

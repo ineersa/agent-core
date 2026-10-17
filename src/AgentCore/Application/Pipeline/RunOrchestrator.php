@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Message\CommitSubagentProgress;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
+use Ineersa\AgentCore\Domain\Message\ReceiveToolCompletion;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
@@ -148,6 +149,12 @@ final readonly class RunOrchestrator
             $message,
             ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
         );
+    }
+
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function onReceiveToolCompletion(ReceiveToolCompletion $message): void
+    {
+        $this->dispatch('command.tool_completion', 'command.tool_completion', $message);
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]

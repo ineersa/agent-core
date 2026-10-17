@@ -112,6 +112,7 @@ final class ToolBackgroundAcknowledgementPersistenceTest extends IsolatedKernelT
             $batches,
             $container->get(CommandStoreInterface::class),
             $repo,
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolCompletionRecipientRepositoryInterface::class),
         );
         $coordinator->apply(new TransitionPlan($run, $pending, $prepared->localActions, [], []));
 
