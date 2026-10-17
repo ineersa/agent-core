@@ -127,7 +127,7 @@ final readonly class RetainedToolCompletionEvidenceReader implements RetainedToo
      *     sha256: string,
      *     truncated: bool,
      *     inline?: array<string, mixed>,
-     *     json?: array<string, mixed>,
+     *     json?: array<array-key, mixed>|string|int|float|bool|null,
      *     text?: string
      * }
      */
@@ -157,7 +157,7 @@ final readonly class RetainedToolCompletionEvidenceReader implements RetainedToo
     }
 
     /**
-     * @return array{kind: string, media_type: string, bytes: int, sha256: string, truncated: bool, json?: array<string, mixed>, text?: string}
+     * @return array{kind: string, media_type: string, bytes: int, sha256: string, truncated: bool, json?: array<array-key, mixed>|string|int|float|bool|null, text?: string}
      */
     private function resolveOwnedSealed(
         RetainedToolCompletionEnvelope $envelope,
@@ -172,7 +172,7 @@ final readonly class RetainedToolCompletionEvidenceReader implements RetainedToo
             'sha256' => $read['sha256'],
             'truncated' => $read['truncated'],
         ];
-        if (isset($read['json']) && \is_array($read['json'])) {
+        if (\array_key_exists('json', $read)) {
             $result['json'] = $read['json'];
         }
         if (isset($read['text']) && \is_string($read['text'])) {

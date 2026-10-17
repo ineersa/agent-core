@@ -25,7 +25,7 @@ interface RetainedToolCompletionEvidenceReaderInterface
      *         sha256: string,
      *         truncated: bool,
      *         inline?: array<string, mixed>,
-     *         json?: array<string, mixed>,
+     *         json?: array<array-key, mixed>|string|int|float|bool|null,
      *         text?: string
      *     }
      * }

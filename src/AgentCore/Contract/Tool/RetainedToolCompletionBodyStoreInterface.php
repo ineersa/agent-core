@@ -35,15 +35,16 @@ interface RetainedToolCompletionBodyStoreInterface
     /**
      * Inspect sealed body metadata and optionally decode JSON under an explicit byte budget.
      *
-     * When $maxDecodeBytes is null or the body exceeds that budget, json is omitted and
-     * truncated=true. Integrity is always validated by streaming hash.
+     * A null $maxDecodeBytes uses the default inspection budget. When the body exceeds
+     * the effective budget, json is omitted and truncated=true. A decoded JSON null
+     * retains the json key. Integrity is always validated by streaming hash.
      *
      * @return array{
      *     bytes: int,
      *     sha256: string,
      *     media_type: string,
      *     truncated: bool,
-     *     json?: array<string, mixed>,
+     *     json?: array<array-key, mixed>|string|int|float|bool|null,
      *     text?: string
      * }
      */

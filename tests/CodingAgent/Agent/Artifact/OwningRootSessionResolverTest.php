@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeFactory;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBodyKindEnum;
@@ -39,6 +40,7 @@ final class OwningRootSessionResolverTest extends IsolatedKernelTestCase
         $store = self::getContainer()->get(SessionRetainedToolCompletionBodyStore::class);
         /** @var RetainedToolCompletionEnvelopeFactory $factory */
         $factory = self::getContainer()->get(RetainedToolCompletionEnvelopeFactory::class);
+        $payloadCodec = self::getContainer()->get(ToolExecutionEndPayloadCodec::class);
 
         $root = $sessions->createSession('owning-root-depth2');
         $identity = new DeferredSubagentBatchIdentityFactory();
@@ -119,6 +121,7 @@ final class OwningRootSessionResolverTest extends IsolatedKernelTestCase
                 ]],
             ],
         ];
+        $message = new ToolCallResult($depth2['childRunId'], 1, 'step-1', 1, 'key-depth2', $depth2Tool, 0, $normalized);
         $envelope = $factory->build(
             completionId: 'completion-depth2',
             correlation: new DeferredToolCompletionCorrelation(
@@ -135,8 +138,8 @@ final class OwningRootSessionResolverTest extends IsolatedKernelTestCase
                 invocationId: 'inv-depth2',
                 executionOwnerKind: 'subagent',
             ),
-            result: new ToolCallResult($depth2['childRunId'], 1, 'step-1', 1, 'key-depth2', $depth2Tool, 0, $normalized),
-            normalizedToolResult: $normalized,
+            result: $message,
+            normalizedToolResult: $payloadCodec->toEventPayload($message)['tool_result'],
             executionOwnerKind: 'subagent',
         );
 
@@ -190,6 +193,7 @@ final class OwningRootSessionResolverTest extends IsolatedKernelTestCase
                 ],
             ],
         ];
+        $manifestMessage = new ToolCallResult($depth2['childRunId'], 1, 'step-2', 1, 'key-depth2-manifest', $depth2Tool.'-manifest', 1, $multi);
         $manifestEnvelope = $factory->build(
             completionId: 'completion-depth2-manifest',
             correlation: new DeferredToolCompletionCorrelation(
@@ -206,13 +210,21 @@ final class OwningRootSessionResolverTest extends IsolatedKernelTestCase
                 invocationId: 'inv-depth2-manifest',
                 executionOwnerKind: 'subagent',
             ),
-            result: new ToolCallResult($depth2['childRunId'], 1, 'step-2', 1, 'key-depth2-manifest', $depth2Tool.'-manifest', 1, $multi),
-            normalizedToolResult: $multi,
+            result: $manifestMessage,
+            normalizedToolResult: $payloadCodec->toEventPayload($manifestMessage)['tool_result'],
             executionOwnerKind: 'subagent',
         );
         $this->assertSame($root, $manifestEnvelope->origin->controllerRunId);
         $this->assertSame(RetainedToolCompletionBodyKindEnum::OwnedSealed, $manifestEnvelope->body->kind);
         $this->assertTrue($store->isHeld($root, 'completion-depth2-manifest'));
+        $manifest = $store->inspectJson($manifestEnvelope->body, $root, maxDecodeBytes: $manifestEnvelope->body->bytes);
+        $this->assertFalse($manifest['truncated']);
+        $this->assertArrayHasKey('json', $manifest);
+        $this->assertSame([
+            'kind' => 'native_artifact_handoff_manifest',
+            'count' => 2,
+            'entries' => $multi['details']['native_artifact_handoffs'],
+        ], $manifest['json']);
 
         $sessions->deleteSession($root);
         $this->assertFalse($store->isHeld($root, 'completion-depth2'));

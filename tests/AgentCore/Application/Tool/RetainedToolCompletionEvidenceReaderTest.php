@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Tool;
 
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeCodec;
+use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeFactory;
 use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEvidenceReader;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBodyKindEnum;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailure;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEnum;
@@ -15,11 +20,78 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeRetainedNativeArtifactHandoffReader;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeRetainedToolCompletionBodyStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\RetainedCompletionTestFactory;
-use PHPUnit\Framework\TestCase;
+use Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionRetainedToolCompletionBodyStore;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
-final class RetainedToolCompletionEvidenceReaderTest extends TestCase
+final class RetainedToolCompletionEvidenceReaderTest extends IsolatedKernelTestCase
 {
+    #[DataProvider('scalarResults')]
+    public function testReaderPreservesSealedJsonValuesAndBudgetOmission(string|int|float|bool|null $value): void
+    {
+        $container = self::getContainer();
+        $runId = $container->get(HatfieldSessionStore::class)->createSession('retained-json-value');
+        $message = new ToolCallResult($runId, 1, 'step-1', 1, 'key-1', 'call-1', 0, $value);
+        $payload = $container->get(ToolExecutionEndPayloadCodec::class)->toEventPayload($message);
+        $envelope = $container->get(RetainedToolCompletionEnvelopeFactory::class)->build(
+            completionId: 'completion-json-value',
+            correlation: new DeferredToolCompletionCorrelation(
+                deferredId: '550e8400-e29b-41d4-a716-446655440904',
+                runId: $runId,
+                turnNo: 1,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                toolCallId: 'call-1',
+                toolName: 'bash',
+                arguments: ['command' => 'true'],
+                orderIndex: 0,
+                executionOwnerKind: 'bash',
+            ),
+            result: $message,
+            normalizedToolResult: $payload['tool_result'],
+            executionOwnerKind: 'bash',
+        );
+        $this->assertSame(RetainedToolCompletionBodyKindEnum::OwnedSealed, $envelope->body->kind);
+        $payload['accepted_completion'] = [
+            'completion_id' => $envelope->messageId,
+            'retained_message' => $container->get(RetainedToolCompletionEnvelopeCodec::class)->normalize($envelope),
+        ];
+        $persisted = PreparedEventStoreSeeder::append(
+            $container->get(PreparedTransitionEventStoreInterface::class),
+            new RunEvent($runId, 0, 1, RunEventTypeEnum::ToolExecutionEnd->value, $payload),
+        );
+        $reader = new RetainedToolCompletionEvidenceReader(
+            $container->get(ChildAwareEventStore::class),
+            $container->get(RetainedToolCompletionEnvelopeCodec::class),
+            $container->get(SessionRetainedToolCompletionBodyStore::class),
+            new FakeRetainedNativeArtifactHandoffReader(),
+        );
+        $resolved = $reader->read($runId, $runId, $envelope->messageId, acceptedSourceSeq: $persisted->seq);
+        $this->assertFalse($resolved['body']['truncated']);
+        $this->assertArrayHasKey('json', $resolved['body']);
+        $this->assertSame($value, $resolved['body']['json']);
+
+        $withheld = $reader->read($runId, $runId, $envelope->messageId, maxBodyBytes: 0, acceptedSourceSeq: $persisted->seq);
+        $this->assertTrue($withheld['body']['truncated']);
+        $this->assertArrayNotHasKey('json', $withheld['body']);
+    }
+
+    /** @return iterable<string, array{string|int|float|bool|null}> */
+    public static function scalarResults(): iterable
+    {
+        yield 'string' => ['plain-text'];
+        yield 'zero' => [0];
+        yield 'float' => [1.25];
+        yield 'false' => [false];
+        yield 'true' => [true];
+        yield 'null' => [null];
+    }
+
     public function testReaderResolvesInlineAndOwnedBodiesAndRejectsForeignCorruptUnsupported(): void
     {
         $events = new InMemoryEventStore();
