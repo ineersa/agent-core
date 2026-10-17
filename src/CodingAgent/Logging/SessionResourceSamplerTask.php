@@ -27,6 +27,7 @@ final class SessionResourceSamplerTask
         private readonly string $dogstatsdHost,
         private readonly int $dogstatsdPort,
         private readonly LoggerInterface $logger,
+        private readonly TelemetrySessionKeyProvider $sessionKeys,
     ) {
     }
 
@@ -169,7 +170,9 @@ final class SessionResourceSamplerTask
     private function send(array $sample): void
     {
         $tag = static fn (string $value): string => preg_replace('/[^A-Za-z0-9_.-]/', '_', $value) ?? '';
-        $tags = '|g|#service:hatfield,env:'.$tag($this->telemetryEnv).',session_id:'.$tag($this->sessionId)."\n";
+        // Keep the qualified value intact, including its colon separator.
+        $tags = '|g|#service:hatfield,env:'.$tag($this->telemetryEnv).',session_id:'.$tag($this->sessionId)
+            .',session_key:'.$this->sessionKeys->forSession($this->sessionId)."\n";
         $payload = self::METRIC_CPU_PERCENT.':'.$sample['cpu_percent'].$tags
             .self::METRIC_RSS_BYTES.':'.$sample['rss_bytes'].$tags
             .self::METRIC_PROCESS_COUNT.':'.$sample['process_count'].$tags;

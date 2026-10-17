@@ -6,16 +6,21 @@ namespace Ineersa\CodingAgent\Tests\Logging;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Kernel;
+use Ineersa\CodingAgent\Logging\LogContextProcessor;
 use Ineersa\CodingAgent\Logging\SessionResourceSampleMessage;
 use Ineersa\CodingAgent\Logging\SessionResourceSamplerSchedule;
 use Ineersa\CodingAgent\Logging\SessionResourceSamplerTask;
+use Ineersa\CodingAgent\Logging\TelemetrySessionKeyProvider;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Monolog\Level;
+use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Messenger\RunCommandMessage;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Scheduler\Generator\MessageContext;
 use Symfony\Component\Scheduler\Messenger\ServiceCallMessage;
+use Symfony\Component\Yaml\Yaml;
 
 #[CoversClass(SessionResourceSamplerTask::class)]
 #[CoversClass(SessionResourceSamplerSchedule::class)]
@@ -95,13 +100,17 @@ final class SessionResourceSamplerTaskTest extends TestCase
             $read = [$socket];
             $write = $except = [];
             $this->assertSame(1, stream_select($read, $write, $except, 2));
+            $key = hash('sha256', (string) realpath($this->directory)).':session-owned';
             $this->assertSame(
-                "hatfield.session.cpu_percent:15|g|#service:hatfield,env:dev,session_id:session-owned\n"
-                ."hatfield.session.rss_bytes:1536000|g|#service:hatfield,env:dev,session_id:session-owned\n"
-                ."hatfield.session.process_count:5|g|#service:hatfield,env:dev,session_id:session-owned\n",
+                "hatfield.session.cpu_percent:15|g|#service:hatfield,env:dev,session_id:session-owned,session_key:$key\n"
+                ."hatfield.session.rss_bytes:1536000|g|#service:hatfield,env:dev,session_id:session-owned,session_key:$key\n"
+                ."hatfield.session.process_count:5|g|#service:hatfield,env:dev,session_id:session-owned,session_key:$key\n",
                 stream_socket_recvfrom($socket, 4096),
             );
             $this->assertSame('session.resource_sample.sent', $logger->records[0]['message']);
+            $processor = new LogContextProcessor(new TelemetrySessionKeyProvider($this->directory));
+            $record = $processor(new LogRecord(new \DateTimeImmutable(), 'test', Level::Info, $logger->records[0]['message'], $logger->records[0]['context']));
+            $this->assertSame($key, $record->extra['session_key']);
         } finally {
             fclose($socket);
         }
@@ -131,7 +140,8 @@ final class SessionResourceSamplerTaskTest extends TestCase
             $port = (int) substr($address, strrpos($address, ':') + 1);
             $autoload = var_export(\dirname(__DIR__, 3).'/vendor/autoload.php', true);
             $worker = 'require '.$autoload.'; (new \\Ineersa\\CodingAgent\\Logging\\SessionResourceSamplerTask('
-                .'true, "native-tree", "dev", "127.0.0.1", '.$port.', new \\Psr\\Log\\NullLogger()))'
+                .'true, "native-tree", "dev", "127.0.0.1", '.$port.', new \\Psr\\Log\\NullLogger(), '
+                .'new \\Ineersa\\CodingAgent\\Logging\\TelemetrySessionKeyProvider('.var_export($this->directory, true).')))'
                 .'(new \\Ineersa\\CodingAgent\\Logging\\SessionResourceSampleMessage());';
             $controller = 'require '.$autoload.'; (new \\Symfony\\Component\\Process\\Process('
                 .'[PHP_BINARY, "-r", '.var_export($worker, true).'], '
@@ -258,12 +268,17 @@ final class SessionResourceSamplerTaskTest extends TestCase
                 $read = [$socket];
                 $write = $except = [];
                 $this->assertSame(1, stream_select($read, $write, $except, 2));
+                $key = hash('sha256', (string) realpath($cwd)).':wiring-owned';
                 $this->assertSame(
-                    "hatfield.session.cpu_percent:10|g|#service:hatfield,env:dev,session_id:wiring-owned\n"
-                    ."hatfield.session.rss_bytes:1024000|g|#service:hatfield,env:dev,session_id:wiring-owned\n"
-                    ."hatfield.session.process_count:4|g|#service:hatfield,env:dev,session_id:wiring-owned\n",
+                    "hatfield.session.cpu_percent:10|g|#service:hatfield,env:dev,session_id:wiring-owned,session_key:$key\n"
+                    ."hatfield.session.rss_bytes:1024000|g|#service:hatfield,env:dev,session_id:wiring-owned,session_key:$key\n"
+                    ."hatfield.session.process_count:4|g|#service:hatfield,env:dev,session_id:wiring-owned,session_key:$key\n",
                     stream_socket_recvfrom($socket, 4096),
                 );
+                $record = $container->get(LogContextProcessor::class)(new LogRecord(
+                    new \DateTimeImmutable(), 'test', Level::Info, 'test', context: ['session_id' => 'wiring-owned'],
+                ));
+                $this->assertSame($key, $record->extra['session_key']);
 
                 putenv('HATFIELD_SESSION_RESOURCE_SAMPLER=0');
                 $_ENV['HATFIELD_SESSION_RESOURCE_SAMPLER'] = $_SERVER['HATFIELD_SESSION_RESOURCE_SAMPLER'] = '0';
@@ -313,9 +328,27 @@ final class SessionResourceSamplerTaskTest extends TestCase
         }
     }
 
+    public function testDashboardScopesQueriesToQualifiedSessionsAndKeepsWildcardSelection(): void
+    {
+        $dashboard = Yaml::parseFile(\dirname(__DIR__, 3).'/ops/datadog/dashboard.yaml');
+        $this->assertSame('session_key', $dashboard['template_variables'][1]['prefix']);
+        $this->assertSame(['*'], $dashboard['template_variables'][1]['defaults']);
+        foreach (new \RecursiveIteratorIterator(new \RecursiveArrayIterator($dashboard['widgets'])) as $field => $value) {
+            if (!\is_string($value) || !\in_array($field, ['query', 'query_string', 'facet'], true)) {
+                continue;
+            }
+            $this->assertStringNotContainsString('session_id', $value);
+            if (str_contains($value, 'hatfield.session.')) {
+                $this->assertStringContainsString('session_key:*', $value);
+            } elseif (str_contains($value, 'service:hatfield')) {
+                $this->assertStringContainsString('@extra.session_key:$session.value', $value);
+            }
+        }
+    }
+
     private function task(TestLogger $logger, bool $enabled = true, string $sessionId = 'session-owned', int $port = 8125): SessionResourceSamplerTask
     {
-        return new SessionResourceSamplerTask($enabled, $sessionId, 'dev', '127.0.0.1', $port, $logger);
+        return new SessionResourceSamplerTask($enabled, $sessionId, 'dev', '127.0.0.1', $port, $logger, new TelemetrySessionKeyProvider($this->directory));
     }
 
     private function schedule(bool $enabled = true, string $sessionId = 'session-owned'): SessionResourceSamplerSchedule
