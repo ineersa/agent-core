@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Domain\Tool\Completion;
 
-use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBodyKindEnum;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBounds;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionSourceEventReference;
@@ -20,20 +19,13 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
         $codec = RetainedCompletionTestFactory::codec();
         $factory = RetainedCompletionTestFactory::envelopeFactory();
         $correlation = $this->correlation();
-        $normalized = [
+        $outcome = [
             'tool_name' => 'bash',
             'content' => [['type' => 'text', 'text' => 'ok']],
             'is_error' => false,
         ];
-        $result = new ToolCallResult(
-            runId: 'run-1',
-            turnNo: 1,
-            stepId: 'step-1',
-            attempt: 1,
-            idempotencyKey: 'key-1',
-            toolCallId: 'call-1',
-            orderIndex: 0,
-            result: $normalized,
+        [$result, $normalized] = RetainedCompletionTestFactory::messageAndToolResult(
+            'run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $outcome,
         );
         $envelope = $factory->build(
             completionId: 'completion-1',
@@ -62,15 +54,18 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
         $store = new FakeRetainedToolCompletionBodyStore();
         $factory = RetainedCompletionTestFactory::envelopeFactory($store);
         $large = str_repeat('字', 3000);
-        $normalized = [
+        $outcome = [
             'tool_name' => 'bash',
             'content' => [['type' => 'text', 'text' => $large]],
             'is_error' => false,
         ];
+        [$result, $normalized] = RetainedCompletionTestFactory::messageAndToolResult(
+            'run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $outcome,
+        );
         $envelope = $factory->build(
             completionId: 'completion-large',
             correlation: $this->correlation(),
-            result: new ToolCallResult('run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $normalized),
+            result: $result,
             normalizedToolResult: $normalized,
             executionOwnerKind: 'bash',
             controllerRunId: 'run-1',
@@ -84,7 +79,7 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
     public function testHostAuthoredNativeGenerationBindsWithoutScrapingPresentation(): void
     {
         $factory = RetainedCompletionTestFactory::envelopeFactory();
-        $normalized = [
+        $outcome = [
             'tool_name' => 'tasks',
             'content' => [['type' => 'text', 'text' => 'done']],
             'is_error' => false,
@@ -99,10 +94,13 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
                 ]],
             ],
         ];
+        [$result, $normalized] = RetainedCompletionTestFactory::messageAndToolResult(
+            'run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $outcome,
+        );
         $envelope = $factory->build(
             completionId: 'completion-native',
             correlation: $this->correlation(),
-            result: new ToolCallResult('run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $normalized),
+            result: $result,
             normalizedToolResult: $normalized,
             executionOwnerKind: 'subagent',
             controllerRunId: 'run-1',
@@ -127,7 +125,7 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
                 'media_type' => 'text/markdown',
             ];
         }
-        $normalized = [
+        $outcome = [
             'tool_name' => 'tasks',
             'content' => [['type' => 'text', 'text' => 'batch done']],
             'is_error' => false,
@@ -135,10 +133,13 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
                 'native_artifact_handoffs' => $entries,
             ],
         ];
+        [$result, $normalized] = RetainedCompletionTestFactory::messageAndToolResult(
+            'run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $outcome,
+        );
         $envelope = $factory->build(
             completionId: 'completion-native-batch',
             correlation: $this->correlation(),
-            result: new ToolCallResult('run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $normalized),
+            result: $result,
             normalizedToolResult: $normalized,
             executionOwnerKind: 'subagent',
             controllerRunId: 'run-1',
@@ -159,15 +160,18 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
     {
         $codec = RetainedCompletionTestFactory::codec();
         $factory = RetainedCompletionTestFactory::envelopeFactory();
-        $normalized = [
+        $outcome = [
             'tool_name' => 'bash',
             'content' => [['type' => 'text', 'text' => 'ok']],
             'is_error' => false,
         ];
+        [$result, $normalized] = RetainedCompletionTestFactory::messageAndToolResult(
+            'run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $outcome,
+        );
         $envelope = $factory->build(
             completionId: 'completion-types',
             correlation: $this->correlation(),
-            result: new ToolCallResult('run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $normalized),
+            result: $result,
             normalizedToolResult: $normalized,
             executionOwnerKind: 'bash',
             controllerRunId: 'run-1',
@@ -176,6 +180,32 @@ final class RetainedToolCompletionEnvelopeTest extends TestCase
         $payload['origin']['origin_turn_no'] = '1';
         $this->expectException(\Throwable::class);
         $codec->denormalize($payload);
+    }
+
+    public function testScalarAndNullOutcomesRetainCanonicalOuterMessageFingerprint(): void
+    {
+        $store = new FakeRetainedToolCompletionBodyStore();
+        $factory = RetainedCompletionTestFactory::envelopeFactory($store);
+        foreach ([null, 'plain-text', 0, false] as $index => $outcome) {
+            [$result, $normalized] = RetainedCompletionTestFactory::messageAndToolResult(
+                'run-1', 1, 'step-1', 1, 'key-scalar-'.$index, 'call-scalar-'.$index, 0, $outcome,
+            );
+            $envelope = $factory->build(
+                completionId: 'completion-scalar-'.$index,
+                correlation: $this->correlation(),
+                result: $result,
+                normalizedToolResult: $normalized,
+                executionOwnerKind: 'bash',
+                controllerRunId: 'run-1',
+            );
+            $this->assertArrayHasKey('result', $normalized);
+            $this->assertSame($outcome, $normalized['result']);
+            // Scalar/null outcomes are sealed as JSON values; inline body refs remain array-shaped.
+            $this->assertSame(RetainedToolCompletionBodyKindEnum::OwnedSealed, $envelope->body->kind);
+            $this->assertTrue($store->isHeld('run-1', 'completion-scalar-'.$index));
+            $inspect = $store->inspectJson($envelope->body, 'run-1');
+            $this->assertSame($outcome, $inspect['json']);
+        }
     }
 
     private function correlation(): DeferredToolCompletionCorrelation

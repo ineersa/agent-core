@@ -208,9 +208,6 @@ final readonly class SessionRetainedToolCompletionBodyStore implements RetainedT
                 } catch (\JsonException $exception) {
                     throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Retained completion body JSON is corrupt.', $exception);
                 }
-                if (!\is_array($decoded)) {
-                    throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Retained completion body JSON must decode to an array.');
-                }
                 $result['truncated'] = false;
                 $result['json'] = $decoded;
 
@@ -360,9 +357,9 @@ final readonly class SessionRetainedToolCompletionBodyStore implements RetainedT
                 @unlink($path);
                 throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Sealed retained completion body JSON is corrupt.', $exception);
             }
-            if (!\is_array($decoded)) {
+            if (!(null === $decoded || \is_bool($decoded) || \is_int($decoded) || \is_float($decoded) || \is_string($decoded) || \is_array($decoded))) {
                 @unlink($path);
-                throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Sealed retained completion body JSON must decode to an array.');
+                throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Sealed retained completion body JSON must decode to a JSON value.');
             }
             unset($decoded, $raw);
         } finally {

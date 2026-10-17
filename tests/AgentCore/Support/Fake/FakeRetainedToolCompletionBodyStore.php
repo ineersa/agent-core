@@ -91,9 +91,6 @@ final class FakeRetainedToolCompletionBodyStore implements RetainedToolCompletio
             return $result;
         }
         $decoded = json_decode($stored['json'], true, 512, \JSON_THROW_ON_ERROR);
-        if (!\is_array($decoded)) {
-            throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Retained completion body JSON must decode to an array.');
-        }
         $result['truncated'] = false;
         $result['json'] = $decoded;
 

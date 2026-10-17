@@ -55,16 +55,14 @@ final readonly class RetainedToolCompletionEnvelopeFactory
             throw new \InvalidArgumentException('Retained completion requires a validated terminal tool_result.');
         }
 
-        // Canonical ToolExecutionEnd payload nests the worker outcome under tool_result.result.
-        // Outer identity/fingerprint stay on the full MESSAGE representation; body promotion
-        // and presentation read the nested outcome when present.
+        // Canonical ToolExecutionEnd payload is the configured Serializer MESSAGE for ToolCallResult.
+        // Outer identity/fingerprint stay on that MESSAGE; body promotion and presentation read
+        // only the nested worker outcome under tool_result.result.
         $outcome = $this->outcomePayload($normalizedToolResult);
 
         $owningRoot = $this->resolveOwningRoot($correlation, $controllerRunId);
         $terminalOutcome = $this->terminalOutcome($result, $outcome, $normalizedToolResult);
-        $toolName = \is_string($outcome['tool_name'] ?? null) && '' !== $outcome['tool_name']
-            ? $outcome['tool_name']
-            : $correlation->toolName;
+        $toolName = $this->outcomeToolName($outcome, $correlation->toolName);
         $subject = RetainedToolCompletionUtf8::truncate(
             \sprintf('%s %s', $toolName, $terminalOutcome),
             RetainedToolCompletionBounds::SUBJECT_MAX_BYTES,
@@ -75,13 +73,13 @@ final readonly class RetainedToolCompletionEnvelopeFactory
         );
 
         $attachments = [];
-        $nativeGenerations = $this->hostAuthoredNativeGenerations($outcome);
+        $nativeGenerations = \is_array($outcome) ? $this->hostAuthoredNativeGenerations($outcome) : [];
         if ([] !== $nativeGenerations) {
             $body = $this->bodyForNativeGenerations($completionId, $owningRoot, $nativeGenerations);
             $attachments = $this->boundedNativeAttachments($nativeGenerations);
         } else {
             $promoted = null;
-            if (null !== $this->outputCapPromoter) {
+            if (null !== $this->outputCapPromoter && \is_array($outcome)) {
                 $promoted = $this->outputCapPromoter->promoteIfOwned(
                     owningRootSessionId: $owningRoot,
                     messageId: $completionId,
@@ -357,24 +355,24 @@ final readonly class RetainedToolCompletionEnvelopeFactory
     }
 
     /**
-     * @param array<string, mixed> $normalizedToolResult
+     * @param array<string, mixed>|string|int|float|bool|null $outcomePayload
      */
     private function inlineOrOwnedBody(
         string $completionId,
         string $owningRootSessionId,
-        array $normalizedToolResult,
+        array|string|int|float|bool|null $outcomePayload,
     ): RetainedToolCompletionBodyReference {
-        // The accepted tool_result is already resident in the receipt payload.
+        // The nested worker outcome is already resident under tool_result.result.
         // Prefer an inline body under the budget. For oversized bodies, stream the
         // already-encoded JSON once into owned storage without keeping extra
         // substr copies beyond the single encoded buffer required for hashing.
-        $encoded = json_encode($normalizedToolResult, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
+        $encoded = json_encode($outcomePayload, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
         $bytes = \strlen($encoded);
         $sha256 = hash('sha256', $encoded);
 
-        if ($bytes <= RetainedToolCompletionBounds::INLINE_BODY_MAX_BYTES) {
+        if ($bytes <= RetainedToolCompletionBounds::INLINE_BODY_MAX_BYTES && \is_array($outcomePayload)) {
             return RetainedToolCompletionBodyReference::inline(
-                inline: $normalizedToolResult,
+                inline: $outcomePayload,
                 mediaType: RetainedToolCompletionBounds::MEDIA_TYPE_JSON,
                 bytes: $bytes,
                 sha256: $sha256,
@@ -410,34 +408,34 @@ final readonly class RetainedToolCompletionEnvelopeFactory
     /**
      * @param array<string, mixed> $normalizedToolResult
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed>|string|int|float|bool|null
      */
-    private function outcomePayload(array $normalizedToolResult): array
+    private function outcomePayload(array $normalizedToolResult): array|string|int|float|bool|null
     {
-        $nested = $normalizedToolResult['result'] ?? null;
-        if (\is_array($nested) && (
-            \array_key_exists('content', $nested)
-            || \array_key_exists('details', $nested)
-            || \array_key_exists('tool_name', $nested)
-            || \array_key_exists('is_error', $nested)
-        )) {
+        if (!\array_key_exists('result', $normalizedToolResult)) {
+            throw new \InvalidArgumentException('Retained completion requires the canonical ToolCallResult MESSAGE with a result field.');
+        }
+        $nested = $normalizedToolResult['result'];
+        if (null === $nested || \is_bool($nested) || \is_int($nested) || \is_float($nested) || \is_string($nested) || \is_array($nested)) {
             return $nested;
         }
 
-        return $normalizedToolResult;
+        throw new \InvalidArgumentException('Retained completion result must be a JSON-compatible terminal value.');
     }
 
     /**
-     * @param array<string, mixed> $outcome
-     * @param array<string, mixed> $normalizedToolResult
+     * @param array<string, mixed>|string|int|float|bool|null $outcome
+     * @param array<string, mixed>                            $normalizedToolResult
      */
-    private function terminalOutcome(ToolCallResult $result, array $outcome, array $normalizedToolResult): string
+    private function terminalOutcome(ToolCallResult $result, array|string|int|float|bool|null $outcome, array $normalizedToolResult): string
     {
         $isError = $result->isError
-            || true === ($outcome['is_error'] ?? false)
             || true === ($normalizedToolResult['is_error'] ?? false);
+        if (\is_array($outcome) && true === ($outcome['is_error'] ?? false)) {
+            $isError = true;
+        }
         if ($isError) {
-            $details = $outcome['details'] ?? ($normalizedToolResult['details'] ?? null);
+            $details = \is_array($outcome) ? ($outcome['details'] ?? null) : null;
             if (\is_array($details) && true === ($details['cancelled'] ?? false)) {
                 return 'cancelled';
             }
@@ -449,12 +447,32 @@ final readonly class RetainedToolCompletionEnvelopeFactory
     }
 
     /**
-     * @param array<string, mixed> $normalizedToolResult
+     * @param array<string, mixed>|string|int|float|bool|null $outcome
      */
-    private function boundedSummary(array $normalizedToolResult, string $terminalOutcome, string $toolName): string
+    private function outcomeToolName(array|string|int|float|bool|null $outcome, string $fallback): string
+    {
+        if (\is_array($outcome) && \is_string($outcome['tool_name'] ?? null) && '' !== $outcome['tool_name']) {
+            return $outcome['tool_name'];
+        }
+
+        return $fallback;
+    }
+
+    /**
+     * @param array<string, mixed>|string|int|float|bool|null $outcome
+     */
+    private function boundedSummary(array|string|int|float|bool|null $outcome, string $terminalOutcome, string $toolName): string
     {
         $parts = [\sprintf('%s %s.', $toolName, $terminalOutcome)];
-        $content = $normalizedToolResult['content'] ?? null;
+        if (!\is_array($outcome)) {
+            if (\is_string($outcome) && '' !== trim($outcome)) {
+                $parts[] = $outcome;
+            }
+
+            return implode(' ', $parts);
+        }
+
+        $content = $outcome['content'] ?? null;
         if (\is_array($content)) {
             foreach ($content as $part) {
                 if (!\is_array($part) || ($part['type'] ?? null) !== 'text') {
@@ -468,7 +486,7 @@ final readonly class RetainedToolCompletionEnvelopeFactory
             }
         }
 
-        $details = $normalizedToolResult['details'] ?? null;
+        $details = $outcome['details'] ?? null;
         if (\is_array($details)) {
             foreach (['error_type', 'hint'] as $key) {
                 $value = $details[$key] ?? null;

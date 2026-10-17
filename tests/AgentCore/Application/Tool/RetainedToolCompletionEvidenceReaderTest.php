@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Tool;
 use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEvidenceReader;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionBodyKindEnum;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailure;
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEnum;
@@ -45,15 +44,18 @@ final class RetainedToolCompletionEvidenceReaderTest extends TestCase
             controllerRunId: 'run-1',
             executionOwnerKind: 'bash',
         );
-        $normalized = [
+        $outcome = [
             'tool_name' => 'bash',
             'content' => [['type' => 'text', 'text' => 'small']],
             'is_error' => false,
         ];
+        [$result, $normalized] = RetainedCompletionTestFactory::messageAndToolResult(
+            'run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $outcome,
+        );
         $envelope = $factory->build(
             completionId: 'completion-small',
             correlation: $correlation,
-            result: new ToolCallResult('run-1', 1, 'step-1', 1, 'key-1', 'call-1', 0, $normalized),
+            result: $result,
             normalizedToolResult: $normalized,
             executionOwnerKind: 'bash',
             controllerRunId: 'run-1',
@@ -123,11 +125,14 @@ final class RetainedToolCompletionEvidenceReaderTest extends TestCase
         $reader = new RetainedToolCompletionEvidenceReader($events, $codec, $bodies, $native);
 
         $large = str_repeat('L', 9000);
-        $ownedNormalized = [
+        $ownedOutcome = [
             'tool_name' => 'bash',
             'content' => [['type' => 'text', 'text' => $large]],
             'is_error' => false,
         ];
+        [$ownedResult, $ownedNormalized] = RetainedCompletionTestFactory::messageAndToolResult(
+            'run-1', 1, 'step-1', 1, 'key-owned', 'call-owned', 0, $ownedOutcome,
+        );
         $ownedEnvelope = $factory->build(
             completionId: 'completion-owned',
             correlation: new DeferredToolCompletionCorrelation(
@@ -145,7 +150,7 @@ final class RetainedToolCompletionEvidenceReaderTest extends TestCase
                 controllerRunId: 'run-1',
                 executionOwnerKind: 'bash',
             ),
-            result: new ToolCallResult('run-1', 1, 'step-1', 1, 'key-owned', 'call-owned', 0, $ownedNormalized),
+            result: $ownedResult,
             normalizedToolResult: $ownedNormalized,
             executionOwnerKind: 'bash',
             controllerRunId: 'run-1',
@@ -153,7 +158,7 @@ final class RetainedToolCompletionEvidenceReaderTest extends TestCase
 
         $nativeBody = 'native-body';
         $native->seed('run-1', 'agent_abc', '0199aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee', $nativeBody);
-        $nativeNormalized = [
+        $nativeOutcome = [
             'tool_name' => 'tasks',
             'content' => [['type' => 'text', 'text' => 'done']],
             'is_error' => false,
@@ -168,6 +173,9 @@ final class RetainedToolCompletionEvidenceReaderTest extends TestCase
                 ]],
             ],
         ];
+        [$nativeResult, $nativeNormalized] = RetainedCompletionTestFactory::messageAndToolResult(
+            'run-1', 1, 'step-1', 1, 'key-native', 'call-native', 1, $nativeOutcome,
+        );
         $nativeEnvelope = $factory->build(
             completionId: 'completion-native',
             correlation: new DeferredToolCompletionCorrelation(
@@ -185,7 +193,7 @@ final class RetainedToolCompletionEvidenceReaderTest extends TestCase
                 controllerRunId: 'run-1',
                 executionOwnerKind: 'subagent',
             ),
-            result: new ToolCallResult('run-1', 1, 'step-1', 1, 'key-native', 'call-native', 1, $nativeNormalized),
+            result: $nativeResult,
             normalizedToolResult: $nativeNormalized,
             executionOwnerKind: 'subagent',
             controllerRunId: 'run-1',

@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEvidenceReader;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
+use Ineersa\AgentCore\Tests\Support\RetainedCompletionTestFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -87,22 +90,59 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($eventsPath);
         file_put_contents($counterPath, "105\n");
 
+        $bodies = new \Ineersa\AgentCore\Tests\Support\Fake\FakeRetainedToolCompletionBodyStore();
+        $codec = RetainedCompletionTestFactory::codec();
+        $factory = RetainedCompletionTestFactory::envelopeFactory($bodies);
+        $outcome = [
+            'tool_name' => 'bash',
+            'content' => [['type' => 'text', 'text' => 'sequenced-body']],
+            'is_error' => false,
+        ];
+        [$result, $normalized] = RetainedCompletionTestFactory::messageAndToolResult(
+            $runId, 1, 'step-1', 1, 'key-1', 'call-1', 0, $outcome,
+        );
+        $envelope = $factory->build(
+            completionId: 'completion-1',
+            correlation: new DeferredToolCompletionCorrelation(
+                deferredId: '550e8400-e29b-41d4-a716-446655440910',
+                runId: $runId,
+                turnNo: 1,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-1',
+                toolCallId: 'call-1',
+                toolName: 'bash',
+                arguments: ['command' => 'true'],
+                orderIndex: 0,
+                invocationId: 'inv-1',
+                controllerRunId: $runId,
+                executionOwnerKind: 'bash',
+            ),
+            result: $result,
+            normalizedToolResult: $normalized,
+            executionOwnerKind: 'bash',
+            controllerRunId: $runId,
+        );
+        $fingerprintBefore = $envelope->integrity->payloadFingerprint;
+
         $persisted = PreparedEventStoreSeeder::append($this->store, new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 1,
             type: 'tool_execution_end',
             payload: [
-                'tool_result' => ['tool_call_id' => 'call-1'],
+                'tool_result' => $normalized,
                 'accepted_completion' => [
                     'completion_id' => 'completion-1',
-                    'retained_message' => [
-                        'message_id' => 'completion-1',
-                        'origin' => [
-                            'controller_run_id' => $runId,
-                            'source_run_id' => $runId,
-                        ],
-                    ],
+                    'result_fingerprint' => hash('sha256', json_encode($normalized, \JSON_THROW_ON_ERROR)),
+                    'origin_run_id' => $runId,
+                    'origin_turn_no' => 1,
+                    'origin_step_id' => 'step-1',
+                    'tool_call_id' => 'call-1',
+                    'invocation_id' => 'inv-1',
+                    'detached' => true,
+                    'evidence_only' => false,
+                    'retained_message' => $codec->normalize($envelope),
                 ],
             ],
         ));
@@ -114,17 +154,21 @@ final class SessionRunEventStoreSequencingTest extends TestCase
             'seq' => 106,
             'turn_no' => 1,
         ], $reference);
-
-        $loaded = null;
-        foreach ($this->store->rangeFor($runId, 106, 106) as $event) {
-            $loaded = $event;
-            break;
-        }
-        $this->assertNotNull($loaded);
         $this->assertSame(
-            106,
-            $loaded->payload['accepted_completion']['retained_message']['origin']['accepted_source_event_reference']['seq'],
+            $fingerprintBefore,
+            $persisted->payload['accepted_completion']['retained_message']['integrity']['payload_fingerprint'],
         );
+
+        $reader = new RetainedToolCompletionEvidenceReader(
+            $this->store,
+            $codec,
+            $bodies,
+            new \Ineersa\AgentCore\Tests\Support\Fake\FakeRetainedNativeArtifactHandoffReader(),
+        );
+        $resolved = $reader->read($runId, $runId, 'completion-1', acceptedSourceSeq: 106);
+        $this->assertSame('sequenced-body', $resolved['body']['inline']['content'][0]['text']);
+        $this->assertSame($fingerprintBefore, $resolved['envelope']->integrity->payloadFingerprint);
+        $this->assertSame(106, $resolved['envelope']->origin->acceptedSourceEventReference?->seq);
     }
 
     public function testCursorBehindCanonicalHistoryCannotAppend(): void

@@ -53,8 +53,8 @@ receipt (`message_id = completion_id`). Runtime origin/provenance and the
 allocated `accepted_source_event_reference` are owner-authored, not taken from
 tool output. The reference is bound from the durable event allocator when the
 canonical receipt is sequenced, not guessed from in-memory `lastSeq`. Retained
-body promotion and presentation read the nested worker outcome under
-`tool_result.result` when the configured serializer emits the MESSAGE shape;
+body promotion and presentation read only the nested worker outcome under
+`tool_result.result` from the canonical ToolCallResult MESSAGE;
 accepted-result fingerprints remain over the full outer `tool_result`. `controller_run_id` is the durable owning root session resolved from
 child-artifact links, durable deferred batch parent edges, and session parent
 links; nested evidence seals under that root, not a phantom
