@@ -244,8 +244,6 @@ final class ToolInvocationLifecyclePersistenceTest extends IsolatedKernelTestCas
             'execution_owner_reference_json' => null,
             'original_execution_mode' => null,
             'deadline_metadata_json' => null,
-            'origin_wake_generation' => null,
-            'root_wake_generation' => null,
             'envelope_fingerprint' => null,
             'caller_disposition' => ToolInvocationCallerDispositionEnum::ForegroundPending->value,
             'execution_observation' => ToolInvocationExecutionObservationEnum::Active->value,

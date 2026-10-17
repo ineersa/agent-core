@@ -45,6 +45,12 @@ final class ApplicationMigrationExecutorTest extends TestCase
 
         $executor();
 
+        $completionColumns = $connection->createSchemaManager()->listTableColumns('deferred_tool_completion');
+        $this->assertArrayNotHasKey('origin_wake_generation', $completionColumns);
+        $this->assertArrayNotHasKey('root_wake_generation', $completionColumns);
+        $this->assertArrayHasKey('delivery_fence_json', $completionColumns);
+        $this->assertNotFalse($connection->fetchOne('SELECT 1 FROM doctrine_migration_versions WHERE version = ?', ['Version20261017223000']));
+
         $recipientColumns = $connection->createSchemaManager()->listTableColumns('tool_completion_recipient');
         foreach (['destination_run_id', 'message_id', 'reference_json', 'received_turn_no', 'received_sequence', 'disposition', 'state_reason', 'applied_sequence'] as $column) {
             $this->assertArrayHasKey($column, $recipientColumns);

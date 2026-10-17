@@ -35,9 +35,14 @@ use Symfony\Component\Messenger\MessageBusInterface;
 
 final class ToolCompletionPublicationSubscriberTest extends IsolatedKernelTestCase
 {
-    public function testAllocatedSourcePublishesOnlyAfterCommitAndReachesLockedRecipientWithoutWaking(): void
+    public function testAllocatedSourcePublishesAfterCommitAndCoalescesThroughLockedRecipientIntoOneModelSuccessor(): void
     {
         $container = self::getContainer();
+        foreach (['messenger.transport.run_control', 'messenger.transport.llm'] as $id) {
+            $transport = $container->get($id);
+            $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+            $transport->reset();
+        }
         [$runId, $source] = ToolCompletionReceiptFixture::prepare($container);
         $path = $container->get(HatfieldSessionStore::class)->resolveSessionsBasePath().'/'.$runId.'/events.jsonl';
         TestDirectoryIsolation::ensureDirectory(\dirname($path));
@@ -75,7 +80,24 @@ final class ToolCompletionPublicationSubscriberTest extends IsolatedKernelTestCa
         $this->assertSame(106, $recipient->reference->sourceEvent->seq);
         $this->assertSame(1, $container->get(CommandStoreInterface::class)->countPending($runId));
         $this->assertSame(RunStatus::Completed, $container->get(ActiveRunContextInterface::class)->requireLoaded($runId)->status);
-        $this->assertCount(1, $published, 'Admission must not schedule unsafe continuation.');
+        $this->assertCount(1, $published, 'The committed source publishes only its retained reference.');
+        $control = $container->get('messenger.transport.run_control');
+        $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $control);
+        $advances = array_values(array_filter(array_map(static fn ($envelope): object => $envelope->getMessage(), $control->getSent()), static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun));
+        $this->assertCount(1, $advances);
+        $owner = $container->get(RunOrchestrator::class);
+        $owner->onAdvanceRun($advances[0]);
+        $owner->onAdvanceRun($advances[0]);
+        $owner->onReceiveToolCompletion($delivery);
+        $llm = $container->get('messenger.transport.llm');
+        $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $llm);
+        $this->assertCount(1, $llm->getSent());
+        $request = $llm->getSent()[0]->getMessage();
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class, $request);
+        $this->assertSame('tool_completion', $request->messages[0]->role);
+        $this->assertStringContainsString('retained completion body', $request->messages[0]->content[0]['text']);
+        $this->assertStringContainsString('not a new human request', $request->messages[0]->content[0]['text']);
+        $this->assertNull($request->messages[0]->toolCallId);
     }
 
     public function testForegroundReceiptHasNoPublicationAndConfiguredHookCapturesDetachedReceipt(): void

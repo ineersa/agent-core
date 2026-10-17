@@ -58,6 +58,23 @@ final class ToolCompletionMailboxConsumerTest extends IsolatedKernelTestCase
         $events = iterator_to_array(self::getContainer()->get(EventStoreInterface::class)->rangeFor($state->runId, 106, 106));
         $this->assertSame($message->toArray(), array_values($events)[0]->payload['message']);
         $this->assertSame($message->content, $committed->messages[0]->content);
+        $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector(self::getContainer()->get('event_dispatcher'), new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState());
+        $projector->reset();
+        foreach (self::getContainer()->get(EventStoreInterface::class)->rangeFor($state->runId, 106, 107) as $event) {
+            $runtimeEvent = self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator::class)->translate($event);
+            if (null !== $runtimeEvent) {
+                $projector->accept($runtimeEvent);
+            }
+        }
+        $this->assertCount(1, $projector->blocks());
+        $this->assertSame(\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum::System, $projector->blocks()[0]->kind);
+        $this->assertSame('tool_completion', $projector->blocks()[0]->meta['kind']);
+        $this->assertSame('runtime_tool_completion', $projector->blocks()[0]->meta['source']);
+        $this->assertStringContainsString('not a new human request', $projector->blocks()[0]->text);
+        $replayed = self::getContainer()->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class)->replay(new RunState($state->runId, RunStatus::Queued), self::getContainer()->get(EventStoreInterface::class)->rangeFor($state->runId, 1, $committed->lastSeq));
+        $this->assertCount(1, $replayed->messages);
+        $this->assertSame($message->toArray(), $replayed->messages[0]->toArray());
+        $this->assertSame([], $replayed->pendingToolCalls, 'Retained receipts cannot recreate an ordinary foreground result during replay.');
         $bag = self::getContainer()->get(AgentMessageConverter::class)->toMessageBag([
             new AgentMessage('assistant', [['type' => 'tool_call', 'id' => 'call-1', 'name' => 'bash', 'arguments' => []]]),
             new AgentMessage('tool', [['type' => 'text', 'text' => 'running_in_background']], toolCallId: 'call-1', toolName: 'bash'),
@@ -175,6 +192,17 @@ final class ToolCompletionMailboxConsumerTest extends IsolatedKernelTestCase
         $this->assertFalse($result->nextState?->isStreaming);
         $this->assertNull($result->nextState?->currentOperation);
         $this->assertCount(1, array_filter($result->postCommitActions, static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO));
+        $advance = array_values(array_filter($result->postCommitActions, static fn (object $action): bool => $action instanceof \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO))[0]->message;
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $advance);
+        $this->assertNotNull($advance->appliedCompletion);
+        $this->assertNotNull($advance->completionFence);
+        $handler = self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler::class);
+        $this->assertNull($handler->handle($advance, $result->nextState)->nextState, 'An unfinalized application is not successor permission.');
+        self::getContainer()->get(ActiveRunContextInterface::class)->loadRecovered($state);
+        $committed = self::getContainer()->get(RunCommit::class)->commit($state, $result->nextState, $result->events, postCommitActions: $result->postCommitActions);
+        $this->assertCount(1, $handler->handle($advance, $committed)->effects, 'The finalized applied reference permits exactly the ordinary successor.');
+        self::getContainer()->get(Connection::class)->executeStatement('UPDATE hatfield_session SET controller_generation = 1 WHERE id = ?', [$state->runId]);
+        $this->assertNull($handler->handle($advance, $committed)->nextState, 'A restart suppresses even a completion already applied at provider stop.');
     }
 
     public function testEveryStaleFenceIsParkedBeforeAnyBodyRead(): void
@@ -222,6 +250,6 @@ final class ToolCompletionMailboxConsumerTest extends IsolatedKernelTestCase
             $eligibility = new ToolCompletionDeliveryEligibilityPolicy($provider);
         }
 
-        return new CommandMailboxPolicy($container->get(CommandStoreInterface::class), $container->get(CommandRouter::class), new ToolCompletionMailboxConsumer($container->get(ToolCompletionRecipientRepositoryInterface::class), $eligibility, $renderer, $container->get(NormalizerInterface::class)));
+        return new CommandMailboxPolicy($container->get(CommandStoreInterface::class), $container->get(CommandRouter::class), new ToolCompletionMailboxConsumer($container->get(ToolCompletionRecipientRepositoryInterface::class), $eligibility, $renderer, $container->get(NormalizerInterface::class)), $eligibility);
     }
 }

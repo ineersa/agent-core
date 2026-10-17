@@ -42,7 +42,7 @@ final class ToolCompletionReceiptFixture
                 orderIndex: 0,
                 invocationId: 'inv-1',
                 executionOwnerKind: 'bash',
-                deliveryFence: new \Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryFenceDTO(0, 0, 0),
+                deliveryFence: $container->get(\Ineersa\AgentCore\Contract\Tool\ToolCompletionDeliveryFenceProviderInterface::class)->capture($runId),
             ),
             result: $message,
             normalizedToolResult: $payload['tool_result'],

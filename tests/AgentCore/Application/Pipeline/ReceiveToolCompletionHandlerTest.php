@@ -31,6 +31,141 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
 {
+    public function testCommittedReceiptsCoalesceThroughExistingOwnerAdvanceIntoOneProviderRequest(): void
+    {
+        $container = self::getContainer();
+        foreach (['messenger.transport.run_control', 'messenger.transport.llm'] as $id) {
+            $transport = $container->get($id);
+            $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+            $transport->reset();
+        }
+        [$runId, , $first] = ToolCompletionReceiptFixture::create($container, 'first completion');
+        [, $source, $second] = ToolCompletionReceiptFixture::create($container, 'second completion', $runId, 'call-2');
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $source->seq));
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($first));
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($second));
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($first));
+        $transport = $container->get('messenger.transport.run_control');
+        $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+        $advances = array_values(array_filter(array_map(static fn ($envelope): object => $envelope->getMessage(), $transport->getSent()), static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun));
+        $this->assertCount(2, $advances);
+        $this->assertSame($advances[0]->idempotencyKey(), $advances[1]->idempotencyKey());
+        $this->assertSame(RunStatus::Completed, $context->requireLoaded($runId)->status, 'Receipt commit only queues the existing continuation.');
+        foreach ([$advances[0], $advances[1], $advances[0]] as $advance) {
+            $owner->onAdvanceRun($advance);
+        }
+        $llm = $container->get('messenger.transport.llm');
+        $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $llm);
+        $requests = array_values(array_filter(array_map(static fn ($envelope): object => $envelope->getMessage(), $llm->getSent()), static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep));
+        $this->assertCount(1, $requests);
+        $this->assertSame(['tool_completion', 'tool_completion'], array_map(static fn ($message): string => $message->role, $requests[0]->messages));
+        $this->assertStringContainsString('first completion', $requests[0]->messages[0]->content[0]['text']);
+        $this->assertStringContainsString('second completion', $requests[0]->messages[1]->content[0]['text']);
+        $this->assertNull($requests[0]->messages[0]->toolCallId);
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
+        $this->assertSame(RunStatus::Running, $context->requireLoaded($runId)->status);
+    }
+
+    public function testRestartBetweenReceiptAndSuccessorSuppressesAutomaticContinuation(): void
+    {
+        $container = self::getContainer();
+        foreach (['messenger.transport.run_control', 'messenger.transport.llm'] as $id) {
+            $transport = $container->get($id);
+            $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+            $transport->reset();
+        }
+        [$runId, $source, $reference] = ToolCompletionReceiptFixture::create($container);
+        $context = $container->get(ActiveRunContextInterface::class);
+        $state = new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $source->seq);
+        $context->loadRecovered($state);
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $transport = $container->get('messenger.transport.run_control');
+        $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+        $advance = array_values(array_filter(array_map(static fn ($envelope): object => $envelope->getMessage(), $transport->getSent()), static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun))[0];
+        $container->get(\Doctrine\DBAL\Connection::class)->executeStatement('UPDATE hatfield_session SET controller_generation = 1 WHERE id = ?', [$runId]);
+        $before = $context->requireLoaded($runId);
+        $owner->onAdvanceRun($advance);
+        $this->assertSame($before, $context->requireLoaded($runId));
+        $this->assertSame(1, $container->get(CommandStoreInterface::class)->countPending($runId));
+        $llm = $container->get('messenger.transport.llm');
+        $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $llm);
+        $this->assertCount(0, $llm->getSent());
+    }
+
+    public function testParkedOnlyBoundedPrefixSchedulesMetadataProgressBeforeEligibleTail(): void
+    {
+        $container = self::getContainer();
+        foreach (['messenger.transport.run_control', 'messenger.transport.llm'] as $id) {
+            $transport = $container->get($id);
+            $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+            $transport->reset();
+        }
+        $context = $container->get(ActiveRunContextInterface::class);
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $runId = null;
+        $state = null;
+        for ($i = 0; $i < 64; ++$i) {
+            [$runId, $source, $reference] = ToolCompletionReceiptFixture::create($container, 'old result', $runId, 'old-'.$i);
+            $state = null === $state ? new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $source->seq) : $context->requireLoaded($runId)->with(['lastSeq' => $source->seq]);
+            $context->loadRecovered($state);
+            $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        }
+        $container->get(\Doctrine\DBAL\Connection::class)->executeStatement('UPDATE hatfield_session SET controller_generation = 1 WHERE id = ?', [$runId]);
+        [, $source, $reference] = ToolCompletionReceiptFixture::create($container, 'eligible tail result', $runId, 'eligible');
+        $context->loadRecovered($context->requireLoaded($runId)->with(['lastSeq' => $source->seq]));
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $transport = $container->get('messenger.transport.run_control');
+        $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+        $arrivals = array_values(array_filter(array_map(static fn ($envelope): object => $envelope->getMessage(), $transport->getSent()), static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun && 1 === $message->completionFence?->controllerGeneration));
+        $this->assertCount(1, $arrivals);
+        $owner->onAdvanceRun($arrivals[0]);
+        $this->assertSame(RunStatus::Completed, $context->requireLoaded($runId)->status, 'Parked-only work must not wake the model.');
+        $this->assertSame(1, $container->get(CommandStoreInterface::class)->countPending($runId));
+        $drains = array_values(array_filter(array_map(static fn ($envelope): object => $envelope->getMessage(), $transport->getSent()), static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun && $message->completionMailboxDrain));
+        $this->assertCount(1, $drains);
+        $owner->onAdvanceRun($drains[0]);
+        $owner->onAdvanceRun($drains[0]);
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
+        $llm = $container->get('messenger.transport.llm');
+        $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $llm);
+        $this->assertCount(1, $llm->getSent());
+        $this->assertStringContainsString('eligible tail result', $context->requireLoaded($runId)->messages[0]->content[0]['text']);
+        $this->assertSame(64, (int) $container->get(\Doctrine\DBAL\Connection::class)->fetchOne("SELECT COUNT(*) FROM tool_completion_recipient WHERE destination_run_id = ? AND disposition = 'parked'", [$runId]));
+    }
+
+    public function testStaleAutomaticSuccessorCannotDiscardForwardHistoryBeforeItsHandler(): void
+    {
+        $container = self::getContainer();
+        foreach (['messenger.transport.run_control', 'messenger.transport.llm'] as $id) {
+            $transport = $container->get($id);
+            $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+            $transport->reset();
+        }
+        [$runId, $source, $reference] = ToolCompletionReceiptFixture::create($container);
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $source->seq));
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $transport = $container->get('messenger.transport.run_control');
+        $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+        $advance = array_values(array_filter(array_map(static fn ($envelope): object => $envelope->getMessage(), $transport->getSent()), static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun))[0];
+        $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        foreach ([['turn_advanced', 1, ['turn_no' => 1]], ['turn_advanced', 2, ['turn_no' => 2]], ['history_position_set', 1, ['position_turn_no' => 1, 'reason' => 'history_select']]] as [$type, $turn, $payload]) {
+            $event = \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, new \Ineersa\AgentCore\Domain\Event\RunEvent($runId, 0, $turn, $type, $payload));
+        }
+        $before = $context->requireLoaded($runId)->with(['lastSeq' => $event->seq]);
+        $context->loadRecovered($before);
+        $history = $container->get(\Ineersa\CodingAgent\Session\SessionRunEventStore::class);
+        $this->assertTrue($history->hasForwardTail($runId, 1));
+        $owner->onAdvanceRun($advance);
+        $this->assertTrue($history->hasForwardTail($runId, 1));
+        $this->assertSame($before, $context->requireLoaded($runId));
+        $this->assertSame($event->seq, $store->latestSequenceFor($runId));
+    }
+
     public function testAdmissionIsPreparedAndDuplicateAfterMailboxConsumptionDoesNotFetchSource(): void
     {
         $container = self::getContainer();

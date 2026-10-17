@@ -27,7 +27,18 @@ final readonly class ToolCompletionDeliveryEligibilityPolicy
         if (null !== $state->parentRunId && RunStatus::Completed === $state->status) {
             return 'terminal_child';
         }
-        $current = $this->fences->capture($state->runId);
+
+        return $this->fenceIneligibleReason($state->runId, $captured);
+    }
+
+    public function capture(string $runId): ToolCompletionDeliveryFenceDTO
+    {
+        return $this->fences->capture($runId);
+    }
+
+    public function fenceIneligibleReason(string $runId, ToolCompletionDeliveryFenceDTO $captured): ?string
+    {
+        $current = $this->fences->capture($runId);
         if ($current->controllerGeneration !== $captured->controllerGeneration) {
             return 'stale_controller_generation';
         }

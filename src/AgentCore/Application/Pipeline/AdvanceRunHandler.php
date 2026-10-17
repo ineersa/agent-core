@@ -43,6 +43,13 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         }
 
         $runId = $message->runId();
+        if (null !== $message->completionFence
+            && (null !== $this->commandMailboxPolicy->completionContinuationIneligibleReason($state, $message)
+                || [] !== $state->pendingHumanInputRequests || $state->isStreaming || [] !== $state->pendingShellToolCalls
+                || \in_array($state->status, [RunStatus::WaitingHuman, RunStatus::Compacting, RunStatus::Cancelling], true)
+                || (null !== $state->parentRunId && RunStatus::Completed === $state->status))) {
+            return new HandlerResult();
+        }
 
         // AdvanceRun consumes the exact current turn. A prior committed
         // transition must stop before it drains commands queued afterward.
@@ -130,6 +137,22 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         $preparedState = $mailboxResult->state;
         $boundaryEventSpecs = $this->withAdvanceToken($mailboxResult->eventSpecs, $message->idempotencyKey());
         $mailboxEffects = $mailboxResult->effects;
+        // An automatic metadata drain is not permission to run a model. Only
+        // an applied eligible completion or an explicit human command can
+        // provide continuation intent; parked/rejected prefixes cannot.
+        if (null !== $message->completionFence && null === $message->appliedCompletion && [] === $mailboxEffects
+            && !array_any($boundaryEventSpecs, static fn (array $spec): bool => RunEventTypeEnum::AgentCommandApplied->value === $spec['type'])) {
+            if ([] === $boundaryEventSpecs) {
+                return new HandlerResult(postCommitActions: $mailboxResult->postCommitActions);
+            }
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
+
+            return new HandlerResult(
+                nextState: $preparedState->with(['version' => $state->version + 1, 'lastSeq' => $state->lastSeq + \count($events), 'lastAppliedAdvanceKey' => $message->idempotencyKey()]),
+                events: $events,
+                postCommitActions: $mailboxResult->postCommitActions,
+            );
+        }
 
         // When pending commands (steer/follow-up/append_message) added new messages while
         // the run was Completed, Failed, Cancelled, or WaitingHuman, transition to Running

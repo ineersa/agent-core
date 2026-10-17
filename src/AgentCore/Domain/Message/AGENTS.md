@@ -16,6 +16,14 @@ Immutable bus payloads and owner-local processor messages under `Ineersa\AgentCo
 
 - `AdvanceRun`, `CompactRun` — state transitions handled only by the dedicated run_control consumer
 
+Runtime completion continuations use `AdvanceRun.completionFence`; bounded
+metadata-only progress also sets `completionMailboxDrain`. These tokens never
+authorize pre-handler history-tail discard and must revalidate the captured
+generations before draining. Ordinary human and foreground successors retain
+their existing semantics without these fields.
+An already-applied provider-stop continuation also carries `appliedCompletion`
+so the owner verifies the finalized recipient before using that intent.
+
 **Owner-local processor messages** (no Messenger route):
 
 - `RefreshRunContext` — attach passes rebuilt generated instructions directly to `RunMessageProcessor`; refreshes context without advancing execution

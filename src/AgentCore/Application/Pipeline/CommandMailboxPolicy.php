@@ -20,7 +20,22 @@ final readonly class CommandMailboxPolicy
         private CommandStoreInterface $commandStore,
         private CommandRouter $commandRouter,
         private \Ineersa\AgentCore\Application\Tool\ToolCompletionMailboxConsumer $toolCompletions,
+        private \Ineersa\AgentCore\Application\Tool\ToolCompletionDeliveryEligibilityPolicy $completionEligibility,
     ) {
+    }
+
+    public function completionContinuationIneligibleReason(RunState $state, \Ineersa\AgentCore\Domain\Message\AdvanceRun $message): ?string
+    {
+        if (null === $message->completionFence) {
+            return null;
+        }
+        if (null !== $message->appliedCompletion && !$this->toolCompletions->isAppliedContinuation($state->runId, $message->appliedCompletion)) {
+            return 'completion_not_applied';
+        }
+
+        return $message->completionMailboxDrain
+            ? $this->completionEligibility->fenceIneligibleReason($state->runId, $message->completionFence)
+            : $this->completionEligibility->ineligibleReason($state, $message->completionFence);
     }
 
     public function applyPendingTurnStartCommands(RunState $state): CommandApplicationResult
@@ -75,6 +90,9 @@ final readonly class CommandMailboxPolicy
         foreach ($pendingCommands as $pendingCommand) {
             if (CoreCommandKind::ToolCompletion === $pendingCommand->kind) {
                 if (++$completionDecisions > 64 || 16384 - $completionBytes < \Ineersa\AgentCore\Application\Tool\ToolCompletionNotificationRenderer::MIN_BYTES + \Ineersa\AgentCore\Application\Tool\ToolCompletionMailboxConsumer::PROVIDER_PREFIX_BYTES) {
+                    if (0 === $completionBytes && [] !== $eventSpecs && null === $state->parentRunId) {
+                        $actions[] = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::forCompletion($state, $this->completionEligibility->capture($state->runId), mailboxDrain: true);
+                    }
                     break;
                 }
                 $decision = $this->toolCompletions->apply($pendingCommand, $state->with(['messages' => $messages]), 16384 - $completionBytes);

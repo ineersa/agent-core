@@ -55,6 +55,13 @@ final readonly class ReceiveToolCompletionHandler implements RunMessageHandler
             throw new \LogicException('Completion recipient must normalize to a canonical record.');
         }
         $event = $this->events->event($state->runId, $state->lastSeq + 1, $state->turnNo, RunEventTypeEnum::ToolCompletionReceived->value, $payload);
+        $continuations = [];
+        if (\Ineersa\AgentCore\Domain\Run\RunStatus::Completed === $state->status
+            && null === $state->parentRunId && null === $state->currentOperation
+            && [] === $state->pendingHumanInputRequests && !$state->isStreaming
+            && null === $this->eligibility->ineligibleReason($state, $reference->deliveryFence)) {
+            $continuations[] = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::forCompletion($state, $reference->deliveryFence);
+        }
 
         return new HandlerResult(
             nextState: $state->with(['version' => $state->version + 1, 'lastSeq' => $state->lastSeq + 1]),
@@ -62,6 +69,7 @@ final readonly class ReceiveToolCompletionHandler implements RunMessageHandler
             postCommitActions: [
                 new RecordToolCompletionDeliveryDTO($delivery, receiptEventOrdinal: 0),
                 new EnqueueCommandDTO(new PendingCommand($state->runId, CoreCommandKind::ToolCompletion, $reference->messageId, ['reference' => $reference])),
+                ...$continuations,
             ],
         );
     }

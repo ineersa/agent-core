@@ -94,12 +94,6 @@ class DeferredToolCompletion
     #[ORM\Column(name: 'deadline_metadata_json', type: 'text', nullable: true)]
     public ?string $deadlineMetadataJson = null;
 
-    #[ORM\Column(name: 'origin_wake_generation', type: 'integer', nullable: true)]
-    public ?int $originWakeGeneration = null;
-
-    #[ORM\Column(name: 'root_wake_generation', type: 'integer', nullable: true)]
-    public ?int $rootWakeGeneration = null;
-
     #[ORM\Column(name: 'delivery_fence_json', type: 'text', nullable: true)]
     public ?string $deliveryFenceJson = null;
 

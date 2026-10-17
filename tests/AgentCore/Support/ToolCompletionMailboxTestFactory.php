@@ -36,6 +36,6 @@ final class ToolCompletionMailboxTestFactory
         $verifier = new ToolCompletionDeliveryVerifier(new InMemoryEventStore(), RetainedCompletionTestFactory::codec(), new IdentityOwningRootSessionResolver());
         $consumer = new ToolCompletionMailboxConsumer(new InMemoryToolCompletionRecipientRepository(), new ToolCompletionDeliveryEligibilityPolicy($fences), new ToolCompletionNotificationRenderer($verifier, $reader, $serializer), $serializer);
 
-        return new CommandMailboxPolicy($commandStore, $commandRouter, $consumer);
+        return new CommandMailboxPolicy($commandStore, $commandRouter, $consumer, new ToolCompletionDeliveryEligibilityPolicy($fences));
     }
 }

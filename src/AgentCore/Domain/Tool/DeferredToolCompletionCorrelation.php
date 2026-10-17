@@ -42,8 +42,6 @@ final readonly class DeferredToolCompletionCorrelation
         public ?ToolInvocationOwnerReference $executionOwnerReference = null,
         public ?string $originalExecutionMode = null,
         public ?array $deadlineMetadata = null,
-        public ?int $originWakeGeneration = null,
-        public ?int $rootWakeGeneration = null,
         public ?string $envelopeFingerprint = null,
         public ToolInvocationCallerDispositionEnum $callerDisposition = ToolInvocationCallerDispositionEnum::ForegroundPending,
         public ToolInvocationExecutionObservationEnum $executionObservation = ToolInvocationExecutionObservationEnum::Active,
@@ -59,12 +57,6 @@ final readonly class DeferredToolCompletionCorrelation
         }
         if (null !== $this->executionOwnerReference && $this->executionOwnerReference->kind !== $this->executionOwnerKind) {
             throw new \InvalidArgumentException('Execution owner kind must match the owner reference kind.');
-        }
-        if (null !== $this->originWakeGeneration && $this->originWakeGeneration < 0) {
-            throw new \InvalidArgumentException('Origin wake generation cannot be negative.');
-        }
-        if (null !== $this->rootWakeGeneration && $this->rootWakeGeneration < 0) {
-            throw new \InvalidArgumentException('Root wake generation cannot be negative.');
         }
         if (null !== $this->envelopeFingerprint) {
             $expectedFingerprint = ToolInvocationEnvelopeFingerprint::fromCorrelation($this);
@@ -218,8 +210,6 @@ final readonly class DeferredToolCompletionCorrelation
             executionOwnerReference: $this->executionOwnerReference,
             originalExecutionMode: $this->originalExecutionMode,
             deadlineMetadata: $this->deadlineMetadata,
-            originWakeGeneration: $this->originWakeGeneration,
-            rootWakeGeneration: $this->rootWakeGeneration,
             envelopeFingerprint: $this->envelopeFingerprint,
             callerDisposition: $callerDisposition,
             executionObservation: $executionObservation,

@@ -35,6 +35,17 @@ final readonly class ToolCompletionMailboxConsumer
     ) {
     }
 
+    public function isAppliedContinuation(string $runId, ToolCompletionDeliveryReferenceDTO $reference): bool
+    {
+        $delivery = $this->recipients->findDelivery($runId, $reference->messageId);
+        if (null === $delivery) {
+            return false;
+        }
+        $delivery->assertSameReference($reference);
+
+        return ToolCompletionDeliveryDispositionEnum::Applied === $delivery->disposition;
+    }
+
     public function apply(PendingCommand $command, RunState $state, int $budget): CommandApplicationResult
     {
         $reference = $command->payload['reference'] ?? null;

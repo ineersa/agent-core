@@ -78,8 +78,10 @@ unsupported, or foreign references yield typed inspection failures and never
 re-execute tools. Background producers and Ctrl+B remain disabled.
 
 C5 retains verified recipient obligations and delivery fences, and applies useful
-custom-role messages at safe owner boundaries. Receipt arrival does not yet
-schedule an automatic idle-root continuation.
+custom-role messages at safe owner boundaries. Eligible receipt arrivals for a
+healthy completed root capture the existing `AdvanceRun` continuation. Arrivals
+in the same idle epoch share its identity; repeated receipts and successor
+deliveries cannot start a second model request.
 `ToolCompletionDeliveryReferenceDTO` carries the recipient identity, message ID,
 exact canonical source location, semantic fingerprint, and captured delivery
 fence. Configured Symfony serialization owns its wire representation.
@@ -128,8 +130,19 @@ updates recipient disposition and consumes the mailbox instruction atomically;
 the applied location binds to the actual canonical allocation. Accepted provider
 stop results close their old operation before this boundary is evaluated.
 
-Automatic idle-root wake scheduling, successor fencing, and full checkpoint proof
-remain C5 work. Background producers, child forwarding, and Ctrl+B are not enabled.
+Automatic successors revalidate captured generations under the owner lock before
+draining. They never trigger the pre-handler forward-history discard. A bounded
+parked-only prefix captures another metadata drain through the same `AdvanceRun`
+path; rejection alone does not authorize a model request. Eligible completion
+application or an explicit queued human continuation supplies that intent.
+When a provider-stop boundary already applied the completion, its successor
+carries the accepted reference and rechecks both the finalized recipient
+disposition and its original fence. Application does not renew wake permission.
+Bodies larger than 8 KiB still arrive in full when their encoded presentation
+fits the remaining boundary budget.
+
+This checkpoint does not enable native background producers, child forwarding,
+or Ctrl+B. Native lifetime and descendant-stop policies remain separate gates.
 
 There is **no** global `ToolExecutor` timeout that rewrites successful late results.
 Bash and deferred subagent supervision own their deadlines. Registration can declare

@@ -50,7 +50,7 @@ final readonly class ToolCompletionNotificationRenderer
         }
         // Inspection validates referenced evidence even when the body is too
         // large to return. Missing/corrupt evidence remains a typed failure.
-        $evidence = $this->reader->read($origin->controllerRunId, $origin->sourceRunId, $reference->messageId, min(8192, $space), $reference->sourceEvent->seq);
+        $evidence = $this->reader->read($origin->controllerRunId, $origin->sourceRunId, $reference->messageId, $space, $reference->sourceEvent->seq);
         if ($evidence['envelope']->integrity->payloadFingerprint !== $reference->payloadFingerprint) {
             throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::Conflict, 'Completion evidence differs from its accepted reference.');
         }

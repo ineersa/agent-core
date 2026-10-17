@@ -34,6 +34,16 @@ final class ToolCompletionNotificationRendererTest extends IsolatedKernelTestCas
         $this->assertLessThanOrEqual(4096, \strlen($notification->text));
     }
 
+    public function testSealedTenKiBResultThatFitsTheBoundaryIsDeliveredInFull(): void
+    {
+        $text = str_repeat('abcdefghij', 1024);
+        [, , $reference] = ToolCompletionReceiptFixture::create(self::getContainer(), $text);
+        $notification = self::getContainer()->get(ToolCompletionNotificationRenderer::class)->render($reference, 16320);
+        $this->assertStringContainsString($text, $notification->text);
+        $this->assertStringNotContainsString('"truncated":true', $notification->text);
+        $this->assertLessThanOrEqual(16320, \strlen($notification->text));
+    }
+
     public function testMissingAndCorruptSealedBodiesRemainTypedFailures(): void
     {
         foreach ([false, true] as $missing) {

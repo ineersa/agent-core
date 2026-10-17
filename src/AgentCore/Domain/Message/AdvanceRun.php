@@ -18,7 +18,16 @@ final readonly class AdvanceRun extends AbstractAgentBusMessage implements RunCo
         int $attempt,
         string $idempotencyKey,
         public array $payload = [],
+        public ?\Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryFenceDTO $completionFence = null,
+        public bool $completionMailboxDrain = false,
+        public ?\Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryReferenceDTO $appliedCompletion = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
+        if ($completionMailboxDrain && null === $completionFence) {
+            throw new \InvalidArgumentException('Completion mailbox continuation requires a captured fence.');
+        }
+        if (null !== $appliedCompletion && (null === $completionFence || $appliedCompletion->destinationRunId !== $runId || !\Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryFenceDTO::same($completionFence, $appliedCompletion->deliveryFence))) {
+            throw new \InvalidArgumentException('Applied completion continuation requires its exact recipient fence.');
+        }
     }
 }

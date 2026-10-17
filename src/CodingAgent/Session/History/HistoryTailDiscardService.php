@@ -39,6 +39,11 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
 
     public function isContextMutatingMessage(AbstractAgentBusMessage $message): bool
     {
+        // Automatic delivery must never discard selected history, even when
+        // its successor became stale before the handler can reject it.
+        if ($message instanceof AdvanceRun && null !== $message->completionFence) {
+            return false;
+        }
         if ($message instanceof AdvanceRun || $message instanceof ApplyShellCommand || $message instanceof CompactRun) {
             return true;
         }

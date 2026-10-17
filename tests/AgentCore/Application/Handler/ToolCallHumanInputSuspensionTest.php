@@ -234,7 +234,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $handler2 = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
             commandStore: $store,
             commandRouter: $router,
-            commandMailboxPolicy: new \Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy($store, $router),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($store, $router),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,
@@ -325,7 +325,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $handler = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
             commandStore: $store,
             commandRouter: $router,
-            commandMailboxPolicy: new \Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy($store, $router),
+            commandMailboxPolicy: \Ineersa\AgentCore\Tests\Support\ToolCompletionMailboxTestFactory::policy($store, $router),
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             maxPendingCommands: 10,

@@ -391,8 +391,6 @@ final class ToolBatchCollectorBackgroundAcknowledgementTest extends TestCase
             executionOwnerReference: $correlation->executionOwnerReference,
             originalExecutionMode: $correlation->originalExecutionMode,
             deadlineMetadata: $correlation->deadlineMetadata,
-            originWakeGeneration: $correlation->originWakeGeneration,
-            rootWakeGeneration: $correlation->rootWakeGeneration,
         );
         $mismatched = new DeferredToolCompletionCorrelation(
             deferredId: $mismatched->deferredId,
@@ -417,8 +415,6 @@ final class ToolBatchCollectorBackgroundAcknowledgementTest extends TestCase
             executionOwnerReference: $mismatched->executionOwnerReference,
             originalExecutionMode: $mismatched->originalExecutionMode,
             deadlineMetadata: $mismatched->deadlineMetadata,
-            originWakeGeneration: $mismatched->originWakeGeneration,
-            rootWakeGeneration: $mismatched->rootWakeGeneration,
             envelopeFingerprint: ToolInvocationEnvelopeFingerprint::fromCorrelation($mismatched),
             callerDisposition: $mismatched->callerDisposition,
             executionObservation: $mismatched->executionObservation,
