@@ -295,9 +295,9 @@ function distribution_stage_phpmicro_for_spc(string $checkout, string $commit): 
     }
     // Use Symfony Filesystem/Finder (already imported by helpers.php) instead of a
     // hand-rolled RecursiveIterator copy. ignoreVCS skips the durable .git metadata.
-    $filesystem = new \Symfony\Component\Filesystem\Filesystem();
+    $filesystem = new Symfony\Component\Filesystem\Filesystem();
     $filesystem->mkdir($stage);
-    $entries = (new \Symfony\Component\Finder\Finder())
+    $entries = (new Symfony\Component\Finder\Finder())
         ->in($checkout)
         ->ignoreDotFiles(false)
         ->ignoreVCS(true);
@@ -1297,11 +1297,9 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
         }
         $status = proc_get_status($proc);
         if ($status['running']) {
-            // Prefer graceful controller shutdown via SIGTERM (controller signal handlers).
-            // Only signal the controller this smoke created — never descendants/unrelated.
-            // Wait > ConsumerSupervisor's default 5s shared consumer grace (aligned with
-            // JsonlProcessAgentSessionClient::CONTROLLER_STOP_GRACE_SECONDS = 7s).
-            posix_kill($status['pid'], \SIGTERM);
+            // Closing stdin requests normal controller shutdown. Never signal a
+            // HATFIELD_SESSION_ID-tagged process, even this isolated smoke fixture.
+            // Retain the parent's 7s stop budget for the shared 5s consumer/broker drain.
             $waitUntil = microtime(true) + 7.0;
             while (microtime(true) < $waitUntil) {
                 $status = proc_get_status($proc);
@@ -1312,8 +1310,7 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
             }
             $status = proc_get_status($proc);
             if ($status['running']) {
-                // Last resort for this owned controller only — never signal unrelated processes.
-                posix_kill($status['pid'], \SIGKILL);
+                throw new RuntimeException('Native topology smoke: controller did not stop after stdin EOF; retained runtime '.$tmp.' (pid '.$status['pid'].')');
             }
         }
         proc_close($proc);
