@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\OwningRootSessionResolverInterface;
+use Ineersa\AgentCore\Contract\Tool\RetainedNativeHandoffBodyPromoterInterface;
 use Ineersa\AgentCore\Contract\Tool\RetainedOutputCapBodyPromoterInterface;
 use Ineersa\AgentCore\Contract\Tool\RetainedToolCompletionBodyStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -34,6 +35,7 @@ final readonly class RetainedToolCompletionEnvelopeFactory
         private RetainedToolCompletionEnvelopeCodec $codec,
         private OwningRootSessionResolverInterface $owningRootSessionResolver,
         private ?RetainedOutputCapBodyPromoterInterface $outputCapPromoter = null,
+        private ?RetainedNativeHandoffBodyPromoterInterface $nativeHandoffPromoter = null,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -70,11 +72,7 @@ final readonly class RetainedToolCompletionEnvelopeFactory
         $attachments = [];
         $nativeGenerations = $this->hostAuthoredNativeGenerations($normalizedToolResult);
         if ([] !== $nativeGenerations) {
-            if (1 === \count($nativeGenerations)) {
-                $body = RetainedToolCompletionBodyReference::fromNativeGeneration($nativeGenerations[0]);
-            } else {
-                $body = $this->sealNativeManifest($completionId, $owningRoot, $nativeGenerations);
-            }
+            $body = $this->bodyForNativeGenerations($completionId, $owningRoot, $nativeGenerations);
             $attachments = $this->boundedNativeAttachments($nativeGenerations);
         } else {
             $promoted = null;
@@ -277,6 +275,35 @@ final readonly class RetainedToolCompletionEnvelopeFactory
         }
 
         return $attachments;
+    }
+
+    /**
+     * @param list<RetainedNativeHandoffGeneration> $generations
+     */
+    private function bodyForNativeGenerations(
+        string $completionId,
+        string $owningRootSessionId,
+        array $generations,
+    ): RetainedToolCompletionBodyReference {
+        if (1 === \count($generations)) {
+            $generation = $generations[0];
+            if ($generation->parentRunId === $owningRootSessionId) {
+                return RetainedToolCompletionBodyReference::fromNativeGeneration($generation);
+            }
+            if (null === $this->nativeHandoffPromoter) {
+                throw new \InvalidArgumentException(\sprintf('Native handoff parent "%s" is outside owning root "%s" and no promoter is configured.', $generation->parentRunId, $owningRootSessionId));
+            }
+
+            // UUID child parents store physical handoffs outside the root session tree.
+            // Seal a root-owned copy so authorized root deletion reclaims the promised body.
+            return $this->nativeHandoffPromoter->sealOwnedCopy(
+                owningRootSessionId: $owningRootSessionId,
+                messageId: $completionId,
+                generation: $generation,
+            );
+        }
+
+        return $this->sealNativeManifest($completionId, $owningRootSessionId, $generations);
     }
 
     /**

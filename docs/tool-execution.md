@@ -52,15 +52,21 @@ C4 retains an immutable versioned `tool_completion` envelope on the accepted
 receipt (`message_id = completion_id`). Runtime origin/provenance and the
 allocated `accepted_source_event_reference` are owner-authored, not taken from
 tool output. `controller_run_id` is the durable owning root session resolved from
-child-artifact/session parent links; nested evidence seals under that root, not a
-phantom `sessions/<childRunId>` directory. Envelope array/JSON mapping uses the
+child-artifact links, durable deferred batch parent edges, and session parent
+links; nested evidence seals under that root, not a phantom
+`sessions/<childRunId>` directory. Cold workers resolve depth-2+ UUID children
+through deferred reservations when artifact cache/session-list scans cannot see
+them. Envelope array/JSON mapping uses the
 configured Symfony Serializer. Small validated bodies stay inline; oversized
 bodies stream the already-resident encoded JSON into sealed storage under the
 owning root at `runtime/retained-tool-completions/<message_id>.json` with
 bytes/hash/media type. Host-authored native handoff generations keep full lists
 in an owned streamed manifest when parallel batches exceed the inline attachment
-budget, and owned output-cap full bodies are promoted before ordinary cleanup can
-reclaim temps. Native inspect stream-hashes generations and returns a bounded
+budget. A single native generation under a non-root UUID parent is sealed as a
+root-owned copy so authorized root deletion reclaims the promised body without
+claiming external UUID artifact paths. Owned output-cap full bodies are promoted
+before ordinary cleanup can reclaim temps. Native inspect stream-hashes
+generations and returns a bounded
 preview only when the body fits the caller budget. The internal reader uses
 canonical source locators or a bounded newest-first scan. Missing, corrupt,
 unsupported, or foreign references yield typed inspection failures and never

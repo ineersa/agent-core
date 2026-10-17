@@ -11,6 +11,8 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Artifact\OwningRootSessionResolver;
 use Ineersa\CodingAgent\Agent\Artifact\RetainedNativeArtifactHandoffReader;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\NullLogger;
@@ -29,7 +31,11 @@ final class RetainedNativeArtifactHandoffReaderTest extends IsolatedKernelTestCa
         $entry = $registry->create($root, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
         $children = new AgentChildRunDirectory($sessions, $registry, new NullLogger());
         $children->register($entry);
-        $resolver = new OwningRootSessionResolver($children, $sessions);
+        /** @var DeferredSubagentChildRepository $deferredChildren */
+        $deferredChildren = self::getContainer()->get(DeferredSubagentChildRepository::class);
+        /** @var DeferredSubagentBatchRepository $deferredBatches */
+        $deferredBatches = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $resolver = new OwningRootSessionResolver($children, $sessions, $deferredChildren, $deferredBatches);
         $reader = new RetainedNativeArtifactHandoffReader($registry, $resolver);
 
         $this->assertSame($root, $resolver->resolveOwningRootSessionId($childRunId));

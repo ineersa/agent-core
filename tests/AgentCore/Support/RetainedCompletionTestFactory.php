@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeCodec;
 use Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeFactory;
 use Ineersa\AgentCore\Application\Tool\SourceRunOwningRootSessionResolver;
 use Ineersa\AgentCore\Contract\Tool\OwningRootSessionResolverInterface;
+use Ineersa\AgentCore\Contract\Tool\RetainedNativeHandoffBodyPromoterInterface;
 use Ineersa\AgentCore\Contract\Tool\RetainedOutputCapBodyPromoterInterface;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeRetainedToolCompletionBodyStore;
 use Psr\Log\LoggerInterface;
@@ -19,6 +20,7 @@ final class RetainedCompletionTestFactory
         ?FakeRetainedToolCompletionBodyStore $bodies = null,
         ?OwningRootSessionResolverInterface $owningRoots = null,
         ?RetainedOutputCapBodyPromoterInterface $promoter = null,
+        ?RetainedNativeHandoffBodyPromoterInterface $nativeHandoffPromoter = null,
         ?LoggerInterface $logger = null,
     ): RetainedToolCompletionEnvelopeFactory {
         $bodies ??= new FakeRetainedToolCompletionBodyStore();
@@ -29,6 +31,7 @@ final class RetainedCompletionTestFactory
             $codec,
             $owningRoots ?? new SourceRunOwningRootSessionResolver(),
             $promoter,
+            $nativeHandoffPromoter,
             $logger ?? new NullLogger(),
         );
     }

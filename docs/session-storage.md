@@ -257,7 +257,13 @@ exact owned containment through session/runtime/body ancestors (no symlink
 escape). These files are retained evidence for the root session lifetime. Explicit root-session
 deletion removes them with the session tree. Ordinary controller shutdown and
 output-cap cleanup do not delete them. Canonical receipts keep only bounded
-envelope metadata and integrity references.
+envelope metadata and integrity references. Owning-root resolution for nested
+UUID children uses durable deferred batch parent edges in addition to artifact
+and session parent links, so cold workers do not invent phantom
+`sessions/<childRunId>` directories. Native handoffs physically stored under a
+UUID parent are sealed as root-owned copies when they are the promised C4 body;
+root deletion removes those sealed copies and does not claim external UUID
+artifact trees.
 
 ## Ephemeral output-cap artifacts
 

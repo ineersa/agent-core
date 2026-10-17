@@ -1022,6 +1022,9 @@ services:
   Ineersa\AgentCore\Contract\Tool\RetainedOutputCapBodyPromoterInterface:
     alias: Ineersa\CodingAgent\Tool\RetainedOutputCapBodyPromoter
 
+  Ineersa\AgentCore\Contract\Tool\RetainedNativeHandoffBodyPromoterInterface:
+    alias: Ineersa\CodingAgent\Agent\Artifact\RetainedNativeHandoffBodyPromoter
+
   Ineersa\AgentCore\Contract\Tool\OwningRootSessionResolverInterface:
     alias: Ineersa\CodingAgent\Agent\Artifact\OwningRootSessionResolver
 
@@ -1047,6 +1050,7 @@ services:
       $codec: '@Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEnvelopeCodec'
       $owningRootSessionResolver: '@Ineersa\AgentCore\Contract\Tool\OwningRootSessionResolverInterface'
       $outputCapPromoter: '@Ineersa\AgentCore\Contract\Tool\RetainedOutputCapBodyPromoterInterface'
+      $nativeHandoffPromoter: '@Ineersa\AgentCore\Contract\Tool\RetainedNativeHandoffBodyPromoterInterface'
 
   Ineersa\AgentCore\Application\Tool\RetainedToolCompletionEvidenceReader:
     arguments:
