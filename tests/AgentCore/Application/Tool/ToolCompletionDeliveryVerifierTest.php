@@ -91,6 +91,12 @@ final class ToolCompletionDeliveryVerifierTest extends IsolatedKernelTestCase
             case 'unsupported_version':
                 $payload['accepted_completion']['retained_message']['schema_version'] = 2;
                 break;
+            case 'unsupported_producer':
+                $payload['accepted_completion']['retained_message']['provenance']['producer'] = 'tool';
+                break;
+            case 'unsupported_authority':
+                $payload['accepted_completion']['retained_message']['provenance']['payload_authority'] = 'human';
+                break;
         }
         $events = new InMemoryEventStore();
         $events->seed(new RunEvent($runId, $event->seq, $turn, $type, $payload));
@@ -116,6 +122,8 @@ final class ToolCompletionDeliveryVerifierTest extends IsolatedKernelTestCase
         yield 'foreign root' => ['foreign_origin', RetainedToolCompletionFailureCodeEnum::ForeignScope];
         yield 'changed semantic body' => ['tampered_summary', RetainedToolCompletionFailureCodeEnum::Conflict];
         yield 'unsupported schema' => ['unsupported_version', RetainedToolCompletionFailureCodeEnum::Unsupported];
+        yield 'unsupported producer' => ['unsupported_producer', RetainedToolCompletionFailureCodeEnum::Unsupported];
+        yield 'unsupported authority' => ['unsupported_authority', RetainedToolCompletionFailureCodeEnum::Unsupported];
     }
 
     public function testUnfinalizedPhysicalAppendIsNotPublishedSourceEvidence(): void

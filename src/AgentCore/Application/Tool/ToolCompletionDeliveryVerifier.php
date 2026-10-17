@@ -46,6 +46,9 @@ final readonly class ToolCompletionDeliveryVerifier
                 throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::BodyCorrupt, 'Completion receipt has no retained envelope.');
             }
             $envelope = $this->codec->denormalize($retained);
+            if ('runtime' !== $envelope->provenance->producer || 'external_tool_result' !== $envelope->provenance->payloadAuthority) {
+                throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::Unsupported, 'Completion delivery requires runtime-owned external-result provenance.');
+            }
             $origin = $envelope->origin;
             if ($origin->controllerRunId !== $this->owningRoots->resolveOwningRootSessionId($destinationRunId) || $origin->sourceRunId !== $source->runId) {
                 throw new RetainedToolCompletionFailure(RetainedToolCompletionFailureCodeEnum::ForeignScope, 'Completion origin does not belong to the recipient root.');
