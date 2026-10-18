@@ -19,6 +19,87 @@ use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
 final class ChildAwareEventStoreTest extends PerMethodIsolatedKernelTestCase
 {
+    #[\PHPUnit\Framework\Attributes\DataProvider('ownerAuditSizes')]
+    public function testWholeOwnerTransitionAudit(int $messageCount, int $messageBytes, int $sample): void
+    {
+        $container = self::getContainer();
+        $logger = new TestLogger();
+        $container->set(\Ineersa\AgentCore\Application\Handler\RunTracer::class, new \Ineersa\AgentCore\Application\Handler\RunTracer($logger));
+        // Exercise explicit compaction independently of automatic scheduling.
+        $container->get(\Ineersa\CodingAgent\Config\AppConfig::class)->compaction = new \Ineersa\CodingAgent\Config\CompactionConfig(autoEnabled: false, keepRecentTokens: 16);
+        $bus = $container->get('agent.command.bus');
+        $sessions = $container->get(HatfieldSessionStore::class);
+        $active = $container->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class);
+        $report = [];
+        $last = function (string $transport, string $class, string $run) use ($container): \Symfony\Component\Messenger\Envelope {
+            $matches = array_values(array_filter($container->get('messenger.transport.'.$transport)->getSent(), static fn ($envelope): bool => $envelope->getMessage() instanceof $class && $envelope->getMessage()->runId() === $run));
+            $this->assertNotEmpty($matches, $class);
+
+            return $matches[array_key_last($matches)];
+        };
+        $run = $sessions->createSession('isolated owner audit');
+        $consume = static function (object $message, string $operation) use ($bus, $container, $logger, &$report, $sample): void {
+            $queued = $message instanceof \Symfony\Component\Messenger\Envelope ? $message : $bus->dispatch($message);
+            $logger->records = [];
+            $started = hrtime(true);
+            $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
+            $container->get('messenger.transport.run_control')->ack($queued);
+            $report[] = ['sample' => $sample, 'operation' => $operation, 'whole_owner_ms' => (hrtime(true) - $started) / 1e6, 'queue_wait_ms' => null,
+                'spans' => array_values(array_filter($logger->records, static fn (array $record): bool => 'agent_loop.trace.finish' === $record['message']))];
+        };
+        $messages = [];
+        for ($i = 0; $i < $messageCount; ++$i) {
+            $messages[] = new \Ineersa\AgentCore\Domain\Message\AgentMessage(0 === $i % 2 ? 'user' : 'assistant', [['type' => 'text', 'text' => str_repeat('x', $messageBytes)]]);
+        }
+        $consume(new \Ineersa\AgentCore\Domain\Message\StartRun($run, 0, 'start', 1, 'start', new \Ineersa\AgentCore\Domain\Message\StartRunPayload('synthetic system', $messages,
+            new \Ineersa\AgentCore\Domain\Run\RunMetadata(model: 'llama_cpp_test/test'))), 'start');
+        $consume($last('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $run), 'advance');
+        $llm = $last('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class, $run)->getMessage();
+        $consume(new \Ineersa\AgentCore\Domain\Message\LlmStepResult($run, $llm->turnNo(), $llm->stepId(), $llm->attempt(), $llm->idempotencyKey(),
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([['id' => 'audit-read', 'name' => 'read', 'arguments' => ['path' => './synthetic.txt']]]),
+            toolsRef: 'default', model: 'llama_cpp_test/test', stopReason: 'tool_call'), 'llm_tools');
+        $tool = $last('tool', \Ineersa\AgentCore\Domain\Message\ExecuteToolCall::class, $run)->getMessage();
+        $consume(new \Ineersa\AgentCore\Domain\Message\ToolCallResult($run, $tool->turnNo(), $tool->stepId(), $tool->attempt(), $tool->idempotencyKey(), $tool->toolCallId, 0,
+            result: ['content' => [['type' => 'text', 'text' => str_repeat('r', $messageBytes)]]]), 'tool_result');
+        $finish = static function () use ($last, $consume, $run, $messageBytes): void {
+            $consume($last('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $run), 'advance_after_input');
+            $request = $last('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class, $run)->getMessage();
+            $consume(new \Ineersa\AgentCore\Domain\Message\LlmStepResult($run, $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(),
+                assistantMessage: SymfonyAiTestMessages::assistantText(str_repeat('a', $messageBytes)), model: 'llama_cpp_test/test', stopReason: 'stop'), 'llm_text');
+        };
+        $finish();
+        $payload = ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'synthetic follow-up']]]];
+        $consume(new \Ineersa\AgentCore\Domain\Message\ApplyCommand($run, $active->requireLoaded($run)->turnNo, 'follow', 1, 'follow', 'follow_up', $payload), 'follow_up');
+        $finish();
+        $turn = $active->requireLoaded($run)->turnNo;
+        $active->release($run);
+        $consume(new \Ineersa\AgentCore\Domain\Message\ApplyCommand($run, $turn, 'cold', 1, 'cold', 'follow_up', $payload), 'cold_recovery_follow_up');
+        $finish();
+        $consume(new \Ineersa\AgentCore\Domain\Message\CompactRun($run, $active->requireLoaded($run)->turnNo, 'compact', 1, 'compact'), 'compact_prepare');
+        $compaction = $last('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class, $run)->getMessage();
+        $consume(new \Ineersa\AgentCore\Domain\Message\CompactionStepResult($run, $compaction->turnNo(), $compaction->stepId(), $compaction->attempt(), $compaction->idempotencyKey(),
+            'synthetic summary', null, $compaction->retainedTailMessages, $compaction->messagesCompacted, $compaction->messagesRetained, $compaction->firstRetainedIndex,
+            $compaction->tokenEstimateBefore, $compaction->trigger, model: $compaction->model), 'compact_result');
+        $consume(new \Ineersa\AgentCore\Domain\Message\ApplyShellCommand($run, $active->requireLoaded($run)->turnNo, 'shell', 1, 'shell', '!true'), 'shell_accept');
+        $shell = $last('tool', \Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall::class, $run)->getMessage();
+        $consume(new \Ineersa\AgentCore\Domain\Message\ToolCallResult($run, $shell->turnNo(), $shell->stepId(), $shell->attempt(), $shell->idempotencyKey(), $shell->toolCallId, 0,
+            result: ['standalone' => $shell->standalone, 'content' => [['type' => 'text', 'text' => 'synthetic shell result']]]), 'shell_result');
+        $this->assertSame(\Ineersa\AgentCore\Domain\Run\RunStatus::Completed, $active->requireLoaded($run)->status);
+        if ('1' === getenv('HATFIELD_OWNER_AUDIT')) {
+            $path = self::$kernel->getProjectDir().'/var/diagnostics/run-state-latency/audit-attributed-'.$messageCount.'x'.$messageBytes.'-'.$sample.'.json';
+            file_put_contents($path, json_encode(['messages' => $messageCount, 'message_bytes' => $messageBytes, 'initial_text_bytes' => $messageCount * $messageBytes,
+                'transport' => 'in-memory', 'external_execution' => 'not exercised', 'auto_compaction' => false, 'measurements' => $report], \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR)."\n");
+        }
+    }
+
+    public static function ownerAuditSizes(): iterable
+    {
+        for ($sample = 0; $sample < 3; ++$sample) {
+            yield 'routine '.$sample => [8, 128, $sample];
+            yield 'larger history '.$sample => [64, 16384, $sample];
+        }
+    }
+
     public function testThreeReadyToolResultsUseOwnerPipeline(): void
     {
         $container = self::getContainer();

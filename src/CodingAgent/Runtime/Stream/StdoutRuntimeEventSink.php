@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -34,6 +35,10 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
 
     /** @var bool|null */
     private static $isPipe;
+
+    public function __construct(private readonly ?RunTracer $tracer = null)
+    {
+    }
 
     public function emit(RuntimeEvent $event): void
     {
@@ -74,13 +79,30 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
             return null;
         }
 
-        $line = JsonlCodec::encodeEvent($event);
-        if (!JsonlCodec::write(self::$stdout, $line)) {
-            return false;
-        }
+        $line = $this->probe('encode', $event, static fn () => JsonlCodec::encodeEvent($event));
 
-        fflush(self::$stdout);
+        return $this->probe('write', $event, static function () use ($line): bool {
+            if (!JsonlCodec::write(self::$stdout, $line)) {
+                return false;
+            }
 
-        return true;
+            fflush(self::$stdout);
+
+            return true;
+        });
+    }
+
+    /**
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function probe(string $phase, RuntimeEvent $event, callable $operation): mixed
+    {
+        return null === $this->tracer ? $operation() : $this->tracer->inSpan('latency_probe.stdout.'.$phase, [
+            'run_id' => $event->runId, 'event_type' => $event->type, 'component' => 'runtime_stdout', 'latency_probe' => true,
+        ], $operation);
     }
 }
