@@ -38,23 +38,24 @@ final readonly class RunCommit
      */
     public function commit(RunState $state, RunState $nextState, array $events, array $effects = [], bool $dispatchAfterTurnHooks = true, array $postCommitEffects = [], array $postCommitActions = []): RunState
     {
+        $attributes = ['run_id' => $nextState->runId, 'turn_no' => $nextState->turnNo, 'step_id' => $nextState->activeStepId];
         $this->assertTransitionReady($state->runId);
         $afterTurnActions = [];
         if ($dispatchAfterTurnHooks) {
-            $afterTurnActions = $this->hookDispatcher?->prepareAfterTurnCommit(
+            $afterTurnActions = $this->probe('commit.prepare_hooks', $attributes, fn () => $this->hookDispatcher?->prepareAfterTurnCommit(
                 AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)), $state->lastSeq,
-            ) ?? [];
+            ) ?? []);
         }
         foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {
             $this->actionValidator->validate($action);
         }
-        $persist = function () use ($state, $nextState, $events, $effects, $afterTurnActions, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions): RunState {
+        $persist = function () use ($state, $nextState, $events, $effects, $afterTurnActions, $dispatchAfterTurnHooks, $postCommitEffects, $postCommitActions, $attributes): RunState {
             /** @var list<RunEvent> $persistedEvents */
             $persistedEvents = [];
             if ([] !== $events || [] !== $effects || [] !== $postCommitEffects || [] !== $postCommitActions || [] !== $afterTurnActions) {
-                $persistedEvents = $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_actions' => $afterTurnActions]);
+                $persistedEvents = $this->probe('commit.append', $attributes, fn () => $this->eventStore->appendTransition($events, ['run_id' => $nextState->runId, 'predecessor_seq' => $state->lastSeq, 'effects' => $effects, 'post_commit_effects' => $postCommitEffects, 'actions' => $postCommitActions, 'after_turn_actions' => $afterTurnActions]));
             }
-            $verifiedSource = $this->eventStore->verifiedPendingTransition($nextState->runId);
+            $verifiedSource = $this->probe('commit.verify_pending', $attributes, fn () => $this->eventStore->verifiedPendingTransition($nextState->runId));
             if (null !== $verifiedSource) {
                 $postCommitActions = $verifiedSource->work['actions'] ?? [];
                 $afterTurnActions = $verifiedSource->work['after_turn_actions'] ?? [];
@@ -72,16 +73,16 @@ final readonly class RunCommit
                 ]);
             }
 
-            $this->activeRunContext->replaceCurrent($committedState);
+            $this->probe('commit.publish_context', $attributes, fn () => $this->activeRunContext->replaceCurrent($committedState));
             $this->logCommittedEvents($committedState, $persistedEvents);
 
-            $this->finalizer->complete(
+            $this->probe('commit.finalizer', $attributes, fn () => $this->finalizer->complete(
                 $committedState->runId,
                 $verifiedSource,
                 [...$effects, ...$postCommitEffects],
                 $postCommitActions,
                 $afterTurnActions,
-            );
+            ));
 
             // A finished child leaves owner memory after its terminal transition is
             // verified and finalized. Canonical history and the narrow projection
@@ -96,9 +97,9 @@ final readonly class RunCommit
             }
 
             try {
-                $this->hookDispatcher?->dispatchAfterTurnCommit(
+                $this->probe('commit.after_turn_observers', $attributes, fn () => $this->hookDispatcher?->dispatchAfterTurnCommit(
                     AfterTurnCommitHookContext::fromRunState($committedState, $persistedEvents, \count($effects)),
-                );
+                ));
             } catch (\Throwable $exception) {
                 $this->logger->warning('After-turn commit hook failed (best-effort)', [
                     'run_id' => $committedState->runId,
@@ -126,7 +127,24 @@ final readonly class RunCommit
 
     public function assertTransitionReady(string $runId): void
     {
-        $this->eventStore->assertTransitionReady($runId);
+        $this->probe('commit.readiness', ['run_id' => $runId], fn () => $this->eventStore->assertTransitionReady($runId));
+    }
+
+    /**
+     * @template T
+     *
+     * @param array<string, mixed> $attributes
+     * @param callable(): T        $operation
+     *
+     * @return T
+     */
+    private function probe(string $phase, array $attributes, callable $operation): mixed
+    {
+        if (null === $this->tracer) {
+            return $operation();
+        }
+
+        return $this->tracer->inSpan('latency_probe.'.$phase, ['latency_probe' => true, ...$attributes], $operation);
     }
 
     /** @param list<RunEvent> $events */
