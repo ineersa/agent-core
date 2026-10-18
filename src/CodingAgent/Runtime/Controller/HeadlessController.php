@@ -254,7 +254,6 @@ final class HeadlessController
                 ]);
                 EventLoop::cancel($watcherId);
                 $this->shutdown();
-                EventLoop::getDriver()->stop();
 
                 return;
             }
@@ -302,7 +301,6 @@ final class HeadlessController
                         'fatal' => true,
                     ],
                 ));
-                EventLoop::getDriver()->stop();
 
                 return;
             }
@@ -313,11 +311,9 @@ final class HeadlessController
         // Graceful shutdown on termination signals.
         EventLoop::onSignal(\SIGTERM, function (): void {
             $this->shutdown();
-            EventLoop::getDriver()->stop();
         });
         EventLoop::onSignal(\SIGINT, function (): void {
             $this->shutdown();
-            EventLoop::getDriver()->stop();
         });
 
         EventLoop::run();
@@ -550,6 +546,9 @@ final class HeadlessController
             // Release only after consumers and lifecycle listeners finish so a
             // replacement controller cannot race against cleanup.
             $this->releaseSessionOwnerLock();
+            // Only the shutdown owner may stop the loop. A repeated signal
+            // must leave its suspended terminal drain and cleanup runnable.
+            EventLoop::getDriver()->stop();
         }
     }
 

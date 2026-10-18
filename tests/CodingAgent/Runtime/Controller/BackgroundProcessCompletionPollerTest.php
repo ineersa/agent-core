@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
+use Amp\DeferredFuture;
+use Amp\TimeoutCancellation;
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
@@ -14,14 +18,27 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
+use Ineersa\CodingAgent\Runtime\Messenger\SerializedBrokerSendersLocator;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
+use Ineersa\SqliteQueue\Messenger\TransportFactory;
+use Ineersa\SqliteQueue\Protocol\Frame;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\TestWith;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Revolt\EventLoop;
+use Symfony\Component\DependencyInjection\ServiceLocator;
+use Symfony\Component\Messenger\MessageBus;
+use Symfony\Component\Messenger\Middleware\SendMessageMiddleware;
+use Symfony\Component\Messenger\Transport\Sender\SendersLocator;
+use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
+
+use function Amp\async;
+use function Amp\Socket\listen;
 
 /**
  * Integration tests for BackgroundProcessCompletionPoller.
@@ -168,6 +185,96 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $entity = $this->findProcess(10001);
         $this->assertNotNull($entity);
         $this->assertNotNull($entity->completionNotifiedAt);
+    }
+
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testCompletionPollDoesNotOverlapPendingPublish(bool $rejectFirst): void
+    {
+        $now = new \DateTimeImmutable();
+        $log = $this->tmpDir.'/completion.log';
+        file_put_contents($log, 'completed');
+        $process = $this->persistProcess(10002, $log, 'echo completed', $now, $now, 0, BackgroundProcessStatusEnum::Finished);
+        $dir = TestDirectoryIsolation::createOsTempDir('sq');
+        $server = listen('unix://'.$dir.'/s');
+        $transport = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($dir.'/s'), [], new PhpSerializer());
+        $locator = new SerializedBrokerSendersLocator(new SendersLocator(['*' => ['queue']], new ServiceLocator(['queue' => static fn () => $transport])));
+        $runner = new AgentRunner(new MessageBus([new SendMessageMiddleware($locator)]), self::getContainer()->get('serializer'));
+        $this->clientSpy = $this->createStub(AgentSessionClient::class);
+        $this->clientSpy->method('send')->willReturnCallback(static function (string $runId, UserCommand $command) use ($runner): void {
+            self::assertSame('append_message', $command->type);
+            $runner->appendMessage($runId, new AgentMessage('user', [['type' => 'text', 'text' => $command->text]]));
+        });
+        $store = self::getContainer()->get(ProcessStore::class);
+        $config = $this->createBgConfig();
+        $poller = $this->createPoller($store, new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger()), $config, new NullLogger()));
+        $poll = new \ReflectionMethod($poller, 'poll');
+        $pending = new DeferredFuture();
+        $release = new DeferredFuture();
+        $entered = new DeferredFuture();
+        $requests = [];
+        $cancel = new TimeoutCancellation(2);
+        $peer = async(static function () use ($server, $pending, $release, $rejectFirst, &$requests, $cancel): void {
+            $socket = $server->accept($cancel);
+            try {
+                $hello = Frame::read($socket, $cancel);
+                $socket->write((new Frame(['v' => 1, 'id' => $hello->control['id'], 'ok' => true, 'result' => ['max_payload' => 1040000, 'max_connections' => 64]]))->encode());
+                while (null !== ($request = Frame::read($socket, $cancel))) {
+                    $requests[] = $request;
+                    if (1 === \count($requests)) {
+                        $pending->complete();
+                        $release->getFuture()->await($cancel);
+                    }
+                    $result = $rejectFirst && 1 === \count($requests)
+                        ? ['ok' => false, 'error' => ['code' => 'invalid_queue_name']]
+                        : ['ok' => true, 'result' => \count($requests)];
+                    $socket->write((new Frame(['v' => 1, 'id' => $request->control['id']] + $result))->encode());
+                }
+            } finally {
+                $socket->close();
+            }
+        });
+        try {
+            $first = async(static fn () => $poll->invoke($poller));
+            $pending->getFuture()->await($cancel);
+            $overlap = async(static function () use ($entered, $poll, $poller): void {
+                $entered->complete();
+                $poll->invoke($poller);
+            });
+            $entered->getFuture()->await($cancel);
+            $skippedWhilePending = $overlap->isComplete();
+            $this->assertFalse($first->isComplete());
+            $this->assertNull($process->completionNotifiedAt);
+            $release->complete();
+            $first->await($cancel);
+            $overlap->await($cancel);
+            $this->assertTrue($skippedWhilePending, 'Another pass must return instead of queueing a duplicate publish.');
+            $this->assertCount(1, $requests);
+            $this->assertStringContainsString('[BG_PROCESS_DONE]', $requests[0]->body);
+            if ($rejectFirst) {
+                $this->assertNull($process->completionNotifiedAt);
+            } else {
+                $this->assertNotNull($process->completionNotifiedAt);
+                $process = $this->persistProcess(10003, $log, 'echo completed again', $now, $now, 0, BackgroundProcessStatusEnum::Finished);
+            }
+            // Success and rejection must both release the pass guard.
+            $poll->invoke($poller);
+            $this->assertNotNull($process->completionNotifiedAt);
+            $this->assertCount(2, $requests);
+            $poll->invoke($poller);
+            $this->assertCount(2, $requests, 'Already notified completions must remain suppressed.');
+        } finally {
+            if (!$release->isComplete()) {
+                $release->complete();
+            }
+            $transport->close();
+            $server->close();
+            $peer->await($cancel);
+            // Finish the owned loop, not just its suspended main-Fiber await,
+            // before following tests exercise synchronous stdout shutdown.
+            EventLoop::run();
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
     }
 
     public function testPollSkipsNonBackgrounded(): void
