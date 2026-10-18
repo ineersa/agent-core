@@ -158,6 +158,17 @@ Success, model failure, empty or ineffective summaries, structural skips, and ho
 cancellation or replacement all preserve that authority rather than issuing a
 fresh unscoped advance. Cancellation still settles an active compaction without
 continuing the run.
+Matching active worker results also settle after a controller restart expires
+their wake fence, including workers reconstructed by explicit repair. Terminal
+events record effective continuation permission, so replay returns to idle with
+no active operation or stream. Stale operation identities remain no-ops.
+
+At turn-start and provider-stop boundaries, queued manual compaction carries an
+already-applied completion's original reference and fence through maintenance.
+It schedules no racing completion advance. Settlement resumes eligible intent
+even after its mailbox row was consumed. Expired completion permission suppresses
+only the automatic successor, not independently authorized manual maintenance.
+Manual compaction without completion intent still does not auto-continue.
 
 Maintenance compaction settlement checks pending completion references without
 opening bodies. An eligible pending delivery schedules the same coalesced idle-root

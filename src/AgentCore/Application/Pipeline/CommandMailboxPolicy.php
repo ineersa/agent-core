@@ -38,6 +38,28 @@ final readonly class CommandMailboxPolicy
             : $this->completionEligibility->ineligibleReason($state, $message->completionFence);
     }
 
+    /** Manual compaction owns maintenance authority; the applied result keeps its separate wake fence. */
+    public function deferCompletionToCompaction(CommandApplicationResult $result, ?\Ineersa\AgentCore\Domain\Message\AdvanceRun $existing = null): CommandApplicationResult
+    {
+        $reference = $existing->appliedCompletion ?? $result->appliedCompletion();
+        if (null === $reference || null === $reference->deliveryFence
+            || !array_any($result->effects, static fn (object $effect): bool => $effect instanceof CompactRun)) {
+            return $result;
+        }
+        $continuation = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::forCompletion($result->state, $reference->deliveryFence, appliedCompletion: $reference)->message;
+        if (!$continuation instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun) {
+            throw new \LogicException('Completion coordination must capture an AdvanceRun.');
+        }
+        $effects = array_map(static fn (object $effect): object => $effect instanceof CompactRun ? new CompactRun(
+            runId: $effect->runId(), turnNo: $effect->turnNo(), stepId: $effect->stepId(),
+            attempt: $effect->attempt(), idempotencyKey: $effect->idempotencyKey(),
+            trigger: $effect->trigger, continueAfterCompaction: $effect->continueAfterCompaction,
+            customInstructions: $effect->customInstructions, completionContinuation: $continuation,
+        ) : $effect, $result->effects);
+
+        return new CommandApplicationResult($result->state, $result->eventSpecs, $result->shouldContinue, $effects, $result->postCommitActions, $result->completionBytes);
+    }
+
     /** Preserve automatic intent on every compaction settlement, including skips and failures. */
     public function afterCompactionSettlement(HandlerResult $result, ?\Ineersa\AgentCore\Domain\Message\AdvanceRun $continuation): HandlerResult
     {
@@ -48,12 +70,24 @@ final readonly class CommandMailboxPolicy
         }
         $effects = $result->effects;
         $actions = $result->postCommitActions;
+        $events = $result->events;
         if (null !== $continuation) {
             // A held completion turn is not a fresh human continuation. Never
             // replace its cancellation/history/controller authority at settlement.
             $effects = array_values(array_filter($effects, static fn (object $effect): bool => !$effect instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun));
             if (null === $this->completionContinuationIneligibleReason($state, $continuation)) {
                 $actions[] = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::forCompletion($state, $continuation->completionFence, appliedCompletion: $continuation->appliedCompletion);
+            } elseif (\Ineersa\AgentCore\Domain\Run\RunStatus::Running === $state->status) {
+                // A synchronous manual skip never entered Compacting. Close
+                // the held completion turn when only its wake authority expired.
+                $events[] = RunEvent::forAppend($state->runId, $state->turnNo, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']);
+                $state = $state->with([
+                    'status' => \Ineersa\AgentCore\Domain\Run\RunStatus::Completed,
+                    'lastSeq' => $state->lastSeq + 1,
+                    'activeStepId' => null,
+                    'isStreaming' => false,
+                    'streamingMessage' => null,
+                ]);
             }
         } elseif (\Ineersa\AgentCore\Domain\Run\RunStatus::Completed === $state->status
             && null === $state->parentRunId
@@ -72,7 +106,7 @@ final readonly class CommandMailboxPolicy
             }
         }
 
-        return new HandlerResult($state, $result->events, $effects, $result->postCommitEffects, $actions);
+        return new HandlerResult($state, $events, $effects, $result->postCommitEffects, $actions);
     }
 
     public function applyPendingTurnStartCommands(RunState $state): CommandApplicationResult

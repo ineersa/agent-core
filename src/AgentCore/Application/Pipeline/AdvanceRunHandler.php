@@ -134,6 +134,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             ], fn (): CommandApplicationResult => $this->commandMailboxPolicy->applyPendingTurnStartCommands($state))
         ;
 
+        $mailboxResult = $this->commandMailboxPolicy->deferCompletionToCompaction($mailboxResult, $message);
         $preparedState = $mailboxResult->state;
         $boundaryEventSpecs = $this->withAdvanceToken($mailboxResult->eventSpecs, $message->idempotencyKey());
         $mailboxEffects = $mailboxResult->effects;
@@ -174,8 +175,12 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             }
 
             $hasCompletionApplication = array_any($boundaryEventSpecs, static fn (array $spec): bool => RunEventTypeEnum::AgentCommandApplied->value === $spec['type'] && 'tool_completion' === ($spec['payload']['kind'] ?? null));
-            $canResumeCompletion = RunStatus::Completed === $preparedState->status && null === $preparedState->parentRunId && $hasCompletionApplication;
-            if (($hasNonCompactBoundaryEvent || $canResumeCompletion) && [] !== $boundaryEventSpecs) {
+            // Maintenance can finish after the original mailbox row was
+            // consumed. Its verified applied reference retains continuation
+            // intent without requiring a fresh receipt or human command.
+            $canResumeCompletion = RunStatus::Completed === $preparedState->status && null === $preparedState->parentRunId
+                && ($hasCompletionApplication || null !== $message->appliedCompletion);
+            if (($hasNonCompactBoundaryEvent && [] !== $boundaryEventSpecs) || $canResumeCompletion) {
                 $preparedState = $preparedState->with([
                     'status' => RunStatus::Running,
                     'errorMessage' => null,

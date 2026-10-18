@@ -725,6 +725,8 @@ final readonly class RunStateReducer
             'status' => $finalStatus,
             'activeStepId' => null,
             'currentOperation' => null,
+            'isStreaming' => false,
+            'streamingMessage' => null,
             'lastAppliedCompactionKey' => $this->currentCompactionKey($state),
         ]);
     }
@@ -789,6 +791,8 @@ final readonly class RunStateReducer
                 'status' => $resolveCompacting,
                 'activeStepId' => null,
                 'currentOperation' => null,
+                'isStreaming' => false,
+                'streamingMessage' => null,
                 'lastAppliedCompactionKey' => $this->currentCompactionKey($state),
             ]);
         }

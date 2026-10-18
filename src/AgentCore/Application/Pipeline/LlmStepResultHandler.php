@@ -342,6 +342,7 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 ], fn (): CommandApplicationResult => $this->commandMailboxPolicy->applyPendingStopBoundaryCommands($stateAfterAssistant))
             ;
 
+            $mailboxResult = $this->commandMailboxPolicy->deferCompletionToCompaction($mailboxResult);
             $stateAfterBoundary = $mailboxResult->state;
             $boundaryEventSpecs = $mailboxResult->eventSpecs;
             $shouldContinue = $mailboxResult->shouldContinue;
@@ -391,9 +392,13 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                         }
                     }
                 }
-                $postCommitActions[] = null === $appliedCompletion
-                    ? $this->followUpAdvanceAction($runId, $state->turnNo, 'stop-boundary-follow-up')
-                    : AdvanceRunCoordinationFactory::forCompletion($nextState, $appliedCompletion->deliveryFence, appliedCompletion: $appliedCompletion);
+                // An applied completion follows queued maintenance through its
+                // settlement, not an AdvanceRun that would race and no-op while Compacting.
+                if (null === $appliedCompletion || !array_any($mailboxEffects, static fn (object $effect): bool => $effect instanceof \Ineersa\AgentCore\Domain\Message\CompactRun && null !== $effect->completionContinuation)) {
+                    $postCommitActions[] = null === $appliedCompletion
+                        ? $this->followUpAdvanceAction($runId, $state->turnNo, 'stop-boundary-follow-up')
+                        : AdvanceRunCoordinationFactory::forCompletion($nextState, $appliedCompletion->deliveryFence, appliedCompletion: $appliedCompletion);
+                }
             }
 
             return new HandlerResult(

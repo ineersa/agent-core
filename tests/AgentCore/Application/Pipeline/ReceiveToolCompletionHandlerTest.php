@@ -678,9 +678,11 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
         $before = $context->requireLoaded($runId);
         $processor->process('fenced-compaction', $queued);
         $after = $context->requireLoaded($runId);
-        if ('cancel' === $invalidation && 'result' === $boundary) {
-            $this->assertSame(RunStatus::Cancelled, $after->status, 'A cancelled active compaction still settles its operation.');
+        if ('result' === $boundary) {
+            $this->assertSame('cancel' === $invalidation ? RunStatus::Cancelled : RunStatus::Completed, $after->status, 'Matching active work settles even after its wake fence expires.');
             $this->assertNull($after->currentOperation);
+            $this->assertNull($after->activeStepId);
+            $this->assertFalse($after->isStreaming);
         } else {
             $this->assertSame($before, $after);
         }
@@ -695,6 +697,174 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
         foreach (['request', 'result', 'successor'] as $boundary) {
             foreach (['cancel', 'restart'] as $fence) {
                 yield $boundary.' '.$fence => [$boundary, $fence];
+            }
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('restartCompactionResults')]
+    public function testMatchingRestartedCompactionSettlesAndRepairCannotKeepItActive(string $outcome, bool $repair): void
+    {
+        $container = self::getContainer();
+        $this->resetTransports();
+        [$runId, $source, $reference] = ToolCompletionReceiptFixture::create($container);
+        $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, new \Ineersa\AgentCore\Domain\Event\RunEvent($runId, 0, 0, 'run_started', ['payload' => ['messages' => array_map(static fn ($message): array => $message->toArray(), $this->compactionHistory())]]));
+        $started = \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, new \Ineersa\AgentCore\Domain\Event\RunEvent($runId, 0, 1, 'turn_advanced', ['turn_no' => 1]));
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $started->seq, messages: $this->compactionHistory()));
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $processor = $this->compactionProcessor();
+        $processor->process('restart-settlement', $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class)[0]);
+        $processor->process('restart-settlement', $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\CompactRun::class)[0]);
+        $step = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class)[0];
+        $container->get(\Doctrine\DBAL\Connection::class)->executeStatement('UPDATE hatfield_session SET controller_generation = 1 WHERE id = ?', [$runId]);
+        $reducer = $container->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class);
+        $cold = $reducer->replay(RunState::queued($runId), $store->rangeFor($runId, 1, $context->requireLoaded($runId)->lastSeq));
+        $context->loadRecovered($cold->with(['version' => $context->requireLoaded($runId)->version]));
+        if ($repair) {
+            $decision = $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairService::class)->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
+            $this->assertNull($decision->refusalReason, $decision->message);
+            $this->assertSame(1, $decision->activeOperationsRedriven, $decision->message);
+            $steps = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class);
+            $this->assertCount(2, $steps);
+            $this->assertEquals($step, $steps[1], 'Real repair reconstructs the original worker, including its stale wake fence.');
+            $step = $steps[1];
+        }
+        $context->loadRecovered($context->requireLoaded($runId)->with(['isStreaming' => true, 'streamingMessage' => ['text' => 'transient compaction progress']]));
+        $result = $this->compactionWorkerResult($step, $outcome);
+        $before = $context->requireLoaded($runId);
+        $wrong = new \Ineersa\AgentCore\Domain\Message\CompactionStepResult($runId, $result->turnNo(), $result->stepId(), $result->attempt() + 1, $result->idempotencyKey(), 'Wrong attempt', null, $result->retainedTailMessages, $result->messagesCompacted, $result->messagesRetained, $result->firstRetainedIndex, $result->tokenEstimateBefore, $result->trigger, completionContinuation: $result->completionContinuation);
+        $processor->process('restart-settlement', $wrong);
+        $this->assertSame($before, $context->requireLoaded($runId));
+        $processor->process('restart-settlement', $result);
+        $settled = $context->requireLoaded($runId);
+        $this->assertSame(RunStatus::Completed, $settled->status);
+        $this->assertNull($settled->currentOperation);
+        $this->assertNull($settled->activeStepId);
+        $this->assertFalse($settled->isStreaming);
+        $this->assertNull($settled->streamingMessage);
+        $replayed = $reducer->replay(RunState::queued($runId), $store->rangeFor($runId, 1, $settled->lastSeq));
+        $this->assertSame($settled->status, $replayed->status);
+        $this->assertNull($replayed->currentOperation);
+        $this->assertNull($replayed->activeStepId);
+        $this->assertFalse($replayed->isStreaming);
+        $this->assertSame(array_map(static fn ($message): array => $message->toArray(), $settled->messages), array_map(static fn ($message): array => $message->toArray(), $replayed->messages));
+        $processor->process('restart-settlement', $result);
+        $this->assertSame($settled, $context->requireLoaded($runId));
+        $this->assertCount(1, $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class));
+        $this->assertCount(0, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+        $owner->onApplyCommand(new ApplyCommand($runId, $settled->turnNo, 'explicit', 1, 'after-stale-compaction', CoreCommandKind::FollowUp, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Explicit follow-up after restart.']]]]));
+        $advances = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+        $processor->process('restart-settlement', $advances[array_key_last($advances)]);
+        $this->assertCount(1, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+    }
+
+    public static function restartCompactionResults(): iterable
+    {
+        foreach (['success', 'error', 'throw', 'empty', 'ineffective'] as $outcome) {
+            foreach ([false, true] as $repair) {
+                yield $outcome.($repair ? ' repaired' : ' original') => [$outcome, $repair];
+            }
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('queuedMaintenanceCompletions')]
+    public function testQueuedManualCompactionCarriesAppliedCompletionUntilSettlement(string $boundary, string $outcome, bool $stale): void
+    {
+        $container = self::getContainer();
+        $this->resetTransports();
+        [$runId, $source, $reference] = ToolCompletionReceiptFixture::create($container);
+        $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, new \Ineersa\AgentCore\Domain\Event\RunEvent($runId, 0, 0, 'run_started', ['payload' => ['messages' => array_map(static fn ($message): array => $message->toArray(), $this->compactionHistory())]]));
+        $started = \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, new \Ineersa\AgentCore\Domain\Event\RunEvent($runId, 0, 1, 'turn_advanced', ['turn_no' => 1]));
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $started->seq, messages: $this->compactionHistory()));
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $processor = $this->compactionProcessor($outcome, false);
+        $request = null;
+        if ('stop' === $boundary) {
+            $owner->onApplyCommand(new ApplyCommand($runId, 1, 'start', 1, 'start-manual-boundary', CoreCommandKind::FollowUp, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Initial authorized request.']]]]));
+            $processor->process('queued-manual', $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class)[0]);
+            $request = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class)[0];
+        } else {
+            // A foreground turn-start successor is already queued while the
+            // active run receives manual maintenance and a completion.
+            $context->loadRecovered($context->requireLoaded($runId)->with(['status' => RunStatus::Running]));
+            $container->get('agent.command.bus')->dispatch(new \Ineersa\AgentCore\Domain\Message\AdvanceRun($runId, 1, 'queued-turn-start', 1, 'queued-turn-start'));
+        }
+        $owner->onApplyCommand(new ApplyCommand($runId, $context->requireLoaded($runId)->turnNo, 'manual', 1, 'queued-manual', CoreCommandKind::Compact));
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        if (null !== $request) {
+            $owner->onLlmStepResult(new \Ineersa\AgentCore\Domain\Message\LlmStepResult($runId, $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(), assistantMessage: new \Symfony\AI\Platform\Message\AssistantMessage(new \Symfony\AI\Platform\Message\Content\Text('Safe stop.')), stopReason: 'stop'));
+        } else {
+            $processor->process('queued-manual', $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class)[0]);
+        }
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
+        $compacts = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\CompactRun::class);
+        $this->assertCount(1, $compacts);
+        $compact = $this->roundTrip($compacts[0]);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\CompactRun::class, $compact);
+        $this->assertFalse($compact->continueAfterCompaction, 'Manual maintenance keeps independent authorization, not automatic-compaction authority.');
+        $this->assertSame('manual', $compact->trigger);
+        $this->assertEquals($reference, $compact->completionContinuation?->appliedCompletion);
+        $this->assertEquals($reference->deliveryFence, $compact->completionContinuation?->completionFence);
+        $this->assertCount(1, $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class), 'No racing stop-boundary continuation while maintenance is queued.');
+        if ($stale) {
+            $container->get(\Doctrine\DBAL\Connection::class)->executeStatement('UPDATE hatfield_session SET controller_generation = 1 WHERE id = ?', [$runId]);
+        }
+        $processor->process('queued-manual', $compact);
+        if (!\in_array($outcome, ['skip', 'hook_cancel', 'replacement'], true)) {
+            $step = $this->roundTrip($this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class)[0]);
+            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class, $step);
+            $this->assertEquals($compact->completionContinuation, $step->completionContinuation);
+            $serialized = $container->get(NormalizerInterface::class)->normalize($step);
+            $this->assertEquals($step, $container->get(\Symfony\Component\Serializer\Normalizer\DenormalizerInterface::class)->denormalize($serialized, \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class));
+            if ('success' === $outcome) {
+                $repair = $container->get(\Ineersa\CodingAgent\Session\Repair\SessionRepairService::class)->repair($runId, true, \Symfony\Component\Uid\Uuid::v4()->toRfc4122());
+                $this->assertSame(1, $repair->activeOperationsRedriven, $repair->message);
+                $steps = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class);
+                $this->assertCount(2, $steps);
+                $this->assertEquals($step, $steps[1]);
+                $step = $steps[1];
+            }
+            $processor->process('queued-manual', $this->compactionWorkerResult($step, $outcome));
+        }
+        $settled = $context->requireLoaded($runId);
+        $this->assertNull($settled->currentOperation);
+        if (!$stale) {
+            $this->assertNull($container->get(CommandMailboxPolicy::class)->completionContinuationIneligibleReason($settled, $compact->completionContinuation));
+        }
+        $advances = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+        $this->assertCount($stale ? 1 : 2, $advances);
+        if (!$stale) {
+            $successor = $this->roundTrip($advances[1]);
+            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $successor);
+            $this->assertEquals($reference, $successor->appliedCompletion);
+            $this->assertEquals($reference->deliveryFence, $successor->completionFence);
+            $processor->process('queued-manual', $successor);
+            $processor->process('queued-manual', $successor);
+        } else {
+            $this->assertSame(RunStatus::Completed, $settled->status);
+            $this->assertNull($settled->activeStepId);
+            $this->assertFalse($settled->isStreaming);
+            $replayed = $container->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class)->replay(RunState::queued($runId), $container->get(EventStoreInterface::class)->rangeFor($runId, 1, $settled->lastSeq));
+            $this->assertSame($settled->status, $replayed->status);
+            $this->assertNull($replayed->currentOperation);
+            $this->assertNull($replayed->activeStepId);
+            $this->assertFalse($replayed->isStreaming);
+        }
+        $this->assertCount(('stop' === $boundary ? 1 : 0) + ($stale ? 0 : 1), $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
+    }
+
+    public static function queuedMaintenanceCompletions(): iterable
+    {
+        foreach (['stop', 'turn-start'] as $boundary) {
+            foreach (['success', 'error', 'empty', 'skip', 'hook_cancel', 'replacement'] as $outcome) {
+                foreach ([false, true] as $stale) {
+                    yield $boundary.' '.$outcome.($stale ? ' stale' : '') => [$boundary, $outcome, $stale];
+                }
             }
         }
     }

@@ -52,6 +52,12 @@ through `completionContinuation`. Both compaction handlers use
 `CommandMailboxPolicy::afterCompactionSettlement()` for all settlement paths.
 It preserves fenced continuation and reuses the idle-root advance for eligible
 receipts admitted during maintenance. Cancellation does not schedule a successor.
+An exact active result settles even after its completion wake fence expires;
+terminal events record effective continuation for idle replay and repair.
+Turn-start and stop-boundary mailbox application attach already-applied completion
+intent to queued manual compaction instead of scheduling a racing advance.
+Manual maintenance remains independently authorized; its completion successor
+must revalidate the original reference and fence after settlement.
 
 ## Subagent progress ownership
 

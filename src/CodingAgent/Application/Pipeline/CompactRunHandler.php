@@ -71,6 +71,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             throw new \InvalidArgumentException('CompactRunHandler can only handle CompactRun messages.');
         }
         if (null !== $message->completionContinuation
+            && $message->continueAfterCompaction
             && RunStatus::Cancelling !== $state->status
             && null !== $this->commandMailboxPolicy->completionContinuationIneligibleReason($state, $message->completionContinuation)) {
             return new HandlerResult();

@@ -54,11 +54,6 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
         if (!$message instanceof CompactionStepResult) {
             throw new \InvalidArgumentException('CompactionStepResultHandler can only handle CompactionStepResult messages.');
         }
-        if (null !== $message->completionContinuation
-            && RunStatus::Cancelling !== $state->status
-            && null !== $this->commandMailboxPolicy->completionContinuationIneligibleReason($state, $message->completionContinuation)) {
-            return new HandlerResult();
-        }
 
         return $this->commandMailboxPolicy->afterCompactionSettlement($this->handleCompactionMessage($message, $state), $message->completionContinuation);
     }
@@ -82,6 +77,13 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             )) {
             return new HandlerResult();
         }
+
+        // Exact active work must settle even when its original automatic wake
+        // authority expired. Record the effective continuation in terminal events
+        // so cold replay also returns to idle instead of reviving old intent.
+        $continueAfterCompaction = $message->continueAfterCompaction
+            && (null === $message->completionContinuation
+                || null === $this->commandMailboxPolicy->completionContinuationIneligibleReason($state, $message->completionContinuation));
 
         // Error from model invocation → emit failure, preserve messages.
         // Prefer the sanitised user_message from the error classifier
@@ -118,7 +120,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             // so transition to Cancelled without emitting AdvanceRun.
             $errorFinalStatus = match (true) {
                 RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
-                $message->continueAfterCompaction => RunStatus::Running,
+                $continueAfterCompaction => RunStatus::Running,
                 default => RunStatus::Completed,
             };
 
@@ -129,7 +131,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             // Do NOT advance when Cancelling — the run has been cancelled
             // and the Cancelled resolution above is terminal.
             $errorEffects = [];
-            if (RunStatus::Cancelling !== $state->status && $message->continueAfterCompaction) {
+            if (RunStatus::Cancelling !== $state->status && $continueAfterCompaction) {
                 $continueStepId = \sprintf('advance-%d', hrtime(true));
                 $errorEffects[] = new AdvanceRun(
                     runId: $runId,
@@ -152,7 +154,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
                     'model' => $message->model,
                     'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
                     'trigger' => $message->trigger,
-                    'continue_after_compaction' => $message->continueAfterCompaction,
+                    'continue_after_compaction' => $continueAfterCompaction,
                 ],
             ]];
 
@@ -188,7 +190,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             // Preserve Cancelling → Cancelled when no more work remains.
             $emptyFinalStatus = match (true) {
                 RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
-                $message->continueAfterCompaction => RunStatus::Running,
+                $continueAfterCompaction => RunStatus::Running,
                 default => RunStatus::Completed,
             };
 
@@ -197,7 +199,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             // dispatch AdvanceRun so the turn proceeds on original messages.
             // Do NOT advance when Cancelling.
             $emptyEffects = [];
-            if (RunStatus::Cancelling !== $state->status && $message->continueAfterCompaction) {
+            if (RunStatus::Cancelling !== $state->status && $continueAfterCompaction) {
                 $continueStepId = \sprintf('advance-%d', hrtime(true));
                 $emptyEffects[] = new AdvanceRun(
                     runId: $runId,
@@ -220,7 +222,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
                     'model' => $message->model,
                     'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
                     'trigger' => $message->trigger,
-                    'continue_after_compaction' => $message->continueAfterCompaction,
+                    'continue_after_compaction' => $continueAfterCompaction,
                 ],
             ]];
 
@@ -299,12 +301,12 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
 
             $ineffectiveFinalStatus = match (true) {
                 RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
-                $message->continueAfterCompaction => RunStatus::Running,
+                $continueAfterCompaction => RunStatus::Running,
                 default => RunStatus::Completed,
             };
 
             $ineffectiveEffects = [];
-            if (RunStatus::Cancelling !== $state->status && $message->continueAfterCompaction) {
+            if (RunStatus::Cancelling !== $state->status && $continueAfterCompaction) {
                 $continueStepId = \sprintf('advance-%d', hrtime(true));
                 $ineffectiveEffects[] = new AdvanceRun(
                     runId: $runId,
@@ -325,7 +327,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
                     'model' => $message->model,
                     'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
                     'trigger' => $message->trigger,
-                    'continue_after_compaction' => $message->continueAfterCompaction,
+                    'continue_after_compaction' => $continueAfterCompaction,
                     'estimated_tokens_before' => $compactResult->tokenEstimateBefore,
                     'estimated_tokens_after' => $compactResult->tokenEstimateAfter,
                     'messages_compacted' => $compactResult->messagesCompacted,
@@ -366,7 +368,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
         //   Cancellation always wins → Cancelled with NO AdvanceRun.
         $finalStatus = match (true) {
             RunStatus::Cancelling === $state->status => RunStatus::Cancelled,
-            $message->continueAfterCompaction => RunStatus::Running,
+            $continueAfterCompaction => RunStatus::Running,
             default => RunStatus::Completed,
         };
 
@@ -385,7 +387,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
                 'model' => $message->model,
                 'thinking_level' => $message->modelOptions['thinking_level'] ?? null,
                 'trigger' => $message->trigger,
-                'continue_after_compaction' => $message->continueAfterCompaction,
+                'continue_after_compaction' => $continueAfterCompaction,
                 'hook_metadata' => $message->hookMetadata,
             ],
         ]];
@@ -407,6 +409,8 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'messages' => $compactResult->compactedMessages,
             'activeStepId' => null,
             'currentOperation' => null,
+            'isStreaming' => false,
+            'streamingMessage' => null,
             'lastAppliedCompactionKey' => $message->idempotencyKey(),
         ]);
 
@@ -416,7 +420,7 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
         // NOT auto-continue — the run is already terminal and the user is
         // expected to follow-up manually.
         $effects = [];
-        if (RunStatus::Cancelling !== $state->status && $message->continueAfterCompaction) {
+        if (RunStatus::Cancelling !== $state->status && $continueAfterCompaction) {
             $continueStepId = \sprintf('advance-%d', hrtime(true));
             $effects[] = new AdvanceRun(
                 runId: $runId,
@@ -455,6 +459,8 @@ final class CompactionStepResultHandler implements RunMessageHandler, RunMessage
             'lastSeq' => $state->lastSeq + $count,
             'activeStepId' => $clearActiveStepId ? null : $state->activeStepId,
             'currentOperation' => $clearActiveStepId ? null : $state->currentOperation,
+            'isStreaming' => $clearActiveStepId ? false : $state->isStreaming,
+            'streamingMessage' => $clearActiveStepId ? null : $state->streamingMessage,
             'lastAppliedCompactionKey' => $completedRequestKey ?? $state->lastAppliedCompactionKey,
         ]);
     }

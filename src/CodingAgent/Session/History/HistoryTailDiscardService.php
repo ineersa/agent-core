@@ -42,7 +42,7 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
         // Automatic delivery must never discard selected history, even when
         // its successor became stale before the handler can reject it.
         if (($message instanceof AdvanceRun && null !== $message->completionFence)
-            || ($message instanceof CompactRun && null !== $message->completionContinuation)) {
+            || ($message instanceof CompactRun && $message->continueAfterCompaction && null !== $message->completionContinuation)) {
             return false;
         }
         if ($message instanceof AdvanceRun || $message instanceof ApplyShellCommand || $message instanceof CompactRun) {
