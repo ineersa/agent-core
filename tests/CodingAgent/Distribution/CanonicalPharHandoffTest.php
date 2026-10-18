@@ -15,6 +15,16 @@ use PHPUnit\Framework\TestCase;
  */
 final class CanonicalPharHandoffTest extends TestCase
 {
+    public function testDarwinExecutableUsesFirstTextVnodeNotProcessTitle(): void
+    {
+        require_once ProjectDir::get().'/.castor/helpers.php';
+        require_once ProjectDir::get().'/.castor/distribution.php';
+        $output = "p123\0camp-process\0\nftxt\0n/installed/hatfield renamed\0\nftxt\0n/usr/lib/dyld\0\n";
+        $this->assertSame('/installed/hatfield renamed', distribution_lsof_executable($output));
+        $this->expectException(\RuntimeException::class);
+        distribution_lsof_executable("p123\0camp-process\0\n");
+    }
+
     public function testResolverPrefersExistingDistPharHandoffWithoutRebuild(): void
     {
         $root = ProjectDir::get();

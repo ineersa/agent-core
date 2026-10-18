@@ -934,17 +934,27 @@ function distribution_read_process_executable(int $pid): string
 
         return $path;
     }
-    $output = [];
-    $exit = 0;
-    exec('ps -p '.escapeshellarg((string) $pid).' -o comm= 2>&1', $output, $exit);
-    if (0 !== $exit || [] === $output) {
-        throw new RuntimeException('Native topology smoke: cannot inspect executable for PID '.$pid);
+    // Darwin ps comm follows argv[0]. lsof's first text vnode is the actual
+    // executable, independent of Amp changing its process title to amp-process.
+    $process = new Symfony\Component\Process\Process(['/usr/sbin/lsof', '-a', '-p', (string) $pid, '-d', 'txt', '-F0n']);
+    $process->mustRun();
+
+    return distribution_lsof_executable($process->getOutput());
+}
+
+function distribution_lsof_executable(string $output): string
+{
+    foreach (explode("\0", $output) as $field) {
+        $field = ltrim($field, "\n");
+        if (str_starts_with($field, 'n/')) {
+            $path = substr($field, 1);
+            $resolved = realpath($path);
+
+            return false !== $resolved ? $resolved : $path;
+        }
     }
-    $path = trim(implode("\n", $output));
 
-    $resolved = realpath($path);
-
-    return false !== $resolved ? $resolved : $path;
+    throw new RuntimeException('Native topology smoke: executable text vnode is missing.');
 }
 /**
  * Assert every expected messenger transport relaunches through the native binary.

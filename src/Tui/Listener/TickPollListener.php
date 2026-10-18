@@ -162,6 +162,12 @@ final class TickPollListener implements TuiListenerRegistrar
                 onSessionRestoring: $returnToParent,
             );
 
+            // A terminal polling failure belongs to the session, not the hidden
+            // parent transcript. Leave the child so the diagnostic is visible.
+            if (RunActivityStateEnum::Failed === $state->activity && '' !== $state->lastRuntimePollError) {
+                $returnToParent();
+            }
+
             // Recovery may have exited the child during the parent poll. All
             // remaining work must follow the view that is actually displayed.
             $liveActive = $state->subagentLiveView->active;

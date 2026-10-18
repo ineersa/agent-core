@@ -567,6 +567,11 @@ services:
     arguments:
       $runtimeConfig: '@Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig'
 
+  Ineersa\CodingAgent\Runtime\Messenger\SerializedBrokerSendersLocator:
+    decorates: messenger.senders_locator
+    arguments:
+      $inner: '@Ineersa\CodingAgent\Runtime\Messenger\SerializedBrokerSendersLocator.inner'
+
   # ─── Controller event loop ───
 
   # Command handlers (ControllerCommandEvent listeners) receive the

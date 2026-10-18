@@ -197,11 +197,18 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
         $this->abandonKilledControllerHandles();
     }
 
-    public function testStartupHookCanPublishBeforeConsumersLaunch(): void
+    public static function startupOutputModes(): iterable
+    {
+        yield 'normal output' => [false];
+        yield 'reader closes during terminal drain' => [true];
+    }
+
+    #[DataProvider('startupOutputModes')]
+    public function testStartupHookAndTerminalCleanup(bool $closedTerminal): void
     {
         $proof = $this->tempDir.'/startup-hook.json';
         $input = new InputStream();
-        $process = new Process([\PHP_BINARY, __DIR__.'/E2E/Support/ControllerStartupHook.php', $this->projectDir, $proof], $this->tempDir,
+        $process = new Process([\PHP_BINARY, __DIR__.'/E2E/Support/ControllerStartupHook.php', $this->projectDir, $proof, $closedTerminal ? 'closed-terminal' : 'normal'], $this->tempDir,
             array_merge($this->controllerSubprocessEnv(), [
                 'APP_ENV' => 'test', 'APP_DEBUG' => '1', 'HATFIELD_CWD' => $this->tempDir, 'HOME' => $this->tempDir,
                 'HATFIELD_SESSION_ID' => false, 'HATFIELD_REPLAY_SESSION_ID' => $this->sessionId,
@@ -214,9 +221,23 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
             $process->start();
             $this->assertTrue($process->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'runtime.ready')), $process->getErrorOutput());
             $tree = OwnedProcessTree::descendants($process->getPid());
+            if ($closedTerminal) {
+                $process->wait();
+            }
+            $this->assertFileExists($proof, 'The owning shutdown must resume after terminal stdout fails.');
             $result = json_decode(file_get_contents($proof), true, 16, \JSON_THROW_ON_ERROR);
             $this->assertSame('startup-job', $result['received']);
             $this->assertSame([], $result['consumers'], 'Session-start hooks must run after broker readiness but before consumer launch.');
+            $this->assertTrue($result['publisher_wrapped']);
+            $this->assertTrue($result['receiver_unchanged']);
+            if ($closedTerminal) {
+                $this->assertTrue($result['lifecycle']);
+                $this->assertTrue($result['background_removed']);
+                $this->assertActualAmpWorker($result['tree']);
+                foreach ($result['tree'] as $child) {
+                    $this->assertFalse(OwnedProcessTree::stillAlive($child), 'Owned broker, Amp worker and consumers must exit before loop stop.');
+                }
+            }
         } catch (\Throwable $exception) {
             throw new \RuntimeException('Startup hook fixture failed: '.$process->getOutput().$process->getErrorOutput(), 0, $exception);
         } finally {

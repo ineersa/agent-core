@@ -44,12 +44,11 @@ final class ConfigExecutableLocator implements AppExecutableLocator
     }
 
     /**
-     * True when $path is the fused native self.
+     * True when $path should launch without a separate PHP interpreter.
      *
-     * Prefer PHP-micro's self path when available. A HATFIELD_BINARY_PATH
-     * override that is not the running self (plain PHAR/script) stays
-     * "[php, path]". Empty PHP_BINARY remains the fused-native signal when the
-     * micro helper is unavailable.
+     * Prefer PHP-micro's self identity. With a non-empty PHP_BINARY, a different
+     * PHAR/script stays "[php, path]". Empty PHP_BINARY remains the native signal
+     * even when the override names another native copy or hardlink.
      */
     private static function isFusedNativeExecutable(string $path): bool
     {
@@ -63,8 +62,10 @@ final class ConfigExecutableLocator implements AppExecutableLocator
             if ('' !== $self) {
                 $resolvedSelf = realpath($self);
 
-                return (false !== $resolvedPath && false !== $resolvedSelf && $resolvedPath === $resolvedSelf)
-                    || $path === $self;
+                if ((false !== $resolvedPath && false !== $resolvedSelf && $resolvedPath === $resolvedSelf)
+                    || $path === $self) {
+                    return true;
+                }
             }
         }
 

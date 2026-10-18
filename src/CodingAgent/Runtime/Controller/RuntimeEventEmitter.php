@@ -33,6 +33,8 @@ final class RuntimeEventEmitter
     private int $pendingBytes = 0;
     private ?\Closure $bootstrapFilter = null;
     private ?\Closure $onDrained = null;
+    /** @var DeferredFuture<null>|null */
+    private ?DeferredFuture $terminalDrain = null;
 
     /** @var (\Closure(): void)|null Callback invoked on fatal stdout write failure before event loop stop. */
     private ?\Closure $onFatalShutdown = null;
@@ -174,7 +176,7 @@ final class RuntimeEventEmitter
         if (null !== $terminal && !$this->shuttingDown && null !== $this->stdout) {
             $this->cancelBootstrapOutput();
             $this->beginBootstrapOutput();
-            $drained = new DeferredFuture();
+            $drained = $this->terminalDrain = new DeferredFuture();
             $this->shuttingDown = true;
             $enqueueTerminal = function () use ($terminal, $drained): void {
                 $this->enqueueTransfer($terminal);
@@ -207,6 +209,7 @@ final class RuntimeEventEmitter
         $this->pendingBytes = 0;
         $this->onDrained = null;
         $this->bootstrapFilter = null;
+        $this->terminalDrain = null;
     }
 
     private function enqueueTransfer(RuntimeEvent $event, ?\Closure $after = null): void
@@ -232,7 +235,15 @@ final class RuntimeEventEmitter
             $runId = $this->pending[0]['run_id'];
             $this->logger->error('session.bootstrap.stdout_failed', ['run_id' => $runId, 'session_id' => $runId,
                 'component' => 'RuntimeEventEmitter', 'event_type' => 'session.bootstrap.stdout_failed']);
+            $drain = $this->terminalDrain;
             $this->shutdown();
+            if (null !== $drain) {
+                // Resume the owning shutdown before it stops the loop: consumers,
+                // broker and lifecycle listeners still need to be cleaned up.
+                $drain->error(new RuntimeTransportException('Terminal stdout disconnected.'));
+
+                return;
+            }
             if (null !== $this->onFatalShutdown) {
                 ($this->onFatalShutdown)();
             }
