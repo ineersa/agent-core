@@ -18,6 +18,9 @@ Internals: [phar-packaging.md](phar-packaging.md) · [static-packaging.md](stati
 | `hatfield.darwin-arm64` | Fused PHP-micro native (macOS arm64) |
 | `SHA256SUMS` | SHA-256 for every release asset |
 
+Native releases are single-file per target. Amp SQLite workers relaunch the same
+fused binary through `--internal-sqlite-worker`.
+
 **Windows / non-POSIX:** the Bash installer and native matrix are **Linux/macOS only**. There is no
 Windows native binary and no Windows installer path. The PHAR is platform-neutral in packaging, but
 runtime requires **POSIX-capable PHP with `pcntl` and `posix`** (plus the other PHAR extensions in

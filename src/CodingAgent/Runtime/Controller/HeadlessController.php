@@ -8,6 +8,9 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\CodingAgent\Config\RuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerTopology;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueEnv;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -53,6 +56,8 @@ use Symfony\Component\Lock\LockInterface;
  */
 final class HeadlessController
 {
+    private const array ORPHAN_CONSUMER_PATTERNS = ['messenger:consume'];
+
     /** 5s consumer supervision interval. */
     private const float SUPERVISE_INTERVAL = 5.0;
 
@@ -69,6 +74,7 @@ final class HeadlessController
 
     public function __construct(
         private readonly ConsumerSupervisor $consumerSupervisor,
+        private readonly SessionSqliteQueueBrokerSupervisor $brokerSupervisor,
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
         private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
@@ -124,7 +130,7 @@ final class HeadlessController
 
         // Single live owner for this project+session before reaping or launching
         // consumers. Fail before runtime.ready so a second controller never shares
-        // session Doctrine queues with a healthy first owner.
+        // session broker queues with a healthy first owner.
         if (!$this->acquireSessionOwnerLock()) {
             return Command::FAILURE;
         }
@@ -136,8 +142,10 @@ final class HeadlessController
         $this->killOrphanedConsumers();
 
         try {
+            $this->startSessionBroker();
             $this->dispatcher->dispatch(new ControllerSessionStartingEvent($this->sessionId));
         } catch (\Throwable $exception) {
+            $this->brokerSupervisor->shutdownUntil(microtime(true) + 5.0);
             $this->releaseSessionOwnerLock();
 
             throw $exception;
@@ -165,42 +173,59 @@ final class HeadlessController
         // Launch messenger consumers before advertising readiness. Clients that
         // send start_run immediately after runtime.ready must not race empty
         // run_control/llm queues under load.
-        $this->consumerSupervisor->launch('run_control');
-        // llm consumers: fixed bounded pool for concurrent provider calls
-        // (parent turns + parallel subagent children share the llm transport).
-        // Count defaults to runtime.llm_worker_count (1..8, default 4) and is
-        // intentionally distinct from tools.execution.max_parallelism.
-        // Constructor override must already be in range; invalid overrides fail closed.
-        $this->consumerSupervisor->launchMultiple('llm', $this->resolveLlmWorkerCount());
-        // tool consumers: N parallel workers for concurrent tool execution.
-        // N defaults to tools.execution.max_parallelism.
-        $effectiveWorkerCount = $this->toolWorkerCount > 0
-            ? $this->toolWorkerCount
-            : max(1, $this->toolExecutionSettings->maxParallelism());
-        $this->consumerSupervisor->launchMultiple('tool', $effectiveWorkerCount);
-        // One agent consumer: parent subagent tool orchestration/polling is isolated
-        // from generic tool workers so child tool calls are not starved.
-        $this->consumerSupervisor->launch('agent');
-        // - run_control consumes StartRun, ApplyCommand, run results, and
-        //   AdvanceRun/CompactRun transitions as the single state owner
-        // - llm consumes ExecuteLlmStep (ASYNC-04)
-        // - tool consumes ExecuteToolCall (generic tools; not subagent)
-        // - agent consumes ExecuteToolCall when toolName=subagent (AGENT-07)
-        // - mcp consumes McpInitializeSessionCommand, McpRefreshCatalogCommand,
-        //   McpDisconnectSessionCommand, and McpCallToolCommand (MCP-05).
-        //   Exactly ONE mcp consumer per session — serialized MCP calls and
-        //   single owner for STDIO child processes.
-        // Scheduler consumer: dispatches recurring background tasks such as
-        // file mention index refresh.  All future periodic background work
-        // should use Scheduler scheduled tasks, not ad-hoc TUI tick process
-        // spawning.
-        $this->consumerSupervisor->launch('scheduler_default');
-        $this->consumerSupervisor->launch('mcp');
-        // Dedicated extension-agent worker: isolated from llm/tool/run_control so
-        // extension Observer/Reflector jobs do not starve main run execution.
-        // Unconditional for now (MVP) — even when no extension registers handlers,
-        // an idle consumer is cheap relative to wiring conditional launch.
-        $this->consumerSupervisor->launch('extension_agent');
+        try {
+            $this->consumerSupervisor->launch('run_control');
+            // llm consumers: fixed bounded pool for concurrent provider calls
+            // (parent turns + parallel subagent children share the llm transport).
+            // Count defaults to runtime.llm_worker_count (1..8, default 4) and is
+            // intentionally distinct from tools.execution.max_parallelism.
+            // Constructor override must already be in range; invalid overrides fail closed.
+            $this->consumerSupervisor->launchMultiple('llm', $this->resolveLlmWorkerCount());
+            // tool consumers: N parallel workers for concurrent tool execution.
+            // N defaults to tools.execution.max_parallelism.
+            $this->consumerSupervisor->launchMultiple('tool', $this->resolveToolWorkerCount());
+            // One agent consumer: parent subagent tool orchestration/polling is isolated
+            // from generic tool workers so child tool calls are not starved.
+            $this->consumerSupervisor->launch('agent');
+            // - run_control consumes StartRun, ApplyCommand, run results, and
+            //   AdvanceRun/CompactRun transitions as the single state owner
+            // - llm consumes ExecuteLlmStep (ASYNC-04)
+            // - tool consumes ExecuteToolCall (generic tools; not subagent)
+            // - agent consumes ExecuteToolCall when toolName=subagent (AGENT-07)
+            // - mcp consumes McpInitializeSessionCommand, McpRefreshCatalogCommand,
+            //   McpDisconnectSessionCommand, and McpCallToolCommand (MCP-05).
+            //   Exactly ONE mcp consumer per session — serialized MCP calls and
+            //   single owner for STDIO child processes.
+            // Scheduler consumer: dispatches recurring background tasks such as
+            // file mention index refresh.  All future periodic background work
+            // should use Scheduler scheduled tasks, not ad-hoc TUI tick process
+            // spawning.
+            $this->consumerSupervisor->launch('scheduler_default');
+            $this->consumerSupervisor->launch('mcp');
+            // Dedicated extension-agent worker: isolated from llm/tool/run_control so
+            // extension Observer/Reflector jobs do not starve main run execution.
+            // Unconditional for now (MVP) — even when no extension registers handlers,
+            // an idle consumer is cheap relative to wiring conditional launch.
+            $this->consumerSupervisor->launch('extension_agent');
+        } catch (\Throwable $exception) {
+            $deadline = microtime(true) + 5.0;
+            $this->consumerSupervisor->shutdownUntil($deadline);
+            $this->brokerSupervisor->shutdownUntil($deadline);
+            try {
+                $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
+            } catch (\Throwable $lifecycleException) {
+                $this->logger->error('Controller session shutdown lifecycle failed after partial consumer launch', [
+                    'component' => 'HeadlessController',
+                    'event_type' => 'controller.session_startup_cleanup_lifecycle_failed',
+                    'session_id' => $this->sessionId,
+                    'exception' => $lifecycleException,
+                ]);
+            } finally {
+                $this->releaseSessionOwnerLock();
+            }
+
+            throw $exception;
+        }
 
         // Same event type/payload as before; emission now follows consumer launch.
         $this->emitter->emit(new RuntimeEvent(
@@ -229,7 +254,6 @@ final class HeadlessController
                 ]);
                 EventLoop::cancel($watcherId);
                 $this->shutdown();
-                EventLoop::getDriver()->stop();
 
                 return;
             }
@@ -267,17 +291,29 @@ final class HeadlessController
                 return;
             }
 
+            if (!$this->brokerSupervisor->supervise()) {
+                $this->shutdown(new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::ProtocolError->value,
+                    runId: '',
+                    seq: 0,
+                    payload: [
+                        'error' => 'Session sqlite-queue broker exited after readiness. Stopping the session without reconnecting or replaying uncertain queue operations.',
+                        'fatal' => true,
+                    ],
+                ));
+
+                return;
+            }
+
             $this->consumerSupervisor->supervise();
         });
 
         // Graceful shutdown on termination signals.
         EventLoop::onSignal(\SIGTERM, function (): void {
             $this->shutdown();
-            EventLoop::getDriver()->stop();
         });
         EventLoop::onSignal(\SIGINT, function (): void {
             $this->shutdown();
-            EventLoop::getDriver()->stop();
         });
 
         EventLoop::run();
@@ -376,71 +412,51 @@ final class HeadlessController
      * Reap orphaned messenger:consume processes on startup.
      *
      * When a previous TUI process was SIGKILL'd, the controller's onSignal
-     * handler never fires, leaving messenger:consume children adopted by init
-     * (ppid=1). These orphans hold the SQLite DB lock and prevent new
-     * controllers from booting.
+     * handler never fires, leaving consumers adopted by init (ppid=1).
+     * Brokers instead stop on controller-owned stdin EOF. Never include them
+     * in this session-marker scan: session IDs are not unique across projects.
      *
      * Only kills processes whose:
      *  - parent PID is 1 (truly orphaned, not owned by another controller)
-     *  - environment contains our session ID (HATFIELD_SESSION_ID match)
-     *
-     * Multi-instance safe: living controllers' consumers have ppid != 1
-     * and different session IDs won't match ours.
+     *  - UID is our non-root UID
+     *  - environment contains the exact HATFIELD_SESSION_ID entry
+     *  - canonical CWD matches this project
      */
     private function killOrphanedConsumers(): void
     {
-        // Find all messenger:consume PIDs.
-        $pgrepOutput = [];
-        $pgrepStatus = 0;
-        exec('pgrep -f messenger:consume 2>/dev/null', $pgrepOutput, $pgrepStatus);
-        if (0 !== $pgrepStatus || [] === $pgrepOutput) {
-            return;
-        }
-
         $killedPids = [];
-
-        foreach ($pgrepOutput as $line) {
-            $pid = (int) trim($line);
-            if ($pid <= 0) {
+        foreach (self::ORPHAN_CONSUMER_PATTERNS as $pattern) {
+            $pgrepOutput = [];
+            $pgrepStatus = 0;
+            exec('pgrep -f '.escapeshellarg($pattern).' 2>/dev/null', $pgrepOutput, $pgrepStatus);
+            if (0 !== $pgrepStatus || [] === $pgrepOutput) {
                 continue;
             }
 
-            $stat = @file_get_contents("/proc/{$pid}/stat");
-            if (false === $stat) {
-                continue;
+            foreach ($pgrepOutput as $line) {
+                $pid = (int) trim($line);
+                if ($pid <= 0 || isset($killedPids[$pid])) {
+                    continue;
+                }
+
+                if (!$this->ownsOrphanedConsumer($pid)) {
+                    continue;
+                }
+
+                $this->logger->info('Reaping orphaned session process', [
+                    'component' => 'HeadlessController',
+                    'event_type' => 'controller.orphan_consumer.term',
+                    'pid' => $pid,
+                    'ppid' => 1,
+                    'pattern' => $pattern,
+                    'run_id' => $this->sessionId,
+                    'session_id' => $this->sessionId,
+                ]);
+
+                // Send SIGTERM, wait briefly, escalate to SIGKILL if needed.
+                @posix_kill($pid, \SIGTERM);
+                $killedPids[$pid] = $pid;
             }
-
-            // ppid is the 4th space-separated field in /proc/pid/stat.
-            $fields = explode(' ', $stat);
-            $ppid = (int) ($fields[3] ?? 0);
-            // Check parent PID: only ppid=1 means orphaned.
-            if (1 !== $ppid) {
-                // Parent still alive — belongs to another controller.
-                continue;
-            }
-
-            // Verify this orphaned consumer belongs to our session by checking
-            // /proc/pid/environ for HATFIELD_SESSION_ID. \0-separated env entries.
-            $pidEnv = @file_get_contents("/proc/{$pid}/environ");
-            if (false === $pidEnv) {
-                continue;
-            }
-
-            $sessionMarker = "HATFIELD_SESSION_ID={$this->sessionId}";
-            if (!str_contains($pidEnv, $sessionMarker)) {
-                // Belongs to a different session — leave it alone.
-                continue;
-            }
-
-            $this->logger->info('Reaping orphaned consumer', [
-                'pid' => $pid,
-                'ppid' => $ppid,
-                'session_id' => $this->sessionId,
-            ]);
-
-            // Send SIGTERM, wait briefly, escalate to SIGKILL if needed.
-            @posix_kill($pid, \SIGTERM);
-            $killedPids[] = $pid;
         }
 
         if ([] !== $killedPids) {
@@ -448,29 +464,74 @@ final class HeadlessController
             usleep(500_000);
 
             foreach ($killedPids as $pid) {
-                // Check if still running.
-                if (false !== @file_get_contents("/proc/{$pid}/stat")) {
+                // Recheck ownership before escalation; a PID alone is not identity.
+                if ($this->ownsOrphanedConsumer($pid)) {
                     @posix_kill($pid, \SIGKILL);
-                    $this->logger->warning('Orphaned consumer did not stop gracefully, sent SIGKILL', [
+                    $this->logger->warning('Orphaned session process did not stop gracefully, sent SIGKILL', [
+                        'component' => 'HeadlessController',
+                        'event_type' => 'controller.orphan_consumer.kill',
                         'pid' => $pid,
+                        'run_id' => $this->sessionId,
+                        'session_id' => $this->sessionId,
                     ]);
                 }
             }
         }
     }
 
-    private function shutdown(): void
+    private function ownsOrphanedConsumer(int $pid): bool
+    {
+        $processDir = '/proc/'.$pid;
+        $uid = @fileowner($processDir);
+        if (false === $uid || 0 === $uid || $uid !== posix_geteuid()) {
+            return false;
+        }
+
+        $stat = @file_get_contents($processDir.'/stat');
+        if (false === $stat || false === ($commEnd = strrpos($stat, ')'))) {
+            return false;
+        }
+        // The parenthesized command may contain spaces; PPID follows the state.
+        $fields = explode(' ', substr($stat, $commEnd + 2));
+        if (1 !== (int) ($fields[1] ?? 0)) {
+            return false;
+        }
+
+        $environment = @file_get_contents($processDir.'/environ');
+        $cwd = @readlink($processDir.'/cwd');
+
+        return false !== $environment && false !== $cwd
+            && self::matchesConsumerIdentity($environment, $cwd, $this->sessionId, $this->runtimeCwd);
+    }
+
+    private static function matchesConsumerIdentity(string $environment, string $cwd, string $sessionId, string $runtimeCwd): bool
+    {
+        $project = realpath($runtimeCwd);
+
+        // Exact NUL-delimited entries prevent both value and variable-name prefixes.
+        return false !== $project && $cwd === $project
+            && \in_array('HATFIELD_SESSION_ID='.$sessionId, explode("\0", $environment), true);
+    }
+
+    private function shutdown(?RuntimeEvent $terminal = null): void
     {
         if ($this->shuttingDown) {
             return;
         }
 
         $this->shuttingDown = true;
-        $this->emitter->shutdown();
+
+        // Terminal output and owned-process teardown share the parent's budget.
+        $deadline = microtime(true) + 5.0;
+        $this->emitter->shutdown($deadline, $terminal);
 
         $this->logger->info('Controller shutting down gracefully');
 
-        $this->consumerSupervisor->shutdown();
+        // Parent JsonlProcessAgentSessionClient stop budget is 7s. Share one
+        // deadline across consumers and broker so sequential 5s+5s grace cannot
+        // outlive that parent SIGKILL.
+        $this->consumerSupervisor->shutdownUntil($deadline);
+        $this->brokerSupervisor->shutdownUntil($deadline);
 
         try {
             $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
@@ -485,6 +546,9 @@ final class HeadlessController
             // Release only after consumers and lifecycle listeners finish so a
             // replacement controller cannot race against cleanup.
             $this->releaseSessionOwnerLock();
+            // Only the shutdown owner may stop the loop. A repeated signal
+            // must leave its suspended terminal drain and cleanup runnable.
+            EventLoop::getDriver()->stop();
         }
     }
 
@@ -540,6 +604,25 @@ final class HeadlessController
         return 'hatfield.controller.session.'.hash('sha256', $canonicalCwd."\0".$this->sessionId);
     }
 
+    private function startSessionBroker(): void
+    {
+        $paths = SessionSqliteQueueEnv::pathsFromEnvironment($this->sessionId);
+        $requiredConnections = SessionSqliteQueueBrokerTopology::requiredConnections(
+            $this->resolveLlmWorkerCount(),
+            $this->resolveToolWorkerCount(),
+        );
+        $this->brokerSupervisor->start($paths, $requiredConnections);
+
+        $advertisedPayload = $this->brokerSupervisor->advertisedMaxPayload();
+        $advertisedConnections = $this->brokerSupervisor->advertisedMaxConnections();
+        if (null === $advertisedPayload || null === $advertisedConnections) {
+            throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" became ready without advertising payload and connection budgets.', $this->sessionId));
+        }
+        if ($advertisedConnections < $requiredConnections) {
+            throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" advertised max_connections=%d below topology requirement %d.', $this->sessionId, $advertisedConnections, $requiredConnections));
+        }
+    }
+
     /**
      * Resolve the fixed llm consumer pool size once from either the constructor
      * override or typed RuntimeConfig settings. Invalid overrides are rejected in
@@ -550,5 +633,17 @@ final class HeadlessController
         return $this->llmWorkerCount > 0
             ? $this->llmWorkerCount
             : $this->runtimeConfig->llmWorkerCount;
+    }
+
+    /**
+     * Resolve the tool consumer pool size once from either the constructor
+     * override or tools.execution.max_parallelism. The same value sizes the
+     * broker connection budget and launches the tool workers.
+     */
+    private function resolveToolWorkerCount(): int
+    {
+        return $this->toolWorkerCount > 0
+            ? $this->toolWorkerCount
+            : max(1, $this->toolExecutionSettings->maxParallelism());
     }
 }

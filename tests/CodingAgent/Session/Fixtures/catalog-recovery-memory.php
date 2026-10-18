@@ -19,8 +19,7 @@ $directory = $argv[1].'/'.$count;
 TestDirectoryIsolation::createHatfieldTree($directory);
 $paths = TuiE2eDatabaseEnv::allocateIsolatedPaths(dirname(__DIR__, 4), $directory, 'catalog');
 foreach (['HATFIELD_CWD' => $directory, 'APP_SECRET' => 'test-secret',
-    'HATFIELD_TEST_DATABASE_PATH' => $paths['appEnv'],
-    'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => $paths['transportEnv']] as $key => $value) {
+    'HATFIELD_TEST_DATABASE_PATH' => $paths['appEnv']] as $key => $value) {
     $_ENV[$key] = $value;
     putenv($key.'='.$value);
 }

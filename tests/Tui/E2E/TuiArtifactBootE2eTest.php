@@ -100,7 +100,6 @@ final class TuiArtifactBootE2eTest extends TestCase
     {
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-artifact-');
         $dbPath = $paths['app'];
-        $transportDbPath = $paths['transport'];
 
         // PHAR needs php runner; fused native is self-executing.
         $isPhar = str_ends_with($resolved, '.phar');
@@ -111,7 +110,7 @@ final class TuiArtifactBootE2eTest extends TestCase
         // Production artifact: APP_ENV=prod (no test DI). No prompt — boot smoke only.
         return \sprintf(
             'APP_ENV=prod APP_DEBUG=0 %sHOME=%s %s agent --tools-excluded=bash 2>&1',
-            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
+            TuiE2eDatabaseEnv::shellPrefix($dbPath),
             escapeshellarg($this->testProjectDir.'/home'),
             $launch,
         );

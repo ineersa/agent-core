@@ -12,17 +12,41 @@ use PHPUnit\Framework\TestCase;
  */
 final class TuiE2eDatabaseEnvTest extends TestCase
 {
-    public function testShellPrefixSetsPairedDatabaseEnvVars(): void
+    public function testShellPrefixSetsAppDatabaseEnvVar(): void
     {
         $prefix = TuiE2eDatabaseEnv::shellPrefix(
             'app_test-abc.sqlite',
-            'messenger_transport_test-abc.sqlite',
         );
 
         $this->assertStringContainsString('HATFIELD_TEST_DATABASE_PATH=', $prefix);
-        $this->assertStringContainsString('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=', $prefix);
         $this->assertStringContainsString('app_test-abc.sqlite', $prefix);
-        $this->assertStringContainsString('messenger_transport_test-abc.sqlite', $prefix);
+        $this->assertStringNotContainsString('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=', $prefix);
+    }
+
+    public function testShellPrefixWithSourceMessengerInstallsPassThroughWrapper(): void
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-source-messenger');
+
+        try {
+            $prefix = TuiE2eDatabaseEnv::shellPrefixWithSourceMessenger(
+                'app_test-source.sqlite',
+                $dir,
+            );
+
+            $this->assertStringContainsString('HATFIELD_TEST_DATABASE_PATH=', $prefix);
+            $this->assertStringContainsString('HATFIELD_BINARY_PATH=', $prefix);
+
+            if (!preg_match("/HATFIELD_BINARY_PATH='([^']+)'/", $prefix, $matches)) {
+                $this->fail('Expected escaped HATFIELD_BINARY_PATH in shell prefix');
+            }
+            $wrapper = $matches[1];
+            $this->assertFileExists($wrapper);
+            $source = (string) file_get_contents($wrapper);
+            $this->assertStringNotContainsString('--sleep=', $source);
+            $this->assertStringContainsString('HATFIELD_REPLAY_SESSION_ID', $source);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
     }
 
     public function testDoctrineEnvPathResolvesToIsolatedAbsolutePath(): void

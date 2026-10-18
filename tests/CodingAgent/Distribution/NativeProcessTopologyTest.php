@@ -24,6 +24,18 @@ use PHPUnit\Framework\TestCase;
 #[Group('native-artifact')]
 final class NativeProcessTopologyTest extends TestCase
 {
+    public function testShellWrapperCannotSatisfyActualWorkerReadiness(): void
+    {
+        require_once ProjectDir::get().'/.castor/distribution.php';
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('no Amp SQLite worker launched through the same Hatfield binary');
+        distribution_assert_native_messenger_topology('/test/hatfield', [
+            ['pid' => 10, 'cmdline' => '/test/hatfield sqlite-queue:broker'],
+            ['pid' => 11, 'cmdline' => 'sh -c /test/hatfield --internal-sqlite-worker worker.php'],
+            ['pid' => 12, 'cmdline' => '/test/hatfield messenger:consume run_control'],
+        ]);
+    }
+
     public function testNativeBinaryControllerReachesReadyAndRelaunchesConsumers(): void
     {
         $binary = getenv('HATFIELD_NATIVE_BINARY_PATH');

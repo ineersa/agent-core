@@ -21,10 +21,6 @@ final class ParaTestWorkerIsolationTest extends TestCase
 
         $this->assertNotSame($left, $right);
         $this->assertNotSame(
-            ParaTestWorkerIsolation::messengerTransportDatabaseFilename($qaRunId, $leftLane, $token),
-            ParaTestWorkerIsolation::messengerTransportDatabaseFilename($qaRunId, $rightLane, $token),
-        );
-        $this->assertNotSame(
             ParaTestWorkerIsolation::cacheDirectory($qaRunId, $leftLane, $token),
             ParaTestWorkerIsolation::cacheDirectory($qaRunId, $rightLane, $token),
         );
@@ -45,10 +41,6 @@ final class ParaTestWorkerIsolationTest extends TestCase
     public function testMissingLaneKeepsTokenOnlyFallbackForStandalonePools(): void
     {
         $this->assertSame('app_test-T1.sqlite', ParaTestWorkerIsolation::appDatabaseFilename('', '', '1'));
-        $this->assertSame(
-            'messenger_transport_test-T1.sqlite',
-            ParaTestWorkerIsolation::messengerTransportDatabaseFilename('', '', '1'),
-        );
         $this->assertSame('.hatfield/cache-paraT1', ParaTestWorkerIsolation::cacheDirectory('', '', '1'));
     }
 

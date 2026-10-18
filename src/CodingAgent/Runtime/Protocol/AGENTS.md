@@ -8,3 +8,4 @@
 - Preserve explicit top-level tool duration; otherwise derive it from canonical start/end timestamps, including queue time.
 - Do not substitute nested executor duration for the lifecycle interval.
 - Emit extension-job failure only for a validated run ID, at sequence zero. Otherwise log it; never fail the main run from that event alone.
+- `protocol.error` with `payload.fatal === true` declares a terminal controller-session failure. Its `runId` may be empty. Preserve its original `payload.error` across parent, child and session-wide polling. The process client must retain this outcome outside per-run compaction, reject commands and suppress automatic restart or resume until explicit start, attach or shutdown. Other protocol errors are not fatal by default.
