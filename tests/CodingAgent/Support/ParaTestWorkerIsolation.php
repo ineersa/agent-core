@@ -26,11 +26,6 @@ final class ParaTestWorkerIsolation
         return 'app_test-'.self::resourceStem($qaRunId, $lane, $token).'.sqlite';
     }
 
-    public static function messengerTransportDatabaseFilename(string $qaRunId, string $lane, string $token): string
-    {
-        return 'messenger_transport_test-'.self::resourceStem($qaRunId, $lane, $token).'.sqlite';
-    }
-
     public static function cacheDirectory(string $qaRunId, string $lane, string $token): string
     {
         $stem = self::resourceStem($qaRunId, $lane, $token);

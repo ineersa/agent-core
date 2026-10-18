@@ -37,6 +37,10 @@ interface AgentSessionClient
     public function send(string $runId, UserCommand $command): void;
 
     /**
+     * Fatal controller-session diagnostics cross run filtering and may have an
+     * empty runId. The process client retains them until explicit start, attach
+     * or shutdown; polling and command retries must not resume that session.
+     *
      * @param int $afterSeq Last successfully observed canonical sequence. Transient events are never cursor-filtered.
      *
      * @return iterable<RuntimeEvent>

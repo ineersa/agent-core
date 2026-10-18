@@ -14,8 +14,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * The public ExtensionApi contract promises async work on a dedicated worker.
  * sync:// would re-dispatch inline on the caller bus and can run model work
  * during AfterTurnCommit — that is fail-closed here. Allowed DSNs are process
- * async transports (doctrine://, in-memory://, etc.). Controllers override
- * HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN to Doctrine SQLite.
+ * async transports (sqlite-queue://, in-memory://, etc.). Controllers override
+ * HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN to the session-owned sqlite-queue broker.
  */
 final readonly class ExtensionAgentJobDispatcher
 {
@@ -29,7 +29,7 @@ final readonly class ExtensionAgentJobDispatcher
     public function dispatch(ExtensionAgentJobRequestDTO $request): void
     {
         if ($this->isSyncTransport($this->transportDsn)) {
-            throw new \RuntimeException('extension_agent transport is configured as sync://; async Doctrine (or test in-memory) transport is required so extension agent jobs do not run model work on the caller thread.');
+            throw new \RuntimeException('extension_agent transport is configured as sync://; async sqlite-queue (or test in-memory) transport is required so extension agent jobs do not run model work on the caller thread.');
         }
 
         $message = new ExtensionAgentJobMessage(

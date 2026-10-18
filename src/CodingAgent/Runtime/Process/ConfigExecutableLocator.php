@@ -44,17 +44,29 @@ final class ConfigExecutableLocator implements AppExecutableLocator
     }
 
     /**
-     * True when $path is the fused native self.
+     * True when $path should launch without a separate PHP interpreter.
      *
-     * Fused PHP-micro reports empty PHP_BINARY on macOS (and likely all static
-     * targets), so empty PHP_BINARY is treated as native self. When PHP_BINARY
-     * is set, same-path/inode detection still applies for hosts that point it
-     * at the fused binary.
+     * Prefer PHP-micro's self identity. With a non-empty PHP_BINARY, a different
+     * PHAR/script stays "[php, path]". Empty PHP_BINARY remains the native signal
+     * even when the override names another native copy or hardlink.
      */
     private static function isFusedNativeExecutable(string $path): bool
     {
         if (!is_file($path)) {
             return false;
+        }
+
+        $resolvedPath = realpath($path);
+        if (\function_exists('micro_get_self_filename')) {
+            $self = (string) micro_get_self_filename();
+            if ('' !== $self) {
+                $resolvedSelf = realpath($self);
+
+                if ((false !== $resolvedPath && false !== $resolvedSelf && $resolvedPath === $resolvedSelf)
+                    || $path === $self) {
+                    return true;
+                }
+            }
         }
 
         // constant() so PHPStan cannot treat PHP_BINARY as always non-empty; fused
@@ -64,7 +76,6 @@ final class ConfigExecutableLocator implements AppExecutableLocator
             return true;
         }
 
-        $resolvedPath = realpath($path);
         $resolvedPhp = realpath($phpBinary);
         if (false === $resolvedPath || false === $resolvedPhp) {
             return $path === $phpBinary;

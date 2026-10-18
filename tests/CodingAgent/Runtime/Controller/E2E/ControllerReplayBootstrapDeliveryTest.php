@@ -15,7 +15,16 @@ use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Process\Process;
 
-/** Real owner/controller pipes must continue processing results while a large view is unread. */
+/**
+ * Real owner/controller pipes must continue processing results while a large view is unread.
+ *
+ * Unique process contract: only a live OS pipe backlog larger than Linux's pipe
+ * capacity proves the controller keeps consuming owner results while stdout is
+ * stalled. Lower layers cannot recreate that unread-kernel-buffer pressure.
+ * The 5s waits below are safety caps around positive readiness/result markers,
+ * not synchronization; under concurrent castor check load this case can exceed
+ * the ordinary 10s soft target without being flaky or timing-window based.
+ */
 #[Group('controller-replay')]
 final class ControllerReplayBootstrapDeliveryTest extends ControllerReplayE2eTestCase
 {
@@ -26,7 +35,7 @@ final class ControllerReplayBootstrapDeliveryTest extends ControllerReplayE2eTes
         $seed = new Process([\PHP_BINARY, __DIR__.'/Support/BootstrapSessionSeed.php', $this->projectDir], $this->tempDir,
             array_merge($this->controllerSubprocessEnv(), ['APP_ENV' => 'test', 'APP_DEBUG' => '1', 'HATFIELD_CWD' => $this->tempDir, 'HOME' => $this->tempDir,
                 'HATFIELD_SESSION_ID' => false, 'HATFIELD_TEST_DATABASE_PATH' => 'app_test-replay-'.$this->sessionId.'.sqlite',
-                'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => 'messenger_transport_test-replay-'.$this->sessionId.'.sqlite']));
+            ]));
         $seed->setTimeout(5);
         $seed->mustRun();
         $seeded = json_decode(trim($seed->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
@@ -94,8 +103,13 @@ final class ControllerReplayBootstrapDeliveryTest extends ControllerReplayE2eTes
         $this->assertFileExists($spool);
         // Borrow the real controller pipes after the test's incremental mount.
         // The harness remains their only lifecycle owner; no second process starts.
-        $client = new JsonlProcessAgentSessionClient(new RuntimeProcessConfig(new SourceTreeExecutableLocator($this->projectDir), $this->tempDir),
-            new PromptTemplatesRuntimeConfig(), new ToolFilterRuntimeConfig(), new TestLogger());
+        $client = new JsonlProcessAgentSessionClient(
+            new RuntimeProcessConfig(new SourceTreeExecutableLocator($this->projectDir), $this->tempDir),
+            new PromptTemplatesRuntimeConfig(),
+            new ToolFilterRuntimeConfig(),
+            new TestLogger(),
+            \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(\Doctrine\ORM\EntityManagerInterface::class), $this->tempDir),
+        );
         $reflection = new \ReflectionClass($client);
         foreach (['process' => $this->process, 'pipes' => $this->pipes, 'activeRunId' => $this->runId,
             'sessionId' => $this->runId, 'processSessionId' => $this->runId, 'runtimeReadyReceived' => true,

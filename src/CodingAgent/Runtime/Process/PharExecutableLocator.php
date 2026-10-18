@@ -43,13 +43,25 @@ final class PharExecutableLocator implements AppExecutableLocator
     /**
      * True when the resolved PHAR path is a fused PHP-micro self-executable.
      *
-     * Empty PHP_BINARY means native self (static/micro SFX). Otherwise same
-     * path/inode as PHP_BINARY still marks fused native.
+     * Prefer PHP-micro's self path when available. A config/plain-PHAR path
+     * that is not the running self stays "[php, path]". Empty PHP_BINARY
+     * remains the fused-native signal when the micro helper is unavailable.
      */
     private static function isFusedNativeExecutable(string $path): bool
     {
         if (!is_file($path)) {
             return false;
+        }
+
+        $resolvedPath = realpath($path);
+        if (\function_exists('micro_get_self_filename')) {
+            $self = (string) micro_get_self_filename();
+            if ('' !== $self) {
+                $resolvedSelf = realpath($self);
+
+                return (false !== $resolvedPath && false !== $resolvedSelf && $resolvedPath === $resolvedSelf)
+                    || $path === $self;
+            }
         }
 
         // constant() so PHPStan cannot treat PHP_BINARY as always non-empty; fused
@@ -59,7 +71,6 @@ final class PharExecutableLocator implements AppExecutableLocator
             return true;
         }
 
-        $resolvedPath = realpath($path);
         $resolvedPhp = realpath($phpBinary);
         if (false === $resolvedPath || false === $resolvedPhp) {
             return $path === $phpBinary;

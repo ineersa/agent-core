@@ -20,7 +20,7 @@ use Symfony\Component\Uid\UuidV7;
 /**
  * Regression: runtime startup uses ApplicationMigrationExecutor's explicit
  * explicit application migration list (not filesystem discovery). Messenger
- * migrations run separately on the dedicated messenger_transport connection.
+ * migrations no longer create messenger_messages; queues use sqlite-queue.
  */
 final class ApplicationMigrationExecutorTest extends TestCase
 {
@@ -61,7 +61,7 @@ final class ApplicationMigrationExecutorTest extends TestCase
 
         $this->assertFalse(
             $connection->createSchemaManager()->tablesExist(['messenger_messages']),
-            'messenger_messages must not be created on the default app connection (queue uses messenger_transport DB)',
+            'messenger_messages must not be created on the default app connection (queues use sqlite-queue)',
         );
 
         // Verify the background_process index migration was applied.

@@ -54,6 +54,7 @@ final class BackgroundProcessCompletionPoller
      *                               HATFIELD_SESSION_ID. When null, poll is a no-op.
      */
     private readonly ?string $sessionId;
+    private bool $polling = false;
 
     public function __construct(
         private readonly ProcessStore $processStore,
@@ -117,6 +118,21 @@ final class BackgroundProcessCompletionPoller
     }
 
     private function poll(): void
+    {
+        // A broker reply can suspend past another tick. Keep selection, send
+        // and the notified mark within one pass, not merely one transport send.
+        if ($this->polling) {
+            return;
+        }
+        $this->polling = true;
+        try {
+            $this->pollCompletions();
+        } finally {
+            $this->polling = false;
+        }
+    }
+
+    private function pollCompletions(): void
     {
         if (null === $this->sessionId) {
             $this->logger->debug('bg_process_completion.poll_skipped_no_session', [

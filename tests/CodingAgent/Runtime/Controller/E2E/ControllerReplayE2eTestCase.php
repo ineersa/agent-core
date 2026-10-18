@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
-use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayLowLatencyMessengerConsole;
+use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplaySourceMessengerConsole;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 
 /**
@@ -154,11 +154,10 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         }
 
         // ConsumerSupervisor relaunches messenger:consume via HATFIELD_BINARY_PATH.
-        // Point it at a test-only wrapper that injects a small --sleep so idle
-        // queue polls do not burn the default 1s Symfony Messenger sleep under
-        // SafeGuard multi-hop / tool-start contention. Controller itself still
-        // boots from source bin/console below.
-        $messengerConsole = ControllerReplayLowLatencyMessengerConsole::install(
+        // Point it at a test-only source wrapper that preserves omitted --sleep so
+        // sqlite-queue native WAIT notifications arm like production. Controller
+        // itself still boots from source bin/console below.
+        $messengerConsole = ControllerReplaySourceMessengerConsole::install(
             $this->tempDir,
             $script,
         );
@@ -183,15 +182,12 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             // shared test DB already).  The path is relative to
             // %kernel.project_dir%/var/test/ per config/packages/test/doctrine.yaml.
             'HATFIELD_TEST_DATABASE_PATH' => 'app_test-replay-'.$this->sessionId.'.sqlite',
-            'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => 'messenger_transport_test-replay-'.$this->sessionId.'.sqlite',
-            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$this->sessionId}&redeliver_timeout=315360000",
-            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$this->sessionId}&redeliver_timeout=315360000",
-            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$this->sessionId}&redeliver_timeout=315360000",
-            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$this->sessionId}&redeliver_timeout=315360000",
-            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$this->sessionId}&redeliver_timeout=315360000",
-            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=extension_agent_{$this->sessionId}&redeliver_timeout=315360000",
             // The test wrapper sets $_SERVER identity without tagging signal-owned PIDs.
             'HATFIELD_REPLAY_SESSION_ID' => $this->sessionId,
+            ...\Ineersa\CodingAgent\Tests\Support\SessionSqliteQueueTestEnv::forSession(
+                $this->tempDir.'/.hatfield/sessions',
+                $this->sessionId,
+            ),
             // Replay activation — consumed by ControllerReplayHttpClientFactory
             'HATFIELD_LLM_REPLAY_FIXTURE_PATH' => implode(';', $fixturePaths),
             // Inherited by ConsumerSupervisor children; ConfigExecutableLocator wins.
@@ -231,7 +227,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
-        $this->messengerTransportDbFilename = (string) ($env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] ?? '');
+        $this->sqliteQueueDatabasePath = (string) ($env['HATFIELD_SQLITE_QUEUE_DATABASE'] ?? '');
         $this->trackControllerProcessTree($process);
     }
 
