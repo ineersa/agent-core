@@ -48,7 +48,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 || [] !== $state->pendingHumanInputRequests || $state->isStreaming || [] !== $state->pendingShellToolCalls
                 || \in_array($state->status, [RunStatus::WaitingHuman, RunStatus::Compacting, RunStatus::Cancelling], true)
                 || (null !== $state->parentRunId && RunStatus::Completed === $state->status))) {
-            return new HandlerResult();
+            return $this->commandMailboxPolicy->settleExpiredCompletionContinuation($state, $message);
         }
 
         // AdvanceRun consumes the exact current turn. A prior committed

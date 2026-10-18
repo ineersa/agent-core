@@ -74,7 +74,7 @@ final readonly class CompactRunHandler implements RunMessageHandler, RunMessageH
             && $message->continueAfterCompaction
             && RunStatus::Cancelling !== $state->status
             && null !== $this->commandMailboxPolicy->completionContinuationIneligibleReason($state, $message->completionContinuation)) {
-            return new HandlerResult();
+            return $this->commandMailboxPolicy->settleExpiredCompletionContinuation($state, $message->completionContinuation, $message);
         }
 
         return $this->commandMailboxPolicy->afterCompactionSettlement($this->handleCompactionMessage($message, $state), $message->completionContinuation);

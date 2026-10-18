@@ -56,7 +56,7 @@ final class ToolCompletionMailboxConsumerTest extends IsolatedKernelTestCase
         $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
         $eligibility = $container->get(ToolCompletionDeliveryEligibilityPolicy::class);
         $consumer = new ToolCompletionMailboxConsumer($container->get(ToolCompletionRecipientRepositoryInterface::class), $eligibility, $container->get(ToolCompletionNotificationRenderer::class), $container->get(NormalizerInterface::class), $logger);
-        $policy = new CommandMailboxPolicy($container->get(CommandStoreInterface::class), $container->get(CommandRouter::class), $consumer, $eligibility);
+        $policy = new CommandMailboxPolicy($container->get(CommandStoreInterface::class), $container->get(CommandRouter::class), $consumer, $eligibility, $container->get(EventStoreInterface::class));
         $prepared = $policy->applyPendingTurnStartCommands($state);
         $this->assertSame(2, $container->get(CommandStoreInterface::class)->countPending($state->runId));
         $this->assertSame(ToolCompletionDeliveryDispositionEnum::Pending, $container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($state->runId, $broken->messageId)?->disposition);
@@ -108,7 +108,7 @@ final class ToolCompletionMailboxConsumerTest extends IsolatedKernelTestCase
         $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
         $eligibility = $container->get(ToolCompletionDeliveryEligibilityPolicy::class);
         $consumer = new ToolCompletionMailboxConsumer($container->get(ToolCompletionRecipientRepositoryInterface::class), $eligibility, new ToolCompletionNotificationRenderer($container->get(ToolCompletionDeliveryVerifier::class), $reader, $container->get(SerializerInterface::class)), $container->get(NormalizerInterface::class), $logger);
-        $policy = new CommandMailboxPolicy($container->get(CommandStoreInterface::class), $container->get(CommandRouter::class), $consumer, $eligibility);
+        $policy = new CommandMailboxPolicy($container->get(CommandStoreInterface::class), $container->get(CommandRouter::class), $consumer, $eligibility, $container->get(EventStoreInterface::class));
         try {
             $policy->applyPendingTurnStartCommands($state);
             $this->fail('Inspection invariants and unexpected failures must propagate unchanged.');
@@ -358,7 +358,11 @@ final class ToolCompletionMailboxConsumerTest extends IsolatedKernelTestCase
         $committed = self::getContainer()->get(RunCommit::class)->commit($state, $result->nextState, $result->events, postCommitActions: $result->postCommitActions);
         $this->assertCount(1, $handler->handle($advance, $committed)->effects, 'The finalized applied reference permits exactly the ordinary successor.');
         self::getContainer()->get(Connection::class)->executeStatement('UPDATE hatfield_session SET controller_generation = 1 WHERE id = ?', [$state->runId]);
-        $this->assertNull($handler->handle($advance, $committed)->nextState, 'A restart suppresses even a completion already applied at provider stop.');
+        $expired = $handler->handle($advance, $committed);
+        $this->assertSame(RunStatus::Completed, $expired->nextState?->status, 'Restart expires wake permission but must close its operation-free held turn.');
+        $this->assertNull($expired->nextState?->currentOperation);
+        $this->assertSame([], $expired->effects);
+        $this->assertSame([], $expired->postCommitActions);
     }
 
     public function testEveryStaleFenceIsParkedBeforeAnyBodyRead(): void
@@ -406,6 +410,6 @@ final class ToolCompletionMailboxConsumerTest extends IsolatedKernelTestCase
             $eligibility = new ToolCompletionDeliveryEligibilityPolicy($provider);
         }
 
-        return new CommandMailboxPolicy($container->get(CommandStoreInterface::class), $container->get(CommandRouter::class), new ToolCompletionMailboxConsumer($container->get(ToolCompletionRecipientRepositoryInterface::class), $eligibility, $renderer, $container->get(NormalizerInterface::class), new \Psr\Log\NullLogger()), $eligibility);
+        return new CommandMailboxPolicy($container->get(CommandStoreInterface::class), $container->get(CommandRouter::class), new ToolCompletionMailboxConsumer($container->get(ToolCompletionRecipientRepositoryInterface::class), $eligibility, $renderer, $container->get(NormalizerInterface::class), new \Psr\Log\NullLogger()), $eligibility, $container->get(EventStoreInterface::class));
     }
 }

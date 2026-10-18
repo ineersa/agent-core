@@ -21,6 +21,7 @@ final readonly class CommandMailboxPolicy
         private CommandRouter $commandRouter,
         private \Ineersa\AgentCore\Application\Tool\ToolCompletionMailboxConsumer $toolCompletions,
         private \Ineersa\AgentCore\Application\Tool\ToolCompletionDeliveryEligibilityPolicy $completionEligibility,
+        private \Ineersa\AgentCore\Contract\EventStoreInterface $events,
     ) {
     }
 
@@ -36,6 +37,59 @@ final readonly class CommandMailboxPolicy
         return $message->completionMailboxDrain
             ? $this->completionEligibility->fenceIneligibleReason($state->runId, $message->completionFence)
             : $this->completionEligibility->ineligibleReason($state, $message->completionFence);
+    }
+
+    /** Expired permission closes only the exact operation-free turn that still owns this intent. */
+    public function settleExpiredCompletionContinuation(RunState $state, \Ineersa\AgentCore\Domain\Message\AdvanceRun $continuation, ?CompactRun $request = null): HandlerResult
+    {
+        if (\Ineersa\AgentCore\Domain\Run\RunStatus::Running !== $state->status || null !== $state->parentRunId
+            || $continuation->runId() !== $state->runId || $continuation->turnNo() !== $state->turnNo
+            || null !== $state->currentOperation || $state->isStreaming || [] !== $state->pendingHumanInputRequests
+            || [] !== $state->pendingShellToolCalls || array_any($state->pendingToolCalls, static fn (bool $done): bool => !$done)
+            || null === $continuation->appliedCompletion || null === $continuation->completionFence
+            || !$this->toolCompletions->isAppliedContinuation($state->runId, $continuation->appliedCompletion)
+            || !\in_array($this->completionContinuationIneligibleReason($state, $continuation), ['stale_controller_generation', 'stale_cancellation_generation', 'stale_history_generation'], true)) {
+            return new HandlerResult();
+        }
+        if (null === $request) {
+            $expected = \Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory::forCompletion($state, $continuation->completionFence, appliedCompletion: $continuation->appliedCompletion)->message;
+            if (!$expected instanceof \Ineersa\AgentCore\Domain\Message\AdvanceRun
+                || $expected->idempotencyKey() !== $continuation->idempotencyKey()
+                || $expected->stepId() !== $continuation->stepId() || $expected->attempt() !== $continuation->attempt()) {
+                return new HandlerResult();
+            }
+        } else {
+            if ($request->runId() !== $state->runId || $request->turnNo() !== $state->turnNo || 1 !== $request->attempt()
+                || $state->lastAppliedAdvanceKey !== $continuation->idempotencyKey()
+                || $state->lastAppliedCompactionKey === $request->idempotencyKey()) {
+                return new HandlerResult();
+            }
+            // The committed request, not an arbitrary Running state, owns this
+            // held turn. A later request or advance supersedes the old identity.
+            $held = null;
+            foreach ($this->events->reverseFor($state->runId) as $event) {
+                if ($event->seq <= $state->lastSeq && RunEventTypeEnum::ContextCompactionRequested->value === $event->type) {
+                    $held = $event;
+                    break;
+                }
+            }
+            if (null === $held || $held->turnNo !== $state->turnNo
+                || ($held->payload['request_idempotency_key'] ?? null) !== $request->idempotencyKey()
+                || ($held->payload['step_id'] ?? null) !== $request->stepId()
+                || ($held->payload['advance_idempotency_key'] ?? null) !== $continuation->idempotencyKey()) {
+                return new HandlerResult();
+            }
+        }
+        $advanceKey = null === $request ? $continuation->idempotencyKey() : $state->lastAppliedAdvanceKey;
+        $event = RunEvent::forAppend($state->runId, $state->turnNo, RunEventTypeEnum::AgentEnd->value, [
+            'reason' => 'completed', 'advance_idempotency_key' => $advanceKey, 'completion_continuation_expired' => true,
+        ]);
+
+        return new HandlerResult($state->with([
+            'status' => \Ineersa\AgentCore\Domain\Run\RunStatus::Completed, 'lastSeq' => $state->lastSeq + 1,
+            'version' => $state->version + 1, 'activeStepId' => null, 'streamingMessage' => null,
+            'lastAppliedAdvanceKey' => $advanceKey,
+        ]), [$event]);
     }
 
     /** Manual compaction owns maintenance authority; the applied result keeps its separate wake fence. */

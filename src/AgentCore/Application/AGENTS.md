@@ -58,6 +58,10 @@ Turn-start and stop-boundary mailbox application attach already-applied completi
 intent to queued manual compaction instead of scheduling a racing advance.
 Manual maintenance remains independently authorized; its completion successor
 must revalidate the original reference and fence after settlement.
+Expired request/successor settlement requires a verified applied recipient and
+the current canonical request or deterministic successor identity. It closes
+only that operation-free held turn. Its terminal event excludes automatic
+maintenance, as do receipt commits whose post-commit successor owns the boundary.
 
 ## Subagent progress ownership
 

@@ -148,7 +148,12 @@ final class AutoCompactionHookSubscriber implements EssentialAfterTurnHookInterf
         // trigger compaction with continueAfterCompaction=true before
         // the next LLM step if token pressure warrants; that is
         // semantically correct and preserves continuation.
-        if ($this->containsEventType($context, RunEventTypeEnum::ToolBatchCommitted->value)) {
+        // Receipt admission also captures AdvanceRun as a post-commit action,
+        // invisible to effectsCount. That successor owns pre-LLM compaction.
+        // Expired held turns must stay idle, not start automatic maintenance.
+        if ($this->containsEventType($context, RunEventTypeEnum::ToolBatchCommitted->value)
+            || $this->containsEventType($context, RunEventTypeEnum::ToolCompletionReceived->value)
+            || array_any($context->events, static fn ($event): bool => RunEventTypeEnum::AgentEnd->value === $event->type && true === ($event->payload['completion_continuation_expired'] ?? false))) {
             return [];
         }
 

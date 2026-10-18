@@ -162,6 +162,15 @@ Matching active worker results also settle after a controller restart expires
 their wake fence, including workers reconstructed by explicit repair. Terminal
 events record effective continuation permission, so replay returns to idle with
 no active operation or stream. Stale operation identities remain no-ops.
+Expired queued requests and settlement successors also close their own held
+Running turn. They must match the committed request or deterministic successor
+identity and verified applied recipient. They cannot close newer turns, active
+operations or unrelated work. The terminal event preserves expired permission;
+it does not schedule maintenance or model work. Ordinary follow-up remains valid.
+
+Receipt admission captures its successor as a post-commit action rather than an
+ordinary effect. The maintenance hook excludes receipt commits, leaving that
+successor in charge of the next boundary and any valid pre-LLM compaction.
 
 At turn-start and provider-stop boundaries, queued manual compaction carries an
 already-applied completion's original reference and fence through maintenance.

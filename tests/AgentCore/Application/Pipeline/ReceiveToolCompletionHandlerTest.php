@@ -26,10 +26,12 @@ use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionFailureCodeEn
 use Ineersa\AgentCore\Domain\Tool\Completion\RetainedToolCompletionSourceEventReference;
 use Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryReferenceDTO;
 use Ineersa\AgentCore\Tests\Support\ToolCompletionReceiptFixture;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
-final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
+// Real pre-LLM policy caches run/turn admission. Rolled-back session IDs must
+// not reuse that controller-local cache across independent test cases.
+final class ReceiveToolCompletionHandlerTest extends PerMethodIsolatedKernelTestCase
 {
     #[\PHPUnit\Framework\Attributes\DataProvider('damagedBodies')]
     public function testDamagedEvidenceAloneCannotWakeAndLaterExplicitUserContinuationStillRuns(bool $corrupt): void
@@ -655,8 +657,11 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $this->resetTransports();
         [$runId, $source, $reference] = ToolCompletionReceiptFixture::create($container);
+        $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, new \Ineersa\AgentCore\Domain\Event\RunEvent($runId, 0, 0, 'run_started', ['payload' => ['messages' => array_map(static fn ($message): array => $message->toArray(), $this->compactionHistory())]]));
+        $started = \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, new \Ineersa\AgentCore\Domain\Event\RunEvent($runId, 0, 1, 'turn_advanced', ['turn_no' => 1]));
         $context = $container->get(ActiveRunContextInterface::class);
-        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $source->seq, messages: $this->compactionHistory()));
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $started->seq, messages: $this->compactionHistory()));
         $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
         $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
         $processor = $this->compactionProcessor();
@@ -678,7 +683,7 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
         $before = $context->requireLoaded($runId);
         $processor->process('fenced-compaction', $queued);
         $after = $context->requireLoaded($runId);
-        if ('result' === $boundary) {
+        if ('result' === $boundary || 'restart' === $invalidation) {
             $this->assertSame('cancel' === $invalidation ? RunStatus::Cancelled : RunStatus::Completed, $after->status, 'Matching active work settles even after its wake fence expires.');
             $this->assertNull($after->currentOperation);
             $this->assertNull($after->activeStepId);
@@ -690,6 +695,21 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
         $this->assertCount(0, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
         $recipient = $container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($runId, $reference->messageId);
         $this->assertEquals($reference->deliveryFence, $recipient?->reference->deliveryFence);
+        if ('restart' === $invalidation) {
+            $replayed = $container->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class)->replay(RunState::queued($runId), $store->rangeFor($runId, 1, $after->lastSeq));
+            $this->assertSame($after->status, $replayed->status);
+            $this->assertSame($after->turnNo, $replayed->turnNo);
+            $this->assertSame($after->lastAppliedAdvanceKey, $replayed->lastAppliedAdvanceKey);
+            $this->assertNull($replayed->currentOperation);
+            $this->assertNull($replayed->activeStepId);
+            $this->assertFalse($replayed->isStreaming);
+            $processor->process('fenced-compaction', $queued);
+            $this->assertSame($after, $context->requireLoaded($runId));
+            $owner->onApplyCommand(new ApplyCommand($runId, $after->turnNo, 'explicit-after-expiry', 1, 'explicit-after-expiry', CoreCommandKind::FollowUp, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Ordinary follow-up after expired intent.']]]]));
+            $advances = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+            $processor->process('fenced-compaction', $advances[array_key_last($advances)]);
+            $this->assertCount(1, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+        }
     }
 
     public static function automaticCompactionInvalidations(): iterable
@@ -867,6 +887,184 @@ final class ReceiveToolCompletionHandlerTest extends IsolatedKernelTestCase
                 }
             }
         }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('unownedExpiredBoundaries')]
+    public function testExpiredBoundaryCannotCloseNewerActiveOrForeignWork(string $boundary, string $variant): void
+    {
+        $container = self::getContainer();
+        $this->resetTransports();
+        [$runId, $source, $reference] = ToolCompletionReceiptFixture::create($container);
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $source->seq, messages: $this->compactionHistory()));
+        $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class)->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $processor = $this->compactionProcessor();
+        $processor->process('unowned-expiry', $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class)[0]);
+        $queued = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\CompactRun::class)[0];
+        if ('successor' === $boundary || 'resolved-request' === $variant) {
+            $processor->process('unowned-expiry', $queued);
+            $processor->process('unowned-expiry', $this->compactionWorkerResult($this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class)[0]));
+            if ('successor' === $boundary) {
+                $queued = $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\AdvanceRun::class)[1];
+            }
+        }
+        $container->get(\Doctrine\DBAL\Connection::class)->executeStatement('UPDATE hatfield_session SET controller_generation = 1 WHERE id = ?', [$runId]);
+        $before = $context->requireLoaded($runId);
+        $before = match ($variant) {
+            'newer' => $before->with(['lastAppliedAdvanceKey' => 'newer-held-boundary']),
+            'active' => $before->with(['activeStepId' => 'new-active', 'currentOperation' => new \Ineersa\AgentCore\Domain\Run\CurrentOperationDTO($before->turnNo, 'new-active', 1, 'new-active-key')]),
+            'wrong-turn' => $before->with(['turnNo' => $before->turnNo + 1]),
+            default => $before,
+        };
+        if ('wrong-token' === $variant) {
+            $queued = $queued instanceof \Ineersa\AgentCore\Domain\Message\CompactRun
+                ? new \Ineersa\AgentCore\Domain\Message\CompactRun($runId, $queued->turnNo(), 'foreign-step', 1, $queued->idempotencyKey(), continueAfterCompaction: true, completionContinuation: $queued->completionContinuation)
+                : new \Ineersa\AgentCore\Domain\Message\AdvanceRun($runId, $queued->turnNo(), 'foreign-step', 1, $queued->idempotencyKey(), completionFence: $queued->completionFence, appliedCompletion: $queued->appliedCompletion);
+        }
+        $context->loadRecovered($before);
+        $processor->process('unowned-expiry', $queued);
+        $this->assertSame($before, $context->requireLoaded($runId));
+        $this->assertSame($before->lastSeq, $container->get(EventStoreInterface::class)->latestSequenceFor($runId));
+        $this->assertCount(0, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+    }
+
+    public static function unownedExpiredBoundaries(): iterable
+    {
+        yield 'already resolved request' => ['request', 'resolved-request'];
+        foreach (['request', 'successor'] as $boundary) {
+            foreach (['newer', 'active', 'wrong-turn', 'wrong-token'] as $variant) {
+                yield $boundary.' '.$variant => [$boundary, $variant];
+            }
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('eligibleUsageBoundaries')]
+    public function testReceiptAdmissionOwnsFifoBoundaryWithEligibleUsageAfterFailedManualCompaction(string $boundary): void
+    {
+        $container = self::getContainer();
+        $this->resetTransports();
+        [$runId, $source] = ToolCompletionReceiptFixture::create($container);
+        $history = array_merge(...array_fill(0, 5, $this->compactionHistory()));
+        $store = $container->get(\Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface::class);
+        \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, new \Ineersa\AgentCore\Domain\Event\RunEvent($runId, 0, 0, 'run_started', ['payload' => ['messages' => array_map(static fn ($message): array => $message->toArray(), $history), 'metadata' => ['model' => 'test-model']]]));
+        $started = \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, new \Ineersa\AgentCore\Domain\Event\RunEvent($runId, 0, 1, 'turn_advanced', ['turn_no' => 1]));
+        $context = $container->get(ActiveRunContextInterface::class);
+        $context->loadRecovered(new RunState($runId, RunStatus::Completed, turnNo: 1, lastSeq: $started->seq, messages: $history, model: 'test-model'));
+        $owner = $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class);
+        $owner->onApplyCommand(new ApplyCommand($runId, 1, 'start-usage', 1, 'start-usage', CoreCommandKind::FollowUp, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Measure provider usage.']]]]));
+        $this->consumeConfiguredControl(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+        $request = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class)[0];
+        $owner->onApplyCommand(new ApplyCommand($runId, $request->turnNo(), 'manual-usage', 1, 'manual-usage', CoreCommandKind::Compact));
+        $settings = $container->get(\Ineersa\CodingAgent\Config\AppConfig::class)->compaction->resolveRuntimeSettings('test-model');
+        $this->assertTrue($settings->autoEnabled);
+        $tokens = $settings->compactAfterTokens + 1;
+        $owner->onLlmStepResult(new \Ineersa\AgentCore\Domain\Message\LlmStepResult($runId, $request->turnNo(), $request->stepId(), $request->attempt(), $request->idempotencyKey(), assistantMessage: new \Symfony\AI\Platform\Message\AssistantMessage(new \Symfony\AI\Platform\Message\Content\Text('Provider measured the retained large history.')), usage: ['input_tokens' => $tokens], stopReason: 'stop'));
+        $beforeManual = $context->requireLoaded($runId)->messages;
+        $this->consumeConfiguredControl(\Ineersa\AgentCore\Domain\Message\CompactRun::class);
+        $manual = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class)[0];
+        $owner->onCompactionStepResult($this->compactionWorkerResult($manual, 'error'));
+        $failed = $context->requireLoaded($runId);
+        $this->assertSame(RunStatus::Completed, $failed->status);
+        $this->assertSame($beforeManual, $failed->messages);
+        $usage = $container->get(\Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver::class);
+        $this->assertSame($tokens, $usage->getLatestEligibleInputTokens($runId));
+        $hook = $container->get(\Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber::class);
+        $this->assertCount(1, $hook->prepareAfterTurnCommit(\Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext::fromRunState($failed, [], 0), $failed->lastSeq), 'Actual maintenance policy is eligible, not bypassed by stubbed usage or preparation.');
+        [, , $reference] = ToolCompletionReceiptFixture::create($container, 'FIFO completion delivered once.', $runId, 'fifo-receipt');
+        $context->loadRecovered($failed->with(['lastSeq' => $container->get(EventStoreInterface::class)->latestSequenceFor($runId)]));
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $this->assertCount(1, $this->transportMessages('run_control', \Ineersa\AgentCore\Domain\Message\CompactRun::class), 'Admission must not enqueue competing maintenance alongside its captured advance.');
+        $this->consumeConfiguredControl(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
+        if ('request-expired' === $boundary) {
+            $container->get(\Doctrine\DBAL\Connection::class)->executeStatement('UPDATE hatfield_session SET controller_generation = 1 WHERE id = ?', [$runId]);
+            $this->consumeConfiguredControl(\Ineersa\AgentCore\Domain\Message\CompactRun::class);
+            $this->assertCount(1, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class), 'Expired automatic request cannot dispatch a worker despite still-eligible usage.');
+            $this->assertIdleExpiryAndFollowUp($runId);
+
+            return;
+        }
+        $compact = $this->consumeConfiguredControl(\Ineersa\AgentCore\Domain\Message\CompactRun::class);
+        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\CompactRun::class, $compact);
+        $this->assertTrue($compact->continueAfterCompaction, 'Actual pre-LLM policy owns compaction and retains intent.');
+        $this->assertEquals($reference, $compact->completionContinuation?->appliedCompletion);
+        $steps = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class);
+        $this->assertCount(2, $steps);
+        $owner->onCompactionStepResult($this->compactionWorkerResult($steps[1]));
+        if ('successor-expired' === $boundary) {
+            $container->get(\Doctrine\DBAL\Connection::class)->executeStatement('UPDATE hatfield_session SET controller_generation = 1 WHERE id = ?', [$runId]);
+            $this->consumeConfiguredControl(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+            $this->assertIdleExpiryAndFollowUp($runId);
+
+            return;
+        }
+        $this->consumeConfiguredControl(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+        $requests = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class);
+        $this->assertCount(2, $requests, 'One initial measurement request and exactly one eventual completion request.');
+        $this->assertCount(1, array_filter($requests[1]->messages, static fn ($message): bool => 'tool_completion' === $message->role));
+        $this->assertSame(\Ineersa\AgentCore\Domain\Tool\Completion\ToolCompletionDeliveryDispositionEnum::Applied, $container->get(ToolCompletionRecipientRepositoryInterface::class)->findDelivery($runId, $reference->messageId)?->disposition);
+        $owner->onReceiveToolCompletion(new ReceiveToolCompletion($reference));
+        $transport = $container->get('messenger.transport.run_control');
+        $this->assertSame([], iterator_to_array($transport->get()));
+        $this->assertSame(0, $container->get(CommandStoreInterface::class)->countPending($runId));
+    }
+
+    public static function eligibleUsageBoundaries(): iterable
+    {
+        foreach (['delivery', 'request-expired', 'successor-expired'] as $boundary) {
+            yield $boundary => [$boundary];
+        }
+    }
+
+    private function assertIdleExpiryAndFollowUp(string $runId): void
+    {
+        $container = self::getContainer();
+        $state = $container->get(ActiveRunContextInterface::class)->requireLoaded($runId);
+        $this->assertSame(RunStatus::Completed, $state->status);
+        $this->assertNull($state->currentOperation);
+        $this->assertNull($state->activeStepId);
+        $this->assertFalse($state->isStreaming);
+        $transport = $container->get('messenger.transport.run_control');
+        $this->assertSame([], iterator_to_array($transport->get()), 'Idle expiry must not enqueue maintenance using old provider pressure.');
+        $this->assertCount(1, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+        $replayed = $container->get(\Ineersa\AgentCore\Application\Replay\RunStateReducer::class)->replay(RunState::queued($runId), $container->get(EventStoreInterface::class)->rangeFor($runId, 1, $state->lastSeq));
+        $this->assertSame($state->status, $replayed->status);
+        $this->assertSame($state->turnNo, $replayed->turnNo);
+        $this->assertSame($state->lastAppliedAdvanceKey, $replayed->lastAppliedAdvanceKey);
+        $this->assertNull($replayed->currentOperation);
+        $this->assertNull($replayed->activeStepId);
+        $this->assertFalse($replayed->isStreaming);
+        $container->get(ActiveRunContextInterface::class)->loadRecovered($replayed->with(['version' => $state->version]));
+        $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class)->onApplyCommand(new ApplyCommand($runId, $state->turnNo, 'ordinary-follow-up', 1, 'ordinary-follow-up', CoreCommandKind::FollowUp, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Ordinary explicit follow-up after idle expiry.']]]]));
+        $this->consumeConfiguredControl(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+        if ([] !== iterator_to_array($transport->get())) {
+            // Fresh human work may legitimately compact the still-large
+            // context; this is not renewal of the old completion's fence.
+            $compact = $this->consumeConfiguredControl(\Ineersa\AgentCore\Domain\Message\CompactRun::class);
+            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\CompactRun::class, $compact);
+            $this->assertNull($compact->completionContinuation);
+            $steps = $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep::class);
+            $container->get(\Ineersa\AgentCore\Application\Pipeline\RunOrchestrator::class)->onCompactionStepResult($this->compactionWorkerResult($steps[array_key_last($steps)]));
+            $this->consumeConfiguredControl(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class);
+        }
+        $this->assertCount(2, $this->transportMessages('llm', \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class));
+    }
+
+    /** @param class-string $expected */
+    private function consumeConfiguredControl(string $expected): object
+    {
+        $container = self::getContainer();
+        $transport = $container->get('messenger.transport.run_control');
+        $this->assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+        $envelopes = iterator_to_array($transport->get());
+        $this->assertCount(1, $envelopes);
+        $envelope = reset($envelopes);
+        $message = $envelope->getMessage();
+        $this->assertInstanceOf($expected, $message);
+        $container->get(\Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor::class)->process('configured-fifo', $message);
+        $transport->ack($envelope);
+
+        return $message;
     }
 
     /** @return list<\Ineersa\AgentCore\Domain\Message\AgentMessage> */
