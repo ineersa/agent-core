@@ -13,7 +13,8 @@ use Symfony\Component\Scheduler\Schedule;
 use Symfony\Component\Scheduler\ScheduleProviderInterface;
 
 /** Opt-in session resource trends for castor run:agent, not complete process accounting. */
-final class SessionResourceSamplerTask
+#[AsSchedule('default')]
+final class SessionResourceSamplerTask implements ScheduleProviderInterface
 {
     public const int INTERVAL_SECONDS = 60;
     public const string METRIC_CPU_PERCENT = 'hatfield.session.cpu_percent';
@@ -27,7 +28,6 @@ final class SessionResourceSamplerTask
         private readonly string $dogstatsdHost,
         private readonly int $dogstatsdPort,
         private readonly LoggerInterface $logger,
-        private readonly TelemetrySessionKeyProvider $sessionKeys,
     ) {
     }
 
@@ -68,6 +68,16 @@ final class SessionResourceSamplerTask
                 'exception_class' => $exception::class,
             ]);
         }
+    }
+
+    public function getSchedule(): Schedule
+    {
+        $schedule = new Schedule();
+        if ($this->isEnabled()) {
+            $schedule->add(RecurringMessage::every(self::INTERVAL_SECONDS, new SessionResourceSampleMessage()));
+        }
+
+        return $schedule;
     }
 
     private function isEnabled(): bool
@@ -170,9 +180,7 @@ final class SessionResourceSamplerTask
     private function send(array $sample): void
     {
         $tag = static fn (string $value): string => preg_replace('/[^A-Za-z0-9_.-]/', '_', $value) ?? '';
-        // Keep the qualified value intact, including its colon separator.
-        $tags = '|g|#service:hatfield,env:'.$tag($this->telemetryEnv).',session_id:'.$tag($this->sessionId)
-            .',session_key:'.$this->sessionKeys->forSession($this->sessionId)."\n";
+        $tags = '|g|#service:hatfield,env:'.$tag($this->telemetryEnv).',session_id:'.$tag($this->sessionId)."\n";
         $payload = self::METRIC_CPU_PERCENT.':'.$sample['cpu_percent'].$tags
             .self::METRIC_RSS_BYTES.':'.$sample['rss_bytes'].$tags
             .self::METRIC_PROCESS_COUNT.':'.$sample['process_count'].$tags;
@@ -192,35 +200,6 @@ final class SessionResourceSamplerTask
         } finally {
             fclose($socket);
         }
-    }
-}
-
-/**
- * Registers the sampler message on the default schedule.
- *
- * Kept separate from {@see SessionResourceSamplerTask}: AddScheduleMessengerPass
- * decorates schedule providers with Schedule, which must not be the Messenger handler.
- */
-#[AsSchedule('default')]
-final class SessionResourceSamplerSchedule implements ScheduleProviderInterface
-{
-    public function __construct(
-        private readonly bool $enabled,
-        private readonly string $sessionId,
-    ) {
-    }
-
-    public function getSchedule(): Schedule
-    {
-        $schedule = new Schedule();
-        if ($this->enabled && '' !== $this->sessionId && 'unknown' !== $this->sessionId) {
-            $schedule->add(RecurringMessage::every(
-                SessionResourceSamplerTask::INTERVAL_SECONDS,
-                new SessionResourceSampleMessage(),
-            ));
-        }
-
-        return $schedule;
     }
 }
 

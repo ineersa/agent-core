@@ -3,7 +3,7 @@
 
 dashboard_id: xza-j7r-e4s
 title: 'Hatfield sessions'
-description: 'Session-first resource diagnostics. Resource gauges are emitted by the opted-in once-per-minute scheduler sampler. CPU is a short interval sample, RSS is a process-tree sum that can double-count shared pages, and process count covers only live sampled tree members. Last-observed values are not proof that a process is still active. Qualified session gauges appear after the updated application is restarted and this dashboard is deployed; old unqualified history is excluded. Normal binary/PHAR launches remain off. The env tag is telemetry environment, not APP_ENV.'
+description: 'Session-first resource diagnostics. Resource gauges are emitted by the opted-in once-per-minute scheduler sampler. CPU is a short interval sample, RSS is a process-tree sum that can double-count shared pages, and process count covers only live sampled tree members. Last-observed values are not proof that a process is still active. New session gauges may show no data until the branch is deployed. Normal binary/PHAR launches remain off. The env tag is telemetry environment, not APP_ENV.'
 tags:
   - 'ai:modified_with_ai'
 template_variables:
@@ -16,14 +16,14 @@ template_variables:
       - dev
   -
     name: session
-    prefix: session_key
+    prefix: session_id
     defaults:
       - '*'
 widgets:
   -
     definition:
       type: note
-      content: 'Collection: `castor run:agent` may opt in to a once-per-minute scheduler resource sample. Gauges: `hatfield.session.cpu_percent` (% short interval sample), `hatfield.session.rss_bytes` (bytes, summed process-tree RSS; shared pages may be double-counted), and `hatfield.session.process_count` (live sampled tree members). Tags: `service:hatfield`, `env:dev`, `session_id:<raw owning session ID>`, and `session_key:<sha256(canonical project cwd)>:<session ID>`. Selector defaults to all qualified sessions; unqualified history is excluded. Normal binary/PHAR launches remain off; `env:dev` is the telemetry environment, not `APP_ENV`. Missing short tools and peaks are accepted. Last-observed samples do not prove process liveness.'
+      content: 'Collection: `castor run:agent` may opt in to a once-per-minute scheduler resource sample. Gauges: `hatfield.session.cpu_percent` (% short interval sample), `hatfield.session.rss_bytes` (bytes, summed process-tree RSS; shared pages may be double-counted), and `hatfield.session.process_count` (live sampled tree members). Tags: `service:hatfield`, `env:dev`, and `session_id:<owning session UUID>`. Selector defaults to all sessions. Normal binary/PHAR launches remain off; `env:dev` is the telemetry environment, not `APP_ENV`. Missing short tools and peaks are accepted. Last-observed samples do not prove process liveness.'
       background_color: '#e6f1ff'
       font_size: '12'
       text_align: left
@@ -47,7 +47,7 @@ widgets:
             -
               data_source: metrics
               name: cpu
-              query: 'sum:hatfield.session.cpu_percent{service:hatfield AND session_key:* AND $env AND $session}'
+              query: 'sum:hatfield.session.cpu_percent{service:hatfield AND $env AND $session}'
           formulas:
             -
               formula: cpu
@@ -71,7 +71,7 @@ widgets:
             -
               data_source: metrics
               name: rss
-              query: 'sum:hatfield.session.rss_bytes{service:hatfield AND session_key:* AND $env AND $session}'
+              query: 'sum:hatfield.session.rss_bytes{service:hatfield AND $env AND $session}'
           formulas:
             -
               formula: rss
@@ -95,7 +95,7 @@ widgets:
             -
               data_source: metrics
               name: count
-              query: 'sum:hatfield.session.process_count{service:hatfield AND session_key:* AND $env AND $session}'
+              query: 'sum:hatfield.session.process_count{service:hatfield AND $env AND $session}'
           formulas:
             -
               formula: count
@@ -122,7 +122,7 @@ widgets:
             -
               data_source: metrics
               name: cpu
-              query: 'avg:hatfield.session.cpu_percent{service:hatfield AND session_key:* AND $env AND $session} by {session_key}'
+              query: 'avg:hatfield.session.cpu_percent{service:hatfield AND $env AND $session} by {session_id}'
           response_format: timeseries
     layout:
       x: 0
@@ -145,7 +145,7 @@ widgets:
             -
               data_source: metrics
               name: rss
-              query: 'avg:hatfield.session.rss_bytes{service:hatfield AND session_key:* AND $env AND $session} by {session_key}'
+              query: 'avg:hatfield.session.rss_bytes{service:hatfield AND $env AND $session} by {session_id}'
           response_format: timeseries
       yaxis:
         include_zero: false
@@ -172,7 +172,7 @@ widgets:
             -
               data_source: metrics
               name: count
-              query: 'avg:hatfield.session.process_count{service:hatfield AND session_key:* AND $env AND $session} by {session_key}'
+              query: 'avg:hatfield.session.process_count{service:hatfield AND $env AND $session} by {session_id}'
           response_format: timeseries
       yaxis:
         include_zero: true
@@ -195,17 +195,17 @@ widgets:
             -
               data_source: metrics
               name: cpu
-              query: 'avg:hatfield.session.cpu_percent{service:hatfield AND session_key:* AND $env AND $session} by {session_key}'
+              query: 'avg:hatfield.session.cpu_percent{service:hatfield AND $env AND $session} by {session_id}'
               aggregator: last
             -
               data_source: metrics
               name: rss
-              query: 'avg:hatfield.session.rss_bytes{service:hatfield AND session_key:* AND $env AND $session} by {session_key}'
+              query: 'avg:hatfield.session.rss_bytes{service:hatfield AND $env AND $session} by {session_id}'
               aggregator: last
             -
               data_source: metrics
               name: count
-              query: 'avg:hatfield.session.process_count{service:hatfield AND session_key:* AND $env AND $session} by {session_key}'
+              query: 'avg:hatfield.session.process_count{service:hatfield AND $env AND $session} by {session_id}'
               aggregator: last
           formulas:
             -
@@ -245,10 +245,10 @@ widgets:
                 - '*'
               name: completed
               search:
-                query: 'service:hatfield $env @extra.session_key:$session.value @context.event_type:llm.request.completed'
+                query: 'service:hatfield $env @extra.session_id:$session.value @context.event_type:llm.request.completed'
               group_by:
                 -
-                  facet: '@extra.session_key'
+                  facet: '@extra.session_id'
                   limit: 50
                   sort:
                     aggregation: count
@@ -261,10 +261,10 @@ widgets:
                 - '*'
               name: failed
               search:
-                query: 'service:hatfield $env @extra.session_key:$session.value @context.event_type:llm.request.failed'
+                query: 'service:hatfield $env @extra.session_id:$session.value @context.event_type:llm.request.failed'
               group_by:
                 -
-                  facet: '@extra.session_key'
+                  facet: '@extra.session_id'
                   limit: 50
                   sort:
                     aggregation: count
@@ -300,8 +300,8 @@ widgets:
               width: auto
           query:
             data_source: logs_stream
-            indexes: []
-            query_string: 'service:hatfield $env @extra.session_key:$session.value source:php status:(warn OR error OR critical OR alert OR emergency)'
+            indexes: {}
+            query_string: 'service:hatfield $env @extra.session_id:$session.value source:php status:(warn OR error OR critical OR alert OR emergency)'
             sort:
               column: timestamp
               order: desc
@@ -330,7 +330,7 @@ widgets:
                 - '*'
               name: failures
               search:
-                query: 'service:hatfield $env @extra.session_key:$session.value status:warn "Failed to execute tool"'
+                query: 'service:hatfield $env @extra.session_id:$session.value status:warn "Failed to execute tool"'
               group_by:
                 -
                   facet: '@extra.tool_name'
@@ -348,7 +348,7 @@ widgets:
     definition:
       type: timeseries
       title: 'Session-filtered logs by status'
-      description: 'Count of structured logs carrying the selected session_key.'
+      description: 'Count of structured logs carrying the selected session_id.'
       show_legend: true
       requests:
         -
@@ -365,7 +365,7 @@ widgets:
                 - '*'
               name: logs
               search:
-                query: 'service:hatfield $env @extra.session_key:$session.value'
+                query: 'service:hatfield $env @extra.session_id:$session.value'
               group_by:
                 -
                   facet: status

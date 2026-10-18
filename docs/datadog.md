@@ -241,7 +241,7 @@ sets `HATFIELD_SESSION_RESOURCE_SAMPLER=1`, `HATFIELD_TELEMETRY_ENV=dev`,
 launches do not enable sampling by default. These are developer-launch parameters,
 not persistent Hatfield settings. The UDP listener must be reachable from the sandbox.
 
-When enabled, `SessionResourceSamplerSchedule` adds one job to the existing Symfony
+When enabled, `SessionResourceSamplerTask` adds one job to the existing Symfony
 `default` schedule. The `scheduler_default` worker aggregates CPU percent, summed
 resident memory, and process count for the owning `HATFIELD_SESSION_ID` process
 tree. It includes the TUI, controller, consumers and descendant tools, but not the
@@ -251,15 +251,10 @@ Castor, shell or tmux ancestors shared with other work. It sends:
 - `hatfield.session.rss_bytes`
 - `hatfield.session.process_count`
 
-Tags are `service:hatfield`, `env:<HATFIELD_TELEMETRY_ENV>`,
-`session_id:<raw owning session ID>`, and `session_key:<project hash>:<session ID>`.
-The project hash is SHA-256 of the canonical runtime project cwd from `app.cwd`,
-not the application installation directory. Symlink aliases resolve to the same
-project; the same session ID in different directories produces different keys.
-The colon separator is preserved in metric tags and log fields. Session tags
-create custom metric series per project and session. CPU comes from the second
-`top` refresh over roughly 0.2 seconds; it is not a minute average.
-RSS is summed resident bytes, not unique physical memory.
+Tags are `service:hatfield`, `env:<HATFIELD_TELEMETRY_ENV>`, and
+`session_id:<owning session UUID>`. Session tags create custom metric series per
+session. CPU comes from the second `top` refresh over roughly 0.2 seconds; it is
+not a minute average. RSS is summed resident bytes, not unique physical memory.
 The minute cadence can miss short-lived tools and short peaks. Failures stay
 local: bounded logs without raw command output or environment contents. UDP sends
 are non-blocking and do not acknowledge Datadog ingestion.
@@ -272,22 +267,14 @@ need per-session CPU/RSS/count from an opted-in Castor launch.
 [The dashboard definition](../ops/datadog/dashboard.yaml) updates the existing
 `xza-j7r-e4s` dashboard in place. The `env` selector defaults to `dev`; this is the
 telemetry environment, not `APP_ENV`. The `session` selector defaults to all
-sessions and filters resource metrics by `session_key` and logs by
-`@extra.session_key`. All metric groups and session comparisons use this qualified
-key. Raw `session_id` and `run_id` remain unchanged for correlation.
-
-`LogContextProcessor` derives the same key for correlated records, including logs
-from launches without the resource sampler. Explicit `extra.session_id` takes
-precedence over call-site `context.session_id`; either takes precedence over the
-ambient session ID. Records without a usable session ID receive no derived key.
+sessions and filters resource metrics by `session_id` and logs by
+`@extra.session_id`.
 
 The dashboard shows last-observed totals, CPU/RSS/process-count trends by session,
 a session comparison table, and session-filtered LLM outcomes and errors.
-Last-observed samples do not prove that processes remain alive. Restart Hatfield
-with the updated application and deploy the updated dashboard definition to use
-qualified session selection. There is no historical backfill: old samples and
-logs without `session_key` are excluded, including when selecting all sessions.
-Session choices appear after an updated sampler-enabled launch sends data.
+Last-observed samples do not prove that processes remain alive. New gauges have
+no historical backfill; session choices appear after a new sampler-enabled launch
+sends data. Secondary log panels can show earlier session activity.
 
 ## Retained visibility and intentional loss
 
