@@ -11,10 +11,13 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueEnv;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\RepairResultNormalizer;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use Psr\Log\LoggerInterface;
@@ -93,8 +96,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     /**
      * Session-scoped identifier (the full run ID).
-     * Used to scope Doctrine Messenger queue names per session so that
-     * cross-session message stealing cannot occur. One session per
+     * Selects the session-owned broker database so that cross-session
+     * message stealing cannot occur. One session per
      * Hatfield instance — session_id === run_id per AGENTS.md.
      */
     private ?string $sessionId = null;
@@ -112,6 +115,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     // Started sessions have no bootstrap ID; failed replacement startup must
     // retain their resume obligation independently of identity publication.
     private bool $recoveryPending = false;
+
+    // A controller-declared session failure is not a crash. Retain its wire
+    // diagnostic outside per-run compaction until an explicit lifecycle reset.
+    private ?RuntimeEvent $fatalProtocolError = null;
 
     /**
      * Whether ensureProcessRunning() auto-resumed the active run during
@@ -132,7 +139,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      * spawned with. When start() or resume() sets a different
      * sessionId, ensureProcessRunning() must restart the process so
      * the controller and its consumer subprocesses use the correct
-     * session-scoped queue names.
+     * session-owned broker.
      */
     private ?string $processSessionId = null;
 
@@ -148,6 +155,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         private readonly PromptTemplatesRuntimeConfig $promptTemplatesConfig,
         private readonly ToolFilterRuntimeConfig $toolFilterConfig,
         private readonly LoggerInterface $logger,
+        private readonly HatfieldSessionStore $sessionStore,
     ) {
         $this->compactEventBuffer = new RuntimeEventPerRunCompactBuffer();
         $this->eventBufferWatermarkActive = false;
@@ -176,6 +184,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function start(StartRunRequest $request): RunHandle
     {
+        if (null !== $this->fatalProtocolError) {
+            $this->shutdown();
+        }
         // New run — clear stale state from any previous run or crash.
         $this->recoveryPending = false;
         $this->pendingSessionRestoring = null;
@@ -188,11 +199,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->bootstrapEnded = false;
         $this->resetSuffix();
 
-        // Derive session-scoped queue names from the request runId before
-        // spawning the controller process, so its env vars carry the right DSNs.
-        // session_id === run_id per AGENTS.md — no truncation needed.
-        $runId = '' !== $request->runId ? $request->runId : null;
+        // Allocate anonymous starts before choosing the broker DB. Startup and
+        // recovery must share the canonical DB-issued session_id === run_id.
+        $runId = '' !== $request->runId ? $request->runId : $this->sessionStore->createSession($request->prompt);
         $this->sessionId = $runId;
+        $this->activeRunId = $runId;
+        $this->primaryRunId = $runId;
 
         $this->ensureProcessRunning();
 
@@ -207,7 +219,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 'component' => 'JsonlProcessAgentSessionClient',
                 'event_type' => 'start_process_cleanup',
                 'session_id' => $this->sessionId ?? '',
-                'run_id' => $runId ?? '',
+                'run_id' => $runId,
                 'error' => $e->getMessage(),
             ]);
             $this->stopProcess();
@@ -215,18 +227,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             throw $e;
         }
 
-        // activeRunId was set above from the request runId for crash recovery
-        // before spawning the process, so if the controller dies before
-        // run.started arrives, auto-resume will target it.
-        if (null !== $runId) {
-            $this->activeRunId = $runId;
-            $this->primaryRunId = $runId;
-        }
-
         $cmd = new RuntimeCommand(
             id: uniqid('cmd_', true),
             type: 'start_run',
-            runId: $runId ?? '',
+            runId: $runId,
             payload: array_filter([
                 'prompt' => $request->prompt,
                 'cwd' => $request->cwd,
@@ -266,6 +270,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                     $this->bufferEvent($event, 'read_events');
                 }
 
+                $this->assertSessionNotFailed();
                 if ($foundStarted) {
                     return new RunHandle(runId: $this->activeRunId, status: 'running');
                 }
@@ -283,7 +288,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 'component' => 'JsonlProcessAgentSessionClient',
                 'event_type' => 'start_process_cleanup',
                 'session_id' => $this->sessionId ?? '',
-                'run_id' => $runId ?? '',
+                'run_id' => $runId,
                 'error' => $e->getMessage(),
             ]);
             $this->stopProcess();
@@ -296,7 +301,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'component' => 'JsonlProcessAgentSessionClient',
             'event_type' => 'start_process_cleanup',
             'session_id' => $this->sessionId ?? '',
-            'run_id' => $runId ?? '',
+            'run_id' => $runId,
             'timeout_seconds' => $timeout,
         ]);
         $this->stopProcess();
@@ -306,6 +311,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function attach(string $runId): RunHandle
     {
+        if (null !== $this->fatalProtocolError) {
+            $this->shutdown();
+        }
         $this->recoveryPending = false;
         $this->pendingSessionRestoring = null;
         $this->bootstrapCommandId = null;
@@ -320,7 +328,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->autoResumed = false;
         $this->observedChildRunIds = [];
 
-        // runId is the session ID — update session-scoped queue DSNs.
+        // runId is the session ID — select its broker before spawning the controller.
         $this->sessionId = $runId;
         $this->activeRunId = $runId;
         $this->primaryRunId = $runId;
@@ -437,6 +445,16 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // Transparently restart the controller process if it died.
         $this->ensureProcessRunning();
 
+        // Decode the whole read before yielding: callers may abandon an events()
+        // generator mid-batch, but a fatal outcome must already fence recovery.
+        $events = null === $this->fatalProtocolError ? $this->readEventBatch() : [];
+        if (null !== $this->fatalProtocolError) {
+            // Session-wide failure is visible from parent and child polls alike.
+            yield $this->fatalProtocolError;
+
+            return;
+        }
+
         if (null !== $this->pendingSessionRestoring && $this->pendingSessionRestoring->runId === $runId) {
             $restoring = $this->pendingSessionRestoring;
             $this->pendingSessionRestoring = null;
@@ -449,7 +467,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         // Read new events from the process.
-        foreach ($this->readEvents() as $event) {
+        foreach ($events as $event) {
             if ($event->runId === $runId) {
                 yield $event;
             } else {
@@ -583,6 +601,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function ensureProcessRunning(): void
     {
+        if (null !== $this->fatalProtocolError) {
+            return;
+        }
         // Force a restart when the session has changed so the controller
         // and its consumer subprocesses are launched with the new session's
         // env vars (queue DSNs, HATFIELD_SESSION_ID).
@@ -593,8 +614,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         //
         // Session-change and crash restarts use the same controller stop
         // grace (CONTROLLER_STOP_GRACE_SECONDS). It must exceed ConsumerSupervisor's
-        // default 5s shared consumer grace so parent teardown cannot SIGKILL the
-        // controller mid-consumer-shutdown (observed orphan: last of N consumers).
+        // shared consumer+broker deadline so parent teardown cannot SIGKILL the
+        // controller mid-shutdown (observed orphan: last of N consumers).
         $sessionChanged = null !== $this->sessionId
             && null !== $this->processSessionId
             && $this->sessionId !== $this->processSessionId;
@@ -604,6 +625,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         if (null !== $this->process && $this->isProcessRunning() && !$this->recoveryPending) {
+            return;
+        }
+
+        // An exited controller may have left the fatal diagnostic unread. Drain
+        // all remaining bytes, including a partial line from an earlier poll,
+        // before closing its pipes or allowing canonical crash recovery.
+        $this->readEventBatch(drain: true);
+        if (null !== $this->fatalProtocolError) {
             return;
         }
 
@@ -674,28 +703,22 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         ];
 
         $currentEnv = getenv();
-        // Build session-scoped queue names so no cross-session message
-        // stealing can occur. Falls back to 'default' before start().
-        $queueSuffix = $this->sessionId ?? 'default';
-
+        if (null === $this->sessionId || '' === $this->sessionId) {
+            throw new \LogicException('Controller startup requires a session identity.');
+        }
+        $queuePaths = SessionSqliteQueuePaths::forSession(
+            $this->sessionStore->resolveSessionsBasePath(),
+            $this->sessionId,
+        );
         $env = array_merge(\is_array($currentEnv) ? $currentEnv : $_ENV, [
             'APP_ENV' => $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? 'prod',
             'APP_DEBUG' => $_SERVER['APP_DEBUG'] ?? $_ENV['APP_DEBUG'] ?? '0',
-            // Controller/worker mode must use real async queues. The parent
-            // TUI process defaults to sync:// so --transport=in-process remains
-            // usable without a consumer pool.
-            // Stock Doctrine redeliver_timeout ≈ ten 365-day years; no keepalive.
-            // Rows older than that horizon can reclaim. Restarting the same session
-            // reuses the same queue and does not reset delivered_at age.
-            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$queueSuffix}&redeliver_timeout=315360000",
-            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$queueSuffix}&redeliver_timeout=315360000",
-            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$queueSuffix}&redeliver_timeout=315360000",
-            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$queueSuffix}&redeliver_timeout=315360000",
-            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$queueSuffix}&redeliver_timeout=315360000",
-            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=extension_agent_{$queueSuffix}&redeliver_timeout=315360000",
+            // Parent publishes broker paths + DSNs so controller/consumer boots
+            // resolve sqlite-queue transports before the broker is started.
+            ...SessionSqliteQueueEnv::processEnv($queuePaths),
             // Pass session ID so the controller can identify and reap its own
             // orphaned consumers when a previous session was SIGKILL'd.
-            'HATFIELD_SESSION_ID' => $this->sessionId ?? 'unknown',
+            'HATFIELD_SESSION_ID' => $this->sessionId,
             // Signal an approval channel so SafeGuard (and future approval-
             // capable extensions) can prompt instead of auto-blocking. The
             // controller and its messenger consumers inherit this env var.
@@ -769,6 +792,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function waitForRuntimeReady(): void
     {
+        $this->assertSessionNotFailed();
         if ($this->runtimeReadyReceived) {
             return;
         }
@@ -787,6 +811,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 $this->bufferEvent($event, 'read_events');
             }
 
+            $this->assertSessionNotFailed();
             if ($this->runtimeReadyReceived) {
                 return;
             }
@@ -828,6 +853,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
             // A read batch can contain events after the repair response. Buffer
             // the entire batch before returning so live updates are not lost.
+            $this->assertSessionNotFailed();
             if (null !== $repairResultEvent) {
                 if (RuntimeEventTypeEnum::CommandRejected->value === $repairResultEvent->type
                     || 'completed' !== ($repairResultEvent->payload['status'] ?? null)) {
@@ -858,6 +884,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function bufferEvent(RuntimeEvent $event, string $reason): void
     {
+        if ($event->isFatalProtocolError()) {
+            return;
+        }
         $observed = isset($this->observedChildRunIds[$event->runId])
             || ('' !== $event->runId && $event->runId === ($this->primaryRunId ?? ''));
         $this->compactEventBuffer->ingest($event, $observed);
@@ -945,6 +974,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function writeCommand(RuntimeCommand $command): void
     {
+        $this->assertSessionNotFailed();
         if (null === $this->process || !isset($this->pipes[0]) || !\is_resource($this->pipes[0])) {
             throw new RuntimeTransportException('Controller stdin pipe is not available. '.$this->diagnosticOutput());
         }
@@ -963,6 +993,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function writeCommandWithRetry(RuntimeCommand $command): void
     {
+        $this->assertSessionNotFailed();
         try {
             $this->writeCommand($command);
         } catch (\RuntimeException $e) {
@@ -998,10 +1029,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      *
      * @return list<RuntimeEvent>
      */
-    private function readEventBatch(): array
+    private function readEventBatch(bool $drain = false): array
     {
         $events = [];
-        foreach ($this->readEvents() as $event) {
+        foreach ($this->readEvents($drain) as $event) {
             $events[] = $event;
         }
 
@@ -1011,7 +1042,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     /**
      * @return iterable<RuntimeEvent>
      */
-    private function readEvents(): iterable
+    private function readEvents(bool $drain): iterable
     {
         if (null === $this->process) {
             return;
@@ -1023,7 +1054,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             return;
         }
 
-        $chunk = fread($this->pipes[1], 65536);
+        $chunk = $drain ? stream_get_contents($this->pipes[1]) : fread($this->pipes[1], 65536);
         if (false === $chunk || '' === $chunk) {
             return;
         }
@@ -1053,6 +1084,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             if (RuntimeEventTypeEnum::SessionRestoring->value === $event->type) {
                 // Replacement identity is trusted local lifecycle, never wire input.
                 continue;
+            }
+            if ($event->isFatalProtocolError()) {
+                $this->fatalProtocolError ??= $event;
             }
             if (RuntimeEventTypeEnum::BootstrapAvailable->value === $event->type) {
                 if (!$this->runtimeReadyReceived || null === $this->bootstrapCommandId || ($event->payload['command_id'] ?? null) !== $this->bootstrapCommandId) {
@@ -1147,11 +1181,24 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function assertProcessStillRunning(string $context): void
     {
+        $this->assertSessionNotFailed();
         if (null === $this->process || $this->isProcessRunning()) {
             return;
         }
 
+        // Exit can race the preceding non-blocking read in a readiness/start
+        // wait. Preserve a final fatal frame before its cleanup closes stdout.
+        $this->readEventBatch(drain: true);
+        $this->assertSessionNotFailed();
+
         throw new RuntimeTransportException(\sprintf('Controller process exited while %s. %s', $context, $this->diagnosticOutput()));
+    }
+
+    private function assertSessionNotFailed(): void
+    {
+        if (null !== $this->fatalProtocolError) {
+            throw new RuntimeTransportException((string) ($this->fatalProtocolError->payload['error'] ?? 'Controller reported a fatal session failure.'));
+        }
     }
 
     /** @phpstan-impure */
@@ -1196,7 +1243,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      * Stop the controller subprocess under CONTROLLER_STOP_GRACE_SECONDS.
      *
      * One grace for all stop paths (session switch, crash recovery, close):
-     * parent must outlive ConsumerSupervisor's shared 5s consumer shutdown.
+     * parent must outlive the controller's shared 5s consumer+broker shutdown
+     * deadline (not sequential 5s+5s).
      */
     private function stopProcess(): void
     {
@@ -1235,6 +1283,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function resetSessionBoundaryState(): void
     {
+        $this->fatalProtocolError = null;
         $this->recoveryPending = false;
         $this->pendingSessionRestoring = null;
         $this->bootstrapCommandId = null;

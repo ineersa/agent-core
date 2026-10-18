@@ -4,21 +4,24 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
-use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayLowLatencyMessengerConsole;
+use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplaySourceMessengerConsole;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Isolated SQLite paths for TUI E2E subprocesses (app state + Messenger transport).
+ * Isolated SQLite paths for TUI E2E subprocesses (app state).
  *
  * TUI tmux tests spawn agent/controller children that do not inherit ParaTest
- * worker env; each test must pass both HATFIELD_TEST_* paths explicitly so
- * parallel TUI workers do not share one messenger_transport_test.sqlite.
+ * worker env; each test must pass HATFIELD_TEST_DATABASE_PATH explicitly so
+ * parallel TUI workers do not share one app_test.sqlite.
+ *
+ * Durable Messenger queues use session-owned sqlite-queue brokers, not a
+ * Doctrine transport SQLite file.
  */
 final class TuiE2eDatabaseEnv
 {
     /**
-     * @return array{app: string, transport: string}
+     * @return array{app: string}
      */
     public static function allocatePaths(string $prefix): array
     {
@@ -26,26 +29,24 @@ final class TuiE2eDatabaseEnv
 
         return [
             'app' => 'app_test-'.$suffix.'.sqlite',
-            'transport' => 'messenger_transport_test-'.$suffix.'.sqlite',
         ];
     }
 
-    public static function shellPrefix(string $appDbPath, string $transportDbPath): string
+    public static function shellPrefix(string $appDbPath): string
     {
-        return self::shellPrefixWithOptionalMessengerBinary($appDbPath, $transportDbPath, null);
+        return self::shellPrefixWithOptionalMessengerBinary($appDbPath, null);
     }
 
     /**
-     * Same as shellPrefix, plus HATFIELD_BINARY_PATH → low-latency messenger
+     * Same as shellPrefix, plus HATFIELD_BINARY_PATH → source messenger
      * console wrapper under the isolated project tree (source-console TUI
      * replay only; do not use for PHAR/artifact boots).
      */
-    public static function shellPrefixWithLowLatencyMessenger(
+    public static function shellPrefixWithSourceMessenger(
         string $appDbPath,
-        string $transportDbPath,
         string $testProjectDir,
     ): string {
-        return self::shellPrefixWithOptionalMessengerBinary($appDbPath, $transportDbPath, $testProjectDir);
+        return self::shellPrefixWithOptionalMessengerBinary($appDbPath, $testProjectDir);
     }
 
     /**
@@ -76,7 +77,7 @@ final class TuiE2eDatabaseEnv
     }
 
     /**
-     * @return array{app: string, transport: string, appAbsolute: string, transportAbsolute: string, appEnv: string, transportEnv: string}
+     * @return array{app: string, appAbsolute: string, appEnv: string}
      */
     public static function allocateIsolatedPaths(string $kernelProjectDir, string $isolatedProjectDir, string $prefix): array
     {
@@ -85,11 +86,8 @@ final class TuiE2eDatabaseEnv
 
         return [
             'app' => $paths['app'],
-            'transport' => $paths['transport'],
             'appAbsolute' => self::isolatedSqliteAbsolutePath($isolatedProjectDir, $paths['app']),
-            'transportAbsolute' => self::isolatedSqliteAbsolutePath($isolatedProjectDir, $paths['transport']),
             'appEnv' => self::doctrineEnvPathForIsolatedSqlite($kernelProjectDir, $isolatedProjectDir, $paths['app']),
-            'transportEnv' => self::doctrineEnvPathForIsolatedSqlite($kernelProjectDir, $isolatedProjectDir, $paths['transport']),
         ];
     }
 
@@ -99,7 +97,7 @@ final class TuiE2eDatabaseEnv
      * restart at fixture 0 and can serve the wrong turn. Force a single llm consumer
      * for all TUI replay isolation (same rationale as ControllerReplayE2eTestCase).
      * Also force tools.execution.max_parallelism=1: TUI replay cases do not need
-     * four idle tool consumers paying Symfony messenger --sleep=1 under contention.
+     * four idle tool consumers under contention.
      *
      * @param array<string, mixed> $settings
      *
@@ -225,19 +223,17 @@ final class TuiE2eDatabaseEnv
 
     private static function shellPrefixWithOptionalMessengerBinary(
         string $appDbPath,
-        string $transportDbPath,
         ?string $testProjectDir,
     ): string {
         $prefix = \sprintf(
-            'HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s ',
+            'HATFIELD_TEST_DATABASE_PATH=%s ',
             escapeshellarg($appDbPath),
-            escapeshellarg($transportDbPath),
         );
         if (null === $testProjectDir || '' === $testProjectDir) {
             return $prefix;
         }
 
-        $wrapper = ControllerReplayLowLatencyMessengerConsole::install(
+        $wrapper = ControllerReplaySourceMessengerConsole::install(
             $testProjectDir,
             ProjectDir::get().'/bin/console',
         );

@@ -1,0 +1,27 @@
+# Session-owned sqlite-queue broker defaults.
+#
+# max_payload is the authoritative session payload budget. It follows this
+# host's SQLite MAX_LENGTH compile option (1_000_000_000 bytes), which is the
+# practical single-value storage ceiling for queue body/header columns. That is
+# independent of SessionBootstrapSpoolStore::MAX_BYTES, which only bounds the
+# disposable UI bootstrap transfer and does not limit prepared ExecuteLlmStep /
+# compaction envelopes after native PhpSerializer expansion.
+#
+# max_connections stays at the package default for standalone broker boots.
+# HeadlessController sizes the live session broker with --max-connections from
+# SessionSqliteQueueBrokerTopology for the resolved LLM/tool pools and fails
+# closed when the ready event advertises less than that requirement.
+parameters:
+    hatfield.sqlite_queue.max_payload: 1000000000
+
+sqlite_queue:
+    synchronous: full
+    redeliver_timeout: 60
+    max_payload: '%hatfield.sqlite_queue.max_payload%'
+    max_connections: 64
+
+# Replace the bundle default connector so Amp SQLite workers relaunch through
+# RuntimeProcessConfig::executableCommand() plus --internal-sqlite-worker.
+services:
+    Fabpot\Amp\Sqlite\SqliteConnector:
+        factory: ['@Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueConnectorFactory', '__invoke']

@@ -30,9 +30,12 @@ use Symfony\Component\Process\Process;
  * Process management:
  * - Launch: creates a non-blocking Symfony Process with timeout(null) and
  *   Symfony Messenger --memory-limit for graceful worker recycling
- * - Consumers launch without --keepalive; session Doctrine DSNs use a ~10-year
- *   redeliver_timeout so short-lived claims are not age-reclaimed. Abandoned
- *   deliveries still need explicit `/repair` redrive of current effects
+ * - Consumers launch with native --keepalive=5 so long handlers renew the
+ *   broker's 60-second lease. Failed keepalive does not stop a running
+ *   handler; ownership loss remains at-least-once and still needs explicit
+ *   `/repair` for interrupted sessions
+ * - scheduler_default keeps native Scheduler transport behavior and omits
+ *   --keepalive (that receiver is not a sqlite-queue KeepaliveReceiver)
  * - Supervision: polls isRunning() every 5s; exit code 0 is treated as
  *   normal memory-limit (or other graceful) recycle with immediate relaunch;
  *   non-zero exits use crash restart policy with exponential backoff
@@ -59,11 +62,18 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     /** Symfony Messenger graceful worker recycle threshold for controller consumers. */
     private const string CONSUMER_MEMORY_LIMIT = '256M';
 
-    /**
-     * Idle poll delay passed to messenger:consume in seconds (50ms).
-     * Symfony converts this CLI value to microseconds for Worker::run().
-     */
-    private const float CONSUMER_SLEEP_SECONDS = 0.05;
+    /** Native Messenger keepalive interval in seconds; must stay below the broker lease. */
+    private const int CONSUMER_KEEPALIVE_SECONDS = 5;
+
+    /** Transports that consume sqlite-queue receivers and need lease renewal. */
+    private const array BROKER_KEEPALIVE_TRANSPORTS = [
+        'run_control',
+        'llm',
+        'tool',
+        'agent',
+        'mcp',
+        'extension_agent',
+    ];
 
     /** Max bytes of stderr tail retained per consumer for crash diagnostics. */
     private const int STDERR_TAIL_MAX_BYTES = 16_384;
@@ -95,7 +105,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly RuntimeProcessConfig $runtimeConfig,
-        private readonly int $shutdownGraceSeconds = 5,
     ) {
     }
 
@@ -111,19 +120,27 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         $appCommand = $this->runtimeConfig->executableCommand();
 
         try {
-            $env = $_ENV;
+            // PHP's default variables_order=GPCS leaves $_ENV empty. Inherit the
+            // real process environment so consumers keep HOME and the controller's
+            // HATFIELD_* sqlite-queue DSNs.
+            $currentEnv = getenv();
+            $env = \is_array($currentEnv) ? $currentEnv : $_ENV;
             $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = '1';
 
+            $command = [
+                ...$appCommand,
+                'messenger:consume',
+                $transportName,
+                '--no-interaction',
+                '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
+            ];
+            if (\in_array($transportName, self::BROKER_KEEPALIVE_TRANSPORTS, true)) {
+                // Omit --sleep so sqlite-queue native WAIT notifications wake idle workers.
+                $command[] = '--keepalive='.self::CONSUMER_KEEPALIVE_SECONDS;
+            }
+
             $process = new Process(
-                [
-                    ...$appCommand,
-                    'messenger:consume',
-                    $transportName,
-                    '--no-interaction',
-                    '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
-                    // Explicit values avoid Symfony's one-second default idle sleep.
-                    '--sleep='.self::CONSUMER_SLEEP_SECONDS,
-                ],
+                $command,
                 cwd: $cwd,
                 env: $env,
                 timeout: null,
@@ -242,7 +259,8 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     }
 
     /**
-     * Gracefully stop all tracked messenger consumer processes.
+     * Gracefully stop all tracked messenger consumer processes against an
+     * absolute shared deadline.
      *
      * This is for controller/runtime shutdown only (e.g. when the user
      * exits the agent or the controller process is stopping). It is NOT
@@ -251,13 +269,15 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
      *
      * Two-phase shutdown under ONE shared grace deadline:
      * 1) SIGTERM every currently running tracked Process first (no wait),
-     * 2) poll until all exit or shutdownGraceSeconds elapses,
+     * 2) poll until all exit or the shared deadline elapses,
      * 3) escalate only remaining tracked children with Process::stop(0).
      *
+     * Controllers that also stop the session broker must share one deadline so
+     * sequential consumer+broker grace cannot exceed the parent stop budget.
      * Sequential Process::stop(grace) per child would delay the last consumer
      * by N×grace and orphan the tail of a large pool under parent timeout.
      */
-    public function shutdown(): void
+    public function shutdownUntil(float $deadline): void
     {
         $this->shuttingDown = true;
 
@@ -265,11 +285,12 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
             return;
         }
 
+        $remaining = max(0.0, $deadline - microtime(true));
         $this->logger->info('Shutting down messenger consumers (controller stopping)', [
             'component' => 'ConsumerSupervisor',
             'event_type' => 'consumer.shutdown_begin',
             'count' => \count($this->consumers),
-            'grace_seconds' => $this->shutdownGraceSeconds,
+            'grace_seconds' => $remaining,
         ]);
 
         // Phase 1: signal every running tracked child before any wait.
@@ -293,7 +314,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         }
 
         // Phase 2: one shared grace deadline for the whole tracked set.
-        $deadline = microtime(true) + $this->shutdownGraceSeconds;
         while (microtime(true) < $deadline) {
             $anyRunning = false;
             foreach ($this->consumers as $process) {

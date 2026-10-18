@@ -44,7 +44,6 @@ final class StartupDatabaseMigratorTest extends IsolatedKernelTestCase
         $catalogRecovery = static::getContainer()->get(SessionCatalogRecoveryService::class);
         $migrator = new StartupDatabaseMigrator(
             $failingExecutor,
-            $failingExecutor,
             $catalogRecovery,
             new NullLogger(),
         );

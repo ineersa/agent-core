@@ -77,7 +77,7 @@ final class SqliteConnectionConfigTest extends IsolatedKernelTestCase
         $config = Yaml::parseFile($configPath);
         $connections = $config['doctrine']['dbal']['connections'] ?? [];
 
-        foreach (['default', 'messenger_transport'] as $connectionName) {
+        foreach (['default'] as $connectionName) {
             $this->assertFalse($connections[$connectionName]['logging'] ?? null, $connectionName.' DBAL logging must stay disabled in long-lived runtime processes.');
             $this->assertFalse($connections[$connectionName]['profiling'] ?? null, $connectionName.' DBAL profiling must stay disabled in long-lived runtime processes.');
         }

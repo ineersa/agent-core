@@ -38,11 +38,6 @@ if (is_string($testDb) && '' !== $testDb) {
     $_ENV['HATFIELD_TEST_DATABASE_PATH'] = $testDb;
     putenv('HATFIELD_TEST_DATABASE_PATH='.$testDb);
 }
-$transportDb = getenv('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH');
-if (is_string($transportDb) && '' !== $transportDb) {
-    $_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportDb;
-    putenv('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH='.$transportDb);
-}
 
 chdir($hatfieldCwd);
 
@@ -51,10 +46,9 @@ chdir($hatfieldCwd);
 StaticDriver::setKeepStaticConnections(false);
 
 SqliteImmediateTransactionKernelTestKernel::bootForSqliteWorker();
-$connectionName = $argv[2] ?? 'messenger_transport';
+$connectionName = $argv[2] ?? 'default';
 $connectionService = match ($connectionName) {
     'default' => 'doctrine.dbal.default_connection',
-    'messenger_transport' => 'doctrine.dbal.messenger_transport_connection',
     default => throw new InvalidArgumentException('unknown connection: '.$connectionName),
 };
 /** @var Connection $connection */

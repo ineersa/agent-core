@@ -14,7 +14,7 @@ model work. Compaction does **not** wait on that worker.
 AfterTurnCommit (any run_control/llm/tool worker)
   → ObserveBoundaryTerminalHook (hot batch only)
   → ExtensionApi::dispatchExtensionAgentJob(scalar payload)
-  → Symfony Messenger transport `extension_agent`  (async Doctrine DSN required)
+  → Symfony Messenger transport `extension_agent`  (session-owned sqlite-queue broker)
   → dedicated Hatfield messenger:consume extension_agent worker
       → ExtensionLoaderSubscriber loads extensions
       → ExtensionAgentJobWorker resolves handler by stable ID
@@ -83,10 +83,13 @@ boundaries.
 
 `ExtensionAgentJobDispatcher` is **fail-closed for `sync://`**.
 
+The controller exports the session's broker socket in the DSN. The queue name
+is `extension_agent`, without a session suffix.
+
 | Mode | `HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN` |
 |---|---|
-| Process controller (production async) | `doctrine://messenger_transport?queue_name=extension_agent_*` |
-| Unit tests | `in-memory://…` or mock bus with non-sync DSN |
+| Process controller (production async) | `sqlite-queue://extension_agent?endpoint=<URL-encoded broker socket>` |
+| Unit tests | `in-memory://…` or a mock bus with a `sqlite-queue://` DSN |
 | Default `.env` `sync://` | **refused** at dispatch |
 
 ## Activation

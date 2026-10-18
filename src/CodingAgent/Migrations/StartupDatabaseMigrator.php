@@ -8,7 +8,7 @@ use Ineersa\CodingAgent\Session\SessionCatalogRecoveryService;
 use Psr\Log\LoggerInterface;
 
 /**
- * Runs pending database schema migrations once on agent startup.
+ * Runs pending application schema migrations once on agent startup.
  *
  * Delegates to ApplicationMigrationExecutor which applies known migration
  * classes directly via DBAL without filesystem scanning or the Symfony
@@ -17,6 +17,9 @@ use Psr\Log\LoggerInterface;
  * After schema migrations, reconciles orphan session directories into the
  * hatfield_session catalog so existing events.jsonl streams remain resumable
  * when state.sqlite rows were lost.
+ *
+ * Durable Messenger queues are owned by the session sqlite-queue broker and
+ * do not use Doctrine migrations.
  *
  * This approach avoids:
  *   - Extracting migration files from the PHAR to a writable directory
@@ -35,7 +38,6 @@ final class StartupDatabaseMigrator
 
     public function __construct(
         private readonly ApplicationMigrationExecutor $applicationMigrationExecutor,
-        private readonly ApplicationMigrationExecutor $transportMigrationExecutor,
         private readonly SessionCatalogRecoveryService $sessionCatalogRecovery,
         private readonly LoggerInterface $logger,
     ) {
@@ -56,7 +58,6 @@ final class StartupDatabaseMigrator
 
         try {
             ($this->applicationMigrationExecutor)();
-            ($this->transportMigrationExecutor)();
             // Catalog recovery needs hatfield_session DDL from application migrations
             // and must finish before interactive create/resume/list paths run.
             ($this->sessionCatalogRecovery)();

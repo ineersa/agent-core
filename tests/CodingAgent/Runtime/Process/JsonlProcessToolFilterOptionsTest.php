@@ -185,6 +185,7 @@ PHP);
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: $toolFilter,
             logger: new TestLogger(),
+            sessionStore: \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(\Doctrine\ORM\EntityManagerInterface::class), $this->tmpDir),
         );
     }
 

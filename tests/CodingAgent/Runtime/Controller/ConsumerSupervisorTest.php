@@ -28,7 +28,7 @@ final class ConsumerSupervisorTest extends TestCase
         $this->logger = new TestLogger();
         $locator = $this->createStub(AppExecutableLocator::class);
         $config = new RuntimeProcessConfig($locator, __DIR__);
-        $supervisor = new ConsumerSupervisor($this->logger, $config, shutdownGraceSeconds: 0);
+        $supervisor = new ConsumerSupervisor($this->logger, $config);
         $calls = new ShutdownProcessCallLog();
         $hang = new RecordingShutdownProcess('hang', $calls, exitsOnTerm: false);
         $exit = new RecordingShutdownProcess('exit', $calls, exitsOnTerm: true);
@@ -40,7 +40,7 @@ final class ConsumerSupervisorTest extends TestCase
             'term_exit#0' => $exit,
         ]);
 
-        $supervisor->shutdown();
+        $supervisor->shutdownUntil(microtime(true));
 
         $this->assertSame([
             'running:hang',
@@ -54,6 +54,36 @@ final class ConsumerSupervisorTest extends TestCase
         $this->assertFalse($hang->isMarkedRunning());
         $this->assertFalse($exit->isMarkedRunning());
         $this->assertSame([], $this->consumerKeysRunning($supervisor), 'shutdown must clear tracked consumers');
+    }
+
+    public function testShutdownUntilEscalatesImmediatelyWhenSharedDeadlineAlreadyPassed(): void
+    {
+        $this->logger = new TestLogger();
+        $locator = $this->createStub(AppExecutableLocator::class);
+        $config = new RuntimeProcessConfig($locator, __DIR__);
+        $supervisor = new ConsumerSupervisor($this->logger, $config);
+        $calls = new ShutdownProcessCallLog();
+        $hang = new RecordingShutdownProcess('hang', $calls, exitsOnTerm: false);
+
+        $ref = new \ReflectionClass($supervisor);
+        $consumers = $ref->getProperty('consumers');
+        $consumers->setValue($supervisor, [
+            'term_hang#0' => $hang,
+        ]);
+
+        $started = microtime(true);
+        $supervisor->shutdownUntil($started - 1.0);
+        $elapsed = microtime(true) - $started;
+
+        $this->assertSame([
+            'running:hang',
+            'signal:hang:'.\SIGTERM,
+            'running:hang',
+            'stop:hang:0',
+        ], $calls->entries);
+        $this->assertFalse($hang->isMarkedRunning());
+        $this->assertLessThan(1.0, $elapsed, 'expired shared deadline must escalate without waiting configured grace');
+        $this->assertSame([], $this->consumerKeysRunning($supervisor));
     }
 
     public function testStderrTailByteBudgetDoesNotStartMidCodePoint(): void
@@ -94,20 +124,42 @@ final class ConsumerSupervisorTest extends TestCase
 
         try {
             $supervisor = $this->createSupervisor($argvFile);
-            $supervisor->launch('test_transport', 0);
+            $supervisor->launch('run_control', 0);
 
-            $process = $this->getConsumerProcess($supervisor, 'test_transport#0');
+            $process = $this->getConsumerProcess($supervisor, 'run_control#0');
             $process->wait();
 
             $argv = json_decode((string) file_get_contents($argvFile), true, 512, \JSON_THROW_ON_ERROR);
             $this->assertIsArray($argv);
             $this->assertContains('--memory-limit=256M', $argv);
-            $this->assertNotContains('--keepalive=5', $argv);
-            $this->assertNotContains('--keepalive', $argv);
-            $this->assertContains('--sleep=0.05', $argv);
+            $this->assertContains('--keepalive=5', $argv);
+            $this->assertNotContains('--sleep=0.05', $argv);
+            $this->assertFalse(array_reduce($argv, static fn (bool $found, mixed $arg): bool => $found || (\is_string($arg) && str_starts_with($arg, '--sleep=')), false));
             $this->assertNotContains('--time-limit=3600', $argv);
             $this->assertContains('messenger:consume', $argv);
-            $this->assertContains('test_transport', $argv);
+            $this->assertContains('run_control', $argv);
+        } finally {
+            @unlink($argvFile);
+        }
+    }
+
+    public function testSchedulerTransportOmitsKeepalive(): void
+    {
+        $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-argv-');
+        $this->assertNotFalse($argvFile);
+
+        try {
+            $supervisor = $this->createSupervisor($argvFile);
+            $supervisor->launch('scheduler_default', 0);
+
+            $process = $this->getConsumerProcess($supervisor, 'scheduler_default#0');
+            $process->wait();
+
+            $argv = json_decode((string) file_get_contents($argvFile), true, 512, \JSON_THROW_ON_ERROR);
+            $this->assertIsArray($argv);
+            $this->assertContains('scheduler_default', $argv);
+            $this->assertNotContains('--keepalive=5', $argv);
+            $this->assertFalse(array_reduce($argv, static fn (bool $found, mixed $arg): bool => $found || (\is_string($arg) && str_starts_with($arg, '--keepalive')), false));
         } finally {
             @unlink($argvFile);
         }

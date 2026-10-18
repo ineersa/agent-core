@@ -26,6 +26,12 @@ final readonly class RuntimeEvent
     ) {
     }
 
+    public function isFatalProtocolError(): bool
+    {
+        return RuntimeEventTypeEnum::ProtocolError->value === $this->type
+            && true === ($this->payload['fatal'] ?? false);
+    }
+
     /**
      * @return array{v: int, type: string, runId: string, seq: int, payload: array<string, mixed>}
      */

@@ -45,7 +45,8 @@ Remove once upstream no longer realpaths AT_EXECFN on Linux.
 5. `spc micro:combine <phar> --with-micro=buildroot/bin/micro.sfx --output=<artifact>`.
 6. Native fused-artifact smoke runs `./hatfield` via a symlink in an isolated CWD so the
    relative-invocation crash cannot be masked by absolute paths.
-7. `castor distribution:verify` (version/list + topology).
+7. `castor distribution:verify` (version/list + topology). Topology proves the same
+   renamed fused binary launches broker, Amp SQLite worker, and messenger consumers.
 
 Release cache path includes `var/tmp/static-php-cli` (SPC + phpmicro) and
 `var/tmp/static-build`, keyed by `pin.json`, `composer.lock`, and

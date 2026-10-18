@@ -109,7 +109,6 @@ final class SessionBootstrapProducerTest extends PerMethodIsolatedKernelTestCase
                 $process = new \Symfony\Component\Process\Process([\PHP_BINARY, '-d', 'memory_limit=128M', __DIR__.'/Support/OwnerBootstrapMemory.php', $directory, (string) $count], \dirname(__DIR__, 4), [
                     'HATFIELD_SESSION_ID' => false,
                     'HATFIELD_TEST_DATABASE_PATH' => $paths['appEnv'],
-                    'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => $paths['transportEnv'],
                 ], timeout: 8);
                 $process->mustRun();
                 $measurements[] = json_decode($process->getOutput(), true, 512, \JSON_THROW_ON_ERROR);

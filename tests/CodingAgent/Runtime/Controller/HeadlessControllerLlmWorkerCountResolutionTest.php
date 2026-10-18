@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\ConsumerSupervisor;
 use Ineersa\CodingAgent\Runtime\Controller\HeadlessController;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -41,11 +42,13 @@ final class HeadlessControllerLlmWorkerCountResolutionTest extends TestCase
         $locator->method('command')->willReturn(['/bin/true']);
         $config = new RuntimeProcessConfig($locator, sys_get_temp_dir());
         $supervisor = new ConsumerSupervisor($logger, $config);
+        $brokerSupervisor = new SessionSqliteQueueBrokerSupervisor($logger, $config);
         $boundary = new RuntimeExceptionBoundary(new EventDispatcher());
         $emitter = new RuntimeEventEmitter($logger);
 
         return new HeadlessController(
             consumerSupervisor: $supervisor,
+            brokerSupervisor: $brokerSupervisor,
             dispatcher: new EventDispatcher(),
             logger: $logger,
             toolExecutionSettings: new ToolSettings(maxParallelism: 1),

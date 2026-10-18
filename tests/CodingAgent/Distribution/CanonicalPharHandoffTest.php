@@ -15,6 +15,16 @@ use PHPUnit\Framework\TestCase;
  */
 final class CanonicalPharHandoffTest extends TestCase
 {
+    public function testDarwinExecutableUsesFirstTextVnodeNotProcessTitle(): void
+    {
+        require_once ProjectDir::get().'/.castor/helpers.php';
+        require_once ProjectDir::get().'/.castor/distribution.php';
+        $output = "p123\0camp-process\0\nftxt\0n/installed/hatfield renamed\0\nftxt\0n/usr/lib/dyld\0\n";
+        $this->assertSame('/installed/hatfield renamed', distribution_lsof_executable($output));
+        $this->expectException(\RuntimeException::class);
+        distribution_lsof_executable("p123\0camp-process\0\n");
+    }
+
     public function testResolverPrefersExistingDistPharHandoffWithoutRebuild(): void
     {
         $root = ProjectDir::get();
@@ -132,5 +142,32 @@ PHP;
         $this->assertSame(['cli', 'micro'], $pin['sapi'] ?? null);
         $this->assertNotEmpty($pin['static_php_cli_commit'] ?? null);
         $this->assertNotEmpty($pin['static_php_cli_repository'] ?? null);
+    }
+
+    public function testReleaseArtifactCatalogIncludesFivePayloads(): void
+    {
+        $root = ProjectDir::get();
+        require_once $root.'/.castor/helpers.php';
+        require_once $root.'/.castor/distribution.php';
+
+        $payloads = array_values(array_filter(
+            HATFIELD_DIST_ARTIFACTS,
+            static fn (string $name): bool => 'SHA256SUMS' !== $name,
+        ));
+        $this->assertCount(5, $payloads);
+        $this->assertContains('hatfield.phar', $payloads);
+        foreach (['linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64'] as $target) {
+            $this->assertContains('hatfield.'.$target, $payloads);
+            $this->assertNotContains('hatfield.'.$target.'.php', $payloads);
+        }
+
+        $workflow = (string) file_get_contents($root.'/.github/workflows/release.yml');
+        $this->assertStringContainsString(
+            'test "$(grep -cE \'^[a-f0-9]{64}  \' var/tmp/dist/SHA256SUMS)" -eq 5',
+            $workflow,
+        );
+        $this->assertStringNotContainsString('hatfield.${{ matrix.target }}.php', $workflow);
+        $this->assertStringNotContainsString('var/tmp/dist/hatfield.linux-amd64.php', $workflow);
+        $this->assertStringNotContainsString('-eq 9', $workflow);
     }
 }

@@ -59,7 +59,15 @@ final class TickPollListenerTest extends TestCase
 
     private ?TuiTickDispatcher $contextTicks = null;
 
-    public function testTrustedParentRecoveryExitsChildAndRefreshesTickOwnership(): void
+    /** @return iterable<string, array{bool}> */
+    public static function parentOutcomes(): iterable
+    {
+        yield 'reattachment' => [false];
+        yield 'session fatal' => [true];
+    }
+
+    #[DataProvider('parentOutcomes')]
+    public function testParentOutcomeExitsChildAndRefreshesTickOwnership(bool $fatal): void
     {
         $state = new TuiSessionState('parent');
         $state->handle = new RunHandle('parent', 'attached', 'old-request');
@@ -71,14 +79,20 @@ final class TickPollListenerTest extends TestCase
         $harness->screen()->promptEditor()->replaceText('Fresh draft');
         $order = [];
         $client = $this->createMock(AgentSessionClient::class);
-        $client->method('events')->willReturnCallback(static function (string $run) use (&$order): array {
+        $client->method('events')->willReturnCallback(static function (string $run) use (&$order, $fatal): array {
             $order[] = $run;
+
+            if ($fatal) {
+                return [new RuntimeEvent('protocol.error', '', 0, ['fatal' => true, 'error' => 'Original broker failure'])];
+            }
 
             return 'parent' === $run ? [new RuntimeEvent('session.restoring', 'parent', 0,
                 ['previous_command_id' => 'old-request', 'command_id' => 'new-request'])] : [];
         });
         $client->expects($this->once())->method('endObservingChildRun')->with('child');
         $client->expects($this->never())->method('send');
+        $client->expects($this->never())->method('start');
+        $client->expects($this->never())->method('attach');
         $childProjector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
         $childProjector->accept(new RuntimeEvent('user.message_submitted', 'child', 1, ['text' => 'Child-only projection']));
         $childPoller = new SubagentLiveChildViewPoller($childProjector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
@@ -103,11 +117,19 @@ final class TickPollListenerTest extends TestCase
         $this->assertSame([], $childProjector->blocks());
         $this->assertFalse($coordinator->actionRequired());
         $this->assertFalse($controller->isOpen());
-        $this->assertSame(['Deferred parent input'], $state->queuedFollowUps);
-        $this->assertSame("Pending parent restoration\n\nFresh draft", $harness->screen()->editorText());
+        $this->assertSame($fatal ? [] : ['Deferred parent input'], $state->queuedFollowUps);
+        $this->assertSame($fatal ? "Pending parent restoration\n\nDeferred parent input\n\nFresh draft" : "Pending parent restoration\n\nFresh draft", $harness->screen()->editorText());
         $this->assertNull($state->pendingEditorRestoreText);
-        $this->assertFalse($state->sessionReady);
-        $this->assertSame('new-request', $state->handle->bootstrapRequestId);
+        $this->assertSame($fatal, $state->sessionReady);
+        if ($fatal) {
+            $this->assertSame(RunActivityStateEnum::Failed, $state->activity);
+            $harness->render();
+            $this->assertStringContainsString('Original broker failure', $harness->plainScreenText());
+            $this->assertStringNotContainsString('Child agent working', $harness->plainScreenText());
+            $this->assertSame('', $this->workingMessage($harness->screen()));
+        } else {
+            $this->assertSame('new-request', $state->handle->bootstrapRequestId);
+        }
     }
 
     public function testUnreadyControllerReconnectPreservesDirtyEditorGuardAcrossRequestReplacement(): void
