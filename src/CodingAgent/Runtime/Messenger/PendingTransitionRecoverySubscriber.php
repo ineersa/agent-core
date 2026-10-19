@@ -18,6 +18,9 @@ use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 final class PendingTransitionRecoverySubscriber
 {
     private string $pendingRunCursor = '';
+    /** @var list<string> */
+    private array $ownedRuns = [];
+    private int $ownedRunIndex = 0;
 
     public function __construct(
         private readonly PreparedTransitionEventStoreInterface $transitions,
@@ -35,6 +38,8 @@ final class PendingTransitionRecoverySubscriber
     {
         if (\in_array('run_control', $event->getWorker()->getMetadata()->getTransportNames(), true)) {
             $this->pendingRunCursor = '';
+            $this->ownedRuns = [];
+            $this->ownedRunIndex = 0;
             $this->reconcilePendingTransition();
         }
     }
@@ -53,7 +58,7 @@ final class PendingTransitionRecoverySubscriber
             return;
         }
         try {
-            $runId = $this->nextOwnedRun($this->pendingRunCursor);
+            $runId = $this->nextOwnedRun();
             if (null === $runId) {
                 $this->pendingRunCursor = '';
 
@@ -72,15 +77,20 @@ final class PendingTransitionRecoverySubscriber
         }
     }
 
-    private function nextOwnedRun(string $after): ?string
+    private function nextOwnedRun(): ?string
     {
-        foreach ($this->ownership->forOwner($this->sessionId) as $run) {
-            if (strcmp($run, $after) > 0) {
-                return $run;
-            }
+        // Reuse one traversal until every snapshot candidate has had its idle
+        // opportunity, including failed candidates. New children enter next sweep.
+        if ([] === $this->ownedRuns) {
+            $this->ownedRuns = $this->ownership->forOwner($this->sessionId);
+        }
+        $run = $this->ownedRuns[$this->ownedRunIndex++] ?? null;
+        if (null === $run) {
+            $this->ownedRuns = [];
+            $this->ownedRunIndex = 0;
         }
 
-        return null;
+        return $run;
     }
 
     private function logFailure(string $runId, \Throwable $exception): void

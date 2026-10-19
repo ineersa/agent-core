@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Entity\RunOperationalState;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Repository\RunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -81,9 +82,11 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
         $this->assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM run_operational_tool_call'));
     }
 
-    public function testFindOperationalStatusRefreshesStaleIdentityMapRow(): void
+    public function testFindOperationalStatusBypassesStaleIdentityMapRow(): void
     {
         $this->repository->replace($this->state(RunStatus::Running));
+        $managed = $this->repository->find('run-1');
+        $this->assertInstanceOf(RunOperationalState::class, $managed);
 
         $first = $this->repository->findOperationalStatus('run-1');
         $this->assertSame(RunStatus::Running, $first?->status);
@@ -91,12 +94,14 @@ final class RunOperationalProjectionRepositoryTest extends IsolatedKernelTestCas
         // Simulate a cross-process cancel write that Doctrine's identity map
         // would otherwise hide from the already-managed entity.
         $this->connection->executeStatement(
-            'UPDATE run_operational_state SET status = ? WHERE run_id = ?',
-            [RunStatus::Cancelling->value, 'run-1'],
+            'UPDATE run_operational_state SET status = ?, last_event_sequence = ? WHERE run_id = ?',
+            [RunStatus::Cancelling->value, 42, 'run-1'],
         );
 
         $refreshed = $this->repository->findOperationalStatus('run-1');
         $this->assertSame(RunStatus::Cancelling, $refreshed?->status);
+        $this->assertSame(42, $refreshed?->lastEventSequence);
+        $this->assertSame(RunStatus::Running, $managed->status, 'Scalar polls must not hydrate or refresh the managed graph.');
     }
 
     public function testParentRunIdFromRunStateMapsOwnershipWithoutMetadataReader(): void

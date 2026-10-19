@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -24,6 +25,7 @@ use Ineersa\AgentCore\Domain\Run\CurrentToolCallDTO;
 use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
+use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
@@ -607,6 +609,38 @@ final class ToolCallResultHandlerTest extends TestCase
         ));
     }
 
+    public function testCancellationLoadsCompletedSiblingsOnceBeforeFinalization(): void
+    {
+        $results = [];
+        $calls = [];
+        foreach (['a', 'b'] as $index => $id) {
+            $results[$id] = ToolCallResultBuilder::success('cancel-batch')->withStepId('tools')->withToolCallId($id)->withOrderIndex($index)->build();
+            $calls[] = ['id' => $id, 'name' => 'web_search', 'arguments' => [], 'order_index' => $index];
+        }
+        $calls[] = ['id' => 'c', 'name' => 'web_search', 'arguments' => [], 'order_index' => 2];
+        $batch = new ToolBatchStateDTO(['a' => 0, 'b' => 1, 'c' => 2], [], [], ['c' => true], $results, false, 3);
+        $store = $this->createMock(ToolBatchStoreInterface::class);
+        // One sibling snapshot plus the existing finalization preparation read.
+        $store->expects($this->exactly(2))->method('load')->with('cancel-batch', 1, 'tools')->willReturn($batch);
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: new ToolBatchCollector($store),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            serializer: AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
+        $state = RunStateBuilder::running('cancel-batch')->withTurnNo(1)->withActiveStepId('tools')
+            ->withPendingToolCalls(['a' => true, 'b' => true, 'c' => false])
+            ->withMessages([new AgentMessage('assistant', [], metadata: ['tool_calls' => $calls])])->build()
+            ->with(['status' => RunStatus::Cancelling]);
+        $incoming = ToolCallResultBuilder::error('cancel-batch', 'cancelled')->withStepId('tools')->withToolCallId('c')->withOrderIndex(2)->build();
+        $outcome = $handler->handle($incoming, $state);
+        $this->assertNotNull($outcome->nextState);
+        $this->assertSame(RunStatus::Cancelled, $outcome->nextState->status);
+        $this->assertSame(['a', 'b', 'c'], array_map(static fn (AgentMessage $message): ?string => $message->toolCallId, \array_slice($outcome->nextState->messages, 1)));
+        new AgentMessageToolCallSequenceValidator()->validate($outcome->nextState->messages);
+    }
+
     public function testCancellingPreserveIncomingProjectsDeferredSiblingMessageOnly(): void
     {
         $collector = new ToolBatchCollector($store = new TestToolBatchStore());
@@ -1094,7 +1128,7 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame('fork-call', $fork->launchContext->toolCallId);
     }
 
-    private function createSessionToolBatchStore(): \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface
+    private function createSessionToolBatchStore(): ToolBatchStoreInterface
     {
         return new TestToolBatchStore();
     }

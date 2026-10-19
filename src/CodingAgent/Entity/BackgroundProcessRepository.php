@@ -95,30 +95,25 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
     }
 
     /**
-     * Find finished background processes that were explicitly backgrounded
-     * and have not yet had their completion notified.
+     * Find unfinished records and accepted completions needing notification.
+     * Ownership comes from durable session/artifact identities: the operational
+     * projection is cleared at controller startup while accepted processes live on.
      *
-     * These are processes that completed after being moved to background,
-     * for which the BackgroundProcessCompletionPoller should send a
-     * follow-up notification to the user.
-     *
-     * @param string|null $sessionId optional session filter
+     * @param list<string> $sessionIds
      *
      * @return BackgroundProcess[]
      */
-    public function findPendingNotifications(?string $sessionId = null): array
+    public function findCompletionCandidates(array $sessionIds): array
     {
-        $qb = $this->createQueryBuilder('bp')
-            ->where('bp.finishedAt IS NOT NULL')
-            ->andWhere('bp.backgroundedAt IS NOT NULL')
-            ->andWhere('bp.completionNotifiedAt IS NULL');
-
-        if (null !== $sessionId) {
-            $qb->andWhere('bp.sessionId = :sessionId')
-                ->setParameter('sessionId', $sessionId);
+        if ([] === $sessionIds) {
+            return [];
         }
 
-        return $qb->orderBy('bp.id', 'ASC')
+        return $this->createQueryBuilder('bp')
+            ->where('bp.sessionId IN (:sessionIds)')
+            ->andWhere('bp.finishedAt IS NULL OR (bp.backgroundedAt IS NOT NULL AND bp.completionNotifiedAt IS NULL)')
+            ->setParameter('sessionIds', $sessionIds)
+            ->orderBy('bp.id', 'ASC')
             ->getQuery()
             ->setHint(Query::HINT_REFRESH, true)
             ->getResult();

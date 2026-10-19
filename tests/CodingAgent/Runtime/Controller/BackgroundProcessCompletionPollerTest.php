@@ -7,18 +7,27 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Events;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Kernel;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Messenger\SerializedBrokerSendersLocator;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
+use Ineersa\CodingAgent\Session\Event\RunOperationalProjectionControllerSessionLifecycleListener;
+use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -31,6 +40,8 @@ use PHPUnit\Framework\Attributes\TestWith;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Revolt\EventLoop;
+use Symfony\Component\Clock\Clock;
+use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\Middleware\SendMessageMiddleware;
@@ -404,8 +415,8 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         // Regression for the bug where a backgrounded process finishes
         // naturally (writes status file, exits) but the DB entity still
         // has finishedAt=NULL because no code calls resolveEntityStatus().
-        // The poller must refresh unfinished process statuses before
-        // querying for pending notifications.
+        // The poller must refresh selected unfinished processes before
+        // deciding which candidates need completion notifications.
         $logPath = $this->tmpDir.'/test-regression.log';
         file_put_contents($logPath, "regression output line\n");
 
@@ -548,6 +559,233 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('PID 70001', $command->text ?? '');
     }
 
+    #[TestWith([0])]
+    #[TestWith([100])]
+    public function testEmptyOwnedTreeUsesOneCandidateSelect(int $children): void
+    {
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        for ($index = 0; $index < $children; ++$index) {
+            $registry->create('test-poller-run', 'historical-'.$index, 'child-'.$index, 'test', AgentArtifactKindEnum::Fork);
+        }
+        $this->persistProcess(900001, $this->tmpDir.'/foreign.log', 'foreign', new \DateTimeImmutable(), new \DateTimeImmutable(), 0, BackgroundProcessStatusEnum::Finished, 'foreign');
+        $logger = self::getContainer()->get('test.sql_logger');
+        $this->assertInstanceOf(TestLogger::class, $logger);
+        $logger->records = [];
+
+        $poller = $this->createPoller(self::getContainer()->get(ProcessStore::class), self::getContainer()->get(BackgroundProcessManager::class));
+        (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
+
+        $selects = array_filter($logger->records, static fn (array $record): bool => str_starts_with($record['context']['sql'] ?? '', 'SELECT'));
+        $this->assertCount(1, $selects, 'Empty historical children must not add process SELECTs.');
+        $this->assertStringContainsString('background_process', array_values($selects)[0]['context']['sql']);
+        $this->assertSame([], $this->sentCommands);
+    }
+
+    #[TestWith([0, false])]
+    #[TestWith([1, false])]
+    #[TestWith([100, false])]
+    #[TestWith([3, true])]
+    public function testCandidateRefreshFlushesOnceBeforeSeparateDeliverySettlements(int $count, bool $complete): void
+    {
+        $this->persistRefreshCandidates($count, $complete);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $counter = new class {
+            public int $flushes = 0;
+            public int $changeDetectionPasses = 0;
+
+            public function preFlush(): void
+            {
+                ++$this->flushes;
+            }
+
+            public function onFlush(): void
+            {
+                ++$this->changeDetectionPasses;
+            }
+        };
+        $events = $em->getEventManager();
+        $events->addEventListener([Events::preFlush, Events::onFlush], $counter);
+        $published = 0;
+        $this->clientSpy = $this->createStub(AgentSessionClient::class);
+        $this->clientSpy->method('send')->willReturnCallback(function () use ($em, &$published): void {
+            $db = $em->getConnection();
+            $this->assertSame(0, (int) $db->fetchOne('SELECT COUNT(*) FROM background_process WHERE finished_at IS NULL'));
+            $this->assertSame($published, (int) $db->fetchOne('SELECT COUNT(*) FROM background_process WHERE completion_notified_at IS NOT NULL'), 'Each previous delivery must already be durable before the next send.');
+            ++$published;
+        });
+        $logger = self::getContainer()->get('test.sql_logger');
+        $this->assertInstanceOf(TestLogger::class, $logger);
+        $logger->records = [];
+        $poller = $this->createPoller(self::getContainer()->get(ProcessStore::class), self::getContainer()->get(BackgroundProcessManager::class));
+        try {
+            (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
+        } finally {
+            $events->removeEventListener([Events::preFlush, Events::onFlush], $counter);
+        }
+
+        $expectedDeliveries = $complete ? $count : 0;
+        $expectedFlushes = (0 === $count ? 0 : 1) + $expectedDeliveries;
+        $this->assertSame($expectedFlushes, $counter->flushes);
+        $this->assertSame($expectedFlushes, $counter->changeDetectionPasses);
+        $this->assertSame($expectedDeliveries, $published);
+        $queries = array_filter($logger->records, static fn (array $record): bool => str_contains($record['context']['sql'] ?? '', 'session_id IN'));
+        $this->assertCount(1, $queries);
+        $this->assertSame($expectedDeliveries, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM background_process WHERE completion_notified_at IS NOT NULL'));
+        $this->assertSame($complete ? 0 : $count, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM background_process WHERE finished_at IS NULL'));
+    }
+
+    public function testRefreshFailureSkipsOnlyThatRecordAndRetriesNextPass(): void
+    {
+        [$failed, $completed] = $this->persistRefreshCandidates(2, true);
+        $originalClock = Clock::get();
+        $clock = $this->createStub(ClockInterface::class);
+        $calls = 0;
+        $clock->method('now')->willReturnCallback(static function () use (&$calls): \DateTimeImmutable {
+            if (0 === $calls++) {
+                throw new \RuntimeException('isolated status resolution failure');
+            }
+
+            return new \DateTimeImmutable();
+        });
+        $logger = new TestLogger();
+        $poller = $this->createPoller(self::getContainer()->get(ProcessStore::class), self::getContainer()->get(BackgroundProcessManager::class), logger: $logger);
+        $poll = new \ReflectionMethod($poller, 'poll');
+        Clock::set($clock);
+        try {
+            $poll->invoke($poller);
+        } finally {
+            Clock::set($originalClock);
+        }
+
+        $this->assertCount(1, $this->sentCommands);
+        $this->assertStringContainsString('PID '.$completed->pid, $this->sentCommands[0][1]->text ?? '');
+        $this->assertNull($failed->finishedAt);
+        $this->assertNull($failed->completionNotifiedAt);
+        $this->assertNotNull($completed->completionNotifiedAt);
+        $errors = array_filter($logger->records, static fn (array $record): bool => 'bg_process_completion.refresh_failed' === $record['message']);
+        $this->assertCount(1, $errors);
+        $poll->invoke($poller);
+        $this->assertCount(2, $this->sentCommands);
+        $this->assertNotNull($failed->completionNotifiedAt);
+    }
+
+    public function testRefreshFlushFailureDefersEveryDeliveryUntilRetry(): void
+    {
+        $processes = $this->persistRefreshCandidates(3, true);
+        $events = self::getContainer()->get(EntityManagerInterface::class)->getEventManager();
+        $listener = new class {
+            public function preFlush(): void
+            {
+                throw new \RuntimeException('refresh flush failed');
+            }
+        };
+        $logger = new TestLogger();
+        $poller = $this->createPoller(self::getContainer()->get(ProcessStore::class), self::getContainer()->get(BackgroundProcessManager::class), logger: $logger);
+        $poll = new \ReflectionMethod($poller, 'poll');
+        $events->addEventListener([Events::preFlush], $listener);
+        try {
+            $poll->invoke($poller);
+        } finally {
+            $events->removeEventListener([Events::preFlush], $listener);
+        }
+        $this->assertSame([], $this->sentCommands);
+        $errors = array_filter($logger->records, static fn (array $record): bool => 'bg_process_completion.refresh_flush_failed' === $record['message']);
+        $this->assertCount(1, $errors);
+        $poll->invoke($poller);
+        $this->assertCount(3, $this->sentCommands);
+        foreach ($processes as $process) {
+            $this->assertNotNull($process->completionNotifiedAt);
+        }
+    }
+
+    public function testCandidateQueryRefreshesStaleManagedStateFromDatabase(): void
+    {
+        $now = new \DateTimeImmutable();
+        $logPath = $this->tmpDir.'/fresh.log';
+        file_put_contents($logPath, 'fresh database completion');
+        $process = $this->persistProcess(900002, $logPath, 'fresh', null, $now, 7, BackgroundProcessStatusEnum::Finished);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        // Another worker can accept the process without updating this controller's identity map.
+        $em->getConnection()->update('background_process', ['backgrounded_at' => $now->format('Y-m-d H:i:s')], ['id' => $process->id]);
+        $this->assertNull($process->backgroundedAt);
+
+        $poller = $this->createPoller(self::getContainer()->get(ProcessStore::class), self::getContainer()->get(BackgroundProcessManager::class));
+        $poll = new \ReflectionMethod($poller, 'poll');
+        $poll->invoke($poller);
+
+        $this->assertCount(1, $this->sentCommands);
+        $this->assertNotNull($process->backgroundedAt);
+        $this->assertNotNull($process->completionNotifiedAt);
+        $this->assertStringContainsString('exit 7', $this->sentCommands[0][1]->text ?? '');
+        $poll->invoke($poller);
+        $this->assertCount(1, $this->sentCommands, 'Persisted notified rows must not be selected again.');
+    }
+
+    public function testArtifactOwnershipSurvivesProjectionResetAndDiscoversIndependentChild(): void
+    {
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $registry->create('test-poller-run', 'retained-artifact', 'retained-child', 'test', AgentArtifactKindEnum::Fork);
+        $repository = self::getContainer()->get(RunOperationalProjectionRepository::class);
+        $repository->replace(new RunState('test-poller-run', RunStatus::Completed));
+        $repository->replace(new RunState('retained-child', RunStatus::Completed, parentRunId: 'test-poller-run'));
+        $repository->replace(new RunState('foreign', RunStatus::Completed));
+        (new RunOperationalProjectionControllerSessionLifecycleListener($repository))->onSessionStarting(new ControllerSessionStartingEvent('test-poller-run'));
+        $this->assertNull($repository->findOperationalStatus('test-poller-run'));
+        $this->assertNull($repository->findOperationalStatus('retained-child'));
+        $this->assertNotNull($repository->findOperationalStatus('foreign'));
+
+        $poller = $this->createPoller(self::getContainer()->get(ProcessStore::class), self::getContainer()->get(BackgroundProcessManager::class));
+        $poll = new \ReflectionMethod($poller, 'poll');
+        $poll->invoke($poller);
+        $this->assertSame([], $this->sentCommands);
+        // This independently registered child has never had an operational projection.
+        $registry->create('test-poller-run', 'independent-artifact', 'independent-child', 'test', AgentArtifactKindEnum::Subagent);
+        foreach (['test-poller-run', 'retained-child', 'independent-child', 'foreign'] as $index => $runId) {
+            $logPath = $this->tmpDir.'/ownership-'.$index.'.log';
+            file_put_contents($logPath, 'owned completion '.$index);
+            $this->persistProcess(900010 + $index, $logPath, 'ownership', new \DateTimeImmutable(), new \DateTimeImmutable(), 0, BackgroundProcessStatusEnum::Finished, $runId);
+        }
+        $logger = self::getContainer()->get('test.sql_logger');
+        $this->assertInstanceOf(TestLogger::class, $logger);
+        $logger->records = [];
+
+        $poll->invoke($poller);
+
+        $this->assertSame(['test-poller-run', 'retained-child', 'independent-child'], array_column($this->sentCommands, 0));
+        $this->assertNull($this->findProcess(900013)?->completionNotifiedAt, 'Foreign completions must remain untouched.');
+        $this->assertNotNull($this->findProcess(900012)?->completionNotifiedAt);
+        $candidateQueries = array_filter($logger->records, static fn (array $record): bool => str_contains($record['context']['sql'] ?? '', 'session_id IN'));
+        $this->assertCount(1, $candidateQueries, 'All owned completions share one candidate SELECT.');
+    }
+
+    public function testCandidateOrderingPreservesScopePrecedenceForDuplicatePid(): void
+    {
+        self::getContainer()->get(AgentArtifactRegistry::class)->create('test-poller-run', 'child-artifact', 'child-run', 'test', AgentArtifactKindEnum::Fork);
+        $childLog = $this->tmpDir.'/child-identity.log';
+        $parentLog = $this->tmpDir.'/parent-identity.log';
+        file_put_contents($childLog, 'child immutable record output');
+        file_put_contents($parentLog, 'parent immutable record output');
+        $now = new \DateTimeImmutable();
+        // Insert child first so global ID order differs from the former root/child query order.
+        $child = $this->persistProcess(900020, $childLog, 'child record', $now, $now, 3, BackgroundProcessStatusEnum::Finished, 'child-run');
+        $parent = $this->persistProcess(900020, $parentLog, 'parent record', $now, $now, 4, BackgroundProcessStatusEnum::Finished);
+        $poller = $this->createPoller(self::getContainer()->get(ProcessStore::class), self::getContainer()->get(BackgroundProcessManager::class));
+
+        (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
+
+        $this->assertCount(1, $this->sentCommands);
+        $this->assertSame('child-run', $this->sentCommands[0][0]);
+        $this->assertStringContainsString('child immutable record output', $this->sentCommands[0][1]->text ?? '');
+        $this->assertStringNotContainsString('parent immutable record output', $this->sentCommands[0][1]->text ?? '');
+        $this->assertNotNull($child->completionNotifiedAt);
+        $this->assertNull($parent->completionNotifiedAt);
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new SqlLoggingKernel('test', false);
+    }
+
     /**
      * Persist a BackgroundProcess entity via EntityManager.
      */
@@ -581,6 +819,34 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         return $proc;
     }
 
+    /** @return list<BackgroundProcess> */
+    private function persistRefreshCandidates(int $count, bool $complete): array
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $processes = [];
+        for ($index = 0; $index < $count; ++$index) {
+            $process = new BackgroundProcess();
+            // Active fixtures simulate multiple records using this live PHP PID;
+            // these tests never launch or signal a workload.
+            $process->pid = $complete ? 99000000 + $index : getmypid();
+            $process->sessionId = 'test-poller-run';
+            $process->command = 'refresh fixture';
+            $process->logPath = $this->tmpDir.'/refresh-'.$index.'.log';
+            $process->statusPath = $this->tmpDir.'/refresh-'.$index.'.status';
+            $process->startedAt = new \DateTimeImmutable();
+            $process->backgroundedAt = new \DateTimeImmutable();
+            if ($complete) {
+                file_put_contents($process->logPath, 'completed fixture output');
+                file_put_contents($process->statusPath, '0');
+            }
+            $em->persist($process);
+            $processes[] = $process;
+        }
+        $em->flush();
+
+        return $processes;
+    }
+
     private function findProcess(int $pid): ?BackgroundProcess
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
@@ -597,7 +863,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         );
     }
 
-    private function createPoller(ProcessStore $store, BackgroundProcessManager $manager, ?string $controllerSessionId = 'test-poller-run'): BackgroundProcessCompletionPoller
+    private function createPoller(ProcessStore $store, BackgroundProcessManager $manager, ?string $controllerSessionId = 'test-poller-run', ?LoggerInterface $logger = null): BackgroundProcessCompletionPoller
     {
         return new BackgroundProcessCompletionPoller(
             processStore: $store,
@@ -606,7 +872,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             emitter: new RuntimeEventEmitter(
                 logger: $this->createStub(LoggerInterface::class),
             ),
-            logger: $this->createStub(LoggerInterface::class),
+            logger: $logger ?? $this->createStub(LoggerInterface::class),
             artifactRegistry: self::getContainer()->get(AgentArtifactRegistry::class),
             sessionId: $controllerSessionId,
         );
