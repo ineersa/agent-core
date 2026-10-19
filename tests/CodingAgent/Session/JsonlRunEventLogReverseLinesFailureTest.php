@@ -7,10 +7,12 @@ namespace Ineersa\CodingAgent\Tests\Session;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
+use Ineersa\CodingAgent\Session\JsonlAppendJournal;
 use Ineersa\CodingAgent\Session\JsonlPhysicalReadObservation;
 use Ineersa\CodingAgent\Session\JsonlRunEventLog;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
@@ -180,6 +182,116 @@ final class JsonlRunEventLogReverseLinesFailureTest extends TestCase
         }
     }
 
+    #[DataProvider('largeRecordBoundaries')]
+    public function testLargeRecordsPreserveByteOrderAndPhysicalReadCounts(int $payloadBytes, string $ending): void
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('jsonl-reverse-fragments');
+        try {
+            $path = $dir.'/events.jsonl';
+            $first = '{"seq":1}';
+            $payload = str_repeat('漢🙂', intdiv($payloadBytes, 7)).str_repeat('x', $payloadBytes % 7);
+            $large = '{"seq":2,"payload":"'.$payload.'"}';
+            $last = 'partial' === $ending ? '{"seq":3,"text":"unfinished🙂' : '{"seq":3}';
+            $contents = $first."\r\n".$large."\r\r\n\n \t\r\n".$last.('newline' === $ending ? "\n" : '');
+            file_put_contents($path, $contents);
+
+            $observation = new JsonlPhysicalReadObservation();
+            $lines = iterator_to_array($this->log()->reverseLines($path, $observation), false);
+
+            // The first physical line historically keeps its CR; later records
+            // trim CR terminators, including a partial final record.
+            $this->assertSame([$last, $large, $first."\r"], $lines);
+            $this->assertSame(\strlen($contents), $observation->archiveBytesRead());
+            $this->assertSame(3, $observation->linesYielded());
+            $this->assertTrue($observation->fullScan());
+            $this->assertFalse($observation->earlyExit());
+        } finally {
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+    }
+
+    public static function largeRecordBoundaries(): iterable
+    {
+        foreach ([8191, 8192, 8193, 2097152] as $bytes) {
+            foreach (['newline', 'no newline', 'partial'] as $ending) {
+                yield $bytes.' '.$ending => [$bytes, $ending];
+            }
+        }
+    }
+
+    public function testLargeFirstRecordWithoutAPrecedingDelimiterKeepsItsOriginalBytes(): void
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('jsonl-reverse-first');
+        try {
+            $path = $dir.'/events.jsonl';
+            $record = '{"seq":1,"payload":"'.str_repeat('漢🙂', 300000).'"}'."\r";
+            foreach (['', "\n"] as $ending) {
+                file_put_contents($path, $record.$ending);
+                $observation = new JsonlPhysicalReadObservation();
+                $this->assertSame([$record], iterator_to_array($this->log()->reverseLines($path, $observation), false));
+                $this->assertSame(\strlen($record.$ending), $observation->archiveBytesRead());
+                $this->assertSame(1, $observation->linesYielded());
+                $this->assertTrue($observation->fullScan());
+            }
+        } finally {
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+    }
+
+    public function testEarlyExitReadsOnlyOneTailChunkWithoutMaterializingOlderLargeRecord(): void
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('jsonl-reverse-early');
+        try {
+            $path = $dir.'/events.jsonl';
+            $last = '{"seq":2}';
+            file_put_contents($path, str_repeat('x', 2097152)."\n".$last."\n");
+            $observation = new JsonlPhysicalReadObservation();
+            $reader = $this->log()->reverseLines($path, $observation);
+            $this->assertSame($last, $reader->current());
+            unset($reader);
+            $this->assertSame(8192, $observation->archiveBytesRead());
+            $this->assertSame(1, $observation->linesYielded());
+            $this->assertTrue($observation->earlyExit());
+            $this->assertFalse($observation->fullScan());
+        } finally {
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+    }
+
+    public function testLargePendingRecordStaysBehindCommittedCutUntilVerifiedFinalization(): void
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('jsonl-reverse-pending');
+        try {
+            $path = $dir.'/events.jsonl';
+            $first = '{"seq":1}';
+            file_put_contents($path, $first."\n");
+            $pending = '{"seq":2,"payload":"'.str_repeat('x', 2097152).'"}';
+            $journal = new JsonlAppendJournal();
+            $journal->append($path, [$pending."\n"], ['actions' => [], 'predecessor_seq' => 1]);
+            $observation = new JsonlPhysicalReadObservation();
+            $this->assertSame([$first], iterator_to_array($this->log()->reverseLines($path, $observation), false));
+            $this->assertSame(\strlen($first) + 1, $observation->archiveBytesRead());
+            $this->assertTrue($observation->fullScan());
+            $verified = $journal->verifiedPending($path);
+            $this->assertNotNull($verified);
+            $journal->finalizeVerified($path, $verified->identity);
+            $this->assertSame([$pending, $first], iterator_to_array($this->log()->reverseLines($path), false));
+        } finally {
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+    }
+
+    public function testLateShortReadDiscardsAccumulatedFragmentsButRetainsCompleteTail(): void
+    {
+        $observation = new JsonlPhysicalReadObservation();
+        $lines = iterator_to_array($this->log()->reverseLines($this->path('late-short'), $observation), false);
+        $this->assertSame(['{"seq":2}'], $lines);
+        $this->assertSame(2 * 8192 + 4, $observation->archiveBytesRead());
+        $this->assertSame(1, $observation->linesYielded());
+        $this->assertFalse($observation->fullScan());
+        $this->assertFalse($observation->earlyExit());
+    }
+
     private function log(): JsonlRunEventLog
     {
         return new JsonlRunEventLog(
@@ -297,7 +409,7 @@ final class JsonlReverseLinesFailureStreamWrapper
             return '';
         }
 
-        if ('short4of8' === $this->mode) {
+        if ('short4of8' === $this->mode || ('late-short' === $this->mode && self::$streamReadCalls >= 3)) {
             $chunk = substr($this->data, $this->position, min(4, $count));
             $this->position += \strlen($chunk);
 
@@ -325,6 +437,7 @@ final class JsonlReverseLinesFailureStreamWrapper
             'empty' => '',
             'failstat', 'failseek', 'failread' => "{\"seq\":1}\n{\"seq\":2}\n",
             'short4of8', 'zeroread' => str_repeat('a', 8),
+            'late-short' => str_repeat('x', 65536)."\n{\"seq\":2}\n",
             default => '',
         };
     }
