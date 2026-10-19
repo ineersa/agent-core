@@ -62,6 +62,7 @@ final readonly class DeferredSubagentBatchChildOutcomeFactory
                 identity: $identity,
                 status: AgentArtifactStatusEnum::Completed,
                 summary: $this->completedSummaryText($projection),
+                terminalEventCursor: $projection->lastCommittedSeq,
             ),
             RunStatus::Failed => new ChildRunTerminalOutcomeDTO(
                 identity: $identity,
@@ -69,12 +70,14 @@ final readonly class DeferredSubagentBatchChildOutcomeFactory
                 failureReason: $projection->errorMessage ?? 'Run failed without error message.',
                 summary: $projection->errorMessage ?? 'Run failed without error message.',
                 childPresentation: $childPresentation,
+                terminalEventCursor: $projection->lastCommittedSeq,
             ),
             RunStatus::Cancelled, RunStatus::Cancelling => new ChildRunTerminalOutcomeDTO(
                 identity: $identity,
                 status: AgentArtifactStatusEnum::Cancelled,
                 summary: 'Child run was cancelled.',
                 childPresentation: $childPresentation,
+                terminalEventCursor: $projection->lastCommittedSeq,
             ),
             default => throw new \RuntimeException('Terminal completion reached non-terminal child status.'),
         };

@@ -170,8 +170,11 @@ final class AgentArtifactRegistry
      * be cleared back to null after it has been set.  This matches the
      * write-once-forward lifecycle model.
      *
-     * The registry and metadata file are kept in sync.  If the artifact
-     * ID is not found, this is a no-op (returns null).
+     * The registry and metadata file are kept in sync. If the artifact ID is
+     * not found, the registry is unchanged and the method returns null.
+     * An optional handoff is committed under the same lock. Identical outcomes
+     * retain their completion time and repair missing sidecars without appending
+     * another handoff. Running/resumed artifacts still start a new outcome.
      *
      * @return AgentArtifactEntryDTO|null the updated entry, or null when
      *                                    the artifact is not found
@@ -185,6 +188,8 @@ final class AgentArtifactRegistry
         ?string $summary = null,                   // sentinel: null = no change
         ?string $failureReason = null,             // sentinel: null = no change
         ?string $needsClarification = null,        // sentinel: null = no change
+        ?string $handoffContent = null,
+        ?string $handoffId = null,
     ): ?AgentArtifactEntryDTO {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
@@ -195,10 +200,36 @@ final class AgentArtifactRegistry
         try {
             $entries = $this->loadRegistry($parentRunId);
             $updated = null;
+            $sameOutcome = false;
+            $sameHandoff = false;
 
             foreach ($entries as $i => $entry) {
                 if ($entry->artifactId !== $artifactId) {
                     continue;
+                }
+
+                if (null !== $handoffContent && null !== $handoffId) {
+                    $latest = $this->latestHandoffEntry($parentRunId, $artifactId);
+                    $previousContent = null;
+                    if (null !== $latest && $latest['id'] === $handoffId) {
+                        $this->pathResolver->validatePathComponent($latest['id'], 'handoffId');
+                        $path = $this->pathResolver->absolutePath($parentRunId, "{$entry->paths->artifactDir}/handoffs/{$latest['id']}.md");
+                        if (is_file($path)) {
+                            $previousContent = $this->readHandoffFile($parentRunId, $artifactId, $latest['id']);
+                        }
+                    }
+                    $sameHandoff = null !== $latest && $latest['id'] === $handoffId
+                        && $previousContent === $handoffContent && $latest['status'] === $status?->value;
+                    $sameOutcome = $entry->status === ($status ?? $entry->status)
+                        && $entry->summary === ($summary ?? $entry->summary)
+                        && $entry->failureReason === ($failureReason ?? $entry->failureReason)
+                        && $entry->needsClarification === ($needsClarification ?? $entry->needsClarification)
+                        && null !== $entry->completedAt;
+                    // The immutable handoff ID is the receipt for this canonical
+                    // terminal cursor, including after a partial write.
+                    if ($sameOutcome && null !== $latest && $latest['id'] === $handoffId) {
+                        $completedAt = $entry->completedAt;
+                    }
                 }
 
                 $updated = new AgentArtifactEntryDTO(
@@ -219,15 +250,27 @@ final class AgentArtifactRegistry
 
                 $entries[$i] = $updated;
 
+                if (null === $handoffId || $this->normalizeEntry($updated) !== $this->normalizeEntry($entry)) {
+                    $this->writeRegistry($parentRunId, $entries);
+                }
+
                 break;
             }
 
             if (null === $updated) {
+                if (null !== $handoffContent) {
+                    $this->appendImmutableHandoff($parentRunId, $artifactId, $handoffContent, $status, $summary, $handoffId);
+                }
+
                 return null;
             }
 
-            $this->writeRegistry($parentRunId, $entries);
-            $this->writeMetadata($parentRunId, $updated);
+            if (null === $handoffContent || !$this->metadataMatches($parentRunId, $updated)) {
+                $this->writeMetadata($parentRunId, $updated);
+            }
+            if (null !== $handoffContent && (!$sameOutcome || !$sameHandoff)) {
+                $this->appendImmutableHandoff($parentRunId, $artifactId, $handoffContent, $status, $summary, $handoffId);
+            }
 
             return $updated;
         } finally {
@@ -583,7 +626,7 @@ final class AgentArtifactRegistry
 
         // Write the canonical registry first — if a later sidecar write
         // fails, the canonical registry is still correct.  metadata.json
-        // is never read by this code; it is an inspectable sidecar.
+        // is not authoritative; retries can repair this inspectable sidecar.
         $this->writeRegistry($parentRunId, $entries);
         $this->writeMetadata($parentRunId, $entry);
     }
@@ -672,8 +715,16 @@ final class AgentArtifactRegistry
      *
      * metadata.json is an inspectable sidecar for external tooling.
      * registry.json remains the canonical load source —
-     * metadata.json is written but never read by this code.
+     * metadata.json is compared only to detect incomplete sidecar persistence.
      */
+    private function metadataMatches(string $parentRunId, AgentArtifactEntryDTO $entry): bool
+    {
+        $path = $this->pathResolver->absolutePath($parentRunId, $entry->paths->metadataPath);
+
+        return is_file($path) && is_readable($path)
+            && file_get_contents($path) === json_encode($this->normalizeEntry($entry), \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR);
+    }
+
     private function writeMetadata(string $parentRunId, AgentArtifactEntryDTO $entry): void
     {
         $path = $this->pathResolver->absolutePath($parentRunId, $entry->paths->metadataPath);
@@ -696,16 +747,22 @@ final class AgentArtifactRegistry
         string $content,
         ?AgentArtifactStatusEnum $status,
         ?string $summary,
+        ?string $handoffId = null,
     ): string {
         $this->ensureArtifactDir($parentRunId, $artifactId);
 
-        $handoffId = UuidV7::v7()->toRfc4122();
+        $handoffId ??= UuidV7::v7()->toRfc4122();
+        $this->pathResolver->validatePathComponent($handoffId, 'handoffId');
         $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
         $relative = "{$paths->artifactDir}/handoffs/{$handoffId}.md";
         $absolute = $this->pathResolver->absolutePath($parentRunId, $relative);
 
         try {
-            AtomicFileWriter::write($absolute, $content, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
+            if (!is_file($absolute)) {
+                AtomicFileWriter::write($absolute, $content, fileMode: SessionAgentArtifactPathResolver::FILE_PERMISSIONS);
+            } elseif ($this->readHandoffFile($parentRunId, $artifactId, $handoffId) !== $content) {
+                throw new \RuntimeException('An immutable handoff ID already contains different content.');
+            }
         } catch (AtomicFileWriterException $exception) {
             throw new \RuntimeException(\sprintf('Failed to write handoff "%s" for artifact "%s" parent "%s".', $handoffId, $artifactId, $parentRunId), previous: $exception);
         }
@@ -717,9 +774,15 @@ final class AgentArtifactRegistry
         }
 
         $entries = $this->normalizedHandoffEntries($parentRunId, $artifactId);
+        foreach ($entries as $entry) {
+            if ($entry['id'] === $handoffId) {
+                return $handoffId;
+            }
+        }
         $entries[] = [
             'id' => $handoffId,
-            'created_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+            // Deterministic terminal IDs are not time-ordered like UUIDv7.
+            'created_at' => (new \DateTimeImmutable())->format('Y-m-d\TH:i:s.uP'),
             'status' => $status?->value,
             'summary' => $summary,
             'path' => $relative,

@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Uid\Uuid;
 
 final class SubagentChildRunArtifactFinalizer
 {
@@ -21,17 +22,6 @@ final class SubagentChildRunArtifactFinalizer
     public function apply(ChildRunTerminalOutcomeDTO $outcome): void
     {
         $identity = $outcome->identity;
-        $completedAt = new \DateTimeImmutable();
-
-        $this->artifactRegistry->update(
-            parentRunId: $identity->parentRunId,
-            artifactId: $identity->artifactId,
-            status: $outcome->status,
-            completedAt: $completedAt,
-            summary: $outcome->summary,
-            failureReason: $outcome->failureReason,
-            needsClarification: $outcome->needsClarification,
-        );
 
         $handoff = $this->handoffRenderer->buildHandoffMarkdown(
             status: $outcome->status,
@@ -44,13 +34,20 @@ final class SubagentChildRunArtifactFinalizer
             childPresentation: $outcome->childPresentation,
         );
 
-        // Append immutable handoff with the status/summary known at this finalize.
-        $this->artifactRegistry->writeHandoff(
-            $identity->parentRunId,
-            $identity->artifactId,
-            $handoff,
+        // Outcome and immutable handoff are checked/persisted under one parent lock.
+        $this->artifactRegistry->update(
+            parentRunId: $identity->parentRunId,
+            artifactId: $identity->artifactId,
             status: $outcome->status,
+            completedAt: new \DateTimeImmutable(),
             summary: $outcome->summary,
+            failureReason: $outcome->failureReason,
+            needsClarification: $outcome->needsClarification,
+            handoffContent: $handoff,
+            handoffId: null === $outcome->terminalEventCursor ? null : Uuid::v5(Uuid::fromString(Uuid::NAMESPACE_URL), json_encode([
+                $identity->childRunId, $outcome->terminalEventCursor, $outcome->status->value,
+                $outcome->summary, $outcome->failureReason, $outcome->needsClarification, $handoff,
+            ], \JSON_THROW_ON_ERROR))->toRfc4122(),
         );
     }
 
