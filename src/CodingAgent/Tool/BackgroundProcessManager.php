@@ -418,12 +418,12 @@ final class BackgroundProcessManager
         }
 
         $wasFinished = null !== $entity->finishedAt;
-        $status = $this->resolveEntityStatus($entity);
+        $this->resolveEntityStatus($entity);
         if (!$wasFinished && null !== $entity->finishedAt) {
             $this->store->flush();
         }
 
-        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, BackgroundProcessStatusEnum::Running !== $status);
+        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, null !== $entity->finishedAt);
     }
 
     /**
@@ -444,12 +444,12 @@ final class BackgroundProcessManager
         }
 
         $wasFinished = null !== $entity->finishedAt;
-        $status = $this->resolveEntityStatus($entity);
+        $this->resolveEntityStatus($entity);
         if (!$wasFinished && null !== $entity->finishedAt) {
             $this->store->flush();
         }
 
-        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, BackgroundProcessStatusEnum::Running !== $status);
+        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, null !== $entity->finishedAt);
     }
 
     /**
@@ -616,15 +616,19 @@ final class BackgroundProcessManager
      */
     public function refreshAllUnfinished(?string $sessionId = null): void
     {
+        // Another reader may already have finalized the row, or cleanup may
+        // have removed it. Neither case appears in the unfinished-only query.
+        foreach (array_keys($this->timeoutGraceDeadlines) as $id) {
+            $record = $this->store->fetchByRecordId($id);
+            if (null === $record || null !== $record->finishedAt) {
+                unset($this->timeoutGraceDeadlines[$id]);
+            }
+        }
         $entities = $this->store->fetchAllUnfinished($sessionId);
 
         foreach ($entities as $entity) {
             $this->resolveEntityStatus($entity);
             if (null !== $entity->finishedAt) {
-                if (isset($this->timeoutGraceDeadlines[$entity->id])) {
-                    $entity->markStopped($entity->finishedAt);
-                    $entity->stoppedByUser = false;
-                }
                 unset($this->timeoutGraceDeadlines[$entity->id]);
 
                 continue;
@@ -633,6 +637,10 @@ final class BackgroundProcessManager
             // same process against its original deadline, not a fresh timeout.
             if (null !== $entity->backgroundedAt && null !== $entity->deadlineNanoseconds && hrtime(true) >= $entity->deadlineNanoseconds) {
                 if (!isset($this->timeoutGraceDeadlines[$entity->id])) {
+                    // Persist the stop cause before TERM can make cleanup exit.
+                    // All readers preserve it; finishedAt still gates completion.
+                    $entity->status = BackgroundProcessStatusEnum::Stopped;
+                    $this->store->flush();
                     $this->lifecycle->sendTerm($entity->pid, $entity->pgid);
                     $this->timeoutGraceDeadlines[$entity->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
                     $this->logger->info('background_process.timed_out', [
@@ -784,11 +792,11 @@ final class BackgroundProcessManager
      *
      * Mutates the entity in place; caller is responsible for flush.
      */
-    private function resolveEntityStatus(BackgroundProcess $entity): BackgroundProcessStatusEnum
+    private function resolveEntityStatus(BackgroundProcess $entity): void
     {
         // Already resolved in DB
         if (null !== $entity->finishedAt) {
-            return $entity->status;
+            return;
         }
 
         $pid = $entity->pid;
@@ -799,14 +807,16 @@ final class BackgroundProcessManager
             $now = Clock::get()->now();
             $entity->finish($exitCode, $now);
 
-            return BackgroundProcessStatusEnum::Finished;
+            return;
         }
 
         // Check /proc/<pid> for liveness
         if ($this->lifecycle->isAlive($pid)) {
-            $entity->status = BackgroundProcessStatusEnum::Running;
+            if (BackgroundProcessStatusEnum::Stopped !== $entity->status) {
+                $entity->status = BackgroundProcessStatusEnum::Running;
+            }
 
-            return BackgroundProcessStatusEnum::Running;
+            return;
         }
 
         // Process is gone but no status file written (crash / SIGKILL / unclean exit)
@@ -818,8 +828,6 @@ final class BackgroundProcessManager
             'event_type' => 'background_process.finished_unclean',
             'process_pid' => $pid,
         ]);
-
-        return BackgroundProcessStatusEnum::FinishedUnclean;
     }
 
     /**

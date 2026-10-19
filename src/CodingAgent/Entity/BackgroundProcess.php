@@ -99,6 +99,7 @@ class BackgroundProcess
     #[ORM\Column(name: 'completion_notified_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $completionNotifiedAt = null;
 
+    /** Stopped records the stop cause during timeout grace; finishedAt alone means execution ended. */
     #[ORM\Column(name: 'status', type: 'string', enumType: BackgroundProcessStatusEnum::class)]
     public BackgroundProcessStatusEnum $status = BackgroundProcessStatusEnum::Running;
 
@@ -123,7 +124,11 @@ class BackgroundProcess
     {
         $this->exitCode = $exitCode;
         $this->finishedAt = $finishedAt;
-        $this->status = BackgroundProcessStatusEnum::Finished;
+        // TERM initiation records Stopped before signaling. A successful cleanup
+        // exit must not turn that durable stop cause into a successful command.
+        if (BackgroundProcessStatusEnum::Stopped !== $this->status) {
+            $this->status = BackgroundProcessStatusEnum::Finished;
+        }
     }
 
     /**
@@ -143,7 +148,9 @@ class BackgroundProcess
     {
         $this->exitCode = null;
         $this->finishedAt = $finishedAt;
-        $this->status = BackgroundProcessStatusEnum::FinishedUnclean;
+        if (BackgroundProcessStatusEnum::Stopped !== $this->status) {
+            $this->status = BackgroundProcessStatusEnum::FinishedUnclean;
+        }
     }
 
     /**

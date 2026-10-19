@@ -32,6 +32,14 @@ final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
             }
             $parser = $context->screen->editorWidget()->getKeybindings()->getParser();
             $data = $event->getData();
+            if ($overlay->isOpen() && $context->screen->editorWidget()->getKeybindings()->matches($data, 'toggle_subagent_live')) {
+                $close();
+
+                return;
+            }
+            if ($overlay->isOpen() && $context->tui->getFocus() !== $overlay->listWidget()) {
+                $overlay->close();
+            }
             if ($parser->isKeyRelease($data) || !$parser->matches($data, Key::ctrl('b'))) {
                 return;
             }
@@ -87,6 +95,6 @@ final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
             });
             $list->onCancel($close);
             $overlay->mount($context->tui, $context->screen, $list, new TextWidget(text: 'Background Bash: select a command, Enter or Ctrl+B confirms, Esc cancels'));
-        }, priority: InputPriority::COMPLETION_SUBAGENT - 1);
+        }, priority: InputPriority::COMPLETION_SUBAGENT + 1);
     }
 }

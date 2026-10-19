@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
@@ -15,6 +16,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\Tui\Listener\BackgroundBashInputListener;
+use Ineersa\Tui\Listener\SubagentLiveToggleInputListener;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
@@ -175,6 +177,30 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         $harness->stopInputLoop();
     }
 
+    public function testLivePickerToggleClosesBackgroundPickerBeforeEscape(): void
+    {
+        $this->manager->start($this->command, 'visible', 'first');
+        $this->manager->start($this->command, 'visible', 'second');
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->never())->method('send');
+        $state = new TuiSessionState('visible');
+        $state->subagentLiveCatalog->ingestSnapshot(new SubagentProgressSingleSnapshotDTO('single', 'running', 'scout', 'artifact', 'child', 'Inspect', 'test/model', 'off'));
+        $harness = $this->mount('visible', $client, $state);
+        (new SubagentLiveToggleInputListener())->register($this->context);
+        $harness->sendInput("\x02");
+        $this->assertTrue($harness->screen()->hasInputOverlay());
+        $bashList = $harness->tui()->getFocus();
+        $harness->sendInput("\x1c");
+        $this->assertTrue($this->context->sessionServices->subagentLivePicker->isOpen());
+        $this->assertNotSame($bashList, $harness->tui()->getFocus());
+        $harness->sendInput("\x1b");
+        $this->assertFalse($this->context->sessionServices->subagentLivePicker->isOpen());
+        $this->assertFalse($harness->screen()->hasInputOverlay(), 'No abandoned Bash picker remains after the live picker closes.');
+        $harness->sendInput('answer');
+        $this->assertSame('answer', $harness->screen()->editorText());
+        $harness->stopInputLoop();
+    }
+
     public function testIneligibleChildViewDoesNotRetargetParentWait(): void
     {
         $parent = $this->manager->start($this->command, 'parent', 'parent-call');
@@ -219,12 +245,13 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         $runtimeClient = self::getContainer()->get(JsonlProcessAgentSessionClient::class);
         $client->method('foregroundBash')->willReturnCallback($runtimeClient->foregroundBash(...));
         $harness = new VirtualTuiHarness(sessionId: $runId);
+        $state ??= new TuiSessionState($runId);
         $context = $this->context = $this->buildTuiContext()
             ->withTui($harness->tui())
             ->withScreen($harness->screen())
-            ->withState($state ?? new TuiSessionState($runId))
+            ->withState($state)
             ->withClient($client)
-            ->withSessionServices($this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), client: $client))
+            ->withSessionServices($this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), state: $state, client: $client))
             ->build();
         (new BackgroundBashInputListener())->register($context);
         $harness->startInputLoop();

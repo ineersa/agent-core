@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
@@ -599,6 +600,44 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             usleep(10_000);
         } while (hrtime(true) < $deadline);
         $this->assertSame([], $unfinished, 'Later passes must escalate all resistant commands.');
+    }
+
+    public function testDeletedTimeoutRecordRetiresOutstandingGrace(): void
+    {
+        $this->createManager();
+        $process = $this->manager->start('sleep 10', self::TEST_SESSION, 'deleted-call', hrtime(true) - 1);
+        $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
+        $this->manager->refreshAllUnfinished(self::TEST_SESSION);
+        $store = self::getContainer()->get(ProcessStore::class);
+        $record = $store->fetchByRecordId($process->id);
+        $this->assertNotNull($record);
+        $grace = new \ReflectionProperty($this->manager, 'timeoutGraceDeadlines');
+        $this->assertArrayHasKey($process->id, $grace->getValue($this->manager));
+        try {
+            $this->assertTrue($store->deleteById($process->id));
+            $this->manager->refreshAllUnfinished(self::TEST_SESSION);
+            $this->assertSame([], $grace->getValue($this->manager));
+        } finally {
+            // The removed row cannot supervise this test-owned group anymore.
+            (new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger()))->sendKill($process->pid, $record->pgid);
+        }
+    }
+
+    public function testLateObservationWithoutTermKeepsSuccessfulExit(): void
+    {
+        $this->createManager();
+        $process = $this->manager->start('printf done', self::TEST_SESSION, 'finished-call', hrtime(true) - 1);
+        $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
+        $record = self::getContainer()->get(ProcessStore::class)->fetchByRecordId($process->id);
+        $this->assertNotNull($record);
+        $deadline = hrtime(true) + 2_000_000_000;
+        while (!is_file($record->statusPath) && hrtime(true) < $deadline) {
+            usleep(10_000);
+        }
+        $this->assertFileExists($record->statusPath);
+        $this->manager->refreshAllUnfinished(self::TEST_SESSION);
+        $this->assertSame(BackgroundProcessStatusEnum::Finished, $record->status);
+        $this->assertSame(0, $record->exitCode);
     }
 
     private function waitUntilFinished(int $pid, float $timeoutSeconds = 2.0): void
