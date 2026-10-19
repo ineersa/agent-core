@@ -602,8 +602,9 @@ final class BackgroundProcessManager
      * Refresh all unfinished entities so finished_at is populated
      * for processes that completed without a list() call.
      *
-     * Used by provisional cleanup. Controller completion polling instead
-     * refreshes its already-selected candidates through refreshEntities().
+     * Passive maintenance only: never signal a process. The owning controller
+     * enforces accepted-job deadlines through refreshEntities(); maintenance
+     * cannot share that owner's in-memory termination grace deadlines.
      *
      * Safe to call repeatedly — only queries unfinished entities, checks
      * status files and /proc/<pid>, and flushes any newly-resolved
@@ -615,7 +616,13 @@ final class BackgroundProcessManager
      */
     public function refreshAllUnfinished(?string $sessionId = null): void
     {
-        $this->refreshEntities($this->store->fetchAllUnfinished($sessionId));
+        $entities = $this->store->fetchAllUnfinished($sessionId);
+        foreach ($entities as $entity) {
+            $this->resolveEntityStatus($entity);
+        }
+        if ([] !== $entities) {
+            $this->store->flush();
+        }
     }
 
     /**

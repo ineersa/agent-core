@@ -625,7 +625,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertNotSame($record, $independent, 'The reader must hydrate its own ORM object.');
             $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status);
             $this->assertNull($independent->finishedAt);
-            $owner->refreshAllUnfinished('timeout-run');
+            $owner->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished('timeout-run'));
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $store->fetchByRecordId($process->id)?->status);
             $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status, 'Timeout must not refresh the suspended reader.');
             $this->assertSame(8, fwrite($release, "release\n"));
@@ -643,7 +643,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertSame(0, $persisted->exitCode);
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $persisted->status);
             $this->assertFalse($persisted->stoppedByUser);
-            $owner->refreshAllUnfinished('timeout-run');
+            $owner->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished('timeout-run'));
             $grace = new \ReflectionProperty($owner, 'timeoutGraceDeadlines');
             $this->assertSame([], $grace->getValue($owner));
             $poller = $this->createPoller($store, $owner, 'timeout-run');

@@ -550,7 +550,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
         $safetyDeadline = hrtime(true) + 2_000_000_000;
         do {
-            $this->manager->refreshAllUnfinished(self::TEST_SESSION);
+            $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
             $record = $this->manager->findByRecordId($process->id, self::TEST_SESSION);
             if (null !== $record?->finishedAt) {
                 break;
@@ -583,7 +583,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             }
             $this->assertFileExists($ready);
         }
-        $this->manager->refreshAllUnfinished(self::TEST_SESSION);
+        $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
         foreach ($processes as $index => $process) {
             $term = $this->tmpDir.'/term-'.($index + 1);
             $deadline = hrtime(true) + 500_000_000;
@@ -595,7 +595,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         }
         $deadline = hrtime(true) + 2_000_000_000;
         do {
-            $this->manager->refreshAllUnfinished(self::TEST_SESSION);
+            $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
             $unfinished = array_filter($processes, fn (StartResult $process): bool => null === $this->manager->findByRecordId($process->id)?->finishedAt);
             if ([] === $unfinished) {
                 break;
@@ -610,7 +610,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->createManager();
         $process = $this->manager->start('sleep 10', self::TEST_SESSION, 'deleted-call', hrtime(true) - 1);
         $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
-        $this->manager->refreshAllUnfinished(self::TEST_SESSION);
+        $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
         $store = self::getContainer()->get(ProcessStore::class);
         $record = $store->fetchByRecordId($process->id);
         $this->assertNotNull($record);
@@ -618,7 +618,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertArrayHasKey($process->id, $grace->getValue($this->manager));
         try {
             $this->assertTrue($store->deleteById($process->id));
-            $this->manager->refreshAllUnfinished(self::TEST_SESSION);
+            $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
             $this->assertSame([], $grace->getValue($this->manager));
         } finally {
             // The removed row cannot supervise this test-owned group anymore.
@@ -638,7 +638,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             usleep(10_000);
         }
         $this->assertFileExists($record->statusPath);
-        $this->manager->refreshAllUnfinished(self::TEST_SESSION);
+        $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
         $this->assertSame(BackgroundProcessStatusEnum::Finished, $record->status);
         $this->assertSame(0, $record->exitCode);
     }

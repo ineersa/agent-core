@@ -905,7 +905,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             $this->assertCount(1, $records);
             $this->assertNull($records[0]->backgroundedAt);
             $this->assertNotNull($records[0]->finishedAt);
-            $manager->refreshAllUnfinished(self::TEST_SESSION);
+            $manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
             $this->assertSame([], self::getContainer()->get(ProcessStore::class)->findCompletionCandidates([self::TEST_SESSION]));
         } finally {
             fclose($endpoint);
