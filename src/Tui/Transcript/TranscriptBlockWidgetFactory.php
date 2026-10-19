@@ -79,6 +79,11 @@ final readonly class TranscriptBlockWidgetFactory
         return $this->subagentRenderer;
     }
 
+    public function toolTextCanAffectPresentation(TranscriptBlock $block): bool
+    {
+        return $this->toolRenderer->toolTextCanAffectPresentation($block);
+    }
+
     public function isTranscriptWidgetSuppressed(TranscriptBlock $block): bool
     {
         return $this->toolPresentationPolicy->isTranscriptWidgetSuppressed($block);

@@ -55,18 +55,15 @@ final class ProcessStore
     }
 
     /**
-     * Find background processes that finished and should notify on completion.
+     * Find records needing status refresh or completion notification together.
      *
-     * Query conditions: finishedAt IS NOT NULL, backgroundedAt IS NOT NULL,
-     * completionNotifiedAt IS NULL.
-     *
-     * @param string|null $sessionId optional session filter
+     * @param list<string> $sessionIds
      *
      * @return BackgroundProcess[]
      */
-    public function findPendingNotifications(?string $sessionId = null): array
+    public function findCompletionCandidates(array $sessionIds): array
     {
-        return $this->repository->findPendingNotifications($sessionId);
+        return $this->repository->findCompletionCandidates($sessionIds);
     }
 
     /**

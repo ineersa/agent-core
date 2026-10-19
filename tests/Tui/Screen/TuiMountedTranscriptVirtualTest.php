@@ -666,6 +666,92 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertSame(TranscriptVisualNode::KIND_TOOL_EXCHANGE, $this->semanticNode($after[0])?->kind, 'Re-created widget must receive its node data via the semantic apply contract');
     }
 
+    public function testResultBeforeCallUpdatesBothMountedOccurrences(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID, columns: 100, rows: 40);
+        $result = new TranscriptBlock('result-first', TranscriptBlockKindEnum::ToolResult, self::SESSION_ID, 1, 'Running…', [
+            'tool_name' => 'bash', 'tool_call_id' => 'reordered-call', 'is_error' => false,
+        ], true);
+        $call = new TranscriptBlock('call-later', TranscriptBlockKindEnum::ToolCall, self::SESSION_ID, 2, 'bash', [
+            'tool_name' => 'bash', 'tool_call_id' => 'reordered-call', 'arguments' => ['command' => 'true'],
+        ]);
+        $harness->screen()->setTranscriptBlocks([$result, $call]);
+        $harness->screen()->setWorkingVisible(false);
+        $harness->plainScreenText();
+
+        $mounted = new \ReflectionProperty($harness->screen(), 'transcriptWidget')->getValue($harness->screen());
+        $this->assertInstanceOf(TranscriptMountedWidget::class, $mounted);
+        $before = $mounted->all();
+        $this->assertCount(2, $before);
+        $this->assertSame($result, $this->semanticNode($before[0])?->primary);
+        $this->assertSame($result, $this->semanticNode($before[1])?->secondary);
+
+        $completed = $result->with(text: 'done', streaming: false, meta: [
+            ...$result->meta, 'is_error' => true, 'duration_ms' => 1250,
+        ]);
+        $harness->screen()->applyTranscriptChangeSet(TranscriptChangeSet::incremental([$completed]));
+        $rendered = $harness->plainScreenText();
+
+        $after = $mounted->all();
+        $this->assertCount(2, $after);
+        $this->assertSame($completed, $this->semanticNode($after[0])?->primary, 'Standalone result must receive text, streaming, error and timing changes.');
+        $this->assertSame($completed, $this->semanticNode($after[1])?->secondary, 'Exchange must receive the same updated result.');
+        $this->assertSame(2, substr_count($rendered, 'done'));
+        $this->assertStringNotContainsString('Running…', $rendered);
+    }
+
+    public function testLongHistoryToolDeltasKeepNativeCardAndScreenIsolation(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID, columns: 100, rows: 24);
+        $history = [];
+        for ($i = 0; $i < 250; ++$i) {
+            $history[] = new TranscriptBlock('retained-'.$i, TranscriptBlockKindEnum::AssistantMessage, self::SESSION_ID, $i + 1, 'retained history '.$i);
+        }
+        $call = new TranscriptBlock('call', TranscriptBlockKindEnum::ToolCall, self::SESSION_ID, 251, 'ignored argument text', [
+            'tool_name' => 'read', 'tool_call_id' => 'visible-call', 'arguments' => ['path' => 'before.txt'],
+        ], true);
+        $result = new TranscriptBlock('result', TranscriptBlockKindEnum::ToolResult, self::SESSION_ID, 252, 'ignored progress', [
+            'tool_name' => 'read', 'tool_call_id' => 'visible-call',
+        ]);
+        $harness->screen()->setTranscriptBlocks([...$history, $call, $result]);
+        $harness->screen()->setWorkingVisible(false);
+        $this->assertStringContainsString('before.txt', $harness->plainScreenText());
+
+        $mounted = new \ReflectionProperty($harness->screen(), 'transcriptWidget')->getValue($harness->screen());
+        $this->assertInstanceOf(TranscriptMountedWidget::class, $mounted);
+        $wrappers = $mounted->all();
+        $card = $wrappers[250];
+        $this->assertInstanceOf(ToolExchangeTranscriptWidget::class, $card);
+        $nativeCard = $card->all()[0];
+
+        $other = new VirtualTuiHarness(sessionId: 'other-screen', columns: 100, rows: 24);
+        $other->screen()->setTranscriptBlocks([new TranscriptBlock('call', TranscriptBlockKindEnum::ToolCall, 'other-screen', 1, 'read', [
+            'tool_name' => 'read', 'tool_call_id' => 'visible-call', 'arguments' => ['path' => 'other-screen.txt'],
+        ])]);
+        $other->screen()->setWorkingVisible(false);
+
+        for ($i = 0; $i < 20; ++$i) {
+            $call = $call->with(text: 'argument chunk '.$i);
+            $result = $result->with(text: 'progress chunk '.$i);
+            $harness->screen()->applyTranscriptChangeSet(TranscriptChangeSet::incremental([$call, $result]));
+        }
+        $this->assertSame($wrappers, $mounted->all(), 'Invisible changes retain every historical mounted wrapper');
+        $this->assertSame($nativeCard, $card->all()[0], 'Invisible deltas must not rebuild the native card subtree');
+        $this->assertSame($call, $this->semanticNode($card)?->primary);
+        $this->assertSame($result, $this->semanticNode($card)?->secondary);
+        $this->assertStringContainsString('before.txt', $harness->plainScreenText());
+        $this->assertStringNotContainsString('progress chunk', $harness->plainScreenText());
+
+        $call = $call->with(meta: [...$call->meta, 'arguments' => ['path' => 'after.txt']], streaming: false);
+        $harness->screen()->applyTranscriptChangeSet(TranscriptChangeSet::incremental([$call]));
+        $this->assertSame($card, $mounted->all()[250]);
+        $this->assertNotSame($nativeCard, $card->all()[0], 'Visible arguments must rebuild the card, not suppress the event');
+        $this->assertStringContainsString('after.txt', $harness->plainScreenText());
+        $this->assertStringNotContainsString('before.txt', $harness->plainScreenText());
+        $this->assertStringContainsString('other-screen.txt', $other->plainScreenText());
+        $this->assertStringNotContainsString('after.txt', $other->plainScreenText());
+    }
+
     /**
      * @return array{0: TranscriptMountedWidget, 1: Tui, 2: VirtualTerminal}
      */
