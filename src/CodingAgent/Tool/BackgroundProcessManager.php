@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
-use Closure;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
@@ -15,7 +14,6 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
-use Throwable;
 
 /**
  * Durable, ORM-backed manager for background processes.
@@ -579,19 +577,19 @@ final class BackgroundProcessManager
      * failures still propagate, so no completion is delivered before persistence.
      * Stop and provisional cleanup retain fail-fast resolution by omitting it.
      *
-     * @param list<BackgroundProcess>                              $entities
-     * @param null|Closure(BackgroundProcess, Throwable): void     $onError
+     * @param list<BackgroundProcess>                            $entities
+     * @param \Closure(BackgroundProcess, \Throwable): void|null $onError
      *
      * @return list<BackgroundProcess> Successfully refreshed records in input order
      */
-    public function refreshEntities(array $entities, ?Closure $onError = null): array
+    public function refreshEntities(array $entities, ?\Closure $onError = null): array
     {
         $refreshed = [];
         foreach ($entities as $entity) {
             try {
                 $this->resolveEntityStatus($entity);
                 $refreshed[] = $entity;
-            } catch (Throwable $e) {
+            } catch (\Throwable $e) {
                 if (null === $onError) {
                     throw $e;
                 }
