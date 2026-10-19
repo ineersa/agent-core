@@ -1160,6 +1160,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             new \Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig(),
             $logger ?? $this->logger,
             \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(\Doctrine\ORM\EntityManagerInterface::class), $directory),
+            static::getContainer()->get(\Ineersa\CodingAgent\Tool\BackgroundProcessManager::class),
         );
 
         return [$client, $directory];

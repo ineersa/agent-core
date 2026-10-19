@@ -53,6 +53,7 @@ function build_sequential_phpunit_command(string $pharEnv): string
     // which would fail under --fail-on-all-issues. Run them via filters with
     // HATFIELD_BINARY_PATH / HATFIELD_NATIVE_BINARY_PATH or distribution:verify.
     return qa_observability_env_command().' APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
+        .' --bootstrap='.escapeshellarg(paratest_bootstrap_path())
         .' --exclude-group tui-e2e-replay --exclude-group llm-real --exclude-group controller-replay --exclude-group phar --exclude-group native-artifact'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 }
@@ -113,7 +114,9 @@ function test(?string $filter = null, ?string $suite = null): void
         // Exclude groups that require live LLM or tmux. Keep phar/native-artifact
         // available so --filter=PharSmokeTest / NativeProcessTopologyTest can run
         // when the caller supplies the packaged artifact env vars.
+        // Process-isolated tests also need their own DB/cache, as in ParaTest.
         $phpunitCmd = qa_observability_env_command().' APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit'
+            .' --bootstrap='.escapeshellarg(paratest_bootstrap_path())
             .$suiteFlag
             .' --filter='.escapeshellarg($filter)
             .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=controller-replay'
