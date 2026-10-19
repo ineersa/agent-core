@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Semantic;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -49,35 +50,44 @@ final readonly class SemanticIndexService
     {
         $lock = $this->lock();
         try {
-            $memories = $this->memories();
-            $chunks = $this->chunks($memories);
-            $sourceHash = $this->sourceHash($memories);
             $state = $this->state();
             $text = TextStore::fromDbal($this->connection, 'om_semantic_document');
             $textExists = 2 === (int) $this->connection->fetchOne("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('om_semantic_document', 'om_semantic_document_fts')");
             $text->setup();
-            $indexed = array_fill_keys(array_map('strval', $this->connection->fetchFirstColumn('SELECT id FROM om_semantic_document')), true);
+            $count = $this->chunkCount();
             $reset = null === $state || 1 === (int) $state['dirty'] || $state['signature'] !== $this->settings->signature()
-                || !$textExists || \count($indexed) !== (int) $this->connection->fetchOne('SELECT COUNT(*) FROM om_semantic_document_fts')
-                || [] !== array_diff_key($indexed, $chunks) || (!$this->filesExist() && [] !== $indexed);
+                || !$textExists || $count !== (int) $this->connection->fetchOne('SELECT COUNT(*) FROM om_semantic_document_fts')
+                || (!$this->filesExist() && 0 !== $count);
             if ($reset) {
-                $initial = null === $state;
-                $this->saveState($sourceHash, 0, true, false);
-                // Never soft-delete Vektor nodes: tombstones can exhaust its fixed
-                // candidate buffer and return no results while live records remain.
-                (new Filesystem())->remove($this->directory.'/vektor');
-                $text->clear();
-                $indexed = [];
+                $this->rebuild($text, null === $state);
                 $state = null;
-                $this->saveState($sourceHash, 0, false, false);
-                $this->logger->log($initial ? 'info' : 'warning', 'om.semantic.rebuild', ['run_id' => $this->runId, 'session_id' => $this->runId, 'component' => 'observational_memory', 'event_type' => 'om.semantic.rebuild']);
+            }
+            $memories = $this->refreshSources();
+            $sourceHash = $this->sourceHash($memories);
+            // Removed or changed chunk IDs require a physical rebuild. Vektor
+            // tombstones can exhaust its fixed candidate buffer.
+            if (false !== $this->connection->fetchOne("WITH valid AS MATERIALIZED (SELECT c.value AS id FROM om_semantic_document s, json_each(s.metadata, '$.chunks') c WHERE s.id LIKE 'source:%') SELECT d.id FROM om_semantic_document d LEFT JOIN valid v ON v.id = d.id WHERE d.id NOT LIKE 'source:%' AND v.id IS NULL LIMIT 1")) {
+                $this->rebuild($text, false);
+                $state = null;
+                $memories = $this->refreshSources();
+                $sourceHash = $this->sourceHash($memories);
             }
             $dimensions = (int) ($state['dimensions'] ?? 0);
-            $pending = array_diff_key($chunks, $indexed);
             $this->saveState($sourceHash, $dimensions, false, false);
-            if ([] !== $pending) {
-                // Also cap work independently of provider batch configuration.
-                $batch = \array_slice($pending, 0, min(4, $this->settings->embeddingBatchSize), true);
+            $batch = [];
+            $limit = min(4, $this->settings->embeddingBatchSize);
+            $parents = $this->connection->fetchFirstColumn($this->pendingSql().' ORDER BY s.id LIMIT '.$limit);
+            foreach ($parents as $parent) {
+                $memory = json_decode((string) $this->connection->fetchOne("SELECT json_extract(metadata, '$.source') FROM om_semantic_document WHERE id = ?", [$parent]), true, flags: \JSON_THROW_ON_ERROR);
+                $key = $memory['kind'].':'.$memory['id'];
+                $indexed = array_fill_keys($this->connection->fetchFirstColumn("SELECT id FROM om_semantic_document WHERE json_extract(metadata, '$._parent_id') = ?", [$key]), true);
+                $pending = array_diff_key($this->chunks([$key => $memory]), $indexed);
+                $batch += \array_slice($pending, 0, $limit - \count($batch), true);
+                if (\count($batch) === $limit) {
+                    break;
+                }
+            }
+            if ([] !== $batch) {
                 $vectors = $this->client->embed(array_values(array_column($batch, 'text')));
                 $batchDimensions = $vectors[0]->getDimensions();
                 if (0 !== $dimensions && $dimensions !== $batchDimensions) {
@@ -93,15 +103,14 @@ final readonly class SemanticIndexService
                     ]));
                 }
                 $this->saveState($sourceHash, $dimensions, true, false);
-                $vector = $this->vectorStore($dimensions);
-                $vector->add($documents);
+                $this->vectorStore($dimensions)->add($documents);
                 (new MemoryStoreAdapter($text, true, 0))->add($documents);
                 $this->saveState($sourceHash, $dimensions, false, false);
-                $pending = array_diff_key($pending, $batch);
             }
-            // Observer commits can occur while this worker embeds. Never call a
-            // snapshot complete if its canonical source changed during that call.
-            $complete = [] === $pending && $sourceHash === $this->sourceHash($this->memories());
+            // Observer commits can occur while this worker embeds. Compare the
+            // exact source snapshot, not a database-wide change counter.
+            $complete = false === $this->connection->fetchOne($this->pendingSql().' LIMIT 1')
+                && $sourceHash === $this->sourceHash($this->refreshSources());
             $this->saveState($sourceHash, $dimensions, false, $complete);
 
             return $complete;
@@ -120,11 +129,11 @@ final readonly class SemanticIndexService
     {
         $lock = $this->lock();
         try {
-            $memories = $this->memories();
             $state = $this->state();
             if (null === $state || 1 === (int) $state['dirty'] || $state['signature'] !== $this->settings->signature()) {
-                throw $this->building($memories, $state);
+                throw $this->building($this->memories(), $state);
             }
+            $memories = 0 === (int) $state['dimensions'] ? $this->memories() : $this->refreshSources();
             if ([] === $memories) {
                 return ['results' => [], 'truncated' => false, 'partial' => false];
             }
@@ -141,7 +150,7 @@ final readonly class SemanticIndexService
             $checkpoint();
             $lock = $this->lock();
             $currentState = $this->state();
-            $currentMemories = $this->memories();
+            $currentMemories = $this->refreshSources();
             if ($state !== $currentState || $snapshotHash !== $this->sourceHash($currentMemories)) {
                 throw $this->building($currentMemories, $currentState);
             }
@@ -158,8 +167,7 @@ final readonly class SemanticIndexService
             }
             $hasDates = \count($filtered) !== \count($memories);
             $chunkIds = [];
-            $chunker = new MemoryChunker($this->settings);
-            $filter = ($hasDates || $partial) ? static function (VectorDocumentInterface $document) use ($filtered, $memories, $hasDates, $partial, $chunker, &$chunkIds): bool {
+            $filter = ($hasDates || $partial) ? function (VectorDocumentInterface $document) use ($filtered, $memories, $hasDates, $partial, &$chunkIds): bool {
                 $parent = (string) $document->getMetadata()->getParentId();
                 if (!isset($memories[$parent]) || ($hasDates && !isset($filtered[$parent]))) {
                     return false;
@@ -168,10 +176,7 @@ final readonly class SemanticIndexService
                     return true;
                 }
                 if (!isset($chunkIds[$parent])) {
-                    $chunkIds[$parent] = [];
-                    foreach ($chunker->split($memories[$parent]['content']) as $position => $text) {
-                        $chunkIds[$parent][self::chunkId($parent, $position, $text)] = true;
-                    }
+                    $chunkIds[$parent] = array_fill_keys($this->connection->fetchFirstColumn("SELECT c.value FROM om_semantic_document s, json_each(s.metadata, '$.chunks') c WHERE s.id = ?", ['source:'.$parent]), true);
                 }
 
                 return isset($chunkIds[$parent][$document->getId()]);
@@ -181,7 +186,7 @@ final readonly class SemanticIndexService
                     $this->saveState($state['source_hash'], (int) $state['dimensions'], true, false);
                     throw new \RuntimeException('Semantic vector files are missing.');
                 }
-                $count = (int) $this->connection->fetchOne('SELECT COUNT(*) FROM om_semantic_document');
+                $count = $this->chunkCount();
                 $vectorStore = new MemoryStoreAdapter($this->vectorStore((int) $state['dimensions']), false, $count, $filter);
                 $textStore = new MemoryStoreAdapter(TextStore::fromDbal($this->connection, 'om_semantic_document'), true, $count, $filter);
                 $store = new CombinedStore($vectorStore, $textStore);
@@ -195,6 +200,22 @@ final readonly class SemanticIndexService
                 }
                 throw $error;
             }
+            $parents = [];
+            foreach ($hits as $hit) {
+                $parent = (string) $hit->getMetadata()->getParentId();
+                if (!isset($memories[$parent])) {
+                    throw new \RuntimeException('Semantic result has no canonical memory.');
+                }
+                $parents['source:'.$parent] = true;
+            }
+            // These manifests were validated against canonical source in one
+            // SQLite snapshot after embedding. Only hit content enters PHP,
+            // and it is frozen before releasing the index lock.
+            $canonical = [];
+            foreach ($this->connection->fetchFirstColumn("SELECT json_extract(metadata, '$.source') FROM om_semantic_document WHERE id IN (?)", [array_keys($parents)], [ArrayParameterType::STRING]) as $source) {
+                $memory = json_decode((string) $source, true, flags: \JSON_THROW_ON_ERROR);
+                $canonical[$memory['kind'].':'.$memory['id']] = $memory;
+            }
             // Hits and canonical source rows are materialized. Their immutable
             // snapshot can be reranked without blocking asynchronous indexing.
             $lock->release();
@@ -207,10 +228,7 @@ final readonly class SemanticIndexService
             $results = [];
             foreach ($hits as $hit) {
                 $parent = (string) $hit->getMetadata()->getParentId();
-                if (!isset($memories[$parent])) {
-                    throw new \RuntimeException('Semantic result has no canonical memory.');
-                }
-                $results[$parent] ??= $memories[$parent];
+                $results[$parent] ??= $canonical[$parent];
             }
             $checkpoint();
 
@@ -220,7 +238,26 @@ final readonly class SemanticIndexService
         }
     }
 
-    /** @param array<string, Memory> $memories
+    private function rebuild(TextStore $text, bool $initial): void
+    {
+        $this->saveState('', 0, true, false);
+        (new Filesystem())->remove($this->directory.'/vektor');
+        $text->clear();
+        $this->saveState('', 0, false, false);
+        $this->logger->log($initial ? 'info' : 'warning', 'om.semantic.rebuild', ['run_id' => $this->runId, 'session_id' => $this->runId, 'component' => 'observational_memory', 'event_type' => 'om.semantic.rebuild']);
+    }
+
+    private function chunkCount(): int
+    {
+        return (int) $this->connection->fetchOne("SELECT COUNT(*) FROM om_semantic_document WHERE id NOT LIKE 'source:%'");
+    }
+
+    private function pendingSql(): string
+    {
+        return "SELECT s.id FROM om_semantic_document s WHERE s.id LIKE 'source:%' AND EXISTS (SELECT 1 FROM json_each(s.metadata, '$.chunks') c LEFT JOIN om_semantic_document d ON d.id = c.value WHERE d.id IS NULL)";
+    }
+
+    /** @param array<string, array<string, mixed>> $memories
      * @param array<string, mixed>|null $state
      */
     private function building(array $memories, ?array $state): SemanticSearchException
@@ -228,7 +265,7 @@ final readonly class SemanticIndexService
         $indexedCount = 0;
         if (null !== $state && 0 === (int) $state['dirty'] && $state['signature'] === $this->settings->signature()
             && false !== $this->connection->fetchOne("SELECT name FROM sqlite_master WHERE name = 'om_semantic_document'")) {
-            $parents = array_fill_keys(array_map('strval', $this->connection->fetchFirstColumn("SELECT DISTINCT json_extract(metadata, '$._parent_id') FROM om_semantic_document")), true);
+            $parents = array_fill_keys(array_map('strval', $this->connection->fetchFirstColumn("SELECT DISTINCT json_extract(metadata, '$._parent_id') FROM om_semantic_document WHERE id NOT LIKE 'source:%'")), true);
             $indexedCount = \count(array_intersect_key($memories, $parents));
         }
 
@@ -267,20 +304,67 @@ final readonly class SemanticIndexService
         return true;
     }
 
-    /** @return array<string, Memory> */
-    private function memories(): array
+    private function sourceSql(): string
     {
-        $rows = $this->connection->fetchAllAssociative("SELECT 'observation' AS kind, observation_id AS id, run_id AS session_id, content, timestamp, relevance AS importance FROM om_observation UNION ALL SELECT 'reflection' AS kind, reflection_id AS id, run_id AS session_id, content, created_at AS timestamp, NULL AS importance FROM om_reflection ORDER BY kind, id");
+        return "SELECT 'observation' AS kind, observation_id AS id, run_id AS session_id, content, timestamp, relevance AS importance FROM om_observation UNION ALL SELECT 'reflection' AS kind, reflection_id AS id, run_id AS session_id, content, created_at AS timestamp, NULL AS importance FROM om_reflection";
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function memories(bool $signatures = false): array
+    {
+        $sql = 'SELECT s.kind, s.id, s.session_id, s.timestamp, s.importance';
+        if ($signatures) {
+            $sql .= ", json_extract(d.metadata, '$.signature') AS signature";
+        }
+        $sql .= ' FROM ('.$this->sourceSql().') s';
+        if ($signatures) {
+            $sql .= " JOIN om_semantic_document d ON d.id = 'source:' || s.kind || ':' || s.id";
+        }
+        $rows = $this->connection->fetchAllAssociative($sql.' ORDER BY s.kind, s.id');
         $memories = [];
         foreach ($rows as $row) {
-            $memory = ['kind' => (string) $row['kind'], 'session_id' => (string) $row['session_id'], 'id' => (string) $row['id'], 'timestamp' => (string) $row['timestamp'], 'content' => (string) $row['content']];
-            if (null !== $row['importance']) {
-                $memory['importance'] = (string) $row['importance'];
-            }
-            $memories[$memory['kind'].':'.$memory['id']] = $memory;
+            $memories[$row['kind'].':'.$row['id']] = $row;
         }
 
         return $memories;
+    }
+
+    /**
+     * Source manifests live only in the disposable TextStore metadata. Compare
+     * exact fields inside SQLite; unchanged content never crosses into PHP.
+     * Unlike chunk rows, manifests have no FTS text and never enter Vektor.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function refreshSources(): array
+    {
+        return $this->connection->transactional(function (): array {
+            $source = $this->sourceSql();
+            $equal = [];
+            foreach (['kind', 'id', 'session_id', 'timestamp', 'importance', 'content'] as $field) {
+                $equal[] = "json_extract(d.metadata, '$.source.".$field."') IS s.".$field;
+            }
+            $sql = 'SELECT s.* FROM ('.$source.") s LEFT JOIN om_semantic_document d ON d.id = 'source:' || s.kind || ':' || s.id WHERE d.id IS NULL OR NOT (".implode(' AND ', $equal).')';
+            foreach ($this->connection->iterateAssociative($sql) as $memory) {
+                if (null === $memory['importance']) {
+                    unset($memory['importance']);
+                }
+                $parent = $memory['kind'].':'.$memory['id'];
+                $metadata = ['source' => $memory, 'signature' => hash('sha256', json_encode($memory, \JSON_THROW_ON_ERROR)), 'chunks' => array_keys($this->chunks([$parent => $memory]))];
+                // Metadata-only writes use DBAL so the source comparison and
+                // manifest publication share one SQLite transaction. TextStore
+                // add() owns a native transaction and cannot be nested here.
+                $this->connection->executeStatement('INSERT INTO om_semantic_document (id, vector, metadata) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET metadata = excluded.metadata', ['source:'.$parent, '[1.0]', json_encode($metadata, \JSON_THROW_ON_ERROR)]);
+            }
+            $deleted = $this->connection->fetchFirstColumn("SELECT id FROM om_semantic_document WHERE id LIKE 'source:%' AND id NOT IN (SELECT 'source:' || kind || ':' || id FROM (".$source.'))');
+            // Unchanged searches remain read-only SQLite transactions. Even a
+            // DELETE matching no rows would unnecessarily acquire a writer lock.
+            if ([] !== $deleted) {
+                $this->connection->executeStatement('DELETE FROM om_semantic_document WHERE id IN (?)', [$deleted], [ArrayParameterType::STRING]);
+            }
+
+            return $this->memories(true);
+        });
     }
 
     /** @param array<string, Memory> $memories
@@ -306,7 +390,7 @@ final readonly class SemanticIndexService
         return substr(hash('sha256', $parent.'\0'.$position.'\0'.$text), 0, 32);
     }
 
-    /** @param array<string, Memory> $memories */
+    /** @param array<string, array<string, mixed>> $memories */
     private function sourceHash(array $memories): string
     {
         return hash('sha256', json_encode($memories, \JSON_THROW_ON_ERROR));
