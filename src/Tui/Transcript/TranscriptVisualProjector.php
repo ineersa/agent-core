@@ -123,11 +123,15 @@ final class TranscriptVisualProjector
             $touchedPrimaryIds[$block->id] = true;
         }
 
+        // Pairing eligibility needs the old sources and candidate counts. Existing
+        // exchanges with unchanged identity can update without rescanning history.
+        $inPlaceToolIds = $this->findInPlaceToolUpdates($changes);
+
         // Mutate canonical state first; dependency expansion uses post-mutation indexes.
         $this->applyRemovalsAndUpsertsToCanonical($changes);
 
-        // Neighbor deps after mutation. ToolResult always forces structural reproject, so
-        // ToolCall pairing lives in fullReproject()/findCombinableToolResultForCall().
+        // Neighbors cover separators/placeholders; exchange sources are resolved by
+        // their existing visual dependency mapping, even when separated in history.
         $expanded = $this->expandDependencyIds(array_keys($touchedPrimaryIds));
 
         // Structural scan decision uses originally dirty IDs only — neighbor expansion
@@ -135,6 +139,7 @@ final class TranscriptVisualProjector
         return $this->reprojectAffected(
             array_keys($expanded),
             array_keys($touchedPrimaryIds),
+            $inPlaceToolIds,
         );
     }
 
@@ -151,6 +156,39 @@ final class TranscriptVisualProjector
         }
 
         return $blocks;
+    }
+
+    /**
+     * Content changes cannot alter pairing when call identity/name stay fixed and
+     * a result has no competing candidate. Ambiguous results, suppression changes,
+     * new blocks and removals retain the full structural policy path.
+     *
+     * @return array<string, bool>
+     */
+    private function findInPlaceToolUpdates(TranscriptChangeSet $changes): array
+    {
+        if ([] !== $changes->removals) {
+            return [];
+        }
+
+        $eligible = [];
+        foreach ($changes->upserts as $block) {
+            $previous = $this->blocksById[$block->id] ?? null;
+            $isTool = \in_array($block->kind, [TranscriptBlockKindEnum::ToolCall, TranscriptBlockKindEnum::ToolResult], true);
+            $eligible[$block->id] = $isTool
+                && null !== $previous
+                && $previous->kind === $block->kind
+                && $previous->runId === $block->runId
+                && $previous->seq === $block->seq
+                && ($previous->meta['tool_call_id'] ?? null) === ($block->meta['tool_call_id'] ?? null)
+                && ($previous->meta['tool_name'] ?? null) === ($block->meta['tool_name'] ?? null)
+                && $this->factory->isTranscriptWidgetSuppressed($previous) === $this->factory->isTranscriptWidgetSuppressed($block)
+                && $this->factory->subagentRenderer()->supports($previous) === $this->factory->subagentRenderer()->supports($block)
+                && (TranscriptBlockKindEnum::ToolCall === $block->kind
+                    || \count($this->toolResultIdsByCallId[$this->toolCallIdMeta($block) ?? ''] ?? []) <= 1);
+        }
+
+        return $eligible;
     }
 
     /**
@@ -445,12 +483,14 @@ final class TranscriptVisualProjector
     /**
      * Reproject only the dependency-bounded set of primary block IDs into visual keys.
      *
-     * @param list<string> $affectedPrimaryIds     Expanded set (neighbors + dirty)
-     * @param list<string> $structuralCandidateIds Originally dirty IDs (not neighbors)
+     * @param list<string>        $affectedPrimaryIds     Expanded set (neighbors + dirty)
+     * @param list<string>        $structuralCandidateIds Originally dirty IDs (not neighbors)
+     * @param array<string, bool> $inPlaceToolIds         Existing tools with unchanged pairing
      */
     private function reprojectAffected(
         array $affectedPrimaryIds,
         array $structuralCandidateIds,
+        array $inPlaceToolIds,
     ): TranscriptVisualPatch {
         // Structural decision is based on originally dirty IDs only. Neighbor expansion
         // for separators must not force O(B) reproject on pure Error/stream content updates.
@@ -464,8 +504,8 @@ final class TranscriptVisualProjector
             }
             if (TranscriptBlockKindEnum::UserMessage === $block->kind
                 || TranscriptBlockKindEnum::Question === $block->kind
-                || TranscriptBlockKindEnum::ToolCall === $block->kind
-                || TranscriptBlockKindEnum::ToolResult === $block->kind
+                || (\in_array($block->kind, [TranscriptBlockKindEnum::ToolCall, TranscriptBlockKindEnum::ToolResult], true)
+                    && !($inPlaceToolIds[$id] ?? false))
             ) {
                 $needsStructuralScan = true;
                 break;
@@ -473,11 +513,8 @@ final class TranscriptVisualProjector
         }
 
         if ($needsStructuralScan) {
-            // ponytail: structural policy (tool/question/user/separator) full-reprojects
-            // O(B) then diffs to a bounded mounted patch when survivor order is stable.
-            // Ceiling: large sessions with frequent tool/question structure churn.
-            // Upgrade: per-exchange/neighbor dependency graph if profiling shows this
-            // structural scan matters. Pure stream/content never enters this branch.
+            // Pairing/suppression changes and tool arrival still require structural
+            // policy. Stable existing exchanges and ordinary streams bypass this scan.
             $beforeKeys = $this->nodeOrder;
             $beforeNodes = $this->nodesByKey;
             $full = $this->fullReproject();
@@ -487,7 +524,7 @@ final class TranscriptVisualProjector
             return $this->diffToIncrementalPatch($beforeKeys, $beforeNodes, $full);
         }
 
-        // Pure in-place content updates (streaming markdown / generic / thinking).
+        // In-place content updates, including already-paired tool sources.
         // Removals are always structural (classified before this branch); a missing
         // block here is an invariant violation → explicit full reproject.
         $revision = $this->presentationRevision();
@@ -504,19 +541,19 @@ final class TranscriptVisualProjector
 
             $key = $this->visualKeyByPrimaryId[$id] ?? $id;
             $existing = $this->nodesByKey[$key] ?? null;
-            // Neighbor expansion can touch a ToolResult that is only the secondary of an
-            // already-mounted exchange. Reclassifying it standalone would emit GENERIC at
-            // the exchange key and crash ToolExchangeTranscriptWidget on apply.
-            if (null !== $existing && $existing->secondary === $block) {
-                continue;
-            }
-
-            $kind = $this->classifyStandalone($block);
+            // Resolve both sources through the stable dependency key. A result may
+            // update an exchange whose call is far outside the neighboring blocks.
+            $primary = null !== $existing?->secondary
+                ? $this->blocksById[$existing->primary->id]
+                : $block;
+            $secondary = null !== $existing?->secondary
+                ? $this->blocksById[$existing->secondary->id]
+                : null;
             $node = new TranscriptVisualNode(
                 key: $key,
-                kind: $kind,
-                primary: $block,
-                secondary: null,
+                kind: $this->classifyStandalone($primary),
+                primary: $primary,
+                secondary: $secondary,
                 presentationRevision: $revision,
             );
 
@@ -647,8 +684,9 @@ final class TranscriptVisualProjector
             return TranscriptVisualNode::KIND_MARKDOWN;
         }
 
-        // Pending tool call (no combinable result yet) is still tool-exchange lifecycle.
-        if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
+        // Single tool cards share the mutable exchange wrapper; a standalone result
+        // must not replace its mounted subtree merely because its content changed.
+        if (\in_array($block->kind, [TranscriptBlockKindEnum::ToolCall, TranscriptBlockKindEnum::ToolResult], true)) {
             return TranscriptVisualNode::KIND_TOOL_EXCHANGE;
         }
 

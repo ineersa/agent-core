@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Style\Padding;
@@ -36,6 +37,32 @@ final readonly class TranscriptToolRenderer
         private readonly ViewImageTranscriptFormatter $viewImageFormatter,
         private readonly TranscriptToolResultFacts $toolResultFacts,
     ) {
+    }
+
+    /**
+     * Text-only deltas need no card rebuild when headers/body use other sources.
+     * Keep this beside the renderer's fallback-header and collapsed-body policy.
+     */
+    public function toolTextCanAffectPresentation(TranscriptBlock $block): bool
+    {
+        $name = $block->meta['tool_name'] ?? null;
+        if (!\is_string($name) || '' === $name) {
+            return true;
+        }
+        if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
+            return false;
+        }
+        if (!$this->toolResultFacts->toolResultIsUnsuccessful($block)
+            && ($this->isViewImageToolName($name)
+                || (!$this->displayState->previewableBlocksExpanded && $this->shouldHideCollapsedResult($name)))) {
+            return false;
+        }
+
+        $result = $block->meta['result'] ?? null;
+
+        // These are the explicit-body cases in toolResultBodyText(); only its
+        // fallback consumes block text. No serialization/preview work is needed.
+        return !(\is_array($result) || \is_object($result) || (\is_scalar($result) && '' !== (string) $result));
     }
 
     public function buildToolCallWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
