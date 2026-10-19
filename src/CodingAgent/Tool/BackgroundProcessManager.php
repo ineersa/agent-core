@@ -781,6 +781,9 @@ final class BackgroundProcessManager
 
         $now = Clock::get()->now();
         $entity->markStopped($now);
+        // The explicit stop result already acknowledges completion. Settle the
+        // existing notification marker atomically with the stop, without a wakeup.
+        $entity->markCompletionNotified($now);
 
         // Write -1 to the status file only when the wrapper did not
         // already write a real exit code (KILL path). When TERM succeeds

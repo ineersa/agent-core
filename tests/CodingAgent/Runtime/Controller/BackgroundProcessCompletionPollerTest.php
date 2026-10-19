@@ -10,6 +10,9 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Event\PostLoadEventArgs;
 use Doctrine\ORM\Events;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -32,9 +35,11 @@ use Ineersa\CodingAgent\Session\Event\RunOperationalProjectionControllerSessionL
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
+use Ineersa\CodingAgent\Tool\BgStatusTool;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Ineersa\SqliteQueue\Protocol\Frame;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -166,6 +171,63 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->rmDir($this->tmpDir);
 
         parent::tearDown();
+    }
+
+    #[TestWith(['stop'])]
+    #[TestWith(['natural'])]
+    #[TestWith(['failure'])]
+    #[TestWith(['already-finished'])]
+    public function testNativeStopAcknowledgmentDoesNotDuplicateCompletion(string $mode): void
+    {
+        $store = self::getContainer()->get(ProcessStore::class);
+        $config = $this->createBgConfig();
+        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $manager = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
+        $fifo = $this->tmpDir.'/release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $release = fopen($fifo, 'r+b');
+        $this->assertIsResource($release);
+        try {
+            $exit = 'failure' === $mode ? 7 : 0;
+            $process = $manager->start('printf ready; read -r release < '.escapeshellarg($fifo).'; printf done; exit '.$exit, 'native-stop', 'call');
+            $manager->markBackgroundedForRecord($process->id, 'native-stop');
+            $record = $store->fetchByRecordId($process->id);
+            $this->assertNotNull($record);
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (!str_contains((string) file_get_contents($record->logPath), 'ready') && hrtime(true) < $deadline) {
+                $this->assertTrue($lifecycle->isAlive($process->pid));
+                usleep(10_000);
+            }
+            $this->assertStringContainsString('ready', (string) file_get_contents($record->logPath));
+            if ('stop' !== $mode) {
+                fwrite($release, "release\n");
+                $deadline = hrtime(true) + 2_000_000_000;
+                while (null === $lifecycle->readStatusFile($record->statusPath) && hrtime(true) < $deadline) {
+                    usleep(10_000);
+                }
+                $this->assertSame($exit, $lifecycle->readStatusFile($record->statusPath));
+            }
+            if (\in_array($mode, ['stop', 'already-finished'], true)) {
+                $accessor = new StackToolExecutionContextAccessor();
+                $tool = new BgStatusTool($manager, $config, $accessor);
+                $context = new ToolContext('native-stop', 0, 'stop-call', 'bg_status', new NullCancellationToken(), 30);
+                $result = $accessor->with($context, static fn () => $tool(new BgStatusArgumentsDTO(action: 'stop', pid: $process->pid)));
+                $this->assertStringContainsString('stop' === $mode ? 'stopped.' : 'had already finished.', $result);
+            }
+            $poller = $this->createPoller($store, $manager, 'native-stop');
+            (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
+            (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
+            $this->assertCount('stop' === $mode ? 0 : 1, $this->sentCommands);
+            $this->assertNotNull($store->fetchByRecordId($process->id)?->completionNotifiedAt);
+            $this->assertNotNull($manager->findByRecordId($process->id)?->finishedAt);
+            $this->assertStringContainsString('ready', $manager->readLogTail('native-stop', $process->pid)->content);
+            if ('stop' !== $mode) {
+                $this->assertStringContainsString('exit '.$exit, $this->sentCommands[0][1]->text ?? '');
+            }
+        } finally {
+            fclose($release);
+            $manager->shutdownCleanup();
+        }
     }
 
     public function testPollSendsFollowUpAndMarksNotified(): void

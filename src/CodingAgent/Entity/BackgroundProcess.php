@@ -166,7 +166,7 @@ class BackgroundProcess
     }
 
     /**
-     * Mark that the completion notification follow-up has been sent.
+     * Mark completion as acknowledged by a follow-up or an explicit stop result.
      */
     public function markCompletionNotified(\DateTimeImmutable $now): void
     {

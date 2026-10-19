@@ -37,6 +37,10 @@ and the configured termination grace period. Timeout handling sends TERM without
 the controller; subsequent polls observe exit or send KILL after grace. Explicit stop and
 shutdown still wait for termination. Completion uses the existing follow-up queue.
 
+Successful explicit stops do not send another completion follow-up: the stop result
+already acknowledges the outcome. Natural completion, failure and timeout still
+notify. Stopping an already-finished job preserves its ordinary completion notification.
+
 Tracking is **session-scoped**. `bg_status` exposes only rows explicitly accepted as background work; private foreground supervision is never listed, tailed, or stopped through that tool. Durable records live in `.hatfield/state.sqlite`; filesystem sidecars (PID/status/log) live under the configured tool path.
 
 ### PID identity
