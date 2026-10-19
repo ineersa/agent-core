@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -51,7 +52,7 @@ final class ProcessStore
             : new \DateTimeImmutable((string) ($fields['started_at'] ?? 'now'));
 
         $this->entityManager->persist($entity);
-        $this->entityManager->flush();
+        $this->flush();
 
         return $entity->id;
     }
@@ -207,7 +208,7 @@ final class ProcessStore
         }
 
         $this->entityManager->remove($entity);
-        $this->entityManager->flush();
+        $this->flush();
 
         return true;
     }
@@ -217,6 +218,31 @@ final class ProcessStore
      */
     public function flush(): void
     {
-        $this->entityManager->flush();
+        $unitOfWork = $this->entityManager->getUnitOfWork();
+        $finishing = [];
+        foreach ($unitOfWork->getIdentityMap()[BackgroundProcess::class] ?? [] as $entity) {
+            if ($entity instanceof BackgroundProcess && null !== $entity->finishedAt
+                && BackgroundProcessStatusEnum::Stopped !== $entity->status
+                && null === ($unitOfWork->getOriginalEntityData($entity)['finishedAt'] ?? null)
+            ) {
+                $finishing[$entity->id] = $entity;
+            }
+        }
+        if ([] === $finishing) {
+            $this->entityManager->flush();
+
+            return;
+        }
+
+        // The configured BEGIN IMMEDIATE transaction excludes competing writers
+        // from this read through ORM flush. Refreshing before the transaction
+        // would leave the same race between observing the cause and writing it.
+        // Read only status so identity and unrelated pending fields stay intact.
+        $this->entityManager->getConnection()->transactional(function () use ($finishing): void {
+            foreach ($this->repository->findStoppedIds(array_keys($finishing)) as $id) {
+                $finishing[$id]->status = BackgroundProcessStatusEnum::Stopped;
+            }
+            $this->entityManager->flush();
+        });
     }
 }

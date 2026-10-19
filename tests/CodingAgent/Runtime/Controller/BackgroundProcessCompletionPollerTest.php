@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Event\PostLoadEventArgs;
 use Doctrine\ORM\Events;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -597,22 +598,45 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
                 usleep(10_000);
             }
             $this->assertFileExists($this->tmpDir.'/ready');
-            $owner->refreshAllUnfinished('timeout-run');
-            $independent = $reader->list('timeout-run')[0];
+            // Stop the independent read after hydration, not before its query:
+            // its managed copy must still say Running when timeout commits.
+            $barrier = new class($process->id) {
+                public function __construct(private readonly int $id)
+                {
+                }
+
+                public function postLoad(PostLoadEventArgs $event): void
+                {
+                    $entity = $event->getObject();
+                    if ($entity instanceof BackgroundProcess && $entity->id === $this->id) {
+                        \Fiber::suspend($entity);
+                    }
+                }
+            };
+            $events = $otherContainer->get(EntityManagerInterface::class)->getEventManager();
+            $events->addEventListener([Events::postLoad], $barrier);
+            $readTask = new \Fiber(static fn () => 'list' === $read ? $reader->list('timeout-run') : $reader->readLogTail('timeout-run', $process->pid));
+            try {
+                $independent = $readTask->start();
+            } finally {
+                $events->removeEventListener([Events::postLoad], $barrier);
+            }
+            $this->assertInstanceOf(BackgroundProcess::class, $independent);
             $this->assertNotSame($record, $independent, 'The reader must hydrate its own ORM object.');
-            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $independent->status);
+            $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status);
             $this->assertNull($independent->finishedAt);
+            $owner->refreshAllUnfinished('timeout-run');
+            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $store->fetchByRecordId($process->id)?->status);
+            $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status, 'Timeout must not refresh the suspended reader.');
             $this->assertSame(8, fwrite($release, "release\n"));
             $deadline = hrtime(true) + 2_000_000_000;
             while (null === $lifecycle->readStatusFile($record->statusPath) && hrtime(true) < $deadline) {
                 usleep(10_000);
             }
             $this->assertSame(0, $lifecycle->readStatusFile($record->statusPath), 'TERM cleanup really exits successfully.');
-            if ('list' === $read) {
-                $reader->list('timeout-run');
-            } else {
-                $reader->readLogTail('timeout-run', $process->pid);
-            }
+            $readTask->resume();
+            $this->assertTrue($readTask->isTerminated());
+            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $independent->status);
             $persisted = $store->fetchByRecordId($process->id);
             $this->assertNotNull($persisted);
             $this->assertNotNull($persisted->finishedAt);
@@ -727,6 +751,9 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertSame($expectedDeliveries, $published);
         $queries = array_filter($logger->records, static fn (array $record): bool => str_contains($record['context']['sql'] ?? '', 'session_id IN'));
         $this->assertCount(1, $queries);
+        $causeReads = array_filter($logger->records, static fn (array $record): bool => str_starts_with($record['context']['sql'] ?? '', 'SELECT')
+            && str_contains($record['context']['sql'], 'status = ?'));
+        $this->assertCount($complete && $count > 0 ? 1 : 0, $causeReads, 'Terminal causes use one batched read, not one read per candidate or delivery.');
         $this->assertSame($expectedDeliveries, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM background_process WHERE completion_notified_at IS NOT NULL'));
         $this->assertSame($complete ? 0 : $count, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM background_process WHERE finished_at IS NULL'));
     }
