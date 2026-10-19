@@ -143,7 +143,6 @@ final class TuiSessionCompositionTest extends TestCase
         // Question state is independent.
         $scope1->questionCoordinator->enqueue(new \Ineersa\Tui\Question\QuestionRequest(
             requestId: 'q1',
-            source: \Ineersa\Tui\Question\QuestionSource::AgentCore,
             kind: \Ineersa\Tui\Question\QuestionKind::Text,
             prompt: 'Scope one question?'
         ));

@@ -20,7 +20,6 @@ use Ineersa\Tui\Listener\SubagentLiveToggleInputListener;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
-use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -164,7 +163,7 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         self::getContainer()->get(SubmitListener::class)->register($this->context);
         $harness->sendInput("\x02");
         $this->assertInstanceOf(SelectListWidget::class, $harness->tui()->getFocus());
-        $request = new QuestionRequest('real-text', QuestionSource::AgentCore, QuestionKind::Text, 'What should happen?', runId: 'visible');
+        $request = new QuestionRequest('real-text', QuestionKind::Text, 'What should happen?', runId: 'visible');
         $answer = null;
         $this->context->sessionServices->questionCoordinator->enqueue($request, static function (mixed $value) use (&$answer): void { $answer = $value; });
         $this->context->sessionServices->questionController->open($request);

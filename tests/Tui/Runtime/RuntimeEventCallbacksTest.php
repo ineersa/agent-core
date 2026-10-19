@@ -29,21 +29,14 @@ final class RuntimeEventCallbacksTest extends TestCase
             onHumanInputRequested: static function (RuntimeEvent $e) use (&$order): void {
                 $order[] = 'human:'.$e->seq;
             },
-            onToolQuestionRequested: static function (RuntimeEvent $e) use (&$order): void {
-                $order[] = 'question:'.$e->seq;
-            },
-            onToolTerminal: static function (RuntimeEvent $e) use (&$order): void {
-                $order[] = 'terminal:'.$e->seq;
-            },
         );
 
         // Each event triggers only its own callback; unrelated kinds are skipped.
         $callbacks->dispatch($this->event('human_input.requested', 1), 'run-9');
-        $callbacks->dispatch($this->event('tool_question.requested', 2), 'run-9');
         $callbacks->dispatch($this->event('tool_execution.completed', 3), 'run-9');
         $callbacks->dispatch($this->event('run.completed', 4), 'run-9');
 
-        $this->assertSame(['human:1', 'question:2', 'terminal:3'], $order);
+        $this->assertSame(['human:1'], $order);
     }
 
     public function testDispatchSwallowsCallbackExceptionAndKeepsLogIdentity(): void
@@ -57,10 +50,10 @@ final class RuntimeEventCallbacksTest extends TestCase
             'MyPoller event callback failed',
             'tui.my_poller',
             'my_poller.callback_failed',
-            onHumanInputRequested: static function () use ($boom): void {
-                throw $boom;
-            },
-            onToolTerminal: static function (RuntimeEvent $e) use (&$dispatched): void {
+            onHumanInputRequested: static function (RuntimeEvent $e) use ($boom, &$dispatched): void {
+                if (7 === $e->seq) {
+                    throw $boom;
+                }
                 $dispatched[] = $e->seq;
             },
         );
@@ -82,9 +75,9 @@ final class RuntimeEventCallbacksTest extends TestCase
 
         // One bad callback must not prevent later matching callbacks in the batch.
         $callbacks->dispatch($this->event('human_input.requested', 7), 'run-9');
-        $callbacks->dispatch($this->event('tool_execution.failed', 8), 'run-9');
+        $callbacks->dispatch($this->event('human_input.requested', 8), 'run-9');
 
-        $this->assertSame([8], $dispatched, 'terminal callback must still run after human callback throws');
+        $this->assertSame([8], $dispatched, 'Later human-input events must still run after a callback throws');
     }
 
     public function testEventListNormalizesTraversable(): void

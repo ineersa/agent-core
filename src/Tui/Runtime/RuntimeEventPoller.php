@@ -60,19 +60,13 @@ final class RuntimeEventPoller
     /**
      * Poll for new runtime events and synchronize projected transcript blocks.
      *
-     * @param ?callable(RuntimeEvent): void $onHumanInputRequested   Called when a
-     *                                                               human_input.requested event is received; may be null if no handler
-     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested Called when a
-     *                                                               tool_question.requested event is received; may be null if no handler
-     * @param ?callable(RuntimeEvent): void $onToolTerminal          Called when a
-     *                                                               tool_execution.completed, tool_execution.failed, or
-     *                                                               tool_execution.cancelled event is received; may be null if no
-     *                                                               handler. Used to close stale TUI question overlays when the
-     *                                                               tool returns while a local tool question is still open.
+     * @param ?callable(RuntimeEvent): void $onHumanInputRequested Called when a
+     *                                                             human_input.requested event is received; may be null if no handler
+     *                                                             tool returns while a local tool question is still open.
      *
      * @return TranscriptChangeSet|null Canonical transcript delta for ChatScreen, or null if nothing new
      */
-    public function poll(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested = null, ?callable $onToolQuestionRequested = null, ?callable $onToolTerminal = null, ?callable $onBootstrapMounted = null, ?callable $onSessionRestoring = null): ?TranscriptChangeSet
+    public function poll(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested = null, ?callable $onBootstrapMounted = null, ?callable $onSessionRestoring = null): ?TranscriptChangeSet
     {
         if (null === $state->handle) {
             return null;
@@ -159,8 +153,6 @@ final class RuntimeEventPoller
                 'tui.runtime_event_poller',
                 'runtime_event_poller.callback_failed',
                 $onHumanInputRequested,
-                $onToolQuestionRequested,
-                $onToolTerminal,
             );
 
             foreach ($events as $index => $runtimeEvent) {

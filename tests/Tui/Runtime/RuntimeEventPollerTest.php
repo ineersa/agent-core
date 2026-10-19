@@ -422,64 +422,6 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertSame('', $this->state->lastRuntimePollError);
     }
 
-    public function testOnToolTerminalCallbackFiresForCompleted(): void
-    {
-        $event = new RuntimeEvent(
-            type: RuntimeEventTypeEnum::ToolExecutionCompleted->value,
-            runId: 'test-run',
-            seq: 5,
-            payload: ['tool_call_id' => 'tc-123', 'is_error' => false],
-        );
-
-        $this->client->expects($this->once())
-            ->method('events')
-            ->with('test-run', $this->anything())
-            ->willReturn([$event]);
-
-        $this->projector->method('accept');
-        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
-
-        $called = null;
-        $callback = static function (RuntimeEvent $e) use (&$called): void {
-            $called = $e;
-        };
-
-        $this->poller->poll($this->state, $this->client, onToolTerminal: $callback);
-
-        $this->assertNotNull($called);
-        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $called->type);
-        $this->assertSame('tc-123', $called->payload['tool_call_id'] ?? null);
-    }
-
-    public function testOnToolTerminalCallbackFiresForFailed(): void
-    {
-        $event = new RuntimeEvent(
-            type: RuntimeEventTypeEnum::ToolExecutionFailed->value,
-            runId: 'test-run',
-            seq: 6,
-            payload: ['tool_call_id' => 'tc-456', 'is_error' => true],
-        );
-
-        $this->client->expects($this->once())
-            ->method('events')
-            ->with('test-run', $this->anything())
-            ->willReturn([$event]);
-
-        $this->projector->method('accept');
-        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
-
-        $called = null;
-        $callback = static function (RuntimeEvent $e) use (&$called): void {
-            $called = $e;
-        };
-
-        $this->poller->poll($this->state, $this->client, onToolTerminal: $callback);
-
-        $this->assertNotNull($called);
-        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionFailed->value, $called->type);
-        $this->assertSame('tc-456', $called->payload['tool_call_id'] ?? null);
-    }
-
     public function testQueuedFollowUpDispatchedOnRunCancelled(): void
     {
         $this->state->queuedFollowUps = ['Continue after cancel'];
@@ -613,33 +555,6 @@ final class RuntimeEventPollerTest extends TestCase
         // Queued text should persist — only cleared on RunCancelled
         $this->assertNotEmpty($this->state->queuedFollowUps);
         $this->assertSame(['Waiting message'], $this->state->queuedFollowUps);
-    }
-
-    public function testOnToolTerminalNotCalledForNonTerminalEvents(): void
-    {
-        $event = new RuntimeEvent(
-            type: RuntimeEventTypeEnum::ToolExecutionStarted->value,
-            runId: 'test-run',
-            seq: 7,
-            payload: ['tool_call_id' => 'tc-789'],
-        );
-
-        $this->client->expects($this->once())
-            ->method('events')
-            ->with('test-run', $this->anything())
-            ->willReturn([$event]);
-
-        $this->projector->method('accept');
-        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
-
-        $called = false;
-        $callback = static function (RuntimeEvent $e) use (&$called): void {
-            $called = true;
-        };
-
-        $this->poller->poll($this->state, $this->client, onToolTerminal: $callback);
-
-        $this->assertFalse($called);
     }
 
     public function testCompactRejectionRetriesProjectionThenDispatchesDeferredInputExactlyOnce(): void
@@ -849,13 +764,13 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
     }
 
-    public function testPollContinuesAfterToolQuestionCallbackThrows(): void
+    public function testPollContinuesAfterHumanInputCallbackThrows(): void
     {
-        $toolQuestion = new RuntimeEvent(
-            type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
+        $humanInput = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::HumanInputRequested->value,
             runId: 'test-run',
             seq: 10,
-            payload: ['request_id' => 'bash_bg_x', 'kind' => 'confirm', 'schema' => null],
+            payload: ['question_id' => 'q_callback', 'schema' => ['type' => 'string']],
         );
         $cancelled = new RuntimeEvent(
             type: RuntimeEventTypeEnum::RunCancelled->value,
@@ -866,7 +781,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->client->expects($this->once())
             ->method('events')
             ->with('test-run', $this->anything())
-            ->willReturn([$toolQuestion, $cancelled]);
+            ->willReturn([$humanInput, $cancelled]);
 
         $this->projector->expects($this->exactly(2))
             ->method('accept');
@@ -880,15 +795,15 @@ final class RuntimeEventPollerTest extends TestCase
             ->with(
                 'RuntimeEventPoller event callback failed',
                 $this->callback(static function (array $context): bool {
-                    return 'onToolQuestionRequested' === ($context['callback'] ?? null)
-                        && RuntimeEventTypeEnum::ToolQuestionRequested->value === ($context['runtime_event_type'] ?? null);
+                    return 'onHumanInputRequested' === ($context['callback'] ?? null)
+                        && RuntimeEventTypeEnum::HumanInputRequested->value === ($context['runtime_event_type'] ?? null);
                 }),
             );
 
         $this->poller->poll(
             $this->state,
             $this->client,
-            onToolQuestionRequested: static function (): void {
+            onHumanInputRequested: static function (): void {
                 throw new \RuntimeException('simulated overlay failure');
             },
         );

@@ -167,12 +167,6 @@ final class TuiSessionCompositionFactory
             onHumanInputRequested: static function (RuntimeEvent $event) use ($eventHandler, $client, $questionCoordinator, $state, $screen): void {
                 $eventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
             },
-            onToolQuestionRequested: static function (RuntimeEvent $event) use ($eventHandler, $client, $questionCoordinator, $state): void {
-                $eventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state);
-            },
-            onToolTerminal: static function (RuntimeEvent $event) use ($eventHandler, $questionCoordinator, $questionController): void {
-                $eventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
-            },
             onLeavingChildRun: static function (string $childRunId) use ($questionCoordinator, $questionController): void {
                 $questionCoordinator->removeForRun($childRunId);
                 $questionController->close();

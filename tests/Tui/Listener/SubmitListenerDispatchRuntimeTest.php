@@ -29,7 +29,6 @@ use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
-use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -723,7 +722,6 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->questionCoordinator->enqueue(
             new QuestionRequest(
                 requestId: 'parent_main_hitl',
-                source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Which docs file would you like me to inspect and summarize?',
                 runId: $parentRunId),

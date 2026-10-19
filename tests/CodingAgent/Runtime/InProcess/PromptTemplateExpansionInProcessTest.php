@@ -121,30 +121,6 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
         $this->assertTrue($this->spyRunner->answerHumanCalls[0]['answer']);
     }
 
-    public function testAnswerToolQuestionIsNotExpanded(): void
-    {
-        $this->writeTemplate('review', 'expanded:$@');
-
-        // No ToolQuestionStore is injected into the container, so the
-        // answer_tool_question path will throw. But we can still verify
-        // the branch is reached BEFORE any expansion would happen by
-        // catching the exception and checking no steer/followUp were made.
-        try {
-            $this->client()->send('run-1', new UserCommand(
-                type: 'answer_tool_question',
-                text: '/review yes',
-                payload: ['request_id' => 'req-1', 'answer' => true],
-            ));
-        } catch (\RuntimeException $e) {
-            // Expected: ToolQuestionStore not configured
-            $this->assertStringContainsString('ToolQuestionStore', $e->getMessage());
-        }
-
-        // No expansion should have leaked into steer/followUp.
-        $this->assertCount(0, $this->spyRunner->steerMessages);
-        $this->assertCount(0, $this->spyRunner->followUpMessages);
-    }
-
     // ── send() passthrough ────────────────────────────────────────
 
     public function testSendPassthroughForNonMatchingSlash(): void

@@ -13,7 +13,6 @@ use Ineersa\Tui\Listener\ReloadCommandHandler;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
-use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -260,7 +259,6 @@ final class ReloadCommandHandlerTest extends TestCase
         $coordinator = new QuestionCoordinator();
         $coordinator->enqueue(new QuestionRequest(
             requestId: 'q-1',
-            source: QuestionSource::AgentCore,
             kind: QuestionKind::Confirm,
             prompt: 'Approve?'));
         $handler = new ReloadCommandHandler(
@@ -316,7 +314,6 @@ final class ReloadCommandHandlerTest extends TestCase
             $coordinator = new QuestionCoordinator();
             $coordinator->enqueue(new QuestionRequest(
                 requestId: 'q-1',
-                source: QuestionSource::AgentCore,
                 kind: QuestionKind::Confirm,
                 prompt: 'Approve?'));
 

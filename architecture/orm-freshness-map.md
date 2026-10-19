@@ -37,23 +37,7 @@ Used by the TUI, runtime startup, and model selection in workers. Both the TUI a
 
 The footer branch adds refresh to the shared point-lookup helper. That covers model reads and writes, but **not the session-list query**. It also refreshes callers that only need existence/deletion, where a field refresh is unnecessary.
 
-## 2. Questions waiting for user input
-
-Source: [ToolQuestionStore](../src/CodingAgent/Tool/ToolQuestion/ToolQuestionStore.php).
-
-Workers create questions. The controller and continuation paths read, answer, or cancel them.
-
-| Method | Database work | Decision | Why / current behavior |
-|---|---|---|---|
-| `findByRequestId`, `pollAnswer` | SELECT one question | **Already fresh** | `pollAnswer` delegates to `findByRequestId`, which clears the EM before SELECT. No additional refresh needed. |
-| `findUnemittedPendingQuestions`, `findPendingQuestionsForRun` | SELECT question list | **Already fresh** | Same clear-before-SELECT behavior. |
-| `create` | Look up existing request, otherwise INSERT | **Already fresh** lookup; **no refresh** on insert | Uses the fresh lookup and clears/reloads after a duplicate-insert conflict. |
-| `markEmitted`, `answer`, `cancel`, private `answerWithCallable` | SELECT, check status, UPDATE | **Already fresh** before mutation | Uses the fresh lookup, then changes fields and flushes. Do not refresh after changing them. |
-| `cancelPendingQuestionsCreatedBefore` | Bulk UPDATE | **No refresh before SQL**; discard affected cached objects afterwards | Current code clears before and after. Bulk UPDATE does not update cached entities. |
-
-**Problem here is the broad clear, not a missing refresh.** It also detaches unrelated session/process entities. Do not copy this pattern into every repository. Replacing it needs proof that pending changes in other stores survive. A fresh read also does not prevent two processes from answering/cancelling simultaneously.
-
-## 3. Background processes
+## 2. Background processes
 
 Source: [ProcessStore](../src/CodingAgent/Tool/BackgroundProcess/ProcessStore.php), using [BackgroundProcessRepository](../src/CodingAgent/Entity/BackgroundProcessRepository.php).
 
@@ -70,7 +54,7 @@ Tools register processes. The controller reads completion files, updates records
 
 Do not clear between loading process records and saving their changed status. That would detach the objects and can prevent the updates from being saved.
 
-## 4. Run status and parent/child identity
+## 3. Run status and parent/child identity
 
 Source: [RunOperationalProjectionRepository](../src/CodingAgent/Repository/RunOperationalProjectionRepository.php) and [RunRelationshipReader](../src/CodingAgent/Repository/RunRelationshipReader.php).
 
@@ -83,7 +67,7 @@ Run-control writes this projection. Workers read it for cancellation and child-r
 | `deleteForOwnerSession` | SELECT matching rows, DELETE | **No field refresh** | Deletes query results by identity, not mutable status. |
 | `isAgentChild`, `readParentRunId`, `requireKnownTopLevel` → private `requireKnown` | SELECT parent identity through `find()` | **Check first** | Parent identity is normally fixed, so caching it can be fine. The methods also promise the row exists; cached objects can outlive deletion. Confirm that lifetime before declaring caching safe. |
 
-## 5. Deferred tool completion
+## 4. Deferred tool completion
 
 Source: [DeferredToolCompletionRepository](../src/CodingAgent/Entity/DeferredToolCompletionRepository.php).
 
@@ -97,7 +81,7 @@ Tool and run-control paths coordinate a tool result that arrives later.
 | `markCompleted`, successful SQL path | Conditional SQL UPDATE, then detach matching cached entity | **No refresh before SQL**; keep targeted detach afterwards | SQL tests the actual stored status. Detach stops this process reusing the old cached status. |
 | `markCompleted`, zero-row SQL fallback | ORM SELECT, check status, possibly UPDATE | **Refresh** before fallback decision | The cached entity may still say pending after another process completed it. Review this fallback separately; don't add a global clear. |
 
-## 6. Deferred subagent batches
+## 5. Deferred subagent batches
 
 Source: [DeferredSubagentBatchRepository](../src/CodingAgent/Entity/DeferredSubagentBatchRepository.php).
 
@@ -117,7 +101,7 @@ Launch, progress, interruption, and child-lifecycle processing can update these 
 
 These clears already exist. Keeping them at transaction completion does **not** authorize adding clears halfway through other operations. Refresh also does not replace SQL version/status checks.
 
-## 7. Deferred subagent children
+## 6. Deferred subagent children
 
 Source: [DeferredSubagentChildRepository](../src/CodingAgent/Entity/DeferredSubagentChildRepository.php).
 
@@ -130,7 +114,7 @@ Source: [DeferredSubagentChildRepository](../src/CodingAgent/Entity/DeferredSuba
 
 `assertChildMatchesIntent` and `decodeChildLifecycleProjection` do not query the database. Their input must already have the freshness required by the caller.
 
-## 8. Queries that do not use cached ORM entities
+## 7. Queries that do not use cached ORM entities
 
 | Database use | Source | Decision |
 |---|---|---|
@@ -146,7 +130,7 @@ Event logs and session snapshot files are not database queries and are outside t
 1. **Session reads/writes and session list:** require fresh fields at the operations marked above. Do not add refresh to every method just because they share a helper.
 2. **Model selection:** route picker, `/model`, and Ctrl+P through one operation that also updates the pending draft selection. This is a separate bug; database refresh cannot fix it.
 3. **Background and deferred status reads:** address the rows marked Refresh. Keep existing SQL concurrency checks.
-4. **Global clears:** audit question-store clears and helper callers before changing them. Never clear while another operation has unsaved changes.
+4. **Global clears:** audit helper callers before changing them. Never clear while another operation has unsaved changes.
 
 Workers have source-wired clearing between messages. TUI/controller reads do not get that worker reset. Neither guarantees freshness during one long-running operation.
 

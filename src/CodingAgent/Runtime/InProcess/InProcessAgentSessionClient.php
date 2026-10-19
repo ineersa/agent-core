@@ -33,8 +33,6 @@ use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BashBackgroundRequestService;
-use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionAnswerResolver;
-use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 
@@ -75,8 +73,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore $bootstrapSpools,
         private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer $bootstrapTransfer,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
-        private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
-        private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
         private readonly ?McpSessionLifecycleDispatcher $mcpDispatcher = null,
         private readonly ?AgentArtifactRegistry $artifactRegistry = null,
     ) {
@@ -155,7 +151,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     {
         $text = $command->text ?? '';
 
-        // answer_human, answer_tool_question, and shell_command carry
+        // answer_human and shell_command carry
         // machine/payload answers, so prompt templates do not expand them.
         if (\in_array($command->type, ['message', 'steer', 'follow_up'], true)) {
             $text = $this->promptTemplateService->expandPromptTemplate($text);
@@ -188,7 +184,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
                 (string) ($command->payload['question_id'] ?? ''),
                 $command->payload['answer'] ?? null,
             ),
-            'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
             'shell_command' => $this->handleShellCommandSend($runId, $command),
             'background_bash' => $this->backgroundRequests->request($runId, $command->payload),
             'select_history_turn' => $this->handleInProcessSelectHistoryTurn($runId, $command),
@@ -464,27 +459,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->mcpDispatcher?->dispatchInitialize($runId, 'start_run');
 
         return new RunHandle(runId: $runId, status: 'running');
-    }
-
-    /**
-     * Handle an answer_tool_question command by writing the answer
-     * to the ToolQuestionStore. The blocked tool worker polls the store
-     * and will pick up the answer.
-     */
-    private function handleAnswerToolQuestion(string $runId, UserCommand $command): void
-    {
-        if (null === $this->toolQuestionStore) {
-            throw new \RuntimeException('ToolQuestionStore not configured; cannot handle answer_tool_question command.');
-        }
-
-        $requestId = (string) ($command->payload['request_id'] ?? '');
-
-        if ('' === $requestId) {
-            throw new \InvalidArgumentException('answer_tool_question requires request_id in payload');
-        }
-
-        $answer = $this->answerResolver->resolve($command->payload['answer'] ?? null);
-        $this->toolQuestionStore->answer($requestId, $answer);
     }
 
     private function handleInProcessSelectHistoryTurn(string $runId, UserCommand $command): void

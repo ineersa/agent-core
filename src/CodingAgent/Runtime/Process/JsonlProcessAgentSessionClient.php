@@ -414,7 +414,6 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'follow_up' => 'follow_up',
             'append_message' => 'append_message',
             'answer_human' => 'answer_human',
-            'answer_tool_question' => 'answer_tool_question',
             'shell_command' => 'shell_command',
             'background_bash' => 'background_bash',
             'select_history_turn' => 'select_history_turn',
@@ -423,10 +422,6 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         $payload = match ($type) {
             'background_bash' => $command->payload,
-            'answer_tool_question' => array_filter([
-                'request_id' => $command->payload['request_id'] ?? '',
-                'answer' => $command->payload['answer'] ?? null,
-            ], static fn (mixed $v): bool => null !== $v),
             'shell_command' => ['text' => $command->text],
             'select_history_turn' => array_filter([
                 'turn_no' => $command->payload['turn_no'] ?? null,

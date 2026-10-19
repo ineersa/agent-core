@@ -53,7 +53,7 @@ final class RuntimeEventEmitterTest extends TestCase
 
         $emitter->shutdown();
         $this->assertTrue($emitter->isShuttingDown());
-        $this->assertFalse($emitter->tryEmit(new RuntimeEvent(RuntimeEventTypeEnum::ToolQuestionRequested->value, 'run', 0, [])));
+        $this->assertFalse($emitter->tryEmit(new RuntimeEvent(RuntimeEventTypeEnum::HumanInputRequested->value, 'run', 0, [])));
     }
 
     public function testEmitWritesJsonlToStdout(): void

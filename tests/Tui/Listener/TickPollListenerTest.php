@@ -28,7 +28,6 @@ use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
-use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
@@ -97,7 +96,7 @@ final class TickPollListenerTest extends TestCase
         $childProjector->accept(new RuntimeEvent('user.message_submitted', 'child', 1, ['text' => 'Child-only projection']));
         $childPoller = new SubagentLiveChildViewPoller($childProjector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
         $coordinator = new QuestionCoordinator();
-        $question = new QuestionRequest('child-question', QuestionSource::AgentCore, QuestionKind::Confirm, 'Child question', runId: 'child');
+        $question = new QuestionRequest('child-question', QuestionKind::Confirm, 'Child question', runId: 'child');
         $coordinator->enqueue($question);
         $controller = new QuestionController($coordinator, $harness->screen());
         $controller->open($question);
@@ -296,121 +295,6 @@ final class TickPollListenerTest extends TestCase
             'Untouched pre-attach editor',
             '',
         ];
-    }
-
-    /**
-     * Confirm cancel must send a boolean false answer so the bash background
-     * poller receives a resolved decision instead of hanging on null.
-     */
-    public function testConfirmOnCancelSendsBooleanFalse(): void
-    {
-        $sentCommand = null;
-
-        $client = $this->createMock(AgentSessionClient::class);
-        $client->expects($this->once())
-            ->method('send')
-            ->with(
-                $this->identicalTo('run-1'),
-                $this->callback(static function (UserCommand $cmd) use (&$sentCommand): bool {
-                    $sentCommand = $cmd;
-
-                    return true;
-                }),
-            );
-
-        $coordinator = new QuestionCoordinator();
-
-        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleConfirmToolQuestion');
-        $ref->invoke(
-            $this->runtimeQuestionHandler(),
-            [
-                'prompt' => 'Move it to the background?',
-                'request_id' => 'rq_test',
-                'tool_call_id' => 'tc_test',
-                'tool_name' => 'bash',
-            ],
-            'tool_rq_test',
-            'run-1',
-            'rq_test',
-            $client,
-            $coordinator,
-        );
-
-        $this->assertTrue($coordinator->actionRequired(), 'Coordinator must have active request after enqueue');
-
-        $coordinator->cancel();
-
-        $this->assertNotNull($sentCommand, 'Expected UserCommand to be sent on cancel');
-        $this->assertSame('answer_tool_question', $sentCommand->type);
-        $this->assertSame('rq_test', $sentCommand->payload['request_id'] ?? null);
-        $this->assertFalse($sentCommand->payload['answer'] ?? true);
-        $this->assertSame('confirm', $sentCommand->payload['kind'] ?? null);
-    }
-
-    public function testConfirmToolQuestionWithNullSchemaEnqueuesConfirmWithoutWarning(): void
-    {
-        $warnings = [];
-        set_error_handler(static function (int $severity, string $message) use (&$warnings): bool {
-            if (\E_USER_WARNING === $severity) {
-                $warnings[] = $message;
-            }
-
-            return true;
-        });
-
-        try {
-            $client = $this->createStub(AgentSessionClient::class);
-            $coordinator = new QuestionCoordinator();
-
-            $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleToolQuestionRequested');
-            $event = new RuntimeEvent(
-                type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
-                runId: 'run-bg',
-                seq: 0,
-                payload: [
-                    'request_id' => 'bash_bg_run1_tc1_99',
-                    'kind' => 'confirm',
-                    'schema' => null,
-                    'prompt' => 'Move it to the background?',
-                ],
-            );
-
-            $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator);
-
-            $this->assertSame([], $warnings, 'Confirm with null schema must not emit E_USER_WARNING');
-            $this->assertTrue($coordinator->actionRequired());
-
-            $active = $coordinator->activeRequest();
-            $this->assertNotNull($active);
-            $this->assertSame(QuestionKind::Confirm, $active->kind);
-        } finally {
-            restore_error_handler();
-        }
-    }
-
-    public function testConfirmToolQuestionWithBooleanSchemaEnqueuesConfirm(): void
-    {
-        $client = $this->createStub(AgentSessionClient::class);
-        $coordinator = new QuestionCoordinator();
-
-        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleToolQuestionRequested');
-        $event = new RuntimeEvent(
-            type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
-            runId: 'run-bg',
-            seq: 0,
-            payload: [
-                'request_id' => 'bash_bg_run1_tc1_100',
-                'kind' => 'confirm',
-                'schema' => '{"type":"boolean"}',
-                'prompt' => 'Move it to the background?',
-            ],
-        );
-
-        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator);
-
-        $active = $coordinator->activeRequest();
-        $this->assertNotNull($active);
-        $this->assertSame(QuestionKind::Confirm, $active->kind);
     }
 
     // ── QH-06: human_input.requested kind routing and answer normalization ──
@@ -854,7 +738,6 @@ final class TickPollListenerTest extends TestCase
         $coordinator->enqueue(
             new QuestionRequest(
                 requestId: 'hitl_guard_test',
-                source: QuestionSource::AgentCore,
                 kind: QuestionKind::Choice,
                 prompt: 'Test prompt',
                 runId: 'run-guard',
@@ -927,7 +810,6 @@ final class TickPollListenerTest extends TestCase
         $coordinator->enqueue(
             new QuestionRequest(
                 requestId: 'hitl_orphan_test',
-                source: QuestionSource::AgentCore,
                 kind: QuestionKind::Choice,
                 prompt: 'Orphan test',
                 runId: 'run-orphan',
@@ -994,7 +876,6 @@ final class TickPollListenerTest extends TestCase
         $coordinator->enqueue(
             new QuestionRequest(
                 requestId: 'parent_hitl_active',
-                source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Which docs file would you like me to inspect and summarize?',
                 runId: $parentRunId),
@@ -1072,7 +953,6 @@ final class TickPollListenerTest extends TestCase
         $coordinator->enqueue(
             new QuestionRequest(
                 requestId: 'parent_hitl_chrome',
-                source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Which docs file would you like me to inspect and summarize?',
                 runId: $parentRunId),

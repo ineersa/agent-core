@@ -235,7 +235,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
     }
 
     /**
-     * Emit a typed non-terminal human-input suspension. No ToolQuestion row, no poll.
+     * Emit a typed non-terminal suspension through canonical human input.
      */
     private function handleRequireApproval(
         ToolCallRequested $event,
@@ -414,8 +414,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 
     private function hookRegistryId(string $hookClass): string
     {
-        // Stable registry identity (not process-local). crc32b matches prior
-        // deterministic ToolQuestion requestId namespace style.
+        // Stable registry identity across processes.
         return hash('crc32b', $hookClass);
     }
 
