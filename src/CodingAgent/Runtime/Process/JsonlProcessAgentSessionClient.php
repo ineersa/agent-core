@@ -1078,7 +1078,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 $event = JsonlCodec::decodeEvent($trimmed);
             } catch (\JsonException|\RuntimeException) {
                 // Skip malformed stdout lines, but preserve them as diagnostics.
-                $this->stderrBuffer .= "\n[malformed stdout] ".$trimmed;
+                $this->stderrBuffer = ProcessDiagnosticTailBuffer::append($this->stderrBuffer, "\n[malformed stdout] ".$trimmed);
                 continue;
             }
             if (RuntimeEventTypeEnum::SessionRestoring->value === $event->type) {
@@ -1221,7 +1221,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         $chunk = stream_get_contents($this->pipes[2]);
         if (false !== $chunk && '' !== $chunk) {
-            $this->stderrBuffer .= $chunk;
+            $this->stderrBuffer = ProcessDiagnosticTailBuffer::append($this->stderrBuffer, $chunk);
         }
     }
 

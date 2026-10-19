@@ -867,6 +867,57 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         }
     }
 
+    public function testRecentDiagnosticsAreBoundedWithoutTruncatingValidProtocolPayloads(): void
+    {
+        $client = $this->createIdleClient();
+        try {
+            $this->injectStderrChunk($client, 'discarded-stderr'.str_repeat('界', 6000).'stderr-END');
+            $diagnostics = new \ReflectionProperty($client, 'stderrBuffer');
+            $this->assertLessThanOrEqual(16_384, \strlen($diagnostics->getValue($client)));
+            $this->assertTrue(mb_check_encoding($diagnostics->getValue($client), 'UTF-8'));
+            $this->assertStringEndsWith('stderr-END', $diagnostics->getValue($client));
+
+            $lines = [];
+            for ($i = 0; $i < 35; ++$i) {
+                $lines[] = 'malformed-'.$i.str_repeat('界', 180).'TAIL-'.$i;
+            }
+            $text = str_repeat('界', 10_000);
+            $lines[] = json_encode(new RuntimeEvent('assistant.text_delta', 'parent-run', 0, ['block_id' => 'large', 'text' => $text])->toArray(), \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR);
+            $this->injectStdoutJsonlLines($client, $lines);
+            $events = iterator_to_array($client->events('parent-run'));
+            $this->assertCount(1, $events);
+            $this->assertSame($text, $events[0]->payload['text']);
+            $tail = $diagnostics->getValue($client);
+            $this->assertLessThanOrEqual(16_384, \strlen($tail));
+            $this->assertTrue(mb_check_encoding($tail, 'UTF-8'));
+            $this->assertStringNotContainsString('discarded-stderr', $tail);
+            $this->assertStringEndsWith('TAIL-34', $tail);
+            $this->assertStringContainsString($tail, new \ReflectionMethod($client, 'diagnosticOutput')->invoke($client));
+        } finally {
+            $client->shutdown();
+        }
+        $this->assertSame('', new \ReflectionProperty($client, 'stderrBuffer')->getValue($client));
+    }
+
+    public function testDiagnosticRolloverDoesNotEvictFatalOutcomeOrCommandRefusal(): void
+    {
+        $client = $this->createIdleClient();
+        try {
+            $this->injectStderrChunk($client, str_repeat('old stderr ', 3000));
+            $this->injectStdoutJsonlLines($client, [str_repeat('malformed ', 4000), trim($this->fatalControllerLine())]);
+            $this->assertFatalControllerEvents($client, 'parent-run');
+            $tail = new \ReflectionProperty($client, 'stderrBuffer')->getValue($client);
+            $this->assertLessThanOrEqual(16_384, \strlen($tail));
+            $this->assertStringNotContainsString('old stderr', $tail);
+            $this->assertFatalControllerEvents($client, 'child-run');
+            $this->expectException(RuntimeTransportException::class);
+            $this->expectExceptionMessage('Broker died; uncertain deliveries must not be replayed.');
+            $client->cancel('parent-run');
+        } finally {
+            $client->shutdown();
+        }
+    }
+
     private function fatalControllerLine(): string
     {
         return json_encode(['type' => 'protocol.error', 'runId' => '', 'seq' => 0,
@@ -983,6 +1034,22 @@ PHP);
             logger: $logger ?? new TestLogger(),
             sessionStore: \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(\Doctrine\ORM\EntityManagerInterface::class), $this->tmpDir),
         );
+    }
+
+    private function injectStderrChunk(JsonlProcessAgentSessionClient $client, string $chunk): void
+    {
+        $property = new \ReflectionProperty($client, 'pipes');
+        $original = $property->getValue($client);
+        $stream = fopen('php://memory', 'w+b');
+        fwrite($stream, $chunk);
+        rewind($stream);
+        $property->setValue($client, array_replace($original, [2 => $stream]));
+        try {
+            new \ReflectionMethod($client, 'drainStderr')->invoke($client);
+        } finally {
+            $property->setValue($client, $original);
+            fclose($stream);
+        }
     }
 
     private function createIdleClient(?TestLogger $logger = null): JsonlProcessAgentSessionClient
