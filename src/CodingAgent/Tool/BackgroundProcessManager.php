@@ -505,14 +505,17 @@ final class BackgroundProcessManager
         return true;
     }
 
-    /** @return list<BackgroundProcess> */
+    /**
+     * Read-only selection snapshot. Native supervision and deadline enforcement
+     * remain with the execution owner/poller, not TUI candidate discovery.
+     *
+     * @return list<BackgroundProcess>
+     */
     public function foregroundTools(string $runId): array
     {
         if ('' === $runId) {
             return [];
         }
-
-        $this->refreshAllUnfinished($runId);
 
         return array_values(array_filter(
             $this->store->fetchAllUnfinished($runId),

@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Tests\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -51,6 +53,18 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
     {
         yield 'legacy' => ["\x02"];
         yield 'kitty' => ["\x1b[98;5u"];
+    }
+
+    public function testCandidateDiscoveryDoesNotEnforceNativeDeadlines(): void
+    {
+        $process = $this->manager->start($this->command, 'visible', 'expired-call', hrtime(true) - 1);
+        foreach ([JsonlProcessAgentSessionClient::class, InProcessAgentSessionClient::class] as $clientClass) {
+            $candidates = self::getContainer()->get($clientClass)->foregroundBash('visible');
+            $this->assertCount(1, $candidates);
+            $this->assertSame($process->id, $candidates[0]->id);
+            $this->assertTrue(posix_kill($process->pid, 0), 'Only the native owner/poller may enforce the deadline.');
+            $this->assertNull($this->manager->findByRecordId($process->id)?->finishedAt);
+        }
     }
 
     #[DataProvider('inputSequences')]
@@ -157,6 +171,8 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
 
     private function mount(string $runId, AgentSessionClient $client, ?TuiSessionState $state = null): VirtualTuiHarness
     {
+        $runtimeClient = self::getContainer()->get(JsonlProcessAgentSessionClient::class);
+        $client->method('foregroundBash')->willReturnCallback($runtimeClient->foregroundBash(...));
         $harness = new VirtualTuiHarness(sessionId: $runId);
         $context = $this->buildTuiContext()
             ->withTui($harness->tui())
@@ -164,7 +180,7 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
             ->withState($state ?? new TuiSessionState($runId))
             ->withClient($client)
             ->build();
-        (new BackgroundBashInputListener($this->manager))->register($context);
+        (new BackgroundBashInputListener())->register($context);
         $harness->startInputLoop();
 
         return $harness;

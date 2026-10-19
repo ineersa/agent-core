@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -87,6 +88,12 @@ final class CompactCommandSpyClient implements AgentSessionClient
     public ?string $lastCompactRunId = null;
     public ?string $lastCompactInstructions = null;
     public bool $throwOnCompact = false;
+
+    /** @return list<BashBackgroundCandidateDTO> */
+    public function foregroundBash(string $runId): array
+    {
+        return [];
+    }
 
     public function start(StartRunRequest $request): RunHandle
     {

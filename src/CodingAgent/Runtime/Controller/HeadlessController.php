@@ -96,7 +96,7 @@ final class HeadlessController
         private readonly int $llmWorkerCount = 0,
         /**
          * Optional tool question poller for cross-process tool questions
-         * (e.g. bash background prompts). When provided, polls the DB for
+         * requiring local confirmation. When provided, polls the DB for
          * un-emitted tool questions and emits RuntimeEvents to the TUI.
          */
         private readonly ?ToolQuestionPoller $toolQuestionPoller = null,

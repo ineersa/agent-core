@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 
 /**
@@ -109,6 +110,7 @@ PHP);
         );
 
         $client = new JsonlProcessAgentSessionClient(
+            backgroundProcesses: self::getContainer()->get(BackgroundProcessManager::class),
             runtimeConfig: $runtimeConfig,
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: new ToolFilterRuntimeConfig(),
@@ -312,6 +314,7 @@ PHP);
         );
 
         return new JsonlProcessAgentSessionClient(
+            backgroundProcesses: self::getContainer()->get(BackgroundProcessManager::class),
             runtimeConfig: $runtimeConfig,
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             toolFilterConfig: new ToolFilterRuntimeConfig(),

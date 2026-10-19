@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Support;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -14,6 +15,12 @@ final class RecordingAgentSessionClient implements AgentSessionClient
 {
     /** @var list<array{op: string, runId: ?string, command: ?UserCommand}> */
     public array $ops = [];
+
+    /** @return list<BashBackgroundCandidateDTO> */
+    public function foregroundBash(string $runId): array
+    {
+        return [];
+    }
 
     public function start(StartRunRequest $request): RunHandle
     {

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
-use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\Tui\Layout\InputPriority;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -18,10 +17,6 @@ use Symfony\Component\Tui\Widget\TextWidget;
 
 final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
 {
-    public function __construct(private BackgroundProcessManager $processes)
-    {
-    }
-
     public function register(TuiRuntimeContext $context): void
     {
         $overlay = new PickerOverlay();
@@ -29,8 +24,7 @@ final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
             $overlay->close();
             $context->tui->setFocus($context->screen->editorWidget());
         };
-        $processes = $this->processes;
-        $context->tui->addListener(static function (InputEvent $event) use ($context, $overlay, $close, $processes): void {
+        $context->tui->addListener(static function (InputEvent $event) use ($context, $overlay, $close): void {
             $parser = $context->screen->editorWidget()->getKeybindings()->getParser();
             $data = $event->getData();
             if ($parser->isKeyRelease($data) || !$parser->matches($data, Key::ctrl('b'))) {
@@ -48,7 +42,7 @@ final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
             }
 
             $runId = $context->state->visibleQuestionOwnerRunId();
-            $candidates = $processes->foregroundTools($runId);
+            $candidates = $context->client->foregroundBash($runId);
             if ([] === $candidates) {
                 return;
             }

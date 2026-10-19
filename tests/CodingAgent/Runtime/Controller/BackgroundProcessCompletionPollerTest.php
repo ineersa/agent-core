@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
@@ -71,6 +72,12 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             public function __construct(
                 private array &$sentCommands,
             ) {
+            }
+
+            /** @return list<BashBackgroundCandidateDTO> */
+            public function foregroundBash(string $runId): array
+            {
+                return [];
             }
 
             public function start(\Ineersa\CodingAgent\Runtime\Contract\StartRunRequest $request): \Ineersa\CodingAgent\Runtime\Contract\RunHandle

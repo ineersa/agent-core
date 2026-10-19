@@ -214,7 +214,7 @@ final class RuntimeQuestionEventHandler
      * The event carries a request_id, prompt, kind, schema, and metadata
      * from the tool that needs user interaction.
      *
-     * Local tool questions are boolean/confirm only (e.g. bash background prompts).
+     * Local tool questions are boolean confirmations.
      * Extension/SafeGuard approvals use human_input.requested (canonical HITL).
      *
      * All tool_question.requested events are LOCAL tool questions:
@@ -223,7 +223,7 @@ final class RuntimeQuestionEventHandler
      * - answer sends answer_tool_question (not answer_human)
      * - no WaitingHuman state transition in AgentCore
      * - no catalog/live WaitingHuman or main/picker "needs input" attention
-     *   (bash background confirms stay answerable overlays only)
+     *   (local confirmations stay answerable overlays only)
      *
      * A guard against duplicate request IDs prevents enqueueing the
      * same question twice if the event stream replays.

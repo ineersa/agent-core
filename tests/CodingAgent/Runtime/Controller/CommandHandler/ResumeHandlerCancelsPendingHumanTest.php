@@ -29,6 +29,7 @@ use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BashBackgroundRequestService;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -155,6 +156,7 @@ final class ResumeHandlerCancelsPendingHumanTest extends IsolatedKernelTestCase
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $bus,
             backgroundRequests: self::getContainer()->get(BashBackgroundRequestService::class),
+            backgroundProcesses: self::getContainer()->get(BackgroundProcessManager::class),
             bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
             bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
         );

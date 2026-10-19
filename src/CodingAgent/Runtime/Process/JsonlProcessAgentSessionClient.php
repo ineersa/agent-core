@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Process;
 
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
@@ -19,6 +20,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\RepairResultNormalizer;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use Psr\Log\LoggerInterface;
 
@@ -156,6 +158,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         private readonly ToolFilterRuntimeConfig $toolFilterConfig,
         private readonly LoggerInterface $logger,
         private readonly HatfieldSessionStore $sessionStore,
+        private readonly BackgroundProcessManager $backgroundProcesses,
     ) {
         $this->compactEventBuffer = new RuntimeEventPerRunCompactBuffer();
         $this->eventBufferWatermarkActive = false;
@@ -165,6 +168,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     public function __destruct()
     {
         $this->stopProcess();
+    }
+
+    public function foregroundBash(string $runId): array
+    {
+        return array_map(
+            static fn ($process): BashBackgroundCandidateDTO => new BashBackgroundCandidateDTO($process->id, (string) $process->toolCallId, $process->pid),
+            $this->backgroundProcesses->foregroundTools($runId),
+        );
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Contract;
 
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
 /**
@@ -35,6 +36,9 @@ interface AgentSessionClient
     public function cancelBootstrap(string $runId): void;
 
     public function send(string $runId, UserCommand $command): void;
+
+    /** @return list<BashBackgroundCandidateDTO> Read-only native candidates for the visible run. */
+    public function foregroundBash(string $runId): array;
 
     /**
      * Fatal controller-session diagnostics cross run filtering and may have an

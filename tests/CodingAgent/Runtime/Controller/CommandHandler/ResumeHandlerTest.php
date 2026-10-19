@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -79,6 +80,12 @@ final class AttachSpySessionClient implements AgentSessionClient
 {
     /** @var list<string> */
     public array $attachRunIds = [];
+
+    /** @return list<BashBackgroundCandidateDTO> */
+    public function foregroundBash(string $runId): array
+    {
+        return [];
+    }
 
     public function start(StartRunRequest $request): RunHandle
     {

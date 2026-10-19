@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
@@ -30,6 +31,7 @@ use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BashBackgroundRequestService;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionAnswerResolver;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
@@ -69,6 +71,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly ModelResolver $modelResolver,
         private readonly MessageBusInterface $commandBus,
         private readonly BashBackgroundRequestService $backgroundRequests,
+        private readonly BackgroundProcessManager $backgroundProcesses,
         private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore $bootstrapSpools,
         private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer $bootstrapTransfer,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
@@ -89,6 +92,14 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $messages = $this->buildContextMessages();
 
         return $this->startWithContext($request, $metadata, $messages);
+    }
+
+    public function foregroundBash(string $runId): array
+    {
+        return array_map(
+            static fn ($process): BashBackgroundCandidateDTO => new BashBackgroundCandidateDTO($process->id, (string) $process->toolCallId, $process->pid),
+            $this->backgroundProcesses->foregroundTools($runId),
+        );
     }
 
     public function attach(string $runId): RunHandle

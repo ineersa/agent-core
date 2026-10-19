@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -216,6 +217,12 @@ final class ObservingSpyClient implements AgentSessionClient
     public function endObservingChildRun(string $childRunId): void
     {
         $this->calls[] = 'end:'.$childRunId;
+    }
+
+    /** @return list<BashBackgroundCandidateDTO> */
+    public function foregroundBash(string $runId): array
+    {
+        return [];
     }
 
     public function start(StartRunRequest $request): RunHandle

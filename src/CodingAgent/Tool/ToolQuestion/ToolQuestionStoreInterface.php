@@ -9,8 +9,7 @@ use Ineersa\CodingAgent\Entity\ToolQuestion;
 /**
  * Interface for the cross-process tool question store.
  *
- * Abstracts DB-backed persistence so the AnswerToolQuestionHandler
- * and RuntimeBashBackgroundPromptAdapter can be tested with fakes.
+ * Persists local tool confirmations independently of canonical human input.
  */
 interface ToolQuestionStoreInterface
 {
@@ -29,7 +28,7 @@ interface ToolQuestionStoreInterface
     /**
      * Find pending tool questions for one run, including already-emitted ones.
      *
-     * Used by child live-view entry to restore local bash-background prompts from
+     * Used by child live-view entry to restore local tool confirmations from
      * durable DB state after leaving agents-live (those events are not in events.jsonl).
      *
      * @return list<ToolQuestion>
@@ -49,9 +48,7 @@ interface ToolQuestionStoreInterface
      *
      * Returns null if the question is still pending (no user decision yet).
      * Returns true if the user answered yes/accept.
-     * Returns false if the user answered no, cancelled, or timed out — because
-     * the bash prompt semantics treat both a explicit-no and cancellation/timeout
-     * as a decline to move the command to the background.
+     * Returns false if the user answered no, cancelled, or timed out.
      *
      * @return ?bool null if pending, true if accepted, false if declined/cancelled/timed-out
      */
