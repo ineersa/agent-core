@@ -30,6 +30,7 @@ use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
+use Ineersa\CodingAgent\Tool\BashBackgroundRequestService;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionAnswerResolver;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -67,6 +68,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly HatfieldSessionStore $sessionMetaStore,
         private readonly ModelResolver $modelResolver,
         private readonly MessageBusInterface $commandBus,
+        private readonly BashBackgroundRequestService $backgroundRequests,
         private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore $bootstrapSpools,
         private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer $bootstrapTransfer,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
@@ -177,6 +179,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             ),
             'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
             'shell_command' => $this->handleShellCommandSend($runId, $command),
+            'background_bash' => $this->backgroundRequests->request($runId, $command->payload),
             'select_history_turn' => $this->handleInProcessSelectHistoryTurn($runId, $command),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };

@@ -369,17 +369,6 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
-  # BashTool — TOOLS-09 registry-backed bash execution with foreground supervision.
-  # TOOLS-09B overrides the prompt adapter to RuntimeBashBackgroundPromptAdapter,
-  # which routes background confirmations through the TUI question system.
-  Ineersa\CodingAgent\Tool\BashTool:
-    arguments:
-      $promptAdapter: '@Ineersa\CodingAgent\Tool\ToolQuestion\RuntimeBashBackgroundPromptAdapter'
-
-  # Background process status checker for adapter poll loop.
-  Ineersa\CodingAgent\Tool\ToolQuestion\BackgroundProcessStatusCheckerInterface:
-    alias: Ineersa\CodingAgent\Tool\ToolQuestion\BackgroundProcessStatusChecker
-
   # Autowire the tool question store interface.
   Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface:
     alias: Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStore

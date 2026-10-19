@@ -494,9 +494,14 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $foreign = $this->manager->start($command, 'other-run', 'call-foreign');
 
         $controllerManager = $this->createOtherManager();
-        $this->assertSame(2, $controllerManager->requestBackgroundForRun(self::TEST_SESSION));
-        $this->assertSame(0, $controllerManager->requestBackgroundForRun(self::TEST_SESSION));
-        $this->assertSame(0, $controllerManager->requestBackgroundForRun(''));
+        $this->assertFalse($controllerManager->requestBackground(self::TEST_SESSION, $foreign->id, 'call-foreign'));
+        $this->assertFalse($controllerManager->requestBackground(self::TEST_SESSION, $shell->id, 'call-shell'));
+        $this->assertFalse($controllerManager->requestBackground(self::TEST_SESSION, $first->id, 'wrong-call'));
+        $this->assertTrue($controllerManager->requestBackground(self::TEST_SESSION, $first->id, 'call-first'));
+        $this->assertFalse($this->manager->findByRecordId($second->id)?->backgroundRequested);
+        $this->assertTrue($controllerManager->requestBackground(self::TEST_SESSION, $first->id, 'call-first'));
+        $this->assertTrue($controllerManager->requestBackground(self::TEST_SESSION, $second->id, 'call-second'));
+        $this->assertFalse($controllerManager->requestBackground('', $first->id, 'call-first'));
 
         foreach ([$first, $second] as $started) {
             $record = $this->manager->findByRecordId($started->id, self::TEST_SESSION);
@@ -522,12 +527,39 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $backgrounded = $this->manager->start('cat '.escapeshellarg($fifo), self::TEST_SESSION, 'call-background');
         $this->manager->markBackgroundedForRecord($backgrounded->id, self::TEST_SESSION);
 
-        $this->assertSame(0, $this->manager->requestBackgroundForRun(self::TEST_SESSION));
+        $this->assertFalse($this->manager->requestBackground(self::TEST_SESSION, $finished->id, 'call-finished'));
+        $this->assertFalse($this->manager->requestBackground(self::TEST_SESSION, $backgrounded->id, 'call-background'));
         $this->assertFalse($this->manager->findByRecordId($finished->id)?->backgroundRequested);
         $this->assertFalse($this->manager->findByRecordId($backgrounded->id)?->backgroundRequested);
     }
 
     /* ── Helpers ── */
+
+    public function testDetachedProcessKeepsOriginalMonotonicDeadlineAndStops(): void
+    {
+        $this->createManager();
+        $fifo = $this->tmpDir.'/deadline-release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        // This short real deadline is the product delay under test, not a readiness sleep.
+        $originalDeadline = hrtime(true) + 500_000_000;
+        $process = $this->manager->start('cat '.escapeshellarg($fifo), self::TEST_SESSION, 'deadline-call', $originalDeadline);
+        $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
+        $safetyDeadline = hrtime(true) + 2_000_000_000;
+        do {
+            $this->manager->refreshAllUnfinished(self::TEST_SESSION);
+            $record = $this->manager->findByRecordId($process->id, self::TEST_SESSION);
+            if (null !== $record?->finishedAt) {
+                break;
+            }
+            usleep(10_000);
+        } while (hrtime(true) < $safetyDeadline);
+
+        $this->assertNotNull($record?->finishedAt);
+        $this->assertGreaterThanOrEqual($originalDeadline, hrtime(true));
+        $this->assertSame($originalDeadline, $record->deadlineNanoseconds);
+        $this->assertSame($process->pid, $record->pid);
+        $this->assertFalse($record->stoppedByUser);
+    }
 
     private function waitUntilFinished(int $pid, float $timeoutSeconds = 2.0): void
     {

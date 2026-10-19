@@ -92,6 +92,10 @@ class BackgroundProcess
     #[ORM\Column(name: 'background_requested', type: 'boolean', options: ['default' => false])]
     public bool $backgroundRequested = false;
 
+    /** Monotonic system clock shared by worker/controller; restart cleanup stops the process. */
+    #[ORM\Column(name: 'deadline_nanoseconds', type: 'bigint', nullable: true)]
+    public ?int $deadlineNanoseconds = null;
+
     #[ORM\Column(name: 'completion_notified_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $completionNotifiedAt = null;
 
@@ -144,7 +148,7 @@ class BackgroundProcess
 
     /**
      * Mark this process as having been explicitly moved to background
-     * by the user through the background prompt.
+     * by an explicit user background request.
      *
      * Processes with backgroundedAt set are eligible for automatic
      * completion notification via BackgroundProcessCompletionPoller.

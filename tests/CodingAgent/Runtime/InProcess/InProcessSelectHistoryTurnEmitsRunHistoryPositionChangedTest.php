@@ -34,6 +34,7 @@ use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\BashBackgroundRequestService;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Log\NullLogger;
@@ -208,6 +209,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             sessionMetaStore: $container->get(HatfieldSessionStore::class),
             modelResolver: $container->get(ModelResolver::class),
             commandBus: $bus,
+            backgroundRequests: self::getContainer()->get(BashBackgroundRequestService::class),
             bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
             bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
             transientSink: $sink,

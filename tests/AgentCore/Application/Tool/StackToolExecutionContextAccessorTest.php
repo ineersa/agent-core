@@ -16,6 +16,7 @@ final class StackToolExecutionContextAccessorTest extends TestCase
         $accessor = new StackToolExecutionContextAccessor();
 
         $this->assertNull($accessor->current());
+        $this->assertSame(0, $accessor->depth());
     }
 
     public function testRequireCurrentThrowsWhenNoContext(): void
@@ -64,7 +65,11 @@ final class StackToolExecutionContextAccessorTest extends TestCase
         $inner = $this->createContext('run-a', 2, 'call-2', 'inner');
 
         $result = $accessor->with($outer, static function () use ($accessor, $inner): string {
+            self::assertSame(1, $accessor->depth());
+
             return $accessor->with($inner, static function () use ($accessor): string {
+                self::assertSame(2, $accessor->depth());
+
                 return $accessor->requireCurrent()->toolName();
             });
         });

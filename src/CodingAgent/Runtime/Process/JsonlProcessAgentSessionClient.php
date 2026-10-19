@@ -405,11 +405,13 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'answer_human' => 'answer_human',
             'answer_tool_question' => 'answer_tool_question',
             'shell_command' => 'shell_command',
+            'background_bash' => 'background_bash',
             'select_history_turn' => 'select_history_turn',
             default => throw new \InvalidArgumentException(\sprintf('Unknown command type: "%s"', $command->type)),
         };
 
         $payload = match ($type) {
+            'background_bash' => $command->payload,
             'answer_tool_question' => array_filter([
                 'request_id' => $command->payload['request_id'] ?? '',
                 'answer' => $command->payload['answer'] ?? null,

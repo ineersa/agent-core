@@ -4,30 +4,37 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
-use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
-use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
+use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
-use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
@@ -35,7 +42,6 @@ use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
-use Ineersa\CodingAgent\Tool\BashBackgroundPromptAdapterInterface;
 use Ineersa\CodingAgent\Tool\BashTool;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
@@ -103,7 +109,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         );
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 2,
-            backgroundPromptThresholdSeconds: 1,
             pollIntervalMicros: 50_000,
             logTailChars: 20000,
         );
@@ -126,7 +131,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         $config = new BashToolConfig();
 
         $this->assertSame(30, $config->defaultTimeoutSeconds);
-        $this->assertSame(15, $config->backgroundPromptThresholdSeconds);
     }
 
     /* ── Successful completion ── */
@@ -251,7 +255,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 1,
-            backgroundPromptThresholdSeconds: 30, // never trigger background prompt
             pollIntervalMicros: 50_000,
             logTailChars: 20000,
         );
@@ -264,143 +267,11 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('partial', $result);
     }
 
-    public function testAgentChildSkipsBackgroundPromptAdapterAndStaysForeground(): void
-    {
-        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter->expects($this->never())->method('shouldBackground');
-
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 5,
-            backgroundPromptThresholdSeconds: 0,
-            pollIntervalMicros: 50_000,
-            logTailChars: 20000,
-        );
-        $this->createManager();
-
-        $childRunId = 'child-bash-foreground';
-        $reader = $this->metadataReaderWithChild($childRunId);
-
-        $started = hrtime(true);
-        $result = $this->withContext($childRunId, function () use ($promptAdapter, $reader): string {
-            return ($this->makeBashTool($promptAdapter, $reader))(new BashArgumentsDTO(
-                command: 'echo "child-foreground" && sleep 1 && echo "child-done"',
-                timeout: 5,
-            ));
-        });
-        $elapsedMs = (int) round((hrtime(true) - $started) / 1_000_000);
-
-        $this->assertStringContainsString('child-foreground', $result);
-        $this->assertStringContainsString('child-done', $result);
-        $this->assertStringNotContainsString('Command moved to background', $result);
-        $this->assertLessThan(4500, $elapsedMs, 'Child background skip must finish without waiting on HITL');
-
-        $declined = array_values(array_filter(
-            $this->logger->records,
-            static fn (array $record): bool => 'bash_tool.background_declined' === $record['message'],
-        ));
-        $this->assertSame([], $declined, 'Policy skip must not log parent background_declined');
-    }
-
-    public function testAgentChildTimeoutTerminatesNearBound(): void
-    {
-        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter->expects($this->never())->method('shouldBackground');
-
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 0,
-            pollIntervalMicros: 50_000,
-            logTailChars: 20000,
-        );
-        $this->createManager();
-
-        $childRunId = 'child-bash-timeout';
-        $reader = $this->metadataReaderWithChild($childRunId);
-
-        $started = hrtime(true);
-        $result = $this->withContext($childRunId, function () use ($promptAdapter, $reader): string {
-            return ($this->makeBashTool($promptAdapter, $reader))(new BashArgumentsDTO(
-                command: 'echo "child-partial" && sleep 10 && echo "should-not-see"',
-                timeout: 1,
-            ));
-        });
-        $elapsedMs = (int) round((hrtime(true) - $started) / 1_000_000);
-
-        $this->assertStringContainsString('Command timed out after 1 seconds', $result);
-        $this->assertStringContainsString('child-partial', $result);
-        $this->assertStringNotContainsString('should-not-see', $result);
-        $this->assertGreaterThanOrEqual(900, $elapsedMs);
-        $this->assertLessThan(3500, $elapsedMs, 'Child bash timeout must fire near the requested bound, not Castor/HITL');
-    }
-
-    public function testChildRelationshipDisablesBackgroundPromptWithoutEventLookup(): void
-    {
-        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter->expects($this->never())->method('shouldBackground');
-
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 5,
-            backgroundPromptThresholdSeconds: 0,
-            pollIntervalMicros: 50_000,
-            logTailChars: 20000,
-        );
-        $this->createManager();
-
-        $runId = 'child-bash-no-prompt';
-        $reader = StubRunRelationshipReader::child($runId, 'parent-1');
-
-        $result = $this->withContext($runId, function () use ($promptAdapter, $reader): string {
-            return ($this->makeBashTool($promptAdapter, $reader))(new BashArgumentsDTO(
-                command: 'echo "child-ok"',
-                timeout: 5,
-            ));
-        });
-
-        $this->assertStringContainsString('child-ok', $result);
-        $failed = array_values(array_filter(
-            $this->logger->records,
-            static fn (array $record): bool => 'bash_tool.background_policy_resolution_failed' === $record['message'],
-        ));
-        $this->assertCount(0, $failed);
-    }
-
-    public function testMissingOperationalIdentityDisablesBackgroundPromptFailClosed(): void
-    {
-        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter->expects($this->never())->method('shouldBackground');
-
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 5,
-            backgroundPromptThresholdSeconds: 0,
-            pollIntervalMicros: 50_000,
-            logTailChars: 20000,
-        );
-        $this->createManager();
-
-        $result = $this->withContext('parent-missing-metadata', function () use ($promptAdapter): string {
-            return ($this->makeBashTool($promptAdapter, $this->emptyMetadataReader()))(new BashArgumentsDTO(
-                command: 'echo "missing-ok" && sleep 1 && echo "missing-done"',
-                timeout: 5,
-            ));
-        });
-
-        $this->assertStringContainsString('missing-ok', $result);
-        $this->assertStringContainsString('missing-done', $result);
-        $this->assertStringNotContainsString('Command moved to background', $result);
-
-        $failed = array_values(array_filter(
-            $this->logger->records,
-            static fn (array $record): bool => 'bash_tool.background_policy_resolution_failed' === $record['message'],
-        ));
-        $this->assertCount(1, $failed);
-    }
-
     public function testTimeoutReapsProcessGroupDescendants(): void
     {
         $this->createManager();
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 1,
-            backgroundPromptThresholdSeconds: 30,
             pollIntervalMicros: 50_000,
             logTailChars: 20000,
         );
@@ -554,7 +425,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 10,
             maxTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 30,
             pollIntervalMicros: 50_000,
             logTailChars: 20000,
         );
@@ -572,7 +442,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 10,
             maxTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 30,
             pollIntervalMicros: 50_000,
             logTailChars: 20000,
         );
@@ -586,211 +455,11 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     /* ── Background prompt acceptance ── */
 
-    public function testBackgroundPromptAcceptance(): void
-    {
-        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter
-            ->expects($this->once())
-            ->method('shouldBackground')
-            ->with(
-                $this->stringContains('echo "background me"'),
-                $this->isInt(),
-                $this->stringContains('.log'),
-                $this->greaterThan(0),
-            )
-            ->willReturn(true);
-
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 0, // trigger immediately
-            pollIntervalMicros: 50_000,
-            logTailChars: 20000,
-        );
-        $this->createManager();
-
-        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
-            return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'echo "background me" && sleep 10'));
-        });
-
-        $this->assertStringContainsString('background', $result);
-        $this->assertStringContainsString('PID:', $result);
-        $this->assertStringContainsString('Log:', $result);
-        $this->assertStringContainsString('You will be notified', $result);
-        $this->assertStringContainsString('bg_status log pid=', $result);
-        $this->assertStringContainsString('bg_status stop pid=', $result);
-        $this->assertStringNotContainsString('timed out', $result);
-        $this->assertStringNotContainsString('cancelled', $result);
-    }
-
-    public function testBackgroundPromptWithAlreadyFinishedProcess(): void
-    {
-        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter
-            ->expects($this->never())
-            ->method('shouldBackground');
-
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 5, // won't be reached for a fast command
-            pollIntervalMicros: 50_000,
-            logTailChars: 20000,
-        );
-        $this->createManager();
-
-        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
-            return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'echo "quick command"'));
-        });
-
-        $this->assertStringContainsString('quick command', $result);
-        $this->assertStringNotContainsString('background', $result);
-    }
-
     /* ── Background prompt decline (default behaviour) ── */
-
-    public function testDefaultPromptDecline(): void
-    {
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 0, // trigger immediately
-            pollIntervalMicros: 50_000,
-            logTailChars: 20000,
-        );
-        $this->createManager();
-
-        $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "decline test"'));
-        });
-
-        $this->assertStringContainsString('decline test', $result);
-        $this->assertStringNotContainsString('background', $result);
-    }
 
     /* ── No duplicate command execution ── */
 
-    public function testNoDuplicateCommandExecution(): void
-    {
-        $promptAdapter = $this->createStub(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter
-            ->method('shouldBackground')
-            ->willReturn(true);
-
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 0, // trigger immediately
-            pollIntervalMicros: 50_000,
-            logTailChars: 20000,
-        );
-        $this->createManager();
-
-        // Process writes unique marker, background acceptance leaves it running
-        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
-            return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'echo "background-marker-12345" && sleep 5'));
-        });
-
-        $this->assertStringContainsString('background', $result);
-        $this->assertStringContainsString('PID:', $result);
-        $this->assertStringContainsString('You will be notified', $result);
-        $this->assertStringContainsString('bg_status log pid=', $result);
-        $this->assertStringContainsString('bg_status stop pid=', $result);
-
-        // Extract PID from result
-        preg_match('/PID: (\d+)/', $result, $matches);
-        $this->assertNotEmpty($matches, 'PID should be present in result');
-        $pid = (int) $matches[1];
-
-        // Verify there's exactly 1 background process
-        $entities = $this->manager->list(self::TEST_SESSION);
-        $this->assertCount(1, $entities, 'There should be exactly one process');
-
-        // Verify it's the same PID (single execution, no duplicate)
-        $this->assertSame($pid, $entities[0]->pid, 'The background process should have the same PID');
-
-        // Verify the process is marked as backgrounded (backgroundAt is set)
-        // This confirms markBackgroundedForRecord() was made in BashTool.
-        $this->assertNotNull($entities[0]->backgroundedAt, 'Background process should have backgroundedAt set');
-
-        // Verify the log contains our unique marker (bounded poll; log flush is async).
-        $marker = 'background-marker-12345';
-        $logPath = $entities[0]->logPath;
-        $deadline = microtime(true) + 2.0;
-        $logContent = '';
-        while (microtime(true) < $deadline) {
-            if (is_file($logPath)) {
-                $logContent = (string) @file_get_contents($logPath);
-                if (str_contains($logContent, $marker)) {
-                    break;
-                }
-            }
-            usleep(10_000);
-        }
-        $this->assertStringContainsString($marker, $logContent);
-
-        // Clean up
-        $this->manager->stop($pid, self::TEST_SESSION);
-    }
-
     /* ── Process finishes during prompt — regression for smoke bug A ── */
-
-    public function testProcessFinishesWhilePromptBlocksReturnsCompletedOutput(): void
-    {
-        $releasePipe = $this->tmpDir.'/finish-during-prompt-'.bin2hex(random_bytes(4)).'.fifo';
-        $this->assertTrue(posix_mkfifo($releasePipe, 0o600), 'Release FIFO must be created');
-        $releaseArg = escapeshellarg($releasePipe);
-        $releaseEndpoint = fopen($releasePipe, 'r+b');
-        $this->assertIsResource($releaseEndpoint, 'Parent must own the release FIFO endpoint');
-        $this->assertTrue(stream_set_blocking($releaseEndpoint, false), 'Release FIFO endpoint must be nonblocking');
-
-        // The child cannot finish before shouldBackground() releases it. The
-        // adapter then waits for the owned process record to reach a terminal
-        // state, which models a user answering after command completion without
-        // depending on a scheduler-sensitive sleep window.
-        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter
-            ->expects($this->once())
-            ->method('shouldBackground')
-            ->willReturnCallback(function (string $command, int $pid) use ($releaseEndpoint): bool {
-                $this->assertSame(
-                    8,
-                    fwrite($releaseEndpoint, "release\n"),
-                    'Release must be delivered to the waiting owned child',
-                );
-
-                $deadline = microtime(true) + 2.0;
-                do {
-                    $record = $this->manager->find($pid, self::TEST_SESSION);
-                    if (null !== $record && BackgroundProcessStatusEnum::Running !== $record->status) {
-                        return true;
-                    }
-
-                    usleep(10_000);
-                } while (microtime(true) < $deadline);
-
-                self::fail('Owned bash process did not reach a terminal state after release');
-            });
-
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 0, // trigger immediately
-            pollIntervalMicros: 10_000,
-            logTailChars: 20000,
-        );
-        $this->createManager();
-
-        try {
-            $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter, $releaseArg): string {
-                return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(
-                    command: 'IFS= read -r release < '.$releaseArg.'; echo "Hello world"',
-                ));
-            });
-        } finally {
-            fclose($releaseEndpoint);
-        }
-
-        // Must show the completed output, not a backgrounding notice or timeout.
-        $this->assertStringContainsString('Hello world', $result);
-        $this->assertStringNotContainsString('Command moved to background', $result);
-        $this->assertStringNotContainsString('timed out', $result);
-    }
 
     /* ── Output capping ── */
 
@@ -820,7 +489,6 @@ final class BashToolTest extends IsolatedKernelTestCase
     {
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 60,
             pollIntervalMicros: 50_000,
             logTailChars: 1024,
         );
@@ -857,60 +525,6 @@ final class BashToolTest extends IsolatedKernelTestCase
             $capFiles = glob($outputCapDir.'/*.txt') ?: [];
             $this->assertSame([], $capFiles, 'Bash must not duplicate oversized logs into output-cap storage');
         }
-    }
-
-    public function testParallelBatchStillInvokesBackgroundPromptAdapter(): void
-    {
-        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter
-            ->expects($this->once())
-            ->method('shouldBackground')
-            ->willReturn(false);
-
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 0,
-            pollIntervalMicros: 50_000,
-            logTailChars: 20000,
-        );
-        $this->createManager();
-
-        $result = $this->withContext(
-            self::TEST_SESSION,
-            function () use ($promptAdapter): string {
-                return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'echo "parallel batch" && sleep 0.2'));
-            },
-            executionMode: ToolExecutionMode::Parallel,
-            batchToolCallCount: 2,
-        );
-
-        $this->assertStringContainsString('parallel batch', $result);
-    }
-
-    public function testSingleParallelBatchStillPromptsForBackground(): void
-    {
-        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter
-            ->expects($this->once())
-            ->method('shouldBackground')
-            ->willReturn(false);
-
-        $this->bashConfig = new BashToolConfig(
-            defaultTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 0,
-            pollIntervalMicros: 50_000,
-            logTailChars: 20000,
-        );
-        $this->createManager();
-
-        $this->withContext(
-            self::TEST_SESSION,
-            function () use ($promptAdapter): string {
-                return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'echo "single" && sleep 0.2'));
-            },
-            executionMode: ToolExecutionMode::Parallel,
-            batchToolCallCount: 1,
-        );
     }
 
     /* ── Registry exposure ── */
@@ -1047,19 +661,23 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 30,
-            backgroundPromptThresholdSeconds: 0,
             pollIntervalMicros: 50_000,
             logTailChars: 20000,
         );
 
-        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
-        $promptAdapter
-            ->expects($this->once())
-            ->method('shouldBackground')
-            ->willReturnCallback(function (string $command, int $pid) use ($store, $em, $staleId, $releaseEndpoint): bool {
+        $token = $this->createStub(CancellationTokenInterface::class);
+        $released = false;
+        $token->method('isCancellationRequested')
+            ->willReturnCallback(function () use ($store, $em, $staleId, $releaseEndpoint, &$released): bool {
+                $records = $this->recordsForSession(self::TEST_SESSION);
+                $current = $records[0] ?? null;
+                if ($released || null === $current || $current->id === $staleId) {
+                    return false;
+                }
+                $released = true;
                 $stale = $store->fetchByRecordId($staleId);
                 if (null !== $stale) {
-                    $stale->pid = $pid;
+                    $stale->pid = $current->pid;
                     $em->flush();
                 }
 
@@ -1073,9 +691,9 @@ final class BashToolTest extends IsolatedKernelTestCase
             });
 
         try {
-            $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter, $releaseArg): string {
-                return ($this->makeBashTool($promptAdapter))(new BashArgumentsDTO(command: 'IFS= read -r release < '.$releaseArg.'; echo '.escapeshellarg(self::DATETIME_MARKER)));
-            });
+            $result = $this->withContext(self::TEST_SESSION, function () use ($releaseArg): string {
+                return ($this->makeBashTool())(new BashArgumentsDTO(command: 'IFS= read -r release < '.$releaseArg.'; echo '.escapeshellarg(self::DATETIME_MARKER)));
+            }, cancellationToken: $token);
         } finally {
             fclose($releaseEndpoint);
         }
@@ -1104,6 +722,150 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertNotSame($byId[$staleId]->logPath, $current->logPath);
     }
 
+    public function testRequestedDetachmentKeepsSameProcessAndPollerNotifiesOnce(): void
+    {
+        $this->createManager();
+        $fifo = $this->tmpDir.'/detach-release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $endpoint = fopen($fifo, 'r+b');
+        $this->assertIsResource($endpoint);
+        $token = $this->createStub(CancellationTokenInterface::class);
+        $selected = null;
+        $originalDeadline = null;
+        $token->method('isCancellationRequested')->willReturnCallback(function () use (&$selected, &$originalDeadline): bool {
+            if (null === $selected) {
+                $records = $this->manager->foregroundTools(self::TEST_SESSION);
+                if ([] !== $records) {
+                    $selected = $records[0];
+                    $originalDeadline = $selected->deadlineNanoseconds;
+                    $this->assertTrue($this->manager->requestBackground(self::TEST_SESSION, $selected->id, 'tc_bash'));
+                }
+            }
+
+            return false;
+        });
+
+        try {
+            $arguments = ['command' => 'printf "started\\n"; IFS= read -r release < '.escapeshellarg($fifo).'; printf "finished\\n"'];
+            $registry = new ToolRegistry();
+            $registry->registerTool(name: 'bash', description: 'bash', handler: $this->makeBashTool(), promptLine: 'bash');
+            $executor = new ToolExecutor(
+                defaultMode: 'parallel',
+                maxParallelism: 2,
+                resultStore: new ToolExecutionResultStore(),
+                toolbox: new RegistryBackedToolbox($registry, new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()), NativeToolSchemaProbe::schemaFactory()),
+                contextAccessor: $this->contextAccessor,
+            );
+            $call = ToolCallBuilder::create('tc_bash')->withToolName('bash')->withArguments($arguments)
+                ->withRunId(self::TEST_SESSION)->withContext(['cancel_token' => $token, 'turn_no' => 1, 'step_id' => 'detach-step'])->build();
+            $batch = self::getContainer()->get(ToolBatchCollector::class);
+            $store = self::getContainer()->get(ToolBatchStoreInterface::class);
+            $first = new ExecuteToolCall(self::TEST_SESSION, 1, 'detach-step', 1, 'first', 'tc_bash', 'bash', $arguments, 0, mode: 'parallel', maxParallelism: 2);
+            $sibling = new ExecuteToolCall(self::TEST_SESSION, 1, 'detach-step', 1, 'sibling', 'sibling', 'read', [], 1, mode: 'sequential');
+            $initial = TestToolBatchRegistration::register($batch, $store, self::TEST_SESSION, 1, 'detach-step', [$first, $sibling]);
+            $this->assertSame(['tc_bash'], array_column($initial, 'toolCallId'));
+            $result = $executor->execute($call);
+            $acknowledgment = $result->content[0]['text'];
+            $receipt = ToolCallResultFactory::fromExecuteToolCallAndToolResult($first, $result);
+            $collected = TestToolBatchCoordination::collect($batch, $store, $receipt);
+            $this->assertTrue($collected->accepted);
+            $this->assertFalse($collected->complete);
+            $this->assertSame(['sibling'], array_column($collected->effectsToDispatch, 'toolCallId'));
+            $duplicate = TestToolBatchCoordination::collect($batch, $store, $receipt);
+            $this->assertTrue($duplicate->duplicate);
+            $this->assertSame([], $duplicate->effectsToDispatch);
+            $this->assertNotNull($selected);
+            $this->assertStringContainsString('Command moved to background.', $acknowledgment);
+            $record = $this->manager->findByRecordId($selected->id, self::TEST_SESSION);
+            $this->assertNotNull($record);
+            $this->assertSame($selected->pid, $record->pid);
+            $this->assertSame($originalDeadline, $record->deadlineNanoseconds);
+            $this->assertNull($record->finishedAt);
+            $this->assertNotNull($record->backgroundedAt);
+            $this->assertCount(1, $this->recordsForSession(self::TEST_SESSION));
+            $siblingResult = ToolCallResultFactory::fromExecuteToolCallAndToolResult($sibling, new ToolResult('sibling', 'read', [['type' => 'text', 'text' => 'sibling output']]));
+            $settled = TestToolBatchCoordination::collect($batch, $store, $siblingResult);
+            $this->assertTrue($settled->complete);
+            $this->assertSame(['tc_bash', 'sibling'], array_column($settled->orderedResults, 'toolCallId'));
+            $this->assertSame(8, fwrite($endpoint, "release\n"));
+
+            $deadline = hrtime(true) + 2_000_000_000;
+            do {
+                $record = $this->manager->findByRecordId($selected->id, self::TEST_SESSION);
+                if (null !== $record?->finishedAt) {
+                    break;
+                }
+                usleep(10_000);
+            } while (hrtime(true) < $deadline);
+            $this->assertNotNull($record?->finishedAt);
+            $this->assertSame(1, substr_count((string) file_get_contents($selected->logPath), "started\n"));
+            $client = $this->createMock(AgentSessionClient::class);
+            $client->expects($this->once())->method('send')->with(self::TEST_SESSION, $this->callback(
+                static fn (UserCommand $command): bool => 'append_message' === $command->type && str_contains($command->text ?? '', 'finished'),
+            ));
+            $poller = new BackgroundProcessCompletionPoller(
+                static::getContainer()->get(ProcessStore::class),
+                $this->manager,
+                $client,
+                new RuntimeEventEmitter(new NullLogger()),
+                new NullLogger(),
+                static::getContainer()->get(AgentArtifactRegistry::class),
+                self::TEST_SESSION,
+            );
+            $poll = new \ReflectionMethod($poller, 'poll');
+            $poll->invoke($poller);
+            $poll->invoke($poller);
+            $this->assertNotNull($this->manager->findByRecordId($selected->id)?->completionNotifiedAt);
+            $this->assertSame($result->content, $executor->execute($call)->content, 'Native completion must not overwrite the original acknowledgment cache.');
+            $this->assertCount(2, $store->load(self::TEST_SESSION, 1, 'detach-step')->results);
+            $this->assertCount(1, $this->recordsForSession(self::TEST_SESSION));
+        } finally {
+            fclose($endpoint);
+        }
+    }
+
+    public function testCompletionWinningRequestRaceReturnsOnlyForegroundOutput(): void
+    {
+        $this->createManager();
+        $fifo = $this->tmpDir.'/finish-race';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $endpoint = fopen($fifo, 'r+b');
+        $this->assertIsResource($endpoint);
+        $token = $this->createStub(CancellationTokenInterface::class);
+        $requested = false;
+        $token->method('isCancellationRequested')->willReturnCallback(function () use ($endpoint, &$requested): bool {
+            $records = $this->manager->foregroundTools(self::TEST_SESSION);
+            if (!$requested && [] !== $records) {
+                $record = $records[0];
+                $requested = true;
+                $this->assertTrue($this->manager->requestBackground(self::TEST_SESSION, $record->id, 'tc_bash'));
+                $this->assertSame(8, fwrite($endpoint, "release\n"));
+                $deadline = hrtime(true) + 2_000_000_000;
+                do {
+                    $finished = $this->manager->findByRecordId($record->id, self::TEST_SESSION);
+                    if (null !== $finished?->finishedAt) {
+                        break;
+                    }
+                    usleep(10_000);
+                } while (hrtime(true) < $deadline);
+                $this->assertNotNull($finished?->finishedAt);
+            }
+
+            return false;
+        });
+        try {
+            $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(
+                new BashArgumentsDTO(command: 'IFS= read -r release < '.escapeshellarg($fifo).'; printf done'),
+            ), cancellationToken: $token);
+            $this->assertSame('done', $result);
+            $this->assertCount(1, $this->recordsForSession(self::TEST_SESSION));
+            $this->assertNull($this->recordsForSession(self::TEST_SESSION)[0]->backgroundedAt);
+            $this->assertSame([], self::getContainer()->get(ProcessStore::class)->findPendingNotifications(self::TEST_SESSION));
+        } finally {
+            fclose($endpoint);
+        }
+    }
+
     /* ── Helpers ── */
 
     /**
@@ -1128,29 +890,15 @@ final class BashToolTest extends IsolatedKernelTestCase
     /**
      * Create a BashTool with the configured dependencies.
      */
-    private function makeBashTool(
-        ?BashBackgroundPromptAdapterInterface $promptAdapter = null,
-        ?RunRelationshipReaderInterface $runMetadataReader = null,
-    ): BashTool {
+    private function makeBashTool(): BashTool
+    {
         return new BashTool(
             manager: $this->manager,
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
             logger: $this->logger,
-            runMetadataReader: $runMetadataReader ?? StubRunRelationshipReader::topLevel(self::TEST_SESSION),
             config: $this->bashConfig,
-            promptAdapter: $promptAdapter ?? new BashToolDeclineAdapter(),
         );
-    }
-
-    private function emptyMetadataReader(): RunRelationshipReaderInterface
-    {
-        return StubRunRelationshipReader::empty();
-    }
-
-    private function metadataReaderWithChild(string $runId): RunRelationshipReaderInterface
-    {
-        return StubRunRelationshipReader::child($runId, 'parent-1');
     }
 
     /**
@@ -1216,9 +964,12 @@ final class BashToolTest extends IsolatedKernelTestCase
         callable $callback,
         ?ToolExecutionMode $executionMode = null,
         int $batchToolCallCount = 1,
+        ?CancellationTokenInterface $cancellationToken = null,
     ): mixed {
-        $cancellationToken = $this->createStub(CancellationTokenInterface::class);
-        $cancellationToken->method('isCancellationRequested')->willReturn(false);
+        if (null === $cancellationToken) {
+            $cancellationToken = $this->createStub(CancellationTokenInterface::class);
+            $cancellationToken->method('isCancellationRequested')->willReturn(false);
+        }
 
         $context = new ToolContext(
             runId: $sessionId,
@@ -1229,6 +980,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             timeoutSeconds: 30,
             executionMode: $executionMode,
             batchToolCallCount: $batchToolCallCount,
+            stepId: 'test-model-step',
         );
 
         return $this->contextAccessor->with($context, $callback);
@@ -1257,23 +1009,5 @@ final class BashToolTest extends IsolatedKernelTestCase
                 }
             }
         }
-    }
-}
-
-/**
- * Test-only prompt adapter that always declines.
- *
- * This is a test-local duplicate of the production
- * BashBackgroundPromptDeclineAdapter. It exists to keep test code
- * independent of production defaults — per AGENTS.md, test helpers
- * belong in tests. The behavior is identical, but wiring a different
- * class in each test function is simpler than binding the production
- * adapter as a default and overriding it per test.
- */
-final class BashToolDeclineAdapter implements BashBackgroundPromptAdapterInterface
-{
-    public function shouldBackground(string $command, int $pid, string $logPath, float $elapsedSeconds): bool
-    {
-        return false;
     }
 }

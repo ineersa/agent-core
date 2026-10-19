@@ -11,7 +11,6 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
-use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
@@ -29,12 +28,9 @@ use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
  * - A foreground supervision loop polls the manager for process status,
  *   checks ambient ToolContext cancellation, and enforces a monotonic
  *   timeout deadline.
- * - At the configured background_prompt_threshold_seconds, parent/main
- *   sessions ask the injectable BashBackgroundPromptAdapterInterface
- *   whether to leave the process running in background. CodingAgent
- *   resolves child/fork/subagent runs from cached immutable RunStarted
- *   metadata and skips that optional HITL so those invocations stay
- *   foreground-supervised and the per-call Bash timeout can still fire.
+ * - Ctrl+B requests detachment of one exact invocation. Its worker checks
+ *   completion before accepting, then the existing controller poller owns
+ *   supervision and completion notification for the same native process.
  * - On successful completion, returns captured capped output.
  * - On non-zero or unclean exit, throws ToolCallException with output and
  *   exit status so ToolExecutor preserves the failed result for the TUI.
@@ -67,16 +63,14 @@ final class BashTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'bash';
 
-    public const string DESCRIPTION_TEMPLATE = 'Execute a shell command. Commands time out after %d seconds by default. Provide the timeout argument with an explicit higher value when a command needs more time. The command runs until completion, hits its timeout, or is cancelled. Long-running commands may be offered to move to background after %d seconds.';
+    public const string DESCRIPTION_TEMPLATE = 'Execute a shell command. Commands time out after %d seconds by default. Provide the timeout argument with an explicit higher value when a command needs more time. The user can move a running Bash tool to background with Ctrl+B.';
 
     public function __construct(
         private readonly BackgroundProcessManager $manager,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
         private readonly LoggerInterface $logger,
-        private readonly RunRelationshipReaderInterface $runMetadataReader,
         private readonly BashToolConfig $config = new BashToolConfig(),
-        private readonly BashBackgroundPromptAdapterInterface $promptAdapter = new BashBackgroundPromptDeclineAdapter(),
     ) {
     }
 
@@ -110,14 +104,13 @@ final class BashTool implements HatfieldToolProviderInterface
             $sessionId = $context?->runId();
             $cancelToken = $context?->cancellationToken();
 
-            // Resolve CodingAgent-owned background-prompt eligibility once
-            // before starting the process. AgentCore ToolContext only provides
-            // the run id; child classification stays in CodingAgent.
-            $allowBackgroundPrompt = $this->resolveBackgroundPromptAllowed($sessionId);
-
             // Start the command immediately through BackgroundProcessManager.
             // This guarantees exactly one process execution per tool call.
-            $startResult = $this->manager->start($command, $sessionId);
+            $deadline = hrtime(true) + $timeout * 1_000_000_000;
+            // Only top-level model tools are targets. Direct !shell has no
+            // producing step; code-mode nested calls have a deeper context.
+            $toolCallId = null !== $context?->stepId() && 1 === $this->contextAccessor->depth() ? $context->toolCallId() : null;
+            $startResult = $this->manager->start($command, $sessionId, $toolCallId, $deadline);
             $pid = $startResult->pid;
             $dbId = $startResult->id;
             $logPath = $startResult->logPath;
@@ -130,12 +123,6 @@ final class BashTool implements HatfieldToolProviderInterface
                 'log_path' => $logPath,
                 'session_id' => $sessionId ?? 'none',
             ]);
-
-            // Compute monotonic deadline for timeout enforcement
-            $deadline = hrtime(true) + $timeout * 1_000_000_000;
-
-            $startTime = hrtime(true);
-            $promptTriggered = false;
 
             // Foreground supervision loop
             while (true) {
@@ -212,64 +199,16 @@ final class BashTool implements HatfieldToolProviderInterface
                     return $this->handleFinished($record, $sessionId);
                 }
 
-                // 4. Background prompt threshold check (once per invocation).
-                // Child/fork runs skip the HITL offer: awaiting it would block
-                // this loop and prevent the Bash deadline above from firing
-                // (session #41 fork hang).
-                if (!$promptTriggered) {
-                    $elapsedSeconds = (hrtime(true) - $startTime) / 1_000_000_000;
+                if ($record->backgroundRequested) {
+                    $this->manager->markBackgroundedForRecord($dbId, $sessionId);
 
-                    if ($elapsedSeconds >= $this->config->backgroundPromptThresholdSeconds) {
-                        $promptTriggered = true;
-
-                        if (!$allowBackgroundPrompt) {
-                            // Policy path: continue foreground supervision.
-                        } elseif ($this->promptAdapter->shouldBackground($command, $pid, $logPath, $elapsedSeconds)) {
-                            // Re-check process status — it may have finished while we
-                            // were waiting for the user's decision. If the process
-                            // completed, return the finished output instead of the
-                            // backgrounding notice. This avoids a misleading
-                            // "Command moved to background" message when the process
-                            // already exited during the prompt wait.
-                            $recheck = $this->manager->findByRecordId($dbId, $sessionId);
-                            if (null !== $recheck && BackgroundProcessStatusEnum::Running !== $recheck->status) {
-                                $this->logger->info('bash_tool.background_process_completed_during_prompt', [
-                                    'component' => 'tool.bash',
-                                    'event_type' => 'bash_tool.background_process_completed_during_prompt',
-                                    'process_pid' => $pid,
-                                ]);
-
-                                return $this->handleFinished($recheck, $sessionId);
-                            }
-
-                            // Mark the process as backgrounded so the
-                            // BackgroundProcessCompletionPoller can notify on completion.
-                            $this->manager->markBackgroundedForRecord($dbId, $sessionId);
-
-                            $this->logger->info('bash_tool.backgrounded', [
-                                'component' => 'tool.bash',
-                                'event_type' => 'bash_tool.backgrounded',
-                                'process_pid' => $pid,
-                                'log_path' => $logPath,
-                            ]);
-
-                            $pidStr = (string) $pid;
-
-                            return \sprintf(
-                                "Command moved to background.\nPID: %d\nLog: %s\n\nYou will be notified when the process finishes.\n\nYou can also check output with:\n  bg_status log pid=%s\n\nOr stop it with:\n  bg_status stop pid=%s",
-                                $pid,
-                                $logPath,
-                                $pidStr,
-                                $pidStr,
-                            );
-                        } else {
-                            $this->logger->info('bash_tool.background_declined', [
-                                'component' => 'tool.bash',
-                                'event_type' => 'bash_tool.background_declined',
-                                'process_pid' => $pid,
-                            ]);
-                        }
-                    }
+                    return \sprintf(
+                        "Command moved to background.\nPID: %d\nLog: %s\n\nYou will be notified when the process finishes. Use bg_status log pid=%d to inspect output or bg_status stop pid=%d to stop it.",
+                        $pid,
+                        $logPath,
+                        $pid,
+                        $pid,
+                    );
                 }
 
                 // 5. Sleep before next poll
@@ -288,7 +227,6 @@ final class BashTool implements HatfieldToolProviderInterface
             description: \sprintf(
                 self::DESCRIPTION_TEMPLATE,
                 $this->config->defaultTimeoutSeconds,
-                $this->config->backgroundPromptThresholdSeconds,
             ),
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
@@ -304,32 +242,6 @@ final class BashTool implements HatfieldToolProviderInterface
                 'Output is capped to prevent excessively large responses. Very large output may be truncated and saved to a file for inspection.',
             ],
         );
-    }
-
-    /**
-     * Known top-level / no-context runs keep normal background prompting.
-     * Known agent_child rows disable it for this invocation.
-     * Missing operational identity fails closed by disabling the optional prompt.
-     */
-    private function resolveBackgroundPromptAllowed(?string $sessionId): bool
-    {
-        if (null === $sessionId || '' === $sessionId) {
-            return true;
-        }
-
-        try {
-            return !$this->runMetadataReader->isAgentChild($sessionId);
-        } catch (\Throwable $e) {
-            $this->logger->warning('bash_tool.background_policy_resolution_failed', [
-                'run_id' => $sessionId,
-                'session_id' => $sessionId,
-                'component' => 'tool.bash',
-                'event_type' => 'bash_tool.background_policy_resolution_failed',
-                'error_class' => $e::class,
-            ]);
-
-            return false;
-        }
     }
 
     // ─── Private helpers ────────────────────────────────────────────

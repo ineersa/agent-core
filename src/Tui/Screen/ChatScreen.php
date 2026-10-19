@@ -97,6 +97,9 @@ final class ChatScreen
     /* ── Mount flag ── */
     private bool $mounted = false;
 
+    /** @var array<int, true> */
+    private array $inputOverlays = [];
+
     public function __construct(
         private readonly TuiTheme $theme,
         private string $sessionId,
@@ -537,6 +540,7 @@ final class ChatScreen
 
         // Add the overlay (appended after status / above the compact header).
         $this->tui->add($widget);
+        $this->inputOverlays[spl_object_id($widget)] = true;
 
         // Restore compact header + editor area widgets in original mount order.
         $this->tui->add($this->compactHeaderWidget);
@@ -573,6 +577,7 @@ final class ChatScreen
 
         // Add the overlay (appended after the editor).
         $this->tui->add($widget);
+        $this->inputOverlays[spl_object_id($widget)] = true;
 
         // Restore footer widgets in original mount order.
         $this->tui->add($this->footerSepWidget);
@@ -589,6 +594,12 @@ final class ChatScreen
     public function removeOverlay(AbstractWidget $widget): void
     {
         $this->tui?->remove($widget);
+        unset($this->inputOverlays[spl_object_id($widget)]);
+    }
+
+    public function hasInputOverlay(): bool
+    {
+        return [] !== $this->inputOverlays;
     }
 
     /**

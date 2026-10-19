@@ -20,8 +20,7 @@ use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 
 /**
  * Production DI proof: agent_child Bash never creates a background ToolQuestion,
- * and the requested Bash timeout still resolves through the wired
- * RuntimeBashBackgroundPromptAdapter path.
+ * and the requested Bash timeout still resolves through production wiring.
  *
  * @requires extension pdo_sqlite
  * @requires OS Linux

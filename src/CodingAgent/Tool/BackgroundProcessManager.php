@@ -166,7 +166,7 @@ final class BackgroundProcessManager
      *
      * @throws \RuntimeException on storage/launch failure
      */
-    public function start(string $command, ?string $sessionId = null, ?string $toolCallId = null): StartResult
+    public function start(string $command, ?string $sessionId = null, ?string $toolCallId = null, ?int $deadlineNanoseconds = null): StartResult
     {
         // Ensure storage directory exists
         $bgDir = $this->lifecycle->ensureStorageDir();
@@ -191,6 +191,7 @@ final class BackgroundProcessManager
             'session_id' => $sessionId ?? '',
             'command' => $command,
             'tool_call_id' => $toolCallId,
+            'deadline_nanoseconds' => $deadlineNanoseconds,
             'log_path' => $logFile,
             'status_path' => $statusFile,
             'started_at' => $now,
@@ -480,37 +481,49 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Request detachment of the foreground Bash tools already running in this run.
+     * Request detachment of one exact foreground Bash invocation.
      *
      * This does not make a process notification-eligible. Its foreground worker
      * checks completion first and accepts the request only when returning the
      * original tool result as an acknowledgment. A finish/request race therefore
      * cannot produce both a foreground result and a completion notification.
      */
-    public function requestBackgroundForRun(string $runId): int
+    public function requestBackground(string $runId, int $recordId, string $toolCallId): bool
     {
-        if ('' === $runId) {
-            return 0;
+        if ('' === $runId || '' === $toolCallId) {
+            return false;
         }
 
-        $requested = 0;
-        foreach ($this->store->fetchAllUnfinished($runId) as $entity) {
-            if (null === $entity->toolCallId || null !== $entity->backgroundedAt || $entity->backgroundRequested) {
-                continue;
-            }
-
-            $entity->backgroundRequested = true;
-            ++$requested;
+        $entity = $this->findByRecordId($recordId, $runId);
+        if (null === $entity || $entity->toolCallId !== $toolCallId || null !== $entity->finishedAt || null !== $entity->backgroundedAt) {
+            return false;
         }
+
+        $entity->backgroundRequested = true;
         $this->store->flush();
 
-        return $requested;
+        return true;
+    }
+
+    /** @return list<BackgroundProcess> */
+    public function foregroundTools(string $runId): array
+    {
+        if ('' === $runId) {
+            return [];
+        }
+
+        $this->refreshAllUnfinished($runId);
+
+        return array_values(array_filter(
+            $this->store->fetchAllUnfinished($runId),
+            static fn (BackgroundProcess $entity): bool => null !== $entity->toolCallId && null === $entity->backgroundedAt && !$entity->backgroundRequested,
+        ));
     }
 
     /**
      * Mark the exact background-process record as user-backgrounded.
      *
-     * Used by BashTool when the user accepts the background prompt for the
+     * Used by BashTool when its worker accepts the background request for the
      * current invocation (immutable record ID from start()).
      *
      * @throws \RuntimeException when record not found or session mismatches
@@ -601,6 +614,19 @@ final class BackgroundProcessManager
 
         foreach ($entities as $entity) {
             $this->resolveEntityStatus($entity);
+            // After detachment the existing controller poller supervises the
+            // same process against its original deadline, not a fresh timeout.
+            if (null === $entity->finishedAt && null !== $entity->backgroundedAt && null !== $entity->deadlineNanoseconds && hrtime(true) >= $entity->deadlineNanoseconds) {
+                $this->stopProcessEntity($entity);
+                $entity->stoppedByUser = false;
+                $this->logger->info('background_process.timed_out', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.timed_out',
+                    'run_id' => $entity->sessionId,
+                    'session_id' => $entity->sessionId,
+                    'record_id' => $entity->id,
+                ]);
+            }
         }
 
         $this->store->flush();
