@@ -128,22 +128,17 @@ final class ToolBatchCollector
     }
 
     /**
-     * Read a previously collected result without mutating batch state.
+     * Read collected siblings together without mutating batch state.
      *
      * Used by cancellation terminalization to project durable-but-unprojected
      * results (accepted while the batch was still incomplete) before synthesizing
      * cancelled siblings and emitting tool_batch_committed / agent_end.
+     *
+     * @return array<string, ToolCallResult>
      */
-    public function getStoredResult(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ToolCallResult
+    public function getStoredResults(string $runId, int $turnNo, string $stepId): array
     {
-        $batch = $this->loadBatch($runId, $turnNo, $stepId);
-        if (null === $batch) {
-            return null;
-        }
-
-        $stored = $batch->results[$toolCallId] ?? null;
-
-        return $stored instanceof ToolCallResult ? $stored : null;
+        return $this->loadBatch($runId, $turnNo, $stepId)->results ?? [];
     }
 
     /**

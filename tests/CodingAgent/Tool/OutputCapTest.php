@@ -18,6 +18,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\String\Exception\InvalidArgumentException;
 
 use function Symfony\Component\String\u;
 
@@ -54,6 +55,42 @@ final class OutputCapTest extends TestCase
     public function testDefaultRetentionRemainsTwentyFourHours(): void
     {
         $this->assertSame(86400, new OutputCapConfig()->retentionSeconds);
+    }
+
+    #[DataProvider('characterBoundaryCases')]
+    public function testByteShortcutPreservesCharacterBoundaries(string $text, bool $fits): void
+    {
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 4));
+        $result = $cap->capIfNeeded($text, 'boundary-run');
+        if ($fits) {
+            $this->assertNull($result);
+        } else {
+            $this->assertNotNull($result);
+            $this->assertSame(5, $result->charCount);
+            $this->assertSame($text, file_get_contents($result->savedPath));
+        }
+    }
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function characterBoundaryCases(): iterable
+    {
+        yield 'empty' => ['', true];
+        yield 'ASCII below' => ['abc', true];
+        yield 'ASCII exact' => ['abcd', true];
+        yield 'ASCII over' => ['abcde', false];
+        yield 'multibyte exact' => [str_repeat('é', 4), true];
+        yield 'multibyte over' => [str_repeat('é', 5), false];
+        yield 'combining exact' => [str_repeat("e\u{0301}", 4), true];
+        yield 'combining over' => [str_repeat("e\u{0301}", 5), false];
+        yield 'joined emoji exact' => [str_repeat('👩‍👩‍👧‍👧', 4), true];
+        yield 'joined emoji over' => [str_repeat('👩‍👩‍👧‍👧', 5), false];
+    }
+
+    public function testMalformedShortTextStillUsesUnicodeRefusal(): void
+    {
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir));
+        $this->expectException(InvalidArgumentException::class);
+        $cap->capIfNeeded("\xff", null);
     }
 
     public function testConfiguredRootWithSymlinkedPathComponentPersistsInsideCanonicalRoot(): void

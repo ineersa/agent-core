@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Session;
 
 use Doctrine\DBAL\Connection;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -30,40 +31,19 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         if (null === $record) {
             return null;
         }
-        $calls = [];
-        foreach ($this->decodeJson($record['calls_json']) as $id => $encoded) {
-            $call = $this->decodeMessage($encoded);
-            if (!$call instanceof ExecuteToolCall || $call->toolCallId !== (string) $id || $call->runId() !== $runId || $call->turnNo() !== $turnNo || $call->stepId() !== $stepId) {
-                throw new \RuntimeException('Stored tool batch call identity is invalid.');
-            }
-            $calls[$id] = $call;
-        }
-        $results = [];
-        foreach ($this->decodeJson($record['results_json']) as $id => $encoded) {
-            $result = $this->decodeMessage($encoded);
-            if (!$result instanceof ToolCallResult || $result->toolCallId !== (string) $id || $result->runId() !== $runId || $result->turnNo() !== $turnNo || $result->stepId() !== $stepId) {
-                throw new \RuntimeException('Stored tool batch result identity is invalid.');
-            }
-            $results[$id] = $result;
-        }
-        /** @var array<string, int> $order */
-        $order = $this->decodeJson($record['expected_order_json']);
-        /** @var list<string> $pending */
-        $pending = $this->decodeJson($record['pending_queue_json']);
-        /** @var list<string> $inFlightIds */
-        $inFlightIds = $this->decodeJson($record['in_flight_json']);
-        /** @var array<string, string> $awaiting */
-        $awaiting = $this->decodeJson($record['awaiting_human_input_json']);
 
-        return new ToolBatchStateDTO($order, $calls, $pending, array_fill_keys($inFlightIds, true), $results, (bool) $record['finalized'], max(1, (int) $record['max_parallelism']), $awaiting);
+        return $this->decodeRecord($record, $runId, $turnNo, $stepId);
     }
 
     public function prepareChanges(array $actions, VerifiedTransitionDTO $transition): \Closure
     {
         /** @var array<string, array<string, mixed>> $rows */
         $rows = [];
+        $fullRows = [];
         /** @var array<string, ToolBatchStateDTO> $batches */
         $batches = [];
+        /** @var array<string, array<string, mixed>|null> $records */
+        $records = [];
         foreach ($actions as $action) {
             if (($transition->work['run_id'] ?? null) !== $action->runId) {
                 throw new \RuntimeException('Prepared batch requires matching verified transition.');
@@ -80,11 +60,14 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
                 throw new \RuntimeException('Prepared batch differs from captured transition work.');
             }
             $key = $action->runId.'|'.$action->turnNo.'|'.$action->stepId;
-            $record = $this->record($action->runId, $action->turnNo, $action->stepId);
+            if (!\array_key_exists($key, $records)) {
+                $records[$key] = $this->record($action->runId, $action->turnNo, $action->stepId);
+            }
+            $record = $records[$key];
             if (null !== $record && $record['applied_transition'] === $transition->identity) {
                 continue;
             }
-            $batch = $batches[$key] ?? $this->load($action->runId, $action->turnNo, $action->stepId);
+            $batch = $batches[$key] ?? (null === $record ? null : $this->decodeRecord($record, $action->runId, $action->turnNo, $action->stepId));
             if ($action instanceof RegisterToolBatchDTO) {
                 $calls = [];
                 foreach ($action->effects as $call) {
@@ -117,16 +100,23 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
             }
             $batches[$key] = $batch;
             // Serialization belongs outside the short mailbox/batch transaction.
-            $rows[$key] = $this->encodeRow($action->runId, $action->turnNo, $action->stepId, $batch, $transition->identity);
+            $encoded = null === $record
+                ? $this->encodeRow($action->runId, $action->turnNo, $action->stepId, $batch, $transition->identity)
+                : $this->encodeChanges($record, $batch, $action, $transition->identity);
+            $rows[$key] = array_replace($rows[$key] ?? [], $encoded);
+            $fullRows[$key] = array_replace($record ?? [], $encoded);
+            // Keep subsequent actions on this batch's prepared state without
+            // treating the uncommitted identity as an already-applied transition.
+            $records[$key] = array_replace($record ?? [], $encoded, ['applied_transition' => $record['applied_transition'] ?? null]);
         }
 
-        return function () use ($rows): void {
-            foreach ($rows as $row) {
+        return function () use ($rows, $fullRows): void {
+            foreach ($rows as $batchKey => $row) {
                 $key = ['run_id' => $row['run_id'], 'turn_no' => $row['turn_no'], 'step_id' => $row['step_id']];
                 if (false === $this->connection->fetchOne('SELECT 1 FROM tool_batch_schedule WHERE run_id = ? AND turn_no = ? AND step_id = ?', array_values($key))) {
-                    $this->connection->insert('tool_batch_schedule', $row);
+                    $this->connection->insert('tool_batch_schedule', $fullRows[$batchKey]);
                 } else {
-                    $this->connection->update('tool_batch_schedule', $row, $key);
+                    $this->connection->update('tool_batch_schedule', array_diff_key($row, $key), $key);
                 }
             }
         };
@@ -174,6 +164,37 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         return false;
     }
 
+    /** @param array<string, mixed> $record */
+    private function decodeRecord(array $record, string $runId, int $turnNo, string $stepId): ToolBatchStateDTO
+    {
+        $calls = [];
+        foreach ($this->decodeJson($record['calls_json']) as $id => $encoded) {
+            $call = $this->decodeMessage($encoded);
+            if (!$call instanceof ExecuteToolCall || $call->toolCallId !== (string) $id || $call->runId() !== $runId || $call->turnNo() !== $turnNo || $call->stepId() !== $stepId) {
+                throw new \RuntimeException('Stored tool batch call identity is invalid.');
+            }
+            $calls[$id] = $call;
+        }
+        $results = [];
+        foreach ($this->decodeJson($record['results_json']) as $id => $encoded) {
+            $result = $this->decodeMessage($encoded);
+            if (!$result instanceof ToolCallResult || $result->toolCallId !== (string) $id || $result->runId() !== $runId || $result->turnNo() !== $turnNo || $result->stepId() !== $stepId) {
+                throw new \RuntimeException('Stored tool batch result identity is invalid.');
+            }
+            $results[$id] = $result;
+        }
+        /** @var array<string, int> $order */
+        $order = $this->decodeJson($record['expected_order_json']);
+        /** @var list<string> $pending */
+        $pending = $this->decodeJson($record['pending_queue_json']);
+        /** @var list<string> $inFlightIds */
+        $inFlightIds = $this->decodeJson($record['in_flight_json']);
+        /** @var array<string, string> $awaiting */
+        $awaiting = $this->decodeJson($record['awaiting_human_input_json']);
+
+        return new ToolBatchStateDTO($order, $calls, $pending, array_fill_keys($inFlightIds, true), $results, (bool) $record['finalized'], max(1, (int) $record['max_parallelism']), $awaiting);
+    }
+
     /** @return array<string, mixed>|null */
     private function record(string $runId, int $turnNo, string $stepId): ?array
     {
@@ -209,6 +230,51 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
             'results_json' => $this->encodeJson($results),
             'applied_transition' => $identity,
         ];
+    }
+
+    /**
+     * Preserve unchanged serialized envelopes and omit unchanged SQL columns.
+     * A changed result still rewrites results_json because the schema owns one
+     * JSON map, but earlier siblings never pass through PhpSerializer again.
+     *
+     * @param array<string, mixed> $record
+     *
+     * @return array<string, mixed>
+     */
+    private function encodeChanges(array $record, ToolBatchStateDTO $batch, RegisterToolBatchDTO|FinalizeToolBatchDTO $action, string $identity): array
+    {
+        $row = [
+            'run_id' => $action->runId,
+            'turn_no' => $action->turnNo,
+            'step_id' => $action->stepId,
+            'applied_transition' => $identity,
+        ];
+        if ($action instanceof RegisterToolBatchDTO) {
+            return $row;
+        }
+        $values = [
+            'finalized' => $batch->finalized ? 1 : 0,
+            'pending_queue_json' => $this->encodeJson($batch->pendingQueue),
+            'in_flight_json' => $this->encodeJson(array_keys($batch->inFlight)),
+            'awaiting_human_input_json' => $this->encodeJson($batch->awaitingHumanInput),
+        ];
+        if (null !== $action->result) {
+            $results = $this->decodeJson($record['results_json']);
+            $results[$action->result->toolCallId] = $this->serializer->encode(new Envelope($action->result));
+            $values['results_json'] = $this->encodeJson($results);
+        }
+        if (null !== $action->revisedCallId) {
+            $calls = $this->decodeJson($record['calls_json']);
+            $calls[$action->revisedCallId] = $this->serializer->encode(new Envelope($batch->calls[$action->revisedCallId]));
+            $values['calls_json'] = $this->encodeJson($calls);
+        }
+        foreach ($values as $column => $value) {
+            if ($value !== $record[$column]) {
+                $row[$column] = $value;
+            }
+        }
+
+        return $row;
     }
 
     private function decodeMessage(mixed $encoded): object

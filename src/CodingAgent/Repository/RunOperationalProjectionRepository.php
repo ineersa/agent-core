@@ -9,6 +9,7 @@ use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Entity\RunOperationalHumanInput;
 use Ineersa\CodingAgent\Entity\RunOperationalState;
 use Ineersa\CodingAgent\Entity\RunOperationalToolCall;
@@ -53,17 +54,17 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
 
     public function findOperationalStatus(string $runId): ?RunOperationalStatusDTO
     {
-        $state = $this->find($runId);
-        if (!$state instanceof RunOperationalState) {
+        // Bypass the identity map so long-lived cancellation polls observe
+        // cross-process writes without refreshing the operational graph.
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
+            'SELECT status, last_event_sequence FROM run_operational_state WHERE run_id = ?',
+            [$runId],
+        );
+        if (false === $row) {
             return null;
         }
 
-        // Cancel polls from long-lived LLM workers must observe cross-process
-        // status writes. Doctrine's identity map would otherwise keep the
-        // first-loaded Running row for the whole message lifetime.
-        $this->getEntityManager()->refresh($state);
-
-        return new RunOperationalStatusDTO($state->status, $state->lastEventSequence);
+        return new RunOperationalStatusDTO(RunStatus::from($row['status']), (int) $row['last_event_sequence']);
     }
 
     public function deleteForOwnerSession(string $ownerSessionId): int
