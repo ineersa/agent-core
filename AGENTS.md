@@ -17,6 +17,11 @@
 - Do not add backward-compatibility code during active development unless the user asks or the code belongs to a published API such as `ExtensionApi` with a documented deprecation window. Replace old behavior and update its tests and docs.
 - Semantic type suffixes: `EventTypeEnum`, `UserEventService`, `RuntimeEventMapper`, `SettingsProvider`, `TranscriptProjector`, `Repository`, `Factory`, `DTO`, etc.
 - **MUST use existing project and framework facilities instead of custom or lower-level replacements unless the user explicitly approves an exception.** This includes Symfony components, Doctrine ORM, Serializer, Validator, EventDispatcher, Messenger, Lock, and the project TUI abstractions.
+- Keep PRs focused and reviewable; agree on smaller slices before implementation grows into a large cross-cutting change. Exclude unrelated changes.
+- Keep CodingAgent policy out of AgentCore. Extend generic building blocks and reuse existing orchestration instead of adding parallel coordinators or mirroring native execution state.
+- Keep DTOs data-only in `DTO` namespaces, without interfaces or constructor validation. Put validators in `Validator`/`Validation`, exceptions in `Exception` with an `Exception` suffix, and import types instead of embedding fully qualified names.
+- Use Symfony Serializer and Validator at input boundaries; return typed validation errors or refusals instead of generic exceptions or magic strings. Simplify complex predicates rather than multiplying state-combination tests around them.
+- Generate one metadata-based Doctrine migration for an unmerged feature's final schema; never hand-write migrations. Put architecture explanations in `architecture/`, Hatfield usage guidance in `docs/`, and omit task/checkpoint labels from shipped documentation.
 - No production APIs or paths solely for tests. No `ReflectionClass::newInstanceWithoutConstructor()`, `Closure::bind()`, or constructor bypass in production. Test helpers stay in tests.
 - Every caught exception must be rethrown/propagated or explicitly logged as intentional local degradation. Empty catch blocks are forbidden.
 - Runtime logs: structured event-style messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`); do not log raw prompts, tool output, env values, API keys, or full session content by default. See `docs/datadog.md`.
