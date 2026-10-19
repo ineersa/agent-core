@@ -666,6 +666,40 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertSame(TranscriptVisualNode::KIND_TOOL_EXCHANGE, $this->semanticNode($after[0])?->kind, 'Re-created widget must receive its node data via the semantic apply contract');
     }
 
+    public function testResultBeforeCallUpdatesBothMountedOccurrences(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID, columns: 100, rows: 40);
+        $result = new TranscriptBlock('result-first', TranscriptBlockKindEnum::ToolResult, self::SESSION_ID, 1, 'Running…', [
+            'tool_name' => 'bash', 'tool_call_id' => 'reordered-call', 'is_error' => false,
+        ], true);
+        $call = new TranscriptBlock('call-later', TranscriptBlockKindEnum::ToolCall, self::SESSION_ID, 2, 'bash', [
+            'tool_name' => 'bash', 'tool_call_id' => 'reordered-call', 'arguments' => ['command' => 'true'],
+        ]);
+        $harness->screen()->setTranscriptBlocks([$result, $call]);
+        $harness->screen()->setWorkingVisible(false);
+        $harness->plainScreenText();
+
+        $mounted = new \ReflectionProperty($harness->screen(), 'transcriptWidget')->getValue($harness->screen());
+        $this->assertInstanceOf(TranscriptMountedWidget::class, $mounted);
+        $before = $mounted->all();
+        $this->assertCount(2, $before);
+        $this->assertSame($result, $this->semanticNode($before[0])?->primary);
+        $this->assertSame($result, $this->semanticNode($before[1])?->secondary);
+
+        $completed = $result->with(text: 'done', streaming: false, meta: [
+            ...$result->meta, 'is_error' => true, 'duration_ms' => 1250,
+        ]);
+        $harness->screen()->applyTranscriptChangeSet(TranscriptChangeSet::incremental([$completed]));
+        $rendered = $harness->plainScreenText();
+
+        $after = $mounted->all();
+        $this->assertCount(2, $after);
+        $this->assertSame($completed, $this->semanticNode($after[0])?->primary, 'Standalone result must receive text, streaming, error and timing changes.');
+        $this->assertSame($completed, $this->semanticNode($after[1])?->secondary, 'Exchange must receive the same updated result.');
+        $this->assertSame(2, substr_count($rendered, 'done'));
+        $this->assertStringNotContainsString('Running…', $rendered);
+    }
+
     public function testLongHistoryToolDeltasKeepNativeCardAndScreenIsolation(): void
     {
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID, columns: 100, rows: 24);

@@ -173,6 +173,15 @@ final class TranscriptVisualProjector
 
         $eligible = [];
         foreach ($changes->upserts as $block) {
+            // A result before its call remains standalone as well as paired. Its
+            // dependency key identifies only the exchange, so refresh both structurally.
+            if (TranscriptBlockKindEnum::ToolResult === $block->kind
+                && isset($this->nodesByKey[$block->id])
+                && ($this->visualKeyByPrimaryId[$block->id] ?? $block->id) !== $block->id) {
+                $eligible[$block->id] = false;
+                continue;
+            }
+
             $previous = $this->blocksById[$block->id] ?? null;
             $isTool = \in_array($block->kind, [TranscriptBlockKindEnum::ToolCall, TranscriptBlockKindEnum::ToolResult], true);
             $eligible[$block->id] = $isTool
