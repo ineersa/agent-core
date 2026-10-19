@@ -458,6 +458,43 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $this->assertSame([8], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
     }
 
+    public function testMissingSchemaObjectsAndEmptyPartialSchemaRebuildOnEveryConnection(): void
+    {
+        $this->write(1, 1, 'turn_advanced');
+        $this->assertSame([1], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
+        foreach (['DROP INDEX turn_answers', 'DROP TABLE command_resolution', 'DELETE FROM index_meta; DROP TABLE pending_prompt'] as $damage) {
+            $db = $this->db();
+            foreach (explode('; ', $damage) as $sql) {
+                $db->executeStatement($sql);
+            }
+            $db->close();
+            $this->logger->records = [];
+            $this->assertSame([1], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
+            $this->assertGreaterThan(0, $this->readBytes('index_cold_rebuild'));
+            $db = $this->db();
+            $this->assertSame(13, (int) $db->fetchOne("SELECT COUNT(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"));
+            $db->close();
+        }
+    }
+
+    public function testConnectionConfigurationIsAppliedWithoutBootstrappingExistingSchema(): void
+    {
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        foreach ([1, 2] as $connection) {
+            $db = (new \ReflectionMethod(RunHistoryIndex::class, 'connect'))->invoke($index, $this->path);
+            try {
+                (new \ReflectionMethod(RunHistoryIndex::class, 'configureConnection'))->invoke($index, $db);
+                $this->assertSame(0, (int) $db->fetchOne('PRAGMA busy_timeout'));
+                $this->assertSame(-1024, (int) $db->fetchOne('PRAGMA cache_size'));
+                $this->assertSame(1, (int) $db->fetchOne('PRAGMA temp_store'));
+                $this->assertSame('wal', $db->fetchOne('PRAGMA journal_mode'));
+                $this->assertSame(0, (int) $db->fetchOne('SELECT COUNT(*) FROM sqlite_master'));
+            } finally {
+                $db->close();
+            }
+        }
+    }
+
     public function testDuplicateAndDecreasingSequencesNeverPublishWatermark(): void
     {
         foreach ([[1, 3, 3], [1, 5, 3]] as $sequences) {
