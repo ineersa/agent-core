@@ -578,6 +578,18 @@ final class BackgroundProcessManager
     }
 
     /**
+     * Refresh a single entity's status from filesystem state.
+     *
+     * Resolves and persists the current status before stop() and for controller
+     * completion candidates, without querying the same record a second time.
+     */
+    public function refreshEntity(BackgroundProcess $entity): void
+    {
+        $this->resolveEntityStatus($entity);
+        $this->store->flush();
+    }
+
+    /**
      * Shared stop lifecycle for a resolved background-process entity.
      */
     private function stopProcessEntity(BackgroundProcess $entity): StopResult
@@ -738,18 +750,5 @@ final class BackgroundProcessManager
         ]);
 
         return BackgroundProcessStatusEnum::FinishedUnclean;
-    }
-
-    /**
-     * Refresh a single entity's status from filesystem state.
-     *
-     * Resolves and persists the current status; used before stop()
-     * to avoid acting on a process that already finished since last
-     * list() call.
-     */
-    private function refreshEntity(BackgroundProcess $entity): void
-    {
-        $this->resolveEntityStatus($entity);
-        $this->store->flush();
     }
 }

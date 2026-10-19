@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -146,36 +147,43 @@ final class BackgroundProcessCompletionPoller
         $sessionIds = $this->resolveOwnedSessionIds($this->sessionId);
         $pendingByPid = [];
 
-        foreach ($sessionIds as $sessionId) {
-            // A backgrounded process that finishes naturally only writes its
-            // status file; the DB entity still has finishedAt=NULL. Without
-            // this refresh, findPendingNotifications() would never select it.
+        try {
+            $candidates = $this->processStore->findCompletionCandidates($sessionIds);
+        } catch (\Throwable $e) {
+            $this->logger->warning('bg_process_completion.poller_query_failed', [
+                'component' => 'bg_process_completion.poller',
+                'event_type' => 'bg_process_completion.poller_query_failed',
+                'controller_session_id' => $this->sessionId,
+                'exception' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
+        // Preserve the former scope order and duplicate-PID precedence. The
+        // stable sort retains the query's record-ID order within each scope.
+        $scopeOrder = array_flip($sessionIds);
+        usort($candidates, static fn (BackgroundProcess $left, BackgroundProcess $right): int => $scopeOrder[$left->sessionId] <=> $scopeOrder[$right->sessionId]);
+
+        foreach ($candidates as $process) {
+            // Natural completion initially writes only the status file. Refresh
+            // the selected record before checking notification eligibility.
             try {
-                $this->processManager->refreshAllUnfinished($sessionId);
+                $this->processManager->refreshEntity($process);
             } catch (\Throwable $e) {
                 $this->logger->warning('bg_process_completion.refresh_failed', [
                     'component' => 'bg_process_completion.poller',
                     'event_type' => 'bg_process_completion.refresh_failed',
                     'controller_session_id' => $this->sessionId,
-                    'scoped_session_id' => $sessionId,
+                    'scoped_session_id' => $process->sessionId,
                     'exception' => $e->getMessage(),
                 ]);
 
                 continue;
             }
 
-            try {
-                foreach ($this->processStore->findPendingNotifications($sessionId) as $process) {
-                    $pendingByPid[$process->pid] = $process;
-                }
-            } catch (\Throwable $e) {
-                $this->logger->warning('bg_process_completion.poller_query_failed', [
-                    'component' => 'bg_process_completion.poller',
-                    'event_type' => 'bg_process_completion.poller_query_failed',
-                    'controller_session_id' => $this->sessionId,
-                    'scoped_session_id' => $sessionId,
-                    'exception' => $e->getMessage(),
-                ]);
+            if (null !== $process->finishedAt && null !== $process->backgroundedAt && null === $process->completionNotifiedAt) {
+                $pendingByPid[$process->pid] = $process;
             }
         }
 
@@ -198,7 +206,7 @@ final class BackgroundProcessCompletionPoller
     /**
      * Build and send a follow-up notification for a completed background process.
      */
-    private function sendNotification(\Ineersa\CodingAgent\Entity\BackgroundProcess $process): void
+    private function sendNotification(BackgroundProcess $process): void
     {
         $pid = $process->pid;
         $sessionId = $process->sessionId;
