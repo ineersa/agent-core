@@ -97,6 +97,17 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
                 return [];
             }
 
+            /** @return list<never> */
+            public function backgroundProcesses(string $runId): array
+            {
+                return [];
+            }
+
+            public function stopBackgroundProcess(string $runId, int $recordId): bool
+            {
+                throw new \LogicException('Unexpected background stop.');
+            }
+
             public function start(\Ineersa\CodingAgent\Runtime\Contract\StartRunRequest $request): \Ineersa\CodingAgent\Runtime\Contract\RunHandle
             {
                 throw new \RuntimeException('Not expected in test');
@@ -182,7 +193,17 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
         $lifecycle = new ProcessLifecycle($config, new NullLogger());
-        $manager = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
+        $poller = null;
+        $logger = $this->createStub(LoggerInterface::class);
+        $logger->method('info')->willReturnCallback(static function (string $message) use (&$poller): void {
+            if ('background_process.stopped' === $message) {
+                // Poll after native exit but before stop() returns. Completion
+                // must already be quiet, not deferred until the final stop flush.
+                (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
+            }
+        });
+        $manager = new BackgroundProcessManager($store, $lifecycle, $config, $logger);
+        $poller = $this->createPoller($store, $manager, 'native-stop');
         $fifo = $this->tmpDir.'/release';
         $this->assertTrue(posix_mkfifo($fifo, 0600));
         $release = fopen($fifo, 'r+b');
@@ -227,6 +248,51 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         } finally {
             fclose($release);
             $manager->shutdownCleanup();
+        }
+    }
+
+    public function testStaleCandidateCannotPublishAfterIndependentExplicitStop(): void
+    {
+        $store = self::getContainer()->get(ProcessStore::class);
+        $config = $this->createBgConfig();
+        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $owner = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
+        $other = new Kernel('test', true);
+        $other->boot();
+        try {
+            $process = $owner->start('sleep 60', 'stale-stop', 'call');
+            $owner->markBackgroundedForRecord($process->id, 'stale-stop');
+            $container = $other->getContainer()->get('test.service_container');
+            $em = $container->get(EntityManagerInterface::class);
+            $this->assertNotSame(self::getContainer()->get(EntityManagerInterface::class), $em);
+            $barrier = new class {
+                public function postLoad(PostLoadEventArgs $event): void
+                {
+                    if ($event->getObject() instanceof BackgroundProcess) {
+                        \Fiber::suspend($event->getObject());
+                    }
+                }
+            };
+            $otherStore = $container->get(ProcessStore::class);
+            $poller = $this->createPoller($otherStore, new BackgroundProcessManager($otherStore, $lifecycle, $config, new NullLogger()), 'stale-stop');
+            $em->getEventManager()->addEventListener([Events::postLoad], $barrier);
+            $fiber = new \Fiber(static fn () => (new \ReflectionMethod($poller, 'poll'))->invoke($poller));
+            try {
+                $stale = $fiber->start();
+            } finally {
+                $em->getEventManager()->removeEventListener([Events::postLoad], $barrier);
+            }
+            $this->assertInstanceOf(BackgroundProcess::class, $stale);
+            $this->assertNull($stale->completionNotifiedAt);
+            $owner->stop($process->pid, 'stale-stop');
+            $this->assertNull($stale->completionNotifiedAt, 'The suspended reader really holds stale notification state.');
+            $fiber->resume();
+            $this->assertTrue($fiber->isTerminated());
+            $this->assertSame([], $this->sentCommands);
+            $this->assertNotNull($stale->completionNotifiedAt);
+        } finally {
+            $owner->shutdownCleanup();
+            $other->shutdown();
         }
     }
 

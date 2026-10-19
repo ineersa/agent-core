@@ -18,12 +18,14 @@ use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundProcessDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Exception\BackgroundProcessUnavailableException;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -96,6 +98,34 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             static fn ($process): BashBackgroundCandidateDTO => new BashBackgroundCandidateDTO($process->id, (string) $process->toolCallId, $process->pid),
             $this->backgroundProcesses->foregroundTools($runId),
         );
+    }
+
+    public function backgroundProcesses(string $runId): array
+    {
+        $snapshot = [];
+        foreach ($this->backgroundProcesses->list($runId) as $process) {
+            if (null === $process->finishedAt) {
+                $snapshot[] = new BackgroundProcessDTO(
+                    $process->id,
+                    $process->pid,
+                    $process->command,
+                    $process->startedAt,
+                    'stopped' === $process->status->value ? 'stopping' : $process->status->value,
+                );
+            }
+        }
+
+        return $snapshot;
+    }
+
+    public function stopBackgroundProcess(string $runId, int $recordId): bool
+    {
+        $process = $this->backgroundProcesses->findByRecordId($recordId, $runId);
+        if (null === $process || null === $process->backgroundedAt) {
+            throw new BackgroundProcessUnavailableException('Background process is no longer available in this session.');
+        }
+
+        return !$this->backgroundProcesses->stopByRecordId($recordId, $runId)->alreadyFinished;
     }
 
     public function attach(string $runId): RunHandle

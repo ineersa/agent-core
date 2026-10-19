@@ -640,11 +640,11 @@ final class BackgroundProcessManager
      */
     public function refreshEntities(array $entities, ?\Closure $onError = null): array
     {
-        // Another reader may already have finalized the row, or cleanup may
-        // have removed it. Neither case appears in the unfinished-only query.
+        // Another reader may have finalized/removed the row. An explicit stop
+        // owns its own grace period and supersedes this manager's timeout grace.
         foreach (array_keys($this->timeoutGraceDeadlines) as $id) {
             $record = $this->store->fetchByRecordId($id);
-            if (null === $record || null !== $record->finishedAt) {
+            if (null === $record || null !== $record->finishedAt || $record->stoppedByUser) {
                 unset($this->timeoutGraceDeadlines[$id]);
             }
         }
@@ -654,7 +654,7 @@ final class BackgroundProcessManager
         foreach ($entities as $entity) {
             try {
                 $this->resolveEntityStatus($entity);
-                if (null !== $entity->finishedAt) {
+                if (null !== $entity->finishedAt || $entity->stoppedByUser) {
                     unset($this->timeoutGraceDeadlines[$entity->id]);
                 } elseif (null !== $entity->backgroundedAt && null !== $entity->deadlineNanoseconds && hrtime(true) >= $entity->deadlineNanoseconds) {
                     // The batch flush records the stop cause before TERM can
@@ -686,6 +686,12 @@ final class BackgroundProcessManager
         $stoppedAfterTerm = false;
         foreach ($toTerminate as $entity) {
             try {
+                // A separate explicit stop may have claimed grace since the
+                // candidate snapshot. Refresh its intent before signaling.
+                $current = $this->store->fetchByRecordId($entity->id);
+                if (null === $current || null !== $current->finishedAt || $current->stoppedByUser) {
+                    continue;
+                }
                 $this->lifecycle->sendTerm($entity->pid, $entity->pgid);
                 $this->timeoutGraceDeadlines[$entity->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
                 if (0 === $this->config->stopGraceSeconds) {
@@ -742,6 +748,13 @@ final class BackgroundProcessManager
         $pgid = $entity->pgid;
         $graceSeconds = $this->config->stopGraceSeconds;
 
+        // Persist explicit stop intent before TERM: an independent completion
+        // poller can observe native exit while this caller is still in grace.
+        $entity->status = BackgroundProcessStatusEnum::Stopped;
+        $entity->stoppedByUser = true;
+        $entity->markCompletionNotified(Clock::get()->now());
+        $this->store->flush();
+
         // TERM signal — target process group (negative PGID)
         $signalSent = 'term';
         $this->lifecycle->sendTerm($pid, $pgid);
@@ -781,9 +794,6 @@ final class BackgroundProcessManager
 
         $now = Clock::get()->now();
         $entity->markStopped($now);
-        // The explicit stop result already acknowledges completion. Settle the
-        // existing notification marker atomically with the stop, without a wakeup.
-        $entity->markCompletionNotified($now);
 
         // Write -1 to the status file only when the wrapper did not
         // already write a real exit code (KILL path). When TERM succeeds

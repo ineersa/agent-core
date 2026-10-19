@@ -258,6 +258,12 @@ final class BackgroundProcessCompletionPoller
             ]);
         }
 
+        // The log lookup refreshes this managed record by immutable ID. An
+        // explicit stop may have acknowledged it since candidate hydration.
+        if (null !== $process->completionNotifiedAt) {
+            return;
+        }
+
         // Build notification message matching pi's bg-process.ts format.
         $exitCode = $process->exitCode;
         $statusLabel = match ($process->status) {

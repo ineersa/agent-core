@@ -42,8 +42,8 @@ The agent can read and edit files and execute commands with your local permissio
 Inspect changes before committing them. Approval policy can block a call or ask you
 to authorize it, but tool access is not a sandbox. See [approvals](approvals.md).
 
-If a bash command offers to continue in the background, you decide whether to accept.
-The agent can use `bg_status` to inspect or stop accepted background jobs. See
+Press Ctrl+B during a Bash tool call to background it. Open `/bg` to inspect or stop
+accepted jobs without a model call, or ask the agent to use `bg_status`. See
 [background processes](background-processes.md) for ownership and cleanup.
 
 ## Session commands
@@ -59,6 +59,7 @@ The agent can use `bg_status` to inspect or stop accepted background jobs. See
 | `/model` | Select an enabled model. |
 | `/settings-show` | Inspect settings through the session UI. |
 | `/compact` | Compact model-visible conversation context. |
+| `/bg` | Inspect and stop background processes in the visible session. |
 | `/mcp` | Inspect MCP server status and discovered tools. |
 | `/agents-live` | Select a child agent's live view. |
 | `/agents-main` | Return from a child view to the parent. |

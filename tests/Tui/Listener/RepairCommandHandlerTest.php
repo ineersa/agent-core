@@ -143,6 +143,17 @@ final class RepairCommandSpyClient implements AgentSessionClient
         return [];
     }
 
+    /** @return list<never> */
+    public function backgroundProcesses(string $runId): array
+    {
+        return [];
+    }
+
+    public function stopBackgroundProcess(string $runId, int $recordId): bool
+    {
+        throw new \LogicException('Unexpected background stop.');
+    }
+
     public function start(StartRunRequest $request): RunHandle
     {
         throw new \RuntimeException('Unexpected start()');

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Contract;
 
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundProcessDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
@@ -39,6 +40,12 @@ interface AgentSessionClient
 
     /** @return list<BashBackgroundCandidateDTO> Read-only native candidates for the visible run. */
     public function foregroundBash(string $runId): array;
+
+    /** @return list<BackgroundProcessDTO> Snapshot of accepted unfinished jobs; never enforces deadlines. */
+    public function backgroundProcesses(string $runId): array;
+
+    /** Stop the exact accepted record in this run; false means it already finished. */
+    public function stopBackgroundProcess(string $runId, int $recordId): bool;
 
     /**
      * Fatal controller-session diagnostics cross run filtering and may have an

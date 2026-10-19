@@ -13,7 +13,20 @@ Escape cancels. Child-run Bash tools cannot detach, including in child live view
 Questions, modal dialogs and completion overlays retain their keyboard handling.
 Without an eligible Bash tool, Ctrl+B keeps its editor cursor-left behavior.
 There is no model-facing background parameter or `bg_start` tool.
-After backgrounding, inspect or stop processes with `bg_status`.
+After backgrounding, open `/bg` to inspect or stop jobs yourself, or ask the agent to use `bg_status`.
+
+## Background process picker: `/bg`
+
+The picker lists accepted unfinished jobs for the visible session, with command, PID,
+elapsed seconds and status. Jobs in termination grace appear as `stopping`.
+Select a job and press Enter to open a Yes/No stop confirmation, defaulting to No.
+Escape returns to the original list; Escape again closes it. Confirming Yes closes
+the picker before stopping the exact selected record and displays the outcome locally.
+Listing and stopping do not call the model.
+
+The list is a snapshot fetched once on opening. It never refreshes while open, even
+after confirmation cancellation or process events. Reopen `/bg` for a fresh snapshot.
+An already-finished or removed selection never targets another job with a reused PID.
 
 ## Model / user tool: `bg_status`
 

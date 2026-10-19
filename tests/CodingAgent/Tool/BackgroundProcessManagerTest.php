@@ -626,6 +626,26 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         }
     }
 
+    public function testExplicitStopIntentOwnsGraceEvenWhenDeadlineExpires(): void
+    {
+        $this->createManager();
+        $process = $this->manager->start('sleep 60', self::TEST_SESSION, 'stop-call', hrtime(true) - 1);
+        $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
+        $store = self::getContainer()->get(ProcessStore::class);
+        $record = $store->fetchByRecordId($process->id);
+        $this->assertNotNull($record);
+        // The persisted interval between an explicit stop's acceptance and TERM.
+        $record->status = BackgroundProcessStatusEnum::Stopped;
+        $record->stoppedByUser = true;
+        $record->markCompletionNotified(new \DateTimeImmutable());
+        $store->flush();
+        $this->manager->refreshEntities([$record]);
+        $this->assertSame([], (new \ReflectionProperty($this->manager, 'timeoutGraceDeadlines'))->getValue($this->manager));
+        $this->assertTrue(posix_kill($process->pid, 0));
+        $this->assertNull($record->finishedAt);
+        $this->assertTrue($record->stoppedByUser);
+    }
+
     public function testLateObservationWithoutTermKeepsSuccessfulExit(): void
     {
         $this->createManager();
