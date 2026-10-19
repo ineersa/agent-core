@@ -13,6 +13,8 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
@@ -56,6 +58,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
                 disableForMain: false,
             ),
             $this->appConfigWithCatalogWindow(272000),
+            $this->metadataReader(),
         );
     }
 
@@ -66,8 +69,10 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             $this->eventStore,
             new ContextBudgetReminderConfig(),
             $this->appConfigWithCatalogWindow(272000),
+            $this->metadataReader(),
         );
-        $this->mockEvents([$this->runStarted(1, 272000)]);
+        $this->eventStore->expects($this->never())->method('firstFor');
+        $this->eventStore->expects($this->never())->method('reverseFor');
         $this->agentRunner->expects($this->never())->method('appendMessage');
         $this->dispatchPrepared($subscriber, $this->hookContext([
             $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, ['usage' => ['input_tokens' => $inputTokens]]),
@@ -79,6 +84,34 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
     {
         yield 'early' => [200000];
         yield 'urgent' => [260000];
+    }
+
+    public function testRepeatedChildCompletionsReuseLaunchMetadata(): void
+    {
+        $this->eventStore->expects($this->once())->method('firstFor')
+            ->with('run-1')->willReturn($this->runStarted(1, 272000, ['kind' => 'agent_child']));
+        $this->eventStore->expects($this->never())->method('reverseFor');
+        $context = $this->hookContext([
+            $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, ['usage' => ['input_tokens' => 1000]]),
+        ], $this->runState()->with(['parentRunId' => 'parent']));
+
+        for ($i = 0; $i < 100; ++$i) {
+            $this->assertSame([], $this->subscriber->prepareAfterTurnCommit($context, 1));
+        }
+    }
+
+    public function testMissingChildMetadataIsRetriedRatherThanCached(): void
+    {
+        $this->eventStore->expects($this->exactly(2))->method('firstFor')
+            ->willReturnOnConsecutiveCalls(null, $this->runStarted(1, 272000, ['kind' => 'agent_child']));
+        $this->eventStore->expects($this->never())->method('reverseFor');
+        $context = $this->hookContext([
+            $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, ['usage' => ['input_tokens' => 1000]]),
+        ], $this->runState()->with(['parentRunId' => 'parent']));
+
+        for ($i = 0; $i < 3; ++$i) {
+            $this->assertSame([], $this->subscriber->prepareAfterTurnCommit($context, 1));
+        }
     }
 
     public function testEarlyQueuesWrappedAppendMessage(): void
@@ -298,6 +331,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             $this->eventStore,
             new ContextBudgetReminderConfig(disableForMain: $disableMain, disableForForks: $disableForks, disableForSubagents: $disableSubagents),
             $this->appConfigWithCatalogWindow(272000),
+            $this->metadataReader(),
         );
         $this->mockEvents([$this->runStarted(1, 272000, $session)]);
         $expectation = $this->agentRunner->expects($suppressed ? $this->never() : $this->once())
@@ -313,7 +347,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             $this->summary(2, RunEventTypeEnum::LlmStepCompleted->value, [
                 'usage' => ['input_tokens' => $inputTokens],
             ]),
-        ]));
+        ], $this->runState()->with(['parentRunId' => 'agent_child' === ($session['kind'] ?? null) ? 'parent' : null])));
     }
 
     /** @return iterable<string, array{array<string, mixed>, bool, bool, int, bool, bool}> */
@@ -380,7 +414,15 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
     /** @param array<string, mixed> $session */
     private function runStarted(int $seq, ?int $contextWindow, array $session = []): RunEvent
     {
-        $metadata = ['session' => $session];
+        if ('agent_child' === ($session['kind'] ?? null)) {
+            $session += ['parent_run_id' => 'parent', 'agent_name' => 'scout', 'artifact_id' => 'agent_test'];
+        }
+        $metadata = [
+            'session' => $session,
+            'model' => 'test/model',
+            'reasoning' => 'medium',
+            'tools_scope' => ['allowed_tools' => ['read']],
+        ];
         if (null !== $contextWindow) {
             $metadata['context_window'] = $contextWindow;
         }
@@ -440,6 +482,11 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             lastSeq: 1,
             model: $model,
         );
+    }
+
+    private function metadataReader(): RunStartedMetadataReader
+    {
+        return new RunStartedMetadataReader($this->eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
     }
 
     private function appConfigWithCatalogWindow(int $window): AppConfig
