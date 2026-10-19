@@ -30,7 +30,6 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
         public ?string $mode = null,
         public ?int $timeoutSeconds = null,
         public ?int $maxParallelism = null,
-        public int $batchToolCallCount = 1,
         public ?array $argSchema = null,
         public ?string $toolsRef = null,
         #[Assert\Valid]
@@ -58,7 +57,6 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
             mode: $this->mode,
             timeoutSeconds: $this->timeoutSeconds,
             maxParallelism: $this->maxParallelism,
-            batchToolCallCount: $this->batchToolCallCount,
             argSchema: $this->argSchema,
             toolsRef: $this->toolsRef,
             humanInputAnswer: $answer,
@@ -86,7 +84,6 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
             mode: $this->mode,
             timeoutSeconds: $this->timeoutSeconds,
             maxParallelism: $this->maxParallelism,
-            batchToolCallCount: $this->batchToolCallCount,
             argSchema: $this->argSchema,
             toolsRef: $this->toolsRef,
             humanInputAnswer: $answer,

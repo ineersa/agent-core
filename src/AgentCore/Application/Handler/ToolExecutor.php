@@ -354,8 +354,6 @@ final class ToolExecutor implements ToolExecutorInterface
             return $result;
         }
 
-        $batchToolCallCount = max(1, (int) ($toolCall->context['assistant_batch_tool_call_count'] ?? 1));
-
         $humanInputAnswer = $toolCall->context['human_input_answer'] ?? null;
         $stepId = $toolCall->context['step_id'] ?? null;
         $runId = $this->runId($toolCall) ?? '';
@@ -382,8 +380,6 @@ final class ToolExecutor implements ToolExecutorInterface
             cancellationToken: $this->cancellationToken($toolCall),
             timeoutSeconds: $policy->timeoutSeconds,
             orderIndex: $toolCall->orderIndex,
-            executionMode: $policy->mode,
-            batchToolCallCount: $batchToolCallCount,
             humanInputAnswer: $humanInputAnswer instanceof ToolCallHumanInputAnswerDTO ? $humanInputAnswer : null,
             stepId: \is_string($stepId) && '' !== $stepId ? $stepId : null,
             parentModel: $parentModel,

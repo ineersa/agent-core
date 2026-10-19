@@ -962,8 +962,6 @@ final class BashToolTest extends IsolatedKernelTestCase
     private function withContext(
         string $sessionId,
         callable $callback,
-        ?ToolExecutionMode $executionMode = null,
-        int $batchToolCallCount = 1,
         ?CancellationTokenInterface $cancellationToken = null,
     ): mixed {
         if (null === $cancellationToken) {
@@ -978,8 +976,6 @@ final class BashToolTest extends IsolatedKernelTestCase
             toolName: 'bash',
             cancellationToken: $cancellationToken,
             timeoutSeconds: 30,
-            executionMode: $executionMode,
-            batchToolCallCount: $batchToolCallCount,
             stepId: 'test-model-step',
         );
 
