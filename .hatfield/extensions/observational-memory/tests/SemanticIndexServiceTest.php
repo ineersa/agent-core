@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -14,6 +15,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticApiClient;
 use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticIndexService;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -89,7 +91,8 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
         $this->assertSame(0, $initial['indexed_count']);
         $this->assertSame(6, $initial['source_count']);
         $this->assertFalse($this->index()->synchronize());
-        $this->assertSame(4, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM om_semantic_document'));
+        $this->assertSame(4, (int) $this->connection->fetchOne("SELECT COUNT(*) FROM om_semantic_document WHERE id NOT LIKE 'source:%'"));
+        $this->assertSame(4, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM om_semantic_document_fts'));
         $progress = $this->query()->search('memory');
         $this->assertTrue($progress['ok']);
         $this->assertTrue($progress['partial']);
@@ -116,7 +119,7 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
         $id = $this->observation('alpha');
         // Fail the real text-store write AFTER Vektor has accepted the document.
         $this->connection->executeStatement('CREATE TABLE om_semantic_document (id TEXT PRIMARY KEY, vector TEXT NOT NULL, metadata TEXT)');
-        $this->connection->executeStatement("CREATE TRIGGER fail_index BEFORE INSERT ON om_semantic_document BEGIN SELECT RAISE(ABORT, 'injected storage failure'); END");
+        $this->connection->executeStatement("CREATE TRIGGER fail_index BEFORE INSERT ON om_semantic_document WHEN NEW.id NOT LIKE 'source:%' BEGIN SELECT RAISE(ABORT, 'injected storage failure'); END");
         try {
             $this->index()->synchronize();
             $this->fail('Storage failure must propagate.');
@@ -448,6 +451,305 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
         $this->assertSame('index_building', $result['error']);
         $this->assertArrayNotHasKey('results', $result);
         $this->assertTrue($this->query()->search('alpha')['ok']);
+    }
+
+    #[Test]
+    public function continuationAndUnchangedWorkDoNotLoadCompletedSourceContent(): void
+    {
+        for ($i = 0; $i < 12; ++$i) {
+            $this->observation('alpha source '.$i);
+        }
+        $this->assertFalse($this->index()->synchronize());
+        $pdo = $this->connection->getNativeConnection();
+        $previous = $pdo->getAttribute(\PDO::ATTR_STATEMENT_CLASS);
+        $pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, [Support\SemanticReadStatement::class]);
+        Support\SemanticReadStatement::$changedSources = 0;
+        Support\SemanticReadStatement::$loadedSources = 0;
+        Support\SemanticReadStatement::$chunkLookups = [];
+        try {
+            $this->assertFalse($this->index()->synchronize());
+            $this->assertSame(0, Support\SemanticReadStatement::$changedSources);
+            $this->assertSame(4, Support\SemanticReadStatement::$loadedSources);
+            $this->assertCount(4, Support\SemanticReadStatement::$chunkLookups);
+            $plan = $this->connection->fetchAllAssociative('EXPLAIN QUERY PLAN '.Support\SemanticReadStatement::$chunkLookups[0], ['source:observation:fixture']);
+            $details = implode("\n", array_column($plan, 'detail'));
+            $this->assertMatchesRegularExpression('/SEARCH s .*\(id=\?\)/', $details);
+            $this->assertMatchesRegularExpression('/SEARCH d .*\(id=\?\)/', $details);
+            $this->assertStringNotContainsString('SCAN s', $details);
+            $this->assertStringNotContainsString('SCAN d', $details);
+            $this->assertTrue($this->index()->synchronize());
+            Support\SemanticReadStatement::$loadedSources = 0;
+            $this->assertTrue($this->index()->synchronize());
+            $this->assertSame(0, Support\SemanticReadStatement::$changedSources);
+            $this->assertSame(0, Support\SemanticReadStatement::$loadedSources);
+            $requests = \count($this->requests);
+            $result = $this->index()->search('alpha', ['observation' => ['2999', null], 'reflection' => ['2999', null]], static function (): void {});
+            $this->assertSame([], $result['results']);
+            $this->assertSame(0, Support\SemanticReadStatement::$changedSources);
+            $this->assertSame(0, Support\SemanticReadStatement::$loadedSources);
+            $this->assertCount($requests + 1, $this->requests);
+            $this->observation('alpha new source');
+            $this->assertTrue($this->index()->synchronize());
+            $this->assertSame(1, Support\SemanticReadStatement::$changedSources);
+            $this->assertSame(1, Support\SemanticReadStatement::$loadedSources);
+        } finally {
+            $pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, $previous);
+        }
+    }
+
+    #[Test]
+    public function reflectionContentChangesAreDetectedWithoutAnUpdatedIdentityOrHash(): void
+    {
+        $id = str_repeat('f', 64);
+        $this->connection->insert('om_reflection', [
+            'reflection_id' => $id, 'run_id' => 'reflection-session', 'compaction_request_id' => 'request',
+            'observation_set_hash' => 'set', 'content' => 'alpha reflection', 'supporting_observation_ids_json' => '[]',
+            'compression_level' => 'normal', 'token_count' => 3, 'reflector_model' => 'test/model',
+            'reflector_schema_version' => '1', 'created_at' => '2026-09-12T12:00:00+00:00',
+        ]);
+        $this->assertTrue($this->index()->synchronize());
+        $http = new MockHttpClient(function () use ($id): MockResponse {
+            $this->connection->update('om_reflection', ['content' => 'omega reflection'], ['reflection_id' => $id]);
+
+            return new MockResponse('{"data":[{"index":0,"embedding":[1.0,0.0]}]}');
+        });
+        $this->assertSame('index_building', $this->query($http)->search('alpha')['error']);
+        $partial = $this->query()->search('alpha');
+        $this->assertTrue($partial['partial']);
+        $this->assertSame([], $partial['results']);
+        $this->assertTrue($this->index()->synchronize());
+        $result = $this->query()->search('omega');
+        $this->assertSame('omega reflection', $result['results'][0]['content']);
+        $this->assertSame($id, $result['results'][0]['id']);
+        $this->assertArrayNotHasKey('signature', $result['results'][0]);
+    }
+
+    #[Test]
+    public function unrelatedWritesAndRestoredContentDoNotInvalidateTheSourceSnapshot(): void
+    {
+        $id = $this->observation('alpha');
+        $this->assertTrue($this->index()->synchronize());
+        $this->connection->executeStatement('CREATE TABLE unrelated (value TEXT)');
+        $http = new MockHttpClient(function () use ($id): MockResponse {
+            $this->connection->insert('unrelated', ['value' => 'changed']);
+            $this->connection->update('om_observation', ['content' => 'omega'], ['observation_id' => $id]);
+            $this->connection->update('om_observation', ['content' => 'alpha'], ['observation_id' => $id]);
+
+            return new MockResponse('{"data":[{"index":0,"embedding":[1.0,0.0]}]}');
+        });
+        $result = $this->query($http)->search('alpha');
+        $this->assertTrue($result['ok']);
+        $this->assertFalse($result['partial']);
+        $this->assertSame('alpha', $result['results'][0]['content']);
+    }
+
+    #[Test]
+    public function canonicalMetadataChangesDoNotReembedUnchangedChunks(): void
+    {
+        $id = $this->observation('alpha');
+        $this->assertTrue($this->index()->synchronize());
+        $this->connection->update('om_observation', ['run_id' => 'updated-session', 'timestamp' => '2026-09-13 12:00', 'relevance' => 'low'], ['observation_id' => $id]);
+        $result = $this->query()->search('alpha', after: '2026-09-13');
+        $this->assertTrue($result['partial']);
+        $this->assertSame('updated-session', $result['results'][0]['session_id']);
+        $this->assertSame('low', $result['results'][0]['importance']);
+        $requests = \count($this->requests);
+        $this->assertTrue($this->index()->synchronize());
+        $this->assertCount($requests, $this->requests);
+    }
+
+    #[Test]
+    public function changedSourceDuringIndexEmbeddingCannotPublishACompleteSnapshot(): void
+    {
+        $id = $this->observation('alpha');
+        $semantic = $this->settings->semantic;
+        $this->assertNotNull($semantic);
+        $http = new MockHttpClient(function () use ($id): MockResponse {
+            $this->connection->update('om_observation', ['content' => 'omega'], ['observation_id' => $id]);
+
+            return new MockResponse('{"data":[{"index":0,"embedding":[1.0,0.0]}]}');
+        });
+        $index = new SemanticIndexService($this->connection, $this->path, $semantic, new SemanticApiClient($semantic, $http));
+        $this->assertFalse($index->synchronize());
+        $this->assertSame(0, (int) $this->connection->fetchOne('SELECT complete FROM om_semantic_state'));
+        $partial = $this->query()->search('omega');
+        $this->assertTrue($partial['partial']);
+        $this->assertSame([], $partial['results']);
+        $this->assertTrue($this->index()->synchronize());
+        $this->assertSame('omega', $this->query()->search('omega')['results'][0]['content']);
+    }
+
+    #[Test]
+    public function dimensionChangesDirtyTheIndexForBothQueryAndContinuation(): void
+    {
+        $this->observation('alpha');
+        $this->assertTrue($this->index()->synchronize());
+        $semantic = $this->settings->semantic;
+        $this->assertNotNull($semantic);
+        $http = new MockHttpClient(new MockResponse('{"data":[{"index":0,"embedding":[1.0,0.0,0.5]}]}'));
+        $result = $this->query($http)->search('alpha');
+        $this->assertSame('embedding_dimensions_changed', $result['error']);
+        $this->assertSame(1, (int) $this->connection->fetchOne('SELECT dirty FROM om_semantic_state'));
+        $this->assertTrue($this->index()->synchronize());
+        $this->observation('omega');
+        $http = new MockHttpClient(new MockResponse('{"data":[{"index":0,"embedding":[1.0,0.0,0.5]}]}'));
+        $index = new SemanticIndexService($this->connection, $this->path, $semantic, new SemanticApiClient($semantic, $http));
+        try {
+            $index->synchronize();
+            $this->fail('Changed embedding dimensions must not be published.');
+        } catch (\RuntimeException $error) {
+            $this->assertSame('Embedding dimensions changed; semantic index requires rebuilding.', $error->getMessage());
+        }
+        $this->assertSame(1, (int) $this->connection->fetchOne('SELECT dirty FROM om_semantic_state'));
+        $this->assertTrue($this->index()->synchronize());
+        $this->assertFalse($this->query()->search('alpha')['partial']);
+    }
+
+    #[Test]
+    public function unchangedSearchDoesNotRequireTheCanonicalWriterLock(): void
+    {
+        $this->observation('alpha');
+        $this->assertTrue($this->index()->synchronize());
+        $other = self::getContainer()->get('test.om_database_factory')->connectAndMigrate($this->path);
+        $semantic = $this->settings->semantic;
+        $this->assertNotNull($semantic);
+        $this->connection->beginTransaction();
+        try {
+            $this->connection->executeStatement('UPDATE om_observation SET token_count = token_count + 1');
+            $index = new SemanticIndexService($other, $this->path, $semantic, new SemanticApiClient($semantic, $this->http));
+            $result = $index->search('alpha', ['observation' => [null, null], 'reflection' => [null, null]], static function (): void {});
+            $this->assertFalse($result['partial']);
+            $this->assertSame('alpha', $result['results'][0]['content']);
+        } finally {
+            $this->connection->rollBack();
+            $other->close();
+        }
+    }
+
+    #[Test]
+    public function unchangedChunksOfAChangedSourceReturnItsCurrentCanonicalContent(): void
+    {
+        $original = str_repeat('alpha ', 400).'old tail';
+        $updated = str_repeat('alpha ', 400).'new tail';
+        $id = $this->observation($original);
+        $this->assertTrue($this->index()->synchronize());
+        $this->connection->update('om_observation', ['content' => $updated], ['observation_id' => $id]);
+        $result = $this->query()->search('alpha');
+        $this->assertTrue($result['partial']);
+        $this->assertSame(1, $result['count']);
+        $this->assertSame($updated, $result['results'][0]['content']);
+        $this->assertSame($id, $result['results'][0]['id']);
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function refreshedSourceCases(): iterable
+    {
+        yield 'new source' => [true];
+        yield 'changed source' => [false];
+    }
+
+    #[Test]
+    #[DataProvider('refreshedSourceCases')]
+    public function sourceRefreshRetriesTheWholeSnapshotAfterAConcurrentCommit(bool $newSource): void
+    {
+        $id = $this->observation('alpha original');
+        $this->assertTrue($this->index()->synchronize());
+        if ($newSource) {
+            $id = $this->observation('alpha new');
+        } else {
+            $this->connection->update('om_observation', ['content' => 'alpha changed'], ['observation_id' => $id]);
+        }
+        $other = self::getContainer()->get('test.om_database_factory')->connectAndMigrate($this->path);
+        $pdo = $this->connection->getNativeConnection();
+        $previous = $pdo->getAttribute(\PDO::ATTR_STATEMENT_CLASS);
+        $pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, [Support\SourceRefreshStatement::class]);
+        Support\SourceRefreshStatement::$sourceReads = 0;
+        Support\SourceRefreshStatement::$conflictCodes = [];
+        Support\SourceRefreshStatement::$afterSourceRead = static function () use ($other, $id): void {
+            Support\SourceRefreshStatement::$afterSourceRead = null;
+            $other->update('om_observation', ['content' => 'omega committed'], ['observation_id' => $id]);
+        };
+        $logger = new TestLogger();
+        $semantic = $this->settings->semantic;
+        $this->assertNotNull($semantic);
+        try {
+            $index = new SemanticIndexService($this->connection, $this->path, $semantic, new SemanticApiClient($semantic, $this->http), $logger, 'snapshot-retry-run');
+            $this->assertTrue($index->synchronize());
+            $this->assertSame([517], Support\SourceRefreshStatement::$conflictCodes);
+            $this->assertGreaterThanOrEqual(2, Support\SourceRefreshStatement::$sourceReads);
+            $this->assertSame(0, $this->connection->getTransactionNestingLevel());
+            $this->assertSame(5000, (int) $this->connection->fetchOne('PRAGMA busy_timeout'));
+            $this->assertSame('omega committed', $this->connection->fetchOne("SELECT json_extract(metadata, '$.source.content') FROM om_semantic_document WHERE id = ?", ['source:observation:'.$id]));
+            $conflicts = array_values(array_filter($logger->records, static fn (array $record): bool => 'om.semantic.source_refresh_conflict' === $record['message']));
+            $this->assertCount(1, $conflicts);
+            $this->assertSame(['run_id' => 'snapshot-retry-run', 'session_id' => 'snapshot-retry-run', 'component' => 'observational_memory', 'event_type' => 'om.semantic.source_refresh_conflict', 'sqlite_code' => 517, 'attempt' => 1, 'retrying' => true], $conflicts[0]['context']);
+            $result = $this->query()->search('omega');
+            $this->assertFalse($result['partial']);
+            $contents = array_column($result['results'], 'content', 'id');
+            $this->assertSame('omega committed', $contents[$id]);
+        } finally {
+            Support\SourceRefreshStatement::$afterSourceRead = null;
+            $pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, $previous);
+            $other->close();
+        }
+    }
+
+    #[Test]
+    public function exhaustedSnapshotConflictsAndUnrelatedFailuresPropagateWithoutPublishingManifests(): void
+    {
+        $id = $this->observation('alpha original');
+        $this->assertTrue($this->index()->synchronize());
+        $this->connection->update('om_observation', ['content' => 'alpha changed'], ['observation_id' => $id]);
+        $other = self::getContainer()->get('test.om_database_factory')->connectAndMigrate($this->path);
+        $pdo = $this->connection->getNativeConnection();
+        $previous = $pdo->getAttribute(\PDO::ATTR_STATEMENT_CLASS);
+        $pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, [Support\SourceRefreshStatement::class]);
+        Support\SourceRefreshStatement::$sourceReads = 0;
+        Support\SourceRefreshStatement::$conflictCodes = [];
+        Support\SourceRefreshStatement::$afterSourceRead = static function () use ($other, $id): void {
+            $other->update('om_observation', ['content' => 'alpha commit '.Support\SourceRefreshStatement::$sourceReads], ['observation_id' => $id]);
+        };
+        $logger = new TestLogger();
+        $semantic = $this->settings->semantic;
+        $this->assertNotNull($semantic);
+        $index = new SemanticIndexService($this->connection, $this->path, $semantic, new SemanticApiClient($semantic, $this->http), $logger);
+        try {
+            try {
+                $index->search('alpha', ['observation' => [null, null], 'reflection' => [null, null]], static function (): void {});
+                $this->fail('Exhausted snapshot conflicts must propagate.');
+            } catch (DriverException $error) {
+                $this->assertSame(517, $error->getCode());
+            }
+            $this->assertSame([517, 517, 517], Support\SourceRefreshStatement::$conflictCodes);
+            $this->assertSame(3, Support\SourceRefreshStatement::$sourceReads);
+            $this->assertSame(0, $this->connection->getTransactionNestingLevel());
+            $this->assertSame('alpha original', $this->connection->fetchOne("SELECT json_extract(metadata, '$.source.content') FROM om_semantic_document WHERE id = ?", ['source:observation:'.$id]));
+            $this->assertSame([true, true, false], array_column(array_column($logger->records, 'context'), 'retrying'));
+            $this->assertCount(3, $logger->records);
+            Support\SourceRefreshStatement::$afterSourceRead = null;
+            Support\SourceRefreshStatement::$sourceReads = 0;
+            $this->connection->executeStatement('PRAGMA busy_timeout = 0');
+            $other->beginTransaction();
+            $other->executeStatement('UPDATE om_observation SET token_count = token_count + 1');
+            try {
+                $index->search('alpha', ['observation' => [null, null], 'reflection' => [null, null]], static function (): void {});
+                $this->fail('Unrelated database errors must propagate without retry.');
+            } catch (DriverException $error) {
+                $this->assertSame(5, $error->getCode());
+            } finally {
+                $other->rollBack();
+            }
+            $this->assertSame(1, Support\SourceRefreshStatement::$sourceReads);
+            $this->assertSame([517, 517, 517, 5], Support\SourceRefreshStatement::$conflictCodes);
+            $this->assertCount(3, $logger->records);
+            $this->assertSame(0, $this->connection->getTransactionNestingLevel());
+            $this->assertSame('alpha original', $this->connection->fetchOne("SELECT json_extract(metadata, '$.source.content') FROM om_semantic_document WHERE id = ?", ['source:observation:'.$id]));
+        } finally {
+            Support\SourceRefreshStatement::$afterSourceRead = null;
+            $this->connection->executeStatement('PRAGMA busy_timeout = 5000');
+            $pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, $previous);
+            $other->close();
+        }
     }
 
     private function settings(string $model = 'coderankembed'): OmSettings

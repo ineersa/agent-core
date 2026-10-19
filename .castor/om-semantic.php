@@ -119,7 +119,7 @@ function om_benchmark_semantic(string $source, string $output, bool $reuse = fal
         }
         $buildSeconds = microtime(true) - $start;
         $buildRequests = $counts->getArrayCopy();
-        $chunkCount = (int) $connection->fetchOne('SELECT COUNT(*) FROM om_semantic_document');
+        $chunkCount = (int) $connection->fetchOne("SELECT COUNT(*) FROM om_semantic_document WHERE id NOT LIKE 'source:%'");
         $dimension = (int) $connection->fetchOne('SELECT dimensions FROM om_semantic_state WHERE id = 1');
         $noWorkStart = microtime(true);
         if (!$reuse && (!$index->synchronize() || $buildRequests !== $counts->getArrayCopy())) {
