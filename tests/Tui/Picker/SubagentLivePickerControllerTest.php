@@ -401,7 +401,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         $method->invoke($picker, $child, $state, $harness->screen());
 
         $this->assertSame(4, $state->subagentLiveView->childLastSeq);
-        $this->assertSame('snapshot line', $state->subagentLiveView->childTranscript[0]->text);
+        $this->assertSame('snapshot line', $state->subagentLiveView->childTranscript()[0]->text);
 
         $method->invoke($picker, $child, $state, $harness->screen());
         $this->assertSame(4, $state->subagentLiveView->childLastSeq);

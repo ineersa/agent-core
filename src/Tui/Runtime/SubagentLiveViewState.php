@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 
 /**
  * State for interactive child live view inside the parent TUI session.
@@ -18,9 +19,6 @@ final class SubagentLiveViewState
     public bool $active = false;
 
     public ?SubagentLiveChildDTO $selected = null;
-
-    /** @var list<TranscriptBlock> */
-    public array $childTranscript = [];
 
     public int $childLastSeq = 0;
 
@@ -52,11 +50,19 @@ final class SubagentLiveViewState
      */
     public ?string $lastPickerFeedbackWorkingMessage = null;
 
+    // Reuse the session's indexed transcript application, not a second ID-map
+    // implementation. Lazy construction avoids recursively creating live views.
+    private ?TuiSessionState $transcriptState = null;
+
+    /** @var list<string> Blocks mounted only until the first live batch applies. */
+    private array $entryBlockIds = [];
+
     public function enter(SubagentLiveChildDTO $child): void
     {
         $this->active = true;
         $this->selected = $child;
-        $this->childTranscript = [];
+        $this->transcriptState = null;
+        $this->entryBlockIds = [];
         $this->childLastSeq = 0;
         $this->childLastPoll = 0.0;
         $this->childQueuedUserMessages = [];
@@ -67,6 +73,48 @@ final class SubagentLiveViewState
     /**
      * @return list<TranscriptBlock>
      */
+    public function childTranscript(): array
+    {
+        return $this->transcriptState->transcript ?? [];
+    }
+
+    /** @param list<TranscriptBlock> $blocks */
+    public function replaceChildTranscript(array $blocks, bool $entryOnly = false): void
+    {
+        $this->transcriptState ??= new TuiSessionState($this->selected->agentRunId ?? '');
+        $this->transcriptState->replaceTranscript($blocks);
+        $this->entryBlockIds = $entryOnly ? array_column($blocks, 'id') : [];
+    }
+
+    public function appendChildTranscriptBlock(TranscriptBlock $block): void
+    {
+        $this->transcriptState ??= new TuiSessionState($this->selected->agentRunId ?? '');
+        $this->transcriptState->appendTranscriptBlock($block);
+    }
+
+    public function applyTranscriptChangeSet(TranscriptChangeSet $changes): TranscriptChangeSet
+    {
+        if (!$changes->isFull() && [] !== $this->entryBlockIds) {
+            $changes = TranscriptChangeSet::incremental(
+                $changes->upserts,
+                array_values(array_unique([...$changes->removals, ...$this->entryBlockIds])),
+                $changes->retentionFloorBlockId,
+            );
+        }
+        $this->entryBlockIds = [];
+        if (!$changes->isEmpty()) {
+            $this->transcriptState ??= new TuiSessionState($this->selected->agentRunId ?? '');
+            $this->transcriptState->applyTranscriptChangeSet($changes);
+        }
+
+        // Retention also evicts local notices unknown to the runtime projector.
+        // Publish the authoritative list at this boundary, as in the main view.
+        return null !== $changes->retentionFloorBlockId
+            ? TranscriptChangeSet::full($this->childTranscript())
+            : $changes;
+    }
+
+    /** @return list<TranscriptBlock> */
     public function placeholderTranscriptFor(SubagentLiveChildDTO $child): array
     {
         return [
@@ -87,7 +135,8 @@ final class SubagentLiveViewState
 
     public function clearProjectedState(): void
     {
-        $this->childTranscript = [];
+        $this->transcriptState = null;
+        $this->entryBlockIds = [];
         $this->childLastSeq = 0;
         $this->childLastPoll = 0.0;
         $this->childQueuedUserMessages = [];

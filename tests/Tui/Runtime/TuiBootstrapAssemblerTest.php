@@ -286,7 +286,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
                 \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::Running, 'Child work', 1, 'provider/model', 'low');
             $state->subagentLiveView->enter($child);
             $childBlock = new TranscriptBlock('child-block', TranscriptBlockKindEnum::AssistantMessage, 'child-42', 1, 'Visible child answer');
-            $state->subagentLiveView->childTranscript = [$childBlock];
+            $state->subagentLiveView->replaceChildTranscript([$childBlock]);
             $childProjector->replaceProjectedBlocks([$childBlock]);
             $harness->screen()->setTranscriptBlocks([$childBlock]);
             $client->beginObservingChildRun('child-42');
@@ -303,7 +303,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
                 && str_contains($harness->plainScreenText(), 'Local parent input'));
             $this->assertFalse($state->subagentLiveView->active);
             $this->assertNull($state->subagentLiveView->selected);
-            $this->assertSame([], $state->subagentLiveView->childTranscript);
+            $this->assertSame([], $state->subagentLiveView->childTranscript());
             $this->assertSame([], $childProjector->blocks());
             $this->assertFalse($context->sessionServices->questionCoordinator->actionRequired());
             $this->assertSame([], (new \ReflectionProperty($client, 'observedChildRunIds'))->getValue($client));

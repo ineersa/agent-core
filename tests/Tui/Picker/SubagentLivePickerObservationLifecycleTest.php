@@ -188,7 +188,7 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
         $this->assertFalse($state->subagentLiveView->active);
         $this->assertFalse($coordinator->actionRequired());
         $this->assertFalse($coordinator->hasRequest($requestId));
-        $this->assertSame([], $state->subagentLiveView->childTranscript);
+        $this->assertSame([], $state->subagentLiveView->childTranscript());
         $this->assertSame(0, $state->subagentLiveView->childLastSeq);
 
         // Re-entry always rereads the durable snapshot and rediscovers unresolved HITL.
