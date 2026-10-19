@@ -564,9 +564,10 @@ final class TranscriptProjectionState
             $blocks[] = $this->blocks[$id];
             $this->removeBlock($id);
         }
-        // Keep removals until drain so consumers remove before upserting in the new order.
         foreach ($blocks as $block) {
             $this->addBlock($block);
+            // Consumers must remove before upserting to observe the changed order.
+            $this->removedIds[$block->id] = true;
         }
     }
 
@@ -652,11 +653,11 @@ final class TranscriptProjectionState
 
     private function markDirty(string $id): void
     {
-        // A later update must not cancel a pending remove-and-reinsert operation.
-        // drainChanges() clears removals after publishing the ordered upserts.
+        // Repeated updates must preserve pending reorder removals until drain.
         if (isset($this->dirtyIds[$id])) {
             return;
         }
+        unset($this->removedIds[$id]);
         $this->dirtyIds[$id] = true;
         $this->dirtyOrder[] = $id;
     }
