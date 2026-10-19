@@ -39,7 +39,7 @@ final class TuiVirtualInputTest extends TestCase
     use TuiRuntimeContextBuilderTrait;
 
     private const string SESSION_ID = 'virtual-input-session';
-    private const int HOTKEYS_VIEWPORT_ROWS = 81;
+    private const int HOTKEYS_VIEWPORT_ROWS = 82;
 
     private const string DOUBLE_BANG_UNSUPPORTED = '!! is not supported. Use ! to execute shell commands.';
 
@@ -154,7 +154,7 @@ final class TuiVirtualInputTest extends TestCase
             );
         }
 
-        foreach (['Ctrl+C', 'Ctrl+D', 'Ctrl+O', 'Shift+Enter', 'Insert newline', 'Submit prompt', 'Enter', 'Tab'] as $entry) {
+        foreach (['Ctrl+B', 'Background Bash', 'Ctrl+C', 'Ctrl+D', 'Ctrl+O', 'Shift+Enter', 'Insert newline', 'Submit prompt', 'Enter', 'Tab'] as $entry) {
             $this->assertStringContainsString(
                 $entry,
                 $screen,
