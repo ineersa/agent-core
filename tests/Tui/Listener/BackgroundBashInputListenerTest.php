@@ -15,8 +15,13 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\Tui\Listener\BackgroundBashInputListener;
+use Ineersa\Tui\Listener\SubmitListener;
+use Ineersa\Tui\Question\QuestionKind;
+use Ineersa\Tui\Question\QuestionRequest;
+use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
+use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
@@ -32,6 +37,7 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
     private BackgroundProcessManager $manager;
     private string $directory;
     private string $command;
+    private TuiRuntimeContext $context;
 
     protected function setUp(): void
     {
@@ -146,17 +152,38 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         $harness->stopInputLoop();
     }
 
-    public function testChildViewTargetsChildRatherThanParentWait(): void
+    public function testActualTextQuestionOwnsAnswerAfterBackgroundPickerOpens(): void
+    {
+        $this->manager->start($this->command, 'visible', 'first');
+        $this->manager->start($this->command, 'visible', 'second');
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->never())->method('send');
+        $harness = $this->mount('visible', $client);
+        self::getContainer()->get(SubmitListener::class)->register($this->context);
+        $harness->sendInput("\x02");
+        $this->assertInstanceOf(SelectListWidget::class, $harness->tui()->getFocus());
+        $request = new QuestionRequest('real-text', QuestionSource::AgentCore, QuestionKind::Text, 'What should happen?', runId: 'visible');
+        $answer = null;
+        $this->context->sessionServices->questionCoordinator->enqueue($request, static function (mixed $value) use (&$answer): void { $answer = $value; });
+        $this->context->sessionServices->questionController->open($request);
+        $this->assertSame($harness->screen()->editorWidget(), $harness->tui()->getFocus());
+        $harness->sendInput('my answer');
+        $harness->sendInput("\r");
+        $this->assertSame('my answer', $answer);
+        $this->assertFalse($this->context->sessionServices->questionCoordinator->actionRequired());
+        $this->assertFalse($harness->screen()->hasInputOverlay());
+        $harness->stopInputLoop();
+    }
+
+    public function testIneligibleChildViewDoesNotRetargetParentWait(): void
     {
         $parent = $this->manager->start($this->command, 'parent', 'parent-call');
-        $child = $this->manager->start($this->command, 'child', 'child-call');
+        $this->manager->start($this->command, 'child');
         $state = new TuiSessionState('parent');
         $state->subagentLiveView->active = true;
         $state->subagentLiveView->selected = new SubagentLiveChildDTO('child', 'artifact', 'child', SubagentLiveStatusEnum::Running, 'task', 0, 'test/model', 'off');
         $client = $this->createMock(AgentSessionClient::class);
-        $client->expects($this->once())->method('send')->with('child', $this->callback(
-            static fn (UserCommand $command): bool => $command->payload === ['record_id' => $child->id, 'tool_call_id' => 'child-call'],
-        ));
+        $client->expects($this->never())->method('send');
         $harness = $this->mount('parent', $client, $state);
         $harness->sendInput("\x02");
         $this->assertFalse($this->manager->findByRecordId($parent->id)?->backgroundRequested);
@@ -192,11 +219,12 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         $runtimeClient = self::getContainer()->get(JsonlProcessAgentSessionClient::class);
         $client->method('foregroundBash')->willReturnCallback($runtimeClient->foregroundBash(...));
         $harness = new VirtualTuiHarness(sessionId: $runId);
-        $context = $this->buildTuiContext()
+        $context = $this->context = $this->buildTuiContext()
             ->withTui($harness->tui())
             ->withScreen($harness->screen())
             ->withState($state ?? new TuiSessionState($runId))
             ->withClient($client)
+            ->withSessionServices($this->createSessionServices(tui: $harness->tui(), screen: $harness->screen(), client: $client))
             ->build();
         (new BackgroundBashInputListener())->register($context);
         $harness->startInputLoop();

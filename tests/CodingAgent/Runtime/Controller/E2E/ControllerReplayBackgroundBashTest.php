@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
+use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use PHPUnit\Framework\Attributes\Group;
+use Psr\Log\NullLogger;
 use Symfony\Component\Process\Process;
 
 #[Group('controller-replay')]
@@ -106,6 +109,52 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
         }
     }
 
+    public function testControllerAcknowledgesCommandWhileTimedOutProcessIsInTermGrace(): void
+    {
+        $this->sessionId = trim($this->queryRuntime()->getOutput());
+        $this->spawnController();
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->writeCommand(['v' => 1, 'id' => 'start', 'type' => 'start_run', 'payload' => ['prompt' => 'Start the resistant Bash command.']]);
+        $started = $this->collectEventsUntil(null, 5, static fn (array $event): bool => 'tool_execution.started' === ($event['type'] ?? ''));
+        $this->runId = $this->indexByType($started)['run.started'][0]['runId'];
+        $deadline = microtime(true) + 3;
+        while (!is_file($this->tempDir.'/ready') && microtime(true) < $deadline) {
+            $this->assertTrue($this->isRunning(), $this->collectDiagnostics($started));
+            usleep(10_000);
+        }
+        $this->assertFileExists($this->tempDir.'/ready');
+        $candidates = json_decode(trim($this->queryRuntime($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
+        $this->assertCount(1, $candidates);
+        $candidate = $candidates[0];
+        try {
+            $this->writeCommand(['v' => 1, 'id' => 'detach', 'type' => 'background_bash', 'runId' => $this->runId,
+                'payload' => ['record_id' => $candidate['id'], 'tool_call_id' => self::CALL_ID]]);
+            $detached = $this->collectEventsUntil('run.completed', 3);
+            $this->assertArrayHasKey('run.completed', $this->indexByType($detached), $this->collectDiagnostics($detached));
+            // The command writes this marker only after TERM is actually handled.
+            // Its original two-second timeout and the controller polling interval
+            // are the product delay under test, not readiness sleeps.
+            $deadline = microtime(true) + 5;
+            while (!is_file($this->tempDir.'/term') && microtime(true) < $deadline) {
+                $this->assertTrue($this->isRunning());
+                usleep(10_000);
+            }
+            $this->assertFileExists($this->tempDir.'/term');
+            $this->writeCommand(['v' => 1, 'id' => 'during-grace', 'type' => 'cancel', 'runId' => $this->runId, 'payload' => []]);
+            $events = $this->collectEventsUntil(null, 2, static fn (array $event): bool => 'command.ack' === ($event['type'] ?? '') && 'during-grace' === ($event['payload']['commandId'] ?? null));
+            $this->assertTrue($this->foundAck($events, 'during-grace'), $this->collectDiagnostics($events));
+            $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger());
+            $this->assertTrue($lifecycle->isAlive($candidate['pid']), 'Acknowledgment arrives while native termination is still in grace, not after KILL or zombie exit.');
+        } finally {
+            // Owned process group only. Avoid spending another full explicit-stop
+            // grace during controller teardown after the responsiveness proof.
+            $pgid = posix_getpgid($candidate['pid']);
+            if (false !== $pgid && $pgid === $candidate['pid']) {
+                posix_kill(-$pgid, \SIGKILL);
+            }
+        }
+    }
+
     protected function tempDirPrefix(): string
     {
         return 'test-controller-background-bash';
@@ -117,11 +166,16 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
         $command = 'printf "%s\\n" "$$" >> '.escapeshellarg($this->tempDir.'/started')
             .'; : > '.escapeshellarg($this->tempDir.'/ready')
             .'; IFS= read -r release < '.escapeshellarg($this->tempDir.'/release').'; printf fifo-command-complete';
+        $arguments = ['command' => $command];
+        if ('testControllerAcknowledgesCommandWhileTimedOutProcessIsInTermGrace' === $this->name()) {
+            $command = 'trap '.escapeshellarg(': > '.escapeshellarg($this->tempDir.'/term')).' TERM; : > '.escapeshellarg($this->tempDir.'/ready').'; while :; do sleep 0.05; done';
+            $arguments = ['command' => $command, 'timeout' => 2];
+        }
         $start = json_decode((string) file_get_contents(__DIR__.'/fixtures/controller-bash-blocker.json'), true, 512, \JSON_THROW_ON_ERROR);
         $start['deltas'] = [
             ['type' => 'tool_call_start', 'id' => self::CALL_ID, 'name' => 'bash'],
-            ['type' => 'tool_input_delta', 'id' => self::CALL_ID, 'name' => 'bash', 'partial_json' => json_encode(['command' => $command], \JSON_THROW_ON_ERROR)],
-            ['type' => 'tool_call_complete', 'tool_calls' => [['id' => self::CALL_ID, 'name' => 'bash', 'arguments' => ['command' => $command]]]],
+            ['type' => 'tool_input_delta', 'id' => self::CALL_ID, 'name' => 'bash', 'partial_json' => json_encode($arguments, \JSON_THROW_ON_ERROR)],
+            ['type' => 'tool_call_complete', 'tool_calls' => [['id' => self::CALL_ID, 'name' => 'bash', 'arguments' => $arguments]]],
         ];
         $stop = ['model' => 'llama_cpp_test/test', 'provider_id' => 'llama_cpp_test', 'reasoning' => 'off', 'stop_reason' => 'stop',
             'deltas' => [['type' => 'text', 'content' => 'Acknowledged.']]];

@@ -561,6 +561,46 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertFalse($record->stoppedByUser);
     }
 
+    public function testExpiredProcessesReceiveTermTogetherWithoutWaitingForGrace(): void
+    {
+        $this->createManager(stopGraceSeconds: 1);
+        $processes = [];
+        foreach ([1, 2] as $index) {
+            $ready = $this->tmpDir.'/ready-'.$index;
+            $term = $this->tmpDir.'/term-'.$index;
+            $command = 'trap '.escapeshellarg('echo term >> '.escapeshellarg($term)).' TERM; : > '.escapeshellarg($ready).'; while :; do sleep 0.05; done';
+            $process = $this->manager->start($command, self::TEST_SESSION, 'call-'.$index, hrtime(true) - 1);
+            $processes[] = $process;
+            $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (!is_file($ready) && hrtime(true) < $deadline) {
+                $this->assertTrue(posix_kill($process->pid, 0));
+                usleep(10_000);
+            }
+            $this->assertFileExists($ready);
+        }
+        $this->manager->refreshAllUnfinished(self::TEST_SESSION);
+        foreach ($processes as $index => $process) {
+            $term = $this->tmpDir.'/term-'.($index + 1);
+            $deadline = hrtime(true) + 500_000_000;
+            while (!is_file($term) && hrtime(true) < $deadline) {
+                usleep(10_000);
+            }
+            $this->assertFileExists($term);
+            $this->assertNull($this->manager->findByRecordId($process->id)?->finishedAt, 'Both processes must still be in grace after one refresh.');
+        }
+        $deadline = hrtime(true) + 2_000_000_000;
+        do {
+            $this->manager->refreshAllUnfinished(self::TEST_SESSION);
+            $unfinished = array_filter($processes, fn (StartResult $process): bool => null === $this->manager->findByRecordId($process->id)?->finishedAt);
+            if ([] === $unfinished) {
+                break;
+            }
+            usleep(10_000);
+        } while (hrtime(true) < $deadline);
+        $this->assertSame([], $unfinished, 'Later passes must escalate all resistant commands.');
+    }
+
     private function waitUntilFinished(int $pid, float $timeoutSeconds = 2.0): void
     {
         $deadline = microtime(true) + $timeoutSeconds;

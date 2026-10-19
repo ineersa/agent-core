@@ -25,6 +25,11 @@ final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
             $context->tui->setFocus($context->screen->editorWidget());
         };
         $context->tui->addListener(static function (InputEvent $event) use ($context, $overlay, $close): void {
+            if ($context->sessionServices->questionCoordinator->actionRequired() || $context->sessionServices->questionController->isOpen()) {
+                $overlay->close();
+
+                return;
+            }
             $parser = $context->screen->editorWidget()->getKeybindings()->getParser();
             $data = $event->getData();
             if ($parser->isKeyRelease($data) || !$parser->matches($data, Key::ctrl('b'))) {
@@ -51,7 +56,11 @@ final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
                 return;
             }
             $event->stopPropagation();
-            $choose = static function (int $index) use ($context, $runId, $candidates, $close): void {
+            $choose = static function (int $index) use ($context, $runId, $candidates, $overlay, $close): void {
+                if ($context->sessionServices->questionCoordinator->actionRequired() || $context->sessionServices->questionController->isOpen()
+                    || ($overlay->isOpen() && $context->tui->getFocus() !== $overlay->listWidget())) {
+                    return;
+                }
                 $candidate = $candidates[$index];
                 $close();
                 if ($context->state->visibleQuestionOwnerRunId() !== $runId) {

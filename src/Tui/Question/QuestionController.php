@@ -328,6 +328,8 @@ final class QuestionController
 
         if (null !== $this->listWidget) {
             $this->screen->setFocus($this->listWidget);
+        } else {
+            $this->screen->setFocus($this->screen->editorWidget());
         }
 
         // Non-forced render: forced full repaint on mount contributed to visible flicker/scroll churn.

@@ -9,7 +9,7 @@ Long-running shell work can detach into tracked background processes so the conv
 
 Press **Ctrl+B** while a Bash tool runs to move it to background. If several Bash tools
 are running in the visible session, choose one in the picker. Enter or Ctrl+B confirms;
-Escape cancels. In child live view, the shortcut targets that child's own Bash tool.
+Escape cancels. Child-run Bash tools cannot detach, including in child live view.
 Questions, modal dialogs and completion overlays retain their keyboard handling.
 Without an eligible Bash tool, Ctrl+B keeps its editor cursor-left behavior.
 There is no model-facing background parameter or `bg_start` tool.
@@ -33,7 +33,9 @@ After backgrounding, inspect or stop processes with `bg_status`.
 
 Backgrounding preserves the original monotonic timeout deadline. The existing controller
 completion poller enforces it after detachment, with its two-second polling granularity
-and the configured termination grace period. Completion uses the existing follow-up queue.
+and the configured termination grace period. Timeout handling sends TERM without blocking
+the controller; subsequent polls observe exit or send KILL after grace. Explicit stop and
+shutdown still wait for termination. Completion uses the existing follow-up queue.
 
 Tracking is **session-scoped**. `bg_status` exposes only rows explicitly accepted as background work; private foreground supervision is never listed, tailed, or stopped through that tool. Durable records live in `.hatfield/state.sqlite`; filesystem sidecars (PID/status/log) live under the configured tool path.
 

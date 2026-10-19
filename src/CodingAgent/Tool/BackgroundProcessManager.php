@@ -80,6 +80,9 @@ final class BackgroundProcessManager
      */
     private array $ownedRecordIds = [];
 
+    /** @var array<int, int> Immutable record ID to monotonic TERM grace deadline. */
+    private array $timeoutGraceDeadlines = [];
+
     public function __construct(
         private readonly ProcessStore $store,
         private readonly ProcessLifecycle $lifecycle,
@@ -617,18 +620,38 @@ final class BackgroundProcessManager
 
         foreach ($entities as $entity) {
             $this->resolveEntityStatus($entity);
+            if (null !== $entity->finishedAt) {
+                if (isset($this->timeoutGraceDeadlines[$entity->id])) {
+                    $entity->markStopped($entity->finishedAt);
+                    $entity->stoppedByUser = false;
+                }
+                unset($this->timeoutGraceDeadlines[$entity->id]);
+
+                continue;
+            }
             // After detachment the existing controller poller supervises the
             // same process against its original deadline, not a fresh timeout.
-            if (null === $entity->finishedAt && null !== $entity->backgroundedAt && null !== $entity->deadlineNanoseconds && hrtime(true) >= $entity->deadlineNanoseconds) {
-                $this->stopProcessEntity($entity);
-                $entity->stoppedByUser = false;
-                $this->logger->info('background_process.timed_out', [
-                    'component' => 'tool.background_process',
-                    'event_type' => 'background_process.timed_out',
-                    'run_id' => $entity->sessionId,
-                    'session_id' => $entity->sessionId,
-                    'record_id' => $entity->id,
-                ]);
+            if (null !== $entity->backgroundedAt && null !== $entity->deadlineNanoseconds && hrtime(true) >= $entity->deadlineNanoseconds) {
+                if (!isset($this->timeoutGraceDeadlines[$entity->id])) {
+                    $this->lifecycle->sendTerm($entity->pid, $entity->pgid);
+                    $this->timeoutGraceDeadlines[$entity->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+                    $this->logger->info('background_process.timed_out', [
+                        'component' => 'tool.background_process',
+                        'event_type' => 'background_process.timed_out',
+                        'run_id' => $entity->sessionId,
+                        'session_id' => $entity->sessionId,
+                        'record_id' => $entity->id,
+                    ]);
+                }
+                // Polling never waits for grace: every due process receives TERM
+                // in this pass, and later passes observe exit or escalate.
+                if (hrtime(true) >= $this->timeoutGraceDeadlines[$entity->id]) {
+                    $this->lifecycle->sendKill($entity->pid, $entity->pgid);
+                    $entity->markStopped(Clock::get()->now());
+                    $entity->stoppedByUser = false;
+                    $this->lifecycle->writeStopMarker($entity->statusPath);
+                    unset($this->timeoutGraceDeadlines[$entity->id]);
+                }
             }
         }
 
@@ -640,6 +663,7 @@ final class BackgroundProcessManager
      */
     private function stopProcessEntity(BackgroundProcess $entity): StopResult
     {
+        unset($this->timeoutGraceDeadlines[$entity->id]);
         $pid = $entity->pid;
 
         // Refresh status before acting — the process may have finished
