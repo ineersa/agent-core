@@ -468,6 +468,56 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     }
 
     #[Test]
+    public function mountedChildRetainsReorderWhenAMovedBlockIsUpdatedBeforeDrain(): void
+    {
+        $projector = $this->childLiveProjector();
+        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
+        $live = $this->liveState();
+        $harness = new VirtualTuiHarness(rows: 30);
+        $harness->screen()->setWorkingVisible(false);
+        $harness->screen()->setTranscriptBlocks($poller->replaySnapshot($live, new ChildRunTranscriptSnapshotDTO([], [
+            new RuntimeEvent('assistant.text_started', self::CHILD_RUN_ID, 0, ['message_id' => 'm', 'block_id' => 'later', 'output_index' => 1]),
+            new RuntimeEvent('assistant.text_delta', self::CHILD_RUN_ID, 0, ['block_id' => 'later', 'text' => 'SECOND_NATIVE']),
+        ], 1)));
+        $this->assertStringContainsString('SECOND_NATIVE', $harness->plainScreenText());
+
+        // Canonical completion and a delayed worker checkpoint share one drain.
+        // The canonical tool call keeps the child active while the tail arrives.
+        $changes = $this->pollMounted($poller, $live, $harness, [
+            new RuntimeEvent('assistant.message_completed', self::CHILD_RUN_ID, 2, ['message_id' => 'm', 'content' => [
+                ['type' => 'text', 'block_id' => 'earlier', 'text' => 'FIRST_NATIVE', 'output_index' => 0],
+                ['type' => 'text', 'block_id' => 'later', 'text' => 'SECOND_NATIVE', 'output_index' => 1],
+                ['type' => 'tool_call', 'id' => 'active', 'name' => 'bash', 'arguments' => ['command' => 'echo CHILD_TOOL']],
+            ]]),
+            new RuntimeEvent('assistant.text_completed', self::CHILD_RUN_ID, 0, ['message_id' => 'm', 'block_id' => 'later', 'text' => 'SECOND_UPDATED', 'output_index' => 1]),
+        ]);
+        $expectedOrder = ['earlier', 'later', 'tool_call_active'];
+        $this->assertSame($expectedOrder, array_column($projector->blocks(), 'id'));
+        $this->assertSame($expectedOrder, array_column($live->childTranscript(), 'id'));
+        $this->assertFalse($changes->isFull());
+        $this->assertContains('later', $changes->removals);
+        $this->assertSame('SECOND_UPDATED', $live->childTranscript()[1]->text);
+        $text = $harness->plainScreenText();
+        $this->assertStringContainsString('FIRST_NATIVE', $text);
+        $this->assertStringContainsString('SECOND_UPDATED', $text);
+        $this->assertStringContainsString('CHILD_TOOL', $text);
+        $this->assertLessThan(strpos($text, 'SECOND_UPDATED'), strpos($text, 'FIRST_NATIVE'));
+        $this->assertLessThan(strpos($text, 'CHILD_TOOL'), strpos($text, 'SECOND_UPDATED'));
+
+        $harness->screen()->setTranscriptBlocks($live->childTranscript());
+        $text = $harness->plainScreenText();
+        $this->assertLessThan(strpos($text, 'SECOND_UPDATED'), strpos($text, 'FIRST_NATIVE'));
+        $this->assertLessThan(strpos($text, 'CHILD_TOOL'), strpos($text, 'SECOND_UPDATED'));
+        $changes = $this->pollMounted($poller, $live, $harness, [
+            new RuntimeEvent('assistant.text_completed', self::CHILD_RUN_ID, 0, ['message_id' => 'm', 'block_id' => 'later', 'text' => 'SECOND_UPDATED_AGAIN', 'output_index' => 1]),
+        ]);
+        $this->assertFalse($changes->isFull());
+        $this->assertSame([], $changes->removals, 'The completed drain must clear pending reinsertion.');
+        $this->assertSame($expectedOrder, array_column($live->childTranscript(), 'id'));
+        $this->assertStringContainsString('SECOND_UPDATED_AGAIN', $harness->plainScreenText());
+    }
+
+    #[Test]
     public function mountedRetentionEvictsOldLocalNoticesAndKeepsTheVisibleTailAcrossResize(): void
     {
         $poller = new SubagentLiveChildViewPoller($this->childLiveProjector(), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer());
