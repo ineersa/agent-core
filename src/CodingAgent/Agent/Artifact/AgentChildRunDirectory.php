@@ -17,15 +17,15 @@ use Psr\Log\LoggerInterface;
  *
  * This is intentionally a lazy scan — there is no global child-run
  * index.  A lookup for an unknown agentRunId is O(P) where P is the
- * number of live parent sessions, but subsequent lookups of the same
- * runId are O(1) via the in-memory cache.
+ * number of live parent sessions. Successfully located children use
+ * the in-memory cache; known parents use the canonical session lookup.
  *
  * Cache-hit fast path: already-located (or pre-registered) entries
  * return from the in-memory map without a session-list query or
  * registry read.
  *
- * Cache-miss rescan: when a runId is not in the cache, the locator
- * rescans all known parent sessions and their registries.  This avoids
+ * Cache-miss rescan: when a runId is neither cached nor a known parent,
+ * the locator rescans all known parent sessions and their registries. This avoids
  * a stale process-wide flag that would permanently miss child runs
  * created later in long-lived messenger consumer or tool processes.
  * The rescan is intentionally simple in v1 — there is no listener or
@@ -54,6 +54,9 @@ final class AgentChildRunDirectory
      * Cache-hit fast path (O(1)): returns the entry directly when the
      * runId was already located or pre-registered.
      *
+     * Known parents return null using their durable session identity, even
+     * before an operational projection exists or after owner eviction.
+     *
      * Cache-miss path (O(P)): rescans all known parent sessions and
      * their artifact registries.  If the child run was created since
      * the last scan (e.g. by another long-lived messenger consumer),
@@ -65,6 +68,14 @@ final class AgentChildRunDirectory
     {
         if (isset($this->cache[$agentRunId])) {
             return $this->cache[$agentRunId];
+        }
+
+        // A parent never appears in a child registry. Do not turn each parent
+        // store operation into global discovery, or cache misses for unknown
+        // children that another process may reserve later. Only the canonical
+        // numeric spelling is a parent identity; e.g. "01" can be a child ID.
+        if ((string) (int) $agentRunId === $agentRunId && $this->hatfieldSessionStore->exists($agentRunId)) {
+            return null;
         }
 
         $this->scanAllSessions();

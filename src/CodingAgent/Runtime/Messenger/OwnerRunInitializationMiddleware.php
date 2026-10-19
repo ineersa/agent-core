@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
@@ -39,6 +40,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         private \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry $artifacts,
         private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $transitionRecovery,
         private RunOperationalStatusReaderInterface $operationalStatus,
+        private ?RunTracer $tracer = null,
     ) {
     }
 
@@ -58,7 +60,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
             return $stack->next()->handle($envelope, $stack);
         }
 
-        return $this->locks->synchronized($runId, function () use ($runId, $message, $envelope, $stack): Envelope {
+        $consume = fn (): Envelope => $this->locks->synchronized($runId, function () use ($runId, $message, $envelope, $stack): Envelope {
             // Attach prepares state and display together before applying its policy.
             // Other maintenance performs recovery inside its response boundary.
             if (!$message instanceof RepairSession && !$message instanceof SelectHistoryEntry && !$message instanceof AttachRun) {
@@ -91,6 +93,12 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
 
             return $handled;
         });
+
+        // Include admission/recovery and the lock's after-release publication,
+        // which both sit outside the narrower orchestrator/commit spans.
+        return null === $this->tracer ? $consume() : $this->tracer->inSpan('run_control.consume', [
+            'run_id' => $runId, 'message_type' => $message::class, 'component' => 'run_control',
+        ], $consume, root: true);
     }
 
     /** Explicit owner entry, including maintenance after its integrity-only refusal checks. */

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
@@ -20,6 +21,7 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
         private readonly RuntimeEventSinkInterface $stdoutSink,
         private readonly bool $streamCommittedEventsToStdout,
         private readonly \Symfony\Component\EventDispatcher\EventDispatcherInterface $dispatcher,
+        private readonly ?RunTracer $tracer = null,
     ) {
     }
 
@@ -81,10 +83,10 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
         }
         $this->assertVerifiedBatch($pending, $hotBatch);
 
-        $store->finalizeVerifiedTransition($runId, $identity);
+        $this->probe('canonical_finalize', $runId, static fn () => $store->finalizeVerifiedTransition($runId, $identity));
         unset($this->pendingEvents[$runId]);
         foreach ($hotBatch as $event) {
-            $this->dispatcher->dispatch(new \Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent($event));
+            $this->probe('listeners', $runId, fn () => $this->dispatcher->dispatch(new \Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent($event)));
             $this->emitMapped($event);
         }
     }
@@ -144,11 +146,25 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
             return;
         }
 
-        $runtimeEvent = $this->mapper->toRuntimeEvent($runEvent);
+        $runtimeEvent = $this->probe('map', $runEvent->runId, fn () => $this->mapper->toRuntimeEvent($runEvent));
         if (null === $runtimeEvent) {
             return;
         }
 
-        $this->stdoutSink->emit($runtimeEvent);
+        $this->probe('stdout', $runEvent->runId, fn () => $this->stdoutSink->emit($runtimeEvent));
+    }
+
+    /**
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function probe(string $phase, string $runId, callable $operation): mixed
+    {
+        return null === $this->tracer ? $operation() : $this->tracer->inSpan('latency_probe.publication.'.$phase, [
+            'run_id' => $runId, 'component' => 'runtime_publication', 'latency_probe' => true,
+        ], $operation);
     }
 }

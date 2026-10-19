@@ -338,19 +338,23 @@ final readonly class RunHistoryIndex
         $db->executeStatement('PRAGMA cache_size = -1024');
         $db->executeStatement('PRAGMA temp_store = FILE');
         $db->executeStatement('PRAGMA journal_mode = WAL');
-        $db->executeStatement('CREATE TABLE IF NOT EXISTS index_meta (version INTEGER NOT NULL, run_id TEXT NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL, end_offset INTEGER NOT NULL, last_seq INTEGER NOT NULL, selected_anchor INTEGER NOT NULL, tip_anchor INTEGER NOT NULL, boundary_offset INTEGER NOT NULL, boundary_length INTEGER NOT NULL, boundary_hash TEXT NOT NULL)');
-        $db->executeStatement('CREATE TABLE IF NOT EXISTS turn_anchor (anchor INTEGER PRIMARY KEY, turn_no INTEGER NOT NULL, predecessor INTEGER NOT NULL, retained INTEGER NOT NULL, completion_seq INTEGER NOT NULL DEFAULT 0, prompt_seq INTEGER, prompt_preview TEXT, answer_seq INTEGER, answer_preview TEXT)');
-        $db->executeStatement('CREATE TABLE IF NOT EXISTS pending_prompt (kind TEXT PRIMARY KEY, seq INTEGER NOT NULL, preview TEXT NOT NULL)');
-        $db->executeStatement('CREATE INDEX IF NOT EXISTS turn_display ON turn_anchor (turn_no, anchor)');
-        $db->executeStatement('CREATE INDEX IF NOT EXISTS turn_answers ON turn_anchor (answer_seq) WHERE retained = 1 AND answer_seq IS NOT NULL');
-        $db->executeStatement('CREATE TABLE IF NOT EXISTS event_location (seq INTEGER PRIMARY KEY, offset INTEGER NOT NULL, length INTEGER NOT NULL, type TEXT NOT NULL, turn_no INTEGER NOT NULL, anchor INTEGER NOT NULL)');
-        $db->executeStatement('CREATE INDEX IF NOT EXISTS event_turn_anchor ON event_location (turn_no, anchor)');
-        $db->executeStatement('CREATE INDEX IF NOT EXISTS event_anchor ON event_location (anchor, seq)');
-        $db->executeStatement('CREATE TABLE IF NOT EXISTS command_record (seq INTEGER PRIMARY KEY, type TEXT NOT NULL, source_anchor INTEGER NOT NULL, target_anchor INTEGER, suppressed INTEGER NOT NULL DEFAULT 0)');
-        $db->executeStatement('CREATE INDEX IF NOT EXISTS unresolved_commands ON command_record (target_anchor, suppressed, source_anchor)');
-        $db->executeStatement('CREATE TABLE IF NOT EXISTS command_resolution (identity_hash TEXT PRIMARY KEY, sequence INTEGER NOT NULL)');
-        $db->executeStatement('CREATE TABLE IF NOT EXISTS history_change (seq INTEGER PRIMARY KEY, kind TEXT NOT NULL, anchor INTEGER NOT NULL)');
-        $db->executeStatement('CREATE TABLE IF NOT EXISTS context_checkpoint_location (seq INTEGER PRIMARY KEY, anchor INTEGER NOT NULL, offset INTEGER NOT NULL, length INTEGER NOT NULL)');
+        // Bootstrap the disposable schema in one durable commit, not one WAL
+        // synchronization per table/index before the first event is indexed.
+        $db->transactional(static function (Connection $db): void {
+            $db->executeStatement('CREATE TABLE IF NOT EXISTS index_meta (version INTEGER NOT NULL, run_id TEXT NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL, end_offset INTEGER NOT NULL, last_seq INTEGER NOT NULL, selected_anchor INTEGER NOT NULL, tip_anchor INTEGER NOT NULL, boundary_offset INTEGER NOT NULL, boundary_length INTEGER NOT NULL, boundary_hash TEXT NOT NULL)');
+            $db->executeStatement('CREATE TABLE IF NOT EXISTS turn_anchor (anchor INTEGER PRIMARY KEY, turn_no INTEGER NOT NULL, predecessor INTEGER NOT NULL, retained INTEGER NOT NULL, completion_seq INTEGER NOT NULL DEFAULT 0, prompt_seq INTEGER, prompt_preview TEXT, answer_seq INTEGER, answer_preview TEXT)');
+            $db->executeStatement('CREATE TABLE IF NOT EXISTS pending_prompt (kind TEXT PRIMARY KEY, seq INTEGER NOT NULL, preview TEXT NOT NULL)');
+            $db->executeStatement('CREATE INDEX IF NOT EXISTS turn_display ON turn_anchor (turn_no, anchor)');
+            $db->executeStatement('CREATE INDEX IF NOT EXISTS turn_answers ON turn_anchor (answer_seq) WHERE retained = 1 AND answer_seq IS NOT NULL');
+            $db->executeStatement('CREATE TABLE IF NOT EXISTS event_location (seq INTEGER PRIMARY KEY, offset INTEGER NOT NULL, length INTEGER NOT NULL, type TEXT NOT NULL, turn_no INTEGER NOT NULL, anchor INTEGER NOT NULL)');
+            $db->executeStatement('CREATE INDEX IF NOT EXISTS event_turn_anchor ON event_location (turn_no, anchor)');
+            $db->executeStatement('CREATE INDEX IF NOT EXISTS event_anchor ON event_location (anchor, seq)');
+            $db->executeStatement('CREATE TABLE IF NOT EXISTS command_record (seq INTEGER PRIMARY KEY, type TEXT NOT NULL, source_anchor INTEGER NOT NULL, target_anchor INTEGER, suppressed INTEGER NOT NULL DEFAULT 0)');
+            $db->executeStatement('CREATE INDEX IF NOT EXISTS unresolved_commands ON command_record (target_anchor, suppressed, source_anchor)');
+            $db->executeStatement('CREATE TABLE IF NOT EXISTS command_resolution (identity_hash TEXT PRIMARY KEY, sequence INTEGER NOT NULL)');
+            $db->executeStatement('CREATE TABLE IF NOT EXISTS history_change (seq INTEGER PRIMARY KEY, kind TEXT NOT NULL, anchor INTEGER NOT NULL)');
+            $db->executeStatement('CREATE TABLE IF NOT EXISTS context_checkpoint_location (seq INTEGER PRIMARY KEY, anchor INTEGER NOT NULL, offset INTEGER NOT NULL, length INTEGER NOT NULL)');
+        });
     }
 
     /** Opens, validates and catches up under the canonical storage lock. */

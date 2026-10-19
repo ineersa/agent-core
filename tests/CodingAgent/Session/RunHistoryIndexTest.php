@@ -35,6 +35,26 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         (new Filesystem())->mkdir(\dirname($this->path));
     }
 
+    public function testSchemaBootstrapRollsBackAllNewObjectsOnDdlFailure(): void
+    {
+        $db = $this->db();
+        $db->executeStatement('CREATE TABLE event_location (seq INTEGER PRIMARY KEY)');
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        // Exercise the schema transaction directly: public synchronization repairs
+        // a corrupt index and would hide whether bootstrap used separate commits.
+        try {
+            try {
+                $this->expectException(\Doctrine\DBAL\Exception::class);
+                (new \ReflectionMethod(RunHistoryIndex::class, 'createSchema'))->invoke($index, $db);
+            } finally {
+                $this->assertFalse($db->isTransactionActive());
+                $this->assertSame(['event_location'], $db->fetchFirstColumn("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"));
+            }
+        } finally {
+            $db->close();
+        }
+    }
+
     public function testMixedPagesHaveDistinctChronologicalCursorsAndSeekOnlyTheNextPrompt(): void
     {
         $seq = 0;

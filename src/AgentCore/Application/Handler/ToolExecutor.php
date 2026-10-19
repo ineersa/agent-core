@@ -55,6 +55,7 @@ final class ToolExecutor implements ToolExecutorInterface
         private readonly ?ToolSetResolverInterface $toolSetResolver = null,
         iterable $toolResultProcessors = [],
         ?ClockInterface $clock = null,
+        private readonly ?RunTracer $tracer = null,
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $maxParallelism);
         $this->toolResultProcessors = \is_array($toolResultProcessors)
@@ -74,6 +75,7 @@ final class ToolExecutor implements ToolExecutorInterface
         ?ToolSetResolverInterface $toolSetResolver = null,
         iterable $toolResultProcessors = [],
         ?ClockInterface $clock = null,
+        ?RunTracer $tracer = null,
     ): self {
         return new self(
             defaultMode: $settings->defaultMode(),
@@ -84,6 +86,7 @@ final class ToolExecutor implements ToolExecutorInterface
             toolSetResolver: $toolSetResolver,
             toolResultProcessors: $toolResultProcessors,
             clock: $clock,
+            tracer: $tracer,
         );
     }
 
@@ -126,7 +129,7 @@ final class ToolExecutor implements ToolExecutorInterface
             }
         }
 
-        if ($cancelToken->isCancellationRequested()) {
+        if ($this->probe('cancel_before', $toolCall, static fn () => $cancelToken->isCancellationRequested())) {
             return $this->rememberAndReturn(
                 toolCall: $toolCall,
                 policy: $policy,
@@ -169,7 +172,7 @@ final class ToolExecutor implements ToolExecutorInterface
                         ? DiagnosticMessageSanitizer::redact($exception->hint())
                         : null,
                 ];
-                if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
+                if ($this->probe('cancel_error', $toolCall, fn () => $this->cancellationToken($toolCall)->isCancellationRequested())) {
                     $details['cancelled'] = true;
                 }
                 $result = $this->errorResult(
@@ -231,10 +234,12 @@ final class ToolExecutor implements ToolExecutorInterface
         // coordination markers and pre-start cancellation do not enter it.
         $processingFailed = false;
         if (!$this->isDeferredOutcomeResult($result)) {
-            $result = $this->processTerminalResult($result, $toolCall, $processingFailed);
+            $result = $this->probe('result_processors', $toolCall, function () use ($result, $toolCall, &$processingFailed): ToolResult {
+                return $this->processTerminalResult($result, $toolCall, $processingFailed);
+            });
         }
 
-        if (!$processingFailed && $this->cancellationToken($toolCall)->isCancellationRequested()) {
+        if (!$processingFailed && $this->probe('cancel_after', $toolCall, fn () => $this->cancellationToken($toolCall)->isCancellationRequested())) {
             // Don't overwrite a structured cancelled result.
             $details = $result->details;
             $cancelled = \is_array($details) ? ($details['cancelled'] ?? false) : false;
@@ -300,19 +305,44 @@ final class ToolExecutor implements ToolExecutorInterface
 
         // Enforce execution allowlist when a toolSetResolver and tools_ref are available.
         // This ensures only tools in the same snapshot that was shown to the LLM are executed.
-        $allowlistCheck = $this->checkAllowlist($toolCall);
+        $allowlistCheck = $this->probe('allowlist', $toolCall, fn () => $this->checkAllowlist($toolCall));
         if (null !== $allowlistCheck) {
             return $allowlistCheck;
         }
 
-        return $this->toDomainResult(
+        $toolboxResult = $this->probe('toolbox_execute', $toolCall, fn () => $this->executeWithContext($toolCall, $policy, fn () => $this->toolbox->execute(new SymfonyToolCall(
+            id: $toolCall->toolCallId,
+            name: $toolCall->toolName,
+            arguments: $toolCall->arguments,
+        ))));
+
+        return $this->probe('convert_result', $toolCall, fn () => $this->toDomainResult(
             $toolCall,
-            $this->executeWithContext($toolCall, $policy, fn () => $this->toolbox->execute(new SymfonyToolCall(
-                id: $toolCall->toolCallId,
-                name: $toolCall->toolName,
-                arguments: $toolCall->arguments,
-            ))),
-        );
+            $toolboxResult,
+        ));
+    }
+
+    /**
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function probe(string $phase, ToolCall $toolCall, callable $operation): mixed
+    {
+        if (null === $this->tracer) {
+            return $operation();
+        }
+
+        return $this->tracer->inSpan('latency_probe.tool.'.$phase, [
+            'latency_probe' => true,
+            'run_id' => $this->runId($toolCall),
+            'turn_no' => $toolCall->context['turn_no'] ?? null,
+            'step_id' => $toolCall->context['step_id'] ?? null,
+            'tool_call_id' => $toolCall->toolCallId,
+            'tool_name' => $toolCall->toolName,
+        ], $operation);
     }
 
     private function executeWithContext(ToolCall $toolCall, ToolExecutionPolicy $policy, callable $callback): SymfonyToolResult
