@@ -344,7 +344,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $this->assertSame([], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
         $pending = $this->log->verifiedPendingTransition($this->path, 'indexed');
         $this->assertNotNull($pending);
-        $this->log->finalizeVerifiedTransition($this->path, 'indexed', $pending->identity);
+        $this->log->finalizeVerifiedTransition($this->path, 'indexed', $pending);
         $this->assertSame([1], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
         $db = $this->db();
         $db->beginTransaction();
@@ -353,7 +353,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->log->appendMany($this->path, [RunEvent::forAppend('indexed', 1, 'turn_advanced')], work: ['run_id' => 'indexed', 'predecessor_seq' => 1]);
             $pending = $this->log->verifiedPendingTransition($this->path, 'indexed');
             $this->assertNotNull($pending);
-            $this->log->finalizeVerifiedTransition($this->path, 'indexed', $pending->identity);
+            $this->log->finalizeVerifiedTransition($this->path, 'indexed', $pending);
             $this->assertFileDoesNotExist($this->path.'.append.pending.json');
             $this->assertFileExists(\dirname($this->path).'/history-index.sqlite.unavailable');
             $this->assertCount(1, array_filter($this->logger->records, static fn (array $r): bool => 'history_index.publication_failed' === $r['message']));

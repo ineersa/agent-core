@@ -4,14 +4,24 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
+use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
+use Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage;
+use Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
@@ -20,12 +30,114 @@ use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\HandlerArgumentsStamp;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 use Symfony\Component\Process\Process;
 
 final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
 {
+    public static function reuseModes(): iterable
+    {
+        yield 'hot commit' => ['commit'];
+        yield 'hot recovery' => ['hot-recovery'];
+        yield 'cold recovery' => ['cold-recovery'];
+    }
+
+    #[DataProvider('reuseModes')]
+    public function testConfiguredPipelineDecodesCapturedWorkOnce(string $mode): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('decode reuse');
+        $store = $container->get(PreparedTransitionEventStoreInterface::class);
+        $summary = new AfterTurnCommitEventSummary(0, 'run_started', []);
+        $action = new DeferredAfterTurnCoordinationDTO($run, 0,
+            new ObserveDeferredSubagentBatchChildTurnMessage(
+                'decode-batch', 1, $run, RunStatus::Running, 1, [$summary],
+            ),
+        );
+        $effect = new ExecuteLlmStep($run, 1, 'decode-step', 1, 'decode-key', 'tools', [
+            new AgentMessage('user', [['type' => 'text', 'text' => 'context']], metadata: ['probe' => new Support\JournalWorkDecodeCounter()]),
+        ]);
+        $event = new RunEvent($run, 0, 0, 'run_started', []);
+        Support\JournalWorkDecodeCounter::$decodes = 0;
+        if ('commit' === $mode) {
+            $state = RunState::queued($run);
+            $container->get(ActiveRunContextInterface::class)->loadRecovered($state);
+            $container->get(RunCommit::class)->commit(
+                $state, $state->with(['status' => RunStatus::Running]), [$event], [$effect], false, postCommitActions: [$action],
+            );
+        } else {
+            // Appending through the durable inner store simulates loss of the hot stream batch.
+            $writer = 'cold-recovery' === $mode ? $container->get(ChildAwareEventStore::class) : $store;
+            $writer->appendTransition([$event], ['run_id' => $run, 'predecessor_seq' => 0, 'effects' => [$effect], 'after_turn_actions' => [$action]]);
+            $this->assertNull($store->latestSequenceFor($run));
+            $container->get(PendingTransitionRecovery::class)->recover($run);
+        }
+        $this->assertSame(1, Support\JournalWorkDecodeCounter::$decodes);
+        $this->assertNull($store->verifiedPendingTransition($run));
+        $this->assertSame(1, $store->latestSequenceFor($run));
+    }
+
+    public static function changedEvidence(): iterable
+    {
+        foreach (['manifest', 'work', 'stage', 'archive'] as $part) {
+            yield $part.' before coordination' => [$part, true];
+            yield $part.' before finalization' => [$part, false];
+        }
+    }
+
+    #[DataProvider('changedEvidence')]
+    public function testReusedEvidenceRefusesPhysicalChanges(string $part, bool $coordination): void
+    {
+        $container = self::getContainer();
+        $sessions = $container->get(HatfieldSessionStore::class);
+        $run = $sessions->createSession('changed evidence');
+        $inner = $container->get(SessionRunEventStore::class);
+        $sink = new InMemoryRuntimeEventSink();
+        $store = new StreamingCommittedRuntimeEventStore($inner, $container->get(RuntimeEventMapper::class), $sink, true, $container->get('event_dispatcher'));
+        $summary = new AfterTurnCommitEventSummary(0, 'run_started', []);
+        $action = new DeferredAfterTurnCoordinationDTO($run, 0,
+            new ObserveDeferredSubagentBatchChildTurnMessage(
+                'evidence-batch', 1, $run, RunStatus::Running, 1, [$summary],
+            ),
+        );
+        $store->appendTransition([new RunEvent($run, 0, 0, 'run_started', [])], ['run_id' => $run, 'predecessor_seq' => 0, 'after_turn_actions' => [$action]]);
+        $verified = $store->verifiedPendingTransition($run);
+        $this->assertNotNull($verified);
+        $path = $sessions->resolveSessionsBasePath().'/'.$run.'/events.jsonl';
+        if ('manifest' === $part) {
+            $manifest = json_decode(file_get_contents($path.'.append.pending.json'), true, flags: \JSON_THROW_ON_ERROR);
+            $manifest['boundary_hash'] = str_repeat('0', 64);
+            file_put_contents($path.'.append.pending.json', json_encode($manifest, \JSON_THROW_ON_ERROR));
+        } elseif ('archive' === $part) {
+            $bytes = file_get_contents($path);
+            rename($path, $path.'.replaced');
+            file_put_contents($path, $bytes);
+        } else {
+            file_put_contents($path.('work' === $part ? '.append.work' : '.append.staged'), 'changed', \FILE_APPEND);
+        }
+        clearstatcache();
+        try {
+            if ($coordination) {
+                $container->get('agent.command.bus')->dispatch($verified->work['after_turn_actions'][0], [new HandlerArgumentsStamp([$verified])]);
+            } else {
+                $store->finalizeVerifiedTransition($run, $verified);
+            }
+            $this->fail('Changed physical evidence cannot use an earlier verification.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString(match ($part) {
+                'manifest' => 'identity changed',
+                'work' => 'work is missing or corrupt',
+                'stage' => 'bytes are missing or corrupt',
+                'archive' => 'predecessor or tail is inconsistent',
+            }, $exception->getMessage());
+        }
+        $this->assertFileExists($path.'.append.pending.json');
+        $this->assertCount(0, iterator_to_array($sink->drain($run)));
+    }
+
     public function testParentCutHidesUnfinalizedSuffixAndPreservesAllocatedSequenceHoles(): void
     {
         $container = self::getContainer();
@@ -54,7 +166,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $this->assertSame($action->message->stepId(), $restored->work['actions'][0]->message->stepId());
         $pending = $store->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
-        $store->finalizeVerifiedTransition($run, $pending->identity);
+        $store->finalizeVerifiedTransition($run, $pending);
         $this->assertSame(4, $store->latestSequenceFor($run));
         $this->assertCount(2, iterator_to_array($store->rangeFor($run, 1, \PHP_INT_MAX)));
     }
@@ -77,7 +189,7 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $this->assertDirectoryDoesNotExist($sessions->resolveSessionsBasePath().'/'.$child);
         $pending = $stream->verifiedPendingTransition($child);
         $this->assertNotNull($pending);
-        $stream->finalizeVerifiedTransition($child, $pending->identity);
+        $stream->finalizeVerifiedTransition($child, $pending);
         $this->assertSame(2, $stream->latestSequenceFor($child));
         $this->assertCount(1, iterator_to_array($sink->drain($child)));
     }
@@ -196,17 +308,17 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         PreparedEventStoreSeeder::append($store, new RunEvent($run, 0, 0, 'run_started', []));
         $path = $sessions->resolveSessionsBasePath().'/'.$run.'/events.jsonl';
         $container->get(FileRunSequenceAllocator::class)->allocateBlock(FileRunSequenceAllocator::counterPathForEventsLog($path), 2);
-        $summary = new \Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary(0, 'agent_end', ['reason' => 'completed']);
-        $observation = new \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage(
+        $summary = new AfterTurnCommitEventSummary(0, 'agent_end', ['reason' => 'completed']);
+        $observation = new ObserveDeferredSubagentBatchChildTurnMessage(
             'batch-cold',
             1,
             $run,
-            \Ineersa\AgentCore\Domain\Run\RunStatus::Completed,
+            RunStatus::Completed,
             1,
             [$summary],
         );
-        $action = new \Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO($run, 1, $observation);
-        $request = new \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep($run, 1, 'llm-cold', 1, 'llm-cold-key', 'tools');
+        $action = new DeferredAfterTurnCoordinationDTO($run, 1, $observation);
+        $request = new ExecuteLlmStep($run, 1, 'llm-cold', 1, 'llm-cold-key', 'tools');
         $persisted = $store->appendTransition([
             new RunEvent($run, 0, 0, 'agent_end', ['reason' => 'completed']),
         ], [
@@ -240,17 +352,17 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
                 $message = $message->getMessage();
             }
             $order[] = $message::class;
-            if ($message instanceof \Ineersa\AgentCore\Domain\Message\ExecuteLlmStep) {
+            if ($message instanceof ExecuteLlmStep) {
                 throw new \RuntimeException('gated delivery must wait for finalization');
             }
-            if ($message instanceof \Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO
-                || $message instanceof \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage) {
+            if ($message instanceof DeferredAfterTurnCoordinationDTO
+                || $message instanceof ObserveDeferredSubagentBatchChildTurnMessage) {
                 $cutVisibleDuringObservation = null !== $store->verifiedPendingTransition($run);
             }
 
             return new \Symfony\Component\Messenger\Envelope($message);
         });
-        $recovery = new \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery(
+        $recovery = new PendingTransitionRecovery(
             $store,
             $container->get(ActiveRunContextInterface::class),
             TestTransitionFinalizerFactory::create(
@@ -268,8 +380,8 @@ final class PreparedTransitionEventStoreTest extends IsolatedKernelTestCase
         $this->assertNull($store->verifiedPendingTransition($run));
         $this->assertSame(4, $store->latestSequenceFor($run));
         $this->assertSame([1, 4], array_map(static fn (RunEvent $event): int => $event->seq, iterator_to_array($store->rangeFor($run, 1, \PHP_INT_MAX))));
-        $this->assertContains(\Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO::class, $order);
-        $this->assertSame(\Ineersa\AgentCore\Domain\Message\ExecuteLlmStep::class, $order[array_key_last($order)]);
+        $this->assertContains(DeferredAfterTurnCoordinationDTO::class, $order);
+        $this->assertSame(ExecuteLlmStep::class, $order[array_key_last($order)]);
         $this->assertTrue($cutVisibleDuringObservation);
 
         $publishedBytes = file_get_contents($path);

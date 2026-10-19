@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 /**
@@ -39,7 +40,7 @@ final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\Prepared
         return $store->appendTransition($events, $work);
     }
 
-    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    public function verifiedPendingTransition(string $runId): ?VerifiedTransitionDTO
     {
         $store = $this->resolveChildStore($runId) ?? $this->parentStore;
         if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
@@ -49,23 +50,32 @@ final class ChildAwareEventStore implements \Ineersa\AgentCore\Contract\Prepared
         return $store->verifiedPendingTransition($runId);
     }
 
-    public function verifiedPendingBatch(string $runId, string $identity): array
+    public function verifiedPendingBatch(string $runId, VerifiedTransitionDTO $verified): array
     {
         $store = $this->resolveChildStore($runId) ?? $this->parentStore;
         if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
 
-        return $store->verifiedPendingBatch($runId, $identity);
+        return $store->verifiedPendingBatch($runId, $verified);
     }
 
-    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    public function finalizeVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
     {
         $store = $this->resolveChildStore($runId) ?? $this->parentStore;
         if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
-        $store->finalizeVerifiedTransition($runId, $identity);
+        $store->finalizeVerifiedTransition($runId, $verified);
+    }
+
+    public function assertVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
+    {
+        $store = $this->resolveChildStore($runId) ?? $this->parentStore;
+        if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+        $store->assertVerifiedTransition($runId, $verified);
     }
 
     public function assertTransitionReady(string $runId): void

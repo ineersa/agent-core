@@ -180,8 +180,8 @@ final class ChildAwareEventStoreTest extends PerMethodIsolatedKernelTestCase
         ]);
         $pending = $store->verifiedPendingTransition($run);
         $this->assertNotNull($pending);
-        $this->assertCount(1, $store->verifiedPendingBatch($run, $pending->identity));
-        $store->finalizeVerifiedTransition($run, $pending->identity);
+        $this->assertCount(1, $store->verifiedPendingBatch($run, $pending));
+        $store->finalizeVerifiedTransition($run, $pending);
         $store->assertTransitionReady($run);
         $this->assertSame(1, $store->latestSequenceFor($run));
         $this->assertSame($run, $store->firstFor($run)?->runId);

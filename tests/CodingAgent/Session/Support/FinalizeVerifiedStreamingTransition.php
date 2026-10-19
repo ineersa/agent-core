@@ -29,7 +29,7 @@ try {
         true,
         $container->get('event_dispatcher'),
     );
-    $stream->finalizeVerifiedTransition($argv[2], $argv[3]);
+    $stream->finalizeVerifiedTransition($argv[2], $pending);
     $emitted = iterator_to_array($sink->drain($argv[2]));
     fwrite(\STDOUT, json_encode([
         'count' => count($emitted),
