@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 
 /**
  * Span-based tracer for agent-core operations.
@@ -35,7 +36,7 @@ final class RunTracer
      *
      * @return TResult
      */
-    public function inSpan(string $name, array $attributes, callable $operation, bool $root = false): mixed
+    public function inSpan(string $name, array $attributes, callable $operation, bool $root = false, string $level = LogLevel::INFO): mixed
     {
         $spanId = \sprintf('span-%d', ++$this->sequence);
         $parentSpanId = $root || [] === $this->spanStack ? null : $this->spanStack[array_key_last($this->spanStack)];
@@ -43,7 +44,7 @@ final class RunTracer
         $this->spanStack[] = $spanId;
         $startedAt = hrtime(true);
 
-        $this->logger->info('agent_loop.trace.start', [
+        $this->logger->log($level, 'agent_loop.trace.start', [
             'span_id' => $spanId,
             'parent_span_id' => $parentSpanId,
             'span_name' => $name,
@@ -62,7 +63,7 @@ final class RunTracer
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
-            $this->logger->info('agent_loop.trace.finish', [
+            $this->logger->log($level, 'agent_loop.trace.finish', [
                 'span_id' => $spanId,
                 'parent_span_id' => $parentSpanId,
                 'span_name' => $name,

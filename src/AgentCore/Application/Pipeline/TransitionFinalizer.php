@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\TransitionPlan;
@@ -19,6 +20,7 @@ final readonly class TransitionFinalizer
         private LocalMetadataCoordinator $localMetadata,
         private TransitionPlanFactory $plans,
         private RunLockManager $locks,
+        private ?RunTracer $tracer = null,
     ) {
     }
 
@@ -34,17 +36,29 @@ final readonly class TransitionFinalizer
 
     public function completePlan(TransitionPlan $plan): void
     {
-        $this->dispatcher->dispatchCoordinationActions($plan->syncActions);
+        $this->probe('coordination', $plan->runId, fn () => $this->dispatcher->dispatchCoordinationActions($plan->syncActions));
         if (null !== $plan->verified) {
-            $this->localMetadata->apply($plan);
-            $this->store->finalizeVerifiedTransition($plan->runId, $plan->verified->identity);
+            $this->probe('local_metadata', $plan->runId, fn () => $this->localMetadata->apply($plan));
+            $this->probe('canonical_finalize', $plan->runId, fn () => $this->store->finalizeVerifiedTransition($plan->runId, $plan->verified->identity));
         } elseif ([] !== $plan->localActions) {
             throw new \RuntimeException('Local metadata requires verified transition evidence.');
         }
         // The journal owns unfinished canonical coordination, not a retry queue.
         // A transport loss after this boundary requires explicit /repair.
         $this->locks->afterRelease($plan->runId, function () use ($plan): void {
-            $this->dispatcher->dispatchEffects($plan->messages);
+            $this->probe('effects_after_release', $plan->runId, fn () => $this->dispatcher->dispatchEffects($plan->messages));
         });
+    }
+
+    /** @param callable(): void $operation */
+    private function probe(string $phase, string $runId, callable $operation): void
+    {
+        if (null === $this->tracer) {
+            $operation();
+
+            return;
+        }
+
+        $this->tracer->inSpan('latency_probe.finalize.'.$phase, ['latency_probe' => true, 'run_id' => $runId], $operation);
     }
 }

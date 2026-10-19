@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\RunTracer;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\AbstractLogger;
+use Psr\Log\LogLevel;
 
 final class RunTracerTest extends TestCase
 {
     public function testEmitsStartAndFinishRecords(): void
     {
-        $logger = new TraceLogger();
+        $logger = new TestLogger();
         $tracer = new RunTracer($logger);
 
         $result = $tracer->inSpan('test.noop', [], static fn (): string => 'hello');
@@ -31,7 +32,7 @@ final class RunTracerTest extends TestCase
 
     public function testFinishRecordMarksErrorStatusWhenOperationThrows(): void
     {
-        $logger = new TraceLogger();
+        $logger = new TestLogger();
         $tracer = new RunTracer($logger);
 
         $this->expectException(\RuntimeException::class);
@@ -49,7 +50,7 @@ final class RunTracerTest extends TestCase
 
     public function testNestedSpansSetParentSpanIdInLogRecords(): void
     {
-        $logger = new TraceLogger();
+        $logger = new TestLogger();
         $tracer = new RunTracer($logger);
 
         $tracer->inSpan('parent', [], static function () use ($tracer): void {
@@ -64,7 +65,7 @@ final class RunTracerTest extends TestCase
 
     public function testRootSpanDoesNotSetParentInLogRecords(): void
     {
-        $logger = new TraceLogger();
+        $logger = new TestLogger();
         $tracer = new RunTracer($logger);
 
         $tracer->inSpan('root.op', ['run_id' => 'run-1'], static fn (): string => 'ok', root: true);
@@ -72,20 +73,30 @@ final class RunTracerTest extends TestCase
         $startRecord = $logger->records[0];
         $this->assertNull($startRecord['context']['parent_span_id']);
     }
-}
 
-final class TraceLogger extends AbstractLogger
-{
-    /** @var list<array{message: string, context: array<string, mixed>}> */
-    public array $records = [];
-
-    public function log($level, \Stringable|string $message, array $context = []): void
+    public function testDebugSpanPreservesInfoParentAndErrorUnwinding(): void
     {
-        unset($level);
+        $logger = new TestLogger();
+        $tracer = new RunTracer($logger);
+        $failure = new \RuntimeException('diagnostic failure');
 
-        $this->records[] = [
-            'message' => (string) $message,
-            'context' => $context,
-        ];
+        $tracer->inSpan('owner', [], static function () use ($tracer, $failure): void {
+            try {
+                $tracer->inSpan('detail', [], static function () use ($failure): never {
+                    throw $failure;
+                }, level: LogLevel::DEBUG);
+                self::fail('The debug operation must propagate its exception.');
+            } catch (\RuntimeException $caught) {
+                self::assertSame($failure, $caught);
+            }
+
+            self::assertSame('value', $tracer->inSpan('next', [], static fn (): string => 'value'));
+        });
+
+        $this->assertSame(['info', 'debug', 'debug', 'info', 'info', 'info'], array_column($logger->records, 'level'));
+        $this->assertSame('span-1', $logger->records[1]['context']['parent_span_id']);
+        $this->assertSame('error', $logger->records[2]['context']['status']);
+        $this->assertSame('span-1', $logger->records[3]['context']['parent_span_id']);
+        $this->assertSame('ok', $logger->records[5]['context']['status']);
     }
 }
