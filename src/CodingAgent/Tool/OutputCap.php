@@ -60,6 +60,11 @@ final class OutputCap
         $this->maybeCleanup();
 
         $cap = $this->resolveCap($path);
+        // Bytes bound grapheme count from above. Retain UTF-8 validation so
+        // malformed short output still follows UnicodeString's refusal path.
+        if (\strlen($text) <= $cap && mb_check_encoding($text, 'UTF-8')) {
+            return null;
+        }
         $charCount = u($text)->length();
         if ($charCount <= $cap) {
             return null;

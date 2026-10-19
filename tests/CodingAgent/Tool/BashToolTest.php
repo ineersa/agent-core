@@ -865,7 +865,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             $this->assertSame('done', $result);
             $this->assertCount(1, $this->recordsForSession(self::TEST_SESSION));
             $this->assertNull($this->recordsForSession(self::TEST_SESSION)[0]->backgroundedAt);
-            $this->assertSame([], self::getContainer()->get(ProcessStore::class)->findPendingNotifications(self::TEST_SESSION));
+            $this->assertSame([], self::getContainer()->get(ProcessStore::class)->findCompletionCandidates([self::TEST_SESSION]));
         } finally {
             fclose($endpoint);
         }
@@ -906,7 +906,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             $this->assertNull($records[0]->backgroundedAt);
             $this->assertNotNull($records[0]->finishedAt);
             $manager->refreshAllUnfinished(self::TEST_SESSION);
-            $this->assertSame([], self::getContainer()->get(ProcessStore::class)->findPendingNotifications(self::TEST_SESSION));
+            $this->assertSame([], self::getContainer()->get(ProcessStore::class)->findCompletionCandidates([self::TEST_SESSION]));
         } finally {
             fclose($endpoint);
             $manager->shutdownCleanup();

@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 
 /**
- * Semantic mounted node for tool call ↔ result exchange identity.
+ * Semantic mounted node for a single tool card or call ↔ result exchange.
  *
- * Stable key is {@code exchange:<tool_call_id>} from pending call through result.
- * Owns source dependencies; rebuilds the native card subtree when sources change.
+ * Call/exchange key is {@code exchange:<tool_call_id>} from pending through result;
+ * standalone results keep their block key.
+ * Retains current sources; rebuilds the native card only when rendered inputs change.
  */
 final class ToolExchangeTranscriptWidget extends ContainerWidget implements MutableTranscriptWidget
 {
@@ -38,7 +40,12 @@ final class ToolExchangeTranscriptWidget extends ContainerWidget implements Muta
         }
 
         $previous = $this->node;
-        if (null !== $previous && $previous->sameSources($node) && null !== $this->content) {
+        if (null !== $previous && null !== $this->content
+            && $previous->presentationRevision === $node->presentationRevision
+            && $this->sameRenderedSource($previous->primary, $node->primary)
+            && $this->sameRenderedSource($previous->secondary, $node->secondary)) {
+            $this->node = $node;
+
             return;
         }
 
@@ -48,6 +55,24 @@ final class ToolExchangeTranscriptWidget extends ContainerWidget implements Muta
 
         $this->setContent($content);
         $this->node = $node;
+    }
+
+    private function sameRenderedSource(?TranscriptBlock $previous, ?TranscriptBlock $next): bool
+    {
+        if ($previous === $next) {
+            return true;
+        }
+        if (null === $previous || null === $next
+            || $previous->id !== $next->id || $previous->kind !== $next->kind
+            || $previous->runId !== $next->runId || $previous->seq !== $next->seq
+            || $previous->meta !== $next->meta || $previous->streaming !== $next->streaming
+            || $previous->collapsed !== $next->collapsed) {
+            return false;
+        }
+
+        // The owning renderer decides whether text supplies a header/body or is
+        // hidden by the current preview policy. Other inputs remain conservative.
+        return $previous->text === $next->text || !$this->factory->toolTextCanAffectPresentation($next);
     }
 
     private function setContent(AbstractWidget $content): void

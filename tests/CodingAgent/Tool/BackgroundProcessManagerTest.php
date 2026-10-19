@@ -515,7 +515,10 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertFalse($this->manager->findByRecordId($shell->id)?->backgroundRequested);
         $this->assertFalse($this->manager->findByRecordId($foreign->id)?->backgroundRequested);
         $this->assertSame([], $this->manager->list(self::TEST_SESSION));
-        $this->assertSame([], static::getContainer()->get(ProcessStore::class)->findPendingNotifications(self::TEST_SESSION));
+        foreach (static::getContainer()->get(ProcessStore::class)->findCompletionCandidates([self::TEST_SESSION]) as $candidate) {
+            $this->assertNull($candidate->backgroundedAt);
+            $this->assertNull($candidate->completionNotifiedAt);
+        }
     }
 
     public function testBackgroundRequestLeavesFinishedAndAlreadyBackgroundedCommandsAlone(): void

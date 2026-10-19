@@ -113,6 +113,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
             $collectorStepId = $state->activeStepId ?? $message->stepId();
             $syntheticStepId = $state->activeStepId ?? \sprintf('synthetic-cancel-%d', hrtime(true));
+            $storedResults = null;
 
             foreach ($batchIds as $tcId) {
                 $info = $toolCallInfoMap[$tcId] ?? null;
@@ -121,9 +122,12 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
                 $alreadyTrue = true === ($pendingToolCalls[$tcId] ?? null);
 
                 if ($alreadyTrue) {
-                    $stored = $preserveIncoming && $tcId === $message->toolCallId
-                        ? $message
-                        : $this->toolBatchCollector->getStoredResult($runId, $state->turnNo, $collectorStepId, $tcId);
+                    if ($preserveIncoming && $tcId === $message->toolCallId) {
+                        $stored = $message;
+                    } else {
+                        $storedResults ??= $this->toolBatchCollector->getStoredResults($runId, $state->turnNo, $collectorStepId);
+                        $stored = $storedResults[$tcId] ?? null;
+                    }
 
                     if ($this->stateContainsToolMessageForId($messages, $tcId)) {
                         // Already projected into messages — do not duplicate.

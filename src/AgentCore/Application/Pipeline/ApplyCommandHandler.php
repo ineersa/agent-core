@@ -959,6 +959,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             throw new \LogicException('Cancel of deferred tool-call human waits requires a serializer for ToolExecutionEnd payloads.');
         }
         $codec = new ToolExecutionEndPayloadCodec($this->serializer);
+        $storedResults = null;
 
         foreach ($batchIds as $tcId) {
             if (true === ($pendingToolCalls[$tcId] ?? null)) {
@@ -973,7 +974,8 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 if (null === $this->toolBatchCollector) {
                     throw new \LogicException(\sprintf('Cancel of deferred tool-call human waits requires ToolBatchCollector to project completed call "%s".', $tcId));
                 }
-                $stored = $this->toolBatchCollector->getStoredResult($runId, $state->turnNo, $collectorStepId, $tcId);
+                $storedResults ??= $this->toolBatchCollector->getStoredResults($runId, $state->turnNo, $collectorStepId);
+                $stored = $storedResults[$tcId] ?? null;
                 if (null === $stored) {
                     throw new \LogicException(\sprintf('Cannot project completed tool call "%s" during deferred-tool cancel: stored result is missing for turn=%d step=%s.', $tcId, $state->turnNo, $collectorStepId));
                 }

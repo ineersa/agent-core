@@ -1702,7 +1702,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $accepted = \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::collect($collector, $batchStore, $completedA);
         $this->assertTrue($accepted->accepted);
         $this->assertFalse($accepted->complete);
-        $this->assertNotNull($collector->getStoredResult('run-partial-d', 1, 'step-p', 'call-a'));
+        $this->assertArrayHasKey('call-a', $collector->getStoredResults('run-partial-d', 1, 'step-p'));
 
         \Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination::suspend($collector, $batchStore, 'run-partial-d', 1, 'step-p', 'call-b', 'q-b');
 

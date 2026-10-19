@@ -28,6 +28,10 @@ use Monolog\Processor\ProcessorInterface;
  */
 final class LogContextProcessor implements ProcessorInterface
 {
+    public function __construct(private readonly TelemetrySessionKeyProvider $sessionKeys)
+    {
+    }
+
     public function __invoke(LogRecord $record): LogRecord
     {
         $extra = $record->extra;
@@ -55,10 +59,6 @@ final class LogContextProcessor implements ProcessorInterface
         // set explicitly (in extra or context) so call-site log values win.
         $context = RunLogContext::current();
 
-        if ([] === $context) {
-            return $record->with(extra: $extra);
-        }
-
         foreach ($context as $key => $value) {
             if ('' === $key || null === $value) {
                 continue;
@@ -77,6 +77,15 @@ final class LogContextProcessor implements ProcessorInterface
             }
 
             $extra[$key] = $value;
+        }
+
+        // Derive after merging: explicit extra wins over context, and both win
+        // over ambient session identity. Explicit null suppresses correlation.
+        $sessionId = \array_key_exists('session_id', $extra)
+            ? $extra['session_id']
+            : ($record->context['session_id'] ?? null);
+        if ((\is_string($sessionId) || \is_int($sessionId)) && '' !== (string) $sessionId && 'unknown' !== $sessionId) {
+            $extra['session_key'] = $this->sessionKeys->forSession((string) $sessionId);
         }
 
         return $record->with(extra: $extra);

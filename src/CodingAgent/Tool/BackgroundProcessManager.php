@@ -602,9 +602,8 @@ final class BackgroundProcessManager
      * Refresh all unfinished entities so finished_at is populated
      * for processes that completed without a list() call.
      *
-     * Designed for controller pollers (BackgroundProcessCompletionPoller)
-     * that need to detect freshly-completed processes without first
-     * calling find() or list() on each entity.
+     * Used by provisional cleanup. Controller completion polling instead
+     * refreshes its already-selected candidates through refreshEntities().
      *
      * Safe to call repeatedly — only queries unfinished entities, checks
      * status files and /proc/<pid>, and flushes any newly-resolved
@@ -616,6 +615,24 @@ final class BackgroundProcessManager
      */
     public function refreshAllUnfinished(?string $sessionId = null): void
     {
+        $this->refreshEntities($this->store->fetchAllUnfinished($sessionId));
+    }
+
+    /**
+     * Resolve prefetched records, then persist the refresh phase once.
+     * Newly requested timeout stops are durable before any TERM is sent.
+     *
+     * A caller may isolate individual resolution failures with onError. Flush
+     * failures still propagate, so no completion is delivered before persistence.
+     * Callers without onError retain fail-fast resolution.
+     *
+     * @param list<BackgroundProcess>                            $entities
+     * @param \Closure(BackgroundProcess, \Throwable): void|null $onError
+     *
+     * @return list<BackgroundProcess> Successfully refreshed records in input order
+     */
+    public function refreshEntities(array $entities, ?\Closure $onError = null): array
+    {
         // Another reader may already have finalized the row, or cleanup may
         // have removed it. Neither case appears in the unfinished-only query.
         foreach (array_keys($this->timeoutGraceDeadlines) as $id) {
@@ -624,46 +641,74 @@ final class BackgroundProcessManager
                 unset($this->timeoutGraceDeadlines[$id]);
             }
         }
-        $entities = $this->store->fetchAllUnfinished($sessionId);
 
+        $refreshed = [];
+        $toTerminate = [];
         foreach ($entities as $entity) {
-            $this->resolveEntityStatus($entity);
-            if (null !== $entity->finishedAt) {
-                unset($this->timeoutGraceDeadlines[$entity->id]);
-
-                continue;
-            }
-            // After detachment the existing controller poller supervises the
-            // same process against its original deadline, not a fresh timeout.
-            if (null !== $entity->backgroundedAt && null !== $entity->deadlineNanoseconds && hrtime(true) >= $entity->deadlineNanoseconds) {
-                if (!isset($this->timeoutGraceDeadlines[$entity->id])) {
-                    // Persist the stop cause before TERM can make cleanup exit.
-                    // All readers preserve it; finishedAt still gates completion.
-                    $entity->status = BackgroundProcessStatusEnum::Stopped;
-                    $this->store->flush();
-                    $this->lifecycle->sendTerm($entity->pid, $entity->pgid);
-                    $this->timeoutGraceDeadlines[$entity->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
-                    $this->logger->info('background_process.timed_out', [
-                        'component' => 'tool.background_process',
-                        'event_type' => 'background_process.timed_out',
-                        'run_id' => $entity->sessionId,
-                        'session_id' => $entity->sessionId,
-                        'record_id' => $entity->id,
-                    ]);
+            try {
+                $this->resolveEntityStatus($entity);
+                if (null !== $entity->finishedAt) {
+                    unset($this->timeoutGraceDeadlines[$entity->id]);
+                } elseif (null !== $entity->backgroundedAt && null !== $entity->deadlineNanoseconds && hrtime(true) >= $entity->deadlineNanoseconds) {
+                    // The batch flush records the stop cause before TERM can
+                    // make cleanup exit. finishedAt still gates completion.
+                    if (!isset($this->timeoutGraceDeadlines[$entity->id])) {
+                        $entity->status = BackgroundProcessStatusEnum::Stopped;
+                        $toTerminate[] = $entity;
+                    } elseif (hrtime(true) >= $this->timeoutGraceDeadlines[$entity->id]) {
+                        $this->lifecycle->sendKill($entity->pid, $entity->pgid);
+                        $entity->markStopped(Clock::get()->now());
+                        $entity->stoppedByUser = false;
+                        $this->lifecycle->writeStopMarker($entity->statusPath);
+                        unset($this->timeoutGraceDeadlines[$entity->id]);
+                    }
                 }
-                // Polling never waits for grace: every due process receives TERM
-                // in this pass, and later passes observe exit or escalate.
-                if (hrtime(true) >= $this->timeoutGraceDeadlines[$entity->id]) {
+                $refreshed[] = $entity;
+            } catch (\Throwable $e) {
+                if (null === $onError) {
+                    throw $e;
+                }
+                $onError($entity, $e);
+            }
+        }
+        if ([] !== $refreshed) {
+            $this->store->flush();
+        }
+        // Never wait for grace: all due processes receive TERM after the same
+        // refresh flush, and later passes observe exit or escalate to KILL.
+        $stoppedAfterTerm = false;
+        foreach ($toTerminate as $entity) {
+            try {
+                $this->lifecycle->sendTerm($entity->pid, $entity->pgid);
+                $this->timeoutGraceDeadlines[$entity->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+                if (0 === $this->config->stopGraceSeconds) {
                     $this->lifecycle->sendKill($entity->pid, $entity->pgid);
                     $entity->markStopped(Clock::get()->now());
                     $entity->stoppedByUser = false;
                     $this->lifecycle->writeStopMarker($entity->statusPath);
                     unset($this->timeoutGraceDeadlines[$entity->id]);
+                    $stoppedAfterTerm = true;
                 }
+                $this->logger->info('background_process.timed_out', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.timed_out',
+                    'run_id' => $entity->sessionId,
+                    'session_id' => $entity->sessionId,
+                    'record_id' => $entity->id,
+                ]);
+            } catch (\Throwable $e) {
+                if (null === $onError) {
+                    throw $e;
+                }
+                $onError($entity, $e);
             }
         }
+        // Zero-grace stops end after the cause was flushed but before delivery.
+        if ($stoppedAfterTerm) {
+            $this->store->flush();
+        }
 
-        $this->store->flush();
+        return $refreshed;
     }
 
     /**
@@ -676,7 +721,8 @@ final class BackgroundProcessManager
 
         // Refresh status before acting — the process may have finished
         // since the last list() call (status file written, /proc gone).
-        $this->refreshEntity($entity);
+        $this->resolveEntityStatus($entity);
+        $this->store->flush();
 
         if (null !== $entity->finishedAt) {
             return new StopResult(
@@ -828,18 +874,5 @@ final class BackgroundProcessManager
             'event_type' => 'background_process.finished_unclean',
             'process_pid' => $pid,
         ]);
-    }
-
-    /**
-     * Refresh a single entity's status from filesystem state.
-     *
-     * Resolves and persists the current status; used before stop()
-     * to avoid acting on a process that already finished since last
-     * list() call.
-     */
-    private function refreshEntity(BackgroundProcess $entity): void
-    {
-        $this->resolveEntityStatus($entity);
-        $this->store->flush();
     }
 }

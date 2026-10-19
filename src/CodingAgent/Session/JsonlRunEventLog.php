@@ -254,7 +254,10 @@ final class JsonlRunEventLog
             }
 
             $position = $size;
-            $tail = '';
+            // Retain an unfinished record as reverse-ordered bounded fragments.
+            // Repeatedly prepending chunks would copy and split a large record
+            // again on every read. Materialize only when its delimiter is found.
+            $fragments = [];
             while ($position > 0) {
                 $length = min(8192, $position);
                 $position -= $length;
@@ -281,9 +284,17 @@ final class JsonlRunEventLog
                     return;
                 }
 
-                $tail = $chunk.$tail;
-                $lines = explode("\n", $tail);
-                $tail = array_shift($lines);
+                $lines = explode("\n", $chunk);
+                if (1 === \count($lines)) {
+                    $fragments[] = $chunk;
+
+                    continue;
+                }
+
+                $prefix = array_shift($lines);
+                $fragments[] = array_pop($lines);
+                $lines[] = implode('', array_reverse($fragments));
+                $fragments = [$prefix];
                 for ($index = \count($lines) - 1; $index >= 0; --$index) {
                     $line = rtrim($lines[$index], "\r");
                     if ('' !== trim($line)) {
@@ -291,8 +302,10 @@ final class JsonlRunEventLog
                         yield $line;
                     }
                 }
+                unset($lines, $line);
             }
 
+            $tail = implode('', array_reverse($fragments));
             if ('' !== trim($tail)) {
                 $observation?->addLineYielded();
                 yield $tail;
