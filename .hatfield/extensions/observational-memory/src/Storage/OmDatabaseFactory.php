@@ -6,6 +6,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Storage;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
+use Pdo\Sqlite;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -31,6 +32,8 @@ final class OmDatabaseFactory
         $connection = DriverManager::getConnection([
             'driver' => 'pdo_sqlite',
             'path' => $databasePath,
+            // Distinguish stale WAL snapshots (517) from other busy errors (5).
+            'driverOptions' => [Sqlite::ATTR_EXTENDED_RESULT_CODES => true],
         ]);
 
         OmSqliteConnectionConfigurator::configure($connection);

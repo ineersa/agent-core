@@ -6,6 +6,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Semantic;
 
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\LockWaitTimeoutException;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\AI\Store\Bridge\Sqlite\Store as TextStore;
@@ -80,7 +81,7 @@ final readonly class SemanticIndexService
             foreach ($parents as $parent) {
                 $memory = json_decode((string) $this->connection->fetchOne("SELECT json_extract(metadata, '$.source') FROM om_semantic_document WHERE id = ?", [$parent]), true, flags: \JSON_THROW_ON_ERROR);
                 $key = $memory['kind'].':'.$memory['id'];
-                $indexed = array_fill_keys($this->connection->fetchFirstColumn("SELECT id FROM om_semantic_document WHERE json_extract(metadata, '$._parent_id') = ?", [$key]), true);
+                $indexed = array_fill_keys($this->connection->fetchFirstColumn("SELECT d.id FROM om_semantic_document s JOIN json_each(s.metadata, '$.chunks') c JOIN om_semantic_document d ON d.id = c.value WHERE s.id = ?", [$parent]), true);
                 $pending = array_diff_key($this->chunks([$key => $memory]), $indexed);
                 $batch += \array_slice($pending, 0, $limit - \count($batch), true);
                 if (\count($batch) === $limit) {
@@ -338,33 +339,49 @@ final readonly class SemanticIndexService
      */
     private function refreshSources(): array
     {
-        return $this->connection->transactional(function (): array {
-            $source = $this->sourceSql();
-            $equal = [];
-            foreach (['kind', 'id', 'session_id', 'timestamp', 'importance', 'content'] as $field) {
-                $equal[] = "json_extract(d.metadata, '$.source.".$field."') IS s.".$field;
-            }
-            $sql = 'SELECT s.* FROM ('.$source.") s LEFT JOIN om_semantic_document d ON d.id = 'source:' || s.kind || ':' || s.id WHERE d.id IS NULL OR NOT (".implode(' AND ', $equal).')';
-            foreach ($this->connection->iterateAssociative($sql) as $memory) {
-                if (null === $memory['importance']) {
-                    unset($memory['importance']);
-                }
-                $parent = $memory['kind'].':'.$memory['id'];
-                $metadata = ['source' => $memory, 'signature' => hash('sha256', json_encode($memory, \JSON_THROW_ON_ERROR)), 'chunks' => array_keys($this->chunks([$parent => $memory]))];
-                // Metadata-only writes use DBAL so the source comparison and
-                // manifest publication share one SQLite transaction. TextStore
-                // add() owns a native transaction and cannot be nested here.
-                $this->connection->executeStatement('INSERT INTO om_semantic_document (id, vector, metadata) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET metadata = excluded.metadata', ['source:'.$parent, '[1.0]', json_encode($metadata, \JSON_THROW_ON_ERROR)]);
-            }
-            $deleted = $this->connection->fetchFirstColumn("SELECT id FROM om_semantic_document WHERE id LIKE 'source:%' AND id NOT IN (SELECT 'source:' || kind || ':' || id FROM (".$source.'))');
-            // Unchanged searches remain read-only SQLite transactions. Even a
-            // DELETE matching no rows would unnecessarily acquire a writer lock.
-            if ([] !== $deleted) {
-                $this->connection->executeStatement('DELETE FROM om_semantic_document WHERE id IN (?)', [$deleted], [ArrayParameterType::STRING]);
-            }
+        for ($attempt = 1;; ++$attempt) {
+            try {
+                return $this->connection->transactional(function (): array {
+                    $source = $this->sourceSql();
+                    $equal = [];
+                    foreach (['kind', 'id', 'session_id', 'timestamp', 'importance', 'content'] as $field) {
+                        $equal[] = "json_extract(d.metadata, '$.source.".$field."') IS s.".$field;
+                    }
+                    $sql = 'SELECT s.* FROM ('.$source.") s LEFT JOIN om_semantic_document d ON d.id = 'source:' || s.kind || ':' || s.id WHERE d.id IS NULL OR NOT (".implode(' AND ', $equal).')';
+                    foreach ($this->connection->iterateAssociative($sql) as $memory) {
+                        if (null === $memory['importance']) {
+                            unset($memory['importance']);
+                        }
+                        $parent = $memory['kind'].':'.$memory['id'];
+                        $metadata = ['source' => $memory, 'signature' => hash('sha256', json_encode($memory, \JSON_THROW_ON_ERROR)), 'chunks' => array_keys($this->chunks([$parent => $memory]))];
+                        // Metadata-only writes use DBAL so the source comparison and
+                        // manifest publication share one SQLite transaction. TextStore
+                        // add() owns a native transaction and cannot be nested here.
+                        $this->connection->executeStatement('INSERT INTO om_semantic_document (id, vector, metadata) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET metadata = excluded.metadata', ['source:'.$parent, '[1.0]', json_encode($metadata, \JSON_THROW_ON_ERROR)]);
+                    }
+                    $deleted = $this->connection->fetchFirstColumn("SELECT id FROM om_semantic_document WHERE id LIKE 'source:%' AND id NOT IN (SELECT 'source:' || kind || ':' || id FROM (".$source.'))');
+                    // Unchanged searches remain read-only SQLite transactions. Even a
+                    // DELETE matching no rows would unnecessarily acquire a writer lock.
+                    if ([] !== $deleted) {
+                        $this->connection->executeStatement('DELETE FROM om_semantic_document WHERE id IN (?)', [$deleted], [ArrayParameterType::STRING]);
+                    }
 
-            return $this->memories(true);
-        });
+                    return $this->memories(true);
+                });
+            } catch (LockWaitTimeoutException $error) {
+                if (517 !== $error->getCode()) {
+                    throw $error;
+                }
+                // A committed writer invalidated this deferred read snapshot.
+                // Waiting cannot repair it: DBAL rolled back the whole attempt,
+                // so retry from a fresh snapshot, never just the failed upsert.
+                $retry = $attempt < 3;
+                $this->logger->warning('om.semantic.source_refresh_conflict', ['run_id' => $this->runId, 'session_id' => $this->runId, 'component' => 'observational_memory', 'event_type' => 'om.semantic.source_refresh_conflict', 'sqlite_code' => 517, 'attempt' => $attempt, 'retrying' => $retry]);
+                if (!$retry) {
+                    throw $error;
+                }
+            }
+        }
     }
 
     /** @param array<string, Memory> $memories

@@ -8,9 +8,20 @@ final class SemanticReadStatement extends \PDOStatement
 {
     public static int $changedSources = 0;
     public static int $loadedSources = 0;
+    /** @var list<string> */
+    public static array $chunkLookups = [];
 
     protected function __construct()
     {
+    }
+
+    public function execute(?array $params = null): bool
+    {
+        if (str_starts_with($this->queryString, 'SELECT d.id FROM om_semantic_document s JOIN json_each')) {
+            self::$chunkLookups[] = $this->queryString;
+        }
+
+        return parent::execute($params);
     }
 
     public function fetch(int $mode = \PDO::FETCH_DEFAULT, int $cursorOrientation = \PDO::FETCH_ORI_NEXT, int $cursorOffset = 0): mixed
