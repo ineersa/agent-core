@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
 use Ineersa\AgentCore\Application\Handler\RunTracer;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Monolog\Level;
+use Monolog\Logger;
+use Psr\Log\LogLevel;
 
 /**
  * Writes transient runtime events to STDOUT as JSONL.
@@ -36,8 +40,11 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
     /** @var bool|null */
     private static $isPipe;
 
-    public function __construct(private readonly ?RunTracer $tracer = null)
+    private readonly bool $traceDetails;
+
+    public function __construct(private readonly ?RunTracer $tracer = null, ?LoggingConfig $logging = null)
     {
+        $this->traceDetails = null !== $tracer && Level::Debug === Logger::toMonologLevel($logging->level ?? Level::Info);
     }
 
     public function emit(RuntimeEvent $event): void
@@ -79,30 +86,26 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
             return null;
         }
 
-        $line = $this->probe('encode', $event, static fn () => JsonlCodec::encodeEvent($event));
+        if ($this->traceDetails && null !== $this->tracer) {
+            $attributes = [
+                'run_id' => $event->runId, 'event_type' => $event->type, 'component' => 'runtime_stdout', 'latency_probe' => true,
+            ];
+            $line = $this->tracer->inSpan('latency_probe.stdout.encode', $attributes, static fn () => JsonlCodec::encodeEvent($event), level: LogLevel::DEBUG);
 
-        return $this->probe('write', $event, static function () use ($line): bool {
-            if (!JsonlCodec::write(self::$stdout, $line)) {
-                return false;
-            }
+            return $this->tracer->inSpan('latency_probe.stdout.write', $attributes, fn (): bool => $this->writeLine($line), level: LogLevel::DEBUG);
+        }
 
-            fflush(self::$stdout);
-
-            return true;
-        });
+        return $this->writeLine(JsonlCodec::encodeEvent($event));
     }
 
-    /**
-     * @template T
-     *
-     * @param callable(): T $operation
-     *
-     * @return T
-     */
-    private function probe(string $phase, RuntimeEvent $event, callable $operation): mixed
+    private function writeLine(string $line): bool
     {
-        return null === $this->tracer ? $operation() : $this->tracer->inSpan('latency_probe.stdout.'.$phase, [
-            'run_id' => $event->runId, 'event_type' => $event->type, 'component' => 'runtime_stdout', 'latency_probe' => true,
-        ], $operation);
+        if (!JsonlCodec::write(self::$stdout, $line)) {
+            return false;
+        }
+
+        fflush(self::$stdout);
+
+        return true;
     }
 }
