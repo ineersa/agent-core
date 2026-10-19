@@ -165,12 +165,10 @@ final class BackgroundProcessCompletionPoller
         $scopeOrder = array_flip($sessionIds);
         usort($candidates, static fn (BackgroundProcess $left, BackgroundProcess $right): int => $scopeOrder[$left->sessionId] <=> $scopeOrder[$right->sessionId]);
 
-        foreach ($candidates as $process) {
-            // Natural completion initially writes only the status file. Refresh
-            // the selected record before checking notification eligibility.
-            try {
-                $this->processManager->refreshEntity($process);
-            } catch (\Throwable $e) {
+        // Natural completion initially writes only the status file. Resolve all
+        // selected records and flush once before any notification is delivered.
+        try {
+            $candidates = $this->processManager->refreshEntities($candidates, function (BackgroundProcess $process, \Throwable $e): void {
                 $this->logger->warning('bg_process_completion.refresh_failed', [
                     'component' => 'bg_process_completion.poller',
                     'event_type' => 'bg_process_completion.refresh_failed',
@@ -178,10 +176,19 @@ final class BackgroundProcessCompletionPoller
                     'scoped_session_id' => $process->sessionId,
                     'exception' => $e->getMessage(),
                 ]);
+            });
+        } catch (\Throwable $e) {
+            $this->logger->warning('bg_process_completion.refresh_flush_failed', [
+                'component' => 'bg_process_completion.poller',
+                'event_type' => 'bg_process_completion.refresh_flush_failed',
+                'controller_session_id' => $this->sessionId,
+                'exception' => $e->getMessage(),
+            ]);
 
-                continue;
-            }
+            return;
+        }
 
+        foreach ($candidates as $process) {
             if (null !== $process->finishedAt && null !== $process->backgroundedAt && null === $process->completionNotifiedAt) {
                 $pendingByPid[$process->pid] = $process;
             }

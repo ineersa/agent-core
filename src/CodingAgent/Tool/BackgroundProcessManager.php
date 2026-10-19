@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Closure;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
@@ -14,6 +15,7 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
+use Throwable;
 
 /**
  * Durable, ORM-backed manager for background processes.
@@ -554,9 +556,8 @@ final class BackgroundProcessManager
      * Refresh all unfinished entities so finished_at is populated
      * for processes that completed without a list() call.
      *
-     * Designed for controller pollers (BackgroundProcessCompletionPoller)
-     * that need to detect freshly-completed processes without first
-     * calling find() or list() on each entity.
+     * Used by provisional cleanup. Controller completion polling instead
+     * refreshes its already-selected candidates through refreshEntities().
      *
      * Safe to call repeatedly — only queries unfinished entities, checks
      * status files and /proc/<pid>, and flushes any newly-resolved
@@ -568,25 +569,40 @@ final class BackgroundProcessManager
      */
     public function refreshAllUnfinished(?string $sessionId = null): void
     {
-        $entities = $this->store->fetchAllUnfinished($sessionId);
-
-        foreach ($entities as $entity) {
-            $this->resolveEntityStatus($entity);
-        }
-
-        $this->store->flush();
+        $this->refreshEntities($this->store->fetchAllUnfinished($sessionId));
     }
 
     /**
-     * Refresh a single entity's status from filesystem state.
+     * Resolve prefetched records, then persist the refresh phase once.
      *
-     * Resolves and persists the current status before stop() and for controller
-     * completion candidates, without querying the same record a second time.
+     * A caller may isolate individual resolution failures with onError. Flush
+     * failures still propagate, so no completion is delivered before persistence.
+     * Stop and provisional cleanup retain fail-fast resolution by omitting it.
+     *
+     * @param list<BackgroundProcess>                              $entities
+     * @param null|Closure(BackgroundProcess, Throwable): void     $onError
+     *
+     * @return list<BackgroundProcess> Successfully refreshed records in input order
      */
-    public function refreshEntity(BackgroundProcess $entity): void
+    public function refreshEntities(array $entities, ?Closure $onError = null): array
     {
-        $this->resolveEntityStatus($entity);
-        $this->store->flush();
+        $refreshed = [];
+        foreach ($entities as $entity) {
+            try {
+                $this->resolveEntityStatus($entity);
+                $refreshed[] = $entity;
+            } catch (Throwable $e) {
+                if (null === $onError) {
+                    throw $e;
+                }
+                $onError($entity, $e);
+            }
+        }
+        if ([] !== $refreshed) {
+            $this->store->flush();
+        }
+
+        return $refreshed;
     }
 
     /**
@@ -598,7 +614,7 @@ final class BackgroundProcessManager
 
         // Refresh status before acting — the process may have finished
         // since the last list() call (status file written, /proc gone).
-        $this->refreshEntity($entity);
+        $this->refreshEntities([$entity]);
 
         if (null !== $entity->finishedAt) {
             return new StopResult(
