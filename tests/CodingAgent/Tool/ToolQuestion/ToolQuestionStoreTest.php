@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Tests\Tool\ToolQuestion;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Entity\ToolQuestion;
 use Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum;
+use Ineersa\CodingAgent\Kernel;
+use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStore;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
@@ -294,6 +296,42 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         // IS NULL, so a re-marked question with non-null emittedAt is
         // still excluded from the unemitted result set.
         $this->assertNotNull($afterSecond->emittedAt);
+    }
+
+    public function testUnemittedPollingUsesSelectionIndexAndPreservesCreationOrder(): void
+    {
+        $expected = [];
+        foreach ([3, 1, 2] as $offset) {
+            $question = $this->createQuestion('ordered-'.$offset);
+            $this->store->create($question);
+            $this->forceCreatedAt($question, new \DateTimeImmutable('2026-01-0'.$offset.'T00:00:00+00:00'));
+            $expected[$offset] = $question->requestId;
+        }
+        foreach ([ToolQuestionStatusEnum::Pending, ToolQuestionStatusEnum::Answered, ToolQuestionStatusEnum::Cancelled] as $status) {
+            $question = $this->createQuestion('excluded-'.$status->value);
+            $question->status = $status;
+            $question->emittedAt = ToolQuestionStatusEnum::Pending === $status ? new \DateTimeImmutable() : null;
+            $this->store->create($question);
+        }
+        ksort($expected);
+        $logger = static::getContainer()->get('test.sql_logger');
+        $logger->records = [];
+        $questions = $this->store->findUnemittedPendingQuestions();
+        $this->assertSame(array_values($expected), array_column($questions, 'requestId'));
+        $queries = array_values(array_filter($logger->records, static fn (array $record): bool => isset($record['context']['sql']) && str_contains($record['context']['sql'], 'FROM tool_question')));
+        $this->assertCount(1, $queries);
+        $query = $queries[0]['context'];
+        $plan = implode("\n", array_column($this->em->getConnection()->fetchAllAssociative('EXPLAIN QUERY PLAN '.$query['sql'], array_values($query['params'])), 'detail'));
+        $this->assertStringContainsString('USING INDEX idx_tool_question_unemitted (status=? AND emitted_at=?)', $plan);
+        $this->assertStringNotContainsString('SCAN ', $plan);
+        $this->assertStringNotContainsString('TEMP B-TREE', $plan);
+        $indexes = $this->em->getConnection()->createSchemaManager()->listTableIndexes('tool_question');
+        $this->assertSame(['status', 'emitted_at', 'created_at'], $indexes['idx_tool_question_unemitted']->getColumns());
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new SqlLoggingKernel('test', false);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────

@@ -26,6 +26,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity]
 #[ORM\Table(name: 'tool_question')]
 #[ORM\UniqueConstraint(name: 'uniq_tool_question_request_id', columns: ['request_id'])]
+#[ORM\Index(name: 'idx_tool_question_unemitted', columns: ['status', 'emitted_at', 'created_at'])]
 #[ORM\HasLifecycleCallbacks]
 class ToolQuestion
 {
