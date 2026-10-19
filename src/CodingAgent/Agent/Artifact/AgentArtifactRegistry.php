@@ -517,40 +517,6 @@ final class AgentArtifactRegistry
     }
 
     /**
-     * Append an immutable handoff for an existing artifact.
-     *
-     * Writes handoffs/<uuid>.md and appends an index entry using the status
-     * and summary known at finalize time. Prior handoffs are never rewritten.
-     *
-     * @throws \InvalidArgumentException when IDs contain path separators
-     */
-    public function writeHandoff(
-        string $parentRunId,
-        string $artifactId,
-        string $content,
-        ?AgentArtifactStatusEnum $status = null,
-        ?string $summary = null,
-    ): string {
-        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
-        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
-
-        $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
-        $lock->acquire(true);
-
-        try {
-            return $this->appendImmutableHandoff(
-                $parentRunId,
-                $artifactId,
-                $content,
-                $status,
-                $summary,
-            );
-        } finally {
-            $lock->release();
-        }
-    }
-
-    /**
      * List immutable handoffs for an artifact (oldest → newest by created_at, id tie-break).
      *
      * @return list<array{id: string, created_at: string, status: ?string, summary: ?string, path: string}>

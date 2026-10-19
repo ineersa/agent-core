@@ -84,8 +84,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $artifactId = 'agent_done';
         $childRun = 'child-run-1';
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
-        $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'ok');
-        $this->registry->writeHandoff($parent, $artifactId, "## Result\n\nFound routing config.");
+        $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'ok', handoffContent: "## Result\n\nFound routing config.");
 
         $service = $this->makeService();
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'handoff']));
@@ -141,7 +140,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $artifactId = 'agent_by_run';
         $childRun = 'uuid-child-99';
         $this->registry->create($parent, $artifactId, $childRun, 'worker', AgentArtifactKindEnum::Subagent);
-        $this->registry->writeHandoff($parent, $artifactId, 'handoff-by-run');
+        $this->registry->update($parent, $artifactId, handoffContent: 'handoff-by-run');
 
         $service = $this->makeService();
         $out = $service->retrieve($parent, $this->args(['agent_run_id' => $childRun, 'mode' => 'handoff']));
@@ -341,8 +340,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $artifactId = 'agent_cancel_handoff';
         $childRun = 'child-cancel-retrieve';
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
-        $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Cancelled, summary: 'Cancelled by parent run.');
-        $this->registry->writeHandoff($parent, $artifactId, "# Subagent handoff\n\nStatus: cancelled\nArtifact: {$artifactId}\n\n## Partial context\n\n- turn_no: 2\n\n## Retrieval\n\nUse agent_retrieve");
+        $this->registry->update($parent, $artifactId, status: AgentArtifactStatusEnum::Cancelled, summary: 'Cancelled by parent run.', handoffContent: "# Subagent handoff\n\nStatus: cancelled\nArtifact: {$artifactId}\n\n## Partial context\n\n- turn_no: 2\n\n## Retrieval\n\nUse agent_retrieve");
 
         $service = $this->makeService();
         $out = $service->retrieve($parent, $this->args(['artifact_id' => $artifactId, 'mode' => 'handoff']));
@@ -378,19 +376,20 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $artifactId = 'agent_hist_retrieve';
         $childRun = 'child-hist-retrieve';
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
-        $firstId = $this->registry->writeHandoff(
+        $this->registry->update(
             $parent,
             $artifactId,
-            '# First archive body',
             status: AgentArtifactStatusEnum::Completed,
             summary: 'first done',
+            handoffContent: '# First archive body',
         );
-        $this->registry->writeHandoff(
+        $firstId = $this->registry->listHandoffHistory($parent, $artifactId)[0]['id'];
+        $this->registry->update(
             $parent,
             $artifactId,
-            '# Latest handoff body',
             status: AgentArtifactStatusEnum::Completed,
             summary: 'second done',
+            handoffContent: '# Latest handoff body',
         );
 
         $service = $this->makeService();

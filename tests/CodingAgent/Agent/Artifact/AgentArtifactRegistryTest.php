@@ -782,7 +782,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $agentRunId = 'child-'.bin2hex(random_bytes(4));
 
         $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
-        $this->registry->writeHandoff($parentRunId, $artifactId, '# Handoff
+        $this->registry->update($parentRunId, $artifactId, handoffContent: '# Handoff
 
 Done.');
 
@@ -791,27 +791,29 @@ Done.');
 Done.', $this->registry->readHandoff($parentRunId, $artifactId));
     }
 
-    public function testWriteHandoffAppendsImmutableUuidEntries(): void
+    public function testUpdateAppendsImmutableUuidHandoffEntries(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
         $artifactId = 'agent_hist_01';
         $agentRunId = 'child-'.bin2hex(random_bytes(4));
 
         $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
-        $firstId = $this->registry->writeHandoff(
+        $this->registry->update(
             $parentRunId,
             $artifactId,
-            '# First',
             status: AgentArtifactStatusEnum::Completed,
             summary: 'first done',
+            handoffContent: '# First',
         );
-        $secondId = $this->registry->writeHandoff(
+        $firstId = $this->registry->listHandoffHistory($parentRunId, $artifactId)[0]['id'];
+        $this->registry->update(
             $parentRunId,
             $artifactId,
-            '# Second',
             status: AgentArtifactStatusEnum::Completed,
             summary: 'second done',
+            handoffContent: '# Second',
         );
+        $secondId = $this->registry->listHandoffHistory($parentRunId, $artifactId)[1]['id'];
 
         $this->assertNotSame($firstId, $secondId);
         $this->assertSame('# Second', $this->registry->readHandoff($parentRunId, $artifactId));
@@ -838,13 +840,14 @@ Done.', $this->registry->readHandoff($parentRunId, $artifactId));
         $agentRunId = 'child-'.bin2hex(random_bytes(4));
 
         $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
-        $handoffId = $this->registry->writeHandoff(
+        $this->registry->update(
             $parentRunId,
             $artifactId,
-            '# Canonical body',
             status: AgentArtifactStatusEnum::Completed,
             summary: 'ok',
+            handoffContent: '# Canonical body',
         );
+        $handoffId = $this->registry->listHandoffHistory($parentRunId, $artifactId)[0]['id'];
 
         $indexPath = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/'.$artifactId.'/handoffs/index.json';
         $index = json_decode((string) file_get_contents($indexPath), true, 512, \JSON_THROW_ON_ERROR);
