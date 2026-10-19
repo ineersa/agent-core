@@ -32,6 +32,10 @@ final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
             }
 
             if ($overlay->isOpen()) {
+                if ($context->tui->getFocus() !== $overlay->listWidget()) {
+                    return;
+                }
+
                 $event->stopPropagation();
                 $overlay->listWidget()?->handleInput("\r");
 

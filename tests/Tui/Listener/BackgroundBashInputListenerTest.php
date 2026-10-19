@@ -22,6 +22,7 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
@@ -107,6 +108,23 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         $harness->sendInput("\x1b[B");
         $harness->sendInput("\x02");
         $this->assertFalse($harness->screen()->hasInputOverlay());
+        $harness->stopInputLoop();
+    }
+
+    public function testNewDialogTakesPrecedenceOverOpenBackgroundPicker(): void
+    {
+        $this->manager->start($this->command, 'visible', 'first');
+        $this->manager->start($this->command, 'visible', 'second');
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->never())->method('send');
+        $harness = $this->mount('visible', $client);
+        $harness->sendInput("\x02");
+        $dialog = new SelectListWidget(items: [['label' => 'Continue?', 'value' => 'yes']]);
+        $harness->screen()->insertOverlayAfterEditor($dialog);
+        $harness->tui()->setFocus($dialog);
+        $harness->sendInput("\x02");
+        $this->assertSame($dialog, $harness->tui()->getFocus());
+        $harness->screen()->removeOverlay($dialog);
         $harness->stopInputLoop();
     }
 
