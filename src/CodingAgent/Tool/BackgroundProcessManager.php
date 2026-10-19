@@ -166,7 +166,7 @@ final class BackgroundProcessManager
      *
      * @throws \RuntimeException on storage/launch failure
      */
-    public function start(string $command, ?string $sessionId = null): StartResult
+    public function start(string $command, ?string $sessionId = null, ?string $toolCallId = null): StartResult
     {
         // Ensure storage directory exists
         $bgDir = $this->lifecycle->ensureStorageDir();
@@ -190,6 +190,7 @@ final class BackgroundProcessManager
             'pgid' => $pgid,
             'session_id' => $sessionId ?? '',
             'command' => $command,
+            'tool_call_id' => $toolCallId,
             'log_path' => $logFile,
             'status_path' => $statusFile,
             'started_at' => $now,
@@ -476,6 +477,34 @@ final class BackgroundProcessManager
         }
 
         return $this->stopProcessEntity($entity);
+    }
+
+    /**
+     * Request detachment of the foreground Bash tools already running in this run.
+     *
+     * This does not make a process notification-eligible. Its foreground worker
+     * checks completion first and accepts the request only when returning the
+     * original tool result as an acknowledgment. A finish/request race therefore
+     * cannot produce both a foreground result and a completion notification.
+     */
+    public function requestBackgroundForRun(string $runId): int
+    {
+        if ('' === $runId) {
+            return 0;
+        }
+
+        $requested = 0;
+        foreach ($this->store->fetchAllUnfinished($runId) as $entity) {
+            if (null === $entity->toolCallId || null !== $entity->backgroundedAt || $entity->backgroundRequested) {
+                continue;
+            }
+
+            $entity->backgroundRequested = true;
+            ++$requested;
+        }
+        $this->store->flush();
+
+        return $requested;
     }
 
     /**

@@ -482,6 +482,51 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertFalse($this->manager->existsByRecordId(9999999));
     }
 
+    public function testBackgroundRequestTargetsOnlyCurrentRunModelToolsAndDoesNotNotify(): void
+    {
+        $this->createManager();
+        $fifo = $this->tmpDir.'/command-release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $command = 'cat '.escapeshellarg($fifo);
+        $first = $this->manager->start($command, self::TEST_SESSION, 'call-first');
+        $second = $this->manager->start($command, self::TEST_SESSION, 'call-second');
+        $shell = $this->manager->start($command, self::TEST_SESSION);
+        $foreign = $this->manager->start($command, 'other-run', 'call-foreign');
+
+        $controllerManager = $this->createOtherManager();
+        $this->assertSame(2, $controllerManager->requestBackgroundForRun(self::TEST_SESSION));
+        $this->assertSame(0, $controllerManager->requestBackgroundForRun(self::TEST_SESSION));
+        $this->assertSame(0, $controllerManager->requestBackgroundForRun(''));
+
+        foreach ([$first, $second] as $started) {
+            $record = $this->manager->findByRecordId($started->id, self::TEST_SESSION);
+            $this->assertNotNull($record);
+            $this->assertTrue($record->backgroundRequested);
+            $this->assertNull($record->backgroundedAt);
+            $this->assertNull($record->finishedAt);
+            $this->assertSame($started->pid, $record->pid);
+        }
+        $this->assertFalse($this->manager->findByRecordId($shell->id)?->backgroundRequested);
+        $this->assertFalse($this->manager->findByRecordId($foreign->id)?->backgroundRequested);
+        $this->assertSame([], $this->manager->list(self::TEST_SESSION));
+        $this->assertSame([], static::getContainer()->get(ProcessStore::class)->findPendingNotifications(self::TEST_SESSION));
+    }
+
+    public function testBackgroundRequestLeavesFinishedAndAlreadyBackgroundedCommandsAlone(): void
+    {
+        $this->createManager();
+        $finished = $this->manager->start('printf done', self::TEST_SESSION, 'call-finished');
+        $this->waitUntilFinished($finished->pid);
+        $fifo = $this->tmpDir.'/background-release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $backgrounded = $this->manager->start('cat '.escapeshellarg($fifo), self::TEST_SESSION, 'call-background');
+        $this->manager->markBackgroundedForRecord($backgrounded->id, self::TEST_SESSION);
+
+        $this->assertSame(0, $this->manager->requestBackgroundForRun(self::TEST_SESSION));
+        $this->assertFalse($this->manager->findByRecordId($finished->id)?->backgroundRequested);
+        $this->assertFalse($this->manager->findByRecordId($backgrounded->id)?->backgroundRequested);
+    }
+
     /* ── Helpers ── */
 
     private function waitUntilFinished(int $pid, float $timeoutSeconds = 2.0): void

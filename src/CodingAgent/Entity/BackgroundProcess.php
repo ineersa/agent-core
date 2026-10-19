@@ -84,6 +84,14 @@ class BackgroundProcess
     #[ORM\Column(name: 'backgrounded_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $backgroundedAt = null;
 
+    /** Only model-invoked Bash tools are eligible for caller detachment. */
+    #[ORM\Column(name: 'tool_call_id', type: 'string', nullable: true)]
+    public ?string $toolCallId = null;
+
+    /** The foreground worker accepts this request before publishing backgroundedAt. */
+    #[ORM\Column(name: 'background_requested', type: 'boolean', options: ['default' => false])]
+    public bool $backgroundRequested = false;
+
     #[ORM\Column(name: 'completion_notified_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $completionNotifiedAt = null;
 
