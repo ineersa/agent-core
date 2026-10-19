@@ -262,6 +262,106 @@ final class RuntimeEventPerRunCompactBufferTest extends TestCase
         $this->assertSame([], iterator_to_array($buffer->drain('old-run')));
     }
 
+    public function testFragmentDrainPreservesPayloadPrecedenceAndSplitBytesForEveryStreamType(): void
+    {
+        foreach ([false, true] as $observed) {
+            foreach ([
+                'assistant.text_started' => 'text',
+                'assistant.text_delta' => 'text',
+                'assistant.thinking_started' => 'thinking',
+                'assistant.thinking_delta' => 'thinking',
+                'tool_call.arguments_delta' => 'partial_json',
+                'tool_execution.output_delta' => 'delta',
+            ] as $type => $field) {
+                $buffer = new RuntimeEventPerRunCompactBuffer();
+                $chunks = [substr('🙂', 0, 2), null, substr('🙂', 2), "\0tail"];
+                foreach ($chunks as $index => $chunk) {
+                    $buffer->ingest(new RuntimeEvent($type, 'child', 0, [
+                        'block_id' => 'block', 'tool_call_id' => 'call', $field => $chunk,
+                        'latest' => $index,
+                    ] + (0 === $index ? ['first_only' => true] : []), 7), $observed);
+                }
+                $tail = iterator_to_array($buffer->drain('child'));
+                $this->assertCount(1, $tail, $type);
+                $this->assertSame([
+                    'v' => 1, 'type' => $type, 'runId' => 'child', 'seq' => 0,
+                    'payload' => ['block_id' => 'block', 'tool_call_id' => 'call', $field => "🙂\0tail", 'latest' => 3, 'first_only' => true],
+                ], $tail[0]->toArray(), $type);
+                $this->assertSame([], iterator_to_array($buffer->drain('child')));
+            }
+        }
+    }
+
+    public function testPrunedSlotsDoNotMixFragmentsAfterObservationReleaseOrSessionClear(): void
+    {
+        $buffer = new RuntimeEventPerRunCompactBuffer();
+        $buffer->ingest(new RuntimeEvent('turn.started', 'child', 1), true);
+        foreach (['old', 'discard'] as $text) {
+            $buffer->ingest(new RuntimeEvent('assistant.text_delta', 'child', 0, ['block_id' => 'old', 'text' => $text]));
+        }
+        $buffer->ingest(new RuntimeEvent('human_input.requested', 'child', 0, ['question_id' => 'q']));
+        $buffer->ingest(new RuntimeEvent('assistant.text_completed', 'child', 2, ['block_id' => 'old']), true);
+        $buffer->releaseObservationRetention('child');
+        foreach (['new', '🙂'] as $text) {
+            $buffer->ingest(new RuntimeEvent('assistant.text_delta', 'child', 0, ['block_id' => 'new', 'text' => $text]));
+        }
+        $tail = iterator_to_array($buffer->drain('child'));
+        $this->assertSame(['human_input.requested', 'assistant.text_delta'], array_column($tail, 'type'));
+        $this->assertSame('new🙂', $tail[1]->payload['text']);
+
+        foreach (['stale', 'prefix'] as $text) {
+            $buffer->ingest(new RuntimeEvent('assistant.text_delta', 'child', 0, ['text' => $text]));
+        }
+        $buffer->clear();
+        foreach (['fresh', 'suffix'] as $text) {
+            $buffer->ingest(new RuntimeEvent('assistant.text_delta', 'child', 0, ['text' => $text]));
+        }
+        $this->assertSame('freshsuffix', iterator_to_array($buffer->drain('child'))[0]->payload['text']);
+    }
+
+    public function testSubagentProgressReplacesFragmentsAndCannotBeOverwrittenByRawOutput(): void
+    {
+        $buffer = new RuntimeEventPerRunCompactBuffer();
+        foreach (['discard', 'prefix'] as $delta) {
+            $buffer->ingest(new RuntimeEvent('tool_execution.output_delta', 'child', 0, ['tool_call_id' => 'call', 'delta' => $delta]));
+        }
+        $latest = new RuntimeEvent('tool_execution.output_delta', 'child', 0, ['tool_call_id' => 'call', 'subagent_progress' => ['revision' => 2]], 9);
+        $buffer->ingest(new RuntimeEvent('tool_execution.output_delta', 'child', 0, ['tool_call_id' => 'call', 'subagent_progress' => ['revision' => 1]]));
+        $buffer->ingest($latest);
+        $buffer->ingest(new RuntimeEvent('tool_execution.output_delta', 'child', 0, ['tool_call_id' => 'call', 'delta' => 'ignored']));
+        $this->assertSame([$latest], iterator_to_array($buffer->drain('child')));
+    }
+
+    public function testFragmentsStayUnjoinedUntilDrainAndCheckpointsDiscardThem(): void
+    {
+        $buffer = new RuntimeEventPerRunCompactBuffer();
+        $chunks = ['first', 'second', 'third'];
+        foreach ($chunks as $text) {
+            $buffer->ingest(new RuntimeEvent('assistant.text_delta', 'child', 0, ['block_id' => 'block', 'text' => $text]));
+        }
+        $fragments = new \ReflectionProperty($buffer, 'fragmentsByRunId');
+        $this->assertSame(['child' => [$chunks]], $fragments->getValue($buffer));
+        $buffer->ingest(new RuntimeEvent('assistant.text_completed', 'child', 4, ['block_id' => 'block']));
+        $this->assertSame([], $fragments->getValue($buffer));
+        $this->assertSame([], iterator_to_array($buffer->drain('child')));
+    }
+
+    public function testAbandonedDrainKeepsMaterializedEventAndRemainingFragments(): void
+    {
+        $buffer = new RuntimeEventPerRunCompactBuffer();
+        foreach (['a', 'b'] as $block) {
+            foreach (['first', 'second'] as $text) {
+                $buffer->ingest(new RuntimeEvent('assistant.text_delta', 'child', 0, ['block_id' => $block, 'text' => $text]));
+            }
+        }
+        $drain = $buffer->drain('child');
+        $this->assertSame('firstsecond', $drain->current()->payload['text']);
+        unset($drain);
+        $tail = iterator_to_array($buffer->drain('child'));
+        $this->assertSame(['a', 'b'], array_column(array_column($tail, 'payload'), 'block_id'));
+        $this->assertSame(['firstsecond', 'firstsecond'], array_column(array_column($tail, 'payload'), 'text'));
+    }
+
     /**
      * @param list<RuntimeEvent> $events
      */

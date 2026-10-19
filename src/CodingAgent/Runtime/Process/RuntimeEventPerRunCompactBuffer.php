@@ -25,8 +25,11 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
  */
 final class RuntimeEventPerRunCompactBuffer
 {
-    /** @var array<string, list<RuntimeEvent>> */
+    /** @var array<string, array<int, RuntimeEvent>> */
     private array $tailByRunId = [];
+
+    /** @var array<string, array<int, list<string>>> */
+    private array $fragmentsByRunId = [];
 
     public function ingest(RuntimeEvent $event, bool $observedRun = false): void
     {
@@ -84,11 +87,19 @@ final class RuntimeEventPerRunCompactBuffer
             return;
         }
 
-        foreach ($this->tailByRunId[$runId] as $event) {
+        foreach ($this->tailByRunId[$runId] as $index => $event) {
+            if (isset($this->fragmentsByRunId[$runId][$index])) {
+                $payload = $event->payload;
+                $payload[self::streamChunkField($event)] = implode('', $this->fragmentsByRunId[$runId][$index]);
+                $event = new RuntimeEvent($event->type, $event->runId, $event->seq, $payload, $event->v);
+                // Release each fragment list as it is joined, but keep the event if the drain is abandoned.
+                $this->tailByRunId[$runId][$index] = $event;
+                unset($this->fragmentsByRunId[$runId][$index]);
+            }
             yield $event;
         }
 
-        unset($this->tailByRunId[$runId]);
+        unset($this->tailByRunId[$runId], $this->fragmentsByRunId[$runId]);
     }
 
     /**
@@ -102,14 +113,7 @@ final class RuntimeEventPerRunCompactBuffer
             return;
         }
 
-        $this->tailByRunId[$runId] = array_values(array_filter(
-            $this->tailByRunId[$runId],
-            static fn (RuntimeEvent $event): bool => 0 === $event->seq || self::isProtectedControlEventStatic($event),
-        ));
-
-        if ([] === $this->tailByRunId[$runId]) {
-            unset($this->tailByRunId[$runId]);
-        }
+        $this->retainTail($runId, static fn (RuntimeEvent $event): bool => 0 === $event->seq || self::isProtectedControlEventStatic($event));
     }
 
     public function totalTailCount(): int
@@ -129,6 +133,7 @@ final class RuntimeEventPerRunCompactBuffer
     public function clear(): void
     {
         $this->tailByRunId = [];
+        $this->fragmentsByRunId = [];
     }
 
     public static function isCoalescableStreamEvent(RuntimeEvent $event): bool
@@ -212,14 +217,7 @@ final class RuntimeEventPerRunCompactBuffer
             return;
         }
 
-        $this->tailByRunId[$runId] = array_values(array_filter(
-            $this->tailByRunId[$runId],
-            fn (RuntimeEvent $candidate): bool => !$this->isTransientSupersededByCheckpoint($candidate, $checkpoint),
-        ));
-
-        if ([] === $this->tailByRunId[$runId]) {
-            unset($this->tailByRunId[$runId]);
-        }
+        $this->retainTail($runId, fn (RuntimeEvent $candidate): bool => !$this->isTransientSupersededByCheckpoint($candidate, $checkpoint));
     }
 
     private function isTransientSupersededByCheckpoint(RuntimeEvent $candidate, RuntimeEvent $checkpoint): bool
@@ -337,13 +335,20 @@ final class RuntimeEventPerRunCompactBuffer
             return;
         }
 
-        $this->tailByRunId[$runId] = array_values(array_filter(
-            $this->tailByRunId[$runId],
-            static fn (RuntimeEvent $event): bool => $event->seq > 0 || self::isProtectedControlEventStatic($event),
-        ));
+        $this->retainTail($runId, static fn (RuntimeEvent $event): bool => $event->seq > 0 || self::isProtectedControlEventStatic($event));
+    }
+
+    private function retainTail(string $runId, \Closure $keep): void
+    {
+        // Keep slot identities stable so pruning can discard fragments without joining them.
+        foreach ($this->tailByRunId[$runId] as $index => $event) {
+            if (!$keep($event)) {
+                unset($this->tailByRunId[$runId][$index], $this->fragmentsByRunId[$runId][$index]);
+            }
+        }
 
         if ([] === $this->tailByRunId[$runId]) {
-            unset($this->tailByRunId[$runId]);
+            unset($this->tailByRunId[$runId], $this->fragmentsByRunId[$runId]);
         }
     }
 
@@ -362,7 +367,7 @@ final class RuntimeEventPerRunCompactBuffer
                     continue;
                 }
 
-                $this->tailByRunId[$runId][$index] = $this->mergeCoalescedStreamEvent($existing, $event);
+                $this->tailByRunId[$runId][$index] = $this->mergeCoalescedStreamEvent($runId, $index, $existing, $event);
 
                 return;
             }
@@ -380,69 +385,49 @@ final class RuntimeEventPerRunCompactBuffer
         $this->tailByRunId[$runId][] = $event;
     }
 
-    private function mergeCoalescedStreamEvent(RuntimeEvent $existing, RuntimeEvent $incoming): RuntimeEvent
+    private function mergeCoalescedStreamEvent(string $runId, int $index, RuntimeEvent $existing, RuntimeEvent $incoming): RuntimeEvent
     {
-        $payload = $existing->payload;
+        if (RuntimeEventTypeEnum::ToolExecutionOutputDelta->value === $incoming->type) {
+            if (isset($incoming->payload['subagent_progress']) && \is_array($incoming->payload['subagent_progress'])) {
+                unset($this->fragmentsByRunId[$runId][$index]);
 
-        return match ($incoming->type) {
-            RuntimeEventTypeEnum::AssistantTextStarted->value,
-            RuntimeEventTypeEnum::AssistantTextDelta->value => new RuntimeEvent(
-                type: $incoming->type,
-                runId: $incoming->runId,
-                seq: 0,
-                payload: self::mergePayloadChunk($payload, $incoming->payload, 'text'),
-            ),
-            RuntimeEventTypeEnum::AssistantThinkingStarted->value,
-            RuntimeEventTypeEnum::AssistantThinkingDelta->value => new RuntimeEvent(
-                type: $incoming->type,
-                runId: $incoming->runId,
-                seq: 0,
-                payload: self::mergePayloadChunk($payload, $incoming->payload, 'thinking'),
-            ),
-            RuntimeEventTypeEnum::ToolCallArgumentsDelta->value => new RuntimeEvent(
-                type: $incoming->type,
-                runId: $incoming->runId,
-                seq: 0,
-                payload: self::mergePayloadChunk($payload, $incoming->payload, 'partial_json'),
-            ),
-            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value => $this->mergeToolExecutionOutputDelta($existing, $incoming),
-            default => $incoming,
-        };
-    }
+                return $incoming;
+            }
 
-    /**
-     * @param array<string, mixed> $base
-     * @param array<string, mixed> $chunk
-     *
-     * @return array<string, mixed>
-     */
-    private static function mergePayloadChunk(array $base, array $chunk, string $field): array
-    {
-        $merged = array_merge($base, $chunk);
-        $merged[$field] = (string) ($base[$field] ?? '').(string) ($chunk[$field] ?? '');
+            if (isset($existing->payload['subagent_progress']) && \is_array($existing->payload['subagent_progress'])) {
+                return $existing;
+            }
+        }
 
-        return $merged;
-    }
-
-    private function mergeToolExecutionOutputDelta(RuntimeEvent $existing, RuntimeEvent $incoming): RuntimeEvent
-    {
-        $base = $existing->payload;
-        $chunk = $incoming->payload;
-
-        if (isset($chunk['subagent_progress']) && \is_array($chunk['subagent_progress'])) {
+        $field = self::streamChunkField($incoming);
+        if (null === $field) {
             return $incoming;
         }
 
-        if (isset($base['subagent_progress']) && \is_array($base['subagent_progress'])) {
-            return $existing;
-        }
+        $this->fragmentsByRunId[$runId][$index] ??= [(string) ($existing->payload[$field] ?? '')];
+        $this->fragmentsByRunId[$runId][$index][] = (string) ($incoming->payload[$field] ?? '');
+        $payload = array_merge($existing->payload, $incoming->payload);
+        $payload[$field] = '';
 
         return new RuntimeEvent(
             type: $incoming->type,
             runId: $incoming->runId,
             seq: 0,
-            payload: self::mergePayloadChunk($base, $chunk, 'delta'),
+            payload: $payload,
         );
+    }
+
+    private static function streamChunkField(RuntimeEvent $event): ?string
+    {
+        return match ($event->type) {
+            RuntimeEventTypeEnum::AssistantTextStarted->value,
+            RuntimeEventTypeEnum::AssistantTextDelta->value => 'text',
+            RuntimeEventTypeEnum::AssistantThinkingStarted->value,
+            RuntimeEventTypeEnum::AssistantThinkingDelta->value => 'thinking',
+            RuntimeEventTypeEnum::ToolCallArgumentsDelta->value => 'partial_json',
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value => 'delta',
+            default => null,
+        };
     }
 
     /**
