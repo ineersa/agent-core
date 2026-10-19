@@ -322,14 +322,20 @@ services:
       $parallelTimeoutCancelReason: 'Parallel subagent timed out.'
       $launchAbortSiblingCancelReason: 'Parallel subagent launch aborted after sibling failure.'
 
+  # Shared project qualification for resource tags and log correlation.
+  Ineersa\CodingAgent\Logging\TelemetrySessionKeyProvider:
+    arguments:
+      $runtimeCwd: '%app.cwd%'
+
   # Monolog processor — injects RunLogContext fields into every log record.
   Ineersa\CodingAgent\Logging\LogContextProcessor:
     tags:
       - { name: monolog.processor }
 
   # Opt-in once-per-minute session CPU/RSS/process-count sample over DogStatsD.
-  # #[AsSchedule('default')] lets AddScheduleMessengerPass decorate this provider
-  # with the existing AsPeriodicTask jobs on the same schedule.
+  # Schedule registration stays on SessionResourceSamplerSchedule so
+  # AddScheduleMessengerPass can decorate that provider without replacing the
+  # Messenger handler callable on SessionResourceSamplerTask.
   Ineersa\CodingAgent\Logging\SessionResourceSamplerTask:
     arguments:
       $enabled: '%app.session_resource_sampler.enabled%'
@@ -337,6 +343,11 @@ services:
       $telemetryEnv: '%app.telemetry_env%'
       $dogstatsdHost: '%app.dogstatsd.host%'
       $dogstatsdPort: '%app.dogstatsd.port%'
+
+  Ineersa\CodingAgent\Logging\SessionResourceSamplerSchedule:
+    arguments:
+      $enabled: '%app.session_resource_sampler.enabled%'
+      $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
   # OutputCapConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\OutputCapConfig:
