@@ -179,14 +179,12 @@ final readonly class JsonlAppendJournal
      */
     public function verifiedStagedRecords(string $path, string $identity): array
     {
-        $pending = $this->verifiedPending($path);
-        if (null === $pending || $pending->identity !== $identity) {
+        $manifest = $this->manifest($path);
+        if (null === $manifest || hash('sha256', json_encode($manifest, \JSON_THROW_ON_ERROR)) !== $identity) {
             throw new \RuntimeException('Prepared transition identity changed before batch read.');
         }
-        $manifest = $this->manifest($path);
-        if (null === $manifest) {
-            throw new \RuntimeException('Verified transition missing before batch read.');
-        }
+        // Refresh byte/checksum fences, not the already-verified work object graph.
+        $this->reconcile($path);
         if (!is_file($this->stagePath($path)) || hash_file('sha256', $this->stagePath($path)) !== $manifest['stage_hash']) {
             throw new \RuntimeException('Staged canonical bytes are missing or corrupt.');
         }
@@ -215,11 +213,15 @@ final readonly class JsonlAppendJournal
 
     public function finalizeVerified(string $path, string $identity): void
     {
-        $pending = $this->verifiedPending($path);
-        if (null === $pending || $pending->identity !== $identity) {
+        $manifest = $this->manifest($path);
+        if (null === $manifest || hash('sha256', json_encode($manifest, \JSON_THROW_ON_ERROR)) !== $identity) {
             throw new \RuntimeException('Prepared transition identity changed before finalization.');
         }
-        $this->finalize($path);
+        // Coordination already consumed verified work. Recheck current physical
+        // evidence once under the owner's storage lock before publishing the cut.
+        $this->reconcile($path);
+        $this->filesystem->remove($this->manifestPath($path));
+        $this->filesystem->remove([$this->stagePath($path), $path.'.append.work']);
     }
 
     public function assertReady(string $path): void
@@ -230,14 +232,6 @@ final readonly class JsonlAppendJournal
         $this->reconcile($path);
         // Physical completion cannot establish mailbox/effect finalization.
         throw new \RuntimeException('Owner transition requires coordination recovery; prepared evidence was retained.');
-    }
-
-    public function finalize(string $path): void
-    {
-        $this->reconcile($path);
-        // Call only after the current owner finished required coordination.
-        $this->filesystem->remove($this->manifestPath($path));
-        $this->filesystem->remove([$this->stagePath($path), $path.'.append.work']);
     }
 
     public function readableOffset(string $path, int $physicalSize): int
