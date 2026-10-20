@@ -113,10 +113,11 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         return function () use ($rows, $fullRows): void {
             foreach ($rows as $batchKey => $row) {
                 $key = ['run_id' => $row['run_id'], 'turn_no' => $row['turn_no'], 'step_id' => $row['step_id']];
-                if (false === $this->connection->fetchOne('SELECT 1 FROM tool_batch_schedule WHERE run_id = ? AND turn_no = ? AND step_id = ?', array_values($key))) {
+                // Use the update count instead of an existence read, without
+                // binding unchanged payloads on the existing-batch path.
+                $updated = $this->connection->update('tool_batch_schedule', array_diff_key($row, $key), $key);
+                if (0 === (int) $updated) {
                     $this->connection->insert('tool_batch_schedule', $fullRows[$batchKey]);
-                } else {
-                    $this->connection->update('tool_batch_schedule', array_diff_key($row, $key), $key);
                 }
             }
         };
