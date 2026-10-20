@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 
 /**
@@ -33,8 +32,8 @@ final class SubagentExecutionService
     ): DeferredToolCompletionOutcome {
         return $this->deferredBatchLaunch->launch(
             $parentRunId,
-            [new SubagentTaskDTO(agent: $agentName, task: $task)],
-            ChildRunBatchExecutionModeEnum::Single,
+            $agentName,
+            $task,
         );
     }
 }

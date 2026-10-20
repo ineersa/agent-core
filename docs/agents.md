@@ -27,7 +27,6 @@ tools:
 # skills: [my-skill]
 # inheritProjectContext: true
 # systemPromptMode: replace   # or append
-# parallelAllowed: true
 # extensions:
 #   - Ineersa\HatfieldExt\SomeOptional\SomeOptionalExtension
 ---
@@ -48,11 +47,14 @@ System prompt body for the child agent…
 | `extensions` | Optional child extension classes (**not** global `extensions.enabled`) | omit = none optional |
 | `inheritProjectContext` | Include project context for the child | `true` |
 | `systemPromptMode` | `replace` or `append` body vs parent system prompt | `replace` |
-| `parallelAllowed` | Internal batch-preparation policy; does not serialize independent single-child calls | `true` |
 
 MCP entries inside `tools` use `mcp:` selectors — see [mcp.md](mcp.md).
 
 Body after frontmatter is the child system prompt content.
+
+Remove the obsolete `parallelAllowed` field from custom or previously installed agent
+definitions. Unknown frontmatter fields are rejected. Independent tool calls use
+normal scheduling and file/worktree ownership rules instead of a per-agent batch mode.
 
 ## Discovery
 

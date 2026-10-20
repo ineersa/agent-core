@@ -13,9 +13,10 @@ Use a Markdown file with YAML frontmatter and an instruction body. Unknown field
 | `extensions` | `[]` | Optional extension FQCNs; effective list adds `agents.extensions.always_on`, not the parent's optional extensions |
 | `inheritProjectContext` | `true` | Inherits AGENTS.md context, not parent skills or agent catalog |
 | `systemPromptMode` | `replace` | `append` also includes rendered APPEND_SYSTEM.md and contributors |
-| `parallelAllowed` | `true` | Internal batch-preparation policy; does not serialize independent single-child calls |
 
 Use `skills`, not `skill`. There is no `disabled` or top-level `mcp` field. Remove a definition to remove the agent.
+
+Remove the obsolete `parallelAllowed` field from custom or previously installed agent definitions. Each subagent call launches one child; independent calls use normal tool scheduling.
 
 ## Tools and MCP
 

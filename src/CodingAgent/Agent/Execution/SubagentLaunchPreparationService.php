@@ -42,11 +42,6 @@ final class SubagentLaunchPreparationService
         $this->definitionPolicy->assertDepthAllowed($parentRunId);
     }
 
-    public function requireParallelDefinition(string $agentName): AgentDefinitionDTO
-    {
-        return $this->definitionPolicy->requireParallelDefinition($agentName);
-    }
-
     public function requireForegroundDefinition(string $agentName): AgentDefinitionDTO
     {
         return $this->definitionPolicy->requireForegroundDefinition($agentName);
