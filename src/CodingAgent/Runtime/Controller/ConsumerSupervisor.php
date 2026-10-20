@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
+use Ineersa\CodingAgent\Runtime\Process\ProcessDiagnosticTailBuffer;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
@@ -74,9 +75,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         'mcp',
         'extension_agent',
     ];
-
-    /** Max bytes of stderr tail retained per consumer for crash diagnostics. */
-    private const int STDERR_TAIL_MAX_BYTES = 16_384;
 
     /** @var array<string, Process> compositeKey => process */
     private array $consumers = [];
@@ -378,18 +376,7 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
 
     private function appendStderrTail(string $key, string $chunk): void
     {
-        $tail = ($this->stderrTails[$key] ?? '').$chunk;
-        if (\strlen($tail) > self::STDERR_TAIL_MAX_BYTES) {
-            // Skip leading UTF-8 continuation bytes, but retain the raw end:
-            // the next process chunk may complete its final code point.
-            $start = \strlen($tail) - self::STDERR_TAIL_MAX_BYTES;
-            while (isset($tail[$start]) && (\ord($tail[$start]) & 0xC0) === 0x80) {
-                ++$start;
-            }
-            $tail = substr($tail, $start);
-        }
-
-        $this->stderrTails[$key] = $tail;
+        $this->stderrTails[$key] = ProcessDiagnosticTailBuffer::append($this->stderrTails[$key] ?? '', $chunk);
     }
 
     /**

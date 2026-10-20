@@ -10,7 +10,6 @@ tools:
 skills:
   - playwright-cli
 model: runpod/Qwen3.6-27B
-parallelAllowed: false
 ---
 
 You are the mandatory browser automation subagent for all browser interaction tasks.

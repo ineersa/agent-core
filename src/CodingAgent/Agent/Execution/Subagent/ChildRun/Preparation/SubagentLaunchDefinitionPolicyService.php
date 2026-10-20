@@ -34,16 +34,6 @@ final class SubagentLaunchDefinitionPolicyService
         }
     }
 
-    public function requireParallelDefinition(string $agentName): AgentDefinitionDTO
-    {
-        $definition = $this->requireForegroundDefinition($agentName);
-        if (!$definition->parallelAllowed) {
-            throw new ToolCallException(\sprintf('Agent "%s" does not allow parallel execution. Set parallelAllowed: true in the agent definition or use single subagent mode.', $agentName), retryable: false);
-        }
-
-        return $definition;
-    }
-
     public function requireForegroundDefinition(string $agentName): AgentDefinitionDTO
     {
         try {

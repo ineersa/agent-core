@@ -96,11 +96,10 @@ final class ConsumerSupervisorTest extends TestCase
         $supervisor = new ConsumerSupervisor($this->logger, $config);
 
         $method = new \ReflectionMethod(ConsumerSupervisor::class, 'appendStderrTail');
-        $maxBytes = (new \ReflectionClass(ConsumerSupervisor::class))->getConstant('STDERR_TAIL_MAX_BYTES');
-        $this->assertIsInt($maxBytes);
+        $maxBytes = 16_384;
 
         // Pure 3-byte characters: a naive substr(..., -$maxBytes) starts
-        // mid-codepoint because STDERR_TAIL_MAX_BYTES % 3 !== 0.
+        // mid-codepoint because the byte budget is not divisible by three.
         $this->assertNotSame(0, $maxBytes % 3);
         $payload = str_repeat($box, (int) ceil(($maxBytes + 8) / 3)).'END';
         $this->assertTrue(mb_check_encoding($payload, 'UTF-8'));

@@ -101,10 +101,6 @@ final class AgentFrontmatterDTO
             message: '"systemPromptMode" must be one of replace|append.',
         )]
         public readonly string $systemPromptMode = 'replace',
-
-        #[SerializedName('parallelAllowed')]
-        #[Assert\Type('bool', '"parallelAllowed" must be a boolean.')]
-        public readonly bool $parallelAllowed = true,
     ) {
     }
 

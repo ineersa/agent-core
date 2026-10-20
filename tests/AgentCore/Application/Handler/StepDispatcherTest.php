@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 use Ineersa\AgentCore\Application\Handler\EffectDispatchFailedEvent;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -15,10 +16,28 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Handler\HandlersLocator;
+use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
 
 final class StepDispatcherTest extends TestCase
 {
+    public function testCoordinationReceivesTheSameVerifiedDtoThroughMessenger(): void
+    {
+        $verified = new VerifiedTransitionDTO('identity', ['run_id' => 'run-1']);
+        $action = new AdvanceRun('run-1', 1, 'advance-1', 1, 'advance-key');
+        $received = [];
+        $bus = new MessageBus([new HandleMessageMiddleware(new HandlersLocator([
+            AdvanceRun::class => [static function (AdvanceRun $message, VerifiedTransitionDTO $evidence) use (&$received): void {
+                $received[] = [$message, $evidence];
+            }],
+        ]))]);
+        $dispatcher = new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), new EventDispatcher());
+        $dispatcher->dispatchCoordinationActions([$action], $verified);
+        $this->assertSame([[$action, $verified]], $received);
+    }
+
     public function testDispatchesCoordinationActionsOnCommandBusInOrder(): void
     {
         $commandBus = new TestMessageBus();
@@ -27,7 +46,7 @@ final class StepDispatcherTest extends TestCase
         $advance = new AdvanceRun('run-1', 1, 'advance-1', 1, 'advance-key');
         $compact = new CompactRun('run-1', 1, 'compact-1', 1, 'compact-key');
 
-        $dispatcher->dispatchCoordinationActions([$advance, $compact]);
+        $dispatcher->dispatchCoordinationActions([$advance, $compact], null);
 
         $this->assertSame([$advance, $compact], $commandBus->messages);
     }

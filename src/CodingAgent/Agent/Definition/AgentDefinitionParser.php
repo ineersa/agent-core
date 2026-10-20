@@ -203,7 +203,6 @@ final class AgentDefinitionParser
             extensions: null === $dto->extensions ? null : array_values($dto->extensions),
             inheritProjectContext: $dto->inheritProjectContext,
             systemPromptMode: SystemPromptModeEnum::from($dto->systemPromptMode),
-            parallelAllowed: $dto->parallelAllowed,
             instructions: $body,
             sourcePath: $filePath,
         );

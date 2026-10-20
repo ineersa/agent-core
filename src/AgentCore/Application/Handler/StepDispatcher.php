@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
@@ -12,6 +13,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\HandlerArgumentsStamp;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 final readonly class StepDispatcher
@@ -25,11 +27,12 @@ final readonly class StepDispatcher
     }
 
     /** @param list<object> $actions */
-    public function dispatchCoordinationActions(array $actions): void
+    public function dispatchCoordinationActions(array $actions, ?VerifiedTransitionDTO $verified): void
     {
         foreach ($actions as $action) {
             // Unrouted local coordinators complete before canonical publication.
-            $this->commandBus->dispatch($action);
+            // Messenger keeps these synchronous handler arguments out of transport serialization.
+            $this->commandBus->dispatch($action, [new HandlerArgumentsStamp([$verified])]);
         }
     }
 

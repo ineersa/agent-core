@@ -34,6 +34,8 @@ final class SubagentLiveChildViewPoller
     /** @var list<RuntimeEvent> */
     private array $pendingEvents = [];
 
+    private bool $projectionReplaced = false;
+
     public function __construct(
         private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
@@ -46,14 +48,15 @@ final class SubagentLiveChildViewPoller
     {
         $this->projector->reset();
         $this->pendingEvents = [];
+        $this->projectionReplaced = false;
     }
 
     /**
      * One-time apply of a child snapshot into live view state and the child projector.
      *
      * Call only while {@see SubagentLiveViewState::$active} is true (picker sets this before apply).
-     * Reconstructs presentation from the durable snapshot, redispatches unresolved canonical
-     * human_input.requested events, and restores pending local tool questions from the DB store.
+     * Reconstructs presentation from the durable snapshot and redispatches unresolved
+     * canonical human_input.requested events.
      *
      * @param ?callable(RuntimeEvent): void $onHumanInputRequested
      *
@@ -65,7 +68,7 @@ final class SubagentLiveChildViewPoller
         ?callable $onHumanInputRequested = null,
     ): array {
         if (!$live->active || null === $live->selected) {
-            return $live->childTranscript;
+            return $live->childTranscript();
         }
 
         $callbacks = $this->makeCallbacks($onHumanInputRequested);
@@ -98,14 +101,15 @@ final class SubagentLiveChildViewPoller
         $live->llmRetryWorkingMessage = $scratch->llmRetryWorkingMessage;
         $live->childLastSeq = $snapshot->maxSeq;
         $projected = $this->projector->blocks();
-        $live->childTranscript = [] !== $projected
-            ? $projected
-            : $snapshot->transcriptBlocks;
+        $live->replaceChildTranscript(
+            [] !== $projected ? $projected : $snapshot->transcriptBlocks,
+            entryOnly: [] === $projected,
+        );
         // Snapshot apply establishes the mounted baseline. Discard its full dirty
         // state so later live stream batches produce bounded incremental patches.
         $this->eventApplier->drainProjectedChanges();
 
-        return $live->childTranscript;
+        return $live->childTranscript();
     }
 
     /**
@@ -140,10 +144,6 @@ final class SubagentLiveChildViewPoller
         }
 
         $changed = false;
-        $previousBlockIds = array_fill_keys(array_map(
-            static fn (TranscriptBlock $block): string => $block->id,
-            $live->childTranscript,
-        ), true);
         $scratch = new TuiSessionState($live->selected->agentRunId);
         $scratch->activity = $live->childActivity;
         $scratch->queuedUserMessages = $live->childQueuedUserMessages;
@@ -159,6 +159,9 @@ final class SubagentLiveChildViewPoller
 
             try {
                 $this->eventApplier->apply($scratch, $event);
+                if (RuntimeEventTypeEnum::RunHistoryPositionChanged->value === $event->type) {
+                    $this->projectionReplaced = true;
+                }
                 $callbacks->dispatch($event, $live->selected->agentRunId);
             } catch (\Throwable $exception) {
                 $this->pendingEvents = \array_slice($events, $index);
@@ -183,24 +186,15 @@ final class SubagentLiveChildViewPoller
             return null;
         }
 
-        $live->childTranscript = $this->projector->blocks();
-
         $transcriptChanges = $this->eventApplier->drainProjectedChanges();
-        // Entry placeholders and snapshot fallbacks are mounted from childTranscript,
-        // not the projector. Carry their disappearance as explicit removals so the
-        // incremental screen state converges with the projector-backed view.
-        $currentBlockIds = array_fill_keys(array_map(
-            static fn (TranscriptBlock $block): string => $block->id,
-            $live->childTranscript,
-        ), true);
-        $removedVisibleIds = array_keys(array_diff_key($previousBlockIds, $currentBlockIds));
-        if ([] !== $removedVisibleIds) {
-            $transcriptChanges = TranscriptChangeSet::incremental(
-                $transcriptChanges->upserts,
-                array_values(array_unique([...$transcriptChanges->removals, ...$removedVisibleIds])),
-                $transcriptChanges->retentionFloorBlockId,
-            );
+        // History selection resets the projector without emitting per-ID removals.
+        // Only this structural boundary needs a complete snapshot, including tail
+        // events from the same batch. Retain the flag across failed suffix retries.
+        if ($this->projectionReplaced) {
+            $transcriptChanges = TranscriptChangeSet::full($this->projector->blocks());
+            $this->projectionReplaced = false;
         }
+        $transcriptChanges = $live->applyTranscriptChangeSet($transcriptChanges);
 
         return $transcriptChanges->isEmpty() ? null : $transcriptChanges;
     }

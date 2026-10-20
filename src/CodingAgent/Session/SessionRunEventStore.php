@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
@@ -64,19 +65,24 @@ final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\Prepared
         return $this->eventLog->appendMany($this->eventsPath($events[0]->runId ?? $work['run_id']), $events, work: $work);
     }
 
-    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    public function verifiedPendingTransition(string $runId): ?VerifiedTransitionDTO
     {
         return $this->eventLog->verifiedPendingTransition($this->eventsPath($runId), $runId);
     }
 
-    public function verifiedPendingBatch(string $runId, string $identity): array
+    public function verifiedPendingBatch(string $runId, VerifiedTransitionDTO $verified): array
     {
-        return $this->eventLog->verifiedPendingBatch($this->eventsPath($runId), $runId, $identity);
+        return $this->eventLog->verifiedPendingBatch($this->eventsPath($runId), $runId, $verified);
     }
 
-    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    public function finalizeVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
     {
-        $this->eventLog->finalizeVerifiedTransition($this->eventsPath($runId), $runId, $identity);
+        $this->eventLog->finalizeVerifiedTransition($this->eventsPath($runId), $runId, $verified);
+    }
+
+    public function assertVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
+    {
+        $this->eventLog->assertVerifiedTransition($this->eventsPath($runId), $runId, $verified);
     }
 
     public function assertTransitionReady(string $runId): void

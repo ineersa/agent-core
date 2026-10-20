@@ -96,8 +96,8 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
 
         $this->assertStringContainsString('/agents-main', $this->liveWorkingMessage($screen));
         $this->assertStringContainsString('finished', strtolower($this->liveWorkingMessage($screen)));
-        $this->assertNotEmpty($this->state->subagentLiveView->childTranscript);
-        $this->assertSame(TranscriptBlockKindEnum::Error, $this->state->subagentLiveView->childTranscript[0]->kind);
+        $this->assertNotEmpty($this->state->subagentLiveView->childTranscript());
+        $this->assertSame(TranscriptBlockKindEnum::Error, $this->state->subagentLiveView->childTranscript()[0]->kind);
         $this->assertSame(RunActivityStateEnum::Completed, $this->state->subagentLiveView->childActivity);
     }
 
@@ -111,10 +111,10 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
             $screen = $this->dispatchSubmit($text);
             $this->assertStringContainsString('/agents-main', $this->liveWorkingMessage($screen), $text);
             $this->assertSame(0, $this->handlerCalls[$text] ?? 0, $text);
-            $this->assertNotEmpty($this->state->subagentLiveView->childTranscript, $text);
+            $this->assertNotEmpty($this->state->subagentLiveView->childTranscript(), $text);
             $this->assertSame(
                 TranscriptBlockKindEnum::Error,
-                $this->state->subagentLiveView->childTranscript[\count($this->state->subagentLiveView->childTranscript) - 1]->kind,
+                $this->state->subagentLiveView->childTranscript()[\count($this->state->subagentLiveView->childTranscript()) - 1]->kind,
                 $text,
             );
         }
@@ -190,7 +190,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         );
         $this->state->subagentLiveView->enter($child);
         $this->state->subagentLiveView->childActivity = $childActivity;
-        $this->state->subagentLiveView->childTranscript = [];
+        $this->state->subagentLiveView->replaceChildTranscript([]);
     }
 
     private function registerCountingHandler(string $name): void

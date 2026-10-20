@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Stream;
 
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
@@ -42,7 +43,7 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
         return $persisted;
     }
 
-    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    public function verifiedPendingTransition(string $runId): ?VerifiedTransitionDTO
     {
         $store = $this->inner;
         if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
@@ -52,38 +53,39 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
         return $store->verifiedPendingTransition($runId);
     }
 
-    public function verifiedPendingBatch(string $runId, string $identity): array
+    public function verifiedPendingBatch(string $runId, VerifiedTransitionDTO $verified): array
     {
         $store = $this->inner;
         if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
         }
 
-        return $store->verifiedPendingBatch($runId, $identity);
+        return $store->verifiedPendingBatch($runId, $verified);
     }
 
-    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    public function assertVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
+    {
+        if (!$this->inner instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
+            throw new \LogicException('Configured canonical store lacks transition preparation.');
+        }
+        $this->inner->assertVerifiedTransition($runId, $verified);
+    }
+
+    public function finalizeVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
     {
         $store = $this->inner;
         if (!$store instanceof \Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface) {
             throw new \LogicException('Configured canonical store lacks transition preparation.');
-        }
-        $pending = $store->verifiedPendingTransition($runId);
-        if (null === $pending) {
-            throw new \RuntimeException('Verified transition missing before stream publication.');
-        }
-        if ($pending->identity !== $identity) {
-            throw new \RuntimeException('Prepared transition identity changed before stream publication.');
         }
 
         $hotBatch = $this->pendingEvents[$runId] ?? null;
         if (null === $hotBatch) {
             // Cold recovery uses owner-only staged bytes. Public range readers still honor the cut.
-            $hotBatch = $store->verifiedPendingBatch($runId, $identity);
+            $hotBatch = $store->verifiedPendingBatch($runId, $verified);
         }
-        $this->assertVerifiedBatch($pending, $hotBatch);
+        $this->assertVerifiedBatch($verified, $hotBatch);
 
-        $this->probe('canonical_finalize', $runId, static fn () => $store->finalizeVerifiedTransition($runId, $identity));
+        $this->probe('canonical_finalize', $runId, static fn () => $store->finalizeVerifiedTransition($runId, $verified));
         unset($this->pendingEvents[$runId]);
         foreach ($hotBatch as $event) {
             $this->probe('listeners', $runId, fn () => $this->dispatcher->dispatch(new \Ineersa\CodingAgent\Session\Event\RunEventPublishedEvent($event)));
@@ -126,7 +128,7 @@ final class StreamingCommittedRuntimeEventStore implements \Ineersa\AgentCore\Co
 
     /** @param list<RunEvent> $batch */
     private function assertVerifiedBatch(
-        \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO $pending,
+        VerifiedTransitionDTO $pending,
         array $batch,
     ): void {
         $sequences = array_map(static fn (RunEvent $event): int => $event->seq, $batch);

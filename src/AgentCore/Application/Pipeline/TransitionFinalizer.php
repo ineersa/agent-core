@@ -36,10 +36,10 @@ final readonly class TransitionFinalizer
 
     public function completePlan(TransitionPlan $plan): void
     {
-        $this->probe('coordination', $plan->runId, fn () => $this->dispatcher->dispatchCoordinationActions($plan->syncActions));
+        $this->probe('coordination', $plan->runId, fn () => $this->dispatcher->dispatchCoordinationActions($plan->syncActions, $plan->verified));
         if (null !== $plan->verified) {
             $this->probe('local_metadata', $plan->runId, fn () => $this->localMetadata->apply($plan));
-            $this->probe('canonical_finalize', $plan->runId, fn () => $this->store->finalizeVerifiedTransition($plan->runId, $plan->verified->identity));
+            $this->probe('canonical_finalize', $plan->runId, fn () => $this->store->finalizeVerifiedTransition($plan->runId, $plan->verified));
         } elseif ([] !== $plan->localActions) {
             throw new \RuntimeException('Local metadata requires verified transition evidence.');
         }

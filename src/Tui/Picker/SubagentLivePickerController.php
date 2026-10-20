@@ -413,11 +413,11 @@ final class SubagentLivePickerController
             $snapshot,
             onHumanInputRequested: $this->onHumanInputRequested,
         );
-        if ([] === $state->subagentLiveView->childTranscript) {
-            $state->subagentLiveView->childTranscript = $state->subagentLiveView->placeholderTranscriptFor($child);
+        if ([] === $state->subagentLiveView->childTranscript()) {
+            $state->subagentLiveView->replaceChildTranscript($state->subagentLiveView->placeholderTranscriptFor($child), entryOnly: true);
         }
 
-        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
+        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript());
         $screen->syncQueuedUserMessages($state->subagentLiveView->childQueuedUserMessages);
         // Idle/terminal children use ChatScreen's empty-message finished path (● idle).
         $screen->setWorkingMessage($child->isRunning() ? 'Child agent working...' : null);

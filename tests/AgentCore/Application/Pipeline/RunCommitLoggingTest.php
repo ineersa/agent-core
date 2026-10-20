@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -113,7 +114,7 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
     /** @var list<RunEvent> */
     public array $appended = [];
 
-    /** @var array<string, \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO> */
+    /** @var array<string, VerifiedTransitionDTO> */
     private array $pending = [];
 
     public function appendTransition(array $events, array $work): array
@@ -134,7 +135,7 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
             $this->appended[] = $persisted;
             $out[] = $persisted;
         }
-        $this->pending[$runId] = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(
+        $this->pending[$runId] = new VerifiedTransitionDTO(
             hash('sha256', serialize([$work, $out])),
             $work,
             array_map(static fn (RunEvent $event): int => $event->seq, $out),
@@ -147,27 +148,34 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
     {
     }
 
-    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    public function verifiedPendingTransition(string $runId): ?VerifiedTransitionDTO
     {
         return $this->pending[$runId] ?? null;
     }
 
-    public function verifiedPendingBatch(string $runId, string $identity): array
+    public function verifiedPendingBatch(string $runId, VerifiedTransitionDTO $verified): array
     {
         $pending = $this->verifiedPendingTransition($runId);
-        if (null === $pending || $pending->identity !== $identity) {
+        if (null === $pending || $pending->identity !== $verified->identity) {
             throw new \RuntimeException('Fixture transition identity mismatch.');
         }
 
         return [];
     }
 
-    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    public function finalizeVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
     {
-        if (($this->pending[$runId]->identity ?? null) !== $identity) {
+        if (($this->pending[$runId]->identity ?? null) !== $verified->identity) {
             throw new \RuntimeException('Fixture transition identity mismatch.');
         }
         unset($this->pending[$runId]);
+    }
+
+    public function assertVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
+    {
+        if (($this->pending[$runId]->identity ?? null) !== $verified->identity) {
+            throw new \RuntimeException('Fixture transition identity changed.');
+        }
     }
 
     public function latestSequenceFor(string $runId): ?int

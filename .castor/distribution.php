@@ -1109,6 +1109,12 @@ function distribution_smoke_packaged_process_topology(string $artifactPath, bool
     \CastorTasks\copy_file_checked($artifactPath, $launchPath);
     chmod($launchPath, 0755);
 
+    // macOS /var resolves to /private/var; launch with the same path the argv assertion expects.
+    $launchPath = realpath($launchPath);
+    if (false === $launchPath) {
+        throw new RuntimeException('Packaged topology smoke: unable to resolve copied artifact path.');
+    }
+
     $sessionId = 'topo-1';
     $queuePaths = Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths::forSession(
         $tmp.'/.hatfield/sessions',

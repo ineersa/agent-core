@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Tool;
 
-use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 
@@ -17,13 +16,12 @@ use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 final class SubagentToolDefinitionProvider implements HatfieldToolProviderInterface
 {
     public function __construct(
-        private readonly AgentsConfig $agentsConfig,
         private readonly SubagentToolHandler $handler,
     ) {
     }
 
     public function definition(): ToolDefinitionDTO
     {
-        return SubagentToolDefinitionBuilder::build($this->agentsConfig, $this->handler);
+        return SubagentToolDefinitionBuilder::build($this->handler);
     }
 }

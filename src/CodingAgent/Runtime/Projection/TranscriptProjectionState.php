@@ -653,10 +653,11 @@ final class TranscriptProjectionState
 
     private function markDirty(string $id): void
     {
-        unset($this->removedIds[$id]);
+        // Repeated updates must preserve pending reorder removals until drain.
         if (isset($this->dirtyIds[$id])) {
             return;
         }
+        unset($this->removedIds[$id]);
         $this->dirtyIds[$id] = true;
         $this->dirtyOrder[] = $id;
     }

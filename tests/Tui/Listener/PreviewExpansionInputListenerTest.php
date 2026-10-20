@@ -353,7 +353,7 @@ line9';
         for ($i = 0; $i < 12; ++$i) {
             $resultLines[] = 'child_line_'.$i;
         }
-        $state->subagentLiveView->childTranscript = [
+        $state->subagentLiveView->replaceChildTranscript([
             new TranscriptBlock(
                 id: 'tc-child',
                 kind: TranscriptBlockKindEnum::ToolCall,
@@ -379,8 +379,8 @@ line9';
                     'is_error' => false,
                 ],
             ),
-        ];
-        $childTranscript = $state->subagentLiveView->childTranscript;
+        ]);
+        $childTranscript = $state->subagentLiveView->childTranscript();
 
         $harness->screen()->setTranscriptBlocks($childTranscript);
         $harness->screen()->setWorkingVisible(false);
@@ -408,6 +408,6 @@ line9';
         // Live-view ownership and its projected child transcript stay untouched by the toggle.
         $this->assertTrue($state->subagentLiveView->active);
         $this->assertSame($child, $state->subagentLiveView->selected);
-        $this->assertSame($childTranscript, $state->subagentLiveView->childTranscript);
+        $this->assertSame($childTranscript, $state->subagentLiveView->childTranscript());
     }
 }

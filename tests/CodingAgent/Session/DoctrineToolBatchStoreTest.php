@@ -147,7 +147,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
 
         $coordinator = $container->get(LocalMetadataCoordinator::class);
         $coordinator->apply($plan);
-        $events->finalizeVerifiedTransition($run, $pending->identity);
+        $events->finalizeVerifiedTransition($run, $pending);
         $batch = $batches->load($run, 1, 'tools');
         $this->assertNotNull($batch);
         $this->assertEquals(['call-a' => $first, 'call-b' => $second], $batch->calls);
@@ -160,7 +160,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $next = $events->verifiedPendingTransition($run);
         $this->assertNotNull($next);
         $coordinator->apply(new TransitionPlan($run, $next, [$complete], [], []));
-        $events->finalizeVerifiedTransition($run, $next->identity);
+        $events->finalizeVerifiedTransition($run, $next);
         $batch = $batches->load($run, 1, 'tools');
         $this->assertNotNull($batch);
         $this->assertSame([], $batch->pendingQueue);
