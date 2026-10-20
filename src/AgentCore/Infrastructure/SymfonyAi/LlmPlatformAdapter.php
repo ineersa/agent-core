@@ -73,6 +73,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     {
         $runId = $request->input->runId ?? '';
         $stepId = $request->input->stepId;
+        $cancelToken = new LlmInvocationCancellationToken($this->cancellationToken($request));
 
         $executor = new LlmRequestRetryExecutor(
             policy: $this->requestRetryPolicy,
@@ -82,21 +83,17 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         );
 
         return $executor->execute(
-            invoke: fn (): PlatformInvocationResult => $this->invokeOnce($request),
-            // Build token lazily so the executor does not consume a status-reader
-            // poll before invokeOnce/consumeStream. Stream cancellation accounting
-            // remains owned by consumeStream.
-            isCancelled: function () use ($request): bool {
-                return $this->cancellationToken($request)->isCancellationRequested();
-            },
+            invoke: fn (): PlatformInvocationResult => $this->invokeOnce($request, $cancelToken),
+            // Share observations across attempts without polling at construction.
+            // Retry boundaries bypass the stream's cached negative observation.
+            isCancelled: $cancelToken->refresh(...),
             runId: $runId,
             stepId: $stepId,
         );
     }
 
-    private function invokeOnce(ModelInvocationRequest $request): PlatformInvocationResult
+    private function invokeOnce(ModelInvocationRequest $request, LlmInvocationCancellationToken $cancelToken): PlatformInvocationResult
     {
-        $cancelToken = $this->cancellationToken($request);
         $messages = $this->resolveContextMessages($request->input);
         $preTransformIds = $this->extractNotificationIds($messages);
         $messages = $this->applyTransformHooks($messages, $cancelToken, $request->input->runId);
@@ -162,13 +159,16 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $cancelToken,
             );
             try {
+                if ($cancelToken->refresh()) {
+                    throw new LlmStreamCancelledException();
+                }
                 $deferredResult = $platform->invoke(
                     $input->getModel(),
                     $input->getMessageBag(),
                     array_replace($inputOptions, ['stream' => true]),
                 );
             } catch (\Throwable $exception) {
-                if ($this->isStreamCancellation($exception)) {
+                if ($this->isStreamCancellation($exception) || $cancelToken->refresh()) {
                     return new PlatformInvocationResult(
                         assistantMessage: null,
                         deltas: [],
@@ -424,7 +424,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      */
     private function consumeStream(
         DeferredResult $deferredResult,
-        CancellationTokenInterface $cancelToken,
+        LlmInvocationCancellationToken $cancelToken,
         string $runId,
         ?string $stepId,
         string $modelName = '',
@@ -446,7 +446,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         try {
             // Check before the first delta so a cancel that landed during the
             // provider wait / buffered open still aborts without emitting work.
-            if ($cancelToken->isCancellationRequested()) {
+            if ($cancelToken->refresh()) {
                 $aborted = true;
             } else {
                 foreach ($deferredResult->asStream() as $delta) {
@@ -482,12 +482,12 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
                 // Providers may buffer the full response and yield once; a cancel
                 // that arrives after the last delta must still abort.
-                if (!$aborted && $cancelToken->isCancellationRequested()) {
+                if (!$aborted && $cancelToken->refresh()) {
                     $aborted = true;
                 }
             }
         } catch (\Throwable $exception) {
-            if ($this->isStreamCancellation($exception)) {
+            if ($this->isStreamCancellation($exception) || $cancelToken->refresh()) {
                 $this->abortConnection($deferredResult);
 
                 if ($streamObserverEnabled) {
