@@ -233,9 +233,9 @@ final class BackgroundProcessManager
      *
      * @return list<BackgroundProcess>
      */
-    public function list(string $sessionId): array
+    public function list(string $sessionId, bool $unfinishedOnly = false): array
     {
-        $entities = $this->store->fetchBackgrounded($sessionId);
+        $entities = $this->store->fetchBackgrounded($sessionId, $unfinishedOnly);
 
         foreach ($entities as $entity) {
             $this->resolveEntityStatus($entity);
@@ -520,10 +520,7 @@ final class BackgroundProcessManager
             return [];
         }
 
-        return array_values(array_filter(
-            $this->store->fetchAllUnfinished($runId),
-            static fn (BackgroundProcess $entity): bool => null !== $entity->toolCallId && null === $entity->backgroundedAt && !$entity->backgroundRequested,
-        ));
+        return $this->store->fetchForegroundTools($runId);
     }
 
     /**

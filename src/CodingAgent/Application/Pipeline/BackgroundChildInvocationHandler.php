@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkChildBackgroundedDTO;
@@ -29,18 +28,34 @@ final readonly class BackgroundChildInvocationHandler implements RunMessageHandl
 
     public function handle(object $message, RunState $state): HandlerResult
     {
-        \assert($message instanceof BackgroundChildInvocationDTO);
+        if (!$message instanceof BackgroundChildInvocationDTO) {
+            throw new \InvalidArgumentException('Unsupported child background message.');
+        }
+
+        return $this->detach($message, $state);
+    }
+
+    private function detach(BackgroundChildInvocationDTO $message, RunState $state): HandlerResult
+    {
+        if (false !== ($state->pendingToolCalls[$message->toolCallId] ?? null)) {
+            // Repeated requests and calls whose wait already settled are no-ops.
+            return new HandlerResult();
+        }
+        if (null === $this->batches->findBackgroundCandidate($state->runId, $message->lifecycleId, $message->toolCallId)) {
+            // The picker is a snapshot: completion/interruption may have won.
+            return new HandlerResult();
+        }
         $batch = $this->batches->findByParentRunAndToolCall($state->runId, $message->toolCallId);
-        if (null === $batch || $batch->lifecycleId !== $message->lifecycleId || null !== $batch->backgroundedAt
-            || null !== $batch->terminalCompletionEnqueuedAt || null !== $batch->interruptionKind
-            || DeferredSubagentBatchLaunchStatusEnum::Launched !== $batch->launchStatus
-            || $batch->parentTurnNo !== $state->turnNo || false !== ($state->pendingToolCalls[$message->toolCallId] ?? null)) {
+        if (null === $batch) {
+            throw new \LogicException('Eligible child background batch is missing.');
+        }
+        if ($batch->parentTurnNo !== $state->turnNo) {
+            // A request from an older owner turn cannot detach current work.
             return new HandlerResult();
         }
         $correlation = $this->deferred->findByDeferredId($batch->lifecycleId);
-        if (null === $correlation || !\in_array($correlation->toolName, ['subagent', 'fork'], true)
-            || 'pending' !== $this->deferred->status($batch->lifecycleId)) {
-            return new HandlerResult();
+        if (null === $correlation) {
+            throw new \LogicException('Eligible child background registration is missing.');
         }
         $active = array_any($batch->children, static fn ($child): bool => null === $child->childLifecycleProjection || !$child->childLifecycleProjection->childStatus->isTerminal());
         if (!$active) {

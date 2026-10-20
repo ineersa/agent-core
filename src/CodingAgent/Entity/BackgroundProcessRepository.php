@@ -124,12 +124,33 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
      *
      * @return BackgroundProcess[]
      */
-    public function findBackgrounded(string $sessionId): array
+    public function findBackgrounded(string $sessionId, bool $unfinishedOnly = false): array
     {
-        return $this->createQueryBuilder('bp')
+        $query = $this->createQueryBuilder('bp')
             ->where('bp.sessionId = :sessionId')
             ->andWhere('bp.backgroundedAt IS NOT NULL')
             ->setParameter('sessionId', $sessionId)
+            ->orderBy('bp.id', 'DESC');
+        if ($unfinishedOnly) {
+            $query->andWhere('bp.finishedAt IS NULL');
+        }
+
+        return $query->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getResult();
+    }
+
+    /** @return list<BackgroundProcess> */
+    public function findForegroundTools(string $sessionId): array
+    {
+        return $this->createQueryBuilder('bp')
+            ->where('bp.sessionId = :sessionId')
+            ->andWhere('bp.finishedAt IS NULL')
+            ->andWhere('bp.toolCallId IS NOT NULL')
+            ->andWhere('bp.backgroundedAt IS NULL')
+            ->andWhere('bp.backgroundRequested = :requested')
+            ->setParameter('sessionId', $sessionId)
+            ->setParameter('requested', false)
             ->orderBy('bp.id', 'DESC')
             ->getQuery()
             ->setHint(Query::HINT_REFRESH, true)

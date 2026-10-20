@@ -8,6 +8,8 @@ use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\OptimisticLockException;
 use Doctrine\ORM\Query;
+use Doctrine\ORM\Query\Expr\Join;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
@@ -16,6 +18,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\ChildBackgroundCandidateDTO;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -48,6 +51,24 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         $row = $this->findFreshOneBy(['lifecycleId' => $lifecycleId]);
 
         return $row instanceof DeferredSubagentBatch ? $row : null;
+    }
+
+    /** @return list<ChildBackgroundCandidateDTO> */
+    public function findBackgroundCandidates(string $parentRunId): array
+    {
+        return array_map($this->backgroundCandidate(...), $this->backgroundCandidateQuery($parentRunId)->getQuery()->getArrayResult());
+    }
+
+    public function findBackgroundCandidate(string $parentRunId, string $lifecycleId, string $toolCallId): ?ChildBackgroundCandidateDTO
+    {
+        $row = $this->backgroundCandidateQuery($parentRunId)
+            ->andWhere('batch.lifecycleId = :lifecycleId')
+            ->andWhere('batch.parentToolCallId = :toolCallId')
+            ->setParameter('lifecycleId', $lifecycleId)
+            ->setParameter('toolCallId', $toolCallId)
+            ->getQuery()->getOneOrNullResult(Query::HYDRATE_ARRAY);
+
+        return null === $row ? null : $this->backgroundCandidate($row);
     }
 
     public function markBackgrounded(string $lifecycleId, \DateTimeImmutable $acceptedAt): void
@@ -562,6 +583,40 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
 
         $row->interruptionProgressEnqueuedAt = $enqueuedAt;
         $this->getEntityManager()->flush();
+    }
+
+    private function backgroundCandidateQuery(string $parentRunId): QueryBuilder
+    {
+        $activeChild = $this->getEntityManager()->createQueryBuilder()
+            ->select('1')->from(DeferredSubagentChild::class, 'child')
+            ->where('child.batchLifecycleId = batch.lifecycleId')
+            ->andWhere('child.terminalCompletedAt IS NULL');
+
+        // Scalar eligibility only: picker snapshots must not hydrate child graphs
+        // or decode their lifecycle projections. Acceptance loads the graph later.
+        return $this->createQueryBuilder('batch')
+            ->select('batch.lifecycleId, batch.parentToolCallId, batch.totalChildCount, completion.toolName')
+            ->innerJoin(DeferredToolCompletion::class, 'completion', Join::WITH,
+                'completion.deferredId = batch.lifecycleId AND completion.runId = batch.parentRunId AND completion.toolCallId = batch.parentToolCallId AND completion.turnNo = batch.parentTurnNo')
+            ->where('batch.parentRunId = :parentRunId')
+            ->andWhere('batch.launchStatus = :launched')
+            ->andWhere('batch.backgroundedAt IS NULL')
+            ->andWhere('batch.interruptionKind IS NULL')
+            ->andWhere('batch.terminalCompletionEnqueuedAt IS NULL')
+            ->andWhere('completion.status = :pending')
+            ->andWhere('completion.toolName IN (:tools)')
+            ->andWhere('EXISTS ('.$activeChild->getDQL().')')
+            ->setParameter('parentRunId', $parentRunId)
+            ->setParameter('launched', DeferredSubagentBatchLaunchStatusEnum::Launched)
+            ->setParameter('pending', 'pending')
+            ->setParameter('tools', ['subagent', 'fork'])
+            ->orderBy('batch.id', 'ASC');
+    }
+
+    /** @param array{lifecycleId: string, parentToolCallId: string, totalChildCount: int, toolName: string} $row */
+    private function backgroundCandidate(array $row): ChildBackgroundCandidateDTO
+    {
+        return new ChildBackgroundCandidateDTO($row['lifecycleId'], $row['parentToolCallId'], \sprintf('%s %s (%d children)', $row['toolName'], $row['parentToolCallId'], $row['totalChildCount']));
     }
 
     /**

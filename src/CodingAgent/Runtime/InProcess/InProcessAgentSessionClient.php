@@ -110,7 +110,8 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     public function backgroundProcesses(string $runId): array
     {
         $snapshot = [];
-        foreach ($this->backgroundProcesses->list($runId) as $process) {
+        foreach ($this->backgroundProcesses->list($runId, unfinishedOnly: true) as $process) {
+            // Native status resolution may have finished a selected row meanwhile.
             if (null === $process->finishedAt) {
                 $snapshot[] = new BackgroundProcessDTO(
                     $process->id,

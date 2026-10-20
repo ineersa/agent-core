@@ -86,9 +86,15 @@ final class ProcessStore
      *
      * @return BackgroundProcess[]
      */
-    public function fetchBackgrounded(string $sessionId): array
+    public function fetchBackgrounded(string $sessionId, bool $unfinishedOnly = false): array
     {
-        return $this->repository->findBackgrounded($sessionId);
+        return $this->repository->findBackgrounded($sessionId, $unfinishedOnly);
+    }
+
+    /** @return list<BackgroundProcess> */
+    public function fetchForegroundTools(string $sessionId): array
+    {
+        return $this->repository->findForegroundTools($sessionId);
     }
 
     /**

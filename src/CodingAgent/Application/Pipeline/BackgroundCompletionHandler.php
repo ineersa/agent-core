@@ -43,15 +43,8 @@ final readonly class BackgroundCompletionHandler
             if (null !== $state->parentRunId && ($state->status->isTerminal() || RunStatus::Cancelling === $state->status)) {
                 $owner = $this->children->locate($runId)
                     ?? throw new \RuntimeException('Background completion child owner identity is missing.');
+                // Native child launches are top-level-only: the artifact parent is the root.
                 $rootRunId = $owner->parentRunId;
-                $visited = [$runId => true];
-                while (null !== ($ancestor = $this->children->locate($rootRunId))) {
-                    if (isset($visited[$rootRunId])) {
-                        throw new \RuntimeException('Cyclic background completion ownership.');
-                    }
-                    $visited[$rootRunId] = true;
-                    $rootRunId = $ancestor->parentRunId;
-                }
                 $forward = new DeliverBackgroundCompletionDTO(
                     $rootRunId,
                     $message->identity,

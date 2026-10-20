@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred;
 
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DTO\ChildBackgroundRequestDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\ChildBackgroundCandidateDTO;
@@ -22,7 +20,6 @@ final readonly class ChildInvocationBackgroundService
 {
     public function __construct(
         private DeferredSubagentBatchRepository $batches,
-        private DeferredToolCompletionRepositoryInterface $deferred,
         private DenormalizerInterface $serializer,
         private ValidatorInterface $validator,
         private MessageBusInterface $commandBus,
@@ -34,22 +31,7 @@ final readonly class ChildInvocationBackgroundService
     /** @return list<ChildBackgroundCandidateDTO> */
     public function candidates(string $runId): array
     {
-        $candidates = [];
-        foreach ($this->batches->findUnfinishedByParentRunId($runId) as $batch) {
-            if (null !== $batch->backgroundedAt || null !== $batch->interruptionKind || DeferredSubagentBatchLaunchStatusEnum::Launched !== $batch->launchStatus) {
-                continue;
-            }
-            $correlation = $this->deferred->findByDeferredId($batch->lifecycleId);
-            if (null === $correlation || !\in_array($correlation->toolName, ['subagent', 'fork'], true) || 'pending' !== $this->deferred->status($batch->lifecycleId)) {
-                continue;
-            }
-            if (!array_any($batch->children, static fn ($child): bool => null === $child->childLifecycleProjection || !$child->childLifecycleProjection->childStatus->isTerminal())) {
-                continue;
-            }
-            $candidates[] = new ChildBackgroundCandidateDTO($batch->lifecycleId, $batch->parentToolCallId, \sprintf('%s %s (%d children)', $correlation->toolName, $batch->parentToolCallId, $batch->totalChildCount));
-        }
-
-        return $candidates;
+        return $this->batches->findBackgroundCandidates($runId);
     }
 
     /** @param array<string, mixed> $payload */
@@ -65,15 +47,13 @@ final readonly class ChildInvocationBackgroundService
         if (0 !== \count($this->validator->validate($request))) {
             return false;
         }
-        foreach ($this->candidates($runId) as $candidate) {
-            if ($candidate->lifecycleId === $request->lifecycleId && $candidate->toolCallId === $request->toolCallId) {
-                $this->commandBus->dispatch(new BackgroundChildInvocationDTO($runId, $request->lifecycleId, $request->toolCallId));
-
-                return true;
-            }
+        if (null === $this->batches->findBackgroundCandidate($runId, $request->lifecycleId, $request->toolCallId)) {
+            return false;
         }
 
-        return false;
+        $this->commandBus->dispatch(new BackgroundChildInvocationDTO($runId, $request->lifecycleId, $request->toolCallId));
+
+        return true;
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]
