@@ -7,13 +7,30 @@ description: Background process tracking, logs, stop behavior, and related setti
 
 Long-running shell work can detach into tracked background processes so the conversation loop stays responsive.
 
-Press **Ctrl+B** while a Bash tool runs to move it to background. If several Bash tools
-are running in the visible session, choose one in the picker. Enter or Ctrl+B confirms;
-Escape cancels. Child-run Bash tools cannot detach, including in child live view.
+Press **Ctrl+B** while a Bash, subagent or fork tool runs to move it to background.
+If several eligible invocations are running in the visible session, choose one in the
+picker. Enter or Ctrl+B confirms; Escape cancels. In child live view, the shortcut
+targets that child's Bash tool rather than its parent's invocation.
 Questions, modal dialogs and completion overlays retain their keyboard handling.
-Without an eligible Bash tool, Ctrl+B keeps its editor cursor-left behavior.
+Without an eligible invocation, Ctrl+B keeps its editor cursor-left behavior.
 There is no model-facing background parameter or `bg_start` tool.
 After backgrounding, open `/bg` to inspect or stop jobs yourself, or ask the agent to use `bg_status`.
+
+## Child invocations
+
+Backgrounding a subagent or fork releases the parent's wait with one acknowledgment.
+The same children continue under their original deadlines and cancellation supervision.
+A parallel subagent call remains one invocation: its aggregate handoff arrives as a
+follow-up after all children settle, not as a second result for the original tool call.
+`agent_resume` invocations do not support detachment. Use `agent_retrieve` for existing
+artifact details and handoff history. `/bg` and `bg_status` continue to list Bash processes,
+not child invocations.
+
+A child can also background its own Bash tool. If a completion reaches an active owner,
+it uses that owner's existing follow-up mailbox. If the owner has finished or is cancelling,
+the completion goes to the root parent instead. The forwarded note identifies the original
+child's name, agent/artifact ID and run ID. It never resumes the child or rewrites a completed
+handoff. The parent can explicitly use `agent_resume` if more child work is needed.
 
 ## Background process picker: `/bg`
 

@@ -63,6 +63,9 @@ class DeferredSubagentBatch
     #[ORM\Column(name: 'terminal_completion_enqueued_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $terminalCompletionEnqueuedAt = null;
 
+    #[ORM\Column(name: 'backgrounded_at', type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $backgroundedAt = null;
+
     #[ORM\Version]
     #[ORM\Column(name: 'projection_version', type: 'integer', options: ['default' => 1])]
     public int $projectionVersion = 1;

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Contract;
 
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundProcessDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\ChildBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
 /**
@@ -40,6 +41,9 @@ interface AgentSessionClient
 
     /** @return list<BashBackgroundCandidateDTO> Read-only native candidates for the visible run. */
     public function foregroundBash(string $runId): array;
+
+    /** @return list<ChildBackgroundCandidateDTO> One candidate per registered fork/subagent invocation. */
+    public function foregroundChildren(string $runId): array;
 
     /** @return list<BackgroundProcessDTO> Snapshot of accepted unfinished jobs; never enforces deadlines. */
     public function backgroundProcesses(string $runId): array;

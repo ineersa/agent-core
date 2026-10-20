@@ -7,15 +7,15 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 use function Symfony\Component\String\u;
 
@@ -59,7 +59,7 @@ final class BackgroundProcessCompletionPoller
     public function __construct(
         private readonly ProcessStore $processStore,
         private readonly BackgroundProcessManager $processManager,
-        private readonly AgentSessionClient $sessionClient,
+        private readonly MessageBusInterface $commandBus,
         private readonly RuntimeEventEmitter $emitter,
         private readonly LoggerInterface $logger,
         private readonly AgentArtifactRegistry $artifactRegistry,
@@ -297,10 +297,10 @@ final class BackgroundProcessCompletionPoller
             ],
         ));
 
-        // Send append_message so the model sees the completion (same text as TUI transcript).
-        $this->sessionClient->send($sessionId, new UserCommand(
-            type: 'append_message',
-            text: $notification,
+        // Recipient selection happens under the consuming owner's lock. A child
+        // that finishes before delivery must not be revived by its Bash result.
+        $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
+            $sessionId, 'background-process-'.$process->id, $notification,
         ));
 
         // Only mark notified after successful send.

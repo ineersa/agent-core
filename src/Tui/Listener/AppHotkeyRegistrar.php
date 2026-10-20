@@ -78,8 +78,8 @@ final readonly class AppHotkeyRegistrar implements TuiListenerRegistrar
         $this->hotkeyRegistry->add(new HotkeyBindingDTO(
             context: 'Global',
             keys: ['ctrl+b'],
-            action: 'Background Bash',
-            description: 'Background one running Bash tool in the visible session; choose from a picker when several are running',
+            action: 'Background tool',
+            description: 'Background one running Bash, subagent or fork tool in the visible session',
             source: 'core',
             priority: 24,
         ));

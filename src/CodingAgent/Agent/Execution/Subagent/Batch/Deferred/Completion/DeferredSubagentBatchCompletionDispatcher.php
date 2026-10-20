@@ -8,6 +8,7 @@ use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
@@ -67,6 +68,16 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
                 'event_type' => 'deferred_subagent_batch.launch_input_cleanup_failed',
                 'exception_class' => $exception::class,
             ]);
+        }
+
+        $batch = $this->batchRepository->findByLifecycleId($lifecycleId);
+        if (null !== $batch?->backgroundedAt) {
+            $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
+                $parentRunId, 'background-child-result-'.$lifecycleId, $presentation,
+            ));
+            $this->markTerminalEnqueued($lifecycleId, $parentRunId, $parentToolCallId, $expectedProjectionVersion);
+
+            return;
         }
 
         if ('completed' === $deferredStatus) {

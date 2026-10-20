@@ -50,6 +50,14 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         return $row instanceof DeferredSubagentBatch ? $row : null;
     }
 
+    public function markBackgrounded(string $lifecycleId, \DateTimeImmutable $acceptedAt): void
+    {
+        $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE deferred_subagent_batch SET backgrounded_at = ?, updated_at = ?, projection_version = projection_version + 1 WHERE lifecycle_id = ? AND backgrounded_at IS NULL',
+            [$acceptedAt->format('Y-m-d H:i:s'), $acceptedAt->format('Y-m-d H:i:s'), $lifecycleId],
+        );
+    }
+
     public function hasLaunchedPendingParentToolCall(string $parentRunId, int $parentTurnNo, string $parentToolCallId): bool
     {
         $batch = $this->findByParentRunAndToolCall($parentRunId, $parentToolCallId);
@@ -57,6 +65,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         return null !== $batch
             && $batch->parentTurnNo === $parentTurnNo
             && DeferredSubagentBatchLaunchStatusEnum::Launched === $batch->launchStatus
+            && null === $batch->backgroundedAt
             && null === $batch->terminalCompletionEnqueuedAt;
     }
 
@@ -650,6 +659,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             interruptionRequestedAt: $row->interruptionRequestedAt,
             interruptionProgressEnqueuedAt: $row->interruptionProgressEnqueuedAt,
             parentModel: $row->parentModel,
+            backgroundedAt: $row->backgroundedAt,
         );
     }
 }

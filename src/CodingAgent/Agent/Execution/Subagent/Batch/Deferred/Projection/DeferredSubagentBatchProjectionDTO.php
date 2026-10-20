@@ -37,6 +37,7 @@ final readonly class DeferredSubagentBatchProjectionDTO
         public ?\DateTimeImmutable $interruptionRequestedAt = null,
         public ?\DateTimeImmutable $interruptionProgressEnqueuedAt = null,
         public ?string $parentModel = null,
+        public ?\DateTimeImmutable $backgroundedAt = null,
     ) {
     }
 }
