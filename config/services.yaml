@@ -1026,6 +1026,9 @@ services:
   Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface:
     alias: Ineersa\CodingAgent\Session\SessionToolLaunchInputStore
 
+  Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface:
+    alias: Ineersa\CodingAgent\Session\SessionToolPayloadStore
+
   # Durable tool-batch scheduling lives in application SQLite; payload paths remain for launch/execution files.
   Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface:
     alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareToolBatchRunStoragePaths

@@ -57,6 +57,8 @@ framework:
             agent.command.bus:
                 middleware:
                     - Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware
+                    # The owner lock and pending-transition recovery precede body admission.
+                    - Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware
                 default_middleware:
                     enabled: true
                     allow_no_handlers: false
@@ -76,6 +78,8 @@ framework:
                     # single mcp consumer instead of the default tool transport.
                     # Runs before Symfony send_message middleware.
                     - Ineersa\CodingAgent\Mcp\Messenger\McpExecuteToolCallRoutingMiddleware
+                    # Routing sees toolName first; only bounded references reach send_message.
+                    - Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware
 
         transports:
             run_control:
@@ -100,6 +104,8 @@ framework:
                 dsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 
         routing:
+            # ToolPayloadMiddleware selects tool/agent/mcp/run_control through
+            # TransportNamesStamp. Inline tool messages have no fallback route.
             Ineersa\CodingAgent\Application\Message\AttachRun: run_control
             Ineersa\CodingAgent\Application\Message\SelectHistoryEntry: run_control
             Ineersa\CodingAgent\Application\Message\RepairSession: run_control
@@ -107,7 +113,6 @@ framework:
             Ineersa\AgentCore\Domain\Message\ApplyCommand: run_control
             Ineersa\AgentCore\Domain\Message\ApplyShellCommand: run_control
             Ineersa\AgentCore\Domain\Message\LlmStepResult: run_control
-            Ineersa\AgentCore\Domain\Message\ToolCallResult: run_control
             Ineersa\AgentCore\Domain\Message\CommitSubagentProgress: run_control
             Ineersa\AgentCore\Domain\Message\CompactionStepResult: run_control
             Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage: run_control
@@ -115,7 +120,6 @@ framework:
             Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage: run_control
             Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\RecoverDeferredSubagentBatchLifecycleMessage: run_control
 
-            Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall: run_control
             # State transitions are sent only to agent.command.bus by
             # StepDispatcher and are durably handled once by run_control.
             # Their asynchronous work remains separate Execute* effects.
@@ -124,8 +128,6 @@ framework:
             # Default tool transport; subagent is overridden to agent via middleware.
             Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
             Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep: llm
-            Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall: tool
-            Ineersa\AgentCore\Domain\Message\ExecuteToolCall: tool
             Ineersa\CodingAgent\Mcp\Message\McpInitializeSessionCommand: mcp
             Ineersa\CodingAgent\Mcp\Message\McpRefreshCatalogCommand: mcp
             Ineersa\CodingAgent\Mcp\Message\McpDisconnectSessionCommand: mcp

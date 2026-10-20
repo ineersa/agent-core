@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Infrastructure\Doctrine\CommandRecord;
+use Ineersa\CodingAgent\Entity\DeferredToolCompletion;
 use Ineersa\CodingAgent\Entity\ToolBatchCall;
 use Ineersa\CodingAgent\Entity\ToolBatchResult;
 use Ineersa\CodingAgent\Entity\ToolBatchSchedule;
@@ -17,6 +19,7 @@ final readonly class PendingRuntimeSessionDeletionSubscriber
     public function __construct(
         private OwnedRunIdsProvider $ownership,
         private EntityManagerInterface $entityManager,
+        private ToolPayloadStoreInterface $payloads,
     ) {
     }
 
@@ -31,11 +34,14 @@ final readonly class PendingRuntimeSessionDeletionSubscriber
         $runs = $this->ownership->forOwner($event->sessionId);
         $this->entityManager->createQueryBuilder()->delete(CommandRecord::class, 'c')
             ->where('c.runId IN (:runs)')->setParameter('runs', $runs)->getQuery()->execute();
-        foreach ([ToolBatchResult::class, ToolBatchCall::class] as $entity) {
+        foreach ([ToolBatchResult::class, ToolBatchCall::class, DeferredToolCompletion::class] as $entity) {
             $this->entityManager->createQueryBuilder()->delete($entity, 'p')
                 ->where('p.runId IN (:runs)')->setParameter('runs', $runs)->getQuery()->execute();
         }
         $this->entityManager->createQueryBuilder()->delete(ToolBatchSchedule::class, 'b')
             ->where('b.runId IN (:runs)')->setParameter('runs', $runs)->getQuery()->execute();
+        foreach ($runs as $runId) {
+            $this->payloads->deleteAllForRun($runId);
+        }
     }
 }

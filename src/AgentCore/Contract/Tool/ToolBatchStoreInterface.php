@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 
 /** Active batch calls, collected results, and captured scheduling decisions. */
@@ -21,6 +22,9 @@ interface ToolBatchStoreInterface
     public function loadSchedule(string $runId, int $turnNo, string $stepId): ?ToolBatchScheduleDTO;
 
     public function loadCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall;
+
+    /** Current invocation identity without opening its data file. */
+    public function loadCallReference(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ToolPayloadReferenceDTO;
 
     public function loadResult(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ToolCallResult;
 

@@ -7,9 +7,9 @@ namespace Ineersa\CodingAgent\Entity;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
-#[ORM\Table(name: 'deferred_tool_completion')]
-#[ORM\UniqueConstraint(name: 'uniq_deferred_tool_completion_deferred_id', columns: ['deferred_id'])]
-#[ORM\UniqueConstraint(name: 'uniq_deferred_tool_completion_run_tool_call', columns: ['run_id', 'tool_call_id'])]
+#[ORM\Table(name: 'tool_deferred_completion')]
+#[ORM\UniqueConstraint(name: 'uniq_tool_deferred_completion_deferred_id', columns: ['deferred_id'])]
+#[ORM\UniqueConstraint(name: 'uniq_tool_deferred_completion_run_tool_call', columns: ['run_id', 'tool_call_id'])]
 #[ORM\HasLifecycleCallbacks]
 class DeferredToolCompletion
 {
@@ -44,9 +44,8 @@ class DeferredToolCompletion
     #[ORM\Column(name: 'tool_name', type: 'string', length: 255)]
     public string $toolName = '';
 
-    /** @var string JSON-encoded arguments */
-    #[ORM\Column(type: 'text')]
-    public string $arguments = '{}';
+    #[ORM\Column(name: 'body_reference_json', type: 'string', length: 16384)]
+    public string $bodyReferenceJson = '';
 
     #[ORM\Column(name: 'order_index', type: 'integer')]
     public int $orderIndex = 0;
@@ -62,14 +61,6 @@ class DeferredToolCompletion
 
     #[ORM\Column(name: 'max_parallelism', type: 'integer', nullable: true)]
     public ?int $maxParallelism = null;
-
-    /** @var string|null JSON */
-    #[ORM\Column(name: 'assistant_message', type: 'text', nullable: true)]
-    public ?string $assistantMessage = null;
-
-    /** @var string|null JSON */
-    #[ORM\Column(name: 'arg_schema', type: 'text', nullable: true)]
-    public ?string $argSchema = null;
 
     #[ORM\Column(name: 'tools_ref', type: 'string', length: 255, nullable: true)]
     public ?string $toolsRef = null;

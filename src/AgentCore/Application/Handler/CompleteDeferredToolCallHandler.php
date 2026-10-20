@@ -25,6 +25,9 @@ final readonly class CompleteDeferredToolCallHandler
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function __invoke(CompleteDeferredToolCall $message): void
     {
+        if ('completed' === $this->deferredRepository->status($message->deferredId)) {
+            return;
+        }
         $correlation = $this->deferredRepository->findByDeferredId($message->deferredId);
         if (null === $correlation) {
             $this->logger->warning('deferred_tool_completion.unknown_correlation', [

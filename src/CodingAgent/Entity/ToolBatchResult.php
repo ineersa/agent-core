@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
 
-/** Native Messenger envelope owned by one batch/call identity. Written through DBAL. */
+/** Bounded file reference owned by one batch/call identity. Written through DBAL. */
 #[ORM\Entity]
 #[ORM\Table(name: 'tool_batch_result')]
 class ToolBatchResult
@@ -30,6 +30,6 @@ class ToolBatchResult
     #[ORM\Column(name: 'order_index', type: 'integer')]
     public int $orderIndex = 0;
 
-    #[ORM\Column(name: 'payload_json', type: 'text')]
-    public string $payloadJson = '';
+    #[ORM\Column(name: 'body_reference_json', type: 'string', length: 16384)]
+    public string $bodyReferenceJson = '';
 }

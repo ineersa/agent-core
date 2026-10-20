@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -24,10 +26,17 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
         private readonly ToolBatchStoreInterface $toolBatchStore,
         private readonly LoggerInterface $logger,
         private readonly ToolLaunchInputStoreInterface $launchInputStore,
+        private readonly ToolPayloadStoreInterface $payloads,
+        private readonly RunLockManager $locks,
     ) {
     }
 
     public function handleAfterTurnCommit(AfterTurnCommitHookContext $context): AfterTurnCommitHookContext
+    {
+        return $this->locks->synchronized($context->runId, fn () => $this->cleanupCommitted($context));
+    }
+
+    private function cleanupCommitted(AfterTurnCommitHookContext $context): AfterTurnCommitHookContext
     {
         foreach ($context->events as $event) {
             if (RunEventTypeEnum::ToolExecutionEnd->value === $event->type
@@ -35,6 +44,15 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
                 // A canonical result resolves synchronous launch failures too.
                 // Approval suspension has no terminal tool result and retains input.
                 $this->tryDeleteLaunchInput($context->runId, $event->payload['tool_result']['tool_call_id']);
+                // Direct shell outcomes have no SQL batch to trigger cleanup,
+                // including non-standalone shells while a model turn is active.
+                if (\array_key_exists('standalone', $event->payload['tool_result']['result'] ?? [])) {
+                    try {
+                        $this->payloads->deleteCall($context->runId, $event->payload['tool_result']['tool_call_id']);
+                    } catch (\Throwable $exception) {
+                        $this->logger->warning('tool_payload.shell_cleanup_failed', ['run_id' => $context->runId, 'session_id' => $context->runId, 'component' => 'tool_batch_snapshot_cleanup', 'event_type' => 'tool_payload.shell_cleanup_failed', 'exception_class' => $exception::class]);
+                    }
+                }
             }
             if (RunEventTypeEnum::ToolBatchCommitted->value !== $event->type) {
                 continue;
@@ -61,6 +79,9 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
             try {
                 if (!$this->toolBatchStore->hasUnresolvedExecution($context->runId)) {
                     $this->launchInputStore->deleteAllForRun($context->runId);
+                    if ([] === $context->runState->pendingShellToolCalls) {
+                        $this->payloads->deleteAllForRun($context->runId);
+                    }
                 }
             } catch (\Throwable $exception) {
                 $this->logger->warning('tool_launch_input.terminal_cleanup_failed', [
