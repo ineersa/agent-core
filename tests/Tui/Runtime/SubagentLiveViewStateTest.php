@@ -18,9 +18,9 @@ final class SubagentLiveViewStateTest extends TestCase
     public function testEnterResetsProjectedStateFromCatalogChild(): void
     {
         $view = new SubagentLiveViewState();
-        $view->childTranscript = [
+        $view->replaceChildTranscript([
             new TranscriptBlock('old', TranscriptBlockKindEnum::AssistantMessage, 'run-old', 9, 'stale'),
-        ];
+        ]);
         $view->childLastSeq = 9;
         $view->childQueuedUserMessages = ['k' => 'steer'];
 
@@ -28,7 +28,7 @@ final class SubagentLiveViewStateTest extends TestCase
 
         $this->assertTrue($view->active);
         $this->assertSame('run-a', $view->selected?->agentRunId);
-        $this->assertSame([], $view->childTranscript);
+        $this->assertSame([], $view->childTranscript());
         $this->assertSame(0, $view->childLastSeq);
         $this->assertSame([], $view->childQueuedUserMessages);
         $this->assertSame(RunActivityStateEnum::Running, $view->childActivity);
@@ -38,9 +38,9 @@ final class SubagentLiveViewStateTest extends TestCase
     {
         $view = new SubagentLiveViewState();
         $view->enter($this->child('run-b', 'agent_b', SubagentLiveStatusEnum::WaitingHuman));
-        $view->childTranscript = [
+        $view->replaceChildTranscript([
             new TranscriptBlock('b2', TranscriptBlockKindEnum::AssistantMessage, 'run-b', 2, 'live'),
-        ];
+        ]);
         $view->childLastSeq = 2;
         $view->childQueuedUserMessages = ['k1' => 'steer next'];
         $view->lastLiveWorkingMessage = 'working';
@@ -49,7 +49,7 @@ final class SubagentLiveViewStateTest extends TestCase
 
         $this->assertFalse($view->active);
         $this->assertNull($view->selected);
-        $this->assertSame([], $view->childTranscript);
+        $this->assertSame([], $view->childTranscript());
         $this->assertSame(0, $view->childLastSeq);
         $this->assertSame([], $view->childQueuedUserMessages);
         $this->assertNull($view->lastLiveWorkingMessage);

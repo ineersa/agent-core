@@ -49,7 +49,7 @@ final class PreparedEventStoreSeeder
         if (null === $pending) {
             throw new \RuntimeException('PreparedEventStoreSeeder requires a verified pending transition.');
         }
-        $store->finalizeVerifiedTransition($runId, $pending->identity);
+        $store->finalizeVerifiedTransition($runId, $pending);
 
         return $persisted;
     }

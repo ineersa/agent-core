@@ -256,6 +256,19 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
         ]));
 
+        // A completed child remains retrievable while its sibling is live, but
+        // repeated deliveries must not append identical immutable handoffs.
+        $partial = $repo->findByLifecycleId($lifecycle);
+        $this->assertNotNull($partial);
+        $natural = self::getContainer()->get(DeferredSubagentBatchTerminalCompletionService::class);
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $natural->completeIfAllTerminal($partial);
+        $this->assertCount(1, $registry->listHandoffHistory($parent, $c1['artifactId']));
+        $this->assertStringContainsString('Status: completed', $registry->readHandoff($parent, $c1['artifactId']));
+        $this->assertSame([], $registry->listHandoffHistory($parent, $c2['artifactId']));
+        $natural->completeIfAllTerminal($partial);
+        $this->assertCount(1, $registry->listHandoffHistory($parent, $c1['artifactId']));
+
         // Child 2 status depends on scenario
         if ('partial_cancelled' === $scenario) {
             $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Cancelled, 2, [

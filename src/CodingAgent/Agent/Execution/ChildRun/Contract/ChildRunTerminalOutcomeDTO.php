@@ -16,6 +16,8 @@ final readonly class ChildRunTerminalOutcomeDTO
         public ?string $failureReason = null,
         public ?string $needsClarification = null,
         public ?RunPresentationDTO $childPresentation = null,
+        // Deferred redeliveries share a cursor; resumed terminal outcomes advance it.
+        public ?int $terminalEventCursor = null,
     ) {
     }
 }
