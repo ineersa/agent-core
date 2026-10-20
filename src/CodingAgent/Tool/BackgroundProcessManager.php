@@ -233,9 +233,9 @@ final class BackgroundProcessManager
      *
      * @return list<BackgroundProcess>
      */
-    public function list(string $sessionId, bool $unfinishedOnly = false): array
+    public function list(string $sessionId): array
     {
-        $entities = $this->store->fetchBackgrounded($sessionId, $unfinishedOnly);
+        $entities = $this->store->fetchBackgrounded($sessionId);
 
         foreach ($entities as $entity) {
             $this->resolveEntityStatus($entity);
