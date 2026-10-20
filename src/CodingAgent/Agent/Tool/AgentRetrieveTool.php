@@ -58,7 +58,7 @@ final class AgentRetrieveTool implements HatfieldToolProviderInterface
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'agent_retrieve artifact_id=<id>|agent_run_id=<uuid> [mode] [limit=N] — retrieve a subagent artifact',
             promptGuidelines: [
-                'Use agent_retrieve when parallel subagent summaries were truncated, a child failed/cancelled/timed out, or you need metadata/events/history/debug — not for successful single-mode subagent handoffs already returned inline.',
+                'Use agent_retrieve when a handoff was omitted or a parallel agent_resume returned summaries, a child failed/cancelled/timed out, or you need metadata/events/history/debug. Do not re-fetch successful handoffs already returned inline.',
                 'Provide artifact_id and/or agent_run_id from the current parent session only; cross-parent retrieval is rejected.',
                 'Use metadata for status, timestamps, and counts without raw message or tool output.',
                 'Use events or history for bounded debugging summaries; payloads and prompts are omitted by default.',

@@ -22,7 +22,7 @@ final readonly class AgentsConfig
     /**
      * @param bool         $enabled               Whether agent discovery is enabled
      * @param list<string> $paths                 Additional agent definition file or directory paths
-     * @param int          $maxAgents             Maximum parallel subagents per `subagent` tool call
+     * @param int          $maxAgents             Maximum children per deferred batch, including parallel `agent_resume` calls
      * @param list<string> $subagentExcludedTools Tool names removed from child agents by default/configuration
      */
     public function __construct(

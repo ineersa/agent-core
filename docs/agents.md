@@ -5,8 +5,9 @@ description: Agent definitions, discovery, subagent execution, retrieval, and li
 
 # Agent Definitions
 
-Named child-agent roles live in Markdown files with YAML frontmatter. Discovery and the
-model-visible `subagent` tool are implemented for **foreground** single and parallel runs.
+Named child-agent roles live in Markdown files with YAML frontmatter. The
+model-visible `subagent` tool launches one foreground child per call. Submit independent
+calls together for concurrent execution through the normal tool scheduler.
 Background `subagent` launch is not implemented. The separate model-visible `fork` tool is shipped (see below).
 
 Settings keys: [settings-agents.md](settings-agents.md). Sessions/artifacts: [session-storage.md](session-storage.md).
@@ -47,7 +48,7 @@ System prompt body for the child agent…
 | `extensions` | Optional child extension classes (**not** global `extensions.enabled`) | omit = none optional |
 | `inheritProjectContext` | Include project context for the child | `true` |
 | `systemPromptMode` | `replace` or `append` body vs parent system prompt | `replace` |
-| `parallelAllowed` | Whether the agent may appear in parallel `subagent` tasks | `true` |
+| `parallelAllowed` | Internal batch-preparation policy; does not serialize independent single-child calls | `true` |
 
 MCP entries inside `tools` use `mcp:` selectors — see [mcp.md](mcp.md).
 
@@ -71,8 +72,9 @@ hatfield agents:init
 
 ## Foreground `subagent` tool
 
-- **Single mode:** `agent` + `task` blocks until the child finishes. Success returns the full handoff inline unless the response exceeds 50,000 characters.
-- **Parallel mode:** `tasks` list — up to `agents.max_agents` children; results are bounded summaries.
+- Required arguments: `agent` and `task`. Each call waits for one child and returns its full handoff inline unless the response exceeds 50,000 characters. There is no `tasks` argument.
+- Submit independent `subagent`, `fork`, Bash, or other tool calls together for concurrent execution, subject to available worker capacity and configured tool parallelism. Wait for prerequisites before submitting dependent work.
+- Concurrent writers must respect file and worktree ownership. Never assign concurrent writers to the same worktree.
 - Responses over 50,000 characters omit inline handoffs and return a notice with artifact references. The full handoffs remain available through `agent_retrieve`.
 - Default child denylist includes `hatfield_docs` (`agents.subagent_excluded_tools`). Empty list disables the denylist.
 - **Always stripped on every child:** `subagent`, `fork`, and `agent_resume` (no nested child launches/resumes).
@@ -103,7 +105,7 @@ Parent-scoped continuation of an existing terminal child run via `follow_up` on 
 - Eligible statuses: `completed`, `failed`, `cancelled` when the child run/session is still usable.
 - Rejects in-flight artifacts (`running`, `needs_clarification`). Same-parent-current-lifetime forks are resumable; foreign-session, previous-lifetime, and otherwise ineligible targets still fail with actionable errors.
 - Refuses oversized children when latest input tokens are near context limit (`min(75% contextWindow, 200k)`; 200k when window unknown).
-- Parent results follow the same single and parallel presentation rules as `subagent`, including the 50,000-character inline limit.
+- Single resumes return the full handoff inline; parallel resumes return bounded summaries. Responses over 50,000 characters return a notice and artifact references instead.
 - Same artifact id is preserved; each finalize appends an immutable handoff under `handoffs/<uuid>.md`.
 
 ## `agent_retrieve`
@@ -146,7 +148,7 @@ default `tool` transport (see unmarked repository `docs/tool-execution.md`).
 | Nested children | Nested `subagent`/`fork` **stripped** on every child | Nested `fork` **rejected**; children also lack `subagent` |
 | Extensions | `agents.extensions.always_on` ∪ definition `extensions` | `forks.extensions.always_on` ∪ `forks.extensions.enabled` |
 | Model/thinking | Definition `model`/`thinking` when set | explicit args → `forks.model` / `forks.thinking_level` → parent |
-| Concurrency | Parallel mode up to `agents.max_agents` | Prefer ≤3 concurrent forks; never same worktree |
+| Concurrency | Independent single-child tool calls use normal parallel scheduling | Prefer ≤3 concurrent forks; never same worktree |
 
 Arguments: required `task`; optional `model`, `thinking`. Blocks until the fork completes
 and returns a dense handoff through deferred tool completion.

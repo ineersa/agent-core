@@ -13,7 +13,7 @@ Use a Markdown file with YAML frontmatter and an instruction body. Unknown field
 | `extensions` | `[]` | Optional extension FQCNs; effective list adds `agents.extensions.always_on`, not the parent's optional extensions |
 | `inheritProjectContext` | `true` | Inherits AGENTS.md context, not parent skills or agent catalog |
 | `systemPromptMode` | `replace` | `append` also includes rendered APPEND_SYSTEM.md and contributors |
-| `parallelAllowed` | `true` | `false` forbids parallel task batches |
+| `parallelAllowed` | `true` | Internal batch-preparation policy; does not serialize independent single-child calls |
 
 Use `skills`, not `skill`. There is no `disabled` or top-level `mcp` field. Remove a definition to remove the agent.
 
@@ -28,6 +28,6 @@ Use `skills`, not `skill`. There is no `disabled` or top-level `mcp` field. Remo
 
 ## Settings
 
-- `agents.max_agents` defaults to 4.
+- `agents.max_agents` defaults to 4 and caps children in one parallel `agent_resume` call, not independent single-child calls.
 - `agents.subagent_tool_timeout_seconds` defaults to 86400 and must be >=60.
 - `agents.extensions.always_on` defaults to SafeGuard. Omitted optional extensions do not disable always-on extensions.

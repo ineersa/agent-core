@@ -7,12 +7,12 @@ namespace Ineersa\CodingAgent\Tool\Validation\SubagentTasks;
 use Symfony\Component\Validator\Constraint;
 
 /**
- * Rejects a `subagent` parallel `tasks` list longer than AgentsConfig maxAgents.
+ * Rejects an `agent_resume` tasks list longer than AgentsConfig maxAgents.
  *
  * The bound is settings-derived (agents.max_agents), so it cannot be a
  * static Assert option; the validator autowires the same config object the
  * provider-visible schema fragment comes from
- * ({@see \Ineersa\CodingAgent\Tool\Schema\SubagentTasksSchemaProvider}), so the
+ * ({@see \Ineersa\CodingAgent\Tool\Schema\AgentResumeTasksSchemaProvider}), so the
  * schema `maxItems` and the runtime limit can never drift.
  */
 #[\Attribute(\Attribute::TARGET_PROPERTY)]

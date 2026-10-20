@@ -12,7 +12,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredS
 /**
  * Stable public façade for subagent tool execution.
  *
- * Single and parallel tool calls defer through the normalized durable batch launch
+ * Each tool call defers one child through the normalized durable batch launch
  * service ({@see DeferredSubagentBatchLaunchService}); completion is delivered
  * asynchronously via the generic deferred-tool runtime.
  */
@@ -36,15 +36,5 @@ final class SubagentExecutionService
             [new SubagentTaskDTO(agent: $agentName, task: $task)],
             ChildRunBatchExecutionModeEnum::Single,
         );
-    }
-
-    /**
-     * @param list<SubagentTaskDTO> $tasks
-     *
-     * @throws ToolCallException
-     */
-    public function executeParallel(string $parentRunId, array $tasks): DeferredToolCompletionOutcome
-    {
-        return $this->deferredBatchLaunch->launch($parentRunId, $tasks, ChildRunBatchExecutionModeEnum::Parallel);
     }
 }
