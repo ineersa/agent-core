@@ -155,7 +155,6 @@ a successful late result into a timeout failure.
 |---|---|
 | `tools.bash.default_timeout_seconds` | `30` |
 | `tools.bash.max_timeout_seconds` | `3600` |
-| `tools.bash.background_prompt_threshold_seconds` | `15` |
 | `tools.background_process.path` | `.hatfield/tmp/bg` |
 | `tools.background_process.stop_grace_seconds` | `5` |
 | `tools.background_process.log_tail_chars` | `5000` |

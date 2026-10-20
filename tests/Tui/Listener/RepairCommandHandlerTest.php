@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
@@ -134,6 +135,23 @@ final class RepairCommandSpyClient implements AgentSessionClient
     public function __construct()
     {
         $this->result = new RepairResult(false, false, 'No repairable corruption detected.');
+    }
+
+    /** @return list<BashBackgroundCandidateDTO> */
+    public function foregroundBash(string $runId): array
+    {
+        return [];
+    }
+
+    /** @return list<never> */
+    public function backgroundProcesses(string $runId): array
+    {
+        return [];
+    }
+
+    public function stopBackgroundProcess(string $runId, int $recordId): bool
+    {
+        throw new \LogicException('Unexpected background stop.');
     }
 
     public function start(StartRunRequest $request): RunHandle

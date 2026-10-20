@@ -95,12 +95,6 @@ final class HeadlessController
          */
         private readonly int $llmWorkerCount = 0,
         /**
-         * Optional tool question poller for cross-process tool questions
-         * (e.g. bash background prompts). When provided, polls the DB for
-         * un-emitted tool questions and emits RuntimeEvents to the TUI.
-         */
-        private readonly ?ToolQuestionPoller $toolQuestionPoller = null,
-        /**
          * Optional background process completion poller for sending
          * follow-up notifications when a backgrounded process finishes.
          * When provided, polls the DB for completed background processes
@@ -274,11 +268,6 @@ final class HeadlessController
             $this->logger,
         );
         $stdoutPoller->startPollLoop(0.01);
-
-        // Poll tool_question DB table for un-emitted tool questions.
-        // Runs in-process alongside the controller rather than relying on
-        // tool consumer stdout, which is not currently polled.
-        $this->toolQuestionPoller?->startPollLoop();
 
         // Poll background_process DB table for completed, explicitly-backgrounded
         // processes and send follow-up notifications to the agent session.

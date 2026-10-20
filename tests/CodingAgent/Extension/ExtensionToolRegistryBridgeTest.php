@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Tests\Extension;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -307,8 +306,6 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             cancellationToken: $token,
             timeoutSeconds: 90,
             orderIndex: 0,
-            executionMode: ToolExecutionMode::Sequential,
-            batchToolCallCount: 1,
         ), static fn () => ($def->handler)(['path' => 'x']));
 
         $this->assertSame(['ok' => true, 'args' => ['path' => 'x']], $result);

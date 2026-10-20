@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
@@ -11,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
+use Ineersa\CodingAgent\Tests\Support\UnusedBackgroundProcessManagerFactory;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Process\Process;
@@ -108,7 +111,11 @@ final class ControllerReplayBootstrapDeliveryTest extends ControllerReplayE2eTes
             new PromptTemplatesRuntimeConfig(),
             new ToolFilterRuntimeConfig(),
             new TestLogger(),
-            \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(\Doctrine\ORM\EntityManagerInterface::class), $this->tempDir),
+            \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tempDir),
+            UnusedBackgroundProcessManagerFactory::create(
+                $this->createStub(EntityManagerInterface::class),
+                $this->createStub(ManagerRegistry::class),
+            ),
         );
         $reflection = new \ReflectionClass($client);
         foreach (['process' => $this->process, 'pipes' => $this->pipes, 'activeRunId' => $this->runId,

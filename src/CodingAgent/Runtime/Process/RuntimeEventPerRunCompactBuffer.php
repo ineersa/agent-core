@@ -172,7 +172,6 @@ final class RuntimeEventPerRunCompactBuffer
             RuntimeEventTypeEnum::ApprovalRequested->value,
             RuntimeEventTypeEnum::ApprovalApproved->value,
             RuntimeEventTypeEnum::ApprovalRejected->value,
-            RuntimeEventTypeEnum::ToolQuestionRequested->value,
         ], true);
     }
 

@@ -14,8 +14,7 @@ use Psr\Log\LoggerInterface;
  * RuntimeEventPoller (parent run) and SubagentLiveChildViewPoller
  * (child live view).
  *
- * Dispatch order per event: human_input.requested →
- * tool_question.requested → tool terminal (completed/failed/cancelled).
+ * Dispatch canonical human_input.requested events to their callback.
  * Each callback is invoked inside its own try/catch so one bad callback
  * never drops later events in the same batch. Log identity (message,
  * component, event_type) is poller-specific so the structured logs keep
@@ -26,16 +25,8 @@ final readonly class RuntimeEventCallbacks
     /** @var \Closure(RuntimeEvent): void|null */
     private readonly ?\Closure $onHumanInputRequested;
 
-    /** @var \Closure(RuntimeEvent): void|null */
-    private readonly ?\Closure $onToolQuestionRequested;
-
-    /** @var \Closure(RuntimeEvent): void|null */
-    private readonly ?\Closure $onToolTerminal;
-
     /**
      * @param ?callable(RuntimeEvent): void $onHumanInputRequested
-     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
-     * @param ?callable(RuntimeEvent): void $onToolTerminal
      */
     public function __construct(
         private readonly LoggerInterface $logger,
@@ -43,33 +34,17 @@ final readonly class RuntimeEventCallbacks
         private readonly string $component,
         private readonly string $eventType,
         ?callable $onHumanInputRequested = null,
-        ?callable $onToolQuestionRequested = null,
-        ?callable $onToolTerminal = null,
     ) {
         $this->onHumanInputRequested = self::toClosure($onHumanInputRequested);
-        $this->onToolQuestionRequested = self::toClosure($onToolQuestionRequested);
-        $this->onToolTerminal = self::toClosure($onToolTerminal);
     }
 
     /**
-     * Dispatch an event to the matching callbacks in fixed order.
+     * Dispatch canonical human input to the registered callback.
      */
     public function dispatch(RuntimeEvent $event, string $runId): void
     {
         if (null !== $this->onHumanInputRequested && RuntimeEventTypeEnum::HumanInputRequested->value === $event->type) {
             $this->invoke($this->onHumanInputRequested, $event, $runId, 'onHumanInputRequested');
-        }
-
-        if (null !== $this->onToolQuestionRequested && RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type) {
-            $this->invoke($this->onToolQuestionRequested, $event, $runId, 'onToolQuestionRequested');
-        }
-
-        if (null !== $this->onToolTerminal && (
-            RuntimeEventTypeEnum::ToolExecutionCompleted->value === $event->type
-            || RuntimeEventTypeEnum::ToolExecutionFailed->value === $event->type
-            || RuntimeEventTypeEnum::ToolExecutionCancelled->value === $event->type
-        )) {
-            $this->invoke($this->onToolTerminal, $event, $runId, 'onToolTerminal');
         }
     }
 

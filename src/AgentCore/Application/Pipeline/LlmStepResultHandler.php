@@ -286,7 +286,6 @@ final class LlmStepResultHandler implements RunMessageHandler, RunMessageHandler
                 mode: $policy['mode']->value,
                 timeoutSeconds: $policy['timeout_seconds'],
                 maxParallelism: $policy['max_parallelism'],
-                batchToolCallCount: \count($toolCalls),
                 argSchema: $toolSchemas[$toolCall['name']] ?? null,
                 toolsRef: $message->toolsRef,
                 // The parent model inherited by tool-launched children must

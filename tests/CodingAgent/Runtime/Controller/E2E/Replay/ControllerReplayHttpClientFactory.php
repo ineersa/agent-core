@@ -323,6 +323,10 @@ final class ControllerReplayHttpClientFactory
                     );
                 }
 
+                if (isset($fixture['replay_request_capture'])) {
+                    file_put_contents($fixture['replay_request_capture'], json_encode(self::extractRequestMessages($options), \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND | \LOCK_EX);
+                }
+
                 // HTTP error fixtures return a non-200 MockResponse directly.
                 if (self::isHttpErrorFixture($fixture)) {
                     return self::buildErrorResponse($fixture);

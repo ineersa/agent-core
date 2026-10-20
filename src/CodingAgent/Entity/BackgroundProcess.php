@@ -84,9 +84,22 @@ class BackgroundProcess
     #[ORM\Column(name: 'backgrounded_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $backgroundedAt = null;
 
+    /** Only model-invoked Bash tools are eligible for caller detachment. */
+    #[ORM\Column(name: 'tool_call_id', type: 'string', nullable: true)]
+    public ?string $toolCallId = null;
+
+    /** The foreground worker accepts this request before publishing backgroundedAt. */
+    #[ORM\Column(name: 'background_requested', type: 'boolean', options: ['default' => false])]
+    public bool $backgroundRequested = false;
+
+    /** Monotonic system clock shared by worker/controller; restart cleanup stops the process. */
+    #[ORM\Column(name: 'deadline_nanoseconds', type: 'bigint', nullable: true)]
+    public ?int $deadlineNanoseconds = null;
+
     #[ORM\Column(name: 'completion_notified_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $completionNotifiedAt = null;
 
+    /** Stopped records the stop cause during timeout grace; finishedAt alone means execution ended. */
     #[ORM\Column(name: 'status', type: 'string', enumType: BackgroundProcessStatusEnum::class)]
     public BackgroundProcessStatusEnum $status = BackgroundProcessStatusEnum::Running;
 
@@ -111,7 +124,11 @@ class BackgroundProcess
     {
         $this->exitCode = $exitCode;
         $this->finishedAt = $finishedAt;
-        $this->status = BackgroundProcessStatusEnum::Finished;
+        // TERM initiation records Stopped before signaling. A successful cleanup
+        // exit must not turn that durable stop cause into a successful command.
+        if (BackgroundProcessStatusEnum::Stopped !== $this->status) {
+            $this->status = BackgroundProcessStatusEnum::Finished;
+        }
     }
 
     /**
@@ -131,12 +148,14 @@ class BackgroundProcess
     {
         $this->exitCode = null;
         $this->finishedAt = $finishedAt;
-        $this->status = BackgroundProcessStatusEnum::FinishedUnclean;
+        if (BackgroundProcessStatusEnum::Stopped !== $this->status) {
+            $this->status = BackgroundProcessStatusEnum::FinishedUnclean;
+        }
     }
 
     /**
      * Mark this process as having been explicitly moved to background
-     * by the user through the background prompt.
+     * by an explicit user background request.
      *
      * Processes with backgroundedAt set are eligible for automatic
      * completion notification via BackgroundProcessCompletionPoller.
@@ -147,7 +166,7 @@ class BackgroundProcess
     }
 
     /**
-     * Mark that the completion notification follow-up has been sent.
+     * Mark completion as acknowledged by a follow-up or an explicit stop result.
      */
     public function markCompletionNotified(\DateTimeImmutable $now): void
     {

@@ -47,12 +47,6 @@ final class SubagentLivePickerController
     /** @var ?\Closure(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
     private readonly ?\Closure $onHumanInputRequested;
 
-    /** @var ?\Closure(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
-    private readonly ?\Closure $onToolQuestionRequested;
-
-    /** @var ?\Closure(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
-    private readonly ?\Closure $onToolTerminal;
-
     public function __construct(
         private readonly Tui $tui,
         private readonly ChatScreen $screen,
@@ -63,13 +57,9 @@ final class SubagentLivePickerController
         private readonly ChildAgentEventsPathResolverInterface $childEventsPathResolver,
         private readonly SessionEventsExportService $exportService,
         ?\Closure $onHumanInputRequested = null,
-        ?\Closure $onToolQuestionRequested = null,
-        ?\Closure $onToolTerminal = null,
         ?\Closure $onLeavingChildRun = null,
     ) {
         $this->onHumanInputRequested = $onHumanInputRequested;
-        $this->onToolQuestionRequested = $onToolQuestionRequested;
-        $this->onToolTerminal = $onToolTerminal;
         $this->onLeavingChildRun = $onLeavingChildRun;
     }
 
@@ -416,8 +406,6 @@ final class SubagentLivePickerController
             $state->subagentLiveView,
             $snapshot,
             onHumanInputRequested: $this->onHumanInputRequested,
-            onToolQuestionRequested: $this->onToolQuestionRequested,
-            onToolTerminal: $this->onToolTerminal,
         );
         if ([] === $state->subagentLiveView->childTranscript) {
             $state->subagentLiveView->childTranscript = $state->subagentLiveView->placeholderTranscriptFor($child);

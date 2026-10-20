@@ -11,7 +11,6 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
@@ -245,8 +244,6 @@ final readonly class CodeModeHostBridge
             cancellationToken: $cancelToken,
             timeoutSeconds: $remainingSeconds,
             orderIndex: 0,
-            executionMode: ToolExecutionMode::Sequential,
-            batchToolCallCount: 1,
             humanInputAnswer: null,
             stepId: $parentContext?->stepId(),
             parentModel: $parentContext?->parentModel(),
