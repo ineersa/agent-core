@@ -44,7 +44,7 @@ interface AgentSessionClient
     /** @return list<BackgroundProcessDTO> Snapshot of accepted unfinished jobs; never enforces deadlines. */
     public function backgroundProcesses(string $runId): array;
 
-    /** Stop the exact accepted record in this run; false means it already finished. */
+    /** Request stop of the exact accepted record without waiting; false means it already finished. */
     public function stopBackgroundProcess(string $runId, int $recordId): bool;
 
     /**

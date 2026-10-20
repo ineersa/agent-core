@@ -109,50 +109,14 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
         }
     }
 
+    public function testControllerCompletesInterruptedExplicitStop(): void
+    {
+        $this->assertControllerStopProgress(true);
+    }
+
     public function testControllerAcknowledgesCommandWhileTimedOutProcessIsInTermGrace(): void
     {
-        $this->sessionId = trim($this->queryRuntime()->getOutput());
-        $this->spawnController();
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
-        $this->writeCommand(['v' => 1, 'id' => 'start', 'type' => 'start_run', 'payload' => ['prompt' => 'Start the resistant Bash command.']]);
-        $started = $this->collectEventsUntil(null, 5, static fn (array $event): bool => 'tool_execution.started' === ($event['type'] ?? ''));
-        $this->runId = $this->indexByType($started)['run.started'][0]['runId'];
-        $deadline = microtime(true) + 3;
-        while (!is_file($this->tempDir.'/ready') && microtime(true) < $deadline) {
-            $this->assertTrue($this->isRunning(), $this->collectDiagnostics($started));
-            usleep(10_000);
-        }
-        $this->assertFileExists($this->tempDir.'/ready');
-        $candidates = json_decode(trim($this->queryRuntime($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
-        $this->assertCount(1, $candidates);
-        $candidate = $candidates[0];
-        try {
-            $this->writeCommand(['v' => 1, 'id' => 'detach', 'type' => 'background_bash', 'runId' => $this->runId,
-                'payload' => ['record_id' => $candidate['id'], 'tool_call_id' => self::CALL_ID]]);
-            $detached = $this->collectEventsUntil('run.completed', 3);
-            $this->assertArrayHasKey('run.completed', $this->indexByType($detached), $this->collectDiagnostics($detached));
-            // The command writes this marker only after TERM is actually handled.
-            // Its original two-second timeout and the controller polling interval
-            // are the product delay under test, not readiness sleeps.
-            $deadline = microtime(true) + 5;
-            while (!is_file($this->tempDir.'/term') && microtime(true) < $deadline) {
-                $this->assertTrue($this->isRunning());
-                usleep(10_000);
-            }
-            $this->assertFileExists($this->tempDir.'/term');
-            $this->writeCommand(['v' => 1, 'id' => 'during-grace', 'type' => 'cancel', 'runId' => $this->runId, 'payload' => []]);
-            $events = $this->collectEventsUntil(null, 2, static fn (array $event): bool => 'command.ack' === ($event['type'] ?? '') && 'during-grace' === ($event['payload']['commandId'] ?? null));
-            $this->assertTrue($this->foundAck($events, 'during-grace'), $this->collectDiagnostics($events));
-            $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger());
-            $this->assertTrue($lifecycle->isAlive($candidate['pid']), 'Acknowledgment arrives while native termination is still in grace, not after KILL or zombie exit.');
-        } finally {
-            // Owned process group only. Avoid spending another full explicit-stop
-            // grace during controller teardown after the responsiveness proof.
-            $pgid = posix_getpgid($candidate['pid']);
-            if (false !== $pgid && $pgid === $candidate['pid']) {
-                posix_kill(-$pgid, \SIGKILL);
-            }
-        }
+        $this->assertControllerStopProgress(false);
     }
 
     protected function tempDirPrefix(): string
@@ -167,9 +131,11 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
             .'; : > '.escapeshellarg($this->tempDir.'/ready')
             .'; IFS= read -r release < '.escapeshellarg($this->tempDir.'/release').'; printf fifo-command-complete';
         $arguments = ['command' => $command];
-        if ('testControllerAcknowledgesCommandWhileTimedOutProcessIsInTermGrace' === $this->name()) {
-            $command = 'trap '.escapeshellarg(': > '.escapeshellarg($this->tempDir.'/term')).' TERM; : > '.escapeshellarg($this->tempDir.'/ready').'; while :; do sleep 0.05; done';
-            $arguments = ['command' => $command, 'timeout' => 2];
+        if (str_starts_with($this->name(), 'testController')) {
+            $interrupted = 'testControllerCompletesInterruptedExplicitStop' === $this->name();
+            $barrier = $interrupted ? 'kill -STOP "$(cat '.escapeshellarg($this->tempDir.'/stop-worker').')"; ' : '';
+            $command = 'trap '.escapeshellarg($barrier.': > '.escapeshellarg($this->tempDir.'/term')).' TERM; : > '.escapeshellarg($this->tempDir.'/ready').'; while :; do sleep 0.05; done';
+            $arguments = ['command' => $command, 'timeout' => $interrupted ? 60 : 2];
         }
         $start = json_decode((string) file_get_contents(__DIR__.'/fixtures/controller-bash-blocker.json'), true, 512, \JSON_THROW_ON_ERROR);
         $start['deltas'] = [
@@ -192,18 +158,105 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
         return ['HATFIELD_TEST_DATABASE_PATH' => $this->databasePath];
     }
 
-    private function queryRuntime(?string $runId = null): Process
+    protected function extraSettingsYaml(): string
+    {
+        return 'testControllerCompletesInterruptedExplicitStop' === $this->name()
+            ? "tools:\n  background_process:\n    stop_grace_seconds: 1\n" : '';
+    }
+
+    private function assertControllerStopProgress(bool $interruptedStop): void
+    {
+        $this->sessionId = trim($this->queryRuntime()->getOutput());
+        $this->spawnController();
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->writeCommand(['v' => 1, 'id' => 'start', 'type' => 'start_run', 'payload' => ['prompt' => 'Start the resistant Bash command.']]);
+        $started = $this->collectEventsUntil(null, 5, static fn (array $event): bool => 'tool_execution.started' === ($event['type'] ?? ''));
+        $this->runId = $this->indexByType($started)['run.started'][0]['runId'];
+        $deadline = microtime(true) + 3;
+        while (!is_file($this->tempDir.'/ready') && microtime(true) < $deadline) {
+            $this->assertTrue($this->isRunning(), $this->collectDiagnostics($started));
+            usleep(10_000);
+        }
+        $this->assertFileExists($this->tempDir.'/ready');
+        $candidates = json_decode(trim($this->queryRuntime($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
+        $this->assertCount(1, $candidates);
+        $candidate = $candidates[0];
+        $worker = null;
+        try {
+            $this->writeCommand(['v' => 1, 'id' => 'detach', 'type' => 'background_bash', 'runId' => $this->runId,
+                'payload' => ['record_id' => $candidate['id'], 'tool_call_id' => self::CALL_ID]]);
+            $detached = $this->collectEventsUntil('run.completed', 3);
+            $this->assertArrayHasKey('run.completed', $this->indexByType($detached), $this->collectDiagnostics($detached));
+            if ($interruptedStop) {
+                $worker = $this->queryRuntime($this->runId, $candidate['id']);
+            }
+            // The marker follows actual TERM. Controller polling and configured
+            // grace are the product delays, not fixture readiness sleeps.
+            $deadline = microtime(true) + 5;
+            while (!is_file($this->tempDir.'/term') && microtime(true) < $deadline) {
+                $this->assertTrue($this->isRunning());
+                if (null !== $worker) {
+                    $this->assertTrue($worker->isRunning(), $worker->getErrorOutput());
+                }
+                usleep(10_000);
+            }
+            $this->assertFileExists($this->tempDir.'/term');
+            if (null !== $worker) {
+                // Native TERM handling stops the caller before publishing the
+                // marker. Kill that suspended worker during its real stop grace.
+                $this->assertTrue($worker->isRunning());
+                $worker->signal(\SIGKILL);
+                $worker->wait();
+                $this->assertSame(\SIGKILL, $worker->getTermSignal());
+            }
+            $this->writeCommand(['v' => 1, 'id' => 'during-grace', 'type' => 'cancel', 'runId' => $this->runId, 'payload' => []]);
+            $events = $this->collectEventsUntil(null, 2, static fn (array $event): bool => 'command.ack' === ($event['type'] ?? '') && 'during-grace' === ($event['payload']['commandId'] ?? null));
+            $this->assertTrue($this->foundAck($events, 'during-grace'), $this->collectDiagnostics($events));
+            $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger());
+            $this->assertTrue($lifecycle->isAlive($candidate['pid']), 'Acknowledgment arrives while native termination is still in grace, not after KILL or zombie exit.');
+            if ($interruptedStop) {
+                $deadline = microtime(true) + 5;
+                while ($lifecycle->isAlive($candidate['pid']) && microtime(true) < $deadline) {
+                    $this->assertTrue($this->isRunning(), 'The owning controller survives the stop worker.');
+                    usleep(10_000);
+                }
+                $this->assertFalse($lifecycle->isAlive($candidate['pid']), 'The controller must finish the interrupted stop without redelivery.');
+                $this->assertCount(2, $this->requests(), 'Acknowledged stops do not create another model turn.');
+            }
+        } finally {
+            if (null !== $worker && $worker->isRunning()) {
+                $worker->signal(\SIGKILL);
+                $worker->wait();
+            }
+            // Owned process group only. Avoid spending another full explicit-stop
+            // grace during controller teardown after the responsiveness proof.
+            $pgid = posix_getpgid($candidate['pid']);
+            if (false !== $pgid && $pgid === $candidate['pid']) {
+                posix_kill(-$pgid, \SIGKILL);
+            }
+        }
+    }
+
+    private function queryRuntime(?string $runId = null, ?int $stopRecordId = null): Process
     {
         $command = [\PHP_BINARY, __DIR__.'/Support/ForegroundBashCandidates.php', $this->projectDir];
         if (null !== $runId) {
             $command[] = $runId;
+        }
+        if (null !== $stopRecordId) {
+            $command[] = (string) $stopRecordId;
+            $command[] = $this->tempDir.'/stop-worker';
         }
         $query = new Process($command, $this->tempDir, array_merge($this->controllerSubprocessEnv(), [
             'APP_ENV' => 'test', 'APP_DEBUG' => '1', 'HATFIELD_CWD' => $this->tempDir, 'HOME' => $this->tempDir,
             'HATFIELD_SESSION_ID' => false, 'HATFIELD_TEST_DATABASE_PATH' => $this->databasePath,
         ]));
         $query->setTimeout(3);
-        $query->mustRun();
+        if (null === $stopRecordId) {
+            $query->mustRun();
+        } else {
+            $query->start();
+        }
 
         return $query;
     }

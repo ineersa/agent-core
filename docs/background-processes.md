@@ -21,7 +21,9 @@ The picker lists accepted unfinished jobs for the visible session, with command,
 elapsed seconds and status. Jobs in termination grace appear as `stopping`.
 Select a job and press Enter to open a Yes/No stop confirmation, defaulting to No.
 Escape returns to the original list; Escape again closes it. Confirming Yes closes
-the picker before stopping the exact selected record and displays the outcome locally.
+the picker and requests a stop of the exact selected record without waiting for exit.
+The terminal remains responsive during grace. The controller observes exit or escalates
+to KILL, even if the caller dies. Reopen `/bg` to inspect the current status.
 Listing and stopping do not call the model.
 
 The list is a snapshot fetched once on opening. It never refreshes while open, even

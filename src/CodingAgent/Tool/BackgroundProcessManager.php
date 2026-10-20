@@ -563,10 +563,11 @@ final class BackgroundProcessManager
      *
      * Same TERM → grace → KILL lifecycle as stop(), but targets the exact
      * row tracked by a foreground BashTool invocation.
+     * Nonblocking callers leave grace and escalation to the owning controller.
      *
      * @throws \RuntimeException when record not found, session mismatch, or invalid state
      */
-    public function stopByRecordId(int $recordId, ?string $sessionId = null): StopResult
+    public function stopByRecordId(int $recordId, ?string $sessionId = null, bool $waitForExit = true): StopResult
     {
         if ($recordId <= 0) {
             throw new \RuntimeException(\sprintf('Invalid record ID %d for stop.', $recordId));
@@ -582,7 +583,7 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
         }
 
-        return $this->stopProcessEntity($entity);
+        return $this->stopProcessEntity($entity, $waitForExit);
     }
 
     /**
@@ -640,11 +641,11 @@ final class BackgroundProcessManager
      */
     public function refreshEntities(array $entities, ?\Closure $onError = null): array
     {
-        // Another reader may have finalized/removed the row. An explicit stop
-        // owns its own grace period and supersedes this manager's timeout grace.
+        // Acknowledging an explicit stop never releases controller supervision.
+        // Its caller may die during grace or only request a nonblocking stop.
         foreach (array_keys($this->timeoutGraceDeadlines) as $id) {
             $record = $this->store->fetchByRecordId($id);
-            if (null === $record || null !== $record->finishedAt || $record->stoppedByUser) {
+            if (null === $record || null !== $record->finishedAt) {
                 unset($this->timeoutGraceDeadlines[$id]);
             }
         }
@@ -654,18 +655,25 @@ final class BackgroundProcessManager
         foreach ($entities as $entity) {
             try {
                 $this->resolveEntityStatus($entity);
-                if (null !== $entity->finishedAt || $entity->stoppedByUser) {
+                $deadlineExpired = null !== $entity->deadlineNanoseconds && hrtime(true) >= $entity->deadlineNanoseconds;
+                if (null !== $entity->finishedAt) {
                     unset($this->timeoutGraceDeadlines[$entity->id]);
-                } elseif (null !== $entity->backgroundedAt && null !== $entity->deadlineNanoseconds && hrtime(true) >= $entity->deadlineNanoseconds) {
+                } elseif (null !== $entity->backgroundedAt && ($entity->stoppedByUser || $deadlineExpired)) {
                     // The batch flush records the stop cause before TERM can
                     // make cleanup exit. finishedAt still gates completion.
                     if (!isset($this->timeoutGraceDeadlines[$entity->id])) {
                         $entity->status = BackgroundProcessStatusEnum::Stopped;
-                        $toTerminate[] = $entity;
-                    } elseif (hrtime(true) >= $this->timeoutGraceDeadlines[$entity->id]) {
+                        if ($entity->stoppedByUser) {
+                            // TERM was requested already. Adopt bounded grace
+                            // without signaling cleanup subprocesses a second time.
+                            $this->timeoutGraceDeadlines[$entity->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+                        } else {
+                            $toTerminate[] = $entity;
+                        }
+                    }
+                    if (isset($this->timeoutGraceDeadlines[$entity->id]) && hrtime(true) >= $this->timeoutGraceDeadlines[$entity->id]) {
                         $this->lifecycle->sendKill($entity->pid, $entity->pgid);
-                        $entity->markStopped(Clock::get()->now());
-                        $entity->stoppedByUser = false;
+                        $entity->finish(null, Clock::get()->now());
                         $this->lifecycle->writeStopMarker($entity->statusPath);
                         unset($this->timeoutGraceDeadlines[$entity->id]);
                     }
@@ -686,8 +694,8 @@ final class BackgroundProcessManager
         $stoppedAfterTerm = false;
         foreach ($toTerminate as $entity) {
             try {
-                // A separate explicit stop may have claimed grace since the
-                // candidate snapshot. Refresh its intent before signaling.
+                // A separate caller may have requested an explicit stop since
+                // the candidate snapshot. Refresh its intent before signaling.
                 $current = $this->store->fetchByRecordId($entity->id);
                 if (null === $current || null !== $current->finishedAt || $current->stoppedByUser) {
                     continue;
@@ -727,7 +735,7 @@ final class BackgroundProcessManager
     /**
      * Shared stop lifecycle for a resolved background-process entity.
      */
-    private function stopProcessEntity(BackgroundProcess $entity): StopResult
+    private function stopProcessEntity(BackgroundProcess $entity, bool $waitForExit = true): StopResult
     {
         unset($this->timeoutGraceDeadlines[$entity->id]);
         $pid = $entity->pid;
@@ -758,6 +766,9 @@ final class BackgroundProcessManager
         // TERM signal — target process group (negative PGID)
         $signalSent = 'term';
         $this->lifecycle->sendTerm($pid, $pgid);
+        if (!$waitForExit) {
+            return new StopResult(pgid: $pgid, alreadyFinished: false, signalSent: $signalSent);
+        }
 
         // Poll until cooperative exit or grace deadline, then KILL if still alive.
         // Wrapper trap writes .status before /proc fully disappears; treat that as done.

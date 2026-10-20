@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\Tui\Command\SlashCommandCatalog;
@@ -104,22 +105,47 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
     }
 
     #[DataProvider('clients')]
-    public function testConfirmedStopUsesNativeClientAfterClosingAndNeverReloads(string $clientClass): void
+    public function testConfirmedStopRendersAndAcceptsInputDuringNativeGrace(string $clientClass): void
     {
-        $process = $this->start();
+        $process = $this->start(resistant: true);
+        $lifecycle = self::getContainer()->get(ProcessLifecycle::class);
+        $deadline = hrtime(true) + 2_000_000_000;
+        while (!is_file($this->directory.'/ready') && hrtime(true) < $deadline) {
+            $this->assertTrue($lifecycle->isAlive($process->pid));
+            usleep(10_000);
+        }
+        $this->assertFileExists($this->directory.'/ready');
         $this->manager->findByRecordId($process->id)->deadlineNanoseconds = hrtime(true) - 1;
         self::getContainer()->get(EntityManagerInterface::class)->flush();
         $this->mount($clientClass);
         $this->open();
         $this->assertTrue(posix_kill($process->pid, 0), 'Opening the picker must never enforce deadlines.');
         $this->assertNull($this->manager->findByRecordId($process->id)->finishedAt);
+        $before = \strlen($this->harness->terminal()->getOutput());
         $this->confirm();
+        $this->assertTrue($lifecycle->isAlive($process->pid), 'The input callback must return before termination grace ends.');
+        $rendered = substr($this->harness->terminal()->getOutput(), $before);
+        $this->assertStringContainsString('stop requested', $rendered);
+        $this->assertMatchesRegularExpression('/\e\[/', $rendered);
+        $this->harness->sendInput('responsive');
+        $this->assertStringContainsString('responsive', substr($this->harness->terminal()->getOutput(), $before));
+        $this->assertTrue($lifecycle->isAlive($process->pid), 'Another rendered input precedes native termination.');
         $record = $this->manager->findByRecordId($process->id);
         $this->assertTrue($record->stoppedByUser);
+        $this->assertNull($record->finishedAt);
+        $deadline = hrtime(true) + 7_000_000_000;
+        do {
+            $this->manager->refreshEntities([$record]);
+            if (null !== $record->finishedAt) {
+                break;
+            }
+            usleep(10_000);
+        } while (hrtime(true) < $deadline);
         $this->assertNotNull($record->finishedAt);
+        $this->assertFalse($lifecycle->isAlive($process->pid));
         $this->assertNotNull($record->completionNotifiedAt);
         $this->assertSame(1, $this->reads);
-        $this->assertStringContainsString('Process PID '.$process->pid.' stopped.', $this->harness->plainScreenText());
+        $this->harness->sendInput("\x15"); // Clear the input accepted during grace.
         $this->open();
         $this->assertSame(2, $this->reads);
         $this->assertFalse($this->harness->screen()->hasInputOverlay());
@@ -219,9 +245,11 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         }
     }
 
-    private function start(string $runId = 'visible', bool $accepted = true): StartResult
+    private function start(string $runId = 'visible', bool $accepted = true, bool $resistant = false): StartResult
     {
-        $process = $this->manager->start('read -r release < '.escapeshellarg($this->directory.'/release'), $runId, 'call');
+        $command = ($resistant ? "trap '' TERM; : > ".escapeshellarg($this->directory.'/ready').'; ' : '')
+            .'read -r release < '.escapeshellarg($this->directory.'/release');
+        $process = $this->manager->start($command, $runId, 'call');
         if ($accepted) {
             $this->manager->markBackgroundedForRecord($process->id, $runId);
         }

@@ -125,7 +125,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             throw new BackgroundProcessUnavailableException('Background process is no longer available in this session.');
         }
 
-        return !$this->backgroundProcesses->stopByRecordId($recordId, $runId)->alreadyFinished;
+        return !$this->backgroundProcesses->stopByRecordId($recordId, $runId, waitForExit: false)->alreadyFinished;
     }
 
     public function attach(string $runId): RunHandle

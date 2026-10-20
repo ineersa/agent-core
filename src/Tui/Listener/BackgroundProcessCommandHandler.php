@@ -116,7 +116,7 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
             }
             try {
                 $stopped = $context->client->stopBackgroundProcess($runId, $process->id);
-                $context->screen->setStatus('session', \sprintf('Process PID %d %s.', $process->pid, $stopped ? 'stopped' : 'had already finished'));
+                $context->screen->setStatus('session', \sprintf('Process PID %d %s.', $process->pid, $stopped ? 'stop requested' : 'had already finished'));
             } catch (\Throwable $e) {
                 $this->reportFailure($e, $runId);
             }
