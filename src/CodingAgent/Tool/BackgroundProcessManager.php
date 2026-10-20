@@ -80,6 +80,9 @@ final class BackgroundProcessManager
      */
     private array $ownedRecordIds = [];
 
+    /** @var array<int, int> Immutable record ID to monotonic TERM grace deadline. */
+    private array $timeoutGraceDeadlines = [];
+
     public function __construct(
         private readonly ProcessStore $store,
         private readonly ProcessLifecycle $lifecycle,
@@ -166,7 +169,7 @@ final class BackgroundProcessManager
      *
      * @throws \RuntimeException on storage/launch failure
      */
-    public function start(string $command, ?string $sessionId = null): StartResult
+    public function start(string $command, ?string $sessionId = null, ?string $toolCallId = null, ?int $deadlineNanoseconds = null): StartResult
     {
         // Ensure storage directory exists
         $bgDir = $this->lifecycle->ensureStorageDir();
@@ -190,6 +193,8 @@ final class BackgroundProcessManager
             'pgid' => $pgid,
             'session_id' => $sessionId ?? '',
             'command' => $command,
+            'tool_call_id' => $toolCallId,
+            'deadline_nanoseconds' => $deadlineNanoseconds,
             'log_path' => $logFile,
             'status_path' => $statusFile,
             'started_at' => $now,
@@ -413,12 +418,12 @@ final class BackgroundProcessManager
         }
 
         $wasFinished = null !== $entity->finishedAt;
-        $status = $this->resolveEntityStatus($entity);
+        $this->resolveEntityStatus($entity);
         if (!$wasFinished && null !== $entity->finishedAt) {
             $this->store->flush();
         }
 
-        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, BackgroundProcessStatusEnum::Running !== $status);
+        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, null !== $entity->finishedAt);
     }
 
     /**
@@ -439,12 +444,12 @@ final class BackgroundProcessManager
         }
 
         $wasFinished = null !== $entity->finishedAt;
-        $status = $this->resolveEntityStatus($entity);
+        $this->resolveEntityStatus($entity);
         if (!$wasFinished && null !== $entity->finishedAt) {
             $this->store->flush();
         }
 
-        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, BackgroundProcessStatusEnum::Running !== $status);
+        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, null !== $entity->finishedAt);
     }
 
     /**
@@ -479,9 +484,52 @@ final class BackgroundProcessManager
     }
 
     /**
+     * Request detachment of one exact foreground Bash invocation.
+     *
+     * This does not make a process notification-eligible. Its foreground worker
+     * checks completion first and accepts the request only when returning the
+     * original tool result as an acknowledgment. A finish/request race therefore
+     * cannot produce both a foreground result and a completion notification.
+     */
+    public function requestBackground(string $runId, int $recordId, string $toolCallId): bool
+    {
+        if ('' === $runId || '' === $toolCallId) {
+            return false;
+        }
+
+        $entity = $this->findByRecordId($recordId, $runId);
+        if (null === $entity || $entity->toolCallId !== $toolCallId || null !== $entity->finishedAt || null !== $entity->backgroundedAt) {
+            return false;
+        }
+
+        $entity->backgroundRequested = true;
+        $this->store->flush();
+
+        return true;
+    }
+
+    /**
+     * Read-only selection snapshot. Native supervision and deadline enforcement
+     * remain with the execution owner/poller, not TUI candidate discovery.
+     *
+     * @return list<BackgroundProcess>
+     */
+    public function foregroundTools(string $runId): array
+    {
+        if ('' === $runId) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $this->store->fetchAllUnfinished($runId),
+            static fn (BackgroundProcess $entity): bool => null !== $entity->toolCallId && null === $entity->backgroundedAt && !$entity->backgroundRequested,
+        ));
+    }
+
+    /**
      * Mark the exact background-process record as user-backgrounded.
      *
-     * Used by BashTool when the user accepts the background prompt for the
+     * Used by BashTool when its worker accepts the background request for the
      * current invocation (immutable record ID from start()).
      *
      * @throws \RuntimeException when record not found or session mismatches
@@ -515,10 +563,11 @@ final class BackgroundProcessManager
      *
      * Same TERM → grace → KILL lifecycle as stop(), but targets the exact
      * row tracked by a foreground BashTool invocation.
+     * Nonblocking callers leave grace and escalation to the owning controller.
      *
      * @throws \RuntimeException when record not found, session mismatch, or invalid state
      */
-    public function stopByRecordId(int $recordId, ?string $sessionId = null): StopResult
+    public function stopByRecordId(int $recordId, ?string $sessionId = null, bool $waitForExit = true): StopResult
     {
         if ($recordId <= 0) {
             throw new \RuntimeException(\sprintf('Invalid record ID %d for stop.', $recordId));
@@ -534,7 +583,7 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
         }
 
-        return $this->stopProcessEntity($entity);
+        return $this->stopProcessEntity($entity, $waitForExit);
     }
 
     /**
@@ -554,8 +603,9 @@ final class BackgroundProcessManager
      * Refresh all unfinished entities so finished_at is populated
      * for processes that completed without a list() call.
      *
-     * Used by provisional cleanup. Controller completion polling instead
-     * refreshes its already-selected candidates through refreshEntities().
+     * Passive maintenance only: never signal a process. The owning controller
+     * enforces accepted-job deadlines through refreshEntities(); maintenance
+     * cannot share that owner's in-memory termination grace deadlines.
      *
      * Safe to call repeatedly — only queries unfinished entities, checks
      * status files and /proc/<pid>, and flushes any newly-resolved
@@ -567,15 +617,22 @@ final class BackgroundProcessManager
      */
     public function refreshAllUnfinished(?string $sessionId = null): void
     {
-        $this->refreshEntities($this->store->fetchAllUnfinished($sessionId));
+        $entities = $this->store->fetchAllUnfinished($sessionId);
+        foreach ($entities as $entity) {
+            $this->resolveEntityStatus($entity);
+        }
+        if ([] !== $entities) {
+            $this->store->flush();
+        }
     }
 
     /**
      * Resolve prefetched records, then persist the refresh phase once.
+     * Newly requested timeout stops are durable before any TERM is sent.
      *
      * A caller may isolate individual resolution failures with onError. Flush
      * failures still propagate, so no completion is delivered before persistence.
-     * Stop and provisional cleanup retain fail-fast resolution by omitting it.
+     * Callers without onError retain fail-fast resolution.
      *
      * @param list<BackgroundProcess>                            $entities
      * @param \Closure(BackgroundProcess, \Throwable): void|null $onError
@@ -584,10 +641,43 @@ final class BackgroundProcessManager
      */
     public function refreshEntities(array $entities, ?\Closure $onError = null): array
     {
+        // Acknowledging an explicit stop never releases controller supervision.
+        // Its caller may die during grace or only request a nonblocking stop.
+        foreach (array_keys($this->timeoutGraceDeadlines) as $id) {
+            $record = $this->store->fetchByRecordId($id);
+            if (null === $record || null !== $record->finishedAt) {
+                unset($this->timeoutGraceDeadlines[$id]);
+            }
+        }
+
         $refreshed = [];
+        $toTerminate = [];
         foreach ($entities as $entity) {
             try {
                 $this->resolveEntityStatus($entity);
+                $deadlineExpired = null !== $entity->deadlineNanoseconds && hrtime(true) >= $entity->deadlineNanoseconds;
+                if (null !== $entity->finishedAt) {
+                    unset($this->timeoutGraceDeadlines[$entity->id]);
+                } elseif (null !== $entity->backgroundedAt && ($entity->stoppedByUser || $deadlineExpired)) {
+                    // The batch flush records the stop cause before TERM can
+                    // make cleanup exit. finishedAt still gates completion.
+                    if (!isset($this->timeoutGraceDeadlines[$entity->id])) {
+                        $entity->status = BackgroundProcessStatusEnum::Stopped;
+                        if ($entity->stoppedByUser) {
+                            // TERM was requested already. Adopt bounded grace
+                            // without signaling cleanup subprocesses a second time.
+                            $this->timeoutGraceDeadlines[$entity->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+                        } else {
+                            $toTerminate[] = $entity;
+                        }
+                    }
+                    if (isset($this->timeoutGraceDeadlines[$entity->id]) && hrtime(true) >= $this->timeoutGraceDeadlines[$entity->id]) {
+                        $this->lifecycle->sendKill($entity->pid, $entity->pgid);
+                        $entity->finish(null, Clock::get()->now());
+                        $this->lifecycle->writeStopMarker($entity->statusPath);
+                        unset($this->timeoutGraceDeadlines[$entity->id]);
+                    }
+                }
                 $refreshed[] = $entity;
             } catch (\Throwable $e) {
                 if (null === $onError) {
@@ -599,6 +689,45 @@ final class BackgroundProcessManager
         if ([] !== $refreshed) {
             $this->store->flush();
         }
+        // Never wait for grace: all due processes receive TERM after the same
+        // refresh flush, and later passes observe exit or escalate to KILL.
+        $stoppedAfterTerm = false;
+        foreach ($toTerminate as $entity) {
+            try {
+                // A separate caller may have requested an explicit stop since
+                // the candidate snapshot. Refresh its intent before signaling.
+                $current = $this->store->fetchByRecordId($entity->id);
+                if (null === $current || null !== $current->finishedAt || $current->stoppedByUser) {
+                    continue;
+                }
+                $this->lifecycle->sendTerm($entity->pid, $entity->pgid);
+                $this->timeoutGraceDeadlines[$entity->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+                if (0 === $this->config->stopGraceSeconds) {
+                    $this->lifecycle->sendKill($entity->pid, $entity->pgid);
+                    $entity->markStopped(Clock::get()->now());
+                    $entity->stoppedByUser = false;
+                    $this->lifecycle->writeStopMarker($entity->statusPath);
+                    unset($this->timeoutGraceDeadlines[$entity->id]);
+                    $stoppedAfterTerm = true;
+                }
+                $this->logger->info('background_process.timed_out', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.timed_out',
+                    'run_id' => $entity->sessionId,
+                    'session_id' => $entity->sessionId,
+                    'record_id' => $entity->id,
+                ]);
+            } catch (\Throwable $e) {
+                if (null === $onError) {
+                    throw $e;
+                }
+                $onError($entity, $e);
+            }
+        }
+        // Zero-grace stops end after the cause was flushed but before delivery.
+        if ($stoppedAfterTerm) {
+            $this->store->flush();
+        }
 
         return $refreshed;
     }
@@ -606,13 +735,15 @@ final class BackgroundProcessManager
     /**
      * Shared stop lifecycle for a resolved background-process entity.
      */
-    private function stopProcessEntity(BackgroundProcess $entity): StopResult
+    private function stopProcessEntity(BackgroundProcess $entity, bool $waitForExit = true): StopResult
     {
+        unset($this->timeoutGraceDeadlines[$entity->id]);
         $pid = $entity->pid;
 
         // Refresh status before acting — the process may have finished
         // since the last list() call (status file written, /proc gone).
-        $this->refreshEntities([$entity]);
+        $this->resolveEntityStatus($entity);
+        $this->store->flush();
 
         if (null !== $entity->finishedAt) {
             return new StopResult(
@@ -625,9 +756,19 @@ final class BackgroundProcessManager
         $pgid = $entity->pgid;
         $graceSeconds = $this->config->stopGraceSeconds;
 
+        // Persist explicit stop intent before TERM: an independent completion
+        // poller can observe native exit while this caller is still in grace.
+        $entity->status = BackgroundProcessStatusEnum::Stopped;
+        $entity->stoppedByUser = true;
+        $entity->markCompletionNotified(Clock::get()->now());
+        $this->store->flush();
+
         // TERM signal — target process group (negative PGID)
         $signalSent = 'term';
         $this->lifecycle->sendTerm($pid, $pgid);
+        if (!$waitForExit) {
+            return new StopResult(pgid: $pgid, alreadyFinished: false, signalSent: $signalSent);
+        }
 
         // Poll until cooperative exit or grace deadline, then KILL if still alive.
         // Wrapper trap writes .status before /proc fully disappears; treat that as done.
@@ -728,11 +869,11 @@ final class BackgroundProcessManager
      *
      * Mutates the entity in place; caller is responsible for flush.
      */
-    private function resolveEntityStatus(BackgroundProcess $entity): BackgroundProcessStatusEnum
+    private function resolveEntityStatus(BackgroundProcess $entity): void
     {
         // Already resolved in DB
         if (null !== $entity->finishedAt) {
-            return $entity->status;
+            return;
         }
 
         $pid = $entity->pid;
@@ -743,14 +884,16 @@ final class BackgroundProcessManager
             $now = Clock::get()->now();
             $entity->finish($exitCode, $now);
 
-            return BackgroundProcessStatusEnum::Finished;
+            return;
         }
 
         // Check /proc/<pid> for liveness
         if ($this->lifecycle->isAlive($pid)) {
-            $entity->status = BackgroundProcessStatusEnum::Running;
+            if (BackgroundProcessStatusEnum::Stopped !== $entity->status) {
+                $entity->status = BackgroundProcessStatusEnum::Running;
+            }
 
-            return BackgroundProcessStatusEnum::Running;
+            return;
         }
 
         // Process is gone but no status file written (crash / SIGKILL / unclean exit)
@@ -762,7 +905,5 @@ final class BackgroundProcessManager
             'event_type' => 'background_process.finished_unclean',
             'process_pid' => $pid,
         ]);
-
-        return BackgroundProcessStatusEnum::FinishedUnclean;
     }
 }

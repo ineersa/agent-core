@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -281,6 +282,23 @@ final class AnswerHumanHandlerTest extends TestCase
 final class SpySessionClient implements AgentSessionClient
 {
     public ?UserCommand $lastCommand = null;
+
+    /** @return list<BashBackgroundCandidateDTO> */
+    public function foregroundBash(string $runId): array
+    {
+        return [];
+    }
+
+    /** @return list<never> */
+    public function backgroundProcesses(string $runId): array
+    {
+        return [];
+    }
+
+    public function stopBackgroundProcess(string $runId, int $recordId): bool
+    {
+        throw new \LogicException('Unexpected background stop.');
+    }
 
     public function start(StartRunRequest $request): RunHandle
     {

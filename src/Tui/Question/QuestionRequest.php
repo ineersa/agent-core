@@ -7,9 +7,7 @@ namespace Ineersa\Tui\Question;
 /**
  * Immutable DTO representing a question/input request.
  *
- * Carries the metadata needed for rendering and routing. The source field
- * determines whether answers go to a local callback (Tui) or are dispatched
- * as runtime commands (AgentCore).
+ * Carries the metadata needed for rendering and routing canonical human input.
  *
  * @param list<QuestionOption> $choices Structured options for choice/approval questions
  */
@@ -20,7 +18,6 @@ final readonly class QuestionRequest
      */
     public function __construct(
         public string $requestId,
-        public QuestionSource $source,
         public QuestionKind $kind,
         public string $prompt,
         public array $choices = [],

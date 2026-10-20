@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
@@ -482,7 +483,191 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertFalse($this->manager->existsByRecordId(9999999));
     }
 
+    public function testBackgroundRequestTargetsOnlyCurrentRunModelToolsAndDoesNotNotify(): void
+    {
+        $this->createManager();
+        $fifo = $this->tmpDir.'/command-release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $command = 'cat '.escapeshellarg($fifo);
+        $first = $this->manager->start($command, self::TEST_SESSION, 'call-first');
+        $second = $this->manager->start($command, self::TEST_SESSION, 'call-second');
+        $shell = $this->manager->start($command, self::TEST_SESSION);
+        $foreign = $this->manager->start($command, 'other-run', 'call-foreign');
+
+        $controllerManager = $this->createOtherManager();
+        $this->assertFalse($controllerManager->requestBackground(self::TEST_SESSION, $foreign->id, 'call-foreign'));
+        $this->assertFalse($controllerManager->requestBackground(self::TEST_SESSION, $shell->id, 'call-shell'));
+        $this->assertFalse($controllerManager->requestBackground(self::TEST_SESSION, $first->id, 'wrong-call'));
+        $this->assertTrue($controllerManager->requestBackground(self::TEST_SESSION, $first->id, 'call-first'));
+        $this->assertFalse($this->manager->findByRecordId($second->id)?->backgroundRequested);
+        $this->assertTrue($controllerManager->requestBackground(self::TEST_SESSION, $first->id, 'call-first'));
+        $this->assertTrue($controllerManager->requestBackground(self::TEST_SESSION, $second->id, 'call-second'));
+        $this->assertFalse($controllerManager->requestBackground('', $first->id, 'call-first'));
+
+        foreach ([$first, $second] as $started) {
+            $record = $this->manager->findByRecordId($started->id, self::TEST_SESSION);
+            $this->assertNotNull($record);
+            $this->assertTrue($record->backgroundRequested);
+            $this->assertNull($record->backgroundedAt);
+            $this->assertNull($record->finishedAt);
+            $this->assertSame($started->pid, $record->pid);
+        }
+        $this->assertFalse($this->manager->findByRecordId($shell->id)?->backgroundRequested);
+        $this->assertFalse($this->manager->findByRecordId($foreign->id)?->backgroundRequested);
+        $this->assertSame([], $this->manager->list(self::TEST_SESSION));
+        foreach (static::getContainer()->get(ProcessStore::class)->findCompletionCandidates([self::TEST_SESSION]) as $candidate) {
+            $this->assertNull($candidate->backgroundedAt);
+            $this->assertNull($candidate->completionNotifiedAt);
+        }
+    }
+
+    public function testBackgroundRequestLeavesFinishedAndAlreadyBackgroundedCommandsAlone(): void
+    {
+        $this->createManager();
+        $finished = $this->manager->start('printf done', self::TEST_SESSION, 'call-finished');
+        $this->waitUntilFinished($finished->pid);
+        $fifo = $this->tmpDir.'/background-release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $backgrounded = $this->manager->start('cat '.escapeshellarg($fifo), self::TEST_SESSION, 'call-background');
+        $this->manager->markBackgroundedForRecord($backgrounded->id, self::TEST_SESSION);
+
+        $this->assertFalse($this->manager->requestBackground(self::TEST_SESSION, $finished->id, 'call-finished'));
+        $this->assertFalse($this->manager->requestBackground(self::TEST_SESSION, $backgrounded->id, 'call-background'));
+        $this->assertFalse($this->manager->findByRecordId($finished->id)?->backgroundRequested);
+        $this->assertFalse($this->manager->findByRecordId($backgrounded->id)?->backgroundRequested);
+    }
+
     /* ── Helpers ── */
+
+    public function testDetachedProcessKeepsOriginalMonotonicDeadlineAndStops(): void
+    {
+        $this->createManager();
+        $fifo = $this->tmpDir.'/deadline-release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        // This short real deadline is the product delay under test, not a readiness sleep.
+        $originalDeadline = hrtime(true) + 500_000_000;
+        $process = $this->manager->start('cat '.escapeshellarg($fifo), self::TEST_SESSION, 'deadline-call', $originalDeadline);
+        $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
+        $safetyDeadline = hrtime(true) + 2_000_000_000;
+        do {
+            $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
+            $record = $this->manager->findByRecordId($process->id, self::TEST_SESSION);
+            if (null !== $record?->finishedAt) {
+                break;
+            }
+            usleep(10_000);
+        } while (hrtime(true) < $safetyDeadline);
+
+        $this->assertNotNull($record?->finishedAt);
+        $this->assertGreaterThanOrEqual($originalDeadline, hrtime(true));
+        $this->assertSame($originalDeadline, $record->deadlineNanoseconds);
+        $this->assertSame($process->pid, $record->pid);
+        $this->assertFalse($record->stoppedByUser);
+    }
+
+    public function testExpiredProcessesReceiveTermTogetherWithoutWaitingForGrace(): void
+    {
+        $this->createManager(stopGraceSeconds: 1);
+        $processes = [];
+        foreach ([1, 2] as $index) {
+            $ready = $this->tmpDir.'/ready-'.$index;
+            $term = $this->tmpDir.'/term-'.$index;
+            $command = 'trap '.escapeshellarg('echo term >> '.escapeshellarg($term)).' TERM; : > '.escapeshellarg($ready).'; while :; do sleep 0.05; done';
+            $process = $this->manager->start($command, self::TEST_SESSION, 'call-'.$index, hrtime(true) - 1);
+            $processes[] = $process;
+            $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (!is_file($ready) && hrtime(true) < $deadline) {
+                $this->assertTrue(posix_kill($process->pid, 0));
+                usleep(10_000);
+            }
+            $this->assertFileExists($ready);
+        }
+        $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
+        foreach ($processes as $index => $process) {
+            $term = $this->tmpDir.'/term-'.($index + 1);
+            $deadline = hrtime(true) + 500_000_000;
+            while (!is_file($term) && hrtime(true) < $deadline) {
+                usleep(10_000);
+            }
+            $this->assertFileExists($term);
+            $this->assertNull($this->manager->findByRecordId($process->id)?->finishedAt, 'Both processes must still be in grace after one refresh.');
+        }
+        $deadline = hrtime(true) + 2_000_000_000;
+        do {
+            $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
+            $unfinished = array_filter($processes, fn (StartResult $process): bool => null === $this->manager->findByRecordId($process->id)?->finishedAt);
+            if ([] === $unfinished) {
+                break;
+            }
+            usleep(10_000);
+        } while (hrtime(true) < $deadline);
+        $this->assertSame([], $unfinished, 'Later passes must escalate all resistant commands.');
+    }
+
+    public function testDeletedTimeoutRecordRetiresOutstandingGrace(): void
+    {
+        $this->createManager();
+        $process = $this->manager->start('sleep 10', self::TEST_SESSION, 'deleted-call', hrtime(true) - 1);
+        $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
+        $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
+        $store = self::getContainer()->get(ProcessStore::class);
+        $record = $store->fetchByRecordId($process->id);
+        $this->assertNotNull($record);
+        $grace = new \ReflectionProperty($this->manager, 'timeoutGraceDeadlines');
+        $this->assertArrayHasKey($process->id, $grace->getValue($this->manager));
+        try {
+            $this->assertTrue($store->deleteById($process->id));
+            $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
+            $this->assertSame([], $grace->getValue($this->manager));
+        } finally {
+            // The removed row cannot supervise this test-owned group anymore.
+            (new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger()))->sendKill($process->pid, $record->pgid);
+        }
+    }
+
+    public function testControllerSettlesExplicitStopWithZeroGraceAndExpiredDeadline(): void
+    {
+        $this->createManager(stopGraceSeconds: 0);
+        $ready = $this->tmpDir.'/ready';
+        $process = $this->manager->start("trap '' TERM; : > ".escapeshellarg($ready).'; sleep 60', self::TEST_SESSION, 'stop-call', hrtime(true) - 1);
+        $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
+        $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger());
+        $deadline = hrtime(true) + 2_000_000_000;
+        while (!is_file($ready) && hrtime(true) < $deadline) {
+            $this->assertTrue($lifecycle->isAlive($process->pid));
+            usleep(10_000);
+        }
+        $this->assertFileExists($ready);
+        $this->assertFalse($this->manager->stopByRecordId($process->id, self::TEST_SESSION, waitForExit: false)->alreadyFinished);
+        $record = $this->manager->findByRecordId($process->id);
+        $this->assertNull($record->finishedAt);
+        $this->assertTrue($lifecycle->isAlive($process->pid));
+        $owner = $this->createOtherManager(stopGraceSeconds: 0);
+        $owner->refreshEntities([$record]);
+        $this->assertNotNull($record->finishedAt);
+        $this->assertSame(BackgroundProcessStatusEnum::Stopped, $record->status);
+        $this->assertTrue($record->stoppedByUser);
+        $this->assertNotNull($record->completionNotifiedAt);
+        $this->assertFalse($lifecycle->isAlive($process->pid));
+    }
+
+    public function testLateObservationWithoutTermKeepsSuccessfulExit(): void
+    {
+        $this->createManager();
+        $process = $this->manager->start('printf done', self::TEST_SESSION, 'finished-call', hrtime(true) - 1);
+        $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
+        $record = self::getContainer()->get(ProcessStore::class)->fetchByRecordId($process->id);
+        $this->assertNotNull($record);
+        $deadline = hrtime(true) + 2_000_000_000;
+        while (!is_file($record->statusPath) && hrtime(true) < $deadline) {
+            usleep(10_000);
+        }
+        $this->assertFileExists($record->statusPath);
+        $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
+        $this->assertSame(BackgroundProcessStatusEnum::Finished, $record->status);
+        $this->assertSame(0, $record->exitCode);
+    }
 
     private function waitUntilFinished(int $pid, float $timeoutSeconds = 2.0): void
     {

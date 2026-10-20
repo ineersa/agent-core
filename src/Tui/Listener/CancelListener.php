@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Question\QuestionKind;
-use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
@@ -85,10 +84,9 @@ final class CancelListener implements TuiListenerRegistrar
                 if ($activeOwnedByVisible) {
                     if (QuestionKind::Text === $active->kind) {
                         $runId = $active->runId;
-                        $clearsCanonicalWaiting = QuestionSource::AgentCore === $active->source;
                         $questionCoordinator->cancel();
                         $questionController->close();
-                        if ($clearsCanonicalWaiting && null !== $runId && '' !== $runId) {
+                        if (null !== $runId && '' !== $runId) {
                             SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $runId);
                         }
 
@@ -104,10 +102,9 @@ final class CancelListener implements TuiListenerRegistrar
                     $parentRunId = null !== $state->handle ? $state->handle->runId : $state->sessionId;
                     if ($active->runId !== $parentRunId) {
                         $runId = $active->runId;
-                        $clearsCanonicalWaiting = QuestionSource::AgentCore === $active->source;
                         $questionCoordinator->cancel();
                         $questionController->close();
-                        if ($clearsCanonicalWaiting && null !== $runId && '' !== $runId) {
+                        if (null !== $runId && '' !== $runId) {
                             SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $runId);
                         }
 

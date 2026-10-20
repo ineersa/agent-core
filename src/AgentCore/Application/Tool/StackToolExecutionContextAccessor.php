@@ -16,6 +16,11 @@ final class StackToolExecutionContextAccessor
     /** @var list<ToolContext> */
     private array $stack = [];
 
+    public function depth(): int
+    {
+        return \count($this->stack);
+    }
+
     public function current(): ?ToolContext
     {
         $key = array_key_last($this->stack);

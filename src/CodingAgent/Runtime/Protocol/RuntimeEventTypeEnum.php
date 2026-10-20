@@ -87,13 +87,6 @@ enum RuntimeEventTypeEnum: string
     // Transient JSONL/TUI only (seq=0); does not append canonical RunEvents.
     case SessionRepairCompleted = 'session.repair.completed';
 
-    // ── Tool-local questions ─────────────────────────────────────────────────────
-    // Used by tool workers (e.g. BashTool) to prompt the user via the TUI
-    // question overlay without entering AgentCore WaitingHuman. These events
-    // carry transcript=false and do not create transcript blocks.
-
-    case ToolQuestionRequested = 'tool_question.requested';
-
     // ── Background process completion ───────────────────────────────────────────────────
     // Emitted by BackgroundProcessCompletionPoller when a process that was
     // explicitly moved to background finishes. Carries pid, exit_code, status,

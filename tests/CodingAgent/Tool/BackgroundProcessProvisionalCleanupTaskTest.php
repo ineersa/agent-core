@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -59,6 +62,85 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
 
         parent::tearDown();
+    }
+
+    #[Test]
+    public function scheduledRefreshDoesNotSignalAcceptedTimeoutCleanup(): void
+    {
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        $this->assertIsResource($server);
+        $address = stream_socket_get_name($server, false);
+        $this->assertIsString($address);
+        $script = $this->tmpDir.'/barrier.php';
+        file_put_contents($script, <<<'PHP'
+<?php
+$socket = stream_socket_client('tcp://'.$argv[1]);
+stream_set_timeout($socket, 3);
+if ('result' === $argv[2]) {
+    fwrite($socket, 'exit:'.$argv[3]."\n");
+    exit(0);
+}
+fwrite($socket, $argv[2].':'.getmypid()."\n");
+if ('release' !== trim((string) fgets($socket))) {
+    exit(1);
+}
+fwrite($socket, "cleaned\n");
+PHP);
+        $config = new BackgroundProcessConfig(storageDir: $this->tmpDir, stopGraceSeconds: 5);
+        $owner = new BackgroundProcessManager($this->store, $this->lifecycle, $config, $this->logger);
+        $otherKernel = new Kernel('test', true);
+        $running = null;
+        $cleanup = null;
+        $result = null;
+        try {
+            $otherKernel->boot();
+            $container = $otherKernel->getContainer()->get('test.service_container');
+            $this->assertNotSame(static::getContainer()->get(EntityManagerInterface::class), $container->get(EntityManagerInterface::class));
+            $otherStore = $container->get(ProcessStore::class);
+            $maintenance = new BackgroundProcessManager($otherStore, $this->lifecycle, $config, $this->logger);
+            $task = new BackgroundProcessProvisionalCleanupTask($maintenance, $otherStore, $this->lifecycle, $this->logger);
+            $invoke = escapeshellarg(\PHP_BINARY).' '.escapeshellarg($script).' '.escapeshellarg($address);
+            // The cleanup child is spawned only after the first TERM. Unlike
+            // its shell parent, it has default TERM handling, so a second group
+            // signal kills it while this test holds its release at the socket.
+            $command = 'trap '.escapeshellarg($invoke.' cleanup; result=$?; '.$invoke.' result "$result"; exit "$result"').' TERM; '.$invoke.' running';
+            $process = $owner->start($command, 'accepted-cleanup', 'timeout-call', hrtime(true) - 1);
+            $owner->markBackgroundedForRecord($process->id, 'accepted-cleanup');
+            $running = stream_socket_accept($server, 3);
+            $this->assertIsResource($running, 'The owned command must reach its initial IPC barrier.');
+            stream_set_timeout($running, 3);
+            $this->assertStringStartsWith('running:', (string) fgets($running));
+            $owner->refreshEntities($this->store->fetchAllUnfinished('accepted-cleanup'));
+            $cleanup = stream_socket_accept($server, 3);
+            $this->assertIsResource($cleanup, 'TERM must start the cleanup subprocess.');
+            stream_set_timeout($cleanup, 3);
+            $ready = (string) fgets($cleanup);
+            $this->assertStringStartsWith('cleanup:', $ready);
+            $record = $this->store->fetchByRecordId($process->id);
+            $this->assertNotNull($record);
+            $this->assertSame($record->pgid, posix_getpgid((int) substr($ready, 8)));
+            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $record->status);
+            $this->assertNull($record->finishedAt);
+
+            $task();
+
+            // No elapsed-time window: cleanup cannot finish until this release.
+            @fwrite($cleanup, "release\n");
+            $this->assertSame("cleaned\n", fgets($cleanup), 'Scheduled maintenance must not kill the accepted job\'s TERM cleanup.');
+            $result = stream_socket_accept($server, 3);
+            $this->assertIsResource($result, 'The command must collect its cleanup subprocess exit.');
+            stream_set_timeout($result, 3);
+            $this->assertSame("exit:0\n", fgets($result));
+            $this->assertTrue($otherStore->existsByRecordId($process->id));
+        } finally {
+            foreach ([$running, $cleanup, $result, $server] as $socket) {
+                if (\is_resource($socket)) {
+                    fclose($socket);
+                }
+            }
+            $owner->shutdownCleanup();
+            $otherKernel->shutdown();
+        }
     }
 
     #[Test]
@@ -133,6 +215,27 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
 
         $this->assertFalse($this->store->existsByRecordId($old));
         $this->assertFileExists($outside);
+    }
+
+    #[Test]
+    public function handlerRefreshesPrivateExitBeforeItsRetentionPeriodExpires(): void
+    {
+        $private = $this->createRunningRecord('private-exit');
+        file_put_contents($private['status'], '0');
+
+        ($this->task)();
+
+        $record = $this->store->fetchByRecordId($private['id']);
+        $this->assertNotNull($record);
+        $this->assertSame(BackgroundProcessStatusEnum::Finished, $record->status);
+        $this->assertEquals($this->now, $record->finishedAt);
+        $this->assertFileExists($private['log']);
+        Clock::set(new MockClock($this->now->modify('+6 minutes')));
+
+        ($this->task)();
+
+        $this->assertFalse($this->store->existsByRecordId($private['id']));
+        $this->assertFileDoesNotExist($private['log']);
     }
 
     #[Test]

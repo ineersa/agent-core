@@ -109,7 +109,9 @@ final class BgStatusTool implements HatfieldToolProviderInterface
         $processes = [];
         foreach ($entities as $entity) {
             $status = $entity->status->value;
-            if (BackgroundProcessStatusEnum::Finished === $entity->status
+            if (BackgroundProcessStatusEnum::Stopped === $entity->status && null === $entity->finishedAt) {
+                $status = 'stopping';
+            } elseif (BackgroundProcessStatusEnum::Finished === $entity->status
                 && null !== $entity->exitCode
                 && 0 !== $entity->exitCode
             ) {

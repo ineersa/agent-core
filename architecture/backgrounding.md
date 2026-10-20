@@ -16,8 +16,7 @@ sequenceDiagram
     participant Manager as BackgroundProcessManager
     participant Process as Owned shell process group
     participant Records as background_process and sidecars
-    participant Questions as ToolQuestionStore / runtime prompt adapter
-    participant Controller as ToolQuestionPoller
+    participant Controller as Session runtime command handler
     participant TUI
     actor User
 
@@ -33,29 +32,26 @@ sequenceDiagram
         Process->>Records: Exit code and final output
         Manager-->>Bash: Exact foreground outcome
         Bash-->>Model: Result
-    else Runs past prompt threshold
-        Bash->>Questions: Offer backgrounding, default threshold 15 seconds
-        Controller->>Questions: Poll pending tool question
-        Controller-->>TUI: Question for owning session
-        TUI-->>User: Continue in foreground or background?
-        User->>TUI: Decision
-        TUI->>Questions: Persist answer
-        Questions-->>Bash: User decision
-        alt User accepts
+    else User requests backgrounding with Ctrl+B
+        User->>TUI: Ctrl+B, select a command if several are eligible
+        TUI->>Controller: background_bash(run ID, record ID, tool-call ID)
+        Controller->>Manager: Request backgrounding for exact invocation
+        Manager->>Records: Set background_requested after eligibility checks
+        Bash->>Manager: Recheck completion before accepting request
+        alt Still running and eligible
             Bash->>Manager: Mark existing row backgrounded_at
             Manager->>Records: Publish accepted background ownership
-            Bash-->>Model: Background PID and log reference
-            Note over Process,Records: Same process continues, no second launch
-        else User declines
-            Bash->>Manager: Keep waiting under foreground supervision
-            Process->>Records: Eventual completion or stop outcome
+            Bash-->>Model: One original-call acknowledgment with PID and log reference
+            Note over Process,Records: Same process and original deadline continue
+        else Already finished
             Bash-->>Model: Foreground result
         end
     end
 ```
 
 There is no `bg_start` tool or model-set background flag. The user controls the
-transition. Foreground timeout/cancellation remains separate from `bg_status`.
+transition. Child-run Bash and directly entered shell commands cannot detach.
+Foreground timeout/cancellation remains separate from `bg_status`.
 
 ## Record state and visibility
 

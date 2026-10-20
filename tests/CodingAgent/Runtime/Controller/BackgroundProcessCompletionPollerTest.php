@@ -7,8 +7,12 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Event\PostLoadEventArgs;
 use Doctrine\ORM\Events;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -21,6 +25,7 @@ use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
@@ -30,9 +35,11 @@ use Ineersa\CodingAgent\Session\Event\RunOperationalProjectionControllerSessionL
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
+use Ineersa\CodingAgent\Tool\BgStatusTool;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Ineersa\SqliteQueue\Protocol\Frame;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -82,6 +89,23 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             public function __construct(
                 private array &$sentCommands,
             ) {
+            }
+
+            /** @return list<BashBackgroundCandidateDTO> */
+            public function foregroundBash(string $runId): array
+            {
+                return [];
+            }
+
+            /** @return list<never> */
+            public function backgroundProcesses(string $runId): array
+            {
+                return [];
+            }
+
+            public function stopBackgroundProcess(string $runId, int $recordId): bool
+            {
+                throw new \LogicException('Unexpected background stop.');
             }
 
             public function start(\Ineersa\CodingAgent\Runtime\Contract\StartRunRequest $request): \Ineersa\CodingAgent\Runtime\Contract\RunHandle
@@ -158,6 +182,118 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->rmDir($this->tmpDir);
 
         parent::tearDown();
+    }
+
+    #[TestWith(['stop'])]
+    #[TestWith(['natural'])]
+    #[TestWith(['failure'])]
+    #[TestWith(['already-finished'])]
+    public function testNativeStopAcknowledgmentDoesNotDuplicateCompletion(string $mode): void
+    {
+        $store = self::getContainer()->get(ProcessStore::class);
+        $config = $this->createBgConfig();
+        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $poller = null;
+        $logger = $this->createStub(LoggerInterface::class);
+        $logger->method('info')->willReturnCallback(static function (string $message) use (&$poller): void {
+            if ('background_process.stopped' === $message) {
+                // Poll after native exit but before stop() returns. Completion
+                // must already be quiet, not deferred until the final stop flush.
+                (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
+            }
+        });
+        $manager = new BackgroundProcessManager($store, $lifecycle, $config, $logger);
+        $poller = $this->createPoller($store, $manager, 'native-stop');
+        $fifo = $this->tmpDir.'/release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $release = fopen($fifo, 'r+b');
+        $this->assertIsResource($release);
+        try {
+            $exit = 'failure' === $mode ? 7 : 0;
+            $process = $manager->start('printf ready; read -r release < '.escapeshellarg($fifo).'; printf done; exit '.$exit, 'native-stop', 'call');
+            $manager->markBackgroundedForRecord($process->id, 'native-stop');
+            $record = $store->fetchByRecordId($process->id);
+            $this->assertNotNull($record);
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (!str_contains((string) file_get_contents($record->logPath), 'ready') && hrtime(true) < $deadline) {
+                $this->assertTrue($lifecycle->isAlive($process->pid));
+                usleep(10_000);
+            }
+            $this->assertStringContainsString('ready', (string) file_get_contents($record->logPath));
+            if ('stop' !== $mode) {
+                fwrite($release, "release\n");
+                $deadline = hrtime(true) + 2_000_000_000;
+                while (null === $lifecycle->readStatusFile($record->statusPath) && hrtime(true) < $deadline) {
+                    usleep(10_000);
+                }
+                $this->assertSame($exit, $lifecycle->readStatusFile($record->statusPath));
+            }
+            if (\in_array($mode, ['stop', 'already-finished'], true)) {
+                $accessor = new StackToolExecutionContextAccessor();
+                $tool = new BgStatusTool($manager, $config, $accessor);
+                $context = new ToolContext('native-stop', 0, 'stop-call', 'bg_status', new NullCancellationToken(), 30);
+                $result = $accessor->with($context, static fn () => $tool(new BgStatusArgumentsDTO(action: 'stop', pid: $process->pid)));
+                $this->assertStringContainsString('stop' === $mode ? 'stopped.' : 'had already finished.', $result);
+            }
+            $poller = $this->createPoller($store, $manager, 'native-stop');
+            (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
+            (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
+            $this->assertCount('stop' === $mode ? 0 : 1, $this->sentCommands);
+            $this->assertNotNull($store->fetchByRecordId($process->id)?->completionNotifiedAt);
+            $this->assertNotNull($manager->findByRecordId($process->id)?->finishedAt);
+            $this->assertStringContainsString('ready', $manager->readLogTail('native-stop', $process->pid)->content);
+            if ('stop' !== $mode) {
+                $this->assertStringContainsString('exit '.$exit, $this->sentCommands[0][1]->text ?? '');
+            }
+        } finally {
+            fclose($release);
+            $manager->shutdownCleanup();
+        }
+    }
+
+    public function testStaleCandidateCannotPublishAfterIndependentExplicitStop(): void
+    {
+        $store = self::getContainer()->get(ProcessStore::class);
+        $config = $this->createBgConfig();
+        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $owner = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
+        $other = new Kernel('test', true);
+        $other->boot();
+        try {
+            $process = $owner->start('sleep 60', 'stale-stop', 'call');
+            $owner->markBackgroundedForRecord($process->id, 'stale-stop');
+            $container = $other->getContainer()->get('test.service_container');
+            $em = $container->get(EntityManagerInterface::class);
+            $this->assertNotSame(self::getContainer()->get(EntityManagerInterface::class), $em);
+            $barrier = new class {
+                public function postLoad(PostLoadEventArgs $event): void
+                {
+                    if ($event->getObject() instanceof BackgroundProcess) {
+                        \Fiber::suspend($event->getObject());
+                    }
+                }
+            };
+            $otherStore = $container->get(ProcessStore::class);
+            $poller = $this->createPoller($otherStore, new BackgroundProcessManager($otherStore, $lifecycle, $config, new NullLogger()), 'stale-stop');
+            $em->getEventManager()->addEventListener([Events::postLoad], $barrier);
+            $fiber = new \Fiber(static fn () => (new \ReflectionMethod($poller, 'poll'))->invoke($poller));
+            try {
+                $stale = $fiber->start();
+            } finally {
+                $em->getEventManager()->removeEventListener([Events::postLoad], $barrier);
+            }
+            $this->assertInstanceOf(BackgroundProcess::class, $stale);
+            $this->assertNull($stale->completionNotifiedAt);
+            $owner->stop($process->pid, 'stale-stop');
+            $this->assertNull($stale->completionNotifiedAt, 'The suspended reader really holds stale notification state.');
+            $fiber->resume();
+            $this->assertTrue($fiber->isTerminated());
+            $this->assertSame([], $this->sentCommands);
+            $this->assertNotNull($stale->completionNotifiedAt);
+        } finally {
+            $owner->shutdownCleanup();
+            $other->shutdown();
+        }
     }
 
     public function testPollSendsFollowUpAndMarksNotified(): void
@@ -559,6 +695,119 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('PID 70001', $command->text ?? '');
     }
 
+    #[TestWith(['list'])]
+    #[TestWith(['log'])]
+    public function testIndependentReaderPreservesTimeoutCauseBeforeOwnerPoll(string $read): void
+    {
+        $store = self::getContainer()->get(ProcessStore::class);
+        $config = $this->createBgConfig();
+        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $owner = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
+        $fifo = $this->tmpDir.'/timeout-cleanup';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $release = fopen($fifo, 'r+b');
+        $this->assertIsResource($release);
+        $otherKernel = new Kernel('test', true);
+        $otherKernel->boot();
+        try {
+            $otherContainer = $otherKernel->getContainer()->get('test.service_container');
+            $this->assertNotSame(self::getContainer()->get(EntityManagerInterface::class), $otherContainer->get(EntityManagerInterface::class));
+            $otherStore = $otherContainer->get(ProcessStore::class);
+            $reader = new BackgroundProcessManager($otherStore, $lifecycle, $config, new NullLogger());
+            $cleanup = 'IFS= read -r release < '.escapeshellarg($fifo).'; printf cleaned; exit 0';
+            $command = 'trap '.escapeshellarg($cleanup).' TERM; : > '.escapeshellarg($this->tmpDir.'/ready').'; while :; do sleep 0.05; done';
+            $process = $owner->start($command, 'timeout-run', 'timeout-call', hrtime(true) - 1);
+            $owner->markBackgroundedForRecord($process->id, 'timeout-run');
+            $record = $store->fetchByRecordId($process->id);
+            $this->assertNotNull($record);
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (!is_file($this->tmpDir.'/ready') && hrtime(true) < $deadline) {
+                $this->assertTrue($lifecycle->isAlive($process->pid));
+                usleep(10_000);
+            }
+            $this->assertFileExists($this->tmpDir.'/ready');
+            // Stop the independent read after hydration, not before its query:
+            // its managed copy must still say Running when timeout commits.
+            $barrier = new class($process->id) {
+                public function __construct(private readonly int $id)
+                {
+                }
+
+                public function postLoad(PostLoadEventArgs $event): void
+                {
+                    $entity = $event->getObject();
+                    if ($entity instanceof BackgroundProcess && $entity->id === $this->id) {
+                        \Fiber::suspend($entity);
+                    }
+                }
+            };
+            $events = $otherContainer->get(EntityManagerInterface::class)->getEventManager();
+            $events->addEventListener([Events::postLoad], $barrier);
+            $readTask = new \Fiber(static fn () => 'list' === $read ? $reader->list('timeout-run') : $reader->readLogTail('timeout-run', $process->pid));
+            try {
+                $independent = $readTask->start();
+            } finally {
+                $events->removeEventListener([Events::postLoad], $barrier);
+            }
+            $this->assertInstanceOf(BackgroundProcess::class, $independent);
+            $this->assertNotSame($record, $independent, 'The reader must hydrate its own ORM object.');
+            $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status);
+            $this->assertNull($independent->finishedAt);
+            $owner->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished('timeout-run'));
+            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $store->fetchByRecordId($process->id)?->status);
+            $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status, 'Timeout must not refresh the suspended reader.');
+            $this->assertSame(8, fwrite($release, "release\n"));
+            $deadline = hrtime(true) + 2_000_000_000;
+            while (null === $lifecycle->readStatusFile($record->statusPath) && hrtime(true) < $deadline) {
+                usleep(10_000);
+            }
+            $this->assertSame(0, $lifecycle->readStatusFile($record->statusPath), 'TERM cleanup really exits successfully.');
+            $readTask->resume();
+            $this->assertTrue($readTask->isTerminated());
+            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $independent->status);
+            $persisted = $store->fetchByRecordId($process->id);
+            $this->assertNotNull($persisted);
+            $this->assertNotNull($persisted->finishedAt);
+            $this->assertSame(0, $persisted->exitCode);
+            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $persisted->status);
+            $this->assertFalse($persisted->stoppedByUser);
+            $owner->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished('timeout-run'));
+            $grace = new \ReflectionProperty($owner, 'timeoutGraceDeadlines');
+            $this->assertSame([], $grace->getValue($owner));
+            $poller = $this->createPoller($store, $owner, 'timeout-run');
+            (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
+            $this->assertCount(1, $this->sentCommands);
+            $this->assertStringContainsString('finished (exit stopped)', $this->sentCommands[0][1]->text ?? '');
+            $this->assertStringContainsString('cleaned', $this->sentCommands[0][1]->text ?? '');
+        } finally {
+            fclose($release);
+            $owner->shutdownCleanup();
+            $otherKernel->shutdown();
+        }
+    }
+
+    public function testZeroGraceTimeoutSettlesInTheSameRefresh(): void
+    {
+        $store = self::getContainer()->get(ProcessStore::class);
+        $config = new BackgroundProcessConfig(storageDir: $this->tmpDir, stopGraceSeconds: 0);
+        $manager = new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger()), $config, new NullLogger());
+        $process = $manager->start('sleep 10', 'test-poller-run', 'zero-grace-call', hrtime(true) - 1);
+        try {
+            $manager->markBackgroundedForRecord($process->id, 'test-poller-run');
+            $poller = $this->createPoller($store, $manager);
+            (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
+            $record = $store->fetchByRecordId($process->id);
+            $this->assertNotNull($record);
+            $this->assertNotNull($record->finishedAt);
+            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $record->status);
+            $this->assertFalse($record->stoppedByUser);
+            $this->assertCount(1, $this->sentCommands);
+            $this->assertStringContainsString('exit stopped', $this->sentCommands[0][1]->text ?? '');
+        } finally {
+            $manager->shutdownCleanup();
+        }
+    }
+
     #[TestWith([0])]
     #[TestWith([100])]
     public function testEmptyOwnedTreeUsesOneCandidateSelect(int $children): void
@@ -630,6 +879,9 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertSame($expectedDeliveries, $published);
         $queries = array_filter($logger->records, static fn (array $record): bool => str_contains($record['context']['sql'] ?? '', 'session_id IN'));
         $this->assertCount(1, $queries);
+        $causeReads = array_filter($logger->records, static fn (array $record): bool => str_starts_with($record['context']['sql'] ?? '', 'SELECT')
+            && str_contains($record['context']['sql'], 'status = ?'));
+        $this->assertCount($complete && $count > 0 ? 1 : 0, $causeReads, 'Terminal causes use one batched read, not one read per candidate or delivery.');
         $this->assertSame($expectedDeliveries, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM background_process WHERE completion_notified_at IS NOT NULL'));
         $this->assertSame($complete ? 0 : $count, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM background_process WHERE finished_at IS NULL'));
     }

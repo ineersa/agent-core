@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -202,8 +201,6 @@ PHP);
                     cancellationToken: new NullCancellationToken(),
                     timeoutSeconds: 1,
                     orderIndex: 0,
-                    executionMode: ToolExecutionMode::Sequential,
-                    batchToolCallCount: 1,
                     humanInputAnswer: null,
                     stepId: 'code-mode-bridge-test-step',
                     parentModel: null,
@@ -303,8 +300,6 @@ PHP);
                 cancellationToken: new NullCancellationToken(),
                 timeoutSeconds: 5,
                 orderIndex: 0,
-                executionMode: ToolExecutionMode::Sequential,
-                batchToolCallCount: 1,
                 humanInputAnswer: null,
                 stepId: 'code-mode-bridge-test-step',
                 parentModel: null,
@@ -669,8 +664,6 @@ PHP);
                 cancellationToken: new NullCancellationToken(),
                 timeoutSeconds: $parentTimeoutSeconds,
                 orderIndex: 0,
-                executionMode: ToolExecutionMode::Sequential,
-                batchToolCallCount: 1,
                 humanInputAnswer: null,
                 stepId: 'code-mode-bridge-test-step',
                 parentModel: null,

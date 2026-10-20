@@ -22,8 +22,7 @@ use function Symfony\Component\String\u;
 /**
  * Polls for completed background processes that should notify the user.
  *
- * When a bash command is explicitly moved to background (user accepted
- * the prompt), the process continues running in its own session. Once
+ * When a bash command is explicitly moved to background (user requested detachment), the process continues running in its own session. Once
  * it finishes, this poller:
  * 1. Detects the completed process (backgroundedAt set, finishedAt now set)
  * 2. Reads the log tail (capped at 3000 chars, matching pi bg-process.ts)
@@ -34,7 +33,7 @@ use function Symfony\Component\String\u;
  * 5. Marks completionNotifiedAt to prevent re-notification
  *
  * Only processes explicitly backgrounded by the user through the
- * background prompt trigger this notification — foreground commands
+ * background shortcut trigger this notification — foreground commands
  * that completed normally are handled by BashTool's own loop and
  * never reach this poller.
  *
@@ -257,6 +256,12 @@ final class BackgroundProcessCompletionPoller
                 'process_pid' => $pid,
                 'run_id' => $sessionId,
             ]);
+        }
+
+        // The log lookup refreshes this managed record by immutable ID. An
+        // explicit stop may have acknowledged it since candidate hydration.
+        if (null !== $process->completionNotifiedAt) {
+            return;
         }
 
         // Build notification message matching pi's bg-process.ts format.

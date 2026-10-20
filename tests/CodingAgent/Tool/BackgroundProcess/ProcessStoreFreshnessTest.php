@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\TestWith;
 
 /**
  * Background-process reads must observe committed mutable fields without
@@ -137,6 +138,53 @@ final class ProcessStoreFreshnessTest extends IsolatedKernelTestCase
         $this->assertIsArray($row);
         $this->assertSame('sleep 2 --external', $row['command']);
         $this->assertSame(7, (int) $row['exit_code']);
+    }
+
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testTerminalFlushPreservesStopCauseAndUnrelatedFields(bool $unclean): void
+    {
+        $id = $this->store->insertRecord([
+            'pid' => 7272,
+            'pgid' => 7272,
+            'session_id' => 'stale-terminal-reader',
+            'tool_call_id' => 'original-call',
+            'command' => 'original command',
+            'log_path' => '/tmp/stale-reader.log',
+            'status_path' => '/tmp/stale-reader.status',
+            'started_at' => new \DateTimeImmutable('2026-10-19 12:00:00'),
+        ]);
+        $entity = $this->store->fetchByRecordId($id);
+        $this->assertNotNull($entity);
+        $this->assertSame(BackgroundProcessStatusEnum::Running, $entity->status);
+        $this->connection->executeStatement(
+            'UPDATE background_process SET status = :status, background_requested = 1, stopped_by_user = 1 WHERE id = :id',
+            ['status' => BackgroundProcessStatusEnum::Stopped->value, 'id' => $id],
+        );
+        $finishedAt = new \DateTimeImmutable('2026-10-19 12:01:00');
+        if ($unclean) {
+            $entity->markFinishedUnclean($finishedAt);
+        } else {
+            $entity->finish(0, $finishedAt);
+        }
+        $entity->command = 'pending command edit';
+        $this->store->flush();
+
+        $this->assertSame(BackgroundProcessStatusEnum::Stopped, $entity->status);
+        $this->assertSame($entity, $this->store->fetchByRecordId($id));
+        $this->assertTrue($this->entityManager->contains($entity));
+        $this->assertSame($finishedAt->format('c'), $entity->finishedAt?->format('c'));
+        $this->assertSame($unclean ? null : 0, $entity->exitCode);
+        $this->assertTrue($entity->backgroundRequested);
+        $this->assertTrue($entity->stoppedByUser);
+        $this->assertSame('pending command edit', $entity->command);
+        $this->assertSame(7272, $entity->pid);
+        $this->assertSame(7272, $entity->pgid);
+        $this->assertSame('stale-terminal-reader', $entity->sessionId);
+        $this->assertSame('original-call', $entity->toolCallId);
+        $this->assertSame('/tmp/stale-reader.log', $entity->logPath);
+        $this->assertSame('/tmp/stale-reader.status', $entity->statusPath);
+        $this->assertNull($entity->completionNotifiedAt);
     }
 
     #[Test]

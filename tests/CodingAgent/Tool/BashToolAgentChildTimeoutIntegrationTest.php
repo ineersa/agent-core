@@ -11,24 +11,19 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
-use Ineersa\CodingAgent\Entity\ToolQuestion;
-use Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BashTool;
-use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 
 /**
- * Production DI proof: agent_child Bash never creates a background ToolQuestion,
- * and the requested Bash timeout still resolves through the wired
- * RuntimeBashBackgroundPromptAdapter path.
+ * Production DI proof: child Bash stays foreground and honors its requested timeout.
  *
  * @requires extension pdo_sqlite
  * @requires OS Linux
  */
 final class BashToolAgentChildTimeoutIntegrationTest extends IsolatedKernelTestCase
 {
-    public function testAgentChildTimeoutResolvesWithoutToolQuestion(): void
+    public function testAgentChildForegroundTimeoutResolves(): void
     {
         $childRunId = 'agent-child-bash-di-'.bin2hex(random_bytes(4));
 
@@ -72,8 +67,6 @@ final class BashToolAgentChildTimeoutIntegrationTest extends IsolatedKernelTestC
         $bashTool = self::getContainer()->get(BashTool::class);
         /** @var StackToolExecutionContextAccessor $accessor */
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        /** @var ToolQuestionStoreInterface $questionStore */
-        $questionStore = self::getContainer()->get(ToolQuestionStoreInterface::class);
 
         $cancelToken = $this->createStub(CancellationTokenInterface::class);
         $cancelToken->method('isCancellationRequested')->willReturn(false);
@@ -101,12 +94,5 @@ final class BashToolAgentChildTimeoutIntegrationTest extends IsolatedKernelTestC
         $this->assertStringNotContainsString('Command moved to background', $result);
         $this->assertGreaterThanOrEqual(900, $elapsedMs);
         $this->assertLessThan(4000, $elapsedMs, 'DI child bash must honor BashArgumentsDTO timeout without HITL wait');
-
-        $pending = array_values(array_filter(
-            $questionStore->findUnemittedPendingQuestions(),
-            static fn (ToolQuestion $q): bool => $q->runId === $childRunId
-                && ToolQuestionStatusEnum::Pending === $q->status,
-        ));
-        $this->assertSame([], $pending, 'agent_child must never create a background ToolQuestion');
     }
 }

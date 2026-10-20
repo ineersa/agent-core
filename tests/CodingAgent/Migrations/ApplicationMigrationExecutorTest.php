@@ -45,6 +45,16 @@ final class ApplicationMigrationExecutorTest extends TestCase
 
         $executor();
 
+        $processColumns = $connection->createSchemaManager()->listTableColumns('background_process');
+        $this->assertArrayHasKey('tool_call_id', $processColumns);
+        $this->assertArrayHasKey('background_requested', $processColumns);
+        $this->assertArrayHasKey('deadline_nanoseconds', $processColumns);
+        $this->assertFalse($connection->createSchemaManager()->tablesExist(['tool_question']));
+        $this->assertSame(1, (int) $connection->fetchOne(
+            'SELECT COUNT(*) FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20261019185942'],
+        ));
+
         $this->assertFalse(
             $connection->createSchemaManager()->tablesExist(['messenger_messages']),
             'messenger_messages must not be created on the default app connection (queues use sqlite-queue)',

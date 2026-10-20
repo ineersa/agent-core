@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
@@ -147,6 +148,36 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $this->assertArrayHasKey('processes', $data);
         $this->assertEmpty($data['processes']);
         $this->assertArrayHasKey('hint', $data);
+    }
+
+    public function testListDistinguishesStoppingFromStopped(): void
+    {
+        $fifo = $this->tmpDir.'/release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $release = fopen($fifo, 'r+b');
+        $this->assertIsResource($release);
+        try {
+            $process = $this->manager->start('IFS= read -r release < '.escapeshellarg($fifo), self::TEST_SESSION);
+            $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
+            $store = self::getContainer()->get(ProcessStore::class);
+            $entity = $store->fetchByRecordId($process->id);
+            $this->assertNotNull($entity);
+            $entity->status = BackgroundProcessStatusEnum::Stopped;
+            $store->flush();
+
+            $data = Toon::decode($this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list'))));
+            $this->assertSame('stopping', $data['processes'][0]['status']);
+            $this->assertNull($entity->finishedAt);
+            $this->assertSame(8, fwrite($release, "release\n"));
+            $this->waitUntilFinished($process->pid);
+
+            $data = Toon::decode($this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list'))));
+            $this->assertSame('stopped', $data['processes'][0]['status']);
+            $this->assertSame(0, $data['processes'][0]['exit_code']);
+            $this->assertNotNull($entity->finishedAt);
+        } finally {
+            fclose($release);
+        }
     }
 
     /* ── log action ── */
