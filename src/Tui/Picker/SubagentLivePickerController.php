@@ -69,6 +69,9 @@ final class SubagentLivePickerController
             return;
         }
 
+        $rootRunId = $this->state->handle->runId ?? $this->state->sessionId;
+        $snapshot = $this->client->backgroundWork($rootRunId);
+        $this->state->subagentLiveCatalog->synchronizeOperationalStatus($snapshot->children);
         $children = $this->state->subagentLiveCatalog->all();
         if ([] === $children) {
             $screen = $this->screen;
@@ -130,6 +133,9 @@ final class SubagentLivePickerController
             $task = PickerListLabelFormatter::sanitizeTitle($child->taskSummary);
             $task = u($task)->truncate(48, '...')->toString();
             $statusLabel = $child->needsAttention() ? '⚠ needs input' : $child->statusLabel();
+            if ($child->backgrounded) {
+                $statusLabel .= ', backgrounded';
+            }
             $runShort = \strlen($child->agentRunId) > 12 ? substr($child->agentRunId, 0, 12).'…' : $child->agentRunId;
             $label = \sprintf('%s [%s] %s run:%s — %s', $child->agentName, $statusLabel, $child->artifactId, $runShort, $task);
             $ctxFormatted = ContextUsageFormatter::format($child->model, $child->latestInputTokens, $child->contextWindow);

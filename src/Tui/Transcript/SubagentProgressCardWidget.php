@@ -31,6 +31,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
         private readonly SubagentProgressSnapshotInterface $progress,
         private readonly bool $streaming = false,
         private readonly ?string $expandHandoffHint = null,
+        private readonly bool $backgrounded = false,
     ) {
     }
 
@@ -160,7 +161,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
         $status = $this->normalizeStatus($progress->status);
         $completed = $progress->completedCount;
         $total = max($progress->totalCount, 1);
-        $lines = [\sprintf('parallel subagents (%d/%d completed)', $completed, $total)];
+        $lines = [\sprintf('parallel subagents (%d/%d completed)%s', $completed, $total, $this->backgrounded ? ' [backgrounded]' : '')];
 
         $childrenByIndex = [];
         foreach ($progress->children as $child) {
@@ -206,7 +207,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
         $badge = $this->statusBadgeLabel($status);
         $glyph = $this->statusGlyph($status);
         $prefix = null === $childIndex ? '' : \sprintf('#%d ', $childIndex);
-        $parts = [\sprintf('%s%s %s [%s]', $prefix, $glyph, $agentName, $badge)];
+        $parts = [\sprintf('%s%s %s [%s%s]', $prefix, $glyph, $agentName, $badge, $this->backgrounded ? ', backgrounded' : '')];
 
         if (null !== $progress->cacheReadHitPercentage) {
             $parts[] = \sprintf('↻ %.0f%%', $progress->cacheReadHitPercentage);

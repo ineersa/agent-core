@@ -63,7 +63,7 @@ final readonly class BackgroundChildInvocationHandler implements RunMessageHandl
             return new HandlerResult(postCommitActions: [new DeliverDeferredSubagentBatchLifecycleMessage($batch->lifecycleId)]);
         }
         $identities = array_map(static fn ($child): string => \sprintf('%s (agent_id: %s, run_id: %s)', $child->agentName, $child->artifactId, $child->childRunId), $batch->children);
-        $ack = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => "Child invocation moved to background. The same children keep running under their original deadline. Their aggregate handoff will arrive as a follow-up.\n".implode("\n", $identities)]], null, false, null);
+        $ack = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => "Child invocation moved to background. The same children keep running under their original deadline. Their aggregate handoff will arrive as a follow-up.\n".implode("\n", $identities)]], ['backgrounded' => true], false, null);
         $result = $this->results->handle($ack, $state);
 
         // Reuse the canonical result/batch transition and its recoverable actions.

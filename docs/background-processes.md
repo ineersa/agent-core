@@ -23,8 +23,8 @@ The same children continue under their original deadlines and cancellation super
 A parallel subagent call remains one invocation: its aggregate handoff arrives as a
 follow-up after all children settle, not as a second result for the original tool call.
 `agent_resume` invocations do not support detachment. Use `agent_retrieve` for existing
-artifact details and handoff history. `/bg` and `bg_status` continue to list Bash processes,
-not child invocations.
+artifact details and handoff history. The transcript card is marked backgrounded once,
+then remains frozen. Open `/agents-live` for current child status, inspection or steering.
 
 A child can also background its own Bash tool. If a completion reaches an active owner,
 it uses that owner's existing follow-up mailbox. If the owner has finished or is cancelling,
@@ -32,16 +32,22 @@ the completion goes to the root parent instead. The forwarded note identifies th
 child's name, agent/artifact ID and run ID. It never resumes the child or rewrites a completed
 handoff. The parent can explicitly use `agent_resume` if more child work is needed.
 
-## Background process picker: `/bg`
+## Background work picker: `/bg`
 
-The picker lists accepted unfinished jobs for the visible session, with command, PID,
-elapsed seconds and status. Jobs in termination grace appear as `stopping`.
-Select a job and press Enter to open a Yes/No stop confirmation, defaulting to No.
+Run `/bg` from the main view. It lists detached child invocations and accepted unfinished
+Bash jobs owned by the root session, including its children. Entries identify the owning
+agent and run. Bash entries also show command, PID and elapsed seconds; jobs in termination
+grace appear as `stopping`. `bg_status` remains a Bash-only tool scoped to its current run.
+Select work and press Enter to open a Yes/No cancellation confirmation, defaulting to No.
 Escape returns to the original list; Escape again closes it. Confirming Yes closes
-the picker and requests a stop of the exact selected record without waiting for exit.
+the picker and requests a native stop or child run cancellation without waiting for exit.
 The terminal remains responsive during grace. The controller observes exit or escalates
 to KILL, even if the caller dies. Reopen `/bg` to inspect the current status.
-Listing and stopping do not call the model.
+Opening the picker does not call the model.
+
+The status panel shows cancellation requested until operational state confirms the outcome.
+The terminal notice clears on the next nonempty submission. Unavailable records do not
+count as confirmed termination. Quiet explicit Bash stops do not generate a model follow-up.
 
 The list is a snapshot fetched once on opening. It never refreshes while open, even
 after confirmation cancellation or process events. Reopen `/bg` for a fresh snapshot.

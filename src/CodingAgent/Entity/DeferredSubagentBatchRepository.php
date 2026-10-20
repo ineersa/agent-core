@@ -79,6 +79,25 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         );
     }
 
+    /** @return list<array<string, mixed>> */
+    public function findOwnedChildStatuses(string $rootRunId): array
+    {
+        // Child launches are top-level only. Read their operational status in
+        // one query, independently of the already-settled parent tool call.
+        return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<'SQL'
+            SELECT batch.lifecycle_id, batch.backgrounded_at,
+                child.child_run_id, child.artifact_id, child.agent_name, child.task,
+                child.launch_model, child.launch_reasoning,
+                COALESCE(child.terminal_status, state.status,
+                    json_extract(child.child_lifecycle_projection, '$.child_status'), 'queued') AS status
+            FROM deferred_subagent_batch batch
+            JOIN deferred_subagent_child child ON child.batch_lifecycle_id = batch.lifecycle_id
+            LEFT JOIN run_operational_state state ON state.run_id = child.child_run_id
+            WHERE batch.parent_run_id = :root
+            ORDER BY batch.id, child.batch_index
+            SQL, ['root' => $rootRunId]);
+    }
+
     public function hasLaunchedPendingParentToolCall(string $parentRunId, int $parentTurnNo, string $parentToolCallId): bool
     {
         $batch = $this->findByParentRunAndToolCall($parentRunId, $parentToolCallId);

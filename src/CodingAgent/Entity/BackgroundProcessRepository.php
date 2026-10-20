@@ -20,6 +20,26 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
         parent::__construct($registry, BackgroundProcess::class);
     }
 
+    /** @return list<array<string, mixed>> */
+    public function findOwnedBackgroundWork(string $rootRunId, ?int $observedRecordId): array
+    {
+        // Finished history is not loaded into the picker. A pending UI action
+        // may additionally observe its exact retained row until native settlement.
+        return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<'SQL'
+            SELECT process.id, process.pid, process.command, process.session_id,
+                process.status, process.finished_at, process.started_at
+            FROM background_process process
+            WHERE process.backgrounded_at IS NOT NULL
+                AND (process.finished_at IS NULL OR process.id = :observed)
+                AND (process.session_id = :root OR process.session_id IN (
+                    SELECT child.child_run_id FROM deferred_subagent_child child
+                    JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
+                    WHERE batch.parent_run_id = :root
+                ))
+            ORDER BY process.id
+            SQL, ['root' => $rootRunId, 'observed' => $observedRecordId]);
+    }
+
     /**
      * Check whether a row exists for the given PID.
      *

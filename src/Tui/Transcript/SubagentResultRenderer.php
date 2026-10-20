@@ -85,6 +85,7 @@ final readonly class SubagentResultRenderer
             progress: $progress,
             streaming: $block->streaming,
             expandHandoffHint: $expandHandoffHint,
+            backgrounded: true === ($block->meta['backgrounded'] ?? false),
         ));
 
         if ($isError && '' !== trim($resultText)) {

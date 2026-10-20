@@ -220,7 +220,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $blockId = 'tool_result_'.$toolCallId;
         $block = $state->getBlock($blockId);
 
-        if (null === $block) {
+        if (null === $block || true === ($block->meta['backgrounded'] ?? false)) {
             return;
         }
 
@@ -258,6 +258,11 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
 
         $existing = $state->getBlock($blockId);
 
+        // Background acknowledgment already froze this historical card.
+        if (true === ($existing?->meta['backgrounded'] ?? false)) {
+            return;
+        }
+
         // Non-empty completion result wins over accumulated progress text.
         // Empty canonical tool_execution_end must preserve useful progress
         // output (e.g. subagent deltas) and only fall back to tool-name label
@@ -285,6 +290,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $meta = [
             'tool_call_id' => $toolCallId,
             'is_error' => false,
+            'backgrounded' => true === ($p['backgrounded'] ?? false),
             ...$this->terminalTimingMeta($p, $existing),
         ];
         if ('' !== $result) {
@@ -320,6 +326,9 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $blockId = 'tool_result_'.$toolCallId;
 
         $existing = $state->getBlock($blockId);
+        if (true === ($existing?->meta['backgrounded'] ?? false)) {
+            return;
+        }
         $meta = [
             'tool_call_id' => $toolCallId,
             'is_error' => true,
@@ -356,6 +365,10 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $blockId = 'tool_result_'.$toolCallId;
         $timedOut = (bool) ($p['timed_out'] ?? false);
+
+        if (true === ($state->getBlock($blockId)?->meta['backgrounded'] ?? false)) {
+            return;
+        }
 
         $meta = [
             ...($state->getBlock($blockId)->meta ?? []),

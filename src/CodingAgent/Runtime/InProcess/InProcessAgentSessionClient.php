@@ -18,8 +18,9 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
+use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundProcessDTO;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
@@ -74,6 +75,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly BashBackgroundRequestService $backgroundRequests,
         private readonly BackgroundProcessManager $backgroundProcesses,
         private readonly ChildInvocationBackgroundService $childBackground,
+        private readonly BackgroundWorkSnapshotProvider $backgroundWork,
         private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore $bootstrapSpools,
         private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer $bootstrapTransfer,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
@@ -99,31 +101,17 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         return $this->childBackground->candidates($runId);
     }
 
+    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
+    {
+        return $this->backgroundWork->snapshot($rootRunId, $observedProcessId);
+    }
+
     public function foregroundBash(string $runId): array
     {
         return array_map(
             static fn ($process): BashBackgroundCandidateDTO => new BashBackgroundCandidateDTO($process->id, (string) $process->toolCallId, $process->pid),
             $this->backgroundProcesses->foregroundTools($runId),
         );
-    }
-
-    public function backgroundProcesses(string $runId): array
-    {
-        $snapshot = [];
-        foreach ($this->backgroundProcesses->list($runId, unfinishedOnly: true) as $process) {
-            // Native status resolution may have finished a selected row meanwhile.
-            if (null === $process->finishedAt) {
-                $snapshot[] = new BackgroundProcessDTO(
-                    $process->id,
-                    $process->pid,
-                    $process->command,
-                    $process->startedAt,
-                    'stopped' === $process->status->value ? 'stopping' : $process->status->value,
-                );
-            }
-        }
-
-        return $snapshot;
     }
 
     public function stopBackgroundProcess(string $runId, int $recordId): bool
