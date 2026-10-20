@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
@@ -393,6 +394,16 @@ final class MarkCompletedFailsOnceRepository implements DeferredToolCompletionRe
     public function status(string $deferredId): ?string
     {
         return $this->inner->status($deferredId);
+    }
+
+    public function statusForRunAndToolCall(string $runId, string $toolCallId): ?string
+    {
+        return $this->inner->statusForRunAndToolCall($runId, $toolCallId);
+    }
+
+    public function findMetadataByDeferredId(string $deferredId): ?DeferredToolCompletionMetadataDTO
+    {
+        return $this->inner->findMetadataByDeferredId($deferredId);
     }
 
     public function markCompleted(string $deferredId): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract\Tool;
 
+use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 
 /**
@@ -23,6 +24,9 @@ interface DeferredToolCompletionRepositoryInterface
     public function statusForRunAndToolCall(string $runId, string $toolCallId): ?string;
 
     public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation;
+
+    /** Read and validate stored correlation identity without opening its body. */
+    public function findMetadataByDeferredId(string $deferredId): ?DeferredToolCompletionMetadataDTO;
 
     /**
      * @return 'completed'|'pending'|null

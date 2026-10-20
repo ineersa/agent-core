@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
@@ -13,13 +14,20 @@ use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
+use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Exception\DelayedMessageHandlingException;
+use Symfony\Component\Messenger\Exception\EnvelopeAwareExceptionInterface;
+use Symfony\Component\Messenger\Exception\HandlerFailedException;
+use Symfony\Component\Messenger\Exception\ValidationFailedException as MessageValidationFailedException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
 use Symfony\Component\Messenger\Middleware\StackInterface;
+use Symfony\Component\Messenger\Stamp\AckStamp;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
@@ -37,6 +45,7 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
         private ValidatorInterface $validator,
         private MessageBusInterface $commandBus,
         private LoggerInterface $logger,
+        private CompleteDeferredToolCallHandler $deferredHandler,
     ) {
     }
 
@@ -56,16 +65,15 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
             $this->validate($message);
             $body = $this->locks->synchronized($message->runId(), function () use ($message, $received): ExecuteToolCall|ExecuteShellToolCall|ToolCallResult|CompleteDeferredToolCall|null {
                 if (null !== $message->deferredId) {
-                    if ('pending' !== $this->deferred->status($message->deferredId)) {
+                    $metadata = $this->deferredMetadata($message->deferredId);
+                    $this->assertDeferredReference($metadata, $message->reference);
+                    if ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, 'run_control' === $received->getTransportName())) {
+                        $ref = $metadata->reference;
+                        $this->deferredHandler->settle($metadata->deferredId, $ref->runId, $ref->turnNo, $ref->stepId);
+
                         return null;
                     }
-                    $correlation = $this->deferred->findByDeferredId($message->deferredId);
-                    $ref = $message->reference;
-                    if (null === $correlation || $correlation->runId !== $ref->runId || $correlation->turnNo !== $ref->turnNo || $correlation->stepId !== $ref->stepId || $correlation->toolCallId !== $ref->toolCallId || $correlation->attempt !== $ref->attempt || $correlation->idempotencyKey !== $ref->idempotencyKey || 'result' !== $ref->kind) {
-                        throw new ToolPayloadException('Deferred completion reference has a different correlation.');
-                    }
-                }
-                if (!$this->admission->accepts($message->reference, 'run_control' === $received->getTransportName())) {
+                } elseif (!$this->admission->accepts($message->reference, 'run_control' === $received->getTransportName())) {
                     return null;
                 }
                 try {
@@ -120,7 +128,23 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
                 return $envelope->with(new HandledStamp(null, self::class));
             }
 
-            return $stack->next()->handle(new Envelope($body, array_merge(...array_values($envelope->all()))), $stack);
+            $hydrated = new Envelope($body, array_merge(...array_values($envelope->all())));
+            if (null !== $ack = $envelope->last(AckStamp::class)) {
+                // Batch handlers may acknowledge before returning to this bus.
+                // The worker always tracks the original reference object.
+                $hydrated = $hydrated->withoutAll(AckStamp::class)->with(new AckStamp(
+                    fn (Envelope $handled, ?\Throwable $error = null) => $ack->ack(
+                        $this->restoreReference($handled, $envelope),
+                        null === $error ? null : $this->restoreException($error, $envelope),
+                    ),
+                ));
+            }
+            try {
+                return $this->restoreReference($stack->next()->handle($hydrated, $stack), $envelope);
+            } catch (EnvelopeAwareExceptionInterface $exception) {
+                // Native retry listeners resend the exception's envelope directly.
+                throw $this->restoreException($exception, $envelope);
+            }
         }
         if ($message instanceof ToolPayloadMessage) {
             // Repair/redelivery may already hold a sealed reference. Do not
@@ -132,21 +156,9 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
         if (!$message instanceof ExecuteToolCall && !$message instanceof ExecuteShellToolCall && !$message instanceof ToolCallResult && !$message instanceof CompleteDeferredToolCall) {
             return $stack->next()->handle($envelope, $stack);
         }
-        $deferredId = null;
-        if ($message instanceof CompleteDeferredToolCall) {
-            $deferredId = $message->deferredId;
-            if ('completed' === $this->deferred->status($deferredId)) {
-                return $envelope->with(new HandledStamp(null, self::class));
-            }
-            $correlation = $this->deferred->findByDeferredId($deferredId);
-            if (null === $correlation) {
-                throw new ToolPayloadException('Deferred completion has no registered correlation.');
-            }
-            // Store the final result data once. The deferred handler's subsequent
-            // ordinary result dispatch and SQL collection reuse this same digest.
-            $message = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, $message->content, $message->details, $message->isError, $message->error);
-        }
-        $reference = $this->locks->synchronized($message->runId(), fn () => $this->admission->canPublish($message) ? $this->payloads->publish($message) : null);
+        $deferredId = $message instanceof CompleteDeferredToolCall ? $message->deferredId : null;
+        $reference = $message instanceof CompleteDeferredToolCall ? $this->publishDeferred($message)
+            : $this->locks->synchronized($message->runId(), fn () => $this->admission->canPublish($message) ? $this->payloads->publish($message) : null);
         if (null === $reference) {
             return $envelope->with(new HandledStamp(null, self::class));
         }
@@ -155,6 +167,85 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
         // Sending remains outside the run lock. Cleanup can race the send, but
         // the receiver checks existing admission before requiring the file.
         return $stack->next()->handle($this->route(new Envelope($transported, array_merge(...array_values($envelope->all()))), $transported), $stack);
+    }
+
+    private function publishDeferred(CompleteDeferredToolCall $message): ?ToolPayloadReferenceDTO
+    {
+        $initial = $this->deferredMetadata($message->deferredId);
+
+        return $this->locks->synchronized($initial->reference->runId, function () use ($message, $initial): ?ToolPayloadReferenceDTO {
+            $metadata = $this->deferredMetadata($message->deferredId);
+            $this->assertDeferredReference($metadata, $initial->reference);
+            if ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, false)) {
+                $ref = $metadata->reference;
+                $this->deferredHandler->settle($metadata->deferredId, $ref->runId, $ref->turnNo, $ref->stepId);
+
+                return null;
+            }
+            // Only active completions require retained correlation data. Keep
+            // the pending marker until the handler's normal result send succeeds.
+            $correlation = $this->deferred->findByDeferredId($message->deferredId);
+            if (null === $correlation) {
+                throw new ToolPayloadException('Active deferred completion has no registered correlation.');
+            }
+            $result = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, $message->content, $message->details, $message->isError, $message->error);
+
+            return $this->payloads->publish($result);
+        });
+    }
+
+    private function deferredMetadata(string $deferredId): DeferredToolCompletionMetadataDTO
+    {
+        return $this->deferred->findMetadataByDeferredId($deferredId)
+            ?? throw new ToolPayloadException('Deferred completion has no registered correlation.');
+    }
+
+    private function assertDeferredReference(DeferredToolCompletionMetadataDTO $metadata, ToolPayloadReferenceDTO $reference): void
+    {
+        $stored = $metadata->reference;
+        if ([$stored->runId, $stored->turnNo, $stored->stepId, $stored->attempt, $stored->idempotencyKey, $stored->toolCallId, $stored->orderIndex, $stored->toolName]
+            !== [$reference->runId, $reference->turnNo, $reference->stepId, $reference->attempt, $reference->idempotencyKey, $reference->toolCallId, $reference->orderIndex, $reference->toolName]) {
+            throw new ToolPayloadException('Deferred completion reference has a different correlation.');
+        }
+    }
+
+    private function restoreReference(Envelope $handled, Envelope $original): Envelope
+    {
+        $restored = new Envelope($original->getMessage(), array_merge(...array_values($handled->all())));
+        if (null !== $ack = $original->last(AckStamp::class)) {
+            $restored = $restored->withoutAll(AckStamp::class)->with($ack);
+        }
+
+        return $restored;
+    }
+
+    private function restoreException(\Throwable $exception, Envelope $original): \Throwable
+    {
+        if ($exception instanceof HandlerFailedException) {
+            return new HandlerFailedException(
+                $this->restoreReference($exception->getEnvelope(), $original),
+                $exception->getWrappedExceptions(),
+            );
+        }
+        if ($exception instanceof DelayedMessageHandlingException && null !== $exception->getEnvelope()) {
+            return new DelayedMessageHandlingException(
+                $exception->getWrappedExceptions(),
+                $this->restoreReference($exception->getEnvelope(), $original),
+            );
+        }
+        if ($exception instanceof MessageValidationFailedException && null !== $exception->getEnvelope()) {
+            return new MessageValidationFailedException(
+                $exception->getViolatingMessage(), $exception->getViolations(),
+                $this->restoreReference($exception->getEnvelope(), $original),
+            );
+        }
+        if ($exception instanceof EnvelopeAwareExceptionInterface && null !== $exception->getEnvelope()) {
+            // Symfony inspects wrapped recoverable/unrecoverable causes and their
+            // retry delays. Keep an unknown implementation intact as that cause.
+            return new HandlerFailedException($this->restoreReference($exception->getEnvelope(), $original), [$exception]);
+        }
+
+        return $exception;
     }
 
     private function route(Envelope $envelope, ToolPayloadMessage $message): Envelope

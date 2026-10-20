@@ -12,11 +12,14 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * @extends ServiceEntityRepository<DeferredToolCompletion>
@@ -29,6 +32,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         private readonly ToolBatchStoreInterface $batches,
         private readonly RunLockManager $locks,
         private readonly SerializerInterface $serializer,
+        private readonly ValidatorInterface $validator,
     ) {
         parent::__construct($registry, DeferredToolCompletion::class);
     }
@@ -122,6 +126,26 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
             return $fresh instanceof DeferredToolCompletion && 'pending' === $fresh->status ? $this->toCorrelation($fresh) : null;
         });
+    }
+
+    public function findMetadataByDeferredId(string $deferredId): ?DeferredToolCompletionMetadataDTO
+    {
+        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
+        if (!$entity instanceof DeferredToolCompletion) {
+            return null;
+        }
+        $reference = $this->serializer->deserialize($entity->bodyReferenceJson, ToolPayloadReferenceDTO::class, 'json');
+        $errors = $this->validator->validate($reference);
+        if (0 !== \count($errors)) {
+            throw new ValidationFailedException($reference, $errors);
+        }
+        $identity = [$reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId, $reference->attempt, $reference->idempotencyKey, $reference->orderIndex, $reference->toolName];
+        $storedIdentity = [$entity->runId, $entity->turnNo, $entity->stepId, $entity->toolCallId, $entity->attempt, $entity->idempotencyKey, $entity->orderIndex, $entity->toolName];
+        if ('correlation' !== $reference->kind || $identity !== $storedIdentity || !\in_array($entity->status, ['pending', 'completed'], true)) {
+            throw new ToolPayloadException('Deferred correlation reference does not match its index.');
+        }
+
+        return new DeferredToolCompletionMetadataDTO($entity->deferredId, $reference, $entity->status);
     }
 
     public function status(string $deferredId): ?string

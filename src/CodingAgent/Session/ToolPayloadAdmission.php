@@ -82,6 +82,25 @@ final readonly class ToolPayloadAdmission
         return 'call' !== $reference->kind && null !== $state && isset($state->pendingShellToolCalls[$reference->toolCallId]);
     }
 
+    /** Deferred destinations can retire while their correlation still retains a batch. */
+    public function acceptsDeferred(ToolPayloadReferenceDTO $reference, bool $owner): bool
+    {
+        $state = $owner ? $this->registry->requireLoaded($reference->runId)
+            : $this->replay->rebuildIfStale(RunState::queued($reference->runId), $reference->runId)->rebuiltState;
+        if (null === $state) {
+            throw new ToolPayloadException('Deferred completion requires canonical owner state.');
+        }
+        if ($state->turnNo !== $reference->turnNo || $state->activeStepId !== $reference->stepId || !\array_key_exists($reference->toolCallId, $state->pendingToolCalls)) {
+            return false;
+        }
+        $call = $this->batches->loadCallReference($reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId);
+        if (null === $call) {
+            throw new ToolPayloadException('Active deferred invocation is missing its batch data reference.');
+        }
+
+        return [$call->attempt, $call->idempotencyKey, $call->orderIndex] === [$reference->attempt, $reference->idempotencyKey, $reference->orderIndex];
+    }
+
     /** Propagate an unreadable active invocation without inventing its arguments. */
     public function failedInvocation(ToolPayloadReferenceDTO $reference): ToolCallResult
     {
