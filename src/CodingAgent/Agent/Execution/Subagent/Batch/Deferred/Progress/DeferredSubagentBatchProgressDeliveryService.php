@@ -105,7 +105,7 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
 
     private function markDeliveredRevision(DeferredSubagentBatchProjectionDTO $batch): bool
     {
-        $current = $this->batchRepository->findByLifecycleId($batch->lifecycleId)
+        $current = $this->batchRepository->findEntityByLifecycleId($batch->lifecycleId)
             ?? throw new \RuntimeException('Deferred subagent batch disappeared during progress delivery.');
         if ($current->deliveredProgressRevision >= $batch->aggregateProgressRevision) {
             return true;

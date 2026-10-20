@@ -67,9 +67,9 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $child = new SubagentLiveChildDTO('child-300', 'art1', 'scout', SubagentLiveStatusEnum::Running, 'task', 1, 'deepseek/deepseek-v4-flash', 'medium');
         $state->subagentLiveView->enter($child);
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
-        $state->subagentLiveView->childTranscript = [
+        $state->subagentLiveView->replaceChildTranscript([
             new TranscriptBlock('c1', TranscriptBlockKindEnum::Progress, 'child-300', 1, 'child live'),
-        ];
+        ]);
 
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new RuntimeEvent(
             'tool_execution_update',
@@ -97,7 +97,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $tui = new Tui();
         $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
-        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
+        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript());
 
         $services = $this->createSessionServices(
             tui: $tui,
@@ -147,9 +147,9 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $child = new SubagentLiveChildDTO('child-301', 'art2', 'scout', SubagentLiveStatusEnum::Running, 'task', 1, 'deepseek/deepseek-v4-flash', 'medium');
         $state->subagentLiveView->enter($child);
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
-        $state->subagentLiveView->childTranscript = [
+        $state->subagentLiveView->replaceChildTranscript([
             new TranscriptBlock('c1', TranscriptBlockKindEnum::Progress, 'child-301', 1, 'child live'),
-        ];
+        ]);
 
         SubagentProgressSerializerTestSupport::ingestCatalogEvent($state->subagentLiveCatalog, new RuntimeEvent(
             'tool_execution_update',
@@ -177,7 +177,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $tui = new Tui();
         $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
-        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
+        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript());
 
         $services = $this->createSessionServices(
             tui: $tui,
@@ -229,9 +229,9 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $taskA = $this->liveChild($childRunId, $artifactId, SubagentLiveStatusEnum::Completed, 'Task A');
         $state->subagentLiveView->enter($taskA);
-        $state->subagentLiveView->childTranscript = [
+        $state->subagentLiveView->replaceChildTranscript([
             new TranscriptBlock('c-a', TranscriptBlockKindEnum::AssistantMessage, $childRunId, 4, 'task a done'),
-        ];
+        ]);
         $state->subagentLiveView->childLastSeq = 4;
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Completed;
         $state->subagentLiveView->exit();

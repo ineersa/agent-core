@@ -344,7 +344,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $this->assertSame([], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
         $pending = $this->log->verifiedPendingTransition($this->path, 'indexed');
         $this->assertNotNull($pending);
-        $this->log->finalizeVerifiedTransition($this->path, 'indexed', $pending->identity);
+        $this->log->finalizeVerifiedTransition($this->path, 'indexed', $pending);
         $this->assertSame([1], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
         $db = $this->db();
         $db->beginTransaction();
@@ -353,7 +353,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->log->appendMany($this->path, [RunEvent::forAppend('indexed', 1, 'turn_advanced')], work: ['run_id' => 'indexed', 'predecessor_seq' => 1]);
             $pending = $this->log->verifiedPendingTransition($this->path, 'indexed');
             $this->assertNotNull($pending);
-            $this->log->finalizeVerifiedTransition($this->path, 'indexed', $pending->identity);
+            $this->log->finalizeVerifiedTransition($this->path, 'indexed', $pending);
             $this->assertFileDoesNotExist($this->path.'.append.pending.json');
             $this->assertFileExists(\dirname($this->path).'/history-index.sqlite.unavailable');
             $this->assertCount(1, array_filter($this->logger->records, static fn (array $r): bool => 'history_index.publication_failed' === $r['message']));
@@ -456,6 +456,43 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $line = file_get_contents($this->path);
         file_put_contents($this->path, str_replace('"seq":9', '"seq":8', $line));
         $this->assertSame([8], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
+    }
+
+    public function testMissingSchemaObjectsAndEmptyPartialSchemaRebuildOnEveryConnection(): void
+    {
+        $this->write(1, 1, 'turn_advanced');
+        $this->assertSame([1], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
+        foreach (['DROP INDEX turn_answers', 'DROP TABLE command_resolution', 'DELETE FROM index_meta; DROP TABLE pending_prompt'] as $damage) {
+            $db = $this->db();
+            foreach (explode('; ', $damage) as $sql) {
+                $db->executeStatement($sql);
+            }
+            $db->close();
+            $this->logger->records = [];
+            $this->assertSame([1], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
+            $this->assertGreaterThan(0, $this->readBytes('index_cold_rebuild'));
+            $db = $this->db();
+            $this->assertSame(13, (int) $db->fetchOne("SELECT COUNT(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"));
+            $db->close();
+        }
+    }
+
+    public function testConnectionConfigurationIsAppliedWithoutBootstrappingExistingSchema(): void
+    {
+        $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        foreach ([1, 2] as $connection) {
+            $db = (new \ReflectionMethod(RunHistoryIndex::class, 'connect'))->invoke($index, $this->path);
+            try {
+                (new \ReflectionMethod(RunHistoryIndex::class, 'configureConnection'))->invoke($index, $db);
+                $this->assertSame(0, (int) $db->fetchOne('PRAGMA busy_timeout'));
+                $this->assertSame(-1024, (int) $db->fetchOne('PRAGMA cache_size'));
+                $this->assertSame(1, (int) $db->fetchOne('PRAGMA temp_store'));
+                $this->assertSame('wal', $db->fetchOne('PRAGMA journal_mode'));
+                $this->assertSame(0, (int) $db->fetchOne('SELECT COUNT(*) FROM sqlite_master'));
+            } finally {
+                $db->close();
+            }
+        }
     }
 
     public function testDuplicateAndDecreasingSequencesNeverPublishWatermark(): void

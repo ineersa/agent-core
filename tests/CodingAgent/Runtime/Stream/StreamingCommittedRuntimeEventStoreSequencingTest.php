@@ -30,8 +30,8 @@ final class StreamingCommittedRuntimeEventStoreSequencingTest extends TestCase
         $pending = new VerifiedTransitionDTO('transition-a', ['run_id' => 'run-a'], [42]);
 
         $inner->expects($this->once())->method('appendTransition')->with([$input], ['run_id' => 'run-a'])->willReturn([$persisted]);
-        $inner->expects($this->atLeastOnce())->method('verifiedPendingTransition')->with('run-a')->willReturn($pending);
-        $inner->expects($this->once())->method('finalizeVerifiedTransition')->with('run-a', 'transition-a');
+        $inner->expects($this->never())->method('verifiedPendingTransition');
+        $inner->expects($this->once())->method('finalizeVerifiedTransition')->with('run-a', $pending);
         $inner->expects($this->never())->method('rangeFor');
 
         $sink = new class implements RuntimeEventSinkInterface {
@@ -52,7 +52,7 @@ final class StreamingCommittedRuntimeEventStoreSequencingTest extends TestCase
 
         $returned = $store->appendTransition([$input], ['run_id' => 'run-a'])[0];
         $this->assertCount(0, $sink->emitted);
-        $store->finalizeVerifiedTransition('run-a', 'transition-a');
+        $store->finalizeVerifiedTransition('run-a', $pending);
 
         $this->assertSame(42, $returned->seq);
         $this->assertCount(1, $sink->emitted);

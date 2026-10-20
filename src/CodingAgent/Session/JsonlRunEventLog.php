@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
@@ -108,7 +109,7 @@ final class JsonlRunEventLog
         }
     }
 
-    public function verifiedPendingTransition(string $path, string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    public function verifiedPendingTransition(string $path, string $runId): ?VerifiedTransitionDTO
     {
         $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
         $lock->acquire(true);
@@ -127,23 +128,16 @@ final class JsonlRunEventLog
     /**
      * @return list<RunEvent>
      */
-    public function verifiedPendingBatch(string $path, string $runId, string $identity): array
+    public function verifiedPendingBatch(string $path, string $runId, VerifiedTransitionDTO $verified): array
     {
         $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
         $lock->acquire(true);
         try {
-            $pending = (new JsonlAppendJournal())->verifiedPending($path);
-            if (null === $pending) {
-                throw new \RuntimeException('Verified transition missing before batch read.');
-            }
-            if (($pending->work['run_id'] ?? null) !== $runId) {
+            if (($verified->work['run_id'] ?? null) !== $runId) {
                 throw new \RuntimeException('Prepared work run identity mismatch.');
             }
-            if ($pending->identity !== $identity) {
-                throw new \RuntimeException('Prepared transition identity changed before batch read.');
-            }
 
-            $records = (new JsonlAppendJournal())->verifiedStagedRecords($path, $identity);
+            $records = (new JsonlAppendJournal())->verifiedStagedRecords($path, $verified->identity);
             $events = [];
             foreach ($records as $record) {
                 $line = rtrim($record, "\r\n");
@@ -167,7 +161,7 @@ final class JsonlRunEventLog
                 $events[] = $event;
             }
 
-            $sequences = $pending->eventSequences;
+            $sequences = $verified->eventSequences;
             if (array_map(static fn (RunEvent $event): int => $event->seq, $events) !== $sequences) {
                 throw new \RuntimeException('Verified staged batch sequences do not match captured identities.');
             }
@@ -178,12 +172,29 @@ final class JsonlRunEventLog
         }
     }
 
-    public function finalizeVerifiedTransition(string $path, string $runId, string $identity): void
+    public function assertVerifiedTransition(string $path, string $runId, VerifiedTransitionDTO $verified): void
     {
         $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
         $lock->acquire(true);
         try {
-            (new JsonlAppendJournal())->finalizeVerified($path, $identity);
+            if (($verified->work['run_id'] ?? null) !== $runId) {
+                throw new \RuntimeException('Prepared work run identity mismatch.');
+            }
+            (new JsonlAppendJournal())->assertVerified($path, $verified->identity);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function finalizeVerifiedTransition(string $path, string $runId, VerifiedTransitionDTO $verified): void
+    {
+        $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+        try {
+            if (($verified->work['run_id'] ?? null) !== $runId) {
+                throw new \RuntimeException('Prepared work run identity mismatch.');
+            }
+            (new JsonlAppendJournal())->finalizeVerified($path, $verified->identity);
             $this->historyIndex->updateAfterCommit($this, $path, $runId);
         } finally {
             $lock->release();

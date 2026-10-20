@@ -211,15 +211,20 @@ final readonly class JsonlAppendJournal
         return $records;
     }
 
-    public function finalizeVerified(string $path, string $identity): void
+    public function assertVerified(string $path, string $identity): void
     {
         $manifest = $this->manifest($path);
         if (null === $manifest || hash('sha256', json_encode($manifest, \JSON_THROW_ON_ERROR)) !== $identity) {
             throw new \RuntimeException('Prepared transition identity changed before finalization.');
         }
+        $this->reconcile($path);
+    }
+
+    public function finalizeVerified(string $path, string $identity): void
+    {
         // Coordination already consumed verified work. Recheck current physical
         // evidence once under the owner's storage lock before publishing the cut.
-        $this->reconcile($path);
+        $this->assertVerified($path, $identity);
         $this->filesystem->remove($this->manifestPath($path));
         $this->filesystem->remove([$this->stagePath($path), $path.'.append.work']);
     }

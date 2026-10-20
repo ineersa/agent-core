@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
@@ -123,7 +124,7 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
         return $this->eventLog->appendMany($this->eventsPath(), $events, runLabel: 'child run', dirMode: SessionAgentArtifactPathResolver::DIR_PERMISSIONS, work: $work);
     }
 
-    public function verifiedPendingTransition(string $runId): ?\Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO
+    public function verifiedPendingTransition(string $runId): ?VerifiedTransitionDTO
     {
         if ($runId !== $this->agentRunId) {
             throw new \InvalidArgumentException('Child pending transition identity mismatch.');
@@ -132,21 +133,29 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
         return $this->eventLog->verifiedPendingTransition($this->eventsPath(), $runId);
     }
 
-    public function verifiedPendingBatch(string $runId, string $identity): array
+    public function verifiedPendingBatch(string $runId, VerifiedTransitionDTO $verified): array
     {
         if ($runId !== $this->agentRunId) {
             throw new \InvalidArgumentException('Child pending batch identity mismatch.');
         }
 
-        return $this->eventLog->verifiedPendingBatch($this->eventsPath(), $runId, $identity);
+        return $this->eventLog->verifiedPendingBatch($this->eventsPath(), $runId, $verified);
     }
 
-    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    public function finalizeVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
     {
         if ($runId !== $this->agentRunId) {
             throw new \InvalidArgumentException('Child finalization identity mismatch.');
         }
-        $this->eventLog->finalizeVerifiedTransition($this->eventsPath(), $runId, $identity);
+        $this->eventLog->finalizeVerifiedTransition($this->eventsPath(), $runId, $verified);
+    }
+
+    public function assertVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
+    {
+        if ($runId !== $this->agentRunId) {
+            throw new \InvalidArgumentException('Child transition identity mismatch.');
+        }
+        $this->eventLog->assertVerifiedTransition($this->eventsPath(), $runId, $verified);
     }
 
     public function assertTransitionReady(string $runId): void

@@ -6,13 +6,14 @@ namespace Ineersa\CodingAgent\ContextBudget;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ContextBudgetReminderConfig;
+use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 
 /**
  * After-turn hook: queue one-shot wrap-up append messages when committed LLM
@@ -31,11 +32,16 @@ final readonly class ContextBudgetReminderHookSubscriber implements EssentialAft
         private EventStoreInterface $eventStore,
         private ContextBudgetReminderConfig $config,
         private AppConfig $appConfig,
+        private RunStartedMetadataReader $metadataReader,
     ) {
     }
 
     public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
     {
+        if (null === $context->runState->parentRunId && $this->config->disableForMain) {
+            return [];
+        }
+
         $completion = $this->latestLlmStepCompletedInBatch($context->events);
         if (null === $completion) {
             return [];
@@ -46,7 +52,7 @@ final readonly class ContextBudgetReminderHookSubscriber implements EssentialAft
             return [];
         }
 
-        $runStarted = $this->eventStore->firstFor($context->runId);
+        $runStarted = $this->metadataReader->readRunStartedMetadata($context->runId);
         if ($this->remindersDisabledForRun($runStarted)) {
             return [];
         }
@@ -190,50 +196,28 @@ final readonly class ContextBudgetReminderHookSubscriber implements EssentialAft
         return implode('', $parts);
     }
 
-    private function remindersDisabledForRun(?RunEvent $event): bool
+    private function remindersDisabledForRun(?RunStartedMetadataDTO $metadata): bool
     {
-        $session = $event?->payload['payload']['metadata']['session'] ?? [];
-        if ('agent_child' !== ($session['kind'] ?? null)) {
+        if (true !== $metadata?->isAgentChild()) {
             return $this->config->disableForMain;
         }
 
         // Fork launches set child_kind; named subagent launches omit it.
-        return 'fork' === ($session['child_kind'] ?? null)
+        return 'fork' === $metadata->session->childKind
             ? $this->config->disableForForks
             : $this->config->disableForSubagents;
     }
 
-    private function resolveContextWindow(AfterTurnCommitHookContext $context, ?RunEvent $runStarted): ?int
+    private function resolveContextWindow(AfterTurnCommitHookContext $context, ?RunStartedMetadataDTO $runStarted): ?int
     {
-        $fromRun = $this->contextWindowFromRunStarted($runStarted);
-        if (null !== $fromRun) {
+        $fromRun = $runStarted?->contextWindow;
+        if (null !== $fromRun && $fromRun > 0) {
             return $fromRun;
         }
 
         $model = null !== $context->runState->model ? trim($context->runState->model) : '';
 
         return $this->contextWindowFromCatalog('' !== $model ? $model : null);
-    }
-
-    private function contextWindowFromRunStarted(?RunEvent $event): ?int
-    {
-        if (null === $event || RunEventTypeEnum::RunStarted->value !== $event->type) {
-            return null;
-        }
-
-        $inner = $event->payload['payload'] ?? null;
-        if (!\is_array($inner)) {
-            return null;
-        }
-
-        $metadata = $inner['metadata'] ?? null;
-        if (!\is_array($metadata)) {
-            return null;
-        }
-
-        $window = $metadata['context_window'] ?? null;
-
-        return \is_int($window) && $window > 0 ? $window : null;
     }
 
     private function contextWindowFromCatalog(?string $activeModel): ?int

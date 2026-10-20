@@ -45,7 +45,7 @@ final class PreviewExpansionInputListener implements TuiListenerRegistrar
                 // transcript must be re-pushed instead of the parent's.
                 $screen->setTranscriptBlocks(
                     $state->subagentLiveView->active
-                        ? $state->subagentLiveView->childTranscript
+                        ? $state->subagentLiveView->childTranscript()
                         : $state->transcript,
                 );
 

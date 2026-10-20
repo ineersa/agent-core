@@ -37,7 +37,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 
         $pending = $store->verifiedPendingTransition('run-a');
         $this->assertNotNull($pending);
-        $store->finalizeVerifiedTransition('run-a', $pending->identity);
+        $store->finalizeVerifiedTransition('run-a', $pending);
 
         $this->assertSame(0, $inner->rangeForCalls);
         $this->assertCount(1, $sink->emitted);
@@ -58,7 +58,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         ], ['run_id' => $childRunId, 'predecessor_seq' => 0]);
         $pending = $store->verifiedPendingTransition($childRunId);
         $this->assertNotNull($pending);
-        $store->finalizeVerifiedTransition($childRunId, $pending->identity);
+        $store->finalizeVerifiedTransition($childRunId, $pending);
 
         $this->assertSame(0, $inner->rangeForCalls);
         $this->assertSame($childRunId, $sink->emitted[0]->runId);
@@ -78,7 +78,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         ], ['run_id' => 'run-a', 'predecessor_seq' => 0]);
         $pending = $store->verifiedPendingTransition('run-a');
         $this->assertNotNull($pending);
-        $store->finalizeVerifiedTransition('run-a', $pending->identity);
+        $store->finalizeVerifiedTransition('run-a', $pending);
 
         $this->assertSame(0, $inner->rangeForCalls);
         $this->assertSame([1, 2], array_map(static fn (RuntimeEvent $event): int => $event->seq, $sink->emitted));
@@ -99,7 +99,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 
         // Simulate a restarted stream wrapper that lost the hot batch.
         $cold = $this->store($inner, $sink, true);
-        $cold->finalizeVerifiedTransition('run-a', $pending->identity);
+        $cold->finalizeVerifiedTransition('run-a', $pending);
 
         $this->assertSame(0, $inner->rangeForCalls);
         $this->assertSame(1, $inner->verifiedPendingBatchCalls);
@@ -119,7 +119,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         ], ['run_id' => 'run-a', 'predecessor_seq' => 0]);
 
         try {
-            $store->finalizeVerifiedTransition('run-a', 'stale-identity');
+            $store->finalizeVerifiedTransition('run-a', new VerifiedTransitionDTO('stale-identity', ['run_id' => 'run-a'], [1]));
             $this->fail('Stale identities must refuse before publication.');
         } catch (\RuntimeException $exception) {
             $this->assertStringContainsString('identity changed', $exception->getMessage());
@@ -146,7 +146,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 
         $cold = $this->store($inner, $sink, true);
         try {
-            $cold->finalizeVerifiedTransition('run-a', $pending->identity);
+            $cold->finalizeVerifiedTransition('run-a', $pending);
             $this->fail('Corrupt verified batches must refuse publication.');
         } catch (\RuntimeException $exception) {
             $this->assertStringContainsString('could not be reconstructed', $exception->getMessage());
@@ -179,7 +179,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         ], ['run_id' => 'run-a', 'predecessor_seq' => 0]);
         $pending = $store->verifiedPendingTransition('run-a');
         $this->assertNotNull($pending);
-        $store->finalizeVerifiedTransition('run-a', $pending->identity);
+        $store->finalizeVerifiedTransition('run-a', $pending);
 
         $this->assertCount(1, $inner->appended);
         $this->assertCount(0, $sink->emitted);
@@ -247,11 +247,11 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
         return $this->pending[$runId] ?? null;
     }
 
-    public function verifiedPendingBatch(string $runId, string $identity): array
+    public function verifiedPendingBatch(string $runId, VerifiedTransitionDTO $verified): array
     {
         ++$this->verifiedPendingBatchCalls;
         $pending = $this->verifiedPendingTransition($runId);
-        if (null === $pending || $pending->identity !== $identity) {
+        if (null === $pending || $pending->identity !== $verified->identity) {
             throw new \RuntimeException('Fixture transition identity mismatch.');
         }
 
@@ -269,16 +269,23 @@ final class RecordingEventStore implements PreparedTransitionEventStoreInterface
         return $out;
     }
 
-    public function finalizeVerifiedTransition(string $runId, string $identity): void
+    public function finalizeVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
     {
-        if (($this->pending[$runId]->identity ?? null) !== $identity) {
-            throw new \RuntimeException('Fixture transition identity mismatch.');
+        if (($this->pending[$runId]->identity ?? null) !== $verified->identity) {
+            throw new \RuntimeException('Fixture transition identity changed.');
         }
         unset($this->pending[$runId]);
     }
 
     public function assertTransitionReady(string $runId): void
     {
+    }
+
+    public function assertVerifiedTransition(string $runId, VerifiedTransitionDTO $verified): void
+    {
+        if (($this->pending[$runId]->identity ?? null) !== $verified->identity) {
+            throw new \RuntimeException('Fixture transition identity changed.');
+        }
     }
 
     public function latestSequenceFor(string $runId): ?int

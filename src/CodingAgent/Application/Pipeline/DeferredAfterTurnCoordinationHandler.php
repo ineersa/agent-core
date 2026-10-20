@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Application\Pipeline;
 
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage;
 use Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -18,11 +19,11 @@ final readonly class DeferredAfterTurnCoordinationHandler implements Coordinatio
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]
-    public function __invoke(DeferredAfterTurnCoordinationDTO $action): void
+    public function __invoke(DeferredAfterTurnCoordinationDTO $action, VerifiedTransitionDTO $pending): void
     {
         $this->validate($action);
-        $pending = $this->store->verifiedPendingTransition($action->runId);
-        if (null === $pending || ($pending->work['predecessor_seq'] ?? null) !== $action->predecessorSequence
+        $this->store->assertVerifiedTransition($action->runId, $pending);
+        if (($pending->work['run_id'] ?? null) !== $action->runId || ($pending->work['predecessor_seq'] ?? null) !== $action->predecessorSequence
             || !array_any([...($pending->work['actions'] ?? []), ...($pending->work['after_turn_actions'] ?? [])], static fn (object $captured): bool => $captured instanceof DeferredAfterTurnCoordinationDTO && serialize($captured) === serialize($action))) {
             throw new \RuntimeException('After-turn coordination requires its verified owner transition.');
         }

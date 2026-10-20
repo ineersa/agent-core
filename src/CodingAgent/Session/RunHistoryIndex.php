@@ -331,13 +331,17 @@ final readonly class RunHistoryIndex
         return DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $this->indexPath($path)]);
     }
 
-    private function createSchema(Connection $db): void
+    private function configureConnection(Connection $db): void
     {
         // Keep SQLite's page cache bounded too. No historical rows are fetched in bulk.
         $db->executeStatement('PRAGMA busy_timeout = 0');
         $db->executeStatement('PRAGMA cache_size = -1024');
         $db->executeStatement('PRAGMA temp_store = FILE');
         $db->executeStatement('PRAGMA journal_mode = WAL');
+    }
+
+    private function createSchema(Connection $db): void
+    {
         // Bootstrap the disposable schema in one durable commit, not one WAL
         // synchronization per table/index before the first event is indexed.
         $db->transactional(static function (Connection $db): void {
@@ -366,10 +370,17 @@ final readonly class RunHistoryIndex
         $validation = new JsonlPhysicalReadObservation();
         try {
             try {
+                $missing = !is_file($this->indexPath($path));
                 $db = $this->connect($path);
-                $this->createSchema($db);
+                $this->configureConnection($db);
+                if ($missing) {
+                    $this->createSchema($db);
+                }
                 $meta = $db->fetchAssociative('SELECT * FROM index_meta');
-                $valid = !is_file($this->indexPath($path).'.unavailable') && false !== $meta
+                // Check disposable schema presence on every new connection, including
+                // replaced files. Missing objects require a rebuild, not repeated DDL.
+                $schemaComplete = 13 === (int) $db->fetchOne("SELECT COUNT(*) FROM sqlite_master WHERE (type = 'table' AND name IN ('index_meta', 'turn_anchor', 'pending_prompt', 'event_location', 'command_record', 'command_resolution', 'history_change', 'context_checkpoint_location')) OR (type = 'index' AND name IN ('turn_display', 'turn_answers', 'event_turn_anchor', 'event_anchor', 'unresolved_commands'))");
+                $valid = $schemaComplete && !is_file($this->indexPath($path).'.unavailable') && false !== $meta
                     && self::VERSION === (int) $meta['version'] && $meta['run_id'] === $runId
                     && (int) $meta['device'] === $identity['device'] && (int) $meta['inode'] === $identity['inode']
                     && (int) $meta['end_offset'] >= 0 && (int) $meta['end_offset'] <= $identity['end_offset']
@@ -397,13 +408,17 @@ final readonly class RunHistoryIndex
                 $db->close();
                 (new Filesystem())->remove([$this->indexPath($path), $this->indexPath($path).'-wal', $this->indexPath($path).'-shm']);
                 $db = $this->connect($path);
+                $this->configureConnection($db);
                 $this->createSchema($db);
+                $meta = false;
+                $schemaComplete = true;
                 $valid = false;
             }
-            if (!$valid && false !== $meta) {
+            if (!$valid && (false !== $meta || !$schemaComplete)) {
                 $db->close();
                 (new Filesystem())->remove([$this->indexPath($path), $this->indexPath($path).'-wal', $this->indexPath($path).'-shm']);
                 $db = $this->connect($path);
+                $this->configureConnection($db);
                 $this->createSchema($db);
             }
             $this->observe($runId, 'index_boundary_validation', $validation);

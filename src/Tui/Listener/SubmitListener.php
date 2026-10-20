@@ -721,12 +721,12 @@ final class SubmitListener implements TuiListenerRegistrar
         SubagentLiveInputPolicy $policy,
     ): void {
         $message = $policy->blockedLeaveLiveViewMessage();
-        $state->subagentLiveView->childTranscript[] = $blockFactory->error(
+        $state->subagentLiveView->appendChildTranscriptBlock($blockFactory->error(
             $state->sessionId,
             $message,
-            \count($state->subagentLiveView->childTranscript) + 1,
-        );
-        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
+            \count($state->subagentLiveView->childTranscript()) + 1,
+        ));
+        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript());
         $screen->setWorkingMessage($message);
     }
 
@@ -737,12 +737,12 @@ final class SubmitListener implements TuiListenerRegistrar
         SubagentLiveInputPolicy $policy,
     ): void {
         $message = $policy->terminalChildInputBlockedMessage();
-        $state->subagentLiveView->childTranscript[] = $blockFactory->error(
+        $state->subagentLiveView->appendChildTranscriptBlock($blockFactory->error(
             $state->sessionId,
             $message,
-            \count($state->subagentLiveView->childTranscript) + 1,
-        );
-        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
+            \count($state->subagentLiveView->childTranscript()) + 1,
+        ));
+        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript());
         $screen->setWorkingMessage($message);
     }
 

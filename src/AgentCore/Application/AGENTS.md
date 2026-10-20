@@ -175,4 +175,6 @@ Parent repair also captures deferred child-maintenance obligations through appli
 
 `CanonicalSequenceBoundActionInterface` binds observation event ordinals to allocated staged sequences before the journal publishes its manifest. `VerifiedTransitionDTO` exposes that sequence list. Child observation carries the canonical predecessor, so allocation holes do not look like missing committed events. An observation whose predecessor is ahead of the durable child cursor still requests recovery.
 
+The shared finalizer carries the same verified work DTO through synchronous coordination and canonical publication. `StepDispatcher` supplies it through Messenger's non-sendable `HandlerArgumentsStamp`; it is not a transport payload or retained execution context. Coordinators that consume captured work revalidate current storage evidence without decoding the work graph again. Cold recovery decodes once before using the same completion path.
+
 Extension observers and transient snapshot cleanup run after required coordination and transition finalization. Observer failures remain best effort, and recovery does not replay arbitrary extension callbacks. This checkpoint does not claim power-loss durability.
