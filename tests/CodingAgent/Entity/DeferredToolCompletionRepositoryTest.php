@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
@@ -47,25 +48,25 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $repository = $container->get(DeferredToolCompletionRepository::class);
         $metadata = $repository->findMetadataByDeferredId('deferred');
-        self::assertNotNull($metadata);
-        self::assertSame('pending', $metadata->status);
+        $this->assertNotNull($metadata);
+        $this->assertSame('pending', $metadata->status);
         $batches = $container->get(ToolBatchStoreInterface::class);
         $batches->delete($runId, 1, 'step');
-        self::assertNotNull($batches->loadSchedule($runId, 1, 'step'), 'Pending deferred metadata retains the settled batch.');
-        self::assertDirectoryExists($directory);
+        $this->assertNotNull($batches->loadSchedule($runId, 1, 'step'), 'Pending deferred metadata retains the settled batch.');
+        $this->assertDirectoryExists($directory);
 
         $state = new RunState($runId, RunStatus::Cancelled, turnNo: 1);
         $bus = $this->bus($state);
         $message = $producer ? new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'discard']])
             : new Envelope(new ToolPayloadMessage($reference, 'deferred'), [new ReceivedStamp('run_control')]);
         $bus->dispatch($message);
-        self::assertSame('completed', $repository->status('deferred'));
-        self::assertNull($batches->loadSchedule($runId, 1, 'step'));
-        self::assertSame(0, (int) $container->get(Connection::class)->fetchOne('SELECT COUNT(*) FROM tool_batch_call WHERE run_id = ?', [$runId]));
-        self::assertDirectoryDoesNotExist($directory);
-        self::assertNotNull($repository->findMetadataByDeferredId('deferred'), 'Completed identity survives body cleanup.');
+        $this->assertSame('completed', $repository->status('deferred'));
+        $this->assertNull($batches->loadSchedule($runId, 1, 'step'));
+        $this->assertSame(0, (int) $container->get(Connection::class)->fetchOne('SELECT COUNT(*) FROM tool_batch_call WHERE run_id = ?', [$runId]));
+        $this->assertDirectoryDoesNotExist($directory);
+        $this->assertNotNull($repository->findMetadataByDeferredId('deferred'), 'Completed identity survives body cleanup.');
         $bus->dispatch($message);
-        self::assertSame('completed', $repository->status('deferred'), 'Duplicate completion is idempotent after cleanup.');
+        $this->assertSame('completed', $repository->status('deferred'), 'Duplicate completion is idempotent after cleanup.');
     }
 
     #[DataProvider('completionBoundaries')]
@@ -78,12 +79,12 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
             : new Envelope(new ToolPayloadMessage($reference, 'deferred'), [new ReceivedStamp('run_control')]);
         try {
             $bus->dispatch($message);
-            self::fail('Missing active data must fail closed.');
+            $this->fail('Missing active data must fail closed.');
         } catch (ToolPayloadException $exception) {
-            self::assertSame('Active tool data is missing.', $exception->getMessage());
+            $this->assertSame('Active tool data is missing.', $exception->getMessage());
         }
-        self::assertSame('pending', self::getContainer()->get(DeferredToolCompletionRepository::class)->status('deferred'));
-        self::assertDirectoryExists($directory);
+        $this->assertSame('pending', self::getContainer()->get(DeferredToolCompletionRepository::class)->status('deferred'));
+        $this->assertDirectoryExists($directory);
     }
 
     public static function completionBoundaries(): iterable
@@ -144,6 +145,7 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         // This is an unrelated cleanup sentinel. Neither referenced body exists.
         $container->get(Filesystem::class)->dumpFile($directory.'/sentinel.txt', 'retained');
         $resultReference = new ToolPayloadReferenceDTO('result', $runId, 1, 'step', 1, 'key', 'call', 0, 'subagent', str_repeat('c', 64), 100);
+
         return [$runId, $resultReference, $directory];
     }
 
@@ -165,8 +167,11 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         }
         $commands = new TestMessageBus();
         $logger = new TestLogger();
+        $events = $this->createStub(EventStoreInterface::class);
+        $events->method('latestSequenceFor')->willReturn($state->lastSeq);
+
         return new MessageBus([new ToolPayloadMiddleware(
-            $payloads, new ToolPayloadAdmission($batches, $registry, $replay), $repository, $locks,
+            $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger), $repository, $locks,
             $container->get(ValidatorInterface::class), $commands, $logger,
             new CompleteDeferredToolCallHandler($repository, $commands, $locks, $batches, $logger),
         )]);

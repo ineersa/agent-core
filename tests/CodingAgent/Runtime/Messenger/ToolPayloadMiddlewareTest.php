@@ -8,7 +8,9 @@ use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
@@ -70,13 +72,17 @@ final class ToolPayloadMiddlewareTest extends TestCase
         $payloads->expects($this->exactly(2))->method('read')->willReturn($this->call());
         $middleware = $this->middleware($payloads);
         $ack = new class($explicitAck) implements MiddlewareInterface {
-            public function __construct(private bool $explicitAck) {}
+            public function __construct(private bool $explicitAck)
+            {
+            }
+
             public function handle(Envelope $envelope, StackInterface $stack): Envelope
             {
                 $handled = $stack->next()->handle($envelope, $stack);
                 if ($this->explicitAck) {
                     $handled->last(AckStamp::class)->ack($handled);
                 }
+
                 return $handled;
             }
         };
@@ -93,12 +99,12 @@ final class ToolPayloadMiddlewareTest extends TestCase
         });
         $worker->run(['sleep' => 0]);
         $worker->keepalive(5);
-        self::assertCount(2, $transport->acked);
+        $this->assertCount(2, $transport->acked);
         foreach ($transport->acked as $index => $envelope) {
-            self::assertSame($transport->received[$index]->getMessage(), $envelope->getMessage());
-            self::assertSame($this->call()->args['large'], $envelope->last(HandledStamp::class)->getResult());
+            $this->assertSame($transport->received[$index]->getMessage(), $envelope->getMessage());
+            $this->assertSame($this->call()->args['large'], $envelope->last(HandledStamp::class)->getResult());
         }
-        self::assertSame([], $transport->keepaliveRequests, 'Acknowledged references must leave native SplObjectStorage.');
+        $this->assertSame([], $transport->keepaliveRequests, 'Acknowledged references must leave native SplObjectStorage.');
     }
 
     public static function ackModes(): iterable
@@ -118,12 +124,16 @@ final class ToolPayloadMiddlewareTest extends TestCase
         $failure = $recoverable ? new RecoverableMessageHandlingException('retry', retryDelay: 37)
             : new UnrecoverableMessageHandlingException('stop');
         $downstream = new class($explicitAck, $failure) implements MiddlewareInterface {
-            public function __construct(private bool $explicitAck, private \Throwable $failure) {}
+            public function __construct(private bool $explicitAck, private \Throwable $failure)
+            {
+            }
+
             public function handle(Envelope $envelope, StackInterface $stack): Envelope
             {
                 $exception = new HandlerFailedException($envelope, ['tool-handler' => $this->failure]);
                 if ($this->explicitAck) {
                     $envelope->last(AckStamp::class)->ack($envelope, $exception);
+
                     return $envelope;
                 }
                 throw $exception;
@@ -143,19 +153,19 @@ final class ToolPayloadMiddlewareTest extends TestCase
         }, -100);
         $worker->run(['sleep' => 0]);
         $worker->keepalive(5);
-        self::assertSame($transport->received[0]->getMessage(), $transport->rejected[0]->getMessage());
-        self::assertSame([], $transport->keepaliveRequests);
-        self::assertCount($recoverable ? 2 : 1, $transport->getSent());
+        $this->assertSame($transport->received[0]->getMessage(), $transport->rejected[0]->getMessage());
+        $this->assertSame([], $transport->keepaliveRequests);
+        $this->assertCount($recoverable ? 2 : 1, $transport->getSent());
         if ($recoverable) {
             $retry = $transport->getSent()[1];
-            self::assertInstanceOf(ToolPayloadMessage::class, $retry->getMessage());
-            self::assertSame(37, $retry->last(DelayStamp::class)->getDelay());
-            self::assertSame(1, $retry->last(RedeliveryStamp::class)->getRetryCount());
-            self::assertLessThan(8192, \strlen($serializer->encode($retry)['body']));
+            $this->assertInstanceOf(ToolPayloadMessage::class, $retry->getMessage());
+            $this->assertSame(37, $retry->last(DelayStamp::class)->getDelay());
+            $this->assertSame(1, $retry->last(RedeliveryStamp::class)->getRetryCount());
+            $this->assertLessThan(8192, \strlen($serializer->encode($retry)['body']));
             $accepted = new MessageBus([$this->middleware($payloads), new HandleMessageMiddleware(new HandlersLocator([
                 ExecuteToolCall::class => [static fn (): string => 'retried'],
             ]))]);
-            self::assertSame($retry->getMessage(), $accepted->dispatch($retry->with(new ReceivedStamp('tool')))->getMessage());
+            $this->assertSame($retry->getMessage(), $accepted->dispatch($retry->with(new ReceivedStamp('tool')))->getMessage());
         }
     }
 
@@ -174,22 +184,23 @@ final class ToolPayloadMiddlewareTest extends TestCase
         $payloads->method('read')->willReturn($this->call());
         $original = new ToolPayloadMessage($this->reference('call'));
         $downstream = new class($kind) implements MiddlewareInterface {
-            public function __construct(private string $kind) {}
+            public function __construct(private string $kind)
+            {
+            }
+
             public function handle(Envelope $envelope, StackInterface $stack): Envelope
             {
                 $envelope = $envelope->with(new HandledStamp('retained', 'earlier-handler'));
-                throw 'delayed' === $this->kind
-                    ? new DelayedMessageHandlingException([new \LogicException('delayed')], $envelope)
-                    : new MessageValidationFailedException($envelope->getMessage(), new ConstraintViolationList(), $envelope);
+                throw 'delayed' === $this->kind ? new DelayedMessageHandlingException([new \LogicException('delayed')], $envelope) : new MessageValidationFailedException($envelope->getMessage(), new ConstraintViolationList(), $envelope);
             }
         };
         try {
             new MessageBus([$this->middleware($payloads), $downstream])->dispatch(new Envelope($original, [new ReceivedStamp('tool')]));
-            self::fail('Expected envelope-aware failure.');
+            $this->fail('Expected envelope-aware failure.');
         } catch (DelayedMessageHandlingException|MessageValidationFailedException $exception) {
-            self::assertInstanceOf(EnvelopeAwareExceptionInterface::class, $exception);
-            self::assertSame($original, $exception->getEnvelope()->getMessage());
-            self::assertSame('retained', $exception->getEnvelope()->last(HandledStamp::class)->getResult());
+            $this->assertInstanceOf(EnvelopeAwareExceptionInterface::class, $exception);
+            $this->assertSame($original, $exception->getEnvelope()->getMessage());
+            $this->assertSame('retained', $exception->getEnvelope()->last(HandledStamp::class)->getResult());
         }
     }
 
@@ -215,7 +226,7 @@ final class ToolPayloadMiddlewareTest extends TestCase
         $bus = new MessageBus([$this->middleware($payloads, $deferred, $batches, $registry)]);
         $message = new ToolPayloadMessage($this->reference('result'), 'deferred');
         for ($i = 0; $i < 2; ++$i) {
-            self::assertSame($message, $bus->dispatch(new Envelope($message, [new ReceivedStamp('run_control')]))->getMessage());
+            $this->assertSame($message, $bus->dispatch(new Envelope($message, [new ReceivedStamp('run_control')]))->getMessage());
         }
     }
 
@@ -233,7 +244,7 @@ final class ToolPayloadMiddlewareTest extends TestCase
         $replay = $this->createMock(RunStateRebuilderInterface::class);
         $replay->expects($this->once())->method('rebuildIfStale')->willReturn(RunStateReplayResult::rebuilt(new RunState('run', RunStatus::Cancelled, turnNo: 1)));
         $result = new MessageBus([$this->middleware($payloads, $deferred, $batches, replay: $replay)])->dispatch(new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'discard']]));
-        self::assertNotNull($result->last(HandledStamp::class));
+        $this->assertNotNull($result->last(HandledStamp::class));
     }
 
     #[DataProvider('mismatchedIdentities')]
@@ -282,13 +293,19 @@ final class ToolPayloadMiddlewareTest extends TestCase
             $batches->method('loadCallReference')->willReturn($this->reference('call'));
             $batches->method('loadSchedule')->willReturn(new ToolBatchScheduleDTO(['call' => 0], ['call' => 'sequential'], [], ['call' => true], [], false, 1));
         }
-        $registry ??= $this->createStub(ActiveRunContextInterface::class);
+        if (null === $registry) {
+            $registry = $this->createStub(ActiveRunContextInterface::class);
+            $registry->method('requireLoaded')->willThrowException(new RunContextNotLoadedException('Not loaded'));
+        }
         $replay ??= $this->createStub(RunStateRebuilderInterface::class);
         $locks = new RunLockManager(new LockFactory(new InMemoryStore()));
         $commands = new TestMessageBus();
         $logger = new TestLogger();
+        $events = $this->createStub(EventStoreInterface::class);
+        $events->method('latestSequenceFor')->willReturn(0);
+
         return new ToolPayloadMiddleware(
-            $payloads, new ToolPayloadAdmission($batches, $registry, $replay), $deferred, $locks,
+            $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger), $deferred, $locks,
             Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(), $commands, $logger,
             new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger),
         );
