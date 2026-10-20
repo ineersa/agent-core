@@ -19,7 +19,6 @@ use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
-use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
@@ -391,7 +390,6 @@ class CancelListenerTest extends TestCase
         $coordinator->enqueue(
             new QuestionRequest(
                 requestId: 'stale_child_q',
-                source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Stale child question',
                 runId: 'child-run-stale'),
@@ -435,7 +433,6 @@ class CancelListenerTest extends TestCase
         $coordinator->enqueue(
             new QuestionRequest(
                 requestId: 'child_hitl_text',
-                source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Which file should the scout inspect next?',
                 runId: 'child-run-text-question'),
@@ -482,7 +479,6 @@ class CancelListenerTest extends TestCase
         $coordinator->enqueue(
             new QuestionRequest(
                 requestId: 'child_hitl_overlay',
-                source: QuestionSource::AgentCore,
                 kind: QuestionKind::Choice,
                 prompt: 'Which file should the scout inspect next?',
                 runId: 'child-run-overlay',

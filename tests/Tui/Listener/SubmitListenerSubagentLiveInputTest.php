@@ -22,7 +22,6 @@ use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
-use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
@@ -141,7 +140,6 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         $this->questionCoordinator->enqueue(
             new QuestionRequest(
                 requestId: 'child_hitl_submit_bypass',
-                source: QuestionSource::AgentCore,
                 kind: QuestionKind::Text,
                 prompt: 'Which file should the scout inspect next?',
                 runId: 'child-run-1'),

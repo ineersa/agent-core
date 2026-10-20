@@ -81,8 +81,7 @@ Parent and child questions must not be answered into the wrong run context.
 Each live-view entry reconstructs the child transcript from that child's
 `events.jsonl`. Outside agents-live, the parent TUI does not retain child
 transcript or event archives. Unresolved canonical `human_input.requested`
-events are rediscovered from the snapshot on reopening; local bash-background
-`tool_question.requested` prompts are restored from `ToolQuestionStore`.
+events are rediscovered from the snapshot on reopening.
 
 ## Cancellation
 

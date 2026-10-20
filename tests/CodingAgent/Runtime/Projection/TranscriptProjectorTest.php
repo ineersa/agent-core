@@ -1250,24 +1250,6 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame('Timed out', $block->text);
     }
 
-    // ── HITL ─────────────────────────────────────────────────────────────────
-
-    public function testToolQuestionRequestedDoesNotCreateTranscriptBlock(): void
-    {
-        // Local TUI questions (e.g. BashTool background prompts) flow as
-        // tool_question.requested. The projector must never turn them into
-        // transcript blocks — only human_input.* / approval.* (HITL) create blocks.
-        $this->accept('tool_question.requested', [
-            'question_id' => 'tq_01',
-            'kind' => 'confirm',
-            'prompt' => 'Keep waiting?',
-            'schema' => ['type' => 'boolean'],
-        ]);
-
-        $this->assertCount(0, $this->projector->blocks(),
-            'tool_question.requested must not create transcript blocks');
-    }
-
     public function testHumanInputRequestedUsesUiKindForMetaKind(): void
     {
         // The real factory emits kind='interrupt' (transport marker) with UI

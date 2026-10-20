@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Application\Tool;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 
 /**
@@ -22,8 +21,6 @@ final readonly class ToolContext
         private CancellationTokenInterface $cancellationToken,
         private ?int $timeoutSeconds,
         private int $orderIndex = 0,
-        private ?ToolExecutionMode $executionMode = null,
-        private int $batchToolCallCount = 1,
         private ?ToolCallHumanInputAnswerDTO $humanInputAnswer = null,
         private ?string $stepId = null,
         private ?string $parentModel = null,
@@ -69,19 +66,6 @@ final readonly class ToolContext
     public function orderIndex(): int
     {
         return $this->orderIndex;
-    }
-
-    public function executionMode(): ?ToolExecutionMode
-    {
-        return $this->executionMode;
-    }
-
-    /**
-     * Number of tool calls in the assistant message for this LLM step (batch size).
-     */
-    public function batchToolCallCount(): int
-    {
-        return max(1, $this->batchToolCallCount);
     }
 
     /**

@@ -11,7 +11,6 @@ use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionOverlayWidget;
 use Ineersa\Tui\Question\QuestionRequest;
-use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -99,7 +98,6 @@ class QuestionControllerTest extends TestCase
         $longPrompt = str_repeat('Describe your workflow. ', 20);
         $request = new QuestionRequest(
             requestId: 'text-banner',
-            source: QuestionSource::AgentCore,
             kind: QuestionKind::Text,
             prompt: $longPrompt);
 
@@ -151,7 +149,6 @@ class QuestionControllerTest extends TestCase
     {
         $request = new QuestionRequest(
             requestId: 'choice-style',
-            source: QuestionSource::AgentCore,
             kind: QuestionKind::Choice,
             prompt: 'PROMPT_BODY_UNIQUE Choose carefully',
             choices: [
@@ -229,7 +226,6 @@ class QuestionControllerTest extends TestCase
     {
         $request = new QuestionRequest(
             requestId: 'confirm-1',
-            source: QuestionSource::Tui,
             kind: QuestionKind::Confirm,
             prompt: 'Are you sure?');
 
@@ -248,7 +244,6 @@ class QuestionControllerTest extends TestCase
     {
         $request = new QuestionRequest(
             requestId: 'confirm-2',
-            source: QuestionSource::Tui,
             kind: QuestionKind::Confirm,
             prompt: 'Proceed?',
             allowOther: false);
@@ -265,7 +260,6 @@ class QuestionControllerTest extends TestCase
     {
         $request = new QuestionRequest(
             requestId: 'choice-1',
-            source: QuestionSource::Tui,
             kind: QuestionKind::Choice,
             prompt: 'Pick one:',
             choices: [
@@ -289,7 +283,6 @@ class QuestionControllerTest extends TestCase
     {
         $request = new QuestionRequest(
             requestId: 'choice-2',
-            source: QuestionSource::Tui,
             kind: QuestionKind::Choice,
             prompt: 'Pick:',
             choices: [
@@ -308,7 +301,6 @@ class QuestionControllerTest extends TestCase
     {
         $request = new QuestionRequest(
             requestId: 'choice-3',
-            source: QuestionSource::Tui,
             kind: QuestionKind::Choice,
             prompt: 'Pick:',
             choices: [
@@ -339,7 +331,6 @@ class QuestionControllerTest extends TestCase
     {
         $request = new QuestionRequest(
             requestId: 'choice-1',
-            source: QuestionSource::Tui,
             kind: QuestionKind::Choice,
             prompt: 'Choose an option:',
             choices: [
@@ -366,7 +357,6 @@ class QuestionControllerTest extends TestCase
     {
         $request = new QuestionRequest(
             requestId: 'choice-sg',
-            source: QuestionSource::Tui,
             kind: QuestionKind::Choice,
             prompt: 'Pick one:',
             choices: [
@@ -390,7 +380,6 @@ class QuestionControllerTest extends TestCase
     {
         $request = new QuestionRequest(
             requestId: 'choice-3',
-            source: QuestionSource::AgentCore,
             kind: QuestionKind::Choice,
             prompt: 'Allow destructive command?',
             choices: [
@@ -416,7 +405,6 @@ class QuestionControllerTest extends TestCase
         // Empty choices list with allowOther=false → fall back to generic
         $request = new QuestionRequest(
             requestId: 'choice-empty',
-            source: QuestionSource::Tui,
             kind: QuestionKind::Choice,
             prompt: 'Pick?',
             choices: [],
@@ -433,7 +421,6 @@ class QuestionControllerTest extends TestCase
     {
         $request = new QuestionRequest(
             requestId: 'text-1',
-            source: QuestionSource::Tui,
             kind: QuestionKind::Text,
             prompt: 'Enter your name:');
 
@@ -453,7 +440,6 @@ class QuestionControllerTest extends TestCase
         // Verify buildItems includes icon markers for confirm labels.
         $request = new QuestionRequest(
             requestId: 'confirm-icons',
-            source: QuestionSource::Tui,
             kind: QuestionKind::Confirm,
             prompt: 'Test?',
             allowOther: false);
@@ -537,7 +523,6 @@ class QuestionControllerTest extends TestCase
         $calledWith = null;
         $request = new QuestionRequest(
             requestId: 'cb-test',
-            source: QuestionSource::Tui,
             kind: QuestionKind::Text,
             prompt: 'Test:');
 
@@ -556,7 +541,6 @@ class QuestionControllerTest extends TestCase
     {
         $request = new QuestionRequest(
             requestId: 'cancel-test',
-            source: QuestionSource::Tui,
             kind: QuestionKind::Confirm,
             prompt: 'Cancel test?');
 

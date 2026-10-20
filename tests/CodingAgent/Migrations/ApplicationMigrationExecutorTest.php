@@ -45,6 +45,16 @@ final class ApplicationMigrationExecutorTest extends TestCase
 
         $executor();
 
+        $processColumns = $connection->createSchemaManager()->listTableColumns('background_process');
+        $this->assertArrayHasKey('tool_call_id', $processColumns);
+        $this->assertArrayHasKey('background_requested', $processColumns);
+        $this->assertArrayHasKey('deadline_nanoseconds', $processColumns);
+        $this->assertFalse($connection->createSchemaManager()->tablesExist(['tool_question']));
+        $this->assertSame(1, (int) $connection->fetchOne(
+            'SELECT COUNT(*) FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20261019185942'],
+        ));
+
         $this->assertFalse(
             $connection->createSchemaManager()->tablesExist(['messenger_messages']),
             'messenger_messages must not be created on the default app connection (queues use sqlite-queue)',
@@ -124,12 +134,6 @@ final class ApplicationMigrationExecutorTest extends TestCase
         );
 
         $schemaManager = $connection->createSchemaManager();
-        $questionIndexes = $schemaManager->listTableIndexes('tool_question');
-        $this->assertArrayHasKey('idx_tool_question_unemitted', $questionIndexes);
-        $this->assertSame(
-            ['status', 'emitted_at', 'created_at'],
-            $questionIndexes['idx_tool_question_unemitted']->getColumns(),
-        );
         $this->assertTrue(
             $schemaManager->tablesExist(['deferred_tool_completion']),
             'deferred_tool_completion must exist after startup executor (run_control deferred registration)',

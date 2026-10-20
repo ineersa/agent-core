@@ -28,6 +28,7 @@ final class SubagentLiveInputPolicyTest extends TestCase
         $this->assertFalse($this->policy->shouldBlockInLiveView('/agents-main'));
         $this->assertFalse($this->policy->shouldBlockInLiveView('/main'));
         $this->assertFalse($this->policy->shouldBlockInLiveView('/agents-live'));
+        $this->assertFalse($this->policy->shouldBlockInLiveView('/bg'));
         $this->assertFalse($this->policy->shouldBlockInLiveView('steer this child'));
     }
 
@@ -52,6 +53,7 @@ final class SubagentLiveInputPolicyTest extends TestCase
         $this->assertTrue($this->policy->isAllowedLiveViewNavigationSlash('/main'));
         $this->assertTrue($this->policy->isAllowedLiveViewNavigationSlash('/agents-live'));
         $this->assertFalse($this->policy->isAllowedLiveViewNavigationSlash('/new'));
+        $this->assertFalse($this->policy->isAllowedLiveViewNavigationSlash('/bg'), 'Background inspection must not bypass an active child question.');
         $this->assertFalse($this->policy->isAllowedLiveViewNavigationSlash('steer child'));
     }
 

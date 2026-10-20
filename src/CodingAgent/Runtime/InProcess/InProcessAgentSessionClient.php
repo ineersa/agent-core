@@ -18,11 +18,14 @@ use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundProcessDTO;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Exception\BackgroundProcessUnavailableException;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -30,8 +33,8 @@ use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
-use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionAnswerResolver;
-use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
+use Ineersa\CodingAgent\Tool\BashBackgroundRequestService;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 
@@ -67,11 +70,11 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly HatfieldSessionStore $sessionMetaStore,
         private readonly ModelResolver $modelResolver,
         private readonly MessageBusInterface $commandBus,
+        private readonly BashBackgroundRequestService $backgroundRequests,
+        private readonly BackgroundProcessManager $backgroundProcesses,
         private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore $bootstrapSpools,
         private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer $bootstrapTransfer,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
-        private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
-        private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
         private readonly ?McpSessionLifecycleDispatcher $mcpDispatcher = null,
         private readonly ?AgentArtifactRegistry $artifactRegistry = null,
     ) {
@@ -87,6 +90,42 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $messages = $this->buildContextMessages();
 
         return $this->startWithContext($request, $metadata, $messages);
+    }
+
+    public function foregroundBash(string $runId): array
+    {
+        return array_map(
+            static fn ($process): BashBackgroundCandidateDTO => new BashBackgroundCandidateDTO($process->id, (string) $process->toolCallId, $process->pid),
+            $this->backgroundProcesses->foregroundTools($runId),
+        );
+    }
+
+    public function backgroundProcesses(string $runId): array
+    {
+        $snapshot = [];
+        foreach ($this->backgroundProcesses->list($runId) as $process) {
+            if (null === $process->finishedAt) {
+                $snapshot[] = new BackgroundProcessDTO(
+                    $process->id,
+                    $process->pid,
+                    $process->command,
+                    $process->startedAt,
+                    'stopped' === $process->status->value ? 'stopping' : $process->status->value,
+                );
+            }
+        }
+
+        return $snapshot;
+    }
+
+    public function stopBackgroundProcess(string $runId, int $recordId): bool
+    {
+        $process = $this->backgroundProcesses->findByRecordId($recordId, $runId);
+        if (null === $process || null === $process->backgroundedAt) {
+            throw new BackgroundProcessUnavailableException('Background process is no longer available in this session.');
+        }
+
+        return !$this->backgroundProcesses->stopByRecordId($recordId, $runId, waitForExit: false)->alreadyFinished;
     }
 
     public function attach(string $runId): RunHandle
@@ -142,7 +181,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     {
         $text = $command->text ?? '';
 
-        // answer_human, answer_tool_question, and shell_command carry
+        // answer_human and shell_command carry
         // machine/payload answers, so prompt templates do not expand them.
         if (\in_array($command->type, ['message', 'steer', 'follow_up'], true)) {
             $text = $this->promptTemplateService->expandPromptTemplate($text);
@@ -175,8 +214,8 @@ final class InProcessAgentSessionClient implements AgentSessionClient
                 (string) ($command->payload['question_id'] ?? ''),
                 $command->payload['answer'] ?? null,
             ),
-            'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
             'shell_command' => $this->handleShellCommandSend($runId, $command),
+            'background_bash' => $this->backgroundRequests->request($runId, $command->payload),
             'select_history_turn' => $this->handleInProcessSelectHistoryTurn($runId, $command),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };
@@ -450,27 +489,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->mcpDispatcher?->dispatchInitialize($runId, 'start_run');
 
         return new RunHandle(runId: $runId, status: 'running');
-    }
-
-    /**
-     * Handle an answer_tool_question command by writing the answer
-     * to the ToolQuestionStore. The blocked tool worker polls the store
-     * and will pick up the answer.
-     */
-    private function handleAnswerToolQuestion(string $runId, UserCommand $command): void
-    {
-        if (null === $this->toolQuestionStore) {
-            throw new \RuntimeException('ToolQuestionStore not configured; cannot handle answer_tool_question command.');
-        }
-
-        $requestId = (string) ($command->payload['request_id'] ?? '');
-
-        if ('' === $requestId) {
-            throw new \InvalidArgumentException('answer_tool_question requires request_id in payload');
-        }
-
-        $answer = $this->answerResolver->resolve($command->payload['answer'] ?? null);
-        $this->toolQuestionStore->answer($requestId, $answer);
     }
 
     private function handleInProcessSelectHistoryTurn(string $runId, UserCommand $command): void

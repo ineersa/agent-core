@@ -76,6 +76,15 @@ final readonly class AppHotkeyRegistrar implements TuiListenerRegistrar
 
         // ── Prompt history ────────────────────────────────────────
         $this->hotkeyRegistry->add(new HotkeyBindingDTO(
+            context: 'Global',
+            keys: ['ctrl+b'],
+            action: 'Background Bash',
+            description: 'Background one running Bash tool in the visible session; choose from a picker when several are running',
+            source: 'core',
+            priority: 24,
+        ));
+
+        $this->hotkeyRegistry->add(new HotkeyBindingDTO(
             context: 'History',
             keys: ['up'],
             action: 'Previous prompt',

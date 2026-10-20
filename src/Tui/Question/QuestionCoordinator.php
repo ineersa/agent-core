@@ -8,12 +8,10 @@ namespace Ineersa\Tui\Question;
  * In-memory coordinator for question request lifecycle.
  *
  * Holds one active question at a time and maintains a FIFO queue for
- * subsequent requests. Answer callbacks are invoked for all sources
- * (Tui and AgentCore) — upper layers register callbacks that dispatch
- * answer_human commands to the runtime or handle local side effects.
+ * subsequent requests. Upper layers register answer callbacks that dispatch
+ * answer_human commands to the runtime.
  * Cancel callbacks (AgentCore HITL path) send 'Cancelled by user' when the
- * user dismisses the overlay without responding. ToolQuestion cancel callbacks
- * (SafeGuard approval path) send 'cancel'. The receiving extension owns
+ * user dismisses the overlay without responding. The receiving extension owns
  * fail-closed semantics via its resolveApprovalAnswer() contract.
  *
  * This coordinator is stateful and should be scoped per-session.
@@ -105,10 +103,8 @@ final class QuestionCoordinator
     /**
      * Resolve the active question with a user-provided answer.
      *
-     * The registered callback (if any, for any source) is invoked with
-     * the answer value. For AgentCore-source questions the callback
-     * typically sends an answer_human command back to the runtime;
-     * for Tui-source questions it handles local side effects.
+     * The registered callback is invoked with the answer value. It typically
+     * sends an answer_human command back to the runtime.
      *
      * After recording the answer, the coordinator advances to the
      * next queued request, if any.

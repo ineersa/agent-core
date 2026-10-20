@@ -17,7 +17,6 @@ use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
-use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
@@ -100,7 +99,6 @@ final class SafeGuardToolCallHookTest extends TestCase
         $controller = new QuestionController(new QuestionCoordinator(), $harness->screen());
         $controller->open(new QuestionRequest(
             requestId: 'safeguard-markdown',
-            source: QuestionSource::AgentCore,
             kind: QuestionKind::Choice,
             prompt: $prompt,
             choices: [new QuestionOption('✅ Allow'), new QuestionOption('❌ Deny')],
@@ -135,7 +133,6 @@ final class SafeGuardToolCallHookTest extends TestCase
         $controller = new QuestionController($coordinator, $harness->screen());
         $request = new QuestionRequest(
             requestId: 'long-approval',
-            source: QuestionSource::AgentCore,
             kind: QuestionKind::Choice,
             prompt: (string) $dto->details['prompt'],
             choices: [new QuestionOption('✅ Allow'), new QuestionOption('❌ Deny')],

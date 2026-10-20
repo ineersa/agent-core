@@ -22,8 +22,8 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  * {@see AgentSessionClient::events()} for the child run id while the view is
  * active. Leaving or switching children resets the projector and pending buffers.
  *
- * Optional HITL callbacks mirror RuntimeEventPoller so child human_input.requested
- * and tool_question.requested events can drive the shared QuestionCoordinator.
+ * The optional HITL callback mirrors RuntimeEventPoller so child
+ * human_input.requested events can drive the shared QuestionCoordinator.
  */
 final class SubagentLiveChildViewPoller
 {
@@ -55,12 +55,10 @@ final class SubagentLiveChildViewPoller
      * One-time apply of a child snapshot into live view state and the child projector.
      *
      * Call only while {@see SubagentLiveViewState::$active} is true (picker sets this before apply).
-     * Reconstructs presentation from the durable snapshot, redispatches unresolved canonical
-     * human_input.requested events, and restores pending local tool questions from the DB store.
+     * Reconstructs presentation from the durable snapshot and redispatches unresolved
+     * canonical human_input.requested events.
      *
      * @param ?callable(RuntimeEvent): void $onHumanInputRequested
-     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
-     * @param ?callable(RuntimeEvent): void $onToolTerminal
      *
      * @return list<TranscriptBlock>
      */
@@ -68,14 +66,12 @@ final class SubagentLiveChildViewPoller
         SubagentLiveViewState $live,
         ChildRunTranscriptSnapshotDTO $snapshot,
         ?callable $onHumanInputRequested = null,
-        ?callable $onToolQuestionRequested = null,
-        ?callable $onToolTerminal = null,
     ): array {
         if (!$live->active || null === $live->selected) {
             return $live->childTranscript();
         }
 
-        $callbacks = $this->makeCallbacks($onHumanInputRequested, $onToolQuestionRequested, $onToolTerminal);
+        $callbacks = $this->makeCallbacks($onHumanInputRequested);
 
         $this->resetProjection();
 
@@ -100,12 +96,6 @@ final class SubagentLiveChildViewPoller
             $callbacks->dispatch($event, $live->selected->agentRunId);
         }
 
-        foreach ($snapshot->replayEvents as $event) {
-            if (RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type) {
-                $callbacks->dispatch($event, $live->selected->agentRunId);
-            }
-        }
-
         $live->childActivity = $scratch->activity;
         $live->childQueuedUserMessages = $scratch->queuedUserMessages;
         $live->llmRetryWorkingMessage = $scratch->llmRetryWorkingMessage;
@@ -124,8 +114,6 @@ final class SubagentLiveChildViewPoller
 
     /**
      * @param ?callable(RuntimeEvent): void $onHumanInputRequested
-     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
-     * @param ?callable(RuntimeEvent): void $onToolTerminal
      *
      * @return TranscriptChangeSet|null Incremental transcript changes, or null when events changed only non-transcript state
      */
@@ -133,8 +121,6 @@ final class SubagentLiveChildViewPoller
         SubagentLiveViewState $live,
         AgentSessionClient $client,
         ?callable $onHumanInputRequested = null,
-        ?callable $onToolQuestionRequested = null,
-        ?callable $onToolTerminal = null,
     ): ?TranscriptChangeSet {
         if (!$live->active || null === $live->selected) {
             return null;
@@ -163,7 +149,7 @@ final class SubagentLiveChildViewPoller
         $scratch->queuedUserMessages = $live->childQueuedUserMessages;
         $scratch->llmRetryWorkingMessage = $live->llmRetryWorkingMessage;
 
-        $callbacks = $this->makeCallbacks($onHumanInputRequested, $onToolQuestionRequested, $onToolTerminal);
+        $callbacks = $this->makeCallbacks($onHumanInputRequested);
 
         foreach ($events as $index => $event) {
             $seq = $event->seq;
@@ -215,13 +201,9 @@ final class SubagentLiveChildViewPoller
 
     /**
      * @param ?callable(RuntimeEvent): void $onHumanInputRequested
-     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
-     * @param ?callable(RuntimeEvent): void $onToolTerminal
      */
     private function makeCallbacks(
         ?callable $onHumanInputRequested,
-        ?callable $onToolQuestionRequested,
-        ?callable $onToolTerminal,
     ): RuntimeEventCallbacks {
         return new RuntimeEventCallbacks(
             $this->logger,
@@ -229,8 +211,6 @@ final class SubagentLiveChildViewPoller
             'tui.subagent_live_child_poller',
             'subagent_live_child_poller.callback_failed',
             $onHumanInputRequested,
-            $onToolQuestionRequested,
-            $onToolTerminal,
         );
     }
 }

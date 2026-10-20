@@ -7,19 +7,17 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
-use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 
 /**
- * Translates runtime HITL and tool-question events into QuestionCoordinator actions.
+ * Translates canonical human-input events into QuestionCoordinator actions.
  *
  * Extracted from TickPollListener so polling/rendering stays separate from
  * question overlay wiring and orphan self-heal policy.
@@ -83,7 +81,6 @@ final class RuntimeQuestionEventHandler
 
         $request = new QuestionRequest(
             requestId: $requestId,
-            source: QuestionSource::AgentCore,
             kind: $kind,
             prompt: (string) ($p['prompt'] ?? 'Approval required.'),
             choices: $choices,
@@ -146,113 +143,6 @@ final class RuntimeQuestionEventHandler
                 }
             }
         );
-    }
-
-    /**
-     * Handle a tool execution terminal event by cancelling any active
-     * Tui-source question whose toolCallId matches the terminal event.
-     *
-     * This is invoked by RuntimeEventPoller::poll() each time a
-     * tool_execution.completed, tool_execution.failed, or
-     * tool_execution.cancelled event is polled from the runtime stream.
-     * When the tool returns (with output, error, or cancellation) while a
-     * local tool question overlay is still open, this dismisses the stale
-     * question so the user cannot answer a prompt for a tool that is no
-     * longer running.
-     *
-     * Cancelling the coordinator sends a fail-safe false answer through
-     * the registered cancel callback, which dispatches an
-     * answer_tool_question=false command. The store's idempotency makes
-     * this a noop if the adapter already cancelled or returned before the
-     * answer arrives.
-     */
-    public function handleToolTerminal(
-        RuntimeEvent $event,
-        QuestionCoordinator $questionCoordinator,
-        QuestionController $questionController,
-    ): void {
-        $p = $event->payload;
-        $toolCallId = (string) ($p['tool_call_id'] ?? '');
-
-        if ('' === $toolCallId) {
-            return;
-        }
-
-        $active = $questionCoordinator->activeRequest();
-        if (null === $active) {
-            return;
-        }
-
-        // Only cancel if the active question is a local Tui-source question
-        // (tool-local prompt, not AgentCore HITL) and the toolCallId matches.
-        if (QuestionSource::Tui !== $active->source) {
-            return;
-        }
-
-        if ($active->toolCallId !== $toolCallId) {
-            return;
-        }
-
-        if ($active->runId !== $event->runId) {
-            return;
-        }
-
-        $questionCoordinator->cancel();
-
-        // Close the visual overlay so the stale prompt is not visible.
-        // The overlay is removed even if it was already dismissed by user
-        // action — close() handles the no-op case internally.
-        $questionController->close();
-    }
-
-    /**
-     * Handle a tool_question.requested runtime event by enqueuing a
-     * schema-driven question in the coordinator.
-     *
-     * This is invoked by RuntimeEventPoller::poll() each time a
-     * tool_question.requested event is polled from the runtime stream.
-     * The event carries a request_id, prompt, kind, schema, and metadata
-     * from the tool that needs user interaction.
-     *
-     * Local tool questions are boolean/confirm only (e.g. bash background prompts).
-     * Extension/SafeGuard approvals use human_input.requested (canonical HITL).
-     *
-     * All tool_question.requested events are LOCAL tool questions:
-     * - source is Tui (not AgentCore)
-     * - transcript is false (no transcript block)
-     * - answer sends answer_tool_question (not answer_human)
-     * - no WaitingHuman state transition in AgentCore
-     * - no catalog/live WaitingHuman or main/picker "needs input" attention
-     *   (bash background confirms stay answerable overlays only)
-     *
-     * A guard against duplicate request IDs prevents enqueueing the
-     * same question twice if the event stream replays.
-     */
-    public function handleToolQuestionRequested(
-        RuntimeEvent $event,
-        AgentSessionClient $client,
-        QuestionCoordinator $questionCoordinator,
-        ?TuiSessionState $sessionState = null,
-    ): void {
-        $p = $event->payload;
-        $requestIdFromPayload = (string) ($p['request_id'] ?? '');
-        $runId = $event->runId;
-
-        if ('' === $requestIdFromPayload) {
-            return;
-        }
-
-        $requestId = $this->toolRequestId($runId, $requestIdFromPayload);
-
-        if ($questionCoordinator->hasRequest($requestId)) {
-            return;
-        }
-
-        // Do not mark catalog/live WaitingHuman: local tool questions are not
-        // canonical HITL. They remain answerable via QuestionCoordinator only.
-
-        // Boolean/confirm only — enum/approval choice overlays were SafeGuard-specific.
-        $this->handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState);
     }
 
     public function shouldRejectOrphanedQuestion(TuiSessionState $state, QuestionRequest $activeRequest): bool
@@ -361,76 +251,9 @@ final class RuntimeQuestionEventHandler
         return [];
     }
 
-    /**
-     * Handle a tool_question.requested event with a boolean schema.
-     *
-     * Renders a boolean yes/no confirmation. The answer is sent as a boolean
-     * through answer_tool_question.
-     *
-     * @param array<string, mixed> $p
-     */
-    private function handleConfirmToolQuestion(
-        array $p,
-        string $requestId,
-        string $runId,
-        string $requestIdFromPayload,
-        AgentSessionClient $client,
-        QuestionCoordinator $questionCoordinator,
-        ?TuiSessionState $sessionState = null,
-    ): void {
-        $request = new QuestionRequest(
-            requestId: $requestId,
-            source: QuestionSource::Tui,
-            kind: QuestionKind::Confirm,
-            prompt: (string) ($p['prompt'] ?? 'Confirmation required.'),
-            choices: [],
-            header: $this->resolveQuestionHeader($sessionState, $runId, $p, 'approval'),
-            allowOther: false,
-            runId: $runId,
-            toolCallId: (string) ($p['tool_call_id'] ?? ''),
-            toolName: (string) ($p['tool_name'] ?? ''),
-        );
-
-        $questionCoordinator->enqueue(
-            $request,
-            onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload): void {
-                $boolAnswer = \is_string($answer) && 'yes' === strtolower($answer);
-
-                $client->send($runId, new UserCommand(
-                    type: 'answer_tool_question',
-                    payload: [
-                        'request_id' => $requestIdFromPayload,
-                        'answer' => $boolAnswer,
-                        'kind' => 'confirm',
-                    ]
-                ));
-
-                // Local tool questions never own WaitingHuman; do not clear an
-                // independently canonical HITL waiting state for this run.
-            },
-            onCancel: static function () use ($client, $runId, $requestIdFromPayload): void {
-                $client->send($runId, new UserCommand(
-                    type: 'answer_tool_question',
-                    payload: [
-                        'request_id' => $requestIdFromPayload,
-                        'answer' => false,
-                        'kind' => 'confirm',
-                    ]
-                ));
-
-                // Same as onAnswer: leave catalog/live WaitingHuman alone.
-            }
-        );
-    }
-
     private function hitlRequestId(string $runId, string $questionId): string
     {
         return 'hitl_'.substr(hash('sha256', $runId.'|'.$questionId), 0, 16);
-    }
-
-    private function toolRequestId(string $runId, string $requestIdFromPayload): string
-    {
-        return 'tool_'.substr(hash('sha256', $runId.'|'.$requestIdFromPayload), 0, 16);
     }
 
     /**

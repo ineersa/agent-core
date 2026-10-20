@@ -188,4 +188,23 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
             ->setHint(Query::HINT_REFRESH, true)
             ->getOneOrNullResult();
     }
+
+    /**
+     * Read only the authoritative stop cause without replacing pending changes.
+     *
+     * @param list<int> $ids
+     *
+     * @return list<int>
+     */
+    public function findStoppedIds(array $ids): array
+    {
+        return $this->createQueryBuilder('bp')
+            ->select('bp.id')
+            ->where('bp.id IN (:ids)')
+            ->andWhere('bp.status = :status')
+            ->setParameter('ids', $ids)
+            ->setParameter('status', BackgroundProcessStatusEnum::Stopped)
+            ->getQuery()
+            ->getSingleColumnResult();
+    }
 }

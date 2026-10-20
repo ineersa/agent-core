@@ -123,25 +123,21 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
         $this->assertSame("child-shell\n", $result->text);
     }
 
-    public function testEmptyTranscriptStillRestoresPendingLocalToolQuestion(): void
+    public function testSnapshotPreservesCanonicalHumanInputForChildReplay(): void
     {
-        $events = $this->createStub(EventStoreInterface::class);
-        $events->method('allFor')->willReturn([]);
-        $questions = $this->createMock(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class);
-        $questions->expects($this->once())->method('findPendingQuestionsForRun')->with($this->childRunId)->willReturn([
-            \Ineersa\CodingAgent\Entity\ToolQuestion::create(
-                requestId: 'pending', runId: $this->childRunId, toolCallId: 'tc', toolName: 'bash',
-                pid: 42, logPath: '/tmp/test.log', commandPreview: 'command', prompt: 'Background?',
-            ),
-        ]);
+        $snapshot = $this->createProvider([
+            $this->runEvent(RunEventTypeEnum::WaitingHuman->value, 7, 1, [
+                'question_id' => 'pending',
+                'prompt' => 'Approve child operation?',
+                'schema' => ['type' => 'boolean'],
+            ]),
+        ])->snapshot($this->childRunId);
 
-        $snapshot = $this->createProviderWithStore($events, $questions)->snapshot($this->childRunId);
-
-        $this->assertSame([], $snapshot->transcriptBlocks);
-        $this->assertSame(0, $snapshot->maxSeq);
+        $this->assertSame(7, $snapshot->maxSeq);
         $this->assertCount(1, $snapshot->replayEvents);
-        $this->assertSame('tool_question.requested', $snapshot->replayEvents[0]->type);
-        $this->assertSame('pending', $snapshot->replayEvents[0]->payload['request_id']);
+        $this->assertSame('human_input.requested', $snapshot->replayEvents[0]->type);
+        $this->assertSame('pending', $snapshot->replayEvents[0]->payload['question_id']);
+        $this->assertSame($this->childRunId, $snapshot->replayEvents[0]->runId);
     }
 
     /** @param list<RunEvent> $events */
@@ -153,7 +149,7 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
         return $this->createProviderWithStore($store);
     }
 
-    private function createProviderWithStore(EventStoreInterface $store, ?\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface $questions = null): ChildRunTranscriptSnapshotProvider
+    private function createProviderWithStore(EventStoreInterface $store): ChildRunTranscriptSnapshotProvider
     {
         $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
         $translator = new RuntimeEventTranslator($eventDispatcher, new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
@@ -166,7 +162,7 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
         $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $transcriptProjector = new TranscriptProjector($dispatcher, $projectionState);
 
-        return new ChildRunTranscriptSnapshotProvider($store, $eventMapper, $transcriptProjector, $questions ?? $this->createStub(\Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface::class));
+        return new ChildRunTranscriptSnapshotProvider($store, $eventMapper, $transcriptProjector);
     }
 
     /** @return array<string, mixed> */

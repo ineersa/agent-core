@@ -169,28 +169,6 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     }
 
     #[Test]
-    public function replaySnapshotDispatchesPendingLocalToolQuestion(): void
-    {
-        $poller = new SubagentLiveChildViewPoller(
-            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-            new NullLogger(),
-            SubagentProgressSerializerTestSupport::denormalizer(),
-        );
-        $live = $this->liveState();
-        $hit = [];
-
-        $poller->replaySnapshot(
-            $live,
-            new ChildRunTranscriptSnapshotDTO([], [new RuntimeEvent('tool_question.requested', self::CHILD_RUN_ID, 0, ['request_id' => 'bg_open'])], 0),
-            onToolQuestionRequested: static function (RuntimeEvent $event) use (&$hit): void {
-                $hit[] = (string) ($event->payload['request_id'] ?? '');
-            },
-        );
-
-        $this->assertSame(['bg_open'], $hit);
-    }
-
-    #[Test]
     public function pollReturnsOnlyIncrementalLiveTranscriptChanges(): void
     {
         $projector = $this->childLiveProjector();

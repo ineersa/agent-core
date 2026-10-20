@@ -139,7 +139,6 @@ final readonly class ExecuteToolCallWorker
             }
 
             $cancelToken = new RunCancellationToken($this->statusReader, $message->runId());
-            $batchToolCallCount = max(1, $message->batchToolCallCount);
             $toolCall = new ToolCall(
                 toolCallId: $message->toolCallId,
                 toolName: $message->toolName,
@@ -157,7 +156,6 @@ final readonly class ExecuteToolCallWorker
                     'max_parallelism' => $message->maxParallelism,
                     'cancel_token' => $cancelToken,
                     'tools_ref' => $message->toolsRef,
-                    'assistant_batch_tool_call_count' => $batchToolCallCount,
                     'human_input_answer' => $message->humanInputAnswer,
                     'parent_model' => $message->parentModel,
                     'launch_context' => $launchContext,

@@ -80,14 +80,6 @@ final class TickPollListener implements TuiListenerRegistrar
                 $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator);
             };
 
-            $onToolQuestion = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
-                $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator);
-            };
-
-            $onToolTerminal = static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
-                $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
-            };
-
             $liveActive = $state->subagentLiveView->active;
 
             // Child-first on the shared JSONL pipe: events() re-buffers non-matching
@@ -98,12 +90,6 @@ final class TickPollListener implements TuiListenerRegistrar
                     $client,
                     onHumanInputRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
                         $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
-                    },
-                    onToolQuestionRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $runtimeQuestionEventHandler): void {
-                        $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state);
-                    },
-                    onToolTerminal: static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
-                        $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
                     },
                 );
                 // Apply only dirty child blocks. Full replacement is reserved for
@@ -146,8 +132,6 @@ final class TickPollListener implements TuiListenerRegistrar
                 $state,
                 $client,
                 onHumanInputRequested: $onHitl,
-                onToolQuestionRequested: $onToolQuestion,
-                onToolTerminal: $onToolTerminal,
                 onBootstrapMounted: static function () use ($state, $screen, $tui, $promptHistory, $questionCoordinator, $questionController, $returnToParent): void {
                     $returnToParent();
                     $screen->setTranscriptBlocks($state->transcript);

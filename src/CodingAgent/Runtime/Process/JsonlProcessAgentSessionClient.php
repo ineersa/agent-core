@@ -6,11 +6,14 @@ namespace Ineersa\CodingAgent\Runtime\Process;
 
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundProcessDTO;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Exception\BackgroundProcessUnavailableException;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueEnv;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -19,6 +22,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\RepairResultNormalizer;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use Psr\Log\LoggerInterface;
 
@@ -156,6 +160,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         private readonly ToolFilterRuntimeConfig $toolFilterConfig,
         private readonly LoggerInterface $logger,
         private readonly HatfieldSessionStore $sessionStore,
+        private readonly BackgroundProcessManager $backgroundProcesses,
     ) {
         $this->compactEventBuffer = new RuntimeEventPerRunCompactBuffer();
         $this->eventBufferWatermarkActive = false;
@@ -165,6 +170,42 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     public function __destruct()
     {
         $this->stopProcess();
+    }
+
+    public function foregroundBash(string $runId): array
+    {
+        return array_map(
+            static fn ($process): BashBackgroundCandidateDTO => new BashBackgroundCandidateDTO($process->id, (string) $process->toolCallId, $process->pid),
+            $this->backgroundProcesses->foregroundTools($runId),
+        );
+    }
+
+    public function backgroundProcesses(string $runId): array
+    {
+        $snapshot = [];
+        foreach ($this->backgroundProcesses->list($runId) as $process) {
+            if (null === $process->finishedAt) {
+                $snapshot[] = new BackgroundProcessDTO(
+                    $process->id,
+                    $process->pid,
+                    $process->command,
+                    $process->startedAt,
+                    'stopped' === $process->status->value ? 'stopping' : $process->status->value,
+                );
+            }
+        }
+
+        return $snapshot;
+    }
+
+    public function stopBackgroundProcess(string $runId, int $recordId): bool
+    {
+        $process = $this->backgroundProcesses->findByRecordId($recordId, $runId);
+        if (null === $process || null === $process->backgroundedAt) {
+            throw new BackgroundProcessUnavailableException('Background process is no longer available in this session.');
+        }
+
+        return !$this->backgroundProcesses->stopByRecordId($recordId, $runId, waitForExit: false)->alreadyFinished;
     }
 
     /**
@@ -403,17 +444,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'follow_up' => 'follow_up',
             'append_message' => 'append_message',
             'answer_human' => 'answer_human',
-            'answer_tool_question' => 'answer_tool_question',
             'shell_command' => 'shell_command',
+            'background_bash' => 'background_bash',
             'select_history_turn' => 'select_history_turn',
             default => throw new \InvalidArgumentException(\sprintf('Unknown command type: "%s"', $command->type)),
         };
 
         $payload = match ($type) {
-            'answer_tool_question' => array_filter([
-                'request_id' => $command->payload['request_id'] ?? '',
-                'answer' => $command->payload['answer'] ?? null,
-            ], static fn (mixed $v): bool => null !== $v),
+            'background_bash' => $command->payload,
             'shell_command' => ['text' => $command->text],
             'select_history_turn' => array_filter([
                 'turn_no' => $command->payload['turn_no'] ?? null,

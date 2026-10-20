@@ -12,7 +12,6 @@ use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionOverlayWidget;
 use Ineersa\Tui\Question\QuestionRequest;
-use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
@@ -47,7 +46,6 @@ final class TuiQuestionOverlayBudgetVirtualTest extends TestCase
         $controller = new QuestionController(new QuestionCoordinator(), $screen);
         $controller->open(new QuestionRequest(
             requestId: 'changing-editor',
-            source: QuestionSource::AgentCore,
             kind: QuestionKind::Text,
             prompt: implode("\n\n", array_map(static fn (int $i): string => 'Prompt row '.$i, range(1, 20))),
             header: 'QUESTION_HEADER',
@@ -192,7 +190,6 @@ final class TuiQuestionOverlayBudgetVirtualTest extends TestCase
         $controller = new QuestionController(new QuestionCoordinator(), $screen);
         $controller->open(new QuestionRequest(
             requestId: 'short',
-            source: QuestionSource::AgentCore,
             kind: QuestionKind::Choice,
             prompt: 'SHORT_PROMPT_UNIQUE',
             choices: [
@@ -296,7 +293,6 @@ final class TuiQuestionOverlayBudgetVirtualTest extends TestCase
         $controller = new QuestionController(new QuestionCoordinator(), $screen);
         $controller->open(new QuestionRequest(
             requestId: 'shot3-exact',
-            source: QuestionSource::AgentCore,
             kind: QuestionKind::Choice,
             prompt: 'This worktree has uncommitted local Hatfield integration beyond the trial wiring: composer.json/lock point symfony/tui at the local clone path, and QuestionController, ChatScreen, a new QuestionOverlayWidget, plus a new virtual budget test carry the overlay ordering and vertical budget fixes. Upstream PR #66063 is still open and pending CI. What should happen to this local integration work?',
             choices: $choices,
@@ -413,7 +409,6 @@ final class TuiQuestionOverlayBudgetVirtualTest extends TestCase
         $controller = new QuestionController(new QuestionCoordinator(), $screen);
         $controller->open(new QuestionRequest(
             requestId: 'question-paint',
-            source: QuestionSource::AgentCore,
             kind: QuestionKind::Choice,
             prompt: 'What should happen to this local integration work after the upstream select-list wrapping lands, given that the Hatfield overlay budget and unfinished composer path dependency are still local-only trial state?',
             header: 'Choose how to continue the multiline select trial',
@@ -507,7 +502,6 @@ final class TuiQuestionOverlayBudgetVirtualTest extends TestCase
 
         return new QuestionRequest(
             requestId: 'giant-choice',
-            source: QuestionSource::AgentCore,
             kind: QuestionKind::Choice,
             prompt: 'UNIQUE_QUESTION_PROMPT Why did you choose this approach?',
             choices: [
