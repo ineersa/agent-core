@@ -25,17 +25,18 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
     {
         // Finished history is not loaded into the picker. A pending UI action
         // may additionally observe its exact retained row until native settlement.
+        // child_run_id is unique, including resume rebinds. Resolve ownership
+        // and its attribution in this statement without duplicating process rows.
         return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<'SQL'
             SELECT process.id, process.pid, process.command, process.session_id,
-                process.status, process.finished_at, process.started_at
+                process.status, process.finished_at, process.started_at,
+                child.agent_name AS owner_name, child.artifact_id AS owner_artifact_id
             FROM background_process process
+            LEFT JOIN deferred_subagent_child child ON child.child_run_id = process.session_id
+            LEFT JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
             WHERE process.backgrounded_at IS NOT NULL
                 AND (process.finished_at IS NULL OR process.id = :observed)
-                AND (process.session_id = :root OR process.session_id IN (
-                    SELECT child.child_run_id FROM deferred_subagent_child child
-                    JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
-                    WHERE batch.parent_run_id = :root
-                ))
+                AND (process.session_id = :root OR batch.parent_run_id = :root)
             ORDER BY process.id
             SQL, ['root' => $rootRunId, 'observed' => $observedRecordId]);
     }

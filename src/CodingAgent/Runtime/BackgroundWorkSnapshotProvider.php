@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime;
 
+use DateTimeImmutable as ImmutableDateTime;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -21,7 +22,6 @@ final readonly class BackgroundWorkSnapshotProvider
     public function snapshot(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
     {
         $children = [];
-        $owners = [];
         $invocations = [];
         foreach ($this->batches->findOwnedChildStatuses($rootRunId) as $row) {
             $child = new BackgroundChildStatusDTO(
@@ -31,7 +31,6 @@ final readonly class BackgroundWorkSnapshotProvider
                 (string) $row['status'], null !== $row['backgrounded_at'],
             );
             $children[] = $child;
-            $owners[$child->runId] = $this->ownerLabel($child);
             if ($child->backgrounded) {
                 $invocations[$child->lifecycleId][] = $child;
             }
@@ -50,10 +49,10 @@ final readonly class BackgroundWorkSnapshotProvider
             $runId = (string) $row['session_id'];
             $terminal = null !== $row['finished_at'];
             $status = !$terminal && 'stopped' === $row['status'] ? 'stopping' : (string) $row['status'];
-            $owner = $runId === $rootRunId ? 'main run:'.$rootRunId : $owners[$runId];
+            $owner = $runId === $rootRunId ? 'main run:'.$rootRunId : \sprintf('%s agent_id:%s run:%s', $row['owner_name'], $row['owner_artifact_id'], $runId);
             $work[] = new BackgroundWorkDTO(
                 (string) $row['id'], 'bash', \sprintf('PID %d | %s | %s', $row['pid'], $owner, $row['command']),
-                $status, $terminal, [$runId], (int) $row['id'], new \DateTimeImmutable((string) $row['started_at']),
+                $status, $terminal, [$runId], (int) $row['id'], new ImmutableDateTime((string) $row['started_at']),
             );
         }
 
