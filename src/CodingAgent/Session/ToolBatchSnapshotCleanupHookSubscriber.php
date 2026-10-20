@@ -129,7 +129,7 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
     {
         try {
             if ($this->toolBatchStore->hasUnresolvedExecution($runId)) {
-                $batch = $this->toolBatchStore->load($runId, $turnNo, $stepId);
+                $batch = $this->toolBatchStore->loadSchedule($runId, $turnNo, $stepId);
                 if (null !== $batch && (!$batch->finalized || [] !== $batch->awaitingHumanInput || [] !== $batch->pendingQueue || [] !== $batch->inFlight)) {
                     return;
                 }

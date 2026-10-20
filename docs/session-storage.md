@@ -71,8 +71,17 @@ Sessions may be renamed via `/rename`. Display names are metadata only — they 
 - Transient streamed text is separate from durable events. Resume rebuilds from
   committed history, not from an unfinished stream.
 
-Active `tool_batch_schedule` rows retain calls, collected results, scheduling order,
-and human-input waits. `run_command` retains pending command bodies only. Applying
+Active `tool_batch` rows retain scheduling order, admission and human-input waits.
+`tool_batch_call` and `tool_batch_result` retain individual native Messenger
+envelopes under unique run, turn, step and call identities. Normal collection reads
+scheduling metadata, loads only newly admitted calls, and inserts one result body.
+Completion loads collected bodies in invocation order. Batch cleanup removes the
+header and its payload rows in one transaction after human and deferred work settles.
+
+The normalized schema replaces and discards the obsolete `tool_batch_schedule`
+rows on upgrade. There is no import of those unfinished batches or old-format reader.
+
+`run_command` retains pending command bodies only. Applying
 or rejecting a command deletes its whole row, so a completed command ID can be
 submitted again. Redelivery after completion can repeat user input.
 

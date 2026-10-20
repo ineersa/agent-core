@@ -7,12 +7,25 @@ namespace Ineersa\AgentCore\Contract\Tool;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 
 /** Active batch calls, collected results, and captured scheduling decisions. */
 interface ToolBatchStoreInterface
 {
     public function load(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO;
+
+    /** Return a detached scheduling snapshot without invocation or result bodies. */
+    public function loadSchedule(string $runId, int $turnNo, string $stepId): ?ToolBatchScheduleDTO;
+
+    public function loadCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall;
+
+    public function loadResult(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ToolCallResult;
+
+    /** @return array<string, ToolCallResult> Ordered by invocation order. */
+    public function loadResults(string $runId, int $turnNo, string $stepId): array;
 
     public function delete(string $runId, int $turnNo, string $stepId): void;
 

@@ -11,11 +11,16 @@ use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 
-/** One SQL row owns the active batch's calls, results, and scheduling state. */
+/**
+ * Scalar scheduling state and individually encoded invocation/result rows.
+ * Untouched native envelopes are neither hydrated nor rewritten by result deltas.
+ */
 final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
 {
     private PhpSerializer $serializer;
@@ -27,97 +32,193 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
 
     public function load(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO
     {
-        $record = $this->record($runId, $turnNo, $stepId);
-        if (null === $record) {
+        $schedule = $this->loadSchedule($runId, $turnNo, $stepId);
+        if (null === $schedule) {
             return null;
         }
+        $calls = $this->loadCalls($runId, $turnNo, $stepId);
+        $results = $this->loadResults($runId, $turnNo, $stepId);
 
-        return $this->decodeRecord($record, $runId, $turnNo, $stepId);
+        return new ToolBatchStateDTO($schedule->expectedOrder, $calls, $schedule->pendingQueue, $schedule->inFlight, $results, $schedule->finalized, $schedule->maxParallelism, $schedule->awaitingHumanInput);
+    }
+
+    public function loadSchedule(string $runId, int $turnNo, string $stepId): ?ToolBatchScheduleDTO
+    {
+        $record = $this->record($runId, $turnNo, $stepId);
+
+        return null === $record ? null : $this->decodeSchedule($record);
+    }
+
+    public function loadCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall
+    {
+        $this->sanitizeRunId($runId);
+        $row = $this->connection->fetchAssociative('SELECT * FROM tool_batch_call WHERE run_id = ? AND turn_no = ? AND step_id = ? AND tool_call_id = ?', [$runId, $turnNo, $stepId, $toolCallId]);
+
+        return false === $row ? null : $this->decodeCall($row);
+    }
+
+    public function loadResult(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ToolCallResult
+    {
+        $this->sanitizeRunId($runId);
+        $row = $this->connection->fetchAssociative('SELECT * FROM tool_batch_result WHERE run_id = ? AND turn_no = ? AND step_id = ? AND tool_call_id = ?', [$runId, $turnNo, $stepId, $toolCallId]);
+
+        return false === $row ? null : $this->decodeResult($row);
+    }
+
+    public function loadResults(string $runId, int $turnNo, string $stepId): array
+    {
+        $record = $this->record($runId, $turnNo, $stepId);
+        if (null === $record) {
+            return [];
+        }
+        $order = $this->decodeJson($record['expected_order_json']);
+        $results = [];
+        foreach ($this->connection->iterateAssociative('SELECT * FROM tool_batch_result WHERE run_id = ? AND turn_no = ? AND step_id = ? ORDER BY order_index, rowid', [$runId, $turnNo, $stepId]) as $row) {
+            $result = $this->decodeResult($row);
+            if (($order[$result->toolCallId] ?? null) !== $result->orderIndex) {
+                throw new \RuntimeException('Stored tool batch result membership is invalid.');
+            }
+            $results[$result->toolCallId] = $result;
+        }
+
+        return $results;
     }
 
     public function prepareChanges(array $actions, VerifiedTransitionDTO $transition): \Closure
     {
-        /** @var array<string, array<string, mixed>> $rows */
-        $rows = [];
-        $fullRows = [];
-        /** @var array<string, ToolBatchStateDTO> $batches */
-        $batches = [];
-        /** @var array<string, array<string, mixed>|null> $records */
         $records = [];
+        $schedules = [];
+        $headers = [];
+        $callWrites = [];
+        $resultWrites = [];
+        $calls = [];
+        $results = [];
+        $validatedBodies = [];
+        $retainedCounts = [];
         foreach ($actions as $action) {
-            if (($transition->work['run_id'] ?? null) !== $action->runId) {
-                throw new \RuntimeException('Prepared batch requires matching verified transition.');
-            }
-            $expectedActions = [...($transition->work['actions'] ?? []), ...($transition->work['after_turn_actions'] ?? [])];
-            $matched = false;
-            foreach ($expectedActions as $expected) {
-                if (serialize($expected) === serialize($action)) {
-                    $matched = true;
-                    break;
-                }
-            }
-            if (!$matched) {
-                throw new \RuntimeException('Prepared batch differs from captured transition work.');
-            }
-            $key = $action->runId.'|'.$action->turnNo.'|'.$action->stepId;
+            $this->verifyAction($action, $transition);
+            $key = $this->encodeJson([$action->runId, $action->turnNo, $action->stepId]);
             if (!\array_key_exists($key, $records)) {
                 $records[$key] = $this->record($action->runId, $action->turnNo, $action->stepId);
             }
+            // Keep the durable identity separate from prepared scheduling state:
+            // later actions must not mistake this uncommitted plan for redelivery.
             $record = $records[$key];
             if (null !== $record && $record['applied_transition'] === $transition->identity) {
                 continue;
             }
-            $batch = $batches[$key] ?? (null === $record ? null : $this->decodeRecord($record, $action->runId, $action->turnNo, $action->stepId));
-            if ($action instanceof RegisterToolBatchDTO) {
-                $calls = [];
-                foreach ($action->effects as $call) {
-                    $calls[$call->toolCallId] = $call;
+            if (!\array_key_exists($key, $schedules)) {
+                $schedules[$key] = null === $record ? null : $this->decodeSchedule($record);
+                if (null !== $schedules[$key]) {
+                    $retainedCounts[$key] = [\count($schedules[$key]->expectedOrder), \count($schedules[$key]->completedIds)];
                 }
-                if (null !== $batch) {
-                    if ($batch->expectedOrder !== $action->expectedOrder || serialize($batch->calls) !== serialize($calls)) {
+            }
+            $schedule = $schedules[$key];
+            if (null !== $record && !isset($validatedBodies[$key]) && ($action instanceof RegisterToolBatchDTO || null === $action->result)) {
+                // Registration, answers and cancellation still validate retained
+                // native evidence, including unchanged siblings. Ordinary result
+                // deltas leave those rows untouched; completion hydrates them once.
+                $calls[$key] = array_replace($this->loadCalls($action->runId, $action->turnNo, $action->stepId), $calls[$key] ?? []);
+                $results[$key] = array_replace($this->loadResults($action->runId, $action->turnNo, $action->stepId), $results[$key] ?? []);
+                $validatedBodies[$key] = true;
+            }
+            if ($action instanceof RegisterToolBatchDTO) {
+                $registered = [];
+                $modes = [];
+                foreach ($action->effects as $call) {
+                    $this->validateMessageIdentity($call, $action->runId, $action->turnNo, $action->stepId, $call->toolCallId, $action->expectedOrder[$call->toolCallId] ?? -1);
+                    $registered[$call->toolCallId] = $call;
+                    $modes[$call->toolCallId] = $this->mode($call);
+                }
+                if (\count($registered) !== \count($action->expectedOrder) || [] !== array_diff_key($registered, $action->expectedOrder)) {
+                    throw new \LogicException('Prepared batch invocation membership is invalid.');
+                }
+                if (null !== $schedule) {
+                    $stored = $calls[$key] ?? $this->loadCalls($action->runId, $action->turnNo, $action->stepId);
+                    if ($schedule->expectedOrder !== $action->expectedOrder || serialize($stored) !== serialize($registered)) {
                         throw new \LogicException('Conflicting prepared tool batch registration.');
                     }
-                // Redelivery never resets collected siblings or current queue state.
+                    // Registration redelivery never resets collected siblings or admission.
+                    $calls[$key] = $stored;
                 } else {
-                    $batch = new ToolBatchStateDTO($action->expectedOrder, $calls, $action->pendingQueue, $action->inFlight, [], false, max(1, $action->maxParallelism));
+                    $schedule = new ToolBatchScheduleDTO($action->expectedOrder, $modes, $action->pendingQueue, $action->inFlight, [], false, max(1, $action->maxParallelism));
+                    $calls[$key] = $registered;
+                    foreach ($registered as $id => $call) {
+                        $callWrites[$key][$id] = $this->encodeCall($call);
+                    }
                 }
             } else {
-                if (null === $batch) {
+                if (null === $schedule) {
                     throw new \RuntimeException('Prepared batch evidence is missing.');
                 }
                 if (null !== $action->result) {
-                    $batch->results[$action->result->toolCallId] = $action->result;
+                    $result = $action->result;
+                    $this->validateMessageIdentity($result, $action->runId, $action->turnNo, $action->stepId, $result->toolCallId, $schedule->expectedOrder[$result->toolCallId] ?? -1);
+                    if (isset($schedule->completedIds[$result->toolCallId])) {
+                        $stored = $results[$key][$result->toolCallId] ?? $this->loadResult($action->runId, $action->turnNo, $action->stepId, $result->toolCallId);
+                        if (null === $stored || !$this->equivalentResults($stored, $result)) {
+                            throw new \LogicException('Conflicting prepared tool batch result.');
+                        }
+                    } else {
+                        $resultWrites[$key][$result->toolCallId] = $this->encodeResult($result);
+                        $schedule->completedIds[$result->toolCallId] = true;
+                    }
+                    $results[$key][$result->toolCallId] = $result;
                 }
                 if (null !== $action->revisedCallId) {
-                    $call = $batch->calls[$action->revisedCallId] ?? throw new \RuntimeException('Prepared human answer has no stored call.');
-                    $batch->calls[$action->revisedCallId] = null === $action->answer
-                        ? $call->withHumanInputAnswer(null) : $call->withAuthorizedHumanAnswer($action->answer);
+                    $id = $action->revisedCallId;
+                    $call = $calls[$key][$id] ?? $this->loadCall($action->runId, $action->turnNo, $action->stepId, $id);
+                    if (null === $call || !isset($schedule->expectedOrder[$id])) {
+                        throw new \RuntimeException('Prepared human answer has no stored call.');
+                    }
+                    $call = null === $action->answer ? $call->withHumanInputAnswer(null) : $call->withAuthorizedHumanAnswer($action->answer);
+                    $calls[$key][$id] = $call;
+                    $callWrites[$key][$id] = $this->encodeCall($call);
                 }
-                $batch->pendingQueue = $action->pendingQueue;
-                $batch->inFlight = $action->inFlight;
-                $batch->awaitingHumanInput = $action->awaitingHumanInput;
-                $batch->finalized = $action->finalized;
+                $schedule->pendingQueue = $action->pendingQueue;
+                $schedule->inFlight = $action->inFlight;
+                $schedule->awaitingHumanInput = $action->awaitingHumanInput;
+                $schedule->finalized = $action->finalized;
             }
-            $batches[$key] = $batch;
-            // Serialization belongs outside the short mailbox/batch transaction.
-            $encoded = null === $record
-                ? $this->encodeRow($action->runId, $action->turnNo, $action->stepId, $batch, $transition->identity)
-                : $this->encodeChanges($record, $batch, $action, $transition->identity);
-            $rows[$key] = array_replace($rows[$key] ?? [], $encoded);
-            $fullRows[$key] = array_replace($record ?? [], $encoded);
-            // Keep subsequent actions on this batch's prepared state without
-            // treating the uncommitted identity as an already-applied transition.
-            $records[$key] = array_replace($record ?? [], $encoded, ['applied_transition' => $record['applied_transition'] ?? null]);
+            $this->validateSchedule($schedule);
+            $schedules[$key] = $schedule;
+            // Only touched bodies are encoded, before the metadata transaction.
+            $headers[$key] = $this->encodeHeader($action->runId, $action->turnNo, $action->stepId, $schedule, $transition->identity);
         }
 
-        return function () use ($rows, $fullRows): void {
-            foreach ($rows as $batchKey => $row) {
+        return function () use ($headers, $records, $callWrites, $resultWrites, $retainedCounts): void {
+            foreach ($headers as $batchKey => $row) {
                 $key = ['run_id' => $row['run_id'], 'turn_no' => $row['turn_no'], 'step_id' => $row['step_id']];
-                // Use the update count instead of an existence read, without
-                // binding unchanged payloads on the existing-batch path.
-                $updated = $this->connection->update('tool_batch_schedule', array_diff_key($row, $key), $key);
-                if (0 === (int) $updated) {
-                    $this->connection->insert('tool_batch_schedule', $fullRows[$batchKey]);
+                $changes = array_diff_key($row, $key);
+                foreach ($changes as $column => $value) {
+                    if (null !== $records[$batchKey] && $records[$batchKey][$column] === $value) {
+                        unset($changes[$column]);
+                    }
+                }
+                // The update count replaces an existence query on normal writes.
+                if (0 === (int) $this->connection->update('tool_batch', $changes, $key)) {
+                    if (null !== $records[$batchKey]) {
+                        // Recreate a missing header only while all retained body
+                        // rows still exist. Do not invent siblings after cleanup.
+                        foreach (['tool_batch_call', 'tool_batch_result'] as $index => $table) {
+                            $count = $this->connection->fetchOne("SELECT COUNT(*) FROM $table WHERE run_id = ? AND turn_no = ? AND step_id = ?", array_values($key));
+                            if ((int) $count !== $retainedCounts[$batchKey][$index]) {
+                                throw new \RuntimeException('Prepared tool batch payload rows disappeared before apply.');
+                            }
+                        }
+                    }
+                    $this->connection->insert('tool_batch', $row);
+                }
+                foreach ($callWrites[$batchKey] ?? [] as $callRow) {
+                    $callKey = $key + ['tool_call_id' => $callRow['tool_call_id']];
+                    if (null === $records[$batchKey]) {
+                        $this->connection->insert('tool_batch_call', $callRow);
+                    } elseif (0 === (int) $this->connection->update('tool_batch_call', array_diff_key($callRow, $callKey), $callKey)) {
+                        $this->connection->insert('tool_batch_call', $callRow);
+                    }
+                }
+                foreach ($resultWrites[$batchKey] ?? [] as $resultRow) {
+                    $this->connection->insert('tool_batch_result', $resultRow);
                 }
             }
         };
@@ -125,162 +226,232 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
 
     public function delete(string $runId, int $turnNo, string $stepId): void
     {
-        $this->sanitizeRunId($runId);
-        $this->connection->executeStatement(
-            "DELETE FROM tool_batch_schedule WHERE run_id = ? AND turn_no = ? AND step_id = ? AND finalized = 1 AND awaiting_human_input_json = '[]' AND pending_queue_json = '[]' AND in_flight_json = '[]' AND NOT EXISTS (SELECT 1 FROM deferred_tool_completion d WHERE d.run_id = tool_batch_schedule.run_id AND d.turn_no = tool_batch_schedule.turn_no AND d.step_id = tool_batch_schedule.step_id AND d.status = 'pending')",
-            [$runId, $turnNo, $stepId],
-        );
+        $this->deleteSettled($runId, $turnNo, $stepId);
     }
 
     public function deleteAllForRun(string $runId): void
     {
-        $this->sanitizeRunId($runId);
-        $this->connection->executeStatement(
-            "DELETE FROM tool_batch_schedule WHERE run_id = ? AND finalized = 1 AND awaiting_human_input_json = '[]' AND pending_queue_json = '[]' AND in_flight_json = '[]' AND NOT EXISTS (SELECT 1 FROM deferred_tool_completion d WHERE d.run_id = tool_batch_schedule.run_id AND d.turn_no = tool_batch_schedule.turn_no AND d.step_id = tool_batch_schedule.step_id AND d.status = 'pending')",
-            [$runId],
-        );
+        $this->deleteSettled($runId);
     }
 
     public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool
     {
         $this->sanitizeRunId($runId);
         $params = [$runId];
-        $sql = "SELECT 1 FROM deferred_tool_completion WHERE run_id = ? AND status = 'pending'";
+        $deferred = "SELECT 1 FROM deferred_tool_completion WHERE run_id = ? AND status = 'pending'";
         if (null !== $toolCallId) {
-            $sql .= ' AND tool_call_id = ?';
+            $deferred .= ' AND tool_call_id = ?';
             $params[] = $toolCallId;
         }
-        if (false !== $this->connection->fetchOne($sql.' LIMIT 1', $params)) {
+        if (false !== $this->connection->fetchOne($deferred.' LIMIT 1', $params)) {
             return true;
         }
-        foreach ($this->connection->fetchAllAssociative('SELECT calls_json, finalized, awaiting_human_input_json, pending_queue_json, in_flight_json FROM tool_batch_schedule WHERE run_id = ?', [$runId]) as $record) {
-            if (null !== $toolCallId && !isset($this->decodeJson($record['calls_json'])[$toolCallId])) {
-                continue;
-            }
-            if (!(bool) $record['finalized'] || [] !== $this->decodeJson($record['awaiting_human_input_json']) || [] !== $this->decodeJson($record['pending_queue_json']) || [] !== $this->decodeJson($record['in_flight_json'])) {
-                return true;
-            }
+        $sql = "SELECT 1 FROM tool_batch b WHERE b.run_id = ? AND (b.finalized = 0 OR b.awaiting_human_input_json <> '[]' OR b.pending_queue_json <> '[]' OR b.in_flight_json <> '[]')";
+        if (null !== $toolCallId) {
+            $sql .= ' AND EXISTS (SELECT 1 FROM tool_batch_call c WHERE c.run_id = b.run_id AND c.turn_no = b.turn_no AND c.step_id = b.step_id AND c.tool_call_id = ?)';
         }
 
-        return false;
+        return false !== $this->connection->fetchOne($sql.' LIMIT 1', $params);
+    }
+
+    private function deleteSettled(string $runId, ?int $turnNo = null, ?string $stepId = null): void
+    {
+        $this->sanitizeRunId($runId);
+        $where = "b.run_id = ? AND b.finalized = 1 AND b.awaiting_human_input_json = '[]' AND b.pending_queue_json = '[]' AND b.in_flight_json = '[]' AND NOT EXISTS (SELECT 1 FROM deferred_tool_completion d WHERE d.run_id = b.run_id AND d.turn_no = b.turn_no AND d.step_id = b.step_id AND d.status = 'pending')";
+        $params = [$runId];
+        if (null !== $turnNo) {
+            $where .= ' AND b.turn_no = ? AND b.step_id = ?';
+            $params[] = $turnNo;
+            $params[] = $stepId;
+        }
+        // Child bodies and their header must disappear together. Retention uses
+        // the same settlement predicate for all three tables, under one lock.
+        $this->connection->transactional(function () use ($where, $params): void {
+            foreach (['tool_batch_result', 'tool_batch_call'] as $table) {
+                $this->connection->executeStatement("DELETE FROM $table WHERE EXISTS (SELECT 1 FROM tool_batch b WHERE b.run_id = $table.run_id AND b.turn_no = $table.turn_no AND b.step_id = $table.step_id AND $where)", $params);
+            }
+            $this->connection->executeStatement("DELETE FROM tool_batch AS b WHERE $where", $params);
+        });
+    }
+
+    /** @return array<string, ExecuteToolCall> */
+    private function loadCalls(string $runId, int $turnNo, string $stepId): array
+    {
+        $calls = [];
+        foreach ($this->connection->iterateAssociative('SELECT * FROM tool_batch_call WHERE run_id = ? AND turn_no = ? AND step_id = ? ORDER BY rowid', [$runId, $turnNo, $stepId]) as $row) {
+            $call = $this->decodeCall($row);
+            $calls[$call->toolCallId] = $call;
+        }
+
+        return $calls;
     }
 
     /** @param array<string, mixed> $record */
-    private function decodeRecord(array $record, string $runId, int $turnNo, string $stepId): ToolBatchStateDTO
+    private function decodeSchedule(array $record): ToolBatchScheduleDTO
     {
-        $calls = [];
-        foreach ($this->decodeJson($record['calls_json']) as $id => $encoded) {
-            $call = $this->decodeMessage($encoded);
-            if (!$call instanceof ExecuteToolCall || $call->toolCallId !== (string) $id || $call->runId() !== $runId || $call->turnNo() !== $turnNo || $call->stepId() !== $stepId) {
-                throw new \RuntimeException('Stored tool batch call identity is invalid.');
-            }
-            $calls[$id] = $call;
-        }
-        $results = [];
-        foreach ($this->decodeJson($record['results_json']) as $id => $encoded) {
-            $result = $this->decodeMessage($encoded);
-            if (!$result instanceof ToolCallResult || $result->toolCallId !== (string) $id || $result->runId() !== $runId || $result->turnNo() !== $turnNo || $result->stepId() !== $stepId) {
-                throw new \RuntimeException('Stored tool batch result identity is invalid.');
-            }
-            $results[$id] = $result;
-        }
+        $params = [$record['run_id'], (int) $record['turn_no'], $record['step_id']];
         /** @var array<string, int> $order */
         $order = $this->decodeJson($record['expected_order_json']);
+        $modes = [];
+        foreach ($this->connection->fetchAllAssociative('SELECT tool_call_id, order_index, mode FROM tool_batch_call WHERE run_id = ? AND turn_no = ? AND step_id = ? ORDER BY order_index, rowid', $params) as $row) {
+            $id = (string) $row['tool_call_id'];
+            $mode = ToolExecutionMode::tryFrom((string) $row['mode']);
+            if (($order[$id] ?? null) !== (int) $row['order_index'] || null === $mode) {
+                throw new \RuntimeException('Stored tool batch call membership is invalid.');
+            }
+            $modes[$id] = $mode->value;
+        }
+        if (\count($modes) !== \count($order)) {
+            throw new \RuntimeException('Stored tool batch invocation is missing.');
+        }
+        $completed = [];
+        foreach ($this->connection->fetchAllAssociative('SELECT tool_call_id, order_index FROM tool_batch_result WHERE run_id = ? AND turn_no = ? AND step_id = ?', $params) as $row) {
+            $id = (string) $row['tool_call_id'];
+            if (($order[$id] ?? null) !== (int) $row['order_index']) {
+                throw new \RuntimeException('Stored tool batch result membership is invalid.');
+            }
+            $completed[$id] = true;
+        }
         /** @var list<string> $pending */
         $pending = $this->decodeJson($record['pending_queue_json']);
-        /** @var list<string> $inFlightIds */
-        $inFlightIds = $this->decodeJson($record['in_flight_json']);
+        /** @var list<string> $inFlight */
+        $inFlight = $this->decodeJson($record['in_flight_json']);
         /** @var array<string, string> $awaiting */
         $awaiting = $this->decodeJson($record['awaiting_human_input_json']);
+        $schedule = new ToolBatchScheduleDTO(
+            $order, $modes, $pending, array_fill_keys($inFlight, true), $completed,
+            (bool) $record['finalized'], max(1, (int) $record['max_parallelism']), $awaiting,
+        );
+        $this->validateSchedule($schedule);
 
-        return new ToolBatchStateDTO($order, $calls, $pending, array_fill_keys($inFlightIds, true), $results, (bool) $record['finalized'], max(1, (int) $record['max_parallelism']), $awaiting);
+        return $schedule;
+    }
+
+    private function validateSchedule(ToolBatchScheduleDTO $schedule): void
+    {
+        foreach ($schedule->expectedOrder as $id => $index) {
+            if (!\is_int($index) || !isset($schedule->callModes[$id])) {
+                throw new \RuntimeException('Stored tool batch order is invalid.');
+            }
+        }
+        foreach ([$schedule->pendingQueue, array_keys($schedule->inFlight), array_keys($schedule->awaitingHumanInput), array_keys($schedule->completedIds)] as $ids) {
+            foreach ($ids as $id) {
+                if (!\array_key_exists($id, $schedule->expectedOrder)) {
+                    throw new \RuntimeException('Stored tool batch scheduling membership is invalid.');
+                }
+            }
+        }
+    }
+
+    private function verifyAction(RegisterToolBatchDTO|FinalizeToolBatchDTO $action, VerifiedTransitionDTO $transition): void
+    {
+        if (($transition->work['run_id'] ?? null) !== $action->runId) {
+            throw new \RuntimeException('Prepared batch requires matching verified transition.');
+        }
+        foreach ([...($transition->work['actions'] ?? []), ...($transition->work['after_turn_actions'] ?? [])] as $expected) {
+            if (serialize($expected) === serialize($action)) {
+                return;
+            }
+        }
+        throw new \RuntimeException('Prepared batch differs from captured transition work.');
     }
 
     /** @return array<string, mixed>|null */
     private function record(string $runId, int $turnNo, string $stepId): ?array
     {
         $this->sanitizeRunId($runId);
-        $row = $this->connection->fetchAssociative('SELECT * FROM tool_batch_schedule WHERE run_id = ? AND turn_no = ? AND step_id = ?', [$runId, $turnNo, $stepId]);
+        $row = $this->connection->fetchAssociative('SELECT * FROM tool_batch WHERE run_id = ? AND turn_no = ? AND step_id = ?', [$runId, $turnNo, $stepId]);
 
         return false === $row ? null : $row;
     }
 
     /** @return array<string, mixed> */
-    private function encodeRow(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batch, string $identity): array
+    private function encodeHeader(string $runId, int $turnNo, string $stepId, ToolBatchScheduleDTO $schedule, string $identity): array
     {
-        $calls = [];
-        foreach ($batch->calls as $id => $call) {
-            $calls[$id] = $this->serializer->encode(new Envelope($call));
-        }
-        $results = [];
-        foreach ($batch->results as $id => $result) {
-            $results[$id] = $this->serializer->encode(new Envelope($result));
-        }
-
         return [
             'run_id' => $runId,
             'turn_no' => $turnNo,
             'step_id' => $stepId,
-            'max_parallelism' => $batch->maxParallelism,
-            'finalized' => $batch->finalized ? 1 : 0,
-            'expected_order_json' => $this->encodeJson($batch->expectedOrder),
-            'pending_queue_json' => $this->encodeJson($batch->pendingQueue),
-            'in_flight_json' => $this->encodeJson(array_keys($batch->inFlight)),
-            'awaiting_human_input_json' => $this->encodeJson($batch->awaitingHumanInput),
-            'calls_json' => $this->encodeJson($calls),
-            'results_json' => $this->encodeJson($results),
+            'max_parallelism' => $schedule->maxParallelism,
+            'finalized' => $schedule->finalized ? 1 : 0,
+            'expected_order_json' => $this->encodeJson($schedule->expectedOrder),
+            'pending_queue_json' => $this->encodeJson($schedule->pendingQueue),
+            'in_flight_json' => $this->encodeJson(array_keys($schedule->inFlight)),
+            'awaiting_human_input_json' => $this->encodeJson($schedule->awaitingHumanInput),
             'applied_transition' => $identity,
         ];
     }
 
-    /**
-     * Preserve unchanged serialized envelopes and omit unchanged SQL columns.
-     * A changed result still rewrites results_json because the schema owns one
-     * JSON map, but earlier siblings never pass through PhpSerializer again.
-     *
-     * @param array<string, mixed> $record
-     *
-     * @return array<string, mixed>
-     */
-    private function encodeChanges(array $record, ToolBatchStateDTO $batch, RegisterToolBatchDTO|FinalizeToolBatchDTO $action, string $identity): array
+    /** @return array<string, mixed> */
+    private function encodeCall(ExecuteToolCall $call): array
     {
-        $row = [
-            'run_id' => $action->runId,
-            'turn_no' => $action->turnNo,
-            'step_id' => $action->stepId,
-            'applied_transition' => $identity,
-        ];
-        if ($action instanceof RegisterToolBatchDTO) {
-            return $row;
-        }
-        $values = [
-            'finalized' => $batch->finalized ? 1 : 0,
-            'pending_queue_json' => $this->encodeJson($batch->pendingQueue),
-            'in_flight_json' => $this->encodeJson(array_keys($batch->inFlight)),
-            'awaiting_human_input_json' => $this->encodeJson($batch->awaitingHumanInput),
-        ];
-        if (null !== $action->result) {
-            $results = $this->decodeJson($record['results_json']);
-            $results[$action->result->toolCallId] = $this->serializer->encode(new Envelope($action->result));
-            $values['results_json'] = $this->encodeJson($results);
-        }
-        if (null !== $action->revisedCallId) {
-            $calls = $this->decodeJson($record['calls_json']);
-            $calls[$action->revisedCallId] = $this->serializer->encode(new Envelope($batch->calls[$action->revisedCallId]));
-            $values['calls_json'] = $this->encodeJson($calls);
-        }
-        foreach ($values as $column => $value) {
-            if ($value !== $record[$column]) {
-                $row[$column] = $value;
-            }
-        }
-
-        return $row;
+        return $this->messageRow($call) + ['mode' => $this->mode($call)];
     }
 
-    private function decodeMessage(mixed $encoded): object
+    /** @return array<string, mixed> */
+    private function encodeResult(ToolCallResult $result): array
     {
-        if (!\is_array($encoded) || !\is_string($encoded['body'] ?? null)) {
+        return $this->messageRow($result);
+    }
+
+    /** @return array<string, mixed> */
+    private function messageRow(ExecuteToolCall|ToolCallResult $message): array
+    {
+        return [
+            'run_id' => $message->runId(),
+            'turn_no' => $message->turnNo(),
+            'step_id' => $message->stepId(),
+            'tool_call_id' => $message->toolCallId,
+            'order_index' => $message->orderIndex,
+            'payload_json' => $this->encodeJson($this->serializer->encode(new Envelope($message))),
+        ];
+    }
+
+    /** @param array<string, mixed> $row */
+    private function decodeCall(array $row): ExecuteToolCall
+    {
+        $message = $this->decodeMessage($row['payload_json']);
+        if (!$message instanceof ExecuteToolCall || $this->mode($message) !== $row['mode']) {
+            throw new \RuntimeException('Stored tool batch call type or mode is invalid.');
+        }
+        $this->validateMessageIdentity($message, $row['run_id'], (int) $row['turn_no'], $row['step_id'], $row['tool_call_id'], (int) $row['order_index']);
+
+        return $message;
+    }
+
+    /** @param array<string, mixed> $row */
+    private function decodeResult(array $row): ToolCallResult
+    {
+        $message = $this->decodeMessage($row['payload_json']);
+        if (!$message instanceof ToolCallResult) {
+            throw new \RuntimeException('Stored tool batch result type is invalid.');
+        }
+        $this->validateMessageIdentity($message, $row['run_id'], (int) $row['turn_no'], $row['step_id'], $row['tool_call_id'], (int) $row['order_index']);
+
+        return $message;
+    }
+
+    private function validateMessageIdentity(ExecuteToolCall|ToolCallResult $message, string $runId, int $turnNo, string $stepId, string $toolCallId, int $orderIndex): void
+    {
+        if ($message->runId() !== $runId || $message->turnNo() !== $turnNo || $message->stepId() !== $stepId || $message->toolCallId !== $toolCallId || $message->orderIndex !== $orderIndex) {
+            throw new \RuntimeException('Stored tool batch message identity is invalid.');
+        }
+    }
+
+    private function mode(ExecuteToolCall $call): string
+    {
+        return (ToolExecutionMode::tryFrom((string) ($call->mode ?? ToolExecutionMode::Sequential->value)) ?? ToolExecutionMode::Sequential)->value;
+    }
+
+    private function equivalentResults(ToolCallResult $left, ToolCallResult $right): bool
+    {
+        return $left->toolCallId === $right->toolCallId && $left->orderIndex === $right->orderIndex && $left->isError === $right->isError && $left->result === $right->result && $left->error === $right->error;
+    }
+
+    private function decodeMessage(string $payload): object
+    {
+        $encoded = $this->decodeJson($payload);
+        if (!\is_string($encoded['body'] ?? null)) {
             throw new \RuntimeException('Stored tool batch message is invalid.');
         }
 

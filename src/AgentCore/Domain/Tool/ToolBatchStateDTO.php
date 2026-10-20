@@ -10,10 +10,10 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
- * Runtime and SQL scheduling state for one (run, turn, step).
+ * Fully hydrated runtime batch for registration, human input, and repair.
  *
- * The active SQL batch owns typed calls and collected sibling results alongside
- * membership, FIFO queue, in-flight work, and human-input waits.
+ * Normal result collection uses the payload-free ToolBatchScheduleDTO instead.
+ * Calls and results are loaded from their individual SQL rows when required.
  */
 final class ToolBatchStateDTO
 {
