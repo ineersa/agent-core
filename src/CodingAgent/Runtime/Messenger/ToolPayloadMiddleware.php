@@ -15,7 +15,9 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
 use Symfony\Component\Messenger\Middleware\StackInterface;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
@@ -33,6 +35,8 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
         private DeferredToolCompletionRepositoryInterface $deferred,
         private RunLockManager $locks,
         private ValidatorInterface $validator,
+        private MessageBusInterface $commandBus,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -64,7 +68,22 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
                 if (!$this->admission->accepts($message->reference, 'run_control' === $received->getTransportName())) {
                     return null;
                 }
-                $body = $this->payloads->read($message->reference);
+                try {
+                    $body = $this->payloads->read($message->reference);
+                } catch (\Throwable $exception) {
+                    if ('call' !== $message->reference->kind && 'shell' !== $message->reference->kind) {
+                        throw $exception;
+                    }
+                    // Resolution precedes the worker's exception boundary. Send
+                    // a failed outcome instead of leaving its batch waiting.
+                    $this->logger->warning('tool_payload.invocation_read_failed', [
+                        'run_id' => $message->runId(), 'session_id' => $message->runId(),
+                        'tool_call_id' => $message->reference->toolCallId, 'component' => 'tool_payload',
+                        'event_type' => 'tool_payload.invocation_read_failed', 'exception_class' => $exception::class,
+                    ]);
+
+                    return $this->admission->failedInvocation($message->reference);
+                }
                 if (!$body instanceof ExecuteToolCall && !$body instanceof ExecuteShellToolCall && !$body instanceof ToolCallResult) {
                     throw new ToolPayloadException('Transport reference does not identify tool invocation or result data.');
                 }
@@ -79,6 +98,25 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
                 return $body;
             });
             if (null === $body) {
+                if ('run_control' === $received->getTransportName()) {
+                    $this->admission->releaseTerminalChild($message->runId());
+                }
+
+                return $envelope->with(new HandledStamp(null, self::class));
+            }
+            if ($body instanceof ToolCallResult && 'result' !== $message->reference->kind) {
+                // Use the normal result bus, after releasing the execution lock.
+                try {
+                    $this->commandBus->dispatch($body);
+                } catch (\Throwable $exception) {
+                    // Match tool workers: failed sends require explicit repair.
+                    $this->logger->warning('runtime.result_send_failed', [
+                        'run_id' => $message->runId(), 'session_id' => $message->runId(),
+                        'tool_call_id' => $message->reference->toolCallId, 'component' => 'tool_payload',
+                        'event_type' => 'runtime.result_send_failed', 'exception_class' => $exception::class,
+                    ]);
+                }
+
                 return $envelope->with(new HandledStamp(null, self::class));
             }
 

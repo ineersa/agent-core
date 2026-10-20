@@ -81,4 +81,30 @@ final readonly class ToolPayloadAdmission
 
         return 'call' !== $reference->kind && null !== $state && isset($state->pendingShellToolCalls[$reference->toolCallId]);
     }
+
+    /** Propagate an unreadable active invocation without inventing its arguments. */
+    public function failedInvocation(ToolPayloadReferenceDTO $reference): ToolCallResult
+    {
+        $result = ['tool_name' => $reference->toolName];
+        if ('shell' === $reference->kind) {
+            $state = $this->replay->rebuildIfStale(RunState::queued($reference->runId), $reference->runId)->rebuiltState;
+            // An attached shell must not complete the model's current operation.
+            $result['standalone'] = $state?->currentOperation?->matches($reference->turnNo, $reference->stepId, $reference->attempt, $reference->idempotencyKey) ?? false;
+        }
+
+        return (new ToolCallResult(
+            $reference->runId, $reference->turnNo, $reference->stepId,
+            $reference->attempt, $reference->idempotencyKey,
+            $reference->toolCallId, $reference->orderIndex, $result,
+        ))->withRepresentationFailure('Tool invocation data is missing or invalid.');
+    }
+
+    /** Match the ordinary run processor's terminal-child release on owner no-ops. */
+    public function releaseTerminalChild(string $runId): void
+    {
+        $state = $this->registry->requireLoaded($runId);
+        if (null !== $state->parentRunId && $state->status->isTerminal()) {
+            $this->registry->release($runId);
+        }
+    }
 }
