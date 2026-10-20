@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Migrations;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
+use DoctrineMigrations\Version20261019210134;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -91,6 +92,7 @@ final class ApplicationMigrationExecutor
         \DoctrineMigrations\Version20260908010000::class,
         \DoctrineMigrations\Version20261004192458::class,
         \DoctrineMigrations\Version20261008200352::class,
+        Version20261019210134::class,
     ];
 
     private bool $ran = false;
