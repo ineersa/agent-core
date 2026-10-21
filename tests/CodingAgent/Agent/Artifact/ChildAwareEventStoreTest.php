@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -58,7 +62,8 @@ final class ChildAwareEventStoreTest extends PerMethodIsolatedKernelTestCase
         $consume(new \Ineersa\AgentCore\Domain\Message\LlmStepResult($run, $llm->turnNo(), $llm->stepId(), $llm->attempt(), $llm->idempotencyKey(),
             assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([['id' => 'audit-read', 'name' => 'read', 'arguments' => ['path' => './synthetic.txt']]]),
             toolsRef: 'default', model: 'llama_cpp_test/test', stopReason: 'tool_call'), 'llm_tools');
-        $tool = $last('tool', \Ineersa\AgentCore\Domain\Message\ExecuteToolCall::class, $run)->getMessage();
+        $tool = $container->get(ToolPayloadStoreInterface::class)->read($last('tool', ToolPayloadMessage::class, $run)->getMessage()->reference);
+        $this->assertInstanceOf(ExecuteToolCall::class, $tool);
         $consume(new \Ineersa\AgentCore\Domain\Message\ToolCallResult($run, $tool->turnNo(), $tool->stepId(), $tool->attempt(), $tool->idempotencyKey(), $tool->toolCallId, 0,
             result: ['content' => [['type' => 'text', 'text' => str_repeat('r', $messageBytes)]]]), 'tool_result');
         $finish = static function () use ($last, $consume, $run, $messageBytes): void {
@@ -81,7 +86,8 @@ final class ChildAwareEventStoreTest extends PerMethodIsolatedKernelTestCase
             'synthetic summary', null, $compaction->retainedTailMessages, $compaction->messagesCompacted, $compaction->messagesRetained, $compaction->firstRetainedIndex,
             $compaction->tokenEstimateBefore, $compaction->trigger, model: $compaction->model), 'compact_result');
         $consume(new \Ineersa\AgentCore\Domain\Message\ApplyShellCommand($run, $active->requireLoaded($run)->turnNo, 'shell', 1, 'shell', '!true'), 'shell_accept');
-        $shell = $last('tool', \Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall::class, $run)->getMessage();
+        $shell = $container->get(ToolPayloadStoreInterface::class)->read($last('tool', ToolPayloadMessage::class, $run)->getMessage()->reference);
+        $this->assertInstanceOf(ExecuteShellToolCall::class, $shell);
         $consume(new \Ineersa\AgentCore\Domain\Message\ToolCallResult($run, $shell->turnNo(), $shell->stepId(), $shell->attempt(), $shell->idempotencyKey(), $shell->toolCallId, 0,
             result: ['standalone' => $shell->standalone, 'content' => [['type' => 'text', 'text' => 'synthetic shell result']]]), 'shell_result');
         $this->assertSame(\Ineersa\AgentCore\Domain\Run\RunStatus::Completed, $active->requireLoaded($run)->status);
@@ -136,9 +142,12 @@ final class ChildAwareEventStoreTest extends PerMethodIsolatedKernelTestCase
         $executions = $container->get('messenger.transport.tool')->getSent();
         $this->assertCount(3, $executions);
         $results = [];
+        $payloads = $container->get(ToolPayloadStoreInterface::class)->forRun($run);
         foreach ($executions as $execution) {
-            $call = $execution->getMessage();
-            $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\ExecuteToolCall::class, $call);
+            $message = $execution->getMessage();
+            $this->assertInstanceOf(ToolPayloadMessage::class, $message);
+            $call = $payloads->read($message->reference);
+            $this->assertInstanceOf(ExecuteToolCall::class, $call);
             $results[] = $bus->dispatch(new \Ineersa\AgentCore\Domain\Message\ToolCallResult(
                 $run, $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->orderIndex,
                 result: ['content' => [['type' => 'text', 'text' => 'synthetic result']]],

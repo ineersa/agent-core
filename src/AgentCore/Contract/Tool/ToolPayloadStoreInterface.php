@@ -10,6 +10,11 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 
+/**
+ * Callers hold the existing run lock through admission and payload publication,
+ * reads or deletion. Immutable files need no additional per-call lock. A scoped
+ * store reuses a root resolution; it does not acquire or retain ownership.
+ */
 interface ToolPayloadStoreInterface
 {
     /** Reuse a positive path resolution for one run-scoped operation, not across operations. */

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Recovery;
 
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -13,6 +14,7 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage;
@@ -248,7 +250,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $batchRepo->applyLaunchSuccessState($otherParent, $otherTool, $otherLifecycle, new \DateTimeImmutable(), [1]);
 
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
-        $deferred->registerPending(new DeferredToolCompletionCorrelation(
+        $unfinishedCorrelation = new DeferredToolCompletionCorrelation(
             deferredId: $unfinishedLifecycle,
             runId: $sessionId,
             turnNo: 1,
@@ -259,8 +261,9 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             toolName: 'subagent',
             arguments: [],
             orderIndex: 0,
-        ));
-        $deferred->registerPending(new DeferredToolCompletionCorrelation(
+            mode: 'parallel',
+        );
+        $interruptCorrelation = new DeferredToolCompletionCorrelation(
             deferredId: $interruptLifecycle,
             runId: $sessionId,
             turnNo: 1,
@@ -271,7 +274,11 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             toolName: 'subagent',
             arguments: [],
             orderIndex: 2,
-        ));
+            mode: 'parallel',
+        );
+        TestToolBatchRegistration::registerDeferredInvocations(self::getContainer()->get(ToolBatchStoreInterface::class), $unfinishedCorrelation, $interruptCorrelation);
+        $deferred->registerPending($unfinishedCorrelation);
+        $deferred->registerPending($interruptCorrelation);
 
         $wrongTransportBus = new TestMessageBus();
         $wrongTransportSubscriber = new DeferredSubagentBatchRunControlWorkerStartedSubscriber(

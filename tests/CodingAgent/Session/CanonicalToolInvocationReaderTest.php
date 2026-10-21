@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -21,6 +22,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -38,6 +40,7 @@ use Ineersa\CodingAgent\Session\SessionToolPayloadStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
@@ -79,7 +82,7 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $paths = $this->createStub(ToolBatchRunStoragePathsInterface::class);
         $paths->method('resolveToolBatchesDirectory')->willReturn(\dirname($this->path).'/runtime/tool-batches');
-        $payloads = new SessionToolPayloadStore($paths, $container->get(LockFactory::class), $container->get(SerializerInterface::class), $container->get(ValidatorInterface::class), $container->get(Filesystem::class));
+        $payloads = new SessionToolPayloadStore($paths, $container->get(SerializerInterface::class), $container->get(ValidatorInterface::class), $container->get(Filesystem::class));
         $deferred = $this->createStub(DeferredToolCompletionRepositoryInterface::class);
         $locks = $container->get(RunLockManager::class);
         $commands = new TestMessageBus();
@@ -150,15 +153,17 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         });
         $admission = $this->admission($batches);
         $this->assertTrue($admission->acceptsDeferred($reference, false));
-        $this->append('tool_execution_start', ['tool_call_id' => 'call', 'attempt' => 2]);
+        $approved = $this->approvedCall();
+        $this->assertSame(1, $this->reader->find('indexed', 'call')?->attempt);
+        $current = new ToolPayloadReferenceDTO('call', 'indexed', 1, 'model-step', $approved->attempt(), $approved->idempotencyKey(), 'call', 0, 'subagent', str_repeat('b', 64), 100);
         $this->assertFalse($admission->acceptsDeferred($reference, false));
-        $this->assertSame(2, $this->reader->find('indexed', 'call')?->attempt);
-        $current = new ToolPayloadReferenceDTO('call', 'indexed', 1, 'model-step', 2, 'new-key', 'call', 0, 'subagent', str_repeat('b', 64), 100);
         $this->assertTrue($admission->acceptsDeferred($current, false));
+        $this->assertFalse($admission->acceptsDeferred(new ToolPayloadReferenceDTO('call', 'indexed', 1, 'model-step', 2, 'stale-key', 'call', 0, 'subagent', str_repeat('b', 64), 100), false));
+        $this->assertFalse($admission->acceptsDeferred(new ToolPayloadReferenceDTO('call', 'indexed', 1, 'model-step', 2, $approved->idempotencyKey(), 'call', 1, 'subagent', str_repeat('b', 64), 100), false));
         $this->append('tool_execution_end', ['tool_result' => ['tool_call_id' => 'call']]);
         $this->assertNotNull($this->reader->find('indexed', 'call'));
         $this->append('tool_batch_committed');
-        $this->assertFalse($admission->acceptsDeferred($reference, false));
+        $this->assertFalse($admission->acceptsDeferred($current, false));
         $this->append('llm_step_completed', ['assistant_message' => ['tool_calls' => [['id' => 'next']]]]);
         $this->append('context_compaction_started', ['step_id' => 'compact']);
         $this->assertNull($this->reader->find('indexed', 'next'));
@@ -197,17 +202,19 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         $this->assertNull($this->reader->find('indexed', 'previous'));
     }
 
-    public function testUnloadedDeferredProducerPublishesActiveAndSettlesRetiredWithoutStateReplay(): void
+    #[DataProvider('deferredProducerScenarios')]
+    public function testUnloadedDeferredProducerPublishesActiveAndSettlesRetiredWithoutStateReplay(bool $approvalRetry): void
     {
         $this->append('llm_step_completed', ['assistant_message' => ['tool_calls' => [['id' => 'call']]]]);
-        $reference = new ToolPayloadReferenceDTO('correlation', 'indexed', 1, 'model-step', 1, 'key', 'call', 0, 'subagent', str_repeat('a', 64), 100);
-        $resultReference = new ToolPayloadReferenceDTO('result', 'indexed', 1, 'model-step', 1, 'key', 'call', 0, 'subagent', str_repeat('b', 64), 100);
+        $call = $approvalRetry ? $this->approvedCall() : new ExecuteToolCall('indexed', 1, 'model-step', 1, 'key', 'call', 'subagent', [], 0);
+        $reference = new ToolPayloadReferenceDTO('correlation', 'indexed', 1, 'model-step', $call->attempt(), $call->idempotencyKey(), 'call', 0, 'subagent', str_repeat('a', 64), 100);
+        $resultReference = new ToolPayloadReferenceDTO('result', 'indexed', 1, 'model-step', $call->attempt(), $call->idempotencyKey(), 'call', 0, 'subagent', str_repeat('b', 64), 100);
         $batches = $this->createMock(ToolBatchStoreInterface::class);
         $batches->method('loadCallReference')->willReturn($reference);
         $batches->expects($this->once())->method('delete')->with('indexed', 1, 'model-step');
         $deferred = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
         $deferred->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('deferred', $reference, 'pending'));
-        $deferred->expects($this->once())->method('findByDeferredId')->willReturn(new DeferredToolCompletionCorrelation('deferred', 'indexed', 1, 'model-step', 1, 'key', 'call', 'subagent', [], 0));
+        $deferred->expects($this->once())->method('findByDeferredId')->willReturn(new DeferredToolCompletionCorrelation('deferred', 'indexed', 1, 'model-step', $call->attempt(), $call->idempotencyKey(), 'call', 'subagent', [], 0));
         $deferred->expects($this->once())->method('markCompleted')->with('deferred');
         $payloads = $this->createMock(ToolPayloadStoreInterface::class);
         $payloads->expects($this->once())->method('publish')->willReturn($resultReference);
@@ -221,6 +228,12 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         $this->append('tool_batch_committed');
         $this->assertNotNull($bus->dispatch($completion)->last(HandledStamp::class));
         $this->assertSame([], $commands->messages);
+    }
+
+    /** @return array<string, array{0: bool}> */
+    public static function deferredProducerScenarios(): array
+    {
+        return ['initial invocation' => [false], 'approval retry' => [true]];
     }
 
     public function testUnpublishedShellCompletionCannotRetireInvocation(): void
@@ -257,6 +270,21 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         (new Filesystem())->remove($this->path);
         $this->expectException(\RuntimeException::class);
         $this->admission($this->createStub(ToolBatchStoreInterface::class))->canPublish($call);
+    }
+
+    private function approvedCall(): ExecuteToolCall
+    {
+        $call = new ExecuteToolCall('indexed', 1, 'model-step', 1, 'key', 'call', 'subagent', [], 0);
+        $answer = new ToolCallHumanInputAnswerDTO('approval-question', true, ['run_id' => 'indexed', 'turn_no' => 1, 'step_id' => 'model-step', 'tool_call_id' => 'call'], []);
+        $this->append('tool_execution_start', ['tool_call_id' => 'call', 'attempt' => 1]);
+        // Approval resumes emit this command and a revised effect, not another start.
+        $this->append('agent_command_applied', [
+            'kind' => 'human_response', 'idempotency_key' => 'approval-command',
+            'question_id' => $answer->questionId, 'answer' => $answer->answer,
+            'continuation_kind' => 'tool_call', 'tool_call_id' => 'call', 'options' => [],
+        ]);
+
+        return $call->withAuthorizedHumanAnswer($answer);
     }
 
     private function admission(ToolBatchStoreInterface $batches): ToolPayloadAdmission

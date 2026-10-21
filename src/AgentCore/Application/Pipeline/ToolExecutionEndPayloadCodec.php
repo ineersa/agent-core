@@ -27,31 +27,24 @@ final readonly class ToolExecutionEndPayloadCodec
     /** Check the serializer representation before accepting a terminal result. */
     public function finalizeResult(ToolCallResult $result): ToolCallResult
     {
-        // Admission checks the actual representation before batch storage or
-        // model projection, not just the object supplied to the serializer.
-        $result = $result->finalized();
-        try {
-            $normalized = $this->serializer->normalize($result);
-        } catch (\Throwable $exception) {
-            $failure = $exception instanceof \JsonException && \JSON_ERROR_UTF8 === $exception->getCode()
-                ? ToolResultText::FAILURE_MESSAGE
-                : ToolResultText::INSPECTION_FAILURE_MESSAGE;
+        return $this->inspectResult($result)[0];
+    }
 
-            return $result->withRepresentationFailure($failure);
-        }
-        $failure = \is_array($normalized) ? ToolResultText::failureMessage($normalized) : ToolResultText::INSPECTION_FAILURE_MESSAGE;
+    /** @return array<string, mixed> */
+    public function normalizeResult(ToolCallResult $result): array
+    {
+        [$result, $normalized] = $this->inspectResult($result);
 
-        return null === $failure ? $result : $result->withRepresentationFailure($failure);
+        // A valid representation is already concrete data. Only a replacement
+        // failure result needs normalization again, through the same codec.
+        return $normalized ?? $this->normalizeArray($result);
     }
 
     /** @return array{tool_result: array<string, mixed>} */
     public function toEventPayload(ToolCallResult $result): array
     {
         $result = $result->finalized();
-        $normalized = $this->serializer->normalize($result);
-        if (!\is_array($normalized)) {
-            throw new \UnexpectedValueException('ToolExecutionEnd tool_result normalization must produce an array.');
-        }
+        $normalized = $this->normalizeArray($result);
         if (!ToolResultText::isValid($normalized)) {
             // Never persist a different representation after owner admission.
             throw new \UnexpectedValueException('ToolExecutionEnd normalization violated the terminal data contract.');
@@ -81,5 +74,36 @@ final readonly class ToolExecutionEndPayloadCodec
         }
 
         return $result;
+    }
+
+    /** @return array<string, mixed> */
+    private function normalizeArray(ToolCallResult $result): array
+    {
+        $normalized = $this->serializer->normalize($result);
+        if (!\is_array($normalized)) {
+            throw new \UnexpectedValueException('ToolExecutionEnd tool_result normalization must produce an array.');
+        }
+
+        return $normalized;
+    }
+
+    /** @return array{ToolCallResult, array<string, mixed>|null} */
+    private function inspectResult(ToolCallResult $result): array
+    {
+        // Admission checks the actual representation before batch storage or
+        // model projection, not just the object supplied to the serializer.
+        $result = $result->finalized();
+        try {
+            $normalized = $this->serializer->normalize($result);
+        } catch (\Throwable $exception) {
+            $failure = $exception instanceof \JsonException && \JSON_ERROR_UTF8 === $exception->getCode()
+                ? ToolResultText::FAILURE_MESSAGE
+                : ToolResultText::INSPECTION_FAILURE_MESSAGE;
+
+            return [$result->withRepresentationFailure($failure), null];
+        }
+        $failure = \is_array($normalized) ? ToolResultText::failureMessage($normalized) : ToolResultText::INSPECTION_FAILURE_MESSAGE;
+
+        return null === $failure ? [$result, $normalized] : [$result->withRepresentationFailure($failure), null];
     }
 }

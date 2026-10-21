@@ -231,7 +231,6 @@ final readonly class ExecuteToolCallWorker
             mode: $message->mode,
             timeoutSeconds: $message->timeoutSeconds,
             maxParallelism: $message->maxParallelism,
-            assistantMessage: null,
             argSchema: $message->argSchema,
             toolsRef: $message->toolsRef,
         );

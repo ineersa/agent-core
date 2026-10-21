@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract\Tool;
 
-use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 
 /**
  * Cross-process durable store for deferred tool executions.

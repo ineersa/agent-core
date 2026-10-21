@@ -39,11 +39,12 @@ final class CompleteDeferredToolCallHandlerTest extends TestCase
             if (!$sendSucceeds) {
                 throw new \RuntimeException('transport unavailable');
             }
+
             return new Envelope($message);
         });
         $handler = new CompleteDeferredToolCallHandler($repository, $bus, new RunLockManager(new LockFactory(new InMemoryStore())), $batches, new TestLogger());
         $handler(new CompleteDeferredToolCall('deferred', []));
-        self::assertSame(!$sendSucceeds, $pending);
+        $this->assertSame(!$sendSucceeds, $pending);
     }
 
     public static function sendOutcomes(): iterable
