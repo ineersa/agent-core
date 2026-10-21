@@ -924,7 +924,7 @@ services:
   # ─── Tool schema providers & native JsonSchema chain ───
   #
   # DTO properties whose provider-visible schema depends on runtime settings
-  # (bash timeout max, parallel resume limit) contribute a fragment through
+  # (Bash timeout max) contribute a fragment through
   # Symfony AI SchemaProviderInterface (#[Schema(provider: ...)]). The native
   # Describer default chain would instantiate SchemaAttributeDescriber without
   # providers, so the chain is rebuilt explicitly with the provider-aware

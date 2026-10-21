@@ -57,13 +57,17 @@ final readonly class BackgroundChildInvocationHandler implements RunMessageHandl
         if (null === $correlation) {
             throw new \LogicException('Eligible child background registration is missing.');
         }
-        $active = array_any($batch->children, static fn ($child): bool => null === $child->childLifecycleProjection || !$child->childLifecycleProjection->childStatus->isTerminal());
+        if (1 !== \count($batch->children)) {
+            throw new \LogicException('Child invocation requires exactly one reserved child.');
+        }
+        $child = $batch->children[0];
+        $active = null === $child->childLifecycleProjection || !$child->childLifecycleProjection->childStatus->isTerminal();
         if (!$active) {
             // Natural completion won the race; let the existing lifecycle deliver it.
             return new HandlerResult(postCommitActions: [new DeliverDeferredSubagentBatchLifecycleMessage($batch->lifecycleId)]);
         }
-        $identities = array_map(static fn ($child): string => \sprintf('%s (agent_id: %s, run_id: %s)', $child->agentName, $child->artifactId, $child->childRunId), $batch->children);
-        $ack = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => "Child invocation moved to background. The same children keep running under their original deadline. Their aggregate handoff will arrive as a follow-up.\n".implode("\n", $identities)]], ['backgrounded' => true], false, null);
+        $identity = \sprintf('%s (agent_id: %s, run_id: %s)', $child->agentName, $child->artifactId, $child->childRunId);
+        $ack = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => "Child invocation moved to background. The same child keeps running under its original deadline. Its handoff will arrive as a follow-up.\n".$identity]], ['backgrounded' => true], false, null);
         $result = $this->results->handle($ack, $state);
 
         // Reuse the canonical result/batch transition and its recoverable actions.

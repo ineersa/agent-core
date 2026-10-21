@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotDTO;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Render\RenderContext;
@@ -18,8 +15,7 @@ use function Symfony\Component\String\u;
 /**
  * Semantic subagent progress card: owns typed snapshot → plain lines → themed rails.
  *
- * Live single cards keep a fixed nine-row footprint. Parallel cards use four
- * shared rows plus two rows per declared child. Progress updates therefore stay
+ * Cards keep a fixed nine-row footprint. Progress updates stay
  * inside the addressable viewport instead of mutating native scrollback rows.
  * Detailed child activity remains available through /agents-live.
  *
@@ -28,7 +24,7 @@ use function Symfony\Component\String\u;
 final class SubagentProgressCardWidget extends AbstractWidget
 {
     public function __construct(
-        private readonly SubagentProgressSnapshotInterface $progress,
+        private readonly SubagentProgressSnapshotDTO $progress,
         private readonly bool $streaming = false,
         private readonly ?string $expandHandoffHint = null,
         private readonly bool $backgrounded = false,
@@ -39,7 +35,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
     public function render(RenderContext $context): array
     {
         $width = max(1, $context->getColumns());
-        $status = $this->normalizeStatus($this->progress->status());
+        $status = $this->normalizeStatus($this->progress->status);
         $plainLines = $this->buildLines($this->progress);
         $footerHint = $this->resolveFooterHint($plainLines, $status);
 
@@ -52,7 +48,6 @@ final class SubagentProgressCardWidget extends AbstractWidget
             array_pop($workingLines);
         }
 
-        $isParallel = $this->progress->isParallel();
         $borderEl = $this->borderElement($status);
         $header = [] !== $workingLines ? array_shift($workingLines) : 'subagent';
         $lines = [$this->fitLine($this->applyElement($borderEl, '╭─ '.$header), $width)];
@@ -60,14 +55,6 @@ final class SubagentProgressCardWidget extends AbstractWidget
         foreach ($workingLines as $line) {
             if ('' === $line) {
                 $lines[] = $this->fitLine($this->applyElement($borderEl, '│ '), $width);
-                continue;
-            }
-            if ($isParallel && str_starts_with($line, '#')) {
-                $childStatus = $this->childStatusFromLine($line);
-                $lines[] = $this->fitLine(
-                    $this->applyElement($borderEl, '├─ ').$this->styleBodyLine($line, $childStatus),
-                    $width,
-                );
                 continue;
             }
             $lines[] = $this->fitLine(
@@ -101,37 +88,23 @@ final class SubagentProgressCardWidget extends AbstractWidget
     /**
      * @return list<string>
      */
-    private function buildLines(SubagentProgressSnapshotInterface $progress): array
+    private function buildLines(SubagentProgressSnapshotDTO $progress): array
     {
-        if ($progress instanceof SubagentProgressParallelSnapshotDTO) {
-            return $this->buildParallelLines($progress);
-        }
-        if ($progress instanceof SubagentProgressSingleSnapshotDTO) {
-            return $this->buildSingleLines($progress, null);
-        }
-
-        throw new \InvalidArgumentException('Expected single subagent_progress snapshot.');
+        return $this->buildSingleLines($progress);
     }
 
     /**
      * @return list<string>
      */
-    private function buildSingleLines(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress, ?int $childIndex): array
+    private function buildSingleLines(SubagentProgressSnapshotDTO $progress): array
     {
         $status = $this->normalizeStatus($progress->status);
-        $lines = [$this->formatHeaderLine($progress, $progress->agentName, $status, $childIndex)];
+        $lines = [$this->formatHeaderLine($progress, $progress->agentName, $status)];
 
-        $taskMaxLength = null === $childIndex ? 120 : 60;
+        $taskMaxLength = 120;
         $taskSummary = $this->truncate($progress->taskSummary, $taskMaxLength);
         $task = '' === $taskSummary ? '' : 'Task '.$taskSummary;
         $activity = $this->formatCurrentActivity($progress, $status);
-
-        if (null !== $childIndex) {
-            $context = $this->formatContextUsageLine($progress) ?? '';
-            $detail = implode(' · ', array_filter([$context, $activity, $task], static fn (string $part): bool => '' !== $part));
-
-            return [...$lines, $detail];
-        }
 
         $lines[] = $task;
         $artifact = null !== $progress->artifactPath && '' !== $progress->artifactPath
@@ -153,39 +126,8 @@ final class SubagentProgressCardWidget extends AbstractWidget
         return $lines;
     }
 
-    /**
-     * @return list<string>
-     */
-    private function buildParallelLines(SubagentProgressParallelSnapshotDTO $progress): array
-    {
-        $status = $this->normalizeStatus($progress->status);
-        $completed = $progress->completedCount;
-        $total = max($progress->totalCount, 1);
-        $lines = [\sprintf('parallel subagents (%d/%d completed)%s', $completed, $total, $this->backgrounded ? ' [backgrounded]' : '')];
-
-        $childrenByIndex = [];
-        foreach ($progress->children as $child) {
-            $childrenByIndex[$child->index] = $child;
-        }
-
-        // Snapshot producers assign children contiguous, one-based indices.
-        for ($index = 1; $index <= $total; ++$index) {
-            $child = $childrenByIndex[$index] ?? null;
-            $childLines = null === $child ? ['', ''] : $this->buildSingleLines($child, $index);
-            foreach ($childLines as $line) {
-                $lines[] = $line;
-            }
-        }
-
-        $lines[] = $this->needsLiveHint($status)
-            ? 'Ctrl+\\ / /agents-live to inspect, steer, or answer'
-            : $this->retrieveGuidance($status);
-
-        return $lines;
-    }
-
     private function formatCurrentActivity(
-        SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress,
+        SubagentProgressSnapshotDTO $progress,
         string $status,
     ): string {
         $activeTool = $progress->activeTool ?? '';
@@ -199,15 +141,13 @@ final class SubagentProgressCardWidget extends AbstractWidget
     }
 
     private function formatHeaderLine(
-        SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress,
+        SubagentProgressSnapshotDTO $progress,
         string $agentName,
         string $status,
-        ?int $childIndex,
     ): string {
         $badge = $this->statusBadgeLabel($status);
         $glyph = $this->statusGlyph($status);
-        $prefix = null === $childIndex ? '' : \sprintf('#%d ', $childIndex);
-        $parts = [\sprintf('%s%s %s [%s%s]', $prefix, $glyph, $agentName, $badge, $this->backgrounded ? ', backgrounded' : '')];
+        $parts = [\sprintf('%s %s [%s%s]', $glyph, $agentName, $badge, $this->backgrounded ? ', backgrounded' : '')];
 
         if (null !== $progress->cacheReadHitPercentage) {
             $parts[] = \sprintf('↻ %.0f%%', $progress->cacheReadHitPercentage);
@@ -221,9 +161,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
             if (null !== $tok) {
                 $parts[] = $tok;
             }
-            if ($progress instanceof SubagentProgressSingleSnapshotDTO || !$this->isActiveStatus($status)) {
-                $parts[] = $this->formatElapsedHuman($progress->elapsedMs);
-            }
+            $parts[] = $this->formatElapsedHuman($progress->elapsedMs);
         }
 
         return implode(' · ', $parts);
@@ -350,7 +288,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
         return 'running' === $status;
     }
 
-    private function formatFooter(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data): string
+    private function formatFooter(SubagentProgressSnapshotDTO $data): string
     {
         if (
             0 === $data->inputTokens
@@ -391,7 +329,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
         return implode(' · ', $parts);
     }
 
-    private function formatTokenCompact(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data): ?string
+    private function formatTokenCompact(SubagentProgressSnapshotDTO $data): ?string
     {
         if ($data->totalTokens > 0) {
             return $this->formatTokenCount($data->totalTokens).' tok';
@@ -431,7 +369,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
         return \sprintf('%dm%02ds', $minutes, $rem);
     }
 
-    private function formatContextUsageLine(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress): ?string
+    private function formatContextUsageLine(SubagentProgressSnapshotDTO $progress): ?string
     {
         $latest = $progress->latestInputTokens > 0 ? $progress->latestInputTokens : 0;
         $window = $progress->contextWindow ?? 0;
@@ -469,25 +407,9 @@ final class SubagentProgressCardWidget extends AbstractWidget
         return u($text)->truncate($max, '…')->toString();
     }
 
-    private function childStatusFromLine(string $line): string
-    {
-        if (preg_match('/\[([^\]]+)\]/', $line, $m)) {
-            return match ($m[1]) {
-                'needs input' => 'waiting_human',
-                'running' => 'running',
-                'completed' => 'completed',
-                'failed' => 'failed',
-                'cancelled' => 'cancelled',
-                default => 'running',
-            };
-        }
-
-        return 'running';
-    }
-
     private function looksLikeHeaderLine(string $line): bool
     {
-        return 1 === preg_match('/^(#\d+\s+)?[●⚠✓✕◌○]\s+/u', $line);
+        return 1 === preg_match('/^[●⚠✓✕◌○]\s+/u', $line);
     }
 
     private function isHintLine(string $line): bool

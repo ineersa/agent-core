@@ -19,9 +19,9 @@ After backgrounding, open `/bg` to inspect or stop jobs yourself, or ask the age
 ## Child invocations
 
 Backgrounding a subagent or fork releases the parent's wait with one acknowledgment.
-The same children continue under their original deadlines and cancellation supervision.
-A parallel subagent call remains one invocation: its aggregate handoff arrives as a
-follow-up after all children settle, not as a second result for the original tool call.
+The same child continues under its original deadline and cancellation supervision.
+Its handoff arrives as a follow-up when it settles, not as a second result for the
+original tool call. Independent child calls can run concurrently.
 `agent_resume` invocations do not support detachment. Use `agent_retrieve` for existing
 artifact details and handoff history. The transcript card is marked backgrounded once,
 then remains frozen. Open `/agents-live` for current child status, inspection or steering.

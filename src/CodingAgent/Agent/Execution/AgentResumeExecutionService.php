@@ -90,7 +90,7 @@ final class AgentResumeExecutionService
             childRunId: $entry->agentRunId,
             artifactId: $entry->artifactId,
             agentName: $entry->agentName,
-            task: trim((string) $task->task),
+            task: trim($task->task),
             launchModel: $launchModel,
             launchReasoning: $launchReasoning,
         );
@@ -148,7 +148,7 @@ final class AgentResumeExecutionService
                     $entry->agentRunId,
                     new AgentMessage(
                         role: 'user',
-                        content: [['type' => 'text', 'text' => trim((string) $task->task)]],
+                        content: [['type' => 'text', 'text' => trim($task->task)]],
                     ),
                 );
             } catch (\Throwable $followUpFailure) {
@@ -230,7 +230,7 @@ final class AgentResumeExecutionService
     {
         $artifactId = null === $task->artifact_id ? null : trim($task->artifact_id);
         $agentRunId = null === $task->agent_run_id ? null : trim($task->agent_run_id);
-        if (null === $task->task || '' === trim($task->task)) {
+        if ('' === trim($task->task)) {
             throw new ToolCallException('agent_resume task must be non-empty.', retryable: false);
         }
 

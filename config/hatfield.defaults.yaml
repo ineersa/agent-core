@@ -346,8 +346,7 @@ prompts: []
 # ---------------------------------------------------------------------------
 #
 # Controller runtime process knobs (not tool policy).
-# Distinct from tools.execution.max_parallelism (tool workers) and agents.max_agents
-# (how many children a parallel agent_resume call may request).
+# Distinct from tools.execution.max_parallelism (tool workers).
 runtime:
     # Fixed pool of messenger:consume llm workers launched by HeadlessController.
     # Bounded 1..8 via Symfony Validator attributes on RuntimeConfig. Default 4

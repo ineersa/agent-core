@@ -7,7 +7,7 @@ namespace Ineersa\Tui\Runtime;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
@@ -82,9 +82,9 @@ final readonly class TuiRuntimeEventApplier
         foreach ($mounted['blocks'] as $block) {
             $progress = $block->meta['subagent_progress'] ?? null;
             if (\is_array($progress)) {
-                $progress = $this->denormalizer->denormalize($progress, SubagentProgressSnapshotInterface::class);
+                $progress = $this->denormalizer->denormalize($progress, SubagentProgressSnapshotDTO::class);
             }
-            if ($progress instanceof SubagentProgressSnapshotInterface) {
+            if ($progress instanceof SubagentProgressSnapshotDTO) {
                 $catalog->ingestSnapshot($progress);
             }
         }
@@ -280,8 +280,8 @@ final readonly class TuiRuntimeEventApplier
             throw new \InvalidArgumentException('subagent_progress payload must be an array when present.');
         }
 
-        /** @var SubagentProgressSnapshotInterface $snapshot */
-        $snapshot = $this->denormalizer->denormalize($progress, SubagentProgressSnapshotInterface::class);
+        /** @var SubagentProgressSnapshotDTO $snapshot */
+        $snapshot = $this->denormalizer->denormalize($progress, SubagentProgressSnapshotDTO::class);
         $state->subagentLiveCatalog->ingestSnapshot($snapshot);
     }
 }

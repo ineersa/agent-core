@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -229,8 +229,8 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             if (!\is_array($rawProgress)) {
                 throw new \InvalidArgumentException('subagent_progress payload must be an array when present.');
             }
-            /** @var SubagentProgressSnapshotInterface $progress */
-            $progress = $this->denormalizer->denormalize($rawProgress, SubagentProgressSnapshotInterface::class);
+            /** @var SubagentProgressSnapshotDTO $progress */
+            $progress = $this->denormalizer->denormalize($rawProgress, SubagentProgressSnapshotDTO::class);
             $meta = $block->meta;
             $meta['subagent_progress'] = $progress;
             if (isset($p['tool_name']) && \is_string($p['tool_name']) && '' !== $p['tool_name']) {
@@ -301,7 +301,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
                 $meta['tool_name'] = $existing->meta['tool_name'];
             }
             $priorProgress = $existing->meta['subagent_progress'] ?? null;
-            if ($priorProgress instanceof SubagentProgressSnapshotInterface) {
+            if ($priorProgress instanceof SubagentProgressSnapshotDTO) {
                 $meta['subagent_progress'] = $priorProgress;
                 $meta['subagent_final'] = true;
             }
@@ -309,7 +309,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
 
         $displayText = $result;
         $progress = $meta['subagent_progress'] ?? null;
-        if ($progress instanceof SubagentProgressSnapshotInterface) {
+        if ($progress instanceof SubagentProgressSnapshotDTO) {
             $widgetText = $this->subagentProgressFormatter->format($progress);
             $displayText = '' !== $result ? $widgetText."\n\n".$result : $widgetText;
         }
@@ -342,7 +342,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
                 $meta['tool_name'] = $existing->meta['tool_name'];
             }
             $priorProgress = $existing->meta['subagent_progress'] ?? null;
-            if ($priorProgress instanceof SubagentProgressSnapshotInterface) {
+            if ($priorProgress instanceof SubagentProgressSnapshotDTO) {
                 $meta['subagent_progress'] = $priorProgress;
                 $meta['subagent_final'] = true;
             }
@@ -350,7 +350,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
 
         $displayText = $result;
         $progress = $meta['subagent_progress'] ?? null;
-        if ($progress instanceof SubagentProgressSnapshotInterface) {
+        if ($progress instanceof SubagentProgressSnapshotDTO) {
             $widgetText = $this->subagentProgressFormatter->format($progress);
             $displayText = '' !== $result ? $widgetText."\n\n".$result : $widgetText;
         }

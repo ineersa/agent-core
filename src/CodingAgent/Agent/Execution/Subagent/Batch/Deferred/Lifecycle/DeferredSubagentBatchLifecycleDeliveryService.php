@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\Deferre
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 
 /**
- * Durable deferred batch delivery orchestration: aggregate progress and terminal completion.
+ * Durable deferred batch delivery orchestration: progress and terminal completion.
  */
 final readonly class DeferredSubagentBatchLifecycleDeliveryService
 {

@@ -13,14 +13,12 @@ use Symfony\Component\Validator\Constraints as Assert;
  * Optional enrichment fields stay null when absent so Serializer
  * {@see AbstractObjectNormalizer::SKIP_NULL_VALUES} omits them on the wire.
  */
-final readonly class SubagentProgressSingleSnapshotDTO implements SubagentProgressSnapshotInterface
+final readonly class SubagentProgressSnapshotDTO
 {
     /**
      * @param list<string> $recentTools
      */
     public function __construct(
-        #[Assert\EqualTo('single')]
-        public string $mode,
         #[Assert\NotBlank]
         public string $status,
         #[Assert\NotBlank]
@@ -64,15 +62,5 @@ final readonly class SubagentProgressSingleSnapshotDTO implements SubagentProgre
         #[Assert\Range(min: 0, max: 100)]
         public int|float|null $cacheReadHitPercentage = null,
     ) {
-    }
-
-    public function status(): string
-    {
-        return $this->status;
-    }
-
-    public function isParallel(): bool
-    {
-        return false;
     }
 }

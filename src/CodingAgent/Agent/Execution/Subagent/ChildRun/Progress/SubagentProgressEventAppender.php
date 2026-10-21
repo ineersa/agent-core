@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\CommitSubagentProgress;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
@@ -41,7 +41,7 @@ class SubagentProgressEventAppender
         string $parentToolCallId,
         int $parentOrderIndex,
         string $toolName,
-        SubagentProgressSnapshotInterface $progress,
+        SubagentProgressSnapshotDTO $progress,
         string $lifecycleId,
         int $revision,
         ?string $interruptionKind = null,
@@ -72,7 +72,7 @@ class SubagentProgressEventAppender
             ],
         );
 
-        $status = RunStatus::from($progress->status());
+        $status = RunStatus::from($progress->status);
         if ($this->streamCommittedEventsToStdout && !$status->isTerminal()) {
             $runtimeEvent = $this->runtimeEventMapper->toRuntimeEvent($event);
             if (null !== $runtimeEvent) {

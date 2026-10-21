@@ -29,6 +29,6 @@ Remove the obsolete `parallelAllowed` field from custom or previously installed 
 
 ## Settings
 
-- `agents.max_agents` defaults to 4 and caps children in one parallel `agent_resume` call, not independent single-child calls.
+Remove obsolete `agents.max_agents` settings. Each launch or resume call targets one child; independent calls use normal tool scheduling.
 - `agents.subagent_tool_timeout_seconds` defaults to 86400 and must be >=60.
 - `agents.extensions.always_on` defaults to SafeGuard. Omitted optional extensions do not disable always-on extensions.

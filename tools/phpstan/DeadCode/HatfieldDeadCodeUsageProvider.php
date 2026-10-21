@@ -12,9 +12,7 @@ use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedSessionMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedToolsScopeDTO;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmCancelAwareHttpClient;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -52,9 +50,7 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         RunStartedMetadataDTO::class,
         RunStartedSessionMetadataDTO::class,
         RunStartedToolsScopeDTO::class,
-        SubagentProgressChildRowDTO::class,
-        SubagentProgressParallelSnapshotDTO::class,
-        SubagentProgressSingleSnapshotDTO::class,
+        SubagentProgressSnapshotDTO::class,
     ];
 
     protected function shouldMarkMethodAsUsed(\ReflectionMethod $method): ?VirtualUsageData

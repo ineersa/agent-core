@@ -101,13 +101,12 @@ Parent-scoped continuation of an existing terminal child run via `follow_up` on 
 |---|---|
 | `artifact_id` | Child artifact id (preferred) |
 | `agent_run_id` | Child run UUID (optional alternative / cross-check) |
-| `task` | Continuation instruction |
-| `tasks` | Parallel list of `{artifact_id,task}` (cap `agents.max_agents`) |
+| `task` | Required continuation instruction |
 
 - Eligible statuses: `completed`, `failed`, `cancelled` when the child run/session is still usable.
 - Rejects in-flight artifacts (`running`, `needs_clarification`). Same-parent-current-lifetime forks are resumable; foreign-session, previous-lifetime, and otherwise ineligible targets still fail with actionable errors.
 - Refuses oversized children when latest input tokens are near context limit (`min(75% contextWindow, 200k)`; 200k when window unknown).
-- Single resumes return the full handoff inline; parallel resumes return bounded summaries. Responses over 50,000 characters return a notice and artifact references instead.
+- Each call resumes one child and returns its full handoff inline. Submit independent calls together for concurrent execution. Responses over 50,000 characters return a notice and artifact references instead.
 - Same artifact id is preserved; each finalize appends an immutable handoff under `handoffs/<uuid>.md`.
 
 ## `agent_retrieve`
@@ -122,7 +121,7 @@ Parent-scoped retrieval for child artifacts:
 | `handoff_id` | Optional handoff uuid for `mode=handoff_history` |
 | `limit` | Max rows for events/history (default 20, max 100) |
 
-Provide at least one identifier. Cross-parent retrieval is rejected. Use when parallel summaries were truncated, a child failed/cancelled/timed out, or you need extra detail — not to re-fetch a successful single-mode handoff already returned inline.
+Provide at least one identifier. Cross-parent retrieval is rejected. Use when a handoff was omitted, a child failed/cancelled/timed out, or you need extra detail — not to re-fetch a successful handoff already returned inline.
 
 `mode=handoff` returns the latest handoff. `mode=handoff_history` lists prior handoffs by default; pass `handoff_id=<uuid>` to fetch one body.
 

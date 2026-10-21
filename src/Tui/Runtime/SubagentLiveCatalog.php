@@ -5,10 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundChildStatusDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotDTO;
 
 /**
  * Indexes subagent child runs from typed parent subagent_progress snapshots.
@@ -122,26 +119,12 @@ final class SubagentLiveCatalog
         );
     }
 
-    public function ingestSnapshot(SubagentProgressSnapshotInterface $snapshot): void
+    public function ingestSnapshot(SubagentProgressSnapshotDTO $snapshot): void
     {
-        // One wall-clock sample for the whole snapshot so multi-child parallel
-        // rows share lastActivityAtMs (stable within-event tie; no product order change).
-        $now = (int) (microtime(true) * 1000);
-
-        if ($snapshot instanceof SubagentProgressParallelSnapshotDTO) {
-            foreach ($snapshot->children as $child) {
-                $this->upsertFromProgressRow($child, $now);
-            }
-
-            return;
-        }
-
-        if ($snapshot instanceof SubagentProgressSingleSnapshotDTO) {
-            $this->upsertFromProgressRow($snapshot, $now);
-        }
+        $this->upsertFromProgressRow($snapshot, (int) (microtime(true) * 1000));
     }
 
-    private function upsertFromProgressRow(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $row, int $now): void
+    private function upsertFromProgressRow(SubagentProgressSnapshotDTO $row, int $now): void
     {
         $artifactId = $row->artifactId;
         if ('' === $artifactId || $this->isDismissed($artifactId)) {
