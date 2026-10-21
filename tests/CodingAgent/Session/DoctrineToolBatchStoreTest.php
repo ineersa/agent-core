@@ -32,6 +32,7 @@ use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tests\Support\CountingToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -280,6 +281,66 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $this->assertSame([], $batch->pendingQueue);
         $this->assertSame(['call-b' => true], $batch->inFlight);
         $this->assertEquals($second, $batch->calls['call-b']);
+    }
+
+    public function testCapturedAbsenceInsertsWithoutAnUpdateOrApplyTimeRead(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('captured insert');
+        $store = $container->get(ToolBatchStoreInterface::class);
+        $call = new ExecuteToolCall($run, 1, 'tools', 1, 'key', 'call', 'echo', [], 0);
+        $action = new RegisterToolBatchDTO($run, 1, 'tools', [$call], ['call' => 0], [], ['call' => true], 1);
+        $transition = new VerifiedTransitionDTO('register', ['run_id' => $run, 'actions' => [$action]]);
+        $apply = $store->prepareChanges([$action], $transition);
+        $sql = $container->get('test.sql_logger');
+        $sql->records = [];
+        $container->get(Connection::class)->transactional($apply);
+        $queries = array_column(array_column($sql->records, 'context'), 'sql');
+        $this->assertCount(1, preg_grep('/^INSERT INTO tool_batch /', $queries));
+        $this->assertCount(0, preg_grep('/^(UPDATE|SELECT) /', $queries));
+        $before = $store->load($run, 1, 'tools');
+        foreach (['register', 'register-again'] as $identity) {
+            $apply = $store->prepareChanges([$action], new VerifiedTransitionDTO($identity, ['run_id' => $run, 'actions' => [$action]]));
+            $sql->records = [];
+            $container->get(Connection::class)->transactional($apply);
+            $queries = array_column(array_column($sql->records, 'context'), 'sql');
+            $this->assertCount(0, preg_grep('/^(INSERT|SELECT) /', $queries));
+            $this->assertCount('register' === $identity ? 0 : 1, preg_grep('/^UPDATE tool_batch /', $queries));
+            $this->assertEquals($before, $store->load($run, 1, 'tools'));
+        }
+    }
+
+    #[DataProvider('vanishedRowProvider')]
+    public function testVanishedExpectedRowsCannotBeResurrected(string $table, string $reason): void
+    {
+        $container = self::getContainer();
+        $connection = $container->get(Connection::class);
+        $run = $container->get(HatfieldSessionStore::class)->createSession('vanished row');
+        $store = $container->get(ToolBatchStoreInterface::class);
+        $this->register($store, $run, 1, 'tools', ['call']);
+        $action = new FinalizeToolBatchDTO($run, 1, 'tools', [], ['call' => true], [], false, revisedCallId: 'call', answer: new ToolCallHumanInputAnswerDTO('q', 'allow', [], []));
+        $apply = $store->prepareChanges([$action], new VerifiedTransitionDTO('answer', ['run_id' => $run, 'actions' => [$action]]));
+        $connection->delete($table, ['run_id' => $run]);
+        $sql = $container->get('test.sql_logger');
+        $sql->records = [];
+        try {
+            $connection->transactional($apply);
+            $this->fail('Expected rows must not be recreated after preparation.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame($reason, $exception->getMessage());
+        }
+        $queries = array_column(array_column($sql->records, 'context'), 'sql');
+        $this->assertCount(0, preg_grep('/^(INSERT|SELECT) /', $queries));
+        $this->assertSame(0, (int) $connection->fetchOne("SELECT COUNT(*) FROM $table WHERE run_id = ?", [$run]));
+        if ('tool_batch_call' === $table) {
+            $this->assertSame('register-1-tools', $connection->fetchOne('SELECT applied_transition FROM tool_batch WHERE run_id = ?', [$run]));
+        }
+    }
+
+    public static function vanishedRowProvider(): iterable
+    {
+        yield 'header' => ['tool_batch', 'Prepared tool batch header disappeared before apply.'];
+        yield 'revised call' => ['tool_batch_call', 'Prepared tool batch call disappeared before apply.'];
     }
 
     public function testFailedCleanupTransactionPreservesReferencesAndFiles(): void

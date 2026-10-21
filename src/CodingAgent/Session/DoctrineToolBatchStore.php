@@ -155,7 +155,6 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         $calls = [];
         $results = [];
         $validatedBodies = [];
-        $retainedCounts = [];
         foreach ($actions as $action) {
             $key = $this->encodeJson([$action->runId, $action->turnNo, $action->stepId]);
             if (!\array_key_exists($key, $records)) {
@@ -169,9 +168,6 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
             }
             if (!\array_key_exists($key, $schedules)) {
                 $schedules[$key] = null === $record ? null : $this->decodeSchedule($record);
-                if (null !== $schedules[$key]) {
-                    $retainedCounts[$key] = [\count($schedules[$key]->expectedOrder), \count($schedules[$key]->completedIds)];
-                }
             }
             $schedule = $schedules[$key];
             if (null !== $record && !isset($validatedBodies[$key]) && ($action instanceof RegisterToolBatchDTO || null === $action->result)) {
@@ -246,7 +242,7 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
             $headers[$key] = $this->encodeHeader($action->runId, $action->turnNo, $action->stepId, $schedule, $transition->identity);
         }
 
-        return function () use ($headers, $records, $callWrites, $resultWrites, $retainedCounts): void {
+        return function () use ($headers, $records, $callWrites, $resultWrites): void {
             foreach ($headers as $batchKey => $row) {
                 $key = ['run_id' => $row['run_id'], 'turn_no' => $row['turn_no'], 'step_id' => $row['step_id']];
                 $changes = array_diff_key($row, $key);
@@ -255,26 +251,19 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
                         unset($changes[$column]);
                     }
                 }
-                // The update count replaces an existence query on normal writes.
-                if (0 === (int) $this->connection->update('tool_batch', $changes, $key)) {
-                    if (null !== $records[$batchKey]) {
-                        // Recreate a missing header only while all retained body
-                        // rows still exist. Do not invent siblings after cleanup.
-                        foreach (['tool_batch_call', 'tool_batch_result'] as $index => $table) {
-                            $count = $this->connection->fetchOne("SELECT COUNT(*) FROM $table WHERE run_id = ? AND turn_no = ? AND step_id = ?", array_values($key));
-                            if ((int) $count !== $retainedCounts[$batchKey][$index]) {
-                                throw new \RuntimeException('Prepared tool batch payload rows disappeared before apply.');
-                            }
-                        }
-                    }
+                // Preparation and apply share the owner lock. Captured absence
+                // means insert; a vanished expected row is not recoverable here.
+                if (null === $records[$batchKey]) {
                     $this->connection->insert('tool_batch', $row);
+                } elseif (0 === (int) $this->connection->update('tool_batch', $changes, $key)) {
+                    throw new \RuntimeException('Prepared tool batch header disappeared before apply.');
                 }
                 foreach ($callWrites[$batchKey] ?? [] as $callRow) {
                     $callKey = $key + ['tool_call_id' => $callRow['tool_call_id']];
                     if (null === $records[$batchKey]) {
                         $this->connection->insert('tool_batch_call', $callRow);
                     } elseif (0 === (int) $this->connection->update('tool_batch_call', array_diff_key($callRow, $callKey), $callKey)) {
-                        $this->connection->insert('tool_batch_call', $callRow);
+                        throw new \RuntimeException('Prepared tool batch call disappeared before apply.');
                     }
                 }
                 foreach ($resultWrites[$batchKey] ?? [] as $resultRow) {
