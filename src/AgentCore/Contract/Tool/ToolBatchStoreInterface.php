@@ -44,7 +44,7 @@ interface ToolBatchStoreInterface
      *
      * @param list<string> $toolCallIds
      *
-     * @return list<string> Unresolved identities from the requested set.
+     * @return list<string> unresolved identities from the requested set
      */
     public function findUnresolvedToolCallIds(string $runId, array $toolCallIds): array;
 
