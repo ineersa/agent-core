@@ -105,7 +105,7 @@ final class ProcessStoreFreshnessTest extends IsolatedKernelTestCase
             'started_at' => new \DateTimeImmutable('2026-09-16 12:00:00'),
         ]);
 
-        $entities = $this->store->fetchAllUnfinished('session-list-fresh');
+        $entities = $this->store->fetchAllUnfinished(['session-list-fresh']);
         $this->assertCount(1, $entities);
         $this->assertSame($recordId, $entities[0]->id);
         $this->assertSame('sleep 2', $entities[0]->command);
@@ -122,7 +122,7 @@ final class ProcessStoreFreshnessTest extends IsolatedKernelTestCase
             ],
         );
 
-        $again = $this->store->fetchAllUnfinished('session-list-fresh');
+        $again = $this->store->fetchAllUnfinished(['session-list-fresh']);
         $this->assertCount(1, $again);
         $this->assertSame($entities[0], $again[0]);
         $this->assertTrue($this->entityManager->contains($again[0]));
