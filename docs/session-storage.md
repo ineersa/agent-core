@@ -85,6 +85,10 @@ Tool data lives beside the batch runtime directory in
 file contains a typed JSON data document, not a Messenger envelope or stamps.
 References include producing identity, SHA-256 and byte length, never a path.
 Publication seals the file before transport or SQL receives its reference.
+Payload callers hold the existing run lock across admission and publication,
+reads or deletion. The payload store adds no per-call lock. Transport middleware,
+deferred registration and lookup, owner metadata preparation, repair and cleanup
+use that same ownership boundary. Nested same-run operations reuse its lock.
 Batch publication, loading and cleanup resolve the run's payload root once per
 operation. They do not retain a process-wide path cache. Reads validate file size
 before loading JSON, then check its byte count and SHA-256 from the loaded bytes.
@@ -96,6 +100,8 @@ missing or corrupt active data fails closed.
 
 Batch cleanup removes the header and reference rows together after human and
 deferred work settles, then removes unreferenced call data under the run lock.
+The SQL transaction commits before file removal, within the same critical section;
+cleanup does not wait for lock release or reacquire it through a callback.
 The SQL deletes are scoped to the requested run or batch. One surviving-ID lookup
 protects call data still referenced by another batch before filesystem cleanup.
 Direct shell completion, terminal commits without unresolved work and permanent

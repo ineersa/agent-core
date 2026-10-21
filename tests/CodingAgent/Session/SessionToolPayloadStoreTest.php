@@ -18,7 +18,6 @@ use Ineersa\CodingAgent\Tests\Support\CountingToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
@@ -28,7 +27,7 @@ final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('scoped bodies');
         $paths = new CountingToolBatchRunStoragePaths($container->get(ToolBatchRunStoragePathsInterface::class));
-        $store = new SessionToolPayloadStore($paths, $container->get(LockFactory::class), $container->get('serializer'), $container->get(ValidatorInterface::class), new Filesystem());
+        $store = new SessionToolPayloadStore($paths, $container->get('serializer'), $container->get(ValidatorInterface::class), new Filesystem());
         $sql = $container->get('test.sql_logger');
         $sql->records = [];
         $scoped = $store->forRun($run);

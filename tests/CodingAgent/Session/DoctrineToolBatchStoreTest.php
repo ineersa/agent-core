@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception as DbalException;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
@@ -32,7 +33,6 @@ use Ineersa\CodingAgent\Tests\Support\CountingToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
@@ -107,7 +107,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('batch paths');
         $paths = new CountingToolBatchRunStoragePaths($container->get(ToolBatchRunStoragePathsInterface::class));
-        $payloads = new SessionToolPayloadStore($paths, $container->get(LockFactory::class), $container->get('serializer'), $container->get(ValidatorInterface::class), new Filesystem());
+        $payloads = new SessionToolPayloadStore($paths, $container->get('serializer'), $container->get(ValidatorInterface::class), new Filesystem());
         $store = new DoctrineToolBatchStore($container->get(Connection::class), $payloads, $container->get('serializer'), $container->get(ValidatorInterface::class), $container->get(RunLockManager::class), new TestLogger());
         $sql = $container->get('test.sql_logger');
         $sql->records = [];
@@ -140,7 +140,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $this->assertCount(1, array_filter($sql->records, static fn (array $r): bool => str_contains($r['context']['sql'] ?? '', 'SELECT DISTINCT tool_call_id')));
     }
 
-    public function testScopedDeletesUseCompositeKeysAndRetainSharedAndNewReferences(): void
+    public function testScopedDeletesFinishBeforeOwnerReleaseAndRetainSharedAndNewReferences(): void
     {
         $container = self::getContainer();
         $connection = $container->get(Connection::class);
@@ -160,13 +160,15 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $sql = $container->get('test.sql_logger');
         $sql->records = [];
         $deletes = [];
-        $container->get(RunLockManager::class)->synchronized($run, function () use ($store, $run, $sql, &$deletes): void {
+        $container->get(RunLockManager::class)->synchronized($run, function () use ($store, $run, $sql, $root, &$deletes): void {
             $store->delete($run, 1, 'settled');
             $deletes = array_values(array_filter($sql->records, static fn (array $r): bool => str_starts_with($r['context']['sql'] ?? '', 'DELETE FROM tool_batch_')));
-            // New references are committed between metadata deletion and the
-            // deterministic after-release cleanup, without a timing lottery.
+            // Cleanup completes inside the outer owner's critical section.
+            // A later registration republishes its data, with no delayed cleanup.
+            $this->assertDirectoryDoesNotExist($root.hash('sha256', 'new-reference'));
+            $this->assertDirectoryDoesNotExist($root.hash('sha256', 'delete-a'));
+            $this->assertDirectoryExists($root.hash('sha256', 'shared'));
             $this->register($store, $run, 4, 'new', ['new-reference']);
-            $sql->records = [];
         });
         $this->assertCount(2, $deletes);
         foreach ($deletes as $record) {
@@ -278,6 +280,30 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $this->assertSame([], $batch->pendingQueue);
         $this->assertSame(['call-b' => true], $batch->inFlight);
         $this->assertEquals($second, $batch->calls['call-b']);
+    }
+
+    public function testFailedCleanupTransactionPreservesReferencesAndFiles(): void
+    {
+        $container = self::getContainer();
+        $connection = $container->get(Connection::class);
+        $sessions = $container->get(HatfieldSessionStore::class);
+        $run = $sessions->createSession('cleanup rollback');
+        $store = $container->get(ToolBatchStoreInterface::class);
+        $this->register($store, $run, 1, 'tools', ['call']);
+        $this->apply($store, $run, 'settled', [new FinalizeToolBatchDTO($run, 1, 'tools', [], [], [], true, new ToolCallResult($run, 1, 'tools', 1, 'call', 'call', 0, 'retained'))]);
+        $before = $store->load($run, 1, 'tools');
+        $root = $sessions->resolveSessionsBasePath().'/'.$run.'/runtime/tool-payloads/'.hash('sha256', 'call');
+        $connection->executeStatement("CREATE TEMP TRIGGER fail_batch_cleanup BEFORE DELETE ON tool_batch BEGIN SELECT RAISE(ABORT, 'injected cleanup failure'); END");
+        try {
+            $store->delete($run, 1, 'tools');
+            $this->fail('Metadata rollback must prevent file cleanup.');
+        } catch (DbalException $exception) {
+            $this->assertStringContainsString('injected cleanup failure', $exception->getMessage());
+        } finally {
+            $connection->executeStatement('DROP TRIGGER fail_batch_cleanup');
+        }
+        $this->assertDirectoryExists($root);
+        $this->assertEquals($before, $store->load($run, 1, 'tools'));
     }
 
     protected static function createKernel(array $options = []): Kernel
