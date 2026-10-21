@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
+use Ineersa\CodingAgent\Session\DTO\PendingToolInvocationDTO;
 use Symfony\Component\Lock\LockFactory;
 
 /**
@@ -483,6 +484,11 @@ final class JsonlRunEventLog
     public function indexedLines(string $path, string $runId, int $startSeq, int $endSeq): iterable
     {
         return $this->historyIndex->records($this, $path, $runId, $startSeq, $endSeq);
+    }
+
+    public function pendingToolInvocation(string $path, string $runId, string $toolCallId): ?PendingToolInvocationDTO
+    {
+        return $this->historyIndex->pendingToolInvocation($this, $path, $runId, $toolCallId);
     }
 
     /** @return array{sequence: int, end_offset: int, anchor: int}|null */

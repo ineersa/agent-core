@@ -26,6 +26,7 @@ use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Entity\ToolBatchCall;
 use Ineersa\CodingAgent\Entity\ToolBatchSchedule;
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
+use Ineersa\CodingAgent\Session\CanonicalToolInvocationReader;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
@@ -77,16 +78,17 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         $bus = $this->bus($state, expectNoBodyRead: false);
         $message = $producer ? new CompleteDeferredToolCall('deferred', [])
             : new Envelope(new ToolPayloadMessage($reference, 'deferred'), [new ReceivedStamp('run_control')]);
+        $this->expectException(ToolPayloadException::class);
+        $this->expectExceptionMessage('Active tool data is missing.');
         try {
             $bus->dispatch($message);
-            $this->fail('Missing active data must fail closed.');
-        } catch (ToolPayloadException $exception) {
-            $this->assertSame('Active tool data is missing.', $exception->getMessage());
+        } finally {
+            $this->assertSame('pending', self::getContainer()->get(DeferredToolCompletionRepository::class)->status('deferred'));
+            $this->assertDirectoryExists($directory);
         }
-        $this->assertSame('pending', self::getContainer()->get(DeferredToolCompletionRepository::class)->status('deferred'));
-        $this->assertDirectoryExists($directory);
     }
 
+    /** @return iterable<array{bool}> */
     public static function completionBoundaries(): iterable
     {
         yield 'producer' => [true];
@@ -171,7 +173,7 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         $events->method('latestSequenceFor')->willReturn($state->lastSeq);
 
         return new MessageBus([new ToolPayloadMiddleware(
-            $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger), $repository, $locks,
+            $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, $container->get(CanonicalToolInvocationReader::class)), $repository, $locks,
             $container->get(ValidatorInterface::class), $commands, $logger,
             new CompleteDeferredToolCallHandler($repository, $commands, $locks, $batches, $logger),
         )]);

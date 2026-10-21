@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\CodingAgent\Session\DTO\PendingToolInvocationDTO;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Psr\Log\LoggerInterface;
 
@@ -26,6 +27,7 @@ final readonly class ToolPayloadAdmission
         private RunStateRebuilderInterface $replay,
         private EventStoreInterface $events,
         private LoggerInterface $logger,
+        private CanonicalToolInvocationReader $invocations,
     ) {
     }
 
@@ -47,12 +49,18 @@ final readonly class ToolPayloadAdmission
         // Loading an existing schedule detects a missing member row rather
         // than silently treating damaged active metadata as a stale delivery.
         $this->batches->loadSchedule($message->runId(), $message->turnNo(), $message->stepId());
-        $state = $this->admissionState($message->runId());
+        $state = $this->loadedState($message->runId());
         if (null !== $state && $state->turnNo === $message->turnNo() && $state->activeStepId === $message->stepId() && \array_key_exists($message->toolCallId, $state->pendingToolCalls)) {
             throw new ToolPayloadException('Active tool invocation is missing its batch data reference.');
         }
 
-        return !$message instanceof ExecuteToolCall && null !== $state && isset($state->pendingShellToolCalls[$message->toolCallId]);
+        if (null !== $state) {
+            return !$message instanceof ExecuteToolCall && isset($state->pendingShellToolCalls[$message->toolCallId]);
+        }
+
+        $shell = $this->pendingShell($message->runId(), $message->toolCallId, $message->turnNo(), $message->stepId(), $message->attempt(), $message->idempotencyKey());
+
+        return !$message instanceof ExecuteToolCall && null !== $shell;
     }
 
     /** Called under the existing run lock, before opening a possibly cleaned file. */
@@ -77,25 +85,34 @@ final readonly class ToolPayloadAdmission
             return $call->sha256 === $reference->sha256 && null !== $schedule && isset($schedule->inFlight[$reference->toolCallId]) && !isset($schedule->completedIds[$reference->toolCallId]);
         }
         $this->batches->loadSchedule($reference->runId, $reference->turnNo, $reference->stepId);
-        // Direct shell work has no batch. Reuse canonical reconstruction only
-        // for that path or damaged/missing metadata; normal admission is scalar.
-        $state ??= $this->admissionState($reference->runId);
+        // Direct shells have no SQL batch. Unloaded processes read canonical
+        // scalar locations, never reconstruct the session's messages or results.
+        $state ??= $this->loadedState($reference->runId);
         if (null !== $state && $state->turnNo === $reference->turnNo && $state->activeStepId === $reference->stepId && \array_key_exists($reference->toolCallId, $state->pendingToolCalls)) {
             throw new ToolPayloadException('Active tool invocation is missing its batch data reference.');
         }
 
-        return 'call' !== $reference->kind && null !== $state && isset($state->pendingShellToolCalls[$reference->toolCallId]);
+        if (null !== $state) {
+            return 'call' !== $reference->kind && isset($state->pendingShellToolCalls[$reference->toolCallId]);
+        }
+
+        return null !== $this->pendingShell($reference->runId, $reference->toolCallId, $reference->turnNo, $reference->stepId, $reference->attempt, $reference->idempotencyKey) && 'call' !== $reference->kind;
     }
 
     /** Deferred destinations can retire while their correlation still retains a batch. */
     public function acceptsDeferred(ToolPayloadReferenceDTO $reference, bool $owner): bool
     {
         $state = $owner ? $this->registry->requireLoaded($reference->runId)
-            : $this->admissionState($reference->runId);
+            : $this->loadedState($reference->runId);
         if (null === $state) {
-            throw new ToolPayloadException('Deferred completion requires canonical owner state.');
-        }
-        if ($state->turnNo !== $reference->turnNo || $state->activeStepId !== $reference->stepId || !\array_key_exists($reference->toolCallId, $state->pendingToolCalls)) {
+            $pending = $this->invocations->find($reference->runId, $reference->toolCallId);
+            if (null === $pending && null === $this->events->latestSequenceFor($reference->runId)) {
+                throw new ToolPayloadException('Deferred completion requires canonical owner state.');
+            }
+            if (null === $pending || $pending->shell || [$pending->turnNo, $pending->stepId, $pending->attempt] !== [$reference->turnNo, $reference->stepId, $reference->attempt]) {
+                return false;
+            }
+        } elseif ($state->turnNo !== $reference->turnNo || $state->activeStepId !== $reference->stepId || !\array_key_exists($reference->toolCallId, $state->pendingToolCalls)) {
             return false;
         }
         $call = $this->batches->loadCallReference($reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId);
@@ -111,11 +128,19 @@ final readonly class ToolPayloadAdmission
     {
         $result = ['tool_name' => $reference->toolName];
         if ('shell' === $reference->kind) {
-            $state = $this->admissionState($reference->runId);
+            $state = $this->loadedState($reference->runId);
             // An attached shell must not complete the model's current operation.
             // Execution has its own key; the shell ID derives from the command key.
-            $result['standalone'] = null !== $state?->currentOperation
-                && $reference->toolCallId === 'sh_'.hash('sha256', $state->currentOperation->idempotencyKey);
+            if (null !== $state) {
+                $result['standalone'] = null !== $state->currentOperation
+                    && $reference->toolCallId === 'sh_'.hash('sha256', $state->currentOperation->idempotencyKey);
+            } else {
+                $pending = $this->pendingShell($reference->runId, $reference->toolCallId, $reference->turnNo, $reference->stepId, $reference->attempt, $reference->idempotencyKey);
+                if (null === $pending) {
+                    throw new ToolPayloadException('Failed invocation no longer has a pending shell identity.');
+                }
+                $result['standalone'] = $pending->standalone;
+            }
         }
 
         return (new ToolCallResult(
@@ -134,18 +159,31 @@ final readonly class ToolPayloadAdmission
         }
     }
 
-    private function admissionState(string $runId): ?RunState
+    private function pendingShell(string $runId, string $toolCallId, int $turnNo, string $stepId, int $attempt, string $key): ?PendingToolInvocationDTO
+    {
+        $pending = $this->invocations->find($runId, $toolCallId);
+        if (null === $pending || [$pending->turnNo, $pending->stepId, $pending->attempt] !== [$turnNo, $stepId, $attempt]) {
+            return null;
+        }
+        if (!$pending->shell) {
+            throw new ToolPayloadException('Active tool invocation is missing its batch data reference.');
+        }
+
+        return hash('sha256', $runId.'|'.$toolCallId) === $key ? $pending : null;
+    }
+
+    private function loadedState(string $runId): ?RunState
     {
         try {
             $state = $this->registry->requireLoaded($runId);
         } catch (RunContextNotLoadedException $exception) {
-            // Execution processes do not own the in-memory run graph.
-            $this->logger->debug('tool_payload.cold_admission', [
+            // Execution processes use the canonical index instead of an owner graph.
+            $this->logger->debug('tool_payload.unloaded_admission', [
                 'run_id' => $runId, 'session_id' => $runId, 'component' => 'tool_payload',
-                'event_type' => 'tool_payload.cold_admission', 'exception_class' => $exception::class,
+                'event_type' => 'tool_payload.unloaded_admission', 'exception_class' => $exception::class,
             ]);
 
-            return $this->replay->rebuildIfStale(RunState::queued($runId), $runId)->rebuiltState;
+            return null;
         }
         $sequence = $this->events->latestSequenceFor($runId);
         if (null === $sequence || $state->lastSeq > $sequence) {

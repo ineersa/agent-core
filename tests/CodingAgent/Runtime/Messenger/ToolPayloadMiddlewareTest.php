@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
-use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
@@ -25,6 +24,8 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
+use Ineersa\CodingAgent\Session\CanonicalToolInvocationReader;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use Ineersa\CodingAgent\Tests\Runtime\Messenger\Support\ToolPayloadWorkerTransport;
@@ -39,7 +40,6 @@ use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
 use Symfony\Component\Messenger\EventListener\SendFailedMessageForRetryListener;
 use Symfony\Component\Messenger\Exception\DelayedMessageHandlingException;
-use Symfony\Component\Messenger\Exception\EnvelopeAwareExceptionInterface;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
@@ -107,6 +107,7 @@ final class ToolPayloadMiddlewareTest extends TestCase
         $this->assertSame([], $transport->keepaliveRequests, 'Acknowledged references must leave native SplObjectStorage.');
     }
 
+    /** @return iterable<array{bool}> */
     public static function ackModes(): iterable
     {
         yield 'returned envelope' => [false];
@@ -169,6 +170,7 @@ final class ToolPayloadMiddlewareTest extends TestCase
         }
     }
 
+    /** @return iterable<array{bool, bool}> */
     public static function failureModes(): iterable
     {
         yield 'thrown recoverable' => [false, true];
@@ -198,12 +200,12 @@ final class ToolPayloadMiddlewareTest extends TestCase
             new MessageBus([$this->middleware($payloads), $downstream])->dispatch(new Envelope($original, [new ReceivedStamp('tool')]));
             $this->fail('Expected envelope-aware failure.');
         } catch (DelayedMessageHandlingException|MessageValidationFailedException $exception) {
-            $this->assertInstanceOf(EnvelopeAwareExceptionInterface::class, $exception);
             $this->assertSame($original, $exception->getEnvelope()->getMessage());
             $this->assertSame('retained', $exception->getEnvelope()->last(HandledStamp::class)->getResult());
         }
     }
 
+    /** @return iterable<array{string}> */
     public static function envelopeFailures(): iterable
     {
         yield ['delayed'];
@@ -242,8 +244,10 @@ final class ToolPayloadMiddlewareTest extends TestCase
         $batches = $this->createMock(ToolBatchStoreInterface::class);
         $batches->expects($this->once())->method('delete')->with('run', 1, 'step');
         $replay = $this->createMock(RunStateRebuilderInterface::class);
-        $replay->expects($this->once())->method('rebuildIfStale')->willReturn(RunStateReplayResult::rebuilt(new RunState('run', RunStatus::Cancelled, turnNo: 1)));
-        $result = new MessageBus([$this->middleware($payloads, $deferred, $batches, replay: $replay)])->dispatch(new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'discard']]));
+        $replay->expects($this->never())->method('rebuildIfStale');
+        $registry = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
+        $registry->loadRecovered(new RunState('run', RunStatus::Cancelled, turnNo: 1, lastSeq: 7));
+        $result = new MessageBus([$this->middleware($payloads, $deferred, $batches, registry: $registry, replay: $replay)])->dispatch(new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'discard']]));
         $this->assertNotNull($result->last(HandledStamp::class));
     }
 
@@ -263,6 +267,7 @@ final class ToolPayloadMiddlewareTest extends TestCase
         new MessageBus([$this->middleware($payloads, $deferred)])->dispatch(new Envelope($message, [new ReceivedStamp('run_control')]));
     }
 
+    /** @return iterable<array{string}> */
     public static function mismatchedIdentities(): iterable
     {
         foreach (['runId', 'turnNo', 'stepId', 'attempt', 'idempotencyKey', 'toolCallId', 'orderIndex', 'toolName'] as $field) {
@@ -302,10 +307,10 @@ final class ToolPayloadMiddlewareTest extends TestCase
         $commands = new TestMessageBus();
         $logger = new TestLogger();
         $events = $this->createStub(EventStoreInterface::class);
-        $events->method('latestSequenceFor')->willReturn(0);
+        $events->method('latestSequenceFor')->willReturn(7);
 
         return new ToolPayloadMiddleware(
-            $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger), $deferred, $locks,
+            $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class))), $deferred, $locks,
             Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(), $commands, $logger,
             new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger),
         );

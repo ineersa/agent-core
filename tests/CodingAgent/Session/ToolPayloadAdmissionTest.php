@@ -16,6 +16,8 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Session\CanonicalToolInvocationReader;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -76,7 +78,7 @@ final class ToolPayloadAdmissionTest extends TestCase
         $events->method('latestSequenceFor')->willReturn(7);
         $registry = new TestActiveRunContext();
         $registry->loadRecovered($state);
-        $admission = new ToolPayloadAdmission($batches, $registry, $replay, $events, new TestLogger());
+        $admission = new ToolPayloadAdmission($batches, $registry, $replay, $events, new TestLogger(), new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class)));
 
         $this->assertTrue($admission->acceptsDeferred($reference, false));
     }
@@ -136,6 +138,6 @@ final class ToolPayloadAdmissionTest extends TestCase
         $registry = new TestActiveRunContext();
         $registry->loadRecovered($state);
 
-        return new ToolPayloadAdmission($this->createStub(ToolBatchStoreInterface::class), $registry, $replay, $events, new TestLogger());
+        return new ToolPayloadAdmission($this->createStub(ToolBatchStoreInterface::class), $registry, $replay, $events, new TestLogger(), new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class)));
     }
 }
