@@ -85,17 +85,17 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     {
         // Child launches are top-level only. Read their operational status in
         // one query, independently of the already-settled parent tool call.
-        // Failed preparation has no runtime projection. Aborted reservations
-        // must settle without hiding actual lifecycle state of launched siblings.
+        // Failed preparation may leave no runtime or only a previous attempt's
+        // projection. Launched siblings retain their actual lifecycle status.
         return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<'SQL'
             SELECT batch.lifecycle_id, batch.backgrounded_at,
                 child.child_run_id, child.artifact_id, child.agent_name, child.task,
                 child.launch_model, child.launch_reasoning,
-                COALESCE(child.terminal_status, state.status,
-                    json_extract(child.child_lifecycle_projection, '$.child_status'),
-                    CASE WHEN child.launch_status = :failed_child_launch
-                        OR (batch.launch_status = :failed_batch_launch AND child.launch_status = :reserved_child_launch)
-                        THEN :failed_status ELSE 'queued' END) AS status
+                CASE WHEN child.launch_status = :failed_child_launch
+                    OR (batch.launch_status = :failed_batch_launch AND child.launch_status = :reserved_child_launch)
+                    THEN :failed_status
+                    ELSE COALESCE(child.terminal_status, state.status,
+                        json_extract(child.child_lifecycle_projection, '$.child_status'), 'queued') END AS status
             FROM deferred_subagent_batch batch
             JOIN deferred_subagent_child child ON child.batch_lifecycle_id = batch.lifecycle_id
             LEFT JOIN run_operational_state state ON state.run_id = child.child_run_id
