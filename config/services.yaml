@@ -392,6 +392,10 @@ services:
     calls:
       - registerShutdownHandler: []
 
+  Ineersa\CodingAgent\Tool\BackgroundProcessProvisionalCleanupTask:
+    arguments:
+      $sessionId: '%env(HATFIELD_SESSION_ID)%'
+
   # Startup database migrator — runs known migration classes at startup via DBAL.
   # Uses the app-owned ApplicationMigrationExecutor instead of the Symfony
   # doctrine:migrations:migrate console command to avoid phar:// filesystem

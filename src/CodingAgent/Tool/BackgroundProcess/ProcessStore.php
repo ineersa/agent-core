@@ -177,11 +177,13 @@ final class ProcessStore
      * Fetch private foreground-supervision rows that are safely past their
      * five-minute cleanup grace interval.
      *
+     * @param list<string> $sessionIds Controller-owned runs
+     *
      * @return BackgroundProcess[]
      */
-    public function fetchFinishedProvisionalBefore(\DateTimeImmutable $cutoff): array
+    public function fetchFinishedProvisionalBefore(\DateTimeImmutable $cutoff, array $sessionIds): array
     {
-        return $this->repository->findFinishedProvisionalBefore($cutoff);
+        return $this->repository->findFinishedProvisionalBefore($cutoff, $sessionIds);
     }
 
     /**

@@ -196,14 +196,22 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
      * Find private foreground-supervision rows that have remained finished
      * for at least one cleanup interval.
      *
+     * @param list<string> $sessionIds Controller-owned runs
+     *
      * @return BackgroundProcess[]
      */
-    public function findFinishedProvisionalBefore(\DateTimeImmutable $cutoff): array
+    public function findFinishedProvisionalBefore(\DateTimeImmutable $cutoff, array $sessionIds): array
     {
+        if ([] === $sessionIds) {
+            return [];
+        }
+
         return $this->createQueryBuilder('bp')
             ->where('bp.backgroundedAt IS NULL')
+            ->andWhere('bp.sessionId IN (:sessionIds)')
             ->andWhere('bp.finishedAt IS NOT NULL')
             ->andWhere('bp.finishedAt <= :cutoff')
+            ->setParameter('sessionIds', $sessionIds)
             ->setParameter('cutoff', $cutoff)
             ->orderBy('bp.id', 'ASC')
             ->getQuery()
