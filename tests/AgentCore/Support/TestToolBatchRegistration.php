@@ -40,7 +40,12 @@ final class TestToolBatchRegistration
 
     public static function registerDeferredInvocation(ToolBatchStoreInterface $store, DeferredToolCompletionCorrelation $correlation): void
     {
-        $call = new ExecuteToolCall(
+        self::registerDeferredInvocations($store, $correlation);
+    }
+
+    public static function registerDeferredInvocations(ToolBatchStoreInterface $store, DeferredToolCompletionCorrelation $correlation, DeferredToolCompletionCorrelation ...$siblings): void
+    {
+        $calls = array_map(static fn (DeferredToolCompletionCorrelation $correlation): ExecuteToolCall => new ExecuteToolCall(
             $correlation->runId, $correlation->turnNo, $correlation->stepId,
             $correlation->attempt, $correlation->idempotencyKey, $correlation->toolCallId,
             $correlation->toolName, $correlation->arguments, $correlation->orderIndex,
@@ -50,8 +55,8 @@ final class TestToolBatchRegistration
             maxParallelism: $correlation->maxParallelism,
             argSchema: $correlation->argSchema,
             toolsRef: $correlation->toolsRef,
-        );
-        self::register(new ToolBatchCollector($store), $store, $correlation->runId, $correlation->turnNo, $correlation->stepId, [$call]);
+        ), [$correlation, ...$siblings]);
+        self::register(new ToolBatchCollector($store), $store, $correlation->runId, $correlation->turnNo, $correlation->stepId, $calls);
     }
 
     public static function apply(
