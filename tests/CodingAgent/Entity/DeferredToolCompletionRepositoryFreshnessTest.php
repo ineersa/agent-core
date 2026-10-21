@@ -6,9 +6,12 @@ namespace Ineersa\CodingAgent\Tests\Entity;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletion;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -41,9 +44,10 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
     #[Test]
     public function statusAndLookupSeeCompletionCommittedOutsideIdentityMap(): void
     {
-        $correlation = $this->repository->registerPending(new DeferredToolCompletionCorrelation(
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('deferred status freshness');
+        $correlation = $this->registerCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: '550e8400-e29b-41d4-a716-446655440100',
-            runId: 'run-fresh-1',
+            runId: $runId,
             turnNo: 1,
             stepId: 'turn-1-tools-1',
             attempt: 1,
@@ -55,7 +59,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
         ));
 
         $this->assertSame('pending', $this->repository->status($correlation->deferredId));
-        $pending = $this->repository->findByRunAndToolCall('run-fresh-1', 'call-fresh');
+        $pending = $this->repository->findByRunAndToolCall($runId, 'call-fresh');
         $this->assertNotNull($pending);
 
         $managed = $this->entityManager->getRepository(DeferredToolCompletion::class)->findOneBy([
@@ -65,7 +69,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
         $this->assertSame('pending', $managed->status);
 
         $this->connection->executeStatement(
-            'UPDATE deferred_tool_completion
+            'UPDATE tool_deferred_completion
              SET status = :completed, updated_at = :now
              WHERE deferred_id = :deferred_id',
             [
@@ -76,7 +80,12 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
         );
 
         $this->assertSame('completed', $this->repository->status($correlation->deferredId));
-        $this->assertNotNull($this->repository->findByRunAndToolCall('run-fresh-1', 'call-fresh'));
+        $this->assertNull($this->repository->findByRunAndToolCall($runId, 'call-fresh'));
+        $metadata = $this->repository->findMetadataByDeferredId($correlation->deferredId);
+        $this->assertNotNull($metadata);
+        $this->assertSame('completed', $metadata->status);
+        $this->assertSame($runId, $metadata->reference->runId);
+        $this->assertSame('call-fresh', $metadata->reference->toolCallId);
         $this->assertSame('completed', $managed->status);
         $this->assertTrue($this->entityManager->contains($managed));
     }
@@ -84,9 +93,10 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
     #[Test]
     public function markCompletedFallbackDoesNotRewriteAlreadyCompletedRowFromStaleCache(): void
     {
-        $correlation = $this->repository->registerPending(new DeferredToolCompletionCorrelation(
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('deferred completion freshness');
+        $correlation = $this->registerCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: '550e8400-e29b-41d4-a716-446655440101',
-            runId: 'run-fresh-2',
+            runId: $runId,
             turnNo: 1,
             stepId: 'turn-1-tools-1',
             attempt: 1,
@@ -105,7 +115,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
 
         // External writer completes the row while this EM still caches pending.
         $this->connection->executeStatement(
-            'UPDATE deferred_tool_completion
+            'UPDATE tool_deferred_completion
              SET status = :completed, updated_at = :now
              WHERE deferred_id = :deferred_id AND status = :pending',
             [
@@ -120,7 +130,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
         $this->repository->markCompleted($correlation->deferredId);
 
         $row = $this->connection->fetchAssociative(
-            'SELECT status, updated_at FROM deferred_tool_completion WHERE deferred_id = :deferred_id',
+            'SELECT status, updated_at FROM tool_deferred_completion WHERE deferred_id = :deferred_id',
             ['deferred_id' => $correlation->deferredId],
         );
         $this->assertIsArray($row);
@@ -132,9 +142,10 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
     #[Test]
     public function findByDeferredIdKeepsImmutableRegistrationWithoutStatusRefreshRequirement(): void
     {
-        $correlation = $this->repository->registerPending(new DeferredToolCompletionCorrelation(
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('deferred correlation freshness');
+        $correlation = $this->registerCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: '550e8400-e29b-41d4-a716-446655440102',
-            runId: 'run-fresh-3',
+            runId: $runId,
             turnNo: 2,
             stepId: 'turn-2-tools-1',
             attempt: 1,
@@ -150,6 +161,13 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
         $this->assertNotNull($loaded);
         $this->assertSame('bash', $loaded->toolName);
         $this->assertSame(15, $loaded->timeoutSeconds);
-        $this->assertSame('run-fresh-3', $loaded->runId);
+        $this->assertSame($runId, $loaded->runId);
+    }
+
+    private function registerCorrelation(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
+    {
+        TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(ToolBatchStoreInterface::class), $correlation);
+
+        return $this->repository->registerPending($correlation);
     }
 }

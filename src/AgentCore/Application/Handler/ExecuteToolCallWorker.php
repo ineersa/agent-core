@@ -55,7 +55,7 @@ final readonly class ExecuteToolCallWorker
 
         try {
             $execute = function () use ($message): ?ToolCallResult {
-                $existing = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
+                $existing = $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId);
                 if (null !== $existing) {
                     $this->execute($message);
 
@@ -63,6 +63,9 @@ final readonly class ExecuteToolCallWorker
                 }
                 $outcome = $this->execute($message);
                 if (null === $outcome) {
+                    if ('completed' === $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId)) {
+                        return null;
+                    }
                     $registration = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
                     if (null === $registration) {
                         throw new \RuntimeException('Deferred execution has no durable registration.');
@@ -109,10 +112,13 @@ final readonly class ExecuteToolCallWorker
 
     private function execute(ExecuteToolCall $message): ?ToolCallResult
     {
-        $existing = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
-        if (null !== $existing) {
-            if ('pending' === $this->deferredToolCompletionRepository->status($existing->deferredId)) {
-                $this->dispatchDeferredRegistered($existing);
+        $status = $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId);
+        if (null !== $status) {
+            if ('pending' === $status) {
+                $existing = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
+                if (null !== $existing) {
+                    $this->dispatchDeferredRegistered($existing);
+                }
             }
 
             return null;
@@ -225,7 +231,6 @@ final readonly class ExecuteToolCallWorker
             mode: $message->mode,
             timeoutSeconds: $message->timeoutSeconds,
             maxParallelism: $message->maxParallelism,
-            assistantMessage: null,
             argSchema: $message->argSchema,
             toolsRef: $message->toolsRef,
         );

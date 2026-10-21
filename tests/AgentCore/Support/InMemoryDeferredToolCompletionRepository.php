@@ -6,6 +6,8 @@ namespace Ineersa\AgentCore\Tests\Support;
 
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 
 final class InMemoryDeferredToolCompletionRepository implements DeferredToolCompletionRepositoryInterface
 {
@@ -49,12 +51,38 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
             return null;
         }
 
-        return $row['correlation'];
+        return 'pending' === $row['status'] ? $row['correlation'] : null;
     }
 
     public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation
     {
-        return $this->byDeferredId[$deferredId]['correlation'] ?? null;
+        $row = $this->byDeferredId[$deferredId] ?? null;
+
+        return null !== $row && 'pending' === $row['status'] ? $row['correlation'] : null;
+    }
+
+    public function statusForRunAndToolCall(string $runId, string $toolCallId): ?string
+    {
+        $deferredId = $this->byRunToolCall[$runId.'|'.$toolCallId] ?? null;
+
+        return null === $deferredId ? null : $this->status($deferredId);
+    }
+
+    public function findMetadataByDeferredId(string $deferredId): ?DeferredToolCompletionMetadataDTO
+    {
+        $row = $this->byDeferredId[$deferredId] ?? null;
+        if (null === $row) {
+            return null;
+        }
+        $correlation = $row['correlation'];
+        $body = serialize($correlation);
+        $reference = new ToolPayloadReferenceDTO(
+            'correlation', $correlation->runId, $correlation->turnNo, $correlation->stepId,
+            $correlation->attempt, $correlation->idempotencyKey, $correlation->toolCallId,
+            $correlation->orderIndex, $correlation->toolName, hash('sha256', $body), \strlen($body),
+        );
+
+        return new DeferredToolCompletionMetadataDTO($deferredId, $reference, $row['status']);
     }
 
     public function status(string $deferredId): ?string

@@ -24,7 +24,7 @@ Immutable bus payloads and owner-local processor messages under `Ineersa\AgentCo
 - `ExecuteLlmStep`, `ExecuteCompactionStep` → `llm`
 - `ExecuteToolCall`, `ExecuteShellToolCall` → `tool`
 
-Requests carry immutable invocation inputs and their original identities. Workers post ordinary result DTOs on the command bus. Critical tools own their external idempotency contracts; canonical events do not prove whether an external action occurred.
+`ExecuteToolCall`, `ExecuteShellToolCall`, `ToolCallResult` and `CompleteDeferredToolCall` are local typed processing values. `ToolPayloadMiddleware` seals their data before sending and transports only `ToolPayloadMessage`, a bounded identity and file reference. It resolves execution data after admission and result data after owner initialization under the run lock. Subagent and MCP routing run before sealing. LLM and compaction message formats are unchanged. Critical tools own their external idempotency contracts; canonical events do not prove whether an external action occurred.
 
 Producers/consumers and App-layer workers: `../../Application/AGENTS.md`.
 

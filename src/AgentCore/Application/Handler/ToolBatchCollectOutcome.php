@@ -37,16 +37,6 @@ final readonly class ToolBatchCollectOutcome
     }
 
     /**
-     * Creates a static instance for an accepted batch awaiting completion with optional effects.
-     *
-     * @param list<ExecuteToolCall> $effectsToDispatch
-     */
-    public static function acceptedPending(array $effectsToDispatch = []): self
-    {
-        return new self(accepted: true, duplicate: false, complete: false, effectsToDispatch: $effectsToDispatch);
-    }
-
-    /**
      * Creates a static instance for a fully completed batch with results and effects to dispatch.
      *
      * @param list<ToolCallResult>  $orderedResults

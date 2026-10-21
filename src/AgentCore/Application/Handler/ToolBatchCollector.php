@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -113,17 +114,48 @@ final class ToolBatchCollector
     public function prepareCollect(ToolCallResult $result): ToolBatchCollectOutcome
     {
         $result = $result->finalized();
-        $before = $this->loadBatch($result->runId(), $result->turnNo(), $result->stepId());
-        if (null === $before) {
+        $batch = $this->store->loadSchedule($result->runId(), $result->turnNo(), $result->stepId());
+        if (null === $batch || !\array_key_exists($result->toolCallId, $batch->expectedOrder)) {
             return ToolBatchCollectOutcome::rejected();
         }
-        $after = clone $before;
-        $outcome = $this->applyCollectToBatch($after, $result);
+        if ($batch->expectedOrder[$result->toolCallId] !== $result->orderIndex) {
+            throw new \LogicException('Collected tool result order differs from batch membership.');
+        }
+        if (isset($batch->completedIds[$result->toolCallId])) {
+            $complete = $batch->finalized && \count($batch->completedIds) === \count($batch->expectedOrder);
+            $results = $complete ? $this->store->loadResults($result->runId(), $result->turnNo(), $result->stepId()) : [];
+            $stored = $complete ? ($results[$result->toolCallId] ?? null)
+                : $this->store->loadResult($result->runId(), $result->turnNo(), $result->stepId(), $result->toolCallId);
+            if (null === $stored || !$this->toolResultsEquivalent($stored, $result)) {
+                throw new \LogicException(\sprintf('Conflicting duplicate tool result for call "%s" on run "%s".', $result->toolCallId, $result->runId()));
+            }
+            if (!$complete) {
+                return ToolBatchCollectOutcome::duplicate();
+            }
+            if (\count($results) !== \count($batch->expectedOrder)) {
+                throw new \RuntimeException('Completed tool batch result body is missing.');
+            }
+
+            return ToolBatchCollectOutcome::acceptedComplete(array_values($results), []);
+        }
+        if ($batch->finalized) {
+            return ToolBatchCollectOutcome::rejected();
+        }
+
+        // Ordinary results continue collecting while a sibling awaits human input.
+        unset($batch->inFlight[$result->toolCallId], $batch->awaitingHumanInput[$result->toolCallId]);
+        $batch->completedIds[$result->toolCallId] = true;
+        $effects = $this->dispatchFromSchedule($batch, function (string $id) use ($result): ExecuteToolCall {
+            return $this->store->loadCall($result->runId(), $result->turnNo(), $result->stepId(), $id)
+                ?? throw new \RuntimeException('Dispatchable tool batch invocation is missing.');
+        });
+        $complete = \count($batch->completedIds) === \count($batch->expectedOrder);
+        $orderedResults = $complete ? $this->orderedStoredResults($batch, $result) : [];
+        $batch->finalized = $complete;
 
         return new ToolBatchCollectOutcome(
-            $outcome->accepted, $outcome->duplicate, $outcome->complete,
-            $outcome->orderedResults, $outcome->effectsToDispatch,
-            $this->prepareDelta($result->runId(), $result->turnNo(), $result->stepId(), $before, $after, $result),
+            true, false, $complete, $orderedResults, $effects,
+            new FinalizeToolBatchDTO($result->runId(), $result->turnNo(), $result->stepId(), $batch->pendingQueue, $batch->inFlight, $batch->awaitingHumanInput, $batch->finalized, $result),
         );
     }
 
@@ -138,7 +170,7 @@ final class ToolBatchCollector
      */
     public function getStoredResults(string $runId, int $turnNo, string $stepId): array
     {
-        return $this->loadBatch($runId, $turnNo, $stepId)->results ?? [];
+        return $this->store->loadResults($runId, $turnNo, $stepId);
     }
 
     /**
@@ -234,6 +266,22 @@ final class ToolBatchCollector
         return $this->prepareDelta($runId, $turnNo, $stepId, $before, $after);
     }
 
+    /** @return list<ToolCallResult> */
+    private function orderedStoredResults(ToolBatchScheduleDTO $batch, ToolCallResult $result): array
+    {
+        $results = $this->store->loadResults($result->runId(), $result->turnNo(), $result->stepId());
+        // Only this newly accepted result is not durable until the delta commits.
+        // Every older sibling must come from its own validated stored body.
+        $results[$result->toolCallId] = $result;
+        if (\count($results) !== \count($batch->expectedOrder)) {
+            throw new \RuntimeException('Completed tool batch result body is missing.');
+        }
+        $ordered = array_values($results);
+        usort($ordered, static fn (ToolCallResult $left, ToolCallResult $right): int => $left->orderIndex <=> $right->orderIndex);
+
+        return $ordered;
+    }
+
     /**
      * Compute on a private clone. Worker receipts are not part of the delta.
      *
@@ -257,7 +305,7 @@ final class ToolBatchCollector
         return new PreparedToolBatchDTO($effects, $this->prepareDelta($runId, $turnNo, $stepId, $before, $after));
     }
 
-    private function prepareDelta(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $before, ToolBatchStateDTO $after, ?ToolCallResult $result = null): ?FinalizeToolBatchDTO
+    private function prepareDelta(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $before, ToolBatchStateDTO $after): ?FinalizeToolBatchDTO
     {
         if ($before->pendingQueue === $after->pendingQueue
             && $before->inFlight === $after->inFlight
@@ -279,7 +327,7 @@ final class ToolBatchCollector
             }
         }
 
-        return new FinalizeToolBatchDTO($runId, $turnNo, $stepId, $after->pendingQueue, $after->inFlight, $after->awaitingHumanInput, $after->finalized, $result, $revisedId, $answer);
+        return new FinalizeToolBatchDTO($runId, $turnNo, $stepId, $after->pendingQueue, $after->inFlight, $after->awaitingHumanInput, $after->finalized, null, $revisedId, $answer);
     }
 
     /**
@@ -443,70 +491,6 @@ final class ToolBatchCollector
         return $this->dispatchableCalls($batch);
     }
 
-    private function applyCollectToBatch(ToolBatchStateDTO $batch, ToolCallResult $result): ToolBatchCollectOutcome
-    {
-        if (!\array_key_exists($result->toolCallId, $batch->expectedOrder)) {
-            return ToolBatchCollectOutcome::rejected();
-        }
-
-        if (isset($batch->results[$result->toolCallId])) {
-            return $this->outcomeForStoredResult($batch, $result);
-        }
-
-        if ($batch->finalized) {
-            return $this->outcomeForStoredResult($batch, $result);
-        }
-
-        // Ordinary results continue collecting while a sibling call may be
-        // awaiting human input; clear any awaiting marker for this call id.
-        unset($batch->inFlight[$result->toolCallId], $batch->awaitingHumanInput[$result->toolCallId]);
-        $batch->results[$result->toolCallId] = $result;
-
-        $effectsToDispatch = $this->dispatchableCalls($batch);
-
-        if (\count($batch->results) !== \count($batch->expectedOrder)) {
-            return ToolBatchCollectOutcome::acceptedPending($effectsToDispatch);
-        }
-
-        $orderedResults = array_values($batch->results);
-        usort(
-            $orderedResults,
-            static fn (ToolCallResult $left, ToolCallResult $right): int => $left->orderIndex <=> $right->orderIndex,
-        );
-
-        $batch->finalized = true;
-
-        return ToolBatchCollectOutcome::acceptedComplete($orderedResults, $effectsToDispatch);
-    }
-
-    private function outcomeForStoredResult(ToolBatchStateDTO $batch, ToolCallResult $result): ToolBatchCollectOutcome
-    {
-        $stored = $batch->results[$result->toolCallId] ?? null;
-        if (!$stored instanceof ToolCallResult) {
-            return ToolBatchCollectOutcome::rejected();
-        }
-
-        if (!$this->toolResultsEquivalent($stored, $result)) {
-            throw new \LogicException(\sprintf('Conflicting duplicate tool result for call "%s" on run "%s".', $result->toolCallId, $result->runId()));
-        }
-
-        if (!$batch->finalized) {
-            return ToolBatchCollectOutcome::duplicate();
-        }
-
-        if (\count($batch->results) !== \count($batch->expectedOrder)) {
-            return ToolBatchCollectOutcome::duplicate();
-        }
-
-        $orderedResults = array_values($batch->results);
-        usort(
-            $orderedResults,
-            static fn (ToolCallResult $left, ToolCallResult $right): int => $left->orderIndex <=> $right->orderIndex,
-        );
-
-        return ToolBatchCollectOutcome::acceptedComplete($orderedResults, []);
-    }
-
     private function toolResultsEquivalent(ToolCallResult $left, ToolCallResult $right): bool
     {
         return $left->toolCallId === $right->toolCallId
@@ -516,51 +500,54 @@ final class ToolBatchCollector
             && $left->error === $right->error;
     }
 
+    /** @return list<ExecuteToolCall> */
+    private function dispatchableCalls(ToolBatchStateDTO $batch): array
+    {
+        $modes = [];
+        foreach ($batch->calls as $id => $call) {
+            $modes[$id] = (ToolExecutionMode::tryFrom((string) ($call->mode ?? ToolExecutionMode::Sequential->value)) ?? ToolExecutionMode::Sequential)->value;
+        }
+        $schedule = new ToolBatchScheduleDTO($batch->expectedOrder, $modes, $batch->pendingQueue, $batch->inFlight, array_fill_keys(array_keys($batch->results), true), $batch->finalized, $batch->maxParallelism, $batch->awaitingHumanInput);
+        $dispatch = $this->dispatchFromSchedule($schedule, static fn (string $id): ExecuteToolCall => $batch->calls[$id]);
+        $batch->pendingQueue = $schedule->pendingQueue;
+        $batch->inFlight = $schedule->inFlight;
+
+        return $dispatch;
+    }
+
     /**
+     * Hydrate a call only after scalar mode/capacity checks admit it.
+     *
+     * @param callable(string): ExecuteToolCall $loadCall
+     *
      * @return list<ExecuteToolCall>
      */
-    private function dispatchableCalls(ToolBatchStateDTO $batch): array
+    private function dispatchFromSchedule(ToolBatchScheduleDTO $batch, callable $loadCall): array
     {
         $dispatch = [];
 
         while ([] !== $batch->pendingQueue) {
-            $nextCallId = $batch->pendingQueue[0];
-            if (isset($batch->results[$nextCallId]) || isset($batch->awaitingHumanInput[$nextCallId])) {
+            $id = $batch->pendingQueue[0];
+            if (isset($batch->completedIds[$id]) || isset($batch->awaitingHumanInput[$id])) {
                 array_shift($batch->pendingQueue);
-
                 continue;
             }
-
-            $nextCall = $batch->calls[$nextCallId] ?? null;
-
-            if (!$nextCall instanceof ExecuteToolCall) {
-                array_shift($batch->pendingQueue);
-
-                continue;
-            }
-
-            $mode = ToolExecutionMode::tryFrom((string) ($nextCall->mode ?? ToolExecutionMode::Sequential->value))
-                ?? ToolExecutionMode::Sequential;
-
+            $mode = ToolExecutionMode::from($batch->callModes[$id]);
             if (ToolExecutionMode::Sequential === $mode || ToolExecutionMode::Interrupt === $mode) {
                 if ([] !== $batch->inFlight) {
                     break;
                 }
-
+                $dispatch[] = $loadCall($id);
                 array_shift($batch->pendingQueue);
-                $batch->inFlight[$nextCallId] = true;
-                $dispatch[] = $nextCall;
-
+                $batch->inFlight[$id] = true;
                 break;
             }
-
             if (\count($batch->inFlight) >= $batch->maxParallelism) {
                 break;
             }
-
+            $dispatch[] = $loadCall($id);
             array_shift($batch->pendingQueue);
-            $batch->inFlight[$nextCallId] = true;
-            $dispatch[] = $nextCall;
+            $batch->inFlight[$id] = true;
         }
 
         return $dispatch;

@@ -135,9 +135,11 @@ final class ApplicationMigrationExecutorTest extends TestCase
 
         $schemaManager = $connection->createSchemaManager();
         $this->assertTrue(
-            $schemaManager->tablesExist(['deferred_tool_completion']),
-            'deferred_tool_completion must exist after startup executor (run_control deferred registration)',
+            $schemaManager->tablesExist(['tool_batch', 'tool_batch_call', 'tool_batch_result', 'tool_deferred_completion']),
+            'Startup must install the batch index and reference-backed deferred registration tables.',
         );
+        $this->assertFalse($schemaManager->tablesExist(['deferred_tool_completion']));
+        $this->assertFalse($schemaManager->tablesExist(['tool_batch_schedule']));
 
         $recordedDeferredBatch = $connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',

@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -25,6 +26,7 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
@@ -288,7 +290,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         }
 
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
-        $deferred->registerPending(new DeferredToolCompletionCorrelation(
+        $this->registerCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: $lifecycle,
             runId: $parent,
             turnNo: 2,
@@ -489,7 +491,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         // STEP 2: Register generic deferred completion
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
-        $deferred->registerPending(new DeferredToolCompletionCorrelation(
+        $this->registerCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: $lifecycle,
             runId: $parent,
             turnNo: 2,
@@ -864,7 +866,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         }
 
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
-        $deferred->registerPending(new DeferredToolCompletionCorrelation(
+        $this->registerCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: $lifecycle,
             runId: $parent,
             turnNo: 2,
@@ -1066,7 +1068,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertCount(0, $commandBus->messages, 'No completion before registration');
 
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
-        $deferred->registerPending(new DeferredToolCompletionCorrelation(
+        $this->registerCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: $lifecycle,
             runId: $parent,
             turnNo: 2,
@@ -1322,7 +1324,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum::Reserved, $batch->children[0]->launchStatus);
 
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
-        $deferred->registerPending(new DeferredToolCompletionCorrelation(
+        $this->registerCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: $lifecycle,
             runId: $parent,
             turnNo: 2,
@@ -1367,10 +1369,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $inputStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
         $reference = $inputStore->publish('fork', $parent, 2, 'turn-2-tools-1', $tool, 'deepseek/deepseek-v4-flash', '', [new AgentMessage('user', [['type' => 'text', 'text' => 'Fork task']])]);
         $original = new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall($parent, 2, 'turn-2-tools-1', 1, 'idem-fork-once', $tool, 'fork', ['task' => 'Fork task'], 0, parentModel: 'deepseek/deepseek-v4-flash', launchContext: $reference);
-        $batchStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
-        $register = new \Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO($parent, 2, 'turn-2-tools-1', [$original], [$tool => 0], [$tool], [], 1);
-        $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $parent, 'actions' => [$register]]);
-        $batchStore->prepareChanges([$register], $verified)();
+        $batchStore = self::getContainer()->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batchStore), $batchStore, $parent, 2, 'turn-2-tools-1', [$original]);
         $original = $batchStore->load($parent, 2, 'turn-2-tools-1')->calls[$tool];
         $paths = self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class);
         $inputPath = \dirname($paths->resolveToolBatchesDirectory($parent)).'/tool-launch-inputs/'.hash('sha256', $tool).'.jsonl';
@@ -1519,7 +1519,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         ]));
 
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
-        $deferred->registerPending(new DeferredToolCompletionCorrelation(
+        $this->registerCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: $lifecycle,
             runId: $parent,
             turnNo: 2,
@@ -1546,7 +1546,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $deferred,
             $resultBus,
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
+            self::getContainer()->get(ToolBatchStoreInterface::class),
             new TestLogger(),
         );
         $completionHandler($complete);
@@ -1654,7 +1654,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $row->interruptionKind = DeferredSubagentInterruptionKindEnum::from($kind);
             self::getContainer()->get('doctrine.orm.entity_manager')->flush();
         }
-        self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->registerPending(new DeferredToolCompletionCorrelation(
+        $this->registerCorrelation(new DeferredToolCompletionCorrelation(
             $lifecycle, $parent, 2, 'step', 1, 'idempotency', $tool, 'subagent', [], 0,
         ));
         $inputs = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
@@ -1833,6 +1833,12 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         );
 
         return new DeferredSubagentBatchLifecycleDeliveryService($repo, $progress, $naturalCompletion, $interruptionCompletion);
+    }
+
+    private function registerCorrelation(DeferredToolCompletionCorrelation $correlation): void
+    {
+        TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(ToolBatchStoreInterface::class), $correlation);
+        self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->registerPending($correlation);
     }
 
     private function ensureArtifactReserved(
