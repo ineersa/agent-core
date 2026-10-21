@@ -159,22 +159,6 @@ final class ToolBatchCollector
         );
     }
 
-    /** @return list<ToolCallResult> */
-    private function orderedStoredResults(ToolBatchScheduleDTO $batch, ToolCallResult $result): array
-    {
-        $results = $this->store->loadResults($result->runId(), $result->turnNo(), $result->stepId());
-        // Only this newly accepted result is not durable until the delta commits.
-        // Every older sibling must come from its own validated stored body.
-        $results[$result->toolCallId] = $result;
-        if (\count($results) !== \count($batch->expectedOrder)) {
-            throw new \RuntimeException('Completed tool batch result body is missing.');
-        }
-        $ordered = array_values($results);
-        usort($ordered, static fn (ToolCallResult $left, ToolCallResult $right): int => $left->orderIndex <=> $right->orderIndex);
-
-        return $ordered;
-    }
-
     /**
      * Read collected siblings together without mutating batch state.
      *
@@ -280,6 +264,22 @@ final class ToolBatchCollector
         $after->finalized = true;
 
         return $this->prepareDelta($runId, $turnNo, $stepId, $before, $after);
+    }
+
+    /** @return list<ToolCallResult> */
+    private function orderedStoredResults(ToolBatchScheduleDTO $batch, ToolCallResult $result): array
+    {
+        $results = $this->store->loadResults($result->runId(), $result->turnNo(), $result->stepId());
+        // Only this newly accepted result is not durable until the delta commits.
+        // Every older sibling must come from its own validated stored body.
+        $results[$result->toolCallId] = $result;
+        if (\count($results) !== \count($batch->expectedOrder)) {
+            throw new \RuntimeException('Completed tool batch result body is missing.');
+        }
+        $ordered = array_values($results);
+        usort($ordered, static fn (ToolCallResult $left, ToolCallResult $right): int => $left->orderIndex <=> $right->orderIndex);
+
+        return $ordered;
     }
 
     /**

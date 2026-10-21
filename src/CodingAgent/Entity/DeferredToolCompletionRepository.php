@@ -9,12 +9,12 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
-use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -40,62 +40,6 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
     {
         return $this->locks->synchronized($correlation->runId, fn () => $this->registerLocked($correlation));
-    }
-
-    private function registerLocked(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
-    {
-        $existing = $this->findFreshOneBy([
-            'runId' => $correlation->runId,
-            'toolCallId' => $correlation->toolCallId,
-        ]);
-
-        if ($existing instanceof DeferredToolCompletion) {
-            return $this->toCorrelation($existing);
-        }
-
-        $call = $this->batches->loadCallReference($correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->toolCallId);
-        $schedule = $this->batches->loadSchedule($correlation->runId, $correlation->turnNo, $correlation->stepId);
-        if (null === $call || $call->attempt !== $correlation->attempt || $call->idempotencyKey !== $correlation->idempotencyKey || null === $schedule || !isset($schedule->inFlight[$correlation->toolCallId]) || isset($schedule->completedIds[$correlation->toolCallId])) {
-            throw new ToolPayloadException('Deferred registration no longer has an active invocation.');
-        }
-        $reference = $this->payloads->publishCorrelation($correlation);
-        $now = Clock::get()->now()->format('Y-m-d H:i:s');
-
-        try {
-            $this->getEntityManager()->getConnection()->insert('tool_deferred_completion', [
-                'deferred_id' => $correlation->deferredId,
-                'run_id' => $correlation->runId,
-                'turn_no' => $correlation->turnNo,
-                'step_id' => $correlation->stepId,
-                'attempt' => $correlation->attempt,
-                'idempotency_key' => $correlation->idempotencyKey,
-                'tool_call_id' => $correlation->toolCallId,
-                'tool_name' => $correlation->toolName,
-                'body_reference_json' => $this->serializer->serialize($reference, 'json'),
-                'order_index' => $correlation->orderIndex,
-                'tool_idempotency_key' => $correlation->toolIdempotencyKey,
-                'mode' => $correlation->mode,
-                'timeout_seconds' => $correlation->timeoutSeconds,
-                'max_parallelism' => $correlation->maxParallelism,
-                'tools_ref' => $correlation->toolsRef,
-                'status' => 'pending',
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
-        } catch (UniqueConstraintViolationException $exception) {
-            return $this->resolveRegistrationConflict($correlation, $exception);
-        }
-
-        $inserted = $this->findOneBy([
-            'runId' => $correlation->runId,
-            'toolCallId' => $correlation->toolCallId,
-        ]);
-
-        if (!$inserted instanceof DeferredToolCompletion) {
-            throw new \RuntimeException(\sprintf('Deferred tool registration for run "%s" tool call "%s" succeeded but row could not be loaded.', $correlation->runId, $correlation->toolCallId));
-        }
-
-        return $this->toCorrelation($inserted);
     }
 
     public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
@@ -191,6 +135,62 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
         $entity->status = 'completed';
         $em->flush();
+    }
+
+    private function registerLocked(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
+    {
+        $existing = $this->findFreshOneBy([
+            'runId' => $correlation->runId,
+            'toolCallId' => $correlation->toolCallId,
+        ]);
+
+        if ($existing instanceof DeferredToolCompletion) {
+            return $this->toCorrelation($existing);
+        }
+
+        $call = $this->batches->loadCallReference($correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->toolCallId);
+        $schedule = $this->batches->loadSchedule($correlation->runId, $correlation->turnNo, $correlation->stepId);
+        if (null === $call || $call->attempt !== $correlation->attempt || $call->idempotencyKey !== $correlation->idempotencyKey || null === $schedule || !isset($schedule->inFlight[$correlation->toolCallId]) || isset($schedule->completedIds[$correlation->toolCallId])) {
+            throw new ToolPayloadException('Deferred registration no longer has an active invocation.');
+        }
+        $reference = $this->payloads->publishCorrelation($correlation);
+        $now = Clock::get()->now()->format('Y-m-d H:i:s');
+
+        try {
+            $this->getEntityManager()->getConnection()->insert('tool_deferred_completion', [
+                'deferred_id' => $correlation->deferredId,
+                'run_id' => $correlation->runId,
+                'turn_no' => $correlation->turnNo,
+                'step_id' => $correlation->stepId,
+                'attempt' => $correlation->attempt,
+                'idempotency_key' => $correlation->idempotencyKey,
+                'tool_call_id' => $correlation->toolCallId,
+                'tool_name' => $correlation->toolName,
+                'body_reference_json' => $this->serializer->serialize($reference, 'json'),
+                'order_index' => $correlation->orderIndex,
+                'tool_idempotency_key' => $correlation->toolIdempotencyKey,
+                'mode' => $correlation->mode,
+                'timeout_seconds' => $correlation->timeoutSeconds,
+                'max_parallelism' => $correlation->maxParallelism,
+                'tools_ref' => $correlation->toolsRef,
+                'status' => 'pending',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        } catch (UniqueConstraintViolationException $exception) {
+            return $this->resolveRegistrationConflict($correlation, $exception);
+        }
+
+        $inserted = $this->findOneBy([
+            'runId' => $correlation->runId,
+            'toolCallId' => $correlation->toolCallId,
+        ]);
+
+        if (!$inserted instanceof DeferredToolCompletion) {
+            throw new \RuntimeException(\sprintf('Deferred tool registration for run "%s" tool call "%s" succeeded but row could not be loaded.', $correlation->runId, $correlation->toolCallId));
+        }
+
+        return $this->toCorrelation($inserted);
     }
 
     private function resolveRegistrationConflict(

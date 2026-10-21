@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
-use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
@@ -164,6 +164,7 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
         }
         $transported = new ToolPayloadMessage($reference, $deferredId);
         $this->validate($transported);
+
         // Sending remains outside the run lock. Cleanup can race the send, but
         // the receiver checks existing admission before requiring the file.
         return $stack->next()->handle($this->route(new Envelope($transported, array_merge(...array_values($envelope->all()))), $transported), $stack);
