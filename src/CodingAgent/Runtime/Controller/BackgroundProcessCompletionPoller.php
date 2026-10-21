@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -63,6 +64,7 @@ final class BackgroundProcessCompletionPoller
         private readonly RuntimeEventEmitter $emitter,
         private readonly LoggerInterface $logger,
         private readonly AgentArtifactRegistry $artifactRegistry,
+        private readonly BackgroundCompletionReceiptRepository $receipts,
         ?string $sessionId = null,
     ) {
         // Normalize empty string to null so repository null-guards
@@ -145,6 +147,24 @@ final class BackgroundProcessCompletionPoller
 
         $sessionIds = $this->resolveOwnedSessionIds($this->sessionId);
         $pendingByPid = [];
+
+        try {
+            // Forwarding remains a native completion obligation after the
+            // source mailbox row is deleted, until root admission commits.
+            foreach ($this->receipts->forwarding($this->sessionId) as $receipt) {
+                $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
+                    $receipt->destinationRunId, $receipt->identity, $receipt->forwardedText, $receipt->sourceRunId,
+                ));
+            }
+        } catch (\Throwable $exception) {
+            $this->logger->warning('background_completion.forwarding_retry_failed', [
+                'run_id' => $this->sessionId,
+                'session_id' => $this->sessionId,
+                'component' => 'bg_process_completion.poller',
+                'event_type' => 'background_completion.forwarding_retry_failed',
+                'exception_class' => $exception::class,
+            ]);
+        }
 
         try {
             $candidates = $this->processStore->findCompletionCandidates($sessionIds);

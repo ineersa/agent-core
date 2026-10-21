@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Infrastructure\Doctrine\CommandRecord;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceipt;
 use Ineersa\CodingAgent\Entity\ToolBatchSchedule;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -31,5 +32,7 @@ final readonly class PendingRuntimeSessionDeletionSubscriber
             ->where('c.runId IN (:runs)')->setParameter('runs', $runs)->getQuery()->execute();
         $this->entityManager->createQueryBuilder()->delete(ToolBatchSchedule::class, 'b')
             ->where('b.runId IN (:runs)')->setParameter('runs', $runs)->getQuery()->execute();
+        $this->entityManager->createQueryBuilder()->delete(BackgroundCompletionReceipt::class, 'r')
+            ->where('r.rootRunId IN (:runs)')->setParameter('runs', $runs)->getQuery()->execute();
     }
 }

@@ -75,6 +75,9 @@ services:
     Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface:
       tags: ['agent_core.coordination_action_validator']
 
+    Ineersa\AgentCore\Contract\CommandConsumptionPolicyInterface:
+      tags: ['agent_core.command_consumption_policy']
+
     Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface:
       tags: ['agent_core.command_handler']
 

@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO;
+use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
@@ -23,6 +24,11 @@ final readonly class CoordinationActionValidator
 
     public function validate(object $action): void
     {
+        if ($action instanceof DispatchLocalMetadataMessageDTO) {
+            $this->validate($action->message);
+
+            return;
+        }
         if ($action instanceof FinalizeToolBatchDTO) {
             if ('' === $action->runId || '' === $action->stepId || $action->turnNo < 0
                 || !array_is_list($action->pendingQueue)) {

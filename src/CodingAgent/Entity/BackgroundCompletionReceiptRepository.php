@@ -1,0 +1,84 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\CodingAgent\Entity;
+
+use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\Persistence\ManagerRegistry;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionReceiptDTO;
+
+/** @extends ServiceEntityRepository<BackgroundCompletionReceipt> */
+final class BackgroundCompletionReceiptRepository extends ServiceEntityRepository
+{
+    public function __construct(ManagerRegistry $registry)
+    {
+        parent::__construct($registry, BackgroundCompletionReceipt::class);
+    }
+
+    public function receipt(string $identity): ?BackgroundCompletionReceiptDTO
+    {
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative('SELECT * FROM background_completion_receipt WHERE identity = ?', [$identity]);
+
+        return false === $row ? null : $this->snapshot($row);
+    }
+
+    /** @return list<BackgroundCompletionReceiptDTO> */
+    public function forwarding(string $rootRunId): array
+    {
+        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative('SELECT * FROM background_completion_receipt WHERE root_run_id = ? AND disposition = ?', [$rootRunId, BackgroundCompletionDispositionEnum::Forwarding->value]);
+
+        return array_map($this->snapshot(...), $rows);
+    }
+
+    public function record(BackgroundCompletionReceiptDTO $receipt): void
+    {
+        $connection = $this->getEntityManager()->getConnection();
+        $current = $this->receipt($receipt->identity);
+        if (null !== $current) {
+            // Recovery cannot replace a consumed receipt or move an accepted
+            // destination back from root to a resumed original child.
+            if (BackgroundCompletionDispositionEnum::Consumed === $current->disposition || BackgroundCompletionDispositionEnum::Pending === $current->disposition) {
+                return;
+            }
+            $connection->update('background_completion_receipt', [
+                'disposition' => $receipt->disposition->value,
+                'destination_run_id' => $current->destinationRunId,
+            ], ['identity' => $receipt->identity]);
+
+            return;
+        }
+        $connection->insert('background_completion_receipt', [
+            'identity' => $receipt->identity,
+            'source_run_id' => $receipt->sourceRunId,
+            'accepted_destination_run_id' => $receipt->acceptedDestinationRunId,
+            'destination_run_id' => $receipt->destinationRunId,
+            'root_run_id' => $receipt->rootRunId,
+            'text' => $receipt->text,
+            'forwarded_text' => $receipt->forwardedText,
+            'disposition' => $receipt->disposition->value,
+        ]);
+    }
+
+    public function consume(string $identity, string $runId, bool $forward): void
+    {
+        $connection = $this->getEntityManager()->getConnection();
+        if ($forward) {
+            $connection->executeStatement('UPDATE background_completion_receipt SET disposition = ?, destination_run_id = root_run_id WHERE identity = ? AND destination_run_id = ? AND disposition = ?', [BackgroundCompletionDispositionEnum::Forwarding->value, $identity, $runId, BackgroundCompletionDispositionEnum::Pending->value]);
+        } else {
+            $connection->executeStatement('UPDATE background_completion_receipt SET disposition = ? WHERE identity = ? AND destination_run_id = ? AND disposition = ?', [BackgroundCompletionDispositionEnum::Consumed->value, $identity, $runId, BackgroundCompletionDispositionEnum::Pending->value]);
+        }
+    }
+
+    /** @param array<string, mixed> $row */
+    private function snapshot(array $row): BackgroundCompletionReceiptDTO
+    {
+        return new BackgroundCompletionReceiptDTO(
+            (string) $row['identity'], (string) $row['source_run_id'],
+            (string) $row['accepted_destination_run_id'], (string) $row['destination_run_id'],
+            (string) $row['root_run_id'], (string) $row['text'], (string) $row['forwarded_text'],
+            BackgroundCompletionDispositionEnum::from((string) $row['disposition']),
+        );
+    }
+}
