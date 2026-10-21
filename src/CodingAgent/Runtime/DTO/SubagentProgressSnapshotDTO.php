@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Runtime\Contract\SubagentProgress;
+namespace Ineersa\CodingAgent\Runtime\DTO;
 
 use Symfony\Component\Validator\Constraints as Assert;
 
