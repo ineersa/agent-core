@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection;
 
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DTO\DeferredSubagentCompletionSourceDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 
@@ -38,6 +39,7 @@ final readonly class DeferredSubagentBatchProjectionDTO
         public ?\DateTimeImmutable $interruptionProgressEnqueuedAt = null,
         public ?string $parentModel = null,
         public ?\DateTimeImmutable $backgroundedAt = null,
+        public ?DeferredSubagentCompletionSourceDTO $completionSource = null,
     ) {
     }
 }

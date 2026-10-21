@@ -14,6 +14,7 @@ use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DTO\DeferredSubagentCompletionSourceDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
@@ -221,6 +222,26 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
 
         $row->deliveredProgressRevision = max($row->deliveredProgressRevision, $deliveredProgressRevision);
         $this->getEntityManager()->flush();
+    }
+
+    public function freezeCompletionSource(
+        string $lifecycleId,
+        DeferredSubagentCompletionSourceDTO $source,
+        int $expectedProjectionVersion,
+    ): DeferredSubagentBatchProjectionDTO {
+        $row = $this->findEntityByLifecycleId($lifecycleId)
+            ?? throw new \RuntimeException('Cannot freeze completion for a missing deferred subagent batch.');
+        if (null !== $row->completionSource) {
+            return $this->toDto($row);
+        }
+        if ($row->projectionVersion !== $expectedProjectionVersion) {
+            throw OptimisticLockException::lockFailed($row);
+        }
+
+        $row->completionSource = $this->serializer->serialize($source, 'json');
+        $this->getEntityManager()->flush();
+
+        return $this->toDto($row);
     }
 
     public function markTerminalCompletionEnqueued(
@@ -746,6 +767,9 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             interruptionProgressEnqueuedAt: $row->interruptionProgressEnqueuedAt,
             parentModel: $row->parentModel,
             backgroundedAt: $row->backgroundedAt,
+            completionSource: null === $row->completionSource ? null : $this->serializer->deserialize(
+                $row->completionSource, DeferredSubagentCompletionSourceDTO::class, 'json',
+            ),
         );
     }
 }

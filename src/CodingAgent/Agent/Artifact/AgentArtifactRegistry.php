@@ -172,9 +172,10 @@ final class AgentArtifactRegistry
      *
      * The registry and metadata file are kept in sync. If the artifact ID is
      * not found, the registry is unchanged and the method returns null.
-     * An optional handoff is committed under the same lock. Identical outcomes
-     * retain their completion time and repair missing sidecars without appending
-     * another handoff. Running/resumed artifacts still start a new outcome.
+     * An optional handoff is committed under the same lock. Repeated source IDs
+     * retain their completion time without appending another handoff.
+     * A new source ID starts a new outcome; replaying an older
+     * source leaves a running/resumed artifact unchanged.
      *
      * @return AgentArtifactEntryDTO|null the updated entry, or null when
      *                                    the artifact is not found
@@ -200,35 +201,23 @@ final class AgentArtifactRegistry
         try {
             $entries = $this->loadRegistry($parentRunId);
             $updated = null;
-            $sameOutcome = false;
-            $sameHandoff = false;
 
             foreach ($entries as $i => $entry) {
                 if ($entry->artifactId !== $artifactId) {
                     continue;
                 }
 
-                if (null !== $handoffContent && null !== $handoffId) {
-                    $latest = $this->latestHandoffEntry($parentRunId, $artifactId);
-                    $previousContent = null;
-                    if (null !== $latest && $latest['id'] === $handoffId) {
-                        $this->pathResolver->validatePathComponent($latest['id'], 'handoffId');
-                        $path = $this->pathResolver->absolutePath($parentRunId, "{$entry->paths->artifactDir}/handoffs/{$latest['id']}.md");
-                        if (is_file($path)) {
-                            $previousContent = $this->readHandoffFile($parentRunId, $artifactId, $latest['id']);
-                        }
-                    }
-                    $sameHandoff = null !== $latest && $latest['id'] === $handoffId
-                        && $previousContent === $handoffContent && $latest['status'] === $status?->value;
-                    $sameOutcome = $entry->status === ($status ?? $entry->status)
-                        && $entry->summary === ($summary ?? $entry->summary)
-                        && $entry->failureReason === ($failureReason ?? $entry->failureReason)
-                        && $entry->needsClarification === ($needsClarification ?? $entry->needsClarification)
-                        && null !== $entry->completedAt;
-                    // The immutable handoff ID is the receipt for this canonical
-                    // terminal cursor, including after a partial write.
-                    if ($sameOutcome && null !== $latest && $latest['id'] === $handoffId) {
-                        $completedAt = $entry->completedAt;
+                $publicationSequence = $entry->terminalPublicationSequence;
+                if (null !== $handoffContent) {
+                    // Stage the exact immutable source before publishing resumable status.
+                    $publicationSequence = $this->appendImmutableHandoff(
+                        $parentRunId, $artifactId, $handoffContent, $status, $summary, $handoffId,
+                    );
+                    if (null !== $handoffId && $publicationSequence > 0
+                        && $publicationSequence <= $entry->terminalPublicationSequence) {
+                        // Resume preserves this watermark. Replaying an older publication
+                        // must not restore its terminal status over a newer attempt.
+                        return $entry;
                     }
                 }
 
@@ -246,10 +235,16 @@ final class AgentArtifactRegistry
                     summary: $summary ?? $entry->summary,
                     failureReason: $failureReason ?? $entry->failureReason,
                     needsClarification: $needsClarification ?? $entry->needsClarification,
+                    terminalPublicationSequence: $publicationSequence,
                 );
 
                 $entries[$i] = $updated;
 
+                // Registry status is the resume admission boundary. Publish it last:
+                // a crash beforehand leaves a staged handoff that retry can finish.
+                if (!$this->metadataMatches($parentRunId, $updated)) {
+                    $this->writeMetadata($parentRunId, $updated);
+                }
                 if (null === $handoffId || $this->normalizeEntry($updated) !== $this->normalizeEntry($entry)) {
                     $this->writeRegistry($parentRunId, $entries);
                 }
@@ -263,13 +258,6 @@ final class AgentArtifactRegistry
                 }
 
                 return null;
-            }
-
-            if (null === $handoffContent || !$this->metadataMatches($parentRunId, $updated)) {
-                $this->writeMetadata($parentRunId, $updated);
-            }
-            if (null !== $handoffContent && (!$sameOutcome || !$sameHandoff)) {
-                $this->appendImmutableHandoff($parentRunId, $artifactId, $handoffContent, $status, $summary, $handoffId);
             }
 
             return $updated;
@@ -337,6 +325,7 @@ final class AgentArtifactRegistry
                     summary: $entry->summary,
                     failureReason: $entry->failureReason,
                     needsClarification: $entry->needsClarification,
+                    terminalPublicationSequence: $entry->terminalPublicationSequence,
                 );
 
                 $entries[$i] = $updated;
@@ -526,7 +515,12 @@ final class AgentArtifactRegistry
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
 
-        return $this->normalizedHandoffEntries($parentRunId, $artifactId);
+        $entries = $this->normalizedHandoffEntries($parentRunId, $artifactId);
+        foreach (array_keys($entries) as $index) {
+            unset($entries[$index]['publication_sequence']);
+        }
+
+        return $entries;
     }
 
     /**
@@ -705,7 +699,8 @@ final class AgentArtifactRegistry
     }
 
     /**
-     * Append one immutable handoff file + index entry. Caller must hold the parent lock.
+     * Append one immutable handoff file + index entry and return its publication sequence.
+     * Caller must hold the parent lock. Sequence allocation does not depend on wall-clock order.
      */
     private function appendImmutableHandoff(
         string $parentRunId,
@@ -714,7 +709,7 @@ final class AgentArtifactRegistry
         ?AgentArtifactStatusEnum $status,
         ?string $summary,
         ?string $handoffId = null,
-    ): string {
+    ): int {
         $this->ensureArtifactDir($parentRunId, $artifactId);
 
         $handoffId ??= UuidV7::v7()->toRfc4122();
@@ -742,11 +737,13 @@ final class AgentArtifactRegistry
         $entries = $this->normalizedHandoffEntries($parentRunId, $artifactId);
         foreach ($entries as $entry) {
             if ($entry['id'] === $handoffId) {
-                return $handoffId;
+                return $entry['publication_sequence'];
             }
         }
+        $publicationSequence = max([\count($entries), ...array_column($entries, 'publication_sequence')]) + 1;
         $entries[] = [
             'id' => $handoffId,
+            'publication_sequence' => $publicationSequence,
             // Deterministic terminal IDs are not time-ordered like UUIDv7.
             'created_at' => (new \DateTimeImmutable())->format('Y-m-d\TH:i:s.uP'),
             'status' => $status?->value,
@@ -759,7 +756,7 @@ final class AgentArtifactRegistry
             'entries' => $entries,
         ]);
 
-        return $handoffId;
+        return $publicationSequence;
     }
 
     /**
@@ -780,7 +777,7 @@ final class AgentArtifactRegistry
     }
 
     /**
-     * @return list<array{id: string, created_at: string, status: ?string, summary: ?string, path: string}>
+     * @return list<array{id: string, publication_sequence: int, created_at: string, status: ?string, summary: ?string, path: string}>
      */
     private function normalizedHandoffEntries(string $parentRunId, string $artifactId): array
     {
@@ -798,6 +795,7 @@ final class AgentArtifactRegistry
             $id = trim($entry['id']);
             $out[] = [
                 'id' => $id,
+                'publication_sequence' => \is_int($entry['publication_sequence'] ?? null) ? $entry['publication_sequence'] : 0,
                 'created_at' => \is_string($entry['created_at'] ?? null) ? $entry['created_at'] : '',
                 'status' => \is_string($entry['status'] ?? null) ? $entry['status'] : null,
                 'summary' => \is_string($entry['summary'] ?? null) ? $entry['summary'] : null,

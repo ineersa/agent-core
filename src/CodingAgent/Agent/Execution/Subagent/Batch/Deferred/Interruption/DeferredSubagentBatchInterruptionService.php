@@ -54,6 +54,12 @@ final readonly class DeferredSubagentBatchInterruptionService
             return;
         }
 
+        if (null !== $projection->completionSource) {
+            $this->deliveryService->deliver($batchLifecycleId);
+
+            return;
+        }
+
         if (DeferredSubagentInterruptionKindEnum::Timeout === $kind && null !== $projection->deadlineAt) {
             $delayMs = ($projection->deadlineAt->getTimestamp() - $this->clock->now()->getTimestamp()) * 1000;
             if ($delayMs > 0) {

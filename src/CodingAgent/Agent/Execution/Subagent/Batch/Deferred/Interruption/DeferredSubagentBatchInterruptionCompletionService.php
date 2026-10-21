@@ -45,6 +45,10 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             return;
         }
 
+        if ($this->completionDispatcher->retryFrozenCompletion($batch)) {
+            return;
+        }
+
         $kind = $batch->interruptionKind ?? throw new \RuntimeException('Interruption completion requires persisted interruption kind.');
 
         if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
@@ -77,9 +81,6 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             ? $this->resolveTimeoutSeconds($batch)
             : 0;
         $artifactOutcome = $this->buildSingleInterruptionArtifactOutcome($identity, $kind, $timeoutSecs);
-        $this->lifecycleListener->finalizeTerminalOutcome(
-            ChildRunTerminalFinalizationRequestDTO::persistOnly($artifactOutcome),
-        );
 
         if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
             $presentation = $this->handoffRenderer->formatTimeoutResult(
@@ -88,11 +89,9 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
                 $identity->taskSummary,
                 $identity->artifactId,
             );
-            $this->completionDispatcher->dispatchCompletion(
-                lifecycleId: $batch->lifecycleId,
-                parentRunId: $batch->parentRunId,
-                parentToolCallId: $batch->parentToolCallId,
-                expectedProjectionVersion: $batch->projectionVersion,
+            $this->completionDispatcher->dispatchSingleCompletion(
+                batch: $batch,
+                artifactOutcome: $artifactOutcome,
                 presentation: $presentation,
                 isError: false,
                 errorEnvelope: null,
@@ -103,11 +102,9 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
 
         $presentation = $this->handoffRenderer->formatParentCancelledSingleMessage($identity->displayName, $identity->artifactId);
         $errorEnvelope = $this->buildErrorEnvelope($presentation, true);
-        $this->completionDispatcher->dispatchCompletion(
-            lifecycleId: $batch->lifecycleId,
-            parentRunId: $batch->parentRunId,
-            parentToolCallId: $batch->parentToolCallId,
-            expectedProjectionVersion: $batch->projectionVersion,
+        $this->completionDispatcher->dispatchSingleCompletion(
+            batch: $batch,
+            artifactOutcome: $artifactOutcome,
             presentation: $presentation,
             isError: true,
             errorEnvelope: $errorEnvelope,

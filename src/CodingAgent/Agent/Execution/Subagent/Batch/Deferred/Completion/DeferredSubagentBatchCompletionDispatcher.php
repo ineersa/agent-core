@@ -8,6 +8,11 @@ use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DTO\DeferredSubagentCompletionSourceDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunArtifactFinalizer;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Psr\Log\LoggerInterface;
@@ -26,7 +31,54 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
         private MessageBusInterface $commandBus,
         private LoggerInterface $logger,
         private ToolLaunchInputStoreInterface $launchInputStore,
+        private SubagentChildRunArtifactFinalizer $artifactFinalizer,
     ) {
+    }
+
+    /** @param array{error: array<string, mixed>, details: array<string, mixed>}|null $errorEnvelope */
+    public function dispatchSingleCompletion(
+        DeferredSubagentBatchProjectionDTO $batch,
+        ChildRunTerminalOutcomeDTO $artifactOutcome,
+        string $presentation,
+        bool $isError,
+        ?array $errorEnvelope,
+    ): void {
+        // Persist the original invocation result before the artifact permits resume.
+        // Only rendered handoff content is retained, not a second child transcript.
+        $batch = $this->batchRepository->freezeCompletionSource(
+            $batch->lifecycleId,
+            new DeferredSubagentCompletionSourceDTO(
+                $this->artifactFinalizer->preparePublication($artifactOutcome, $batch->lifecycleId),
+                $presentation, $isError, $errorEnvelope,
+            ),
+            $batch->projectionVersion,
+        );
+        $this->retryFrozenCompletion($batch);
+    }
+
+    public function retryFrozenCompletion(DeferredSubagentBatchProjectionDTO $batch): bool
+    {
+        $source = $batch->completionSource;
+        if (null === $source) {
+            return false;
+        }
+        if (null !== $batch->terminalCompletionEnqueuedAt) {
+            return true;
+        }
+
+        $publication = $source->artifactPublication;
+        if (AgentArtifactStatusEnum::Cancelled === $publication->status) {
+            $this->artifactFinalizer->logChildCancelled($publication->identity);
+        }
+        // Exact immutable publication is idempotent even after resume. Never rebuild
+        // this source from the artifact's latest handoff or the rebound child row.
+        $this->artifactFinalizer->publish($publication);
+        $this->dispatchCompletion(
+            $batch->lifecycleId, $batch->parentRunId, $batch->parentToolCallId,
+            $batch->projectionVersion, $source->presentation, $source->isError, $source->errorEnvelope,
+        );
+
+        return true;
     }
 
     /**
@@ -55,7 +107,7 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
         }
 
         // Registration makes execution redelivery independent of launch input.
-        // Terminal projections and artifact outcomes rebuild the handoff.
+        // Single-child completion is retained on the original batch before publication.
         try {
             $this->launchInputStore->delete($parentRunId, $parentToolCallId);
         } catch (\Throwable $exception) {

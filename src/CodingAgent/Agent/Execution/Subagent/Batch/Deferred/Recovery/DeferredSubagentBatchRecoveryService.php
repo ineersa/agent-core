@@ -46,6 +46,12 @@ final readonly class DeferredSubagentBatchRecoveryService
             return;
         }
 
+        if (null !== $batch->completionSource) {
+            $this->dispatchDeliver($batchLifecycleId);
+
+            return;
+        }
+
         if (null !== $batch->interruptionKind) {
             $this->dispatchInterrupt($batchLifecycleId, $batch->interruptionKind);
 

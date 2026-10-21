@@ -66,6 +66,10 @@ class DeferredSubagentBatch
     #[ORM\Column(name: 'backgrounded_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $backgroundedAt = null;
 
+    // Frozen before terminal artifact publication; child rows may be rebound by resume.
+    #[ORM\Column(name: 'completion_source', type: 'text', nullable: true)]
+    public ?string $completionSource = null;
+
     #[ORM\Version]
     #[ORM\Column(name: 'projection_version', type: 'integer', options: ['default' => 1])]
     public int $projectionVersion = 1;

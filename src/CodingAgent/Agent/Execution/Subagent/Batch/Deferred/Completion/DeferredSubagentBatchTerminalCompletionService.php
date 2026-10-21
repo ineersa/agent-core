@@ -40,6 +40,10 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
             return;
         }
 
+        if ($this->completionDispatcher->retryFrozenCompletion($batch)) {
+            return;
+        }
+
         if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
             $this->completeSingleIfTerminal($batch);
 
@@ -63,16 +67,11 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
 
         $identity = $this->outcomeFactory->identityFromChild($batch, $child);
         $artifactOutcome = $this->outcomeFactory->buildNaturalArtifactOutcome($identity, $projection);
-        $this->lifecycleListener->finalizeTerminalOutcome(
-            ChildRunTerminalFinalizationRequestDTO::persistOnly($artifactOutcome),
-        );
 
         $presentation = $this->buildSingleNaturalPresentation($identity, $projection, $artifactOutcome);
-        $this->completionDispatcher->dispatchCompletion(
-            lifecycleId: $batch->lifecycleId,
-            parentRunId: $batch->parentRunId,
-            parentToolCallId: $batch->parentToolCallId,
-            expectedProjectionVersion: $batch->projectionVersion,
+        $this->completionDispatcher->dispatchSingleCompletion(
+            batch: $batch,
+            artifactOutcome: $artifactOutcome,
             presentation: $presentation,
             isError: false,
             errorEnvelope: null,
