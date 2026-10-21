@@ -7,18 +7,21 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Messenger\Envelope;
@@ -161,9 +164,10 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         /** @var DeferredToolCompletionRepository $repo */
         $repo = self::getContainer()->get(DeferredToolCompletionRepository::class);
 
-        $correlation = $repo->registerPending(new DeferredToolCompletionCorrelation(
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('deferred persistence');
+        $correlation = $this->registerDoctrineCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: '550e8400-e29b-41d4-a716-446655440000',
-            runId: 'run-db-1',
+            runId: $runId,
             turnNo: 1,
             stepId: 'turn-1-tools-1',
             attempt: 1,
@@ -177,14 +181,14 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 
         $loaded = $repo->findByDeferredId($correlation->deferredId);
         $this->assertNotNull($loaded);
-        $this->assertSame('run-db-1', $loaded->runId);
+        $this->assertSame($runId, $loaded->runId);
         $this->assertSame('call-db', $loaded->toolCallId);
         $this->assertSame(30, $loaded->timeoutSeconds);
         $this->assertSame('pending', $repo->status($correlation->deferredId));
 
-        $canonical = $repo->registerPending(new DeferredToolCompletionCorrelation(
+        $canonical = $this->registerDoctrineCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: '660e8400-e29b-41d4-a716-446655440001',
-            runId: 'run-db-1',
+            runId: $runId,
             turnNo: 9,
             stepId: 'other-step',
             attempt: 9,
@@ -201,12 +205,12 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 
     public function testDoctrineRegisterPendingRejectsConflictingDeferredIdForDifferentRunToolCall(): void
     {
-        /** @var DeferredToolCompletionRepository $repo */
-        $repo = self::getContainer()->get(DeferredToolCompletionRepository::class);
-
-        $repo->registerPending(new DeferredToolCompletionCorrelation(
+        $sessions = self::getContainer()->get(HatfieldSessionStore::class);
+        $firstRun = $sessions->createSession('deferred conflict first');
+        $secondRun = $sessions->createSession('deferred conflict second');
+        $this->registerDoctrineCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: '770e8400-e29b-41d4-a716-446655440002',
-            runId: 'run-db-conflict-a',
+            runId: $firstRun,
             turnNo: 1,
             stepId: 'turn-1-tools-1',
             attempt: 1,
@@ -218,11 +222,11 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         ));
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('cannot register run "run-db-conflict-b" tool call "call-b"');
+        $this->expectExceptionMessage('cannot register run "'.$secondRun.'" tool call "call-b"');
 
-        $repo->registerPending(new DeferredToolCompletionCorrelation(
+        $this->registerDoctrineCorrelation(new DeferredToolCompletionCorrelation(
             deferredId: '770e8400-e29b-41d4-a716-446655440002',
-            runId: 'run-db-conflict-b',
+            runId: $secondRun,
             turnNo: 1,
             stepId: 'turn-1-tools-1',
             attempt: 1,
@@ -308,6 +312,16 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 
         $this->assertSame(1, $toolExecutor->calls);
         $this->assertSame(2, $count);
+    }
+
+    private function registerDoctrineCorrelation(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
+    {
+        $repository = self::getContainer()->get(DeferredToolCompletionRepository::class);
+        if (null === $repository->statusForRunAndToolCall($correlation->runId, $correlation->toolCallId)) {
+            TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(ToolBatchStoreInterface::class), $correlation);
+        }
+
+        return $repository->registerPending($correlation);
     }
 
     private function executeMessage(string $toolCallId): ExecuteToolCall

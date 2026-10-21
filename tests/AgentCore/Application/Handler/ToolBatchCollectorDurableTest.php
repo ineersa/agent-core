@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
@@ -188,6 +190,31 @@ final class ToolBatchCollectorDurableTest extends TestCase
             public function load(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO
             {
                 return $this->inner->load($runId, $turnNo, $stepId);
+            }
+
+            public function loadSchedule(string $runId, int $turnNo, string $stepId): ?ToolBatchScheduleDTO
+            {
+                return $this->inner->loadSchedule($runId, $turnNo, $stepId);
+            }
+
+            public function loadCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall
+            {
+                return $this->inner->loadCall($runId, $turnNo, $stepId, $toolCallId);
+            }
+
+            public function loadCallReference(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ToolPayloadReferenceDTO
+            {
+                return $this->inner->loadCallReference($runId, $turnNo, $stepId, $toolCallId);
+            }
+
+            public function loadResult(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ToolCallResult
+            {
+                return $this->inner->loadResult($runId, $turnNo, $stepId, $toolCallId);
+            }
+
+            public function loadResults(string $runId, int $turnNo, string $stepId): array
+            {
+                return $this->inner->loadResults($runId, $turnNo, $stepId);
             }
 
             public function delete(string $runId, int $turnNo, string $stepId): void

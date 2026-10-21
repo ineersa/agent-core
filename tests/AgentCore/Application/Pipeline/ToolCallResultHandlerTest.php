@@ -620,8 +620,9 @@ final class ToolCallResultHandlerTest extends TestCase
         $calls[] = ['id' => 'c', 'name' => 'web_search', 'arguments' => [], 'order_index' => 2];
         $batch = new ToolBatchStateDTO(['a' => 0, 'b' => 1, 'c' => 2], [], [], ['c' => true], $results, false, 3);
         $store = $this->createMock(ToolBatchStoreInterface::class);
-        // One sibling snapshot plus the existing finalization preparation read.
-        $store->expects($this->exactly(2))->method('load')->with('cancel-batch', 1, 'tools')->willReturn($batch);
+        // One ordered sibling read; only finalization hydrates the full batch.
+        $store->expects($this->once())->method('loadResults')->with('cancel-batch', 1, 'tools')->willReturn($results);
+        $store->expects($this->once())->method('load')->with('cancel-batch', 1, 'tools')->willReturn($batch);
         $handler = new ToolCallResultHandler(
             toolBatchCollector: new ToolBatchCollector($store),
             eventFactory: new EventFactory(),

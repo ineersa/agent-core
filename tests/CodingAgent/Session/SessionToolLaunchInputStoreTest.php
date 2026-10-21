@@ -52,13 +52,20 @@ final class SessionToolLaunchInputStoreTest extends IsolatedKernelTestCase
             $verified = new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), ['run_id' => $runId, 'actions' => [$register]]);
             $batchStore->prepareChanges([$register], $verified)();
             $schedule = self::getContainer()->get(\Doctrine\DBAL\Connection::class)->fetchAssociative(
-                'SELECT calls_json, pending_queue_json FROM tool_batch_schedule WHERE run_id = ? AND turn_no = ? AND step_id = ?',
+                'SELECT expected_order_json, pending_queue_json, in_flight_json, awaiting_human_input_json FROM tool_batch WHERE run_id = ? AND turn_no = ? AND step_id = ?',
                 [$runId, 1, 'step-'.$count],
             );
             $this->assertIsArray($schedule);
-            $this->assertStringNotContainsString('PRIVATE_LAUNCH_BODY', (string) $schedule['calls_json']);
-            $sizes[] = [\strlen($body), \strlen((string) $schedule['calls_json']), $reference->bytes];
+            $callRows = self::getContainer()->get(\Doctrine\DBAL\Connection::class)->fetchAllAssociative(
+                'SELECT body_reference_json, mode FROM tool_batch_call WHERE run_id = ? AND turn_no = ? AND step_id = ? ORDER BY order_index',
+                [$runId, 1, 'step-'.$count],
+            );
+            $this->assertCount(2, $callRows);
+            $batchMetadata = json_encode([$schedule, $callRows], \JSON_THROW_ON_ERROR);
+            $this->assertStringNotContainsString('PRIVATE_LAUNCH_BODY', $batchMetadata);
+            $sizes[] = [\strlen($body), \strlen($batchMetadata), $reference->bytes];
             $payloadPath = $this->payloadPath($runId, $callId);
+            $this->assertStringContainsString('PRIVATE_LAUNCH_BODY', file_get_contents($payloadPath));
             $original = hash_file('sha256', $payloadPath);
             // Schedule writes keep sealed launch input untouched.
             $batchStore->prepareChanges([new \Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO($runId, 1, 'step-'.$count, pendingQueue: [$callId], inFlight: [], awaitingHumanInput: [], finalized: false)], new \Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), [
