@@ -83,29 +83,7 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
     {
         $this->validate($reference);
 
-        $path = $this->path($reference);
-        if (!is_file($path) || is_link($path)) {
-            throw new ToolPayloadException('Active tool data is missing.');
-        }
-        $stream = fopen($path, 'rb');
-        if (false === $stream) {
-            throw new ToolPayloadException('Active tool data cannot be opened.');
-        }
-        try {
-            $stat = fstat($stream);
-            if (false === $stat || $stat['size'] !== $reference->bytes) {
-                throw new ToolPayloadException('Active tool data failed its integrity check.');
-            }
-            $json = stream_get_contents($stream);
-            if (false === $json) {
-                throw new ToolPayloadException('Active tool data cannot be read.');
-            }
-            if (\strlen($json) !== $reference->bytes || hash('sha256', $json) !== $reference->sha256) {
-                throw new ToolPayloadException('Active tool data failed its integrity check.');
-            }
-        } finally {
-            fclose($stream);
-        }
+        $json = $this->readJson($reference);
         $document = $this->serializer->deserialize($json, ToolPayloadDataDTO::class, 'json');
         $this->validate($document);
         if ($document->kind !== $reference->kind) {
@@ -120,16 +98,7 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
         };
         $message = $this->serializer->denormalize($document->data, $type);
         $this->validate($message);
-        if ($message instanceof DeferredToolCompletionCorrelation) {
-            if ($message->runId !== $reference->runId || $message->turnNo !== $reference->turnNo || $message->stepId !== $reference->stepId || $message->attempt !== $reference->attempt || $message->idempotencyKey !== $reference->idempotencyKey || $message->toolCallId !== $reference->toolCallId || $message->orderIndex !== $reference->orderIndex || $message->toolName !== $reference->toolName) {
-                throw new ToolPayloadException('Deferred correlation data identity does not match its reference.');
-            }
-
-            return $message;
-        }
-        if ($message->runId() !== $reference->runId || $message->turnNo() !== $reference->turnNo || $message->stepId() !== $reference->stepId || $message->attempt() !== $reference->attempt || $message->idempotencyKey() !== $reference->idempotencyKey || $message->toolCallId !== $reference->toolCallId || (!$message instanceof ExecuteShellToolCall && $message->orderIndex !== $reference->orderIndex) || ($message instanceof ExecuteToolCall && $message->toolName !== $reference->toolName)) {
-            throw new ToolPayloadException('Tool data identity does not match its reference.');
-        }
+        $this->assertIdentity($message, $reference);
 
         return $message instanceof ToolCallResult ? $message->finalized() : $message;
     }
@@ -152,6 +121,61 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
     public function deleteAllForRun(string $runId): void
     {
         $this->filesystem->remove(\dirname($this->directory($runId, 'cleanup')));
+    }
+
+    private function readJson(ToolPayloadReferenceDTO $reference): string
+    {
+        $path = $this->path($reference);
+        if (!is_file($path) || is_link($path)) {
+            throw new ToolPayloadException('Active tool data is missing.');
+        }
+        $stream = fopen($path, 'rb');
+        if (false === $stream) {
+            throw new ToolPayloadException('Active tool data cannot be opened.');
+        }
+        try {
+            $stat = fstat($stream);
+            if (false === $stat || $stat['size'] !== $reference->bytes) {
+                throw new ToolPayloadException('Active tool data failed its integrity check.');
+            }
+            $json = stream_get_contents($stream);
+            if (false === $json) {
+                throw new ToolPayloadException('Active tool data cannot be read.');
+            }
+            if (\strlen($json) !== $reference->bytes || hash('sha256', $json) !== $reference->sha256) {
+                throw new ToolPayloadException('Active tool data failed its integrity check.');
+            }
+
+            return $json;
+        } finally {
+            fclose($stream);
+        }
+    }
+
+    private function assertIdentity(ExecuteToolCall|ExecuteShellToolCall|ToolCallResult|DeferredToolCompletionCorrelation $message, ToolPayloadReferenceDTO $reference): void
+    {
+        $expected = [$reference->runId, $reference->turnNo, $reference->stepId, $reference->attempt, $reference->idempotencyKey, $reference->toolCallId];
+        if ($message instanceof DeferredToolCompletionCorrelation) {
+            $actual = [$message->runId, $message->turnNo, $message->stepId, $message->attempt, $message->idempotencyKey, $message->toolCallId, $message->orderIndex, $message->toolName];
+            if ($actual !== [...$expected, $reference->orderIndex, $reference->toolName]) {
+                throw new ToolPayloadException('Deferred correlation data identity does not match its reference.');
+            }
+
+            return;
+        }
+        $actual = [$message->runId(), $message->turnNo(), $message->stepId(), $message->attempt(), $message->idempotencyKey(), $message->toolCallId];
+        // Shells have no batch order. Results may omit the routing tool name.
+        if (!$message instanceof ExecuteShellToolCall) {
+            $actual[] = $message->orderIndex;
+            $expected[] = $reference->orderIndex;
+        }
+        if ($message instanceof ExecuteToolCall) {
+            $actual[] = $message->toolName;
+            $expected[] = $reference->toolName;
+        }
+        if ($actual !== $expected) {
+            throw new ToolPayloadException('Tool data identity does not match its reference.');
+        }
     }
 
     private function seal(ToolPayloadReferenceDTO $reference, string $json): void

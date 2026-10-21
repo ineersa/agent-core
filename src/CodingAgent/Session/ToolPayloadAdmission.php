@@ -36,21 +36,20 @@ final readonly class ToolPayloadAdmission
     {
         $call = $this->batches->loadCallReference($message->runId(), $message->turnNo(), $message->stepId(), $message->toolCallId);
         if (null !== $call) {
-            if ($call->attempt !== $message->attempt() || $call->idempotencyKey !== $message->idempotencyKey()) {
+            if (!$this->matchesAttemptAndKey($call, $message->attempt(), $message->idempotencyKey())) {
                 return false;
             }
             if ($message instanceof ToolCallResult) {
                 return true;
             }
-            $schedule = $this->batches->loadSchedule($message->runId(), $message->turnNo(), $message->stepId());
 
-            return null !== $schedule && isset($schedule->inFlight[$message->toolCallId]) && !isset($schedule->completedIds[$message->toolCallId]);
+            return $this->isInFlight($call);
         }
         // Loading an existing schedule detects a missing member row rather
         // than silently treating damaged active metadata as a stale delivery.
         $this->batches->loadSchedule($message->runId(), $message->turnNo(), $message->stepId());
         $state = $this->loadedState($message->runId());
-        if (null !== $state && $state->turnNo === $message->turnNo() && $state->activeStepId === $message->stepId() && \array_key_exists($message->toolCallId, $state->pendingToolCalls)) {
+        if (null !== $state && $this->hasPendingCall($state, $message->turnNo(), $message->stepId(), $message->toolCallId)) {
             throw new ToolPayloadException('Active tool invocation is missing its batch data reference.');
         }
 
@@ -74,21 +73,23 @@ final readonly class ToolPayloadAdmission
         }
         $call = $this->batches->loadCallReference($reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId);
         if (null !== $call) {
-            if ($call->attempt !== $reference->attempt || $call->idempotencyKey !== $reference->idempotencyKey || $call->orderIndex !== $reference->orderIndex) {
+            if (!$this->matchesAttemptAndKey($call, $reference->attempt, $reference->idempotencyKey) || $call->orderIndex !== $reference->orderIndex) {
                 return false;
             }
             if ('call' !== $reference->kind) {
                 return 'result' === $reference->kind;
             }
-            $schedule = $this->batches->loadSchedule($reference->runId, $reference->turnNo, $reference->stepId);
+            // Invocation bodies must match the retained digest. Result bodies
+            // differ from their invocation and need no scheduling admission.
+            $inFlight = $this->isInFlight($call);
 
-            return $call->sha256 === $reference->sha256 && null !== $schedule && isset($schedule->inFlight[$reference->toolCallId]) && !isset($schedule->completedIds[$reference->toolCallId]);
+            return $call->sha256 === $reference->sha256 && $inFlight;
         }
         $this->batches->loadSchedule($reference->runId, $reference->turnNo, $reference->stepId);
         // Direct shells have no SQL batch. Unloaded processes read canonical
         // scalar locations, never reconstruct the session's messages or results.
         $state ??= $this->loadedState($reference->runId);
-        if (null !== $state && $state->turnNo === $reference->turnNo && $state->activeStepId === $reference->stepId && \array_key_exists($reference->toolCallId, $state->pendingToolCalls)) {
+        if (null !== $state && $this->hasPendingCall($state, $reference->turnNo, $reference->stepId, $reference->toolCallId)) {
             throw new ToolPayloadException('Active tool invocation is missing its batch data reference.');
         }
 
@@ -114,7 +115,7 @@ final readonly class ToolPayloadAdmission
             if (null === $pending || $pending->shell || [$pending->turnNo, $pending->stepId] !== [$reference->turnNo, $reference->stepId]) {
                 return false;
             }
-        } elseif ($state->turnNo !== $reference->turnNo || $state->activeStepId !== $reference->stepId || !\array_key_exists($reference->toolCallId, $state->pendingToolCalls)) {
+        } elseif (!$this->hasPendingCall($state, $reference->turnNo, $reference->stepId, $reference->toolCallId)) {
             return false;
         }
         $call = $this->batches->loadCallReference($reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId);
@@ -159,6 +160,23 @@ final readonly class ToolPayloadAdmission
         if (null !== $state->parentRunId && $state->status->isTerminal()) {
             $this->registry->release($runId);
         }
+    }
+
+    private function matchesAttemptAndKey(ToolPayloadReferenceDTO $call, int $attempt, string $key): bool
+    {
+        return $call->attempt === $attempt && $call->idempotencyKey === $key;
+    }
+
+    private function isInFlight(ToolPayloadReferenceDTO $call): bool
+    {
+        $schedule = $this->batches->loadSchedule($call->runId, $call->turnNo, $call->stepId);
+
+        return null !== $schedule && isset($schedule->inFlight[$call->toolCallId]) && !isset($schedule->completedIds[$call->toolCallId]);
+    }
+
+    private function hasPendingCall(RunState $state, int $turnNo, string $stepId, string $toolCallId): bool
+    {
+        return $state->turnNo === $turnNo && $state->activeStepId === $stepId && \array_key_exists($toolCallId, $state->pendingToolCalls);
     }
 
     private function pendingShell(string $runId, string $toolCallId, int $turnNo, string $stepId, int $attempt, string $key): ?PendingToolInvocationDTO

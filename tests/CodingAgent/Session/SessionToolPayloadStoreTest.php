@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -79,6 +80,38 @@ final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
         $this->expectException(ToolPayloadException::class);
         $this->expectExceptionMessage('integrity check');
         $store->read($callRef);
+    }
+
+    public function testIdentityChecksKeepCallResultShellAndCorrelationPoliciesSeparate(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('identity policies');
+        $store = $container->get(SessionToolPayloadStore::class);
+        $call = $store->publish(new ExecuteToolCall($run, 1, 'tools', 1, 'key', 'call', 'echo', [], 0));
+        $result = $store->publish(new ToolCallResult($run, 1, 'tools', 1, 'key', 'call', 0, 'done'));
+        $correlation = $store->publishCorrelation(new DeferredToolCompletionCorrelation('deferred', $run, 1, 'tools', 1, 'key', 'call', 'echo', [], 0));
+        foreach ([$call, $result, $correlation] as $reference) {
+            $bad = new ToolPayloadReferenceDTO(...[...get_object_vars($reference), 'orderIndex' => 7]);
+            try {
+                $store->read($bad);
+                $this->fail('Batch-backed data must retain its order identity.');
+            } catch (ToolPayloadException $exception) {
+                $this->assertStringContainsString('identity', $exception->getMessage());
+            }
+        }
+        foreach ([$call, $correlation] as $reference) {
+            $bad = new ToolPayloadReferenceDTO(...[...get_object_vars($reference), 'toolName' => 'different']);
+            try {
+                $store->read($bad);
+                $this->fail('Invocation and correlation routing identities must match.');
+            } catch (ToolPayloadException $exception) {
+                $this->assertStringContainsString('identity', $exception->getMessage());
+            }
+        }
+        $this->assertSame('done', $store->read(new ToolPayloadReferenceDTO(...[...get_object_vars($result), 'toolName' => 'different']))->result);
+        $shell = new ExecuteShellToolCall($run, 1, 'shell', 1, 'shell-call', 'printf hello', true);
+        $reference = $store->publish($shell);
+        $this->assertEquals($shell, $store->read(new ToolPayloadReferenceDTO(...[...get_object_vars($reference), 'orderIndex' => 7, 'toolName' => 'different'])));
     }
 
     public function testReadRefusesWrongLengthKindAndInvocationIdentity(): void
