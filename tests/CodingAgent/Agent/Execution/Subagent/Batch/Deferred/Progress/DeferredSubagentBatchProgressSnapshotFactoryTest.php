@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Progress;
 
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchChildOutcomeFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressSnapshotFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
@@ -16,9 +13,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Session\History\RunPresentationReader;
+use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 
@@ -48,75 +43,13 @@ final class DeferredSubagentBatchProgressSnapshotFactoryTest extends TestCase
         );
 
         $first = $factory->buildNormalPayload($batch);
-        $this->assertInstanceOf(SubagentProgressSingleSnapshotDTO::class, $first);
+        $this->assertInstanceOf(SubagentProgressSnapshotDTO::class, $first);
         $this->assertSame(139000, $first->elapsedMs);
 
         $clock->modify('+10 minutes');
         $second = $factory->buildNormalPayload($batch);
-        $this->assertInstanceOf(SubagentProgressSingleSnapshotDTO::class, $second);
+        $this->assertInstanceOf(SubagentProgressSnapshotDTO::class, $second);
         $this->assertSame(139000, $second->elapsedMs);
-    }
-
-    public function testParallelChildrenFreezeIndependentlyWhileBatchStillRunning(): void
-    {
-        $clock = new MockClock(new \DateTimeImmutable('2026-01-01T00:05:00Z'));
-        $factory = $this->factory($clock);
-        $batchStarted = new \DateTimeImmutable('2026-01-01T00:00:00Z');
-        $doneStart = new \DateTimeImmutable('2026-01-01T00:00:10Z');
-        $doneEnd = new \DateTimeImmutable('2026-01-01T00:00:55Z');
-        $runningStart = new \DateTimeImmutable('2026-01-01T00:00:20Z');
-
-        $batch = new DeferredSubagentBatchProjectionDTO(
-            lifecycleId: 'batch-1',
-            parentRunId: 'parent-1',
-            parentTurnNo: 1,
-            parentToolCallId: 'tc-1',
-            parentOrderIndex: 0,
-            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-            totalChildCount: 2,
-            launchStatus: DeferredSubagentBatchLaunchStatusEnum::Launched,
-            aggregateProgressRevision: 1,
-            deliveredProgressRevision: 0,
-            terminalCompletionEnqueuedAt: null,
-            startedAt: $batchStarted,
-            deadlineAt: null,
-            createdAt: $batchStarted,
-            projectionVersion: 1,
-            children: [
-                $this->child(
-                    index: 1,
-                    runId: 'child-done',
-                    artifactId: 'agent_done',
-                    agentName: 'reviewer',
-                    startedAt: $doneStart,
-                    terminalCompletedAt: $doneEnd,
-                    projection: $this->projection(RunStatus::Completed, toolCount: 5, totalTokens: 12000),
-                ),
-                $this->child(
-                    index: 2,
-                    runId: 'child-run',
-                    artifactId: 'agent_run',
-                    agentName: 'scout',
-                    startedAt: $runningStart,
-                    terminalCompletedAt: null,
-                    projection: $this->projection(RunStatus::Running, toolCount: 3, totalTokens: 9000),
-                ),
-            ],
-        );
-
-        $snapshot = $factory->buildNormalPayload($batch);
-        $this->assertInstanceOf(SubagentProgressParallelSnapshotDTO::class, $snapshot);
-        $this->assertSame('running', $snapshot->status);
-        $this->assertSame(300000, $snapshot->elapsedMs);
-        $this->assertSame(45000, $snapshot->children[0]->elapsedMs);
-        $this->assertSame(280000, $snapshot->children[1]->elapsedMs);
-
-        $clock->modify('+30 seconds');
-        $later = $factory->buildNormalPayload($batch);
-        $this->assertInstanceOf(SubagentProgressParallelSnapshotDTO::class, $later);
-        $this->assertSame(45000, $later->children[0]->elapsedMs);
-        $this->assertSame(310000, $later->children[1]->elapsedMs);
-        $this->assertSame(330000, $later->elapsedMs);
     }
 
     public static function terminalStatuses(): iterable
@@ -129,10 +62,6 @@ final class DeferredSubagentBatchProgressSnapshotFactoryTest extends TestCase
     private function factory(MockClock $clock): DeferredSubagentBatchProgressSnapshotFactory
     {
         return new DeferredSubagentBatchProgressSnapshotFactory(
-            new DeferredSubagentBatchChildOutcomeFactory(
-                new RunPresentationReader($this->createStub(\Ineersa\AgentCore\Contract\EventStoreInterface::class), new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())), new \Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(\Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::serializer(true))),
-                new TestLogger(),
-            ),
             new SubagentChildProgressSummaryBuilder(),
             new SubagentProgressSnapshotBuilder(),
             $clock,
@@ -149,8 +78,6 @@ final class DeferredSubagentBatchProgressSnapshotFactoryTest extends TestCase
             parentTurnNo: 1,
             parentToolCallId: 'tc-1',
             parentOrderIndex: 0,
-            executionMode: ChildRunBatchExecutionModeEnum::Single,
-            totalChildCount: 1,
             launchStatus: DeferredSubagentBatchLaunchStatusEnum::Launched,
             aggregateProgressRevision: 1,
             deliveredProgressRevision: 0,

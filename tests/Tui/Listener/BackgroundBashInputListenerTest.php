@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
@@ -182,8 +183,9 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         $this->manager->start($this->command, 'visible', 'second');
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->never())->method('send');
+        $client->expects($this->once())->method('backgroundWork')->with('visible')->willReturn(new BackgroundWorkSnapshotDTO([], []));
         $state = new TuiSessionState('visible');
-        $state->subagentLiveCatalog->ingestSnapshot(new SubagentProgressSingleSnapshotDTO('single', 'running', 'scout', 'artifact', 'child', 'Inspect', 'test/model', 'off'));
+        $state->subagentLiveCatalog->ingestSnapshot(new SubagentProgressSnapshotDTO('running', 'scout', 'artifact', 'child', 'Inspect', 'test/model', 'off'));
         $harness = $this->mount('visible', $client, $state);
         (new SubagentLiveToggleInputListener())->register($this->context);
         $harness->sendInput("\x02");
