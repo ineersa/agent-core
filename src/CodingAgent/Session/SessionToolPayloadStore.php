@@ -45,9 +45,6 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
 
     public function publish(ExecuteToolCall|ExecuteShellToolCall|ToolCallResult $message): ToolPayloadReferenceDTO
     {
-        if ($message instanceof ToolCallResult) {
-            $message = (new ToolExecutionEndPayloadCodec($this->serializer))->finalizeResult($message);
-        }
         $kind = match (true) {
             $message instanceof ExecuteToolCall => 'call',
             $message instanceof ExecuteShellToolCall => 'shell',
@@ -55,12 +52,14 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
         };
         // Preserve the configured snake-case representation. Private bus fields
         // are explicit constructor inputs, not inferred getter properties.
-        $data = $this->serializer->normalize($message);
+        $data = $message instanceof ToolCallResult
+            ? (new ToolExecutionEndPayloadCodec($this->serializer))->normalizeResult($message)
+            : $this->serializer->normalize($message);
         $data += ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'attempt' => $message->attempt(), 'idempotency_key' => $message->idempotencyKey()];
         $document = new ToolPayloadDataDTO($kind, $data);
         $this->validate($document);
         $json = $this->serializer->serialize($document, 'json');
-        $name = $message instanceof ExecuteToolCall ? $message->toolName : ($message instanceof ExecuteShellToolCall ? 'bash' : ($message->result['tool_name'] ?? null));
+        $name = $message instanceof ExecuteToolCall ? $message->toolName : ($message instanceof ExecuteShellToolCall ? 'bash' : ($data['result']['tool_name'] ?? null));
         $reference = new ToolPayloadReferenceDTO($kind, $message->runId(), $message->turnNo(), $message->stepId(), $message->attempt(), $message->idempotencyKey(), $message->toolCallId, $message instanceof ExecuteShellToolCall ? 0 : $message->orderIndex, \is_string($name) ? $name : null, hash('sha256', $json), \strlen($json));
         $this->seal($reference, $json);
 

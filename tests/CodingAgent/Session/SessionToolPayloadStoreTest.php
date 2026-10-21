@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
@@ -18,7 +19,14 @@ use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tests\Support\CountingToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Exception\NotEncodableValueException;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
@@ -130,6 +138,99 @@ final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
             }
         }
         $this->assertSame('call', $store->read($reference)->toolCallId);
+    }
+
+    #[DataProvider('normalizationProvider')]
+    public function testPublicationReusesTheCheckedNormalizerRepresentation(string $mode, ?string $failure): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('normalization reuse');
+        $normalizer = new class($container->get('serializer'), $mode) implements NormalizerInterface, DenormalizerInterface {
+            public int $resultCalls = 0;
+
+            public function __construct(private SerializerInterface&NormalizerInterface&DenormalizerInterface $inner, private string $mode)
+            {
+            }
+
+            public function normalize(mixed $data, ?string $format = null, array $context = []): array|string|int|float|bool|\ArrayObject|null
+            {
+                $normalized = $this->inner->normalize($data, $format, $context);
+                if ($data instanceof ToolCallResult && 1 === ++$this->resultCalls) {
+                    if ('throw' === $this->mode) {
+                        throw new \RuntimeException('Injected normalizer failure.');
+                    }
+                    if ('throw-utf8' === $this->mode) {
+                        throw new \JsonException('Injected UTF-8 failure.', \JSON_ERROR_UTF8);
+                    }
+                    if ('non-array' === $this->mode) {
+                        return 'unexpected representation';
+                    }
+                    if ('utf8' === $this->mode) {
+                        $normalized['result']['content'][0]['text'] = "\xff";
+                    }
+                }
+
+                return $normalized;
+            }
+
+            public function supportsNormalization(mixed $data, ?string $format = null, array $context = []): bool
+            {
+                return \is_object($data);
+            }
+
+            public function denormalize(mixed $data, string $type, ?string $format = null, array $context = []): mixed
+            {
+                return $this->inner->denormalize($data, $type, $format, $context);
+            }
+
+            public function supportsDenormalization(mixed $data, string $type, ?string $format = null, array $context = []): bool
+            {
+                return true;
+            }
+
+            public function getSupportedTypes(?string $format): array
+            {
+                return ['*' => false];
+            }
+        };
+        $serializer = new Serializer([$normalizer], [new JsonEncoder()]);
+        $store = new SessionToolPayloadStore($container->get(ToolBatchRunStoragePathsInterface::class), $serializer, $container->get(ValidatorInterface::class), new Filesystem());
+        $result = new ToolCallResult($run, 3, 'tools', 2, 'private-key', 'call', 4, ['tool_name' => 'echo', 'content' => [['type' => 'text', 'text' => 'complete']]]);
+        $reference = $store->publish($result);
+        $this->assertSame(null === $failure ? 1 : 2, $normalizer->resultCalls);
+        $this->assertSame([$run, 3, 'tools', 2, 'private-key', 4, 'echo'], [$reference->runId, $reference->turnNo, $reference->stepId, $reference->attempt, $reference->idempotencyKey, $reference->orderIndex, $reference->toolName]);
+        $actual = $store->read($reference);
+        $expected = null === $failure ? $result : $result->withRepresentationFailure($failure);
+        $this->assertEquals($expected, $actual);
+        $path = $container->get(HatfieldSessionStore::class)->resolveSessionsBasePath().'/'.$run.'/runtime/tool-payloads/'.hash('sha256', 'call').'/'.$reference->sha256.'.json';
+        $data = json_decode(file_get_contents($path), true, flags: \JSON_THROW_ON_ERROR)['data'];
+        $this->assertSame('private-key', $data['idempotency_key']);
+        $this->assertSame('call', $data['tool_call_id']);
+        $this->assertArrayNotHasKey('toolCallId', $data);
+    }
+
+    public static function normalizationProvider(): iterable
+    {
+        yield 'valid' => ['valid', null];
+        yield 'malformed representation' => ['utf8', ToolResultText::FAILURE_MESSAGE];
+        yield 'normalizer exception' => ['throw', ToolResultText::INSPECTION_FAILURE_MESSAGE];
+        yield 'UTF-8 exception' => ['throw-utf8', ToolResultText::FAILURE_MESSAGE];
+        yield 'non-array representation' => ['non-array', ToolResultText::INSPECTION_FAILURE_MESSAGE];
+    }
+
+    public function testDocumentSerializationFailuresPropagateWithoutPublishingAFile(): void
+    {
+        $container = self::getContainer();
+        $sessions = $container->get(HatfieldSessionStore::class);
+        $run = $sessions->createSession('strict document serialization');
+        $store = $container->get(SessionToolPayloadStore::class);
+        try {
+            $store->publish(new ToolCallResult($run, 1, 'tools', 1, "key-\xff", 'call', 0, 'valid body'));
+            $this->fail('Explicit private identities still require strict serialization.');
+        } catch (NotEncodableValueException $exception) {
+            $this->assertStringContainsString('UTF-8', $exception->getMessage());
+        }
+        $this->assertDirectoryDoesNotExist($sessions->resolveSessionsBasePath().'/'.$run.'/runtime/tool-payloads');
     }
 
     protected static function createKernel(array $options = []): Kernel
