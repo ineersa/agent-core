@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
@@ -14,6 +15,7 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeIpc;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Process\Process;
 
 /**
@@ -36,6 +38,60 @@ final class CodeModeHostBridgeTest extends IsolatedKernelTestCase
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
         parent::tearDown();
+    }
+
+    #[TestWith([1])]
+    #[TestWith([7])]
+    public function testPartialFrameReadDoesNotWakeOnWritability(int $fragmentBytes): void
+    {
+        $sockets = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, \STREAM_IPPROTO_IP);
+        $this->assertIsArray($sockets);
+        [$host, $peer] = $sockets;
+        try {
+            stream_set_blocking($host, false);
+            $json = json_encode(['type' => 'return', 'ok' => true, 'result' => 42], \JSON_THROW_ON_ERROR);
+            $frame = pack('N', \strlen($json)).$json;
+            $this->assertSame($fragmentBytes, fwrite($peer, substr($frame, 0, $fragmentBytes)));
+
+            // The peer stays open without sending the rest. Only writability is
+            // ready once this fragment has been consumed; no sleeps synchronize it.
+            $polls = $this->cancelBlockedServe($host);
+            $this->assertLessThanOrEqual(15, $polls, 'An incomplete frame must not busy-poll cancellation on socket writability.');
+        } finally {
+            fclose($host);
+            fclose($peer);
+        }
+    }
+
+    public function testBlockedReplyWriteDoesNotWakeOnReadability(): void
+    {
+        $sockets = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, \STREAM_IPPROTO_IP);
+        $this->assertIsArray($sockets);
+        [$host, $peer] = $sockets;
+        try {
+            stream_set_blocking($host, false);
+            stream_set_write_buffer($host, 0);
+            $blocked = false;
+            for ($attempt = 0; $attempt < 256; ++$attempt) {
+                $written = fwrite($host, str_repeat('x', 65_536));
+                $this->assertIsInt($written);
+                if (0 === $written) {
+                    $blocked = true;
+                    break;
+                }
+            }
+            $this->assertTrue($blocked, 'Fill the send buffer before testing write readiness.');
+
+            CodeModeIpc::write($peer, ['type' => 'tool', 'id' => 'reply', 'name' => 'test_tool', 'arguments' => []]);
+            // Leave readable bytes after the request while the peer refuses to
+            // drain the host's full send buffer. Reading cannot unblock its reply.
+            $this->assertSame(1, fwrite($peer, 'x'));
+            $polls = $this->cancelBlockedServe($host);
+            $this->assertLessThanOrEqual(15, $polls, 'A blocked reply must not busy-poll cancellation on socket readability.');
+        } finally {
+            fclose($host);
+            fclose($peer);
+        }
     }
 
     public function testAcceptAfterChildExitStillReceivesQueuedReturnFrame(): void
@@ -586,6 +642,38 @@ PHP);
 
         $result = $this->runScript($bridge, 'return "path-php-ok";');
         $this->assertSame('path-php-ok', $result);
+    }
+
+    /** @param resource $connection */
+    private function cancelBlockedServe(mixed $connection): int
+    {
+        $bridge = $this->bridgeWithToolbox(static fn (): null => null);
+        $process = $this->createStub(Process::class);
+        $process->method('isRunning')->willReturn(true);
+        // This is the cancellation trigger, not a readiness delay. Each real
+        // select timeout is 20 ms; allow ample boundary checks within 100 ms.
+        $token = new class(hrtime(true) + 100_000_000) implements CancellationTokenInterface {
+            public int $polls = 0;
+
+            public function __construct(private readonly int $deadline)
+            {
+            }
+
+            public function isCancellationRequested(): bool
+            {
+                ++$this->polls;
+
+                return hrtime(true) >= $this->deadline;
+            }
+        };
+        try {
+            (new \ReflectionMethod($bridge, 'serve'))->invoke($bridge, $connection, $process, null, $token, 1, hrtime(true));
+            $this->fail('Expected cancellation while the socket remains blocked.');
+        } catch (ToolCallException $exception) {
+            $this->assertSame('Code-mode execution cancelled.', $exception->getMessage());
+        }
+
+        return $token->polls;
     }
 
     private function bridge(): CodeModeHostBridge
