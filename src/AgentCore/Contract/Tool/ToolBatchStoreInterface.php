@@ -31,11 +31,22 @@ interface ToolBatchStoreInterface
     /** @return array<string, ToolCallResult> Ordered by invocation order. */
     public function loadResults(string $runId, int $turnNo, string $stepId): array;
 
+    /** Delete only settled batch metadata and unshared tool payloads. */
     public function delete(string $runId, int $turnNo, string $stepId): void;
 
+    /** Apply the same settlement and shared-payload guards across the run. */
     public function deleteAllForRun(string $runId): void;
 
-    public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool;
+    public function hasUnresolvedExecution(string $runId): bool;
+
+    /**
+     * Resolve pending deferred work and membership in unsettled batches without bodies.
+     *
+     * @param list<string> $toolCallIds
+     *
+     * @return list<string> unresolved identities from the requested set
+     */
+    public function findUnresolvedToolCallIds(string $runId, array $toolCallIds): array;
 
     /**
      * Prepare payloads before the metadata transaction. The returned local write

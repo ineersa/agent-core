@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\ParameterType;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
@@ -124,24 +126,30 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         $this->locks->synchronized($runId, fn () => $this->deleteSettled($runId));
     }
 
-    public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool
+    public function hasUnresolvedExecution(string $runId): bool
     {
         $this->sanitizeRunId($runId);
-        $params = [$runId];
-        $deferred = "SELECT 1 FROM tool_deferred_completion WHERE run_id = ? AND status = 'pending'";
-        if (null !== $toolCallId) {
-            $deferred .= ' AND tool_call_id = ?';
-            $params[] = $toolCallId;
-        }
-        if (false !== $this->connection->fetchOne($deferred.' LIMIT 1', $params)) {
-            return true;
-        }
-        $sql = "SELECT 1 FROM tool_batch b WHERE b.run_id = ? AND (b.finalized = 0 OR b.awaiting_human_input_json <> '[]' OR b.pending_queue_json <> '[]' OR b.in_flight_json <> '[]')";
-        if (null !== $toolCallId) {
-            $sql .= ' AND EXISTS (SELECT 1 FROM tool_batch_call c WHERE c.run_id = b.run_id AND c.turn_no = b.turn_no AND c.step_id = b.step_id AND c.tool_call_id = ?)';
+
+        return (bool) $this->connection->fetchOne("SELECT CASE WHEN EXISTS (SELECT 1 FROM tool_deferred_completion WHERE run_id = ? AND status = 'pending') THEN 1 ELSE EXISTS (SELECT 1 FROM tool_batch b WHERE b.run_id = ? AND (b.finalized = 0 OR b.awaiting_human_input_json <> '[]' OR b.pending_queue_json <> '[]' OR b.in_flight_json <> '[]')) END", [$runId, $runId]);
+    }
+
+    public function findUnresolvedToolCallIds(string $runId, array $toolCallIds): array
+    {
+        $this->sanitizeRunId($runId);
+        $unresolved = [];
+        // Two IN lists plus run IDs use at most 802 bound parameters per chunk,
+        // below SQLite's traditional 999-parameter limit.
+        foreach (array_chunk(array_values(array_unique($toolCallIds)), 400) as $ids) {
+            $sql = "SELECT tool_call_id FROM tool_deferred_completion WHERE run_id = ? AND status = 'pending' AND tool_call_id IN (?)
+                UNION
+                SELECT c.tool_call_id FROM tool_batch_call c JOIN tool_batch b ON b.run_id = c.run_id AND b.turn_no = c.turn_no AND b.step_id = c.step_id
+                WHERE c.run_id = ? AND c.tool_call_id IN (?) AND (b.finalized = 0 OR b.awaiting_human_input_json <> '[]' OR b.pending_queue_json <> '[]' OR b.in_flight_json <> '[]')";
+            foreach ($this->connection->fetchFirstColumn($sql, [$runId, $ids, $runId, $ids], [ParameterType::STRING, ArrayParameterType::STRING, ParameterType::STRING, ArrayParameterType::STRING]) as $id) {
+                $unresolved[] = (string) $id;
+            }
         }
 
-        return false !== $this->connection->fetchOne($sql.' LIMIT 1', $params);
+        return $unresolved;
     }
 
     /** @param list<RegisterToolBatchDTO|FinalizeToolBatchDTO> $actions */
