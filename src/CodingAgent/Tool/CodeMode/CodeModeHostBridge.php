@@ -96,8 +96,11 @@ final readonly class CodeModeHostBridge
         ?int $timeoutSeconds,
         int $startedAtNs,
     ): mixed {
-        $waiter = function () use ($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs): void {
-            $this->waitWhileBlocked($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs);
+        $readWaiter = function () use ($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs): void {
+            $this->waitWhileBlocked($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs, false);
+        };
+        $writeWaiter = function () use ($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs): void {
+            $this->waitWhileBlocked($connection, $process, $cancelToken, $timeoutSeconds, $startedAtNs, true);
         };
 
         while (true) {
@@ -114,7 +117,7 @@ final readonly class CodeModeHostBridge
                 continue;
             }
 
-            $frame = CodeModeIpc::read($connection, $waiter);
+            $frame = CodeModeIpc::read($connection, $readWaiter);
             if (null === $frame) {
                 $this->drainProcessOutput($process);
                 if (!$process->isRunning()) {
@@ -129,7 +132,7 @@ final readonly class CodeModeHostBridge
 
             $type = $frame['type'] ?? null;
             if ('tool' === $type) {
-                $this->handleToolRequest($connection, $frame, $parentContext, $cancelToken, $timeoutSeconds, $startedAtNs, $waiter);
+                $this->handleToolRequest($connection, $frame, $parentContext, $cancelToken, $timeoutSeconds, $startedAtNs, $writeWaiter);
                 continue;
             }
 
@@ -581,12 +584,14 @@ final readonly class CodeModeHostBridge
         CancellationTokenInterface $cancelToken,
         ?int $timeoutSeconds,
         int $startedAtNs,
+        bool $writing,
     ): void {
         $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
         $this->drainProcessOutput($process);
 
-        $read = [$connection];
-        $write = [$connection];
+        // The opposite direction can stay ready without advancing this frame.
+        $read = $writing ? null : [$connection];
+        $write = $writing ? [$connection] : null;
         $except = null;
         $selected = @stream_select($read, $write, $except, 0, self::POLL_INTERVAL_MICROS);
         if (false === $selected) {
