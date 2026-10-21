@@ -109,7 +109,9 @@ final readonly class ToolPayloadAdmission
             if (null === $pending && null === $this->events->latestSequenceFor($reference->runId)) {
                 throw new ToolPayloadException('Deferred completion requires canonical owner state.');
             }
-            if (null === $pending || $pending->shell || [$pending->turnNo, $pending->stepId, $pending->attempt] !== [$reference->turnNo, $reference->stepId, $reference->attempt]) {
+            // Approval resumes update the batch attempt without another start event.
+            // Canonical history owns membership; the batch below owns invocation identity.
+            if (null === $pending || $pending->shell || [$pending->turnNo, $pending->stepId] !== [$reference->turnNo, $reference->stepId]) {
                 return false;
             }
         } elseif ($state->turnNo !== $reference->turnNo || $state->activeStepId !== $reference->stepId || !\array_key_exists($reference->toolCallId, $state->pendingToolCalls)) {
