@@ -308,7 +308,6 @@ class AppConfigTest extends TestCase
             'prompts' => ['a.md', 'b.md'],
             'agents' => [
                 'enabled' => false,
-                'max_agents' => 6,
                 'paths' => ['custom'],
                 'subagent_excluded_tools' => ['bash'],
             ],
@@ -320,7 +319,6 @@ class AppConfigTest extends TestCase
         $this->assertCount(2, $config->prompts->paths);
         $this->assertStringEndsWith('a.md', $config->prompts->paths[0]);
         $this->assertFalse($config->agents->enabled);
-        $this->assertSame(6, $config->agents->maxAgents);
         $this->assertCount(1, $config->agents->paths);
         $this->assertStringEndsWith('custom', $config->agents->paths[0]);
         $this->assertSame(['bash'], $config->agents->subagentExcludedTools);

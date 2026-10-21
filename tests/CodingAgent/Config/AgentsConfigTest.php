@@ -46,6 +46,7 @@ final class AgentsConfigTest extends TestCase
         yield 'explicit null section' => [null, 'Invalid value for agents: expected mapping, got null'];
         yield 'sequential list section' => [['a', 'b'], 'Invalid value for agents: expected mapping, got list'];
         yield 'unknown key' => [['bogus' => 1], 'Invalid key for agents: "bogus" is not supported'];
+        yield 'removed max_agents' => [['max_agents' => 4], 'Invalid key for agents: "max_agents" is not supported'];
         yield 'associative paths' => [['paths' => ['a' => 'x.md']], 'Invalid value for agents.paths: expected list of strings, got associative array'];
         yield 'extensions explicit null' => [['extensions' => null], 'Invalid value for agents.extensions: expected mapping, got null'];
         yield 'extensions unknown key' => [['extensions' => ['bogus' => 1]], 'Invalid key for agents.extensions: "bogus" is not supported'];
@@ -108,22 +109,6 @@ final class AgentsConfigTest extends TestCase
         $this->expectExceptionMessage('Invalid value for agents.enabled');
 
         AgentsConfig::fromRaw(['enabled' => 'yes']);
-    }
-
-    public function testFromRawRejectsNonPositiveMaxAgents(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid value for agents.max_agents');
-
-        AgentsConfig::fromRaw(['max_agents' => 0]);
-    }
-
-    public function testFromRawRejectsWrongTypeMaxAgents(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid value for agents.max_agents');
-
-        AgentsConfig::fromRaw(['max_agents' => '3']);
     }
 
     public function testPathResolutionThroughAppConfigLoader(): void
