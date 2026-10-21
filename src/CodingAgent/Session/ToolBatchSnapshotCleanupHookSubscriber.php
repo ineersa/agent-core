@@ -38,12 +38,16 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
 
     private function cleanupCommitted(AfterTurnCommitHookContext $context): AfterTurnCommitHookContext
     {
+        $launchInputIds = [];
         foreach ($context->events as $event) {
             if (RunEventTypeEnum::ToolExecutionEnd->value === $event->type
                 && \is_string($event->payload['tool_result']['tool_call_id'] ?? null)) {
-                // A canonical result resolves synchronous launch failures too.
-                // Approval suspension has no terminal tool result and retains input.
-                $this->tryDeleteLaunchInput($context->runId, $event->payload['tool_result']['tool_call_id']);
+                // LlmStepResultHandler publishes launch input only for these
+                // tools. Terminal results include synchronous launch failures;
+                // approval suspension has no terminal event and retains input.
+                if (\in_array($event->payload['tool_result']['result']['tool_name'] ?? null, ['fork', 'subagent'], true)) {
+                    $launchInputIds[] = $event->payload['tool_result']['tool_call_id'];
+                }
                 // Direct shell outcomes have no SQL batch to trigger cleanup,
                 // including non-standalone shells while a model turn is active.
                 if (\array_key_exists('standalone', $event->payload['tool_result']['result'] ?? [])) {
@@ -74,6 +78,8 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
             $this->tryDeleteBatch($context->runId, $identity['turn_no'], $identity['step_id']);
         }
 
+        $this->tryDeleteLaunchInputs($context->runId, array_values(array_unique($launchInputIds)));
+
         if ($this->shouldDeleteAllSnapshotsAfterTerminalCommit($context)) {
             $this->tryDeleteAllForRun($context->runId);
             try {
@@ -94,17 +100,31 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
         return $context;
     }
 
-    private function tryDeleteLaunchInput(string $runId, string $toolCallId): void
+    /** @param list<string> $toolCallIds */
+    private function tryDeleteLaunchInputs(string $runId, array $toolCallIds): void
     {
+        if ([] === $toolCallIds) {
+            return;
+        }
         try {
-            if (!$this->toolBatchStore->hasUnresolvedExecution($runId, $toolCallId)) {
-                $this->launchInputStore->delete($runId, $toolCallId);
-            }
+            $unresolved = $this->toolBatchStore->findUnresolvedToolCallIds($runId, $toolCallIds);
         } catch (\Throwable $exception) {
             $this->logger->warning('tool_launch_input.cleanup_failed', [
-                'run_id' => $runId, 'tool_call_id' => $toolCallId, 'component' => 'tool_batch_snapshot_cleanup',
+                'run_id' => $runId, 'session_id' => $runId, 'tool_call_count' => \count($toolCallIds), 'component' => 'tool_batch_snapshot_cleanup',
                 'event_type' => 'tool_launch_input.cleanup_failed', 'exception_class' => $exception::class,
             ]);
+
+            return;
+        }
+        foreach (array_diff($toolCallIds, $unresolved) as $toolCallId) {
+            try {
+                $this->launchInputStore->delete($runId, $toolCallId);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('tool_launch_input.cleanup_failed', [
+                    'run_id' => $runId, 'session_id' => $runId, 'tool_call_id' => $toolCallId, 'component' => 'tool_batch_snapshot_cleanup',
+                    'event_type' => 'tool_launch_input.cleanup_failed', 'exception_class' => $exception::class,
+                ]);
+            }
         }
     }
 
@@ -149,12 +169,6 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
     private function tryDeleteBatch(string $runId, int $turnNo, string $stepId): void
     {
         try {
-            if ($this->toolBatchStore->hasUnresolvedExecution($runId)) {
-                $batch = $this->toolBatchStore->loadSchedule($runId, $turnNo, $stepId);
-                if (null !== $batch && (!$batch->finalized || [] !== $batch->awaitingHumanInput || [] !== $batch->pendingQueue || [] !== $batch->inFlight)) {
-                    return;
-                }
-            }
             $this->toolBatchStore->delete($runId, $turnNo, $stepId);
         } catch (\Throwable $throwable) {
             $this->logger->warning('tool_batch.snapshot_delete_failed', [
