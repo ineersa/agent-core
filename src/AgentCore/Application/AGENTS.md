@@ -161,6 +161,8 @@ Explicit repair derives current model and shell work from replay and compaction 
 
 Mailbox preparation does not enqueue, consume, or reject commands. Prepared events capture exact status decisions, and enqueue descriptors retain the original command payload and idempotency key. A safe-boundary drain captures the existing FIFO cutoff; recovery does not read later commands into that plan. Cancel preserves pending append messages and journals rejection of stale follow-up and steer commands.
 
+Terminal continuation requires an applied message or an applied explicit continue command. Rejection events and other mailbox bookkeeping do not revive the run. Compact commands remain maintenance and do not authorize a model turn.
+
 `ToolBatchCollector` prepares registration, collection, suspension, answers, and redrive on a private clone. `FinalizeToolBatchDTO` captures original results or answers plus queue and membership decisions. One active SQL batch owns calls, collected sibling results, FIFO queue, in-flight membership, and human waits. Approval revisions retain their exact current call identities. Finalized cleanup retains unresolved human and deferred work.
 
 `RunMessageProcessor` checks pending `ApplyCommand` IDs before history discard or handler preparation. The pending mailbox stores no completed identities or source-acceptance markers. Application or rejection deletes the whole command row. Submitting a completed ID again is allowed.
