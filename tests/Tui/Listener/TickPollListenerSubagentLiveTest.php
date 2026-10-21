@@ -212,6 +212,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $artifactId = 'agent_resume';
         $childRunId = 'child-run-resume';
         $client = $this->createStub(AgentSessionClient::class);
+        $client->method('backgroundWork')->willReturn(new BackgroundWorkSnapshotDTO([], []));
 
         $parentProjector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
         $poller = new RuntimeEventPoller(
