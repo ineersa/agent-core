@@ -25,10 +25,10 @@ final class SubagentLiveInputPolicyTest extends TestCase
         $this->assertTrue($this->policy->shouldBlockInLiveView('/new'));
         $this->assertTrue($this->policy->shouldBlockInLiveView('/resume abc'));
         $this->assertTrue($this->policy->shouldBlockInLiveView('/tasks'));
+        $this->assertTrue($this->policy->shouldBlockInLiveView('/bg'));
         $this->assertFalse($this->policy->shouldBlockInLiveView('/agents-main'));
         $this->assertFalse($this->policy->shouldBlockInLiveView('/main'));
         $this->assertFalse($this->policy->shouldBlockInLiveView('/agents-live'));
-        $this->assertFalse($this->policy->shouldBlockInLiveView('/bg'));
         $this->assertFalse($this->policy->shouldBlockInLiveView('steer this child'));
     }
 
