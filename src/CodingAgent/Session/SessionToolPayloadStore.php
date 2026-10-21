@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
-use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadDataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
-use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
@@ -24,13 +24,25 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 /** Immutable, content-addressed data shared by transport and the batch index. */
 final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterface
 {
+    /** @param array{run_id: string, path: string}|null $runRoot */
     public function __construct(
         private ToolBatchRunStoragePathsInterface $paths,
         private LockFactory $lockFactory,
         private SerializerInterface&NormalizerInterface&DenormalizerInterface $serializer,
         private ValidatorInterface $validator,
         private Filesystem $filesystem,
+        private ?array $runRoot = null,
     ) {
+    }
+
+    public function forRun(string $runId): ToolPayloadStoreInterface
+    {
+        $root = $this->root($runId);
+        if (null !== $this->runRoot) {
+            return $this;
+        }
+
+        return new self($this->paths, $this->lockFactory, $this->serializer, $this->validator, $this->filesystem, ['run_id' => $runId, 'path' => $root]);
     }
 
     public function publish(ExecuteToolCall|ExecuteShellToolCall|ToolCallResult $message): ToolPayloadReferenceDTO
@@ -69,27 +81,6 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
         return $reference;
     }
 
-    private function seal(ToolPayloadReferenceDTO $reference, string $json): void
-    {
-        $this->validate($reference);
-        $this->locked($reference->runId, $reference->toolCallId, function () use ($reference, $json): void {
-            $path = $this->path($reference);
-            $this->filesystem->mkdir(\dirname($path), 0700);
-            if (is_link($path)) {
-                throw new ToolPayloadException('Tool data cannot be a symbolic link.');
-            }
-            if (is_file($path)) {
-                if (filesize($path) !== $reference->bytes || hash_file('sha256', $path) !== $reference->sha256) {
-                    throw new ToolPayloadException('Immutable tool data has changed.');
-                }
-
-                return;
-            }
-            $this->filesystem->dumpFile($path, $json);
-            $this->filesystem->chmod($path, 0600);
-        });
-    }
-
     public function read(ToolPayloadReferenceDTO $reference): ExecuteToolCall|ExecuteShellToolCall|ToolCallResult|DeferredToolCompletionCorrelation
     {
         $this->validate($reference);
@@ -105,14 +96,15 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
             }
             try {
                 $stat = fstat($stream);
-                $hash = hash_init('sha256');
-                $bytes = hash_update_stream($hash, $stream);
-                if (false === $stat || $stat['size'] !== $reference->bytes || $bytes !== $reference->bytes || hash_final($hash) !== $reference->sha256 || !rewind($stream)) {
+                if (false === $stat || $stat['size'] !== $reference->bytes) {
                     throw new ToolPayloadException('Active tool data failed its integrity check.');
                 }
                 $json = stream_get_contents($stream);
                 if (false === $json) {
                     throw new ToolPayloadException('Active tool data cannot be read.');
+                }
+                if (\strlen($json) !== $reference->bytes || hash('sha256', $json) !== $reference->sha256) {
+                    throw new ToolPayloadException('Active tool data failed its integrity check.');
                 }
             } finally {
                 fclose($stream);
@@ -127,6 +119,7 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
                 'shell' => ExecuteShellToolCall::class,
                 'result' => ToolCallResult::class,
                 'correlation' => DeferredToolCompletionCorrelation::class,
+                default => throw new ToolPayloadException('Unsupported tool data kind.'),
             };
             $message = $this->serializer->denormalize($document->data, $type);
             $this->validate($message);
@@ -165,6 +158,27 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
         $this->filesystem->remove(\dirname($this->directory($runId, 'cleanup')));
     }
 
+    private function seal(ToolPayloadReferenceDTO $reference, string $json): void
+    {
+        $this->validate($reference);
+        $this->locked($reference->runId, $reference->toolCallId, function () use ($reference, $json): void {
+            $path = $this->path($reference);
+            $this->filesystem->mkdir(\dirname($path), 0700);
+            if (is_link($path)) {
+                throw new ToolPayloadException('Tool data cannot be a symbolic link.');
+            }
+            if (is_file($path)) {
+                if (filesize($path) !== $reference->bytes || hash_file('sha256', $path) !== $reference->sha256) {
+                    throw new ToolPayloadException('Immutable tool data has changed.');
+                }
+
+                return;
+            }
+            $this->filesystem->dumpFile($path, $json);
+            $this->filesystem->chmod($path, 0600);
+        });
+    }
+
     private function path(ToolPayloadReferenceDTO $reference): string
     {
         return $this->directory($reference->runId, $reference->toolCallId).'/'.$reference->sha256.'.json';
@@ -172,15 +186,28 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
 
     private function directory(string $runId, string $toolCallId): string
     {
-        if ('' === $runId || '.' === $runId || '..' === $runId || str_contains($runId, '/') || str_contains($runId, '\\') || str_contains($runId, "\0")) {
-            throw new ToolPayloadException('Invalid tool data run identity.');
-        }
-        $path = \dirname($this->paths->resolveToolBatchesDirectory($runId)).'/tool-payloads/'.hash('sha256', $toolCallId);
+        $path = $this->root($runId).'/'.hash('sha256', $toolCallId);
         if (is_link($path) || is_link(\dirname($path))) {
             throw new ToolPayloadException('Tool data directory cannot be a symbolic link.');
         }
 
         return $path;
+    }
+
+    private function root(string $runId): string
+    {
+        if ('' === $runId || '.' === $runId || '..' === $runId || str_contains($runId, '/') || str_contains($runId, '\\') || str_contains($runId, "\0")) {
+            throw new ToolPayloadException('Invalid tool data run identity.');
+        }
+        if (null !== $this->runRoot) {
+            if ($this->runRoot['run_id'] !== $runId) {
+                throw new ToolPayloadException('Scoped tool data has a different run identity.');
+            }
+
+            return $this->runRoot['path'];
+        }
+
+        return \dirname($this->paths->resolveToolBatchesDirectory($runId)).'/tool-payloads';
     }
 
     private function validate(object $data): void

@@ -44,8 +44,9 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         if (null === $schedule) {
             return null;
         }
-        $calls = $this->loadCalls($runId, $turnNo, $stepId);
-        $results = $this->loadResults($runId, $turnNo, $stepId);
+        $store = $this->withRunPayloads($runId);
+        $calls = $store->loadCalls($runId, $turnNo, $stepId);
+        $results = $store->loadResults($runId, $turnNo, $stepId);
 
         return new ToolBatchStateDTO($schedule->expectedOrder, $calls, $schedule->pendingQueue, $schedule->inFlight, $results, $schedule->finalized, $schedule->maxParallelism, $schedule->awaitingHumanInput);
     }
@@ -88,9 +89,10 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
             return [];
         }
         $order = $this->decodeJson($record['expected_order_json']);
+        $store = $this->withRunPayloads($runId);
         $results = [];
         foreach ($this->connection->iterateAssociative('SELECT * FROM tool_batch_result WHERE run_id = ? AND turn_no = ? AND step_id = ? ORDER BY order_index, rowid', [$runId, $turnNo, $stepId]) as $row) {
-            $result = $this->decodeResult($row);
+            $result = $store->decodeResult($row);
             if (($order[$result->toolCallId] ?? null) !== $result->orderIndex) {
                 throw new \RuntimeException('Stored tool batch result membership is invalid.');
             }
@@ -102,6 +104,49 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
 
     public function prepareChanges(array $actions, VerifiedTransitionDTO $transition): \Closure
     {
+        $runId = null;
+        foreach ($actions as $action) {
+            $this->verifyAction($action, $transition);
+            $runId = $action->runId;
+        }
+        $store = null === $runId ? $this : $this->withRunPayloads($runId);
+
+        return $store->prepareVerifiedChanges($actions, $transition);
+    }
+
+    public function delete(string $runId, int $turnNo, string $stepId): void
+    {
+        $this->deleteSettled($runId, $turnNo, $stepId);
+    }
+
+    public function deleteAllForRun(string $runId): void
+    {
+        $this->deleteSettled($runId);
+    }
+
+    public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool
+    {
+        $this->sanitizeRunId($runId);
+        $params = [$runId];
+        $deferred = "SELECT 1 FROM tool_deferred_completion WHERE run_id = ? AND status = 'pending'";
+        if (null !== $toolCallId) {
+            $deferred .= ' AND tool_call_id = ?';
+            $params[] = $toolCallId;
+        }
+        if (false !== $this->connection->fetchOne($deferred.' LIMIT 1', $params)) {
+            return true;
+        }
+        $sql = "SELECT 1 FROM tool_batch b WHERE b.run_id = ? AND (b.finalized = 0 OR b.awaiting_human_input_json <> '[]' OR b.pending_queue_json <> '[]' OR b.in_flight_json <> '[]')";
+        if (null !== $toolCallId) {
+            $sql .= ' AND EXISTS (SELECT 1 FROM tool_batch_call c WHERE c.run_id = b.run_id AND c.turn_no = b.turn_no AND c.step_id = b.step_id AND c.tool_call_id = ?)';
+        }
+
+        return false !== $this->connection->fetchOne($sql.' LIMIT 1', $params);
+    }
+
+    /** @param list<RegisterToolBatchDTO|FinalizeToolBatchDTO> $actions */
+    private function prepareVerifiedChanges(array $actions, VerifiedTransitionDTO $transition): \Closure
+    {
         $records = [];
         $schedules = [];
         $headers = [];
@@ -112,7 +157,6 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         $validatedBodies = [];
         $retainedCounts = [];
         foreach ($actions as $action) {
-            $this->verifyAction($action, $transition);
             $key = $this->encodeJson([$action->runId, $action->turnNo, $action->stepId]);
             if (!\array_key_exists($key, $records)) {
                 $records[$key] = $this->record($action->runId, $action->turnNo, $action->stepId);
@@ -240,62 +284,42 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         };
     }
 
-    public function delete(string $runId, int $turnNo, string $stepId): void
-    {
-        $this->deleteSettled($runId, $turnNo, $stepId);
-    }
-
-    public function deleteAllForRun(string $runId): void
-    {
-        $this->deleteSettled($runId);
-    }
-
-    public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool
-    {
-        $this->sanitizeRunId($runId);
-        $params = [$runId];
-        $deferred = "SELECT 1 FROM tool_deferred_completion WHERE run_id = ? AND status = 'pending'";
-        if (null !== $toolCallId) {
-            $deferred .= ' AND tool_call_id = ?';
-            $params[] = $toolCallId;
-        }
-        if (false !== $this->connection->fetchOne($deferred.' LIMIT 1', $params)) {
-            return true;
-        }
-        $sql = "SELECT 1 FROM tool_batch b WHERE b.run_id = ? AND (b.finalized = 0 OR b.awaiting_human_input_json <> '[]' OR b.pending_queue_json <> '[]' OR b.in_flight_json <> '[]')";
-        if (null !== $toolCallId) {
-            $sql .= ' AND EXISTS (SELECT 1 FROM tool_batch_call c WHERE c.run_id = b.run_id AND c.turn_no = b.turn_no AND c.step_id = b.step_id AND c.tool_call_id = ?)';
-        }
-
-        return false !== $this->connection->fetchOne($sql.' LIMIT 1', $params);
-    }
-
     private function deleteSettled(string $runId, ?int $turnNo = null, ?string $stepId = null): void
     {
         $this->sanitizeRunId($runId);
         $where = "b.run_id = ? AND b.finalized = 1 AND b.awaiting_human_input_json = '[]' AND b.pending_queue_json = '[]' AND b.in_flight_json = '[]' AND NOT EXISTS (SELECT 1 FROM tool_deferred_completion d WHERE d.run_id = b.run_id AND d.turn_no = b.turn_no AND d.step_id = b.step_id AND d.status = 'pending')";
+        $outerWhere = 'run_id = ?';
         $params = [$runId];
         if (null !== $turnNo) {
             $where .= ' AND b.turn_no = ? AND b.step_id = ?';
+            $outerWhere .= ' AND turn_no = ? AND step_id = ?';
             $params[] = $turnNo;
             $params[] = $stepId;
         }
         $callIds = $this->connection->fetchFirstColumn("SELECT c.tool_call_id FROM tool_batch_call c JOIN tool_batch b ON b.run_id = c.run_id AND b.turn_no = c.turn_no AND b.step_id = c.step_id WHERE $where", $params);
         // References and their header disappear in one transaction. File cleanup
         // waits for owner-lock release and rechecks that no retained row needs it.
-        $this->connection->transactional(function () use ($where, $params): void {
+        $this->connection->transactional(function () use ($where, $outerWhere, $params): void {
             foreach (['tool_batch_result', 'tool_batch_call'] as $table) {
-                $this->connection->executeStatement("DELETE FROM $table WHERE EXISTS (SELECT 1 FROM tool_batch b WHERE b.run_id = $table.run_id AND b.turn_no = $table.turn_no AND b.step_id = $table.step_id AND $where)", $params);
+                $this->connection->executeStatement("DELETE FROM $table WHERE $outerWhere AND EXISTS (SELECT 1 FROM tool_batch b WHERE b.run_id = $table.run_id AND b.turn_no = $table.turn_no AND b.step_id = $table.step_id AND $where)", array_merge($params, $params));
             }
             $this->connection->executeStatement("DELETE FROM tool_batch AS b WHERE $where", $params);
         });
         $this->locks->afterRelease($runId, fn () => $this->locks->synchronized($runId, function () use ($runId, $callIds): void {
-            foreach ($callIds as $id) {
-                if (false !== $this->connection->fetchOne('SELECT 1 FROM tool_batch_call WHERE run_id = ? AND tool_call_id = ? LIMIT 1', [$runId, $id])) {
-                    continue;
-                }
+            if ([] === $callIds) {
+                return;
+            }
+            // One run-scoped read protects shared IDs in surviving batches. The
+            // owner lock prevents new references until these deletions finish.
+            $survivors = array_fill_keys($this->connection->fetchFirstColumn('SELECT DISTINCT tool_call_id FROM tool_batch_call WHERE run_id = ?', [$runId]), true);
+            $safeIds = array_diff(array_unique($callIds), array_keys($survivors));
+            if ([] === $safeIds) {
+                return;
+            }
+            $payloads = $this->payloads->forRun($runId);
+            foreach ($safeIds as $id) {
                 try {
-                    $this->payloads->deleteCall($runId, $id);
+                    $payloads->deleteCall($runId, $id);
                 } catch (\Throwable $exception) {
                     $this->logger->warning('tool_payload.cleanup_failed', ['run_id' => $runId, 'session_id' => $runId, 'tool_call_id' => $id, 'component' => 'tool_batch', 'event_type' => 'tool_payload.cleanup_failed', 'exception_class' => $exception::class]);
                 }
@@ -306,13 +330,19 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
     /** @return array<string, ExecuteToolCall> */
     private function loadCalls(string $runId, int $turnNo, string $stepId): array
     {
+        $store = $this->withRunPayloads($runId);
         $calls = [];
         foreach ($this->connection->iterateAssociative('SELECT * FROM tool_batch_call WHERE run_id = ? AND turn_no = ? AND step_id = ? ORDER BY rowid', [$runId, $turnNo, $stepId]) as $row) {
-            $call = $this->decodeCall($row);
+            $call = $store->decodeCall($row);
             $calls[$call->toolCallId] = $call;
         }
 
         return $calls;
+    }
+
+    private function withRunPayloads(string $runId): self
+    {
+        return new self($this->connection, $this->payloads->forRun($runId), $this->serializer, $this->validator, $this->locks, $this->logger);
     }
 
     /** @param array<string, mixed> $record */

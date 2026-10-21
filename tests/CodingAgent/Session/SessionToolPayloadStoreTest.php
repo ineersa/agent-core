@@ -1,0 +1,111 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\CodingAgent\Tests\Session;
+
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Kernel;
+use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionToolPayloadStore;
+use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
+use Ineersa\CodingAgent\Tests\Support\CountingToolBatchRunStoragePaths;
+use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
+
+final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
+{
+    public function testScopeReusesRealNumericParentResolutionWithoutCachingAcrossOperations(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('scoped bodies');
+        $paths = new CountingToolBatchRunStoragePaths($container->get(ToolBatchRunStoragePathsInterface::class));
+        $store = new SessionToolPayloadStore($paths, $container->get(LockFactory::class), $container->get('serializer'), $container->get(ValidatorInterface::class), new Filesystem());
+        $sql = $container->get('test.sql_logger');
+        $sql->records = [];
+        $scoped = $store->forRun($run);
+        $references = [];
+        for ($i = 0; $i < 12; ++$i) {
+            $references[] = $scoped->publish(new ExecuteToolCall($run, 1, 'tools', 1, 'key-'.$i, 'call-'.$i, 'echo', ['text' => 'hello'], $i));
+        }
+        $this->assertSame(1, $paths->calls);
+        $this->assertSame(1, $this->parentCounts($sql));
+        $sql->records = [];
+        foreach ($references as $i => $reference) {
+            $this->assertSame('call-'.$i, $scoped->read($reference)->toolCallId);
+        }
+        $this->assertSame(1, $paths->calls);
+        $this->assertSame(0, $this->parentCounts($sql));
+        foreach ($references as $reference) {
+            $scoped->deleteCall($run, $reference->toolCallId);
+        }
+        $this->assertSame(1, $paths->calls);
+        $this->assertSame(0, $this->parentCounts($sql));
+        $store->forRun($run);
+        $this->assertSame(2, $paths->calls);
+        $this->assertSame(1, $this->parentCounts($sql));
+    }
+
+    public function testScopeRetainsDifferentDataKindsForTheSameCallAndRejectsChangedBytes(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('shared call data');
+        $store = $container->get(SessionToolPayloadStore::class)->forRun($run);
+        $call = new ExecuteToolCall($run, 1, 'tools', 1, 'key', 'same-call', 'echo', ['value' => 42], 0);
+        $result = new ToolCallResult($run, 1, 'tools', 1, 'key', 'same-call', 0, ['tool_name' => 'echo', 'content' => [['type' => 'text', 'text' => 'done']]]);
+        $correlation = new DeferredToolCompletionCorrelation('deferred', $run, 1, 'tools', 1, 'key', 'same-call', 'echo', ['value' => 42], 0);
+        $callRef = $store->publish($call);
+        $resultRef = $store->publish($result);
+        $correlationRef = $store->publishCorrelation($correlation);
+        $this->assertCount(3, array_unique([$callRef->sha256, $resultRef->sha256, $correlationRef->sha256]));
+        $this->assertEquals($call, $store->read($callRef));
+        $this->assertSame('done', $store->read($resultRef)->result['content'][0]['text']);
+        $this->assertEquals($correlation, $store->readCorrelation($correlationRef));
+        $root = $container->get(HatfieldSessionStore::class)->resolveSessionsBasePath().'/'.$run.'/runtime/tool-payloads/'.hash('sha256', 'same-call');
+        $path = $root.'/'.$callRef->sha256.'.json';
+        $this->assertSame(0600, fileperms($path) & 0777);
+        $this->assertSame(0700, fileperms($root) & 0777);
+        $original = file_get_contents($path);
+        $this->assertIsString($original);
+        file_put_contents($path, str_repeat('x', \strlen($original)));
+        $this->expectException(ToolPayloadException::class);
+        $this->expectExceptionMessage('integrity check');
+        $store->read($callRef);
+    }
+
+    public function testReadRefusesWrongLengthKindAndInvocationIdentity(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('refusal');
+        $store = $container->get(SessionToolPayloadStore::class);
+        $reference = $store->publish(new ExecuteToolCall($run, 1, 'tools', 1, 'key', 'call', 'echo', [], 0));
+        foreach ([['call', 1, $reference->bytes + 1, 'integrity check'], ['result', 1, $reference->bytes, 'kind'], ['call', 2, $reference->bytes, 'identity']] as [$kind, $attempt, $bytes, $reason]) {
+            $bad = new ToolPayloadReferenceDTO($kind, $run, 1, 'tools', $attempt, 'key', 'call', 0, 'echo', $reference->sha256, $bytes);
+            try {
+                $store->read($bad);
+                $this->fail('Changed reference must be rejected.');
+            } catch (ToolPayloadException $exception) {
+                $this->assertStringContainsString($reason, $exception->getMessage());
+            }
+        }
+        $this->assertSame('call', $store->read($reference)->toolCallId);
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new SqlLoggingKernel('test', false);
+    }
+
+    private function parentCounts(TestLogger $sql): int
+    {
+        return \count(array_filter($sql->records, static fn (array $record): bool => str_contains(strtolower($record['context']['sql'] ?? ''), 'hatfield_session') && str_contains(strtolower($record['context']['sql'] ?? ''), 'count')));
+    }
+}
