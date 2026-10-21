@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress;
 
 use Doctrine\ORM\OptimisticLockException;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
@@ -30,8 +29,7 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
     /**
      * Submit a forced interruption snapshot for owner-side once-only consumption.
      *
-     * Parallel parent-cancel: aggregate parallel payload with status cancelled.
-     * Single timeout/parent-cancel: flat single payload when child projection exists.
+     * Timeout/parent-cancel produces the child's flat progress payload.
      * Owner consumption either commits progress or retires a superseded destination.
      */
     public function emitForcedInterruptionProgress(
@@ -44,17 +42,7 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
             throw new \LogicException('Forced progress requires reserved child rows.');
         }
 
-        if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
-            $payload = $this->snapshotFactory->buildSingleForcedPayload($batch, $kind);
-        } else {
-            if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
-                // Parallel timeout completion never calls this method: it has no
-                // forced snapshot and does not wait for an interruption marker.
-                return;
-            }
-
-            $payload = $this->snapshotFactory->buildForcedCancelPayload($batch);
-        }
+        $payload = $this->snapshotFactory->buildSingleForcedPayload($batch, $kind);
 
         $this->appendProgress($batch, $payload, 'deferred_subagent_batch.forced_interruption_progress_failed', $kind);
     }

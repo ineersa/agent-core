@@ -320,10 +320,8 @@ services:
   Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO:
     arguments:
       $parentCancelSingleReason: 'Parent run cancelled subagent tool.'
-      $parentCancelParallelReason: 'Parent run cancelled parallel subagent tool.'
       $singleTimeoutCancelReason: 'Subagent timed out.'
-      $parallelTimeoutCancelReason: 'Parallel subagent timed out.'
-      $launchAbortSiblingCancelReason: 'Parallel subagent launch aborted after sibling failure.'
+      $launchAbortCancelReason: 'Subagent launch aborted after failure.'
 
   # Shared project qualification for resource tags and log correlation.
   Ineersa\CodingAgent\Logging\TelemetrySessionKeyProvider:
@@ -938,7 +936,6 @@ services:
     arguments:
       $providers:
         Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider'
-        Ineersa\CodingAgent\Tool\Schema\AgentResumeTasksSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\AgentResumeTasksSchemaProvider'
 
   # Same default chain as Describer(null) plus the provider-aware describer.
   # The chain members are vendor classes outside the autowire resource, so

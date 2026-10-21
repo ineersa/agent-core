@@ -6,36 +6,18 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
 
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 
-/**
- * Immutable ordered launch plan: identities, intents, and definitions resolved once (Piece 4A).
- */
+/** Native launch identity and input resolved once for one invocation. */
 final readonly class DeferredSubagentBatchLaunchPlanDTO
 {
-    /**
-     * @param list<DeferredSubagentBatchChildIntentDTO> $childIntents
-     * @param array<int, AgentDefinitionDTO>            $definitionsByBatchIndex
-     * @param list<ChildRunIdentityDTO>                 $identities
-     */
     public function __construct(
         public string $lifecycleId,
-        public ChildRunBatchExecutionModeEnum $executionMode,
-        public int $totalChildCount,
-        public array $childIntents,
-        public array $definitionsByBatchIndex,
-        public array $identities,
+        public DeferredSubagentBatchChildIntentDTO $childIntent,
+        public ChildRunIdentityDTO $identity,
+        public ?AgentDefinitionDTO $definition = null,
         public ?string $parentModel = null,
         public ?ToolLaunchContextDTO $launchContext = null,
     ) {
-    }
-
-    /**
-     * @return list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string}>
-     */
-    public function reserveChildIntents(): array
-    {
-        return array_map(static fn (DeferredSubagentBatchChildIntentDTO $intent): array => $intent->toReserveArray(), $this->childIntents);
     }
 }

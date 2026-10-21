@@ -6,13 +6,8 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interrupti
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchSupervisionResultDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationRequestDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLifecycleListenerInterface;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchChildOutcomeFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchCompletionDispatcher;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressDeliveryService;
@@ -20,7 +15,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 
 /**
@@ -30,8 +24,6 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
 {
     public function __construct(
         private DeferredSubagentBatchRepository $batchRepository,
-        private ChildRunBatchLifecycleListenerInterface $lifecycleListener,
-        private SubagentParallelAggregateResultFormatter $parallelFormatter,
         private SubagentChildRunHandoffRenderer $handoffRenderer,
         private DeferredSubagentBatchProgressDeliveryService $progressDelivery,
         private DeferredSubagentBatchCompletionDispatcher $completionDispatcher,
@@ -51,13 +43,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
 
         $kind = $batch->interruptionKind ?? throw new \RuntimeException('Interruption completion requires persisted interruption kind.');
 
-        if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
-            $this->completeSingleFromInterruption($batch, $kind);
-
-            return;
-        }
-
-        $this->completeParallelFromInterruption($batch, $kind);
+        $this->completeSingleFromInterruption($batch, $kind);
     }
 
     private function completeSingleFromInterruption(
@@ -106,65 +92,6 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             batch: $batch,
             artifactOutcome: $artifactOutcome,
             presentation: $presentation,
-            isError: true,
-            errorEnvelope: $errorEnvelope,
-        );
-    }
-
-    private function completeParallelFromInterruption(
-        DeferredSubagentBatchProjectionDTO $batch,
-        DeferredSubagentInterruptionKindEnum $kind,
-    ): void {
-        if (DeferredSubagentInterruptionKindEnum::ParentCancelled === $kind
-            && null === $batch->interruptionProgressEnqueuedAt) {
-            $this->progressDelivery->emitForcedInterruptionProgress($batch, $kind);
-            $batch = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
-            if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt
-                || null === $batch->interruptionProgressEnqueuedAt) {
-                // Only owner consumption marks forced progress delivered. Its
-                // post-commit callback schedules lifecycle delivery again.
-                return;
-            }
-        }
-
-        $timeoutSecs = DeferredSubagentInterruptionKindEnum::Timeout === $kind
-            ? $this->resolveTimeoutSeconds($batch)
-            : 0;
-
-        $items = [];
-        foreach ($batch->children as $child) {
-            $identity = $this->outcomeFactory->identityFromChild($batch, $child);
-            $artifactOutcome = $this->buildParallelInterruptionArtifactOutcome($identity, $child, $kind, $timeoutSecs);
-            $this->lifecycleListener->finalizeTerminalOutcome(
-                ChildRunTerminalFinalizationRequestDTO::persistOnly($artifactOutcome),
-            );
-
-            $items[] = new ChildRunBatchItemSnapshotDTO(
-                identity: $identity,
-                terminal: true,
-                artifactStatus: $artifactOutcome->status,
-                message: $this->interruptionChildMessage($artifactOutcome, $kind, $timeoutSecs),
-            );
-        }
-
-        $result = new ChildRunBatchSupervisionResultDTO(
-            items: $items,
-        );
-
-        if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
-            $message = $this->parallelFormatter->formatReport($result, 'Parallel subagents timed out after '.$timeoutSecs.' seconds.');
-            $errorEnvelope = $this->buildErrorEnvelope($message, false);
-        } else {
-            $message = $this->parallelFormatter->formatReport($result, 'Parallel subagent tool cancelled by parent run.');
-            $errorEnvelope = $this->buildErrorEnvelope($message, true);
-        }
-
-        $this->completionDispatcher->dispatchCompletion(
-            lifecycleId: $batch->lifecycleId,
-            parentRunId: $batch->parentRunId,
-            parentToolCallId: $batch->parentToolCallId,
-            expectedProjectionVersion: $batch->projectionVersion,
-            presentation: $message,
             isError: true,
             errorEnvelope: $errorEnvelope,
         );
@@ -220,49 +147,6 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         );
     }
 
-    private function buildParallelInterruptionArtifactOutcome(
-        ChildRunIdentityDTO $identity,
-        DeferredSubagentChildProjectionDTO $child,
-        DeferredSubagentInterruptionKindEnum $kind,
-        int $timeoutSecs,
-    ): ChildRunTerminalOutcomeDTO {
-        $cp = $child->childLifecycleProjection;
-        if (null !== $cp && $cp->childStatus->isTerminal()) {
-            return $this->outcomeFactory->buildNaturalArtifactOutcome($identity, $cp);
-        }
-
-        $childPresentation = $this->outcomeFactory->loadDurableChildPresentationForFailedOrCancelled($identity);
-
-        if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
-            return new ChildRunTerminalOutcomeDTO(
-                identity: $identity,
-                status: AgentArtifactStatusEnum::Failed,
-                failureReason: 'Child run timed out.',
-                summary: \sprintf('Timed out after %ds.', $timeoutSecs),
-                childPresentation: $childPresentation,
-            );
-        }
-
-        return new ChildRunTerminalOutcomeDTO(
-            identity: $identity,
-            status: AgentArtifactStatusEnum::Cancelled,
-            summary: 'Cancelled by parent run.',
-            childPresentation: $childPresentation,
-        );
-    }
-
-    private function interruptionChildMessage(
-        ChildRunTerminalOutcomeDTO $outcome,
-        DeferredSubagentInterruptionKindEnum $kind,
-        int $timeoutSecs,
-    ): string {
-        if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
-            return \sprintf('Timed out after %ds.', $timeoutSecs);
-        }
-
-        return $outcome->summary ?? '';
-    }
-
     private function resolveTimeoutSeconds(DeferredSubagentBatchProjectionDTO $batch): int
     {
         if (null !== $batch->deadlineAt) {
@@ -277,7 +161,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
 
     private function requireSingleChild(DeferredSubagentBatchProjectionDTO $batch): DeferredSubagentChildProjectionDTO
     {
-        if (1 !== $batch->totalChildCount || 1 !== \count($batch->children)) {
+        if (1 !== \count($batch->children)) {
             throw new \RuntimeException('Single batch interruption requires exactly one child row.');
         }
 

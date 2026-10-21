@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 
@@ -44,12 +43,6 @@ class DeferredSubagentBatch
      */
     #[ORM\Column(name: 'parent_model', type: 'string', length: 255, nullable: true)]
     public ?string $parentModel = null;
-
-    #[ORM\Column(name: 'execution_mode', type: 'string', length: 16, enumType: ChildRunBatchExecutionModeEnum::class)]
-    public ChildRunBatchExecutionModeEnum $executionMode = ChildRunBatchExecutionModeEnum::Parallel;
-
-    #[ORM\Column(name: 'total_child_count', type: 'integer')]
-    public int $totalChildCount = 0;
 
     #[ORM\Column(name: 'launch_status', type: 'string', length: 32, enumType: DeferredSubagentBatchLaunchStatusEnum::class)]
     public DeferredSubagentBatchLaunchStatusEnum $launchStatus = DeferredSubagentBatchLaunchStatusEnum::Reserved;

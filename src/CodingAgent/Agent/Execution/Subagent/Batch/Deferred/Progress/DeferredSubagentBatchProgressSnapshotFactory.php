@@ -5,19 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress;
 
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchChildOutcomeFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
-use Ineersa\CodingAgent\Agent\Execution\SubagentProgressParallelChildReportDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
 use Symfony\Component\Clock\ClockInterface;
@@ -26,10 +18,7 @@ use Symfony\Component\Clock\MonotonicClock;
 /** Pure aggregate payload assembly for deferred batch progress. Delivery owns revision, append, markers. */
 final readonly class DeferredSubagentBatchProgressSnapshotFactory
 {
-    private const LAUNCH_FAILED_MESSAGE = 'Child run failed to launch.';
-
     public function __construct(
-        private DeferredSubagentBatchChildOutcomeFactory $outcomeFactory,
         private SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder,
         private SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
         private ClockInterface $clock = new MonotonicClock(),
@@ -37,15 +26,11 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
     }
 
     /**
-     * Build normal progress payload, branching on execution mode.
+     * Build the invocation progress payload.
      */
     public function buildNormalPayload(DeferredSubagentBatchProjectionDTO $batch): SubagentProgressSnapshotInterface
     {
-        if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
-            return $this->buildSingleNormalPayload($batch);
-        }
-
-        return $this->buildParallelNormalPayload($batch);
+        return $this->buildSingleNormalPayload($batch);
     }
 
     /**
@@ -75,32 +60,9 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    /**
-     * Parallel forced parent-cancel payload: preserve terminal children;
-     * override non-terminal and unprojected children to Cancelled + "Cancelled by parent run.".
-     */
-    public function buildForcedCancelPayload(DeferredSubagentBatchProjectionDTO $batch): SubagentProgressSnapshotInterface
-    {
-        $reports = [];
-        $activeTurns = [];
-        $snapshots = [];
-        $enrichmentByRun = [];
-        foreach ($batch->children as $child) {
-            $built = $this->buildForcedCancelChildRow($batch, $child);
-            $snapshots[$child->childRunId] = $built->snapshot;
-            $activeTurns[$child->childRunId] = $built->turnNo;
-            $reports[$child->childRunId] = $built->report;
-            $enrichmentByRun[$child->childRunId] = $built->enrichment;
-        }
-
-        return $this->progressSnapshotBuilder->parallelSnapshot(
-            $reports, $activeTurns, $this->batchElapsedMs($batch), $enrichmentByRun, 'cancelled',
-        );
-    }
-
     private function requireExactlyOneChild(DeferredSubagentBatchProjectionDTO $batch): DeferredSubagentChildProjectionDTO
     {
-        if (1 !== $batch->totalChildCount || 1 !== \count($batch->children)) {
+        if (1 !== \count($batch->children)) {
             throw new \RuntimeException('Single batch progress requires exactly one child row.');
         }
 
@@ -138,138 +100,6 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    private function buildParallelNormalPayload(DeferredSubagentBatchProjectionDTO $batch): SubagentProgressSnapshotInterface
-    {
-        $reports = [];
-        $activeTurns = [];
-        $snapshots = [];
-        $enrichmentByRun = [];
-        foreach ($batch->children as $child) {
-            $built = $this->buildChildProgressRow($batch, $child);
-            $snapshots[$child->childRunId] = $built->snapshot;
-            $activeTurns[$child->childRunId] = $built->turnNo;
-            $reports[$child->childRunId] = $built->report;
-            $enrichmentByRun[$child->childRunId] = $built->enrichment;
-        }
-
-        return $this->progressSnapshotBuilder->parallelSnapshot(
-            $reports, $activeTurns, $this->batchElapsedMs($batch),
-            $enrichmentByRun, $this->resolveAggregateStatus($snapshots),
-        );
-    }
-
-    private function buildChildProgressRow(
-        DeferredSubagentBatchProjectionDTO $batch,
-        DeferredSubagentChildProjectionDTO $child,
-    ): DeferredSubagentBatchChildProgressBuildDTO {
-        $identity = $this->outcomeFactory->identityFromChild($batch, $child);
-        $state = $this->resolveChildProgressState($child);
-
-        return new DeferredSubagentBatchChildProgressBuildDTO(
-            snapshot: new ChildRunBatchItemSnapshotDTO(
-                identity: $identity, terminal: $state->terminal,
-                artifactStatus: $state->artifactStatus, message: $state->message,
-            ),
-            report: $this->buildChildReport($child, $state, $batch),
-            turnNo: $state->turnNo,
-            enrichment: $state->enrichment,
-        );
-    }
-
-    private function buildForcedCancelChildRow(
-        DeferredSubagentBatchProjectionDTO $batch,
-        DeferredSubagentChildProjectionDTO $child,
-    ): DeferredSubagentBatchChildProgressBuildDTO {
-        $identity = $this->outcomeFactory->identityFromChild($batch, $child);
-        $cp = $child->childLifecycleProjection;
-
-        // Preserve naturally terminal children
-        if (null !== $cp && $cp->childStatus->isTerminal()) {
-            $state = $this->resolveChildProgressState($child);
-
-            return $this->forcedCancelResult($identity, $batch, $child, $state, $state->turnNo, $state->enrichment);
-        }
-
-        // Projected-nonterminal: preserve turnNo + enrichment, override terminal/status/message
-        if (null !== $cp) {
-            $rs = $this->resolveChildProgressState($child);
-            $cs = new DeferredSubagentBatchChildProgressStateDTO(
-                terminal: true,
-                artifactStatus: AgentArtifactStatusEnum::Cancelled,
-                message: 'Cancelled by parent run.',
-                turnNo: $rs->turnNo,
-                enrichment: $rs->enrichment,
-            );
-
-            return $this->forcedCancelResult($identity, $batch, $child, $cs, $rs->turnNo, $rs->enrichment);
-        }
-
-        // Unprojected: identity-only enrichment from launch
-        $enrichment = $this->identityOnlyEnrichment($child);
-
-        return $this->forcedCancelResult(
-            $identity, $batch, $child,
-            new DeferredSubagentBatchChildProgressStateDTO(
-                terminal: true,
-                artifactStatus: AgentArtifactStatusEnum::Cancelled,
-                message: 'Cancelled by parent run.',
-                turnNo: 0,
-                enrichment: $enrichment,
-            ),
-            0, $enrichment,
-        );
-    }
-
-    private function forcedCancelResult(
-        ChildRunIdentityDTO $identity,
-        DeferredSubagentBatchProjectionDTO $batch,
-        DeferredSubagentChildProjectionDTO $child,
-        DeferredSubagentBatchChildProgressStateDTO $state,
-        int $turnNo,
-        SubagentChildProgressSummary $enrichment,
-    ): DeferredSubagentBatchChildProgressBuildDTO {
-        return new DeferredSubagentBatchChildProgressBuildDTO(
-            snapshot: new ChildRunBatchItemSnapshotDTO(
-                identity: $identity, terminal: $state->terminal, artifactStatus: $state->artifactStatus, message: $state->message,
-            ),
-            report: $this->buildChildReport($child, $state, $batch),
-            turnNo: $turnNo,
-            enrichment: $enrichment,
-        );
-    }
-
-    private function resolveChildProgressState(DeferredSubagentChildProjectionDTO $child): DeferredSubagentBatchChildProgressStateDTO
-    {
-        $projection = $child->childLifecycleProjection;
-        if (null !== $projection) {
-            return new DeferredSubagentBatchChildProgressStateDTO(
-                terminal: $projection->childStatus->isTerminal(),
-                artifactStatus: $this->artifactStatusFromProjection($projection->childStatus),
-                message: $this->progressMessageFromProjection($projection),
-                turnNo: $projection->childTurnNo,
-                enrichment: $this->childProgressSummaryBuilder->fromDeferredProjection($projection, $child->artifactId),
-            );
-        }
-
-        if (DeferredSubagentChildLaunchStatusEnum::Failed === $child->launchStatus) {
-            return new DeferredSubagentBatchChildProgressStateDTO(
-                terminal: true,
-                artifactStatus: AgentArtifactStatusEnum::Failed,
-                message: self::LAUNCH_FAILED_MESSAGE,
-                turnNo: 0,
-                enrichment: $this->identityOnlyEnrichment($child),
-            );
-        }
-
-        return new DeferredSubagentBatchChildProgressStateDTO(
-            terminal: false,
-            artifactStatus: AgentArtifactStatusEnum::Running,
-            message: '',
-            turnNo: 0,
-            enrichment: $this->identityOnlyEnrichment($child),
-        );
-    }
-
     private function identityOnlyEnrichment(DeferredSubagentChildProjectionDTO $child): SubagentChildProgressSummary
     {
         return $this->childProgressSummaryBuilder->fromLaunchIdentity(
@@ -277,39 +107,6 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
             $child->launchReasoning,
             $child->artifactId,
         );
-    }
-
-    private function artifactStatusFromProjection(RunStatus $status): AgentArtifactStatusEnum
-    {
-        return match ($status) {
-            RunStatus::Completed => AgentArtifactStatusEnum::Completed,
-            RunStatus::Failed => AgentArtifactStatusEnum::Failed,
-            RunStatus::Cancelled, RunStatus::Cancelling => AgentArtifactStatusEnum::Cancelled,
-            RunStatus::WaitingHuman => AgentArtifactStatusEnum::NeedsClarification,
-            default => AgentArtifactStatusEnum::Running,
-        };
-    }
-
-    private function progressMessageFromProjection(DeferredChildRunLifecycleProjectionDTO $projection): string
-    {
-        if (RunStatus::Failed === $projection->childStatus) {
-            return $projection->errorMessage ?? 'Run failed without error message.';
-        }
-
-        if (RunStatus::Cancelled === $projection->childStatus || RunStatus::Cancelling === $projection->childStatus) {
-            return 'Child run was cancelled.';
-        }
-
-        $text = trim($projection->assistantResultText ?? '');
-        if ('' !== $text) {
-            return $text;
-        }
-
-        if (RunStatus::Completed === $projection->childStatus) {
-            return 'Completed with status completed.';
-        }
-
-        return '';
     }
 
     private function mapChildProgressStatus(RunStatus $status): string
@@ -321,23 +118,6 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
             RunStatus::Cancelled, RunStatus::Cancelling => 'cancelled',
             default => 'running',
         };
-    }
-
-    private function buildChildReport(
-        DeferredSubagentChildProjectionDTO $child,
-        DeferredSubagentBatchChildProgressStateDTO $state,
-        DeferredSubagentBatchProjectionDTO $batch,
-    ): SubagentProgressParallelChildReportDTO {
-        return new SubagentProgressParallelChildReportDTO(
-            index: $child->batchIndex,
-            agentName: $child->agentName,
-            task: $child->task,
-            artifactId: $child->artifactId,
-            agentRunId: $child->childRunId,
-            terminal: $state->terminal,
-            status: $state->artifactStatus,
-            elapsedMs: $this->childElapsedMs($child, $batch),
-        );
     }
 
     private function childElapsedMs(
@@ -357,67 +137,10 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         return $this->elapsedMsBetween($startedAt, $endedAt);
     }
 
-    private function batchElapsedMs(DeferredSubagentBatchProjectionDTO $batch): int
-    {
-        if (null === $batch->startedAt) {
-            return 0;
-        }
-
-        $latestTerminal = null;
-        foreach ($batch->children as $child) {
-            if (null === $child->terminalCompletedAt) {
-                return $this->elapsedMsBetween($batch->startedAt, $this->clock->now());
-            }
-            if (null === $latestTerminal || $child->terminalCompletedAt > $latestTerminal) {
-                $latestTerminal = $child->terminalCompletedAt;
-            }
-        }
-
-        return $this->elapsedMsBetween($batch->startedAt, $latestTerminal ?? $this->clock->now());
-    }
-
     private function elapsedMsBetween(\DateTimeImmutable $startedAt, \DateTimeImmutable $endedAt): int
     {
         $delta = (float) $endedAt->format('U.u') - (float) $startedAt->format('U.u');
 
         return max(0, (int) round($delta * 1000));
-    }
-
-    /**
-     * @param array<string, ChildRunBatchItemSnapshotDTO> $snapshots
-     */
-    private function resolveAggregateStatus(array $snapshots): string
-    {
-        foreach ($snapshots as $snapshot) {
-            if (!$snapshot->terminal) {
-                return 'running';
-            }
-        }
-
-        $hasFailed = false;
-        $hasCancelled = false;
-        foreach ($snapshots as $snapshot) {
-            if (!$snapshot->terminal || null === $snapshot->artifactStatus) {
-                continue;
-            }
-
-            if (AgentArtifactStatusEnum::Failed === $snapshot->artifactStatus) {
-                $hasFailed = true;
-            }
-
-            if (AgentArtifactStatusEnum::Cancelled === $snapshot->artifactStatus) {
-                $hasCancelled = true;
-            }
-        }
-
-        if ($hasFailed) {
-            return 'failed';
-        }
-
-        if ($hasCancelled) {
-            return 'cancelled';
-        }
-
-        return 'completed';
     }
 }

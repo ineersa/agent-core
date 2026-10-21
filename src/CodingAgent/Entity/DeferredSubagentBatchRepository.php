@@ -13,8 +13,8 @@ use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DTO\DeferredSubagentCompletionSourceDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
@@ -87,7 +87,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         // Child launches are top-level only. Read their operational status in
         // one query, independently of the already-settled parent tool call.
         // Failed preparation may leave no runtime or only a previous attempt's
-        // projection. Launched siblings retain their actual lifecycle status.
+        // projection. A successful launch retains its actual lifecycle status.
         return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<'SQL'
             SELECT batch.lifecycle_id, batch.backgrounded_at,
                 child.child_run_id, child.artifact_id, child.agent_name, child.task,
@@ -269,19 +269,14 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         return $row instanceof DeferredSubagentBatch ? $this->toDto($row) : null;
     }
 
-    /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string}> $childIntents
-     */
     public function reserveBatch(
         string $lifecycleId,
         string $parentRunId,
         int $parentTurnNo,
         string $parentToolCallId,
         int $parentOrderIndex,
-        ChildRunBatchExecutionModeEnum $executionMode,
-        int $totalChildCount,
         \DateTimeImmutable $deadlineAt,
-        array $childIntents,
+        DeferredSubagentBatchChildIntentDTO $childIntent,
         ?string $parentModel = null,
     ): DeferredSubagentBatchProjectionDTO {
         $existing = $this->findFreshOneBy([
@@ -290,7 +285,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         ]);
 
         if ($existing instanceof DeferredSubagentBatch) {
-            $this->assertBatchMatchesIntent($existing, $lifecycleId, $executionMode, $totalChildCount, $childIntents);
+            $this->assertBatchMatchesIntent($existing, $lifecycleId, $childIntent);
 
             return $this->toDto($existing);
         }
@@ -307,8 +302,6 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                 'parent_tool_call_id' => $parentToolCallId,
                 'parent_order_index' => $parentOrderIndex,
                 'parent_model' => $parentModel,
-                'execution_mode' => $executionMode->value,
-                'total_child_count' => $totalChildCount,
                 'launch_status' => DeferredSubagentBatchLaunchStatusEnum::Reserved->value,
                 'aggregate_progress_revision' => 0,
                 'delivered_progress_revision' => 0,
@@ -318,7 +311,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                 'created_at' => $now,
                 'updated_at' => $now,
             ]);
-            $this->childRepository->insertReservedChildren($lifecycleId, $childIntents, $conn);
+            $this->childRepository->insertReservedChild($lifecycleId, $childIntent, $conn);
 
             $conn->commit();
         } catch (UniqueConstraintViolationException) {
@@ -334,7 +327,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                 throw new \RuntimeException(\sprintf('Deferred subagent batch reserve conflict for parent "%s" tool call "%s" but row missing.', $parentRunId, $parentToolCallId));
             }
 
-            $this->assertBatchMatchesIntent($row, $lifecycleId, $executionMode, $totalChildCount, $childIntents);
+            $this->assertBatchMatchesIntent($row, $lifecycleId, $childIntent);
 
             return $this->toDto($row);
         } catch (\Throwable $e) {
@@ -403,88 +396,11 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         $this->getEntityManager()->clear();
     }
 
-    /**
-     * @param list<int> $launchedBatchIndices batch indices whose runtime start succeeded before the failing index
-     */
-    public function applyLaunchFailureRuntime(
-        string $parentRunId,
-        string $parentToolCallId,
-        string $lifecycleId,
-        int $failureBatchIndex,
-        array $launchedBatchIndices,
-    ): void {
-        $now = Clock::get()->now()->format('Y-m-d H:i:s');
-        $conn = $this->getEntityManager()->getConnection();
-        $launchedSet = array_fill_keys($launchedBatchIndices, true);
-
-        $conn->beginTransaction();
-        try {
-            $conn->executeStatement(
-                'UPDATE deferred_subagent_batch SET launch_status = :failed, updated_at = :now, projection_version = projection_version + 1
-                 WHERE parent_run_id = :parent AND parent_tool_call_id = :tool AND launch_status = :reserved',
-                [
-                    'failed' => DeferredSubagentBatchLaunchStatusEnum::Failed->value,
-                    'now' => $now,
-                    'parent' => $parentRunId,
-                    'tool' => $parentToolCallId,
-                    'reserved' => DeferredSubagentBatchLaunchStatusEnum::Reserved->value,
-                ],
-            );
-
-            $children = $this->childRepository->findOrderedByBatchLifecycleId($lifecycleId);
-            foreach ($children as $child) {
-                if ($child->batchIndex < $failureBatchIndex && isset($launchedSet[$child->batchIndex])) {
-                    $conn->executeStatement(
-                        'UPDATE deferred_subagent_child SET launch_status = :launched, started_at = COALESCE(started_at, :now), updated_at = :now, projection_version = projection_version + 1
-                         WHERE batch_lifecycle_id = :lifecycle AND batch_index = :idx AND launch_status = :reserved',
-                        [
-                            'launched' => DeferredSubagentChildLaunchStatusEnum::Launched->value,
-                            'now' => $now,
-                            'lifecycle' => $lifecycleId,
-                            'idx' => $child->batchIndex,
-                            'reserved' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
-                        ],
-                    );
-
-                    continue;
-                }
-
-                if ($child->batchIndex >= $failureBatchIndex) {
-                    $conn->executeStatement(
-                        'UPDATE deferred_subagent_child SET launch_status = :failed, updated_at = :now, projection_version = projection_version + 1
-                         WHERE batch_lifecycle_id = :lifecycle AND batch_index = :idx AND launch_status = :reserved',
-                        [
-                            'failed' => DeferredSubagentChildLaunchStatusEnum::Failed->value,
-                            'now' => $now,
-                            'lifecycle' => $lifecycleId,
-                            'idx' => $child->batchIndex,
-                            'reserved' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
-                        ],
-                    );
-                }
-            }
-
-            $conn->commit();
-        } catch (\Throwable $e) {
-            if ($conn->isTransactionActive()) {
-                $conn->rollBack();
-            }
-
-            throw $e;
-        }
-
-        $this->getEntityManager()->clear();
-    }
-
-    /**
-     * @param list<int> $launchedBatchIndices children known started or artifact already beyond Pending
-     */
     public function applyLaunchSuccessState(
         string $parentRunId,
         string $parentToolCallId,
         string $lifecycleId,
         \DateTimeImmutable $startedAt,
-        array $launchedBatchIndices,
     ): void {
         $now = Clock::get()->now()->format('Y-m-d H:i:s');
         $started = $startedAt->format('Y-m-d H:i:s');
@@ -492,28 +408,26 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         $incompleteBatchTransition = false;
         $conn->beginTransaction();
         try {
-            foreach ($launchedBatchIndices as $batchIndex) {
-                $conn->executeStatement(
-                    'UPDATE deferred_subagent_child SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1
+            $conn->executeStatement(
+                'UPDATE deferred_subagent_child SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1
                      WHERE batch_lifecycle_id = :lifecycle AND batch_index = :idx AND launch_status = :reserved',
-                    [
-                        'launched' => DeferredSubagentChildLaunchStatusEnum::Launched->value,
-                        'started' => $started,
-                        'now' => $now,
-                        'lifecycle' => $lifecycleId,
-                        'idx' => $batchIndex,
-                        'reserved' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
-                    ],
-                );
-            }
+                [
+                    'launched' => DeferredSubagentChildLaunchStatusEnum::Launched->value,
+                    'started' => $started,
+                    'now' => $now,
+                    'lifecycle' => $lifecycleId,
+                    'idx' => 1,
+                    'reserved' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
+                ],
+            );
 
-            // Child evidence commits first; batch becomes Launched only when every child row is Launched.
-            // If known child indices were forward-marked but the all-child condition is not met, commit
-            // child updates, leave batch Reserved, then signal incomplete transition after commit.
+            // Child evidence commits first; the invocation becomes Launched only after its child.
+            // If the child was not forward-marked, commit
+            // pending updates, leave the invocation Reserved, and signal after commit.
             $batchAffected = $conn->executeStatement(
                 'UPDATE deferred_subagent_batch SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1
                  WHERE parent_run_id = :parent AND parent_tool_call_id = :tool AND launch_status = :reserved
-                   AND total_child_count = (
+                   AND 1 = (
                      SELECT COUNT(*) FROM deferred_subagent_child
                      WHERE batch_lifecycle_id = :lifecycle AND launch_status = :child_launched
                    )',
@@ -647,7 +561,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         // Scalar eligibility only: picker snapshots must not hydrate child graphs
         // or decode their lifecycle projections. Acceptance loads the graph later.
         return $this->createQueryBuilder('batch')
-            ->select('batch.lifecycleId, batch.parentToolCallId, batch.totalChildCount, completion.toolName')
+            ->select('batch.lifecycleId, batch.parentToolCallId, completion.toolName')
             ->innerJoin(DeferredToolCompletion::class, 'completion', Join::WITH,
                 'completion.deferredId = batch.lifecycleId AND completion.runId = batch.parentRunId AND completion.toolCallId = batch.parentToolCallId AND completion.turnNo = batch.parentTurnNo')
             ->where('batch.parentRunId = :parentRunId')
@@ -665,58 +579,35 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             ->orderBy('batch.id', 'ASC');
     }
 
-    /** @param array{lifecycleId: string, parentToolCallId: string, totalChildCount: int, toolName: string} $row */
+    /** @param array{lifecycleId: string, parentToolCallId: string, toolName: string} $row */
     private function backgroundCandidate(array $row): ChildBackgroundCandidateDTO
     {
-        return new ChildBackgroundCandidateDTO($row['lifecycleId'], $row['parentToolCallId'], \sprintf('%s %s (%d children)', $row['toolName'], $row['parentToolCallId'], $row['totalChildCount']));
+        return new ChildBackgroundCandidateDTO($row['lifecycleId'], $row['parentToolCallId'], \sprintf('%s %s', $row['toolName'], $row['parentToolCallId']));
     }
 
-    /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string}> $childIntents
-     */
     private function assertBatchMatchesIntent(
         DeferredSubagentBatch $row,
         string $lifecycleId,
-        ChildRunBatchExecutionModeEnum $executionMode,
-        int $totalChildCount,
-        array $childIntents,
+        DeferredSubagentBatchChildIntentDTO $childIntent,
     ): void {
         if ($row->lifecycleId !== $lifecycleId) {
             throw new ToolCallException('Deferred subagent batch for this tool call uses a different lifecycle id than the deterministic launch.', retryable: false);
         }
 
-        if ($row->executionMode !== $executionMode || $row->totalChildCount !== $totalChildCount) {
-            throw new ToolCallException('Deferred subagent batch for this tool call was reserved with a different execution mode or child count.', retryable: false);
-        }
-
         $children = $this->childRepository->findOrderedByBatchLifecycleId($row->lifecycleId);
-        if (\count($children) !== \count($childIntents)) {
-            throw new ToolCallException('Deferred subagent batch child count does not match the ordered launch intent.', retryable: false);
+        if (1 !== \count($children)) {
+            throw new ToolCallException('Deferred invocation requires exactly one reserved child.', retryable: false);
         }
 
-        foreach ($childIntents as $intent) {
-            $match = null;
-            foreach ($children as $child) {
-                if ($child->batchIndex === $intent['batchIndex']) {
-                    $match = $child;
-                    break;
-                }
-            }
-
-            if (null === $match) {
-                throw new ToolCallException('Deferred subagent batch is missing a child row for the ordered launch intent.', retryable: false);
-            }
-
-            if ($match->childRunId !== $intent['childRunId']
-                || $match->artifactId !== $intent['artifactId']
-                || $match->agentName !== $intent['agentName']
-                || $match->task !== $intent['task']) {
-                throw new ToolCallException('Deferred subagent batch child intent does not match the durable reservation.', retryable: false);
-            }
-
-            if ($match->launchModel !== $intent['launchModel'] || $match->launchReasoning !== $intent['launchReasoning']) {
-                throw new ToolCallException('Deferred subagent batch child was reserved with a different launch model or reasoning.', retryable: false);
-            }
+        $child = $children[0];
+        if ($child->batchIndex !== $childIntent->batchIndex
+            || $child->childRunId !== $childIntent->childRunId
+            || $child->artifactId !== $childIntent->artifactId
+            || $child->agentName !== $childIntent->agentName
+            || $child->task !== $childIntent->task
+            || $child->launchModel !== $childIntent->launchModel
+            || $child->launchReasoning !== $childIntent->launchReasoning) {
+            throw new ToolCallException('Deferred invocation reservation does not match its launch intent.', retryable: false);
         }
     }
 
@@ -751,8 +642,6 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             parentTurnNo: $row->parentTurnNo,
             parentToolCallId: $row->parentToolCallId,
             parentOrderIndex: $row->parentOrderIndex,
-            executionMode: $row->executionMode,
-            totalChildCount: $row->totalChildCount,
             launchStatus: $row->launchStatus,
             aggregateProgressRevision: $row->aggregateProgressRevision,
             deliveredProgressRevision: $row->deliveredProgressRevision,

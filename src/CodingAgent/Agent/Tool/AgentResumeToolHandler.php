@@ -7,10 +7,8 @@ namespace Ineersa\CodingAgent\Agent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\CodingAgent\Agent\Execution\AgentResumeArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
-use Ineersa\CodingAgent\Agent\Execution\AgentResumeTaskDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Tool\DTO\AgentResumeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
@@ -22,7 +20,7 @@ final class AgentResumeToolHandler
 {
     public const string NAME = 'agent_resume';
 
-    public const string DESCRIPTION_TEMPLATE = 'Continue an existing terminal subagent or fork by artifact_id (or agent_run_id) with a follow-up task. Single mode uses artifact_id/task. Parallel mode uses tasks with up to %d resumes per call (agents.max_agents). Blocks until resumed children finish. Single-mode results include the full latest handoff inline; parallel results include summaries. Responses over 50,000 characters return a notice and artifact references instead. Use agent_retrieve for omitted handoffs; mode=handoff_history retrieves prior handoffs.';
+    public const string DESCRIPTION_TEMPLATE = 'Continue an existing terminal subagent or fork by artifact_id (or agent_run_id) with a follow-up task. Returns the full latest handoff inline. Responses over 50,000 characters return a notice and artifact references instead. Use agent_retrieve for omitted handoffs; mode=handoff_history retrieves prior handoffs.';
 
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 
@@ -49,25 +47,7 @@ final class AgentResumeToolHandler
                 throw new ToolCallException('agent_resume requires a valid parent run ID.', retryable: false);
             }
 
-            if ($arguments->isParallelMode()) {
-                return $this->executionService()->resume(
-                    $parentRunId,
-                    $arguments->parallelTasks(),
-                    ChildRunBatchExecutionModeEnum::Parallel,
-                );
-            }
-
-            $task = new AgentResumeTaskDTO(
-                artifact_id: $arguments->artifact_id,
-                task: $arguments->task,
-                agent_run_id: $arguments->agent_run_id,
-            );
-
-            return $this->executionService()->resume(
-                $parentRunId,
-                [$task],
-                ChildRunBatchExecutionModeEnum::Single,
-            );
+            return $this->executionService()->resume($parentRunId, $arguments);
         });
     }
 
