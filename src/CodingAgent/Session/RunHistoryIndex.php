@@ -655,7 +655,9 @@ final readonly class RunHistoryIndex
                 }
             }
         } elseif ('tool_execution_start' === $type && \is_string($payload['tool_call_id'] ?? null)) {
-            // HITL retries change attempt but retain their original canonical source.
+            // Keep the original canonical source when observing execution starts.
+            // Approval retries can advance the batch attempt without another start;
+            // the batch reference, not this index, owns the current attempt.
             $step = $db->fetchOne('SELECT step_id FROM admission_step_location');
             $db->executeStatement('INSERT OR IGNORE INTO tool_invocation_location (tool_call_id, seq, turn_no, step_id, attempt, shell, standalone) VALUES (?, ?, ?, ?, ?, 0, 0)', [$payload['tool_call_id'], $record['seq'], $record['turn_no'], false === $step ? null : $step, $payload['attempt'] ?? 1]);
             $db->executeStatement('UPDATE tool_invocation_location SET attempt = COALESCE(?, attempt) WHERE tool_call_id = ?', [\is_int($payload['attempt'] ?? null) ? $payload['attempt'] : null, $payload['tool_call_id']]);
