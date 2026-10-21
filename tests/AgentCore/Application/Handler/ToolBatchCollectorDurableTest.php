@@ -222,9 +222,14 @@ final class ToolBatchCollectorDurableTest extends TestCase
                 $this->inner->delete($runId, $turnNo, $stepId);
             }
 
-            public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool
+            public function hasUnresolvedExecution(string $runId): bool
             {
-                return false;
+                return $this->inner->hasUnresolvedExecution($runId);
+            }
+
+            public function findUnresolvedToolCallIds(string $runId, array $toolCallIds): array
+            {
+                return $this->inner->findUnresolvedToolCallIds($runId, $toolCallIds);
             }
 
             public function deleteAllForRun(string $runId): void

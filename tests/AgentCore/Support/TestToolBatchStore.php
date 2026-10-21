@@ -80,33 +80,50 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
 
     public function delete(string $runId, int $turnNo, string $stepId): void
     {
+        $batch = $this->load($runId, $turnNo, $stepId);
+        if (null !== $batch && $this->isUnresolved($batch)) {
+            return;
+        }
         unset($this->batches[$this->key($runId, $turnNo, $stepId)], $this->applied[$this->key($runId, $turnNo, $stepId)]);
     }
 
     public function deleteAllForRun(string $runId): void
     {
         foreach (array_keys($this->batches) as $key) {
-            if (str_starts_with($key, $runId.'|')) {
+            if (str_starts_with($key, $runId.'|') && !$this->isUnresolved($this->batches[$key])) {
                 unset($this->batches[$key], $this->applied[$key]);
             }
         }
     }
 
-    public function hasUnresolvedExecution(string $runId, ?string $toolCallId = null): bool
+    public function hasUnresolvedExecution(string $runId): bool
     {
         foreach ($this->batches as $key => $batch) {
             if (!str_starts_with($key, $runId.'|')) {
                 continue;
             }
-            if (null !== $toolCallId && !isset($batch->calls[$toolCallId])) {
-                continue;
-            }
-            if (!$batch->finalized || [] !== $batch->awaitingHumanInput || [] !== $batch->pendingQueue || [] !== $batch->inFlight) {
+            if ($this->isUnresolved($batch)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    public function findUnresolvedToolCallIds(string $runId, array $toolCallIds): array
+    {
+        $unresolved = [];
+        foreach ($this->batches as $key => $batch) {
+            if (str_starts_with($key, $runId.'|') && $this->isUnresolved($batch)) {
+                foreach ($toolCallIds as $id) {
+                    if (isset($batch->calls[$id])) {
+                        $unresolved[] = $id;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($unresolved));
     }
 
     public function prepareChanges(array $actions, VerifiedTransitionDTO $transition): \Closure
@@ -120,6 +137,11 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
                 }
             }
         };
+    }
+
+    private function isUnresolved(ToolBatchStateDTO $batch): bool
+    {
+        return !$batch->finalized || [] !== $batch->awaitingHumanInput || [] !== $batch->pendingQueue || [] !== $batch->inFlight;
     }
 
     private function applyPrepared(FinalizeToolBatchDTO $action, VerifiedTransitionDTO $transition): void

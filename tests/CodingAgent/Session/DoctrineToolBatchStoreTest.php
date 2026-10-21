@@ -38,6 +38,80 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
 {
+    #[DataProvider('groupedLookupSizes')]
+    public function testGroupedLookupDeduplicatesBeforeChunkingAndBoundsSelects(int $count, int $selects): void
+    {
+        $container = self::getContainer();
+        $store = $container->get(ToolBatchStoreInterface::class);
+        $run = $container->get(HatfieldSessionStore::class)->createSession('grouped boundaries');
+        $ids = 0 === $count ? [] : array_map(static fn (int $i): string => 'call-'.$i, range(0, $count - 1));
+        if ([] !== $ids) {
+            $this->register($store, $run, 1, 'tools', $ids);
+        }
+        $sql = $container->get('test.sql_logger');
+        $sql->records = [];
+        // Repetition crosses the 400-ID boundary without creating extra chunks.
+        $actual = $store->findUnresolvedToolCallIds($run, array_merge($ids, $ids));
+        $this->assertEqualsCanonicalizing($ids, $actual);
+        $this->assertCount($count, $actual);
+        $queries = array_values(array_filter($sql->records, static fn (array $r): bool => str_starts_with($r['context']['sql'] ?? '', 'SELECT')));
+        $this->assertCount($selects, $queries);
+        foreach ($queries as $query) {
+            $this->assertLessThanOrEqual(802, \count($query['context']['params']));
+            $this->assertStringContainsString('UNION', $query['context']['sql']);
+        }
+        $sql->records = [];
+        $this->assertSame(0 !== $count, $store->hasUnresolvedExecution($run));
+        $this->assertCount(1, $sql->records);
+    }
+
+    /** @return iterable<string, array{int, int}> */
+    public static function groupedLookupSizes(): iterable
+    {
+        yield 'empty' => [0, 0];
+        yield 'one' => [1, 1];
+        yield 'one full chunk' => [400, 1];
+        yield 'second chunk' => [401, 2];
+    }
+
+    public function testGroupedLookupPreservesDeferredHumanAndSharedWorkWithoutReadingBodies(): void
+    {
+        $container = self::getContainer();
+        $store = $container->get(ToolBatchStoreInterface::class);
+        $sessions = $container->get(HatfieldSessionStore::class);
+        $run = $sessions->createSession('grouped semantics');
+        $otherRun = $sessions->createSession('foreign work');
+        $deferred = $container->get(DeferredToolCompletionRepositoryInterface::class);
+        foreach (['human', 'queued', 'inflight', 'unfinished', 'pending', 'completed', 'settled', 'shared', 'foreign'] as $id) {
+            $this->register($store, $run, 1, $id, [$id]);
+            if (\in_array($id, ['pending', 'completed'], true)) {
+                $deferred->registerPending(new DeferredToolCompletionCorrelation('deferred-'.$id, $run, 1, $id, 1, $id, $id, 'echo', ['text' => $id], 0));
+            }
+            $this->apply($store, $run, 'settle-'.$id, [new FinalizeToolBatchDTO($run, 1, $id,
+                'queued' === $id ? [$id] : [], 'inflight' === $id ? [$id => true] : [],
+                'human' === $id ? [$id => 'question'] : [], 'unfinished' !== $id,
+            )]);
+        }
+        $deferred->markCompleted('deferred-completed');
+        $this->register($store, $run, 2, 'shared-active', ['shared']);
+        $this->register($store, $otherRun, 1, 'foreign', ['foreign']);
+        $deferred->registerPending(new DeferredToolCompletionCorrelation('foreign-pending', $otherRun, 1, 'foreign', 1, 'foreign', 'foreign', 'echo', ['text' => 'foreign'], 0));
+        // These lookups must remain metadata-only even when retained bodies vanish.
+        (new Filesystem())->remove($sessions->resolveSessionsBasePath().'/'.$run.'/runtime/tool-payloads');
+        $sql = $container->get('test.sql_logger');
+        $sql->records = [];
+        $this->assertEqualsCanonicalizing(['human', 'queued', 'inflight', 'unfinished', 'pending', 'shared'], $store->findUnresolvedToolCallIds($run,
+            ['human', 'queued', 'inflight', 'unfinished', 'pending', 'completed', 'settled', 'shared', 'foreign', 'absent'],
+        ));
+        $this->assertCount(1, $sql->records);
+        $sql->records = [];
+        $this->assertTrue($store->hasUnresolvedExecution($run));
+        $this->assertCount(1, $sql->records);
+        $deferred->markCompleted('deferred-pending');
+        $this->assertSame([], $store->findUnresolvedToolCallIds($run, ['pending', 'completed', 'settled', 'foreign']));
+        $this->assertSame(['foreign'], $store->findUnresolvedToolCallIds($otherRun, ['foreign', 'human']));
+    }
+
     public function testPreparationPreservesRetainedReferencesAndOriginalOrder(): void
     {
         $connection = self::getContainer()->get(Connection::class);
