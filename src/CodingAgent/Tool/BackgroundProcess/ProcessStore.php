@@ -164,13 +164,15 @@ final class ProcessStore
     }
 
     /**
-     * Fetch all unfinished entities, optionally scoped by session.
+     * Fetch all unfinished entities for the controller-owned runs.
+     *
+     * @param list<string> $sessionIds
      *
      * @return BackgroundProcess[]
      */
-    public function fetchAllUnfinished(?string $sessionId = null): array
+    public function fetchAllUnfinished(array $sessionIds): array
     {
-        return $this->repository->findUnfinished($sessionId);
+        return $this->repository->findUnfinished($sessionIds);
     }
 
     /**

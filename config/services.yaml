@@ -16,11 +16,9 @@ parameters:
 
     app.write_prompt_cache_diagnostics: '%env(bool:HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS)%'
 
-    # Default session ID for background process completion polling.
-    # Empty means unscoped (operates across all sessions) in
-    # non-controller or test environments. HeadlessController sets
-    # HATFIELD_SESSION_ID to the actual run ID so the poller scopes
-    # its queries and avoids O(N) cross-session filesystem scans.
+    # Controller session ID for background process polling and maintenance.
+    # Empty disables both in non-controller or test environments. The controller
+    # environment supplies the actual run ID so queries stay within owned runs.
     env(HATFIELD_SESSION_ID): ''
 
     # Context-gate committed RuntimeEvent stdout streaming (not per-consumer selection).

@@ -43,9 +43,7 @@ final class BackgroundProcessProvisionalCleanupTask
         }
 
         $sessionIds = $this->ownership->forOwner($this->sessionId);
-        foreach ($sessionIds as $sessionId) {
-            $this->manager->refreshAllUnfinished($sessionId);
-        }
+        $this->manager->refreshAllUnfinished($sessionIds);
         $cutoff = Clock::get()->now()->modify('-'.self::INTERVAL_SECONDS.' seconds');
         $cleaned = 0;
         $failed = 0;

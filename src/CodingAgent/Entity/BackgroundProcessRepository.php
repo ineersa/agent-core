@@ -95,22 +95,24 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
     }
 
     /**
-     * Find all unfinished processes (finishedAt IS NULL), optionally filtered by session.
+     * Find unfinished processes across the controller-owned runs in one query.
+     *
+     * @param list<string> $sessionIds
      *
      * @return BackgroundProcess[]
      */
-    public function findUnfinished(?string $sessionId = null): array
+    public function findUnfinished(array $sessionIds): array
     {
-        $qb = $this->createQueryBuilder('bp')
-            ->where('bp.finishedAt IS NULL')
-            ->orderBy('bp.id', 'DESC');
-
-        if (null !== $sessionId) {
-            $qb->andWhere('bp.sessionId = :sessionId')
-                ->setParameter('sessionId', $sessionId);
+        if ([] === $sessionIds) {
+            return [];
         }
 
-        return $qb->getQuery()
+        return $this->createQueryBuilder('bp')
+            ->where('bp.finishedAt IS NULL')
+            ->andWhere('bp.sessionId IN (:sessionIds)')
+            ->setParameter('sessionIds', $sessionIds)
+            ->orderBy('bp.id', 'DESC')
+            ->getQuery()
             ->setHint(Query::HINT_REFRESH, true)
             ->getResult();
     }
