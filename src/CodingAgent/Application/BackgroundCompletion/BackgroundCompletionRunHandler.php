@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\BackgroundCompletion;
 
+use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -35,6 +39,9 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         private ApplyCommandHandler $commands,
         private NormalizerInterface $normalizer,
         private ValidatorInterface $validator,
+        private CommandStoreInterface $mailbox,
+        private BackgroundCompletionConsumptionPolicy $consumption,
+        private EventFactory $events,
     ) {
     }
 
@@ -54,6 +61,11 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         }
         $receipt = $this->receipts->receipt($message->identity);
         if (null !== $receipt) {
+            if (BackgroundCompletionDispositionEnum::Pending === $receipt->disposition
+                && $receipt->destinationRunId === $state->runId
+                && null !== $state->parentRunId && $state->status->isTerminal()) {
+                return $this->retireTerminalPending($receipt, $state);
+            }
             // A consumed child admission remains consumed even if the original
             // producer retries after cancellation or an explicit agent_resume.
             if (BackgroundCompletionDispositionEnum::Forwarding !== $receipt->disposition) {
@@ -128,6 +140,38 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
             new DispatchLocalMetadataMessageDTO(new RecordBackgroundCompletionDTO($receipt)),
             ...$result->postCommitActions,
         ]);
+    }
+
+    private function retireTerminalPending(BackgroundCompletionReceiptDTO $receipt, RunState $state): HandlerResult
+    {
+        foreach ($this->mailbox->pending($state->runId) as $command) {
+            if ($command->idempotencyKey !== $receipt->identity) {
+                continue;
+            }
+            $decision = $this->consumption->prepare($state, $command);
+            if (null === $decision || null === $decision->retirementReason) {
+                throw new \RuntimeException('Terminal background receipt lacks its native mailbox retirement decision.');
+            }
+            // Permanent worker failure can retain an old currentOperation, so
+            // AdvanceRun may not drain this row. Reuse the same consumption
+            // policy and captured mailbox finalization without advancing the run
+            // or touching unrelated pending user commands.
+            $event = $this->events->event(
+                $state->runId, $state->lastSeq + 1, $state->turnNo,
+                RunEventTypeEnum::AgentCommandRejected->value,
+                [
+                    'kind' => $command->kind,
+                    'idempotency_key' => $command->idempotencyKey,
+                    'reason' => $decision->retirementReason,
+                    'consumption_metadata' => $decision->metadata,
+                ],
+            );
+
+            return CommandMailboxCoordinationFactory::finalize(new HandlerResult(
+                $state->with(['version' => $state->version + 1, 'lastSeq' => $state->lastSeq + 1]), [$event],
+            ));
+        }
+        throw new \RuntimeException('Pending background receipt has no pending mailbox entry.');
     }
 
     private function forward(BackgroundCompletionReceiptDTO $receipt): DeliverBackgroundCompletionDTO

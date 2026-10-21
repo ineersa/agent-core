@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionReceiptDTO;
 
@@ -25,9 +26,23 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
     }
 
     /** @return list<BackgroundCompletionReceiptDTO> */
-    public function forwarding(string $rootRunId): array
+    public function recoverableDeliveries(string $rootRunId): array
     {
-        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative('SELECT * FROM background_completion_receipt WHERE root_run_id = ? AND disposition = ?', [$rootRunId, BackgroundCompletionDispositionEnum::Forwarding->value]);
+        // Worker-failure terminalization need not schedule another AdvanceRun.
+        // Its already-admitted notification still needs owner-side consumption.
+        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
+            'SELECT receipt.* FROM background_completion_receipt receipt
+             LEFT JOIN run_operational_state state ON state.run_id = receipt.destination_run_id
+             WHERE receipt.root_run_id = ? AND (
+                 receipt.disposition = ? OR (
+                     receipt.disposition = ? AND state.parent_run_id IS NOT NULL
+                     AND state.status IN (?, ?, ?)
+                 )
+             )',
+            [$rootRunId, BackgroundCompletionDispositionEnum::Forwarding->value,
+                BackgroundCompletionDispositionEnum::Pending->value,
+                RunStatus::Completed->value, RunStatus::Failed->value, RunStatus::Cancelled->value],
+        );
 
         return array_map($this->snapshot(...), $rows);
     }

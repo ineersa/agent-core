@@ -149,11 +149,13 @@ final class BackgroundProcessCompletionPoller
         $pendingByPid = [];
 
         try {
-            // Forwarding remains a native completion obligation after the
-            // source mailbox row is deleted, until root admission commits.
-            foreach ($this->receipts->forwarding($this->sessionId) as $receipt) {
+            // Terminal child mailboxes can need retirement without an AdvanceRun.
+            // Forwarding then remains outstanding until root admission commits.
+            foreach ($this->receipts->recoverableDeliveries($this->sessionId) as $receipt) {
                 $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
-                    $receipt->destinationRunId, $receipt->identity, $receipt->forwardedText, $receipt->sourceRunId,
+                    $receipt->destinationRunId, $receipt->identity,
+                    $receipt->destinationRunId === $receipt->sourceRunId ? $receipt->text : $receipt->forwardedText,
+                    $receipt->sourceRunId,
                 ));
             }
         } catch (\Throwable $exception) {
