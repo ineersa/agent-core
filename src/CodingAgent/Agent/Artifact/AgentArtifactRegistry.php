@@ -217,6 +217,11 @@ final class AgentArtifactRegistry
                         && $publicationSequence <= $entry->terminalPublicationSequence) {
                         // Resume preserves this watermark. Replaying an older publication
                         // must not restore its terminal status over a newer attempt.
+                        // Repair sidecars from the current entry, not the replayed outcome.
+                        if (!$this->metadataMatches($parentRunId, $entry)) {
+                            $this->writeMetadata($parentRunId, $entry);
+                        }
+
                         return $entry;
                     }
                 }

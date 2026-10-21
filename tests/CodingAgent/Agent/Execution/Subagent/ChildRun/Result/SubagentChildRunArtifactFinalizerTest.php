@@ -86,10 +86,12 @@ final class SubagentChildRunArtifactFinalizerTest extends IsolatedKernelTestCase
         } catch (\RuntimeException $exception) {
             $this->assertStringContainsString('Failed to write', $exception->getMessage());
         }
-        $this->assertSame(AgentArtifactStatusEnum::Completed, $registry->get('parent', 'artifact')?->status);
-        $completedAt = $registry->get('parent', 'artifact')?->completedAt;
+        // Registry status admits resume only after handoff and metadata are durable.
+        $this->assertSame(AgentArtifactStatusEnum::Pending, $registry->get('parent', 'artifact')?->status);
+        $this->assertNull($registry->get('parent', 'artifact')?->completedAt);
         $fs->remove($path);
         $finalizer->apply($outcome);
+        $this->assertSame(AgentArtifactStatusEnum::Completed, $registry->get('parent', 'artifact')?->status);
         $this->assertCount(1, $registry->listHandoffHistory('parent', 'artifact'));
         $this->assertStringContainsString('summary', $registry->readHandoff('parent', 'artifact'));
         $this->assertFileExists($this->root().'/artifact/metadata.json');
@@ -99,7 +101,7 @@ final class SubagentChildRunArtifactFinalizerTest extends IsolatedKernelTestCase
 
     public static function partialWrites(): iterable
     {
-        yield 'registry committed, metadata failed' => ['metadata.json'];
+        yield 'handoff staged, metadata failed' => ['metadata.json'];
         yield 'handoff body committed, index failed' => ['handoffs/index.json'];
     }
 
