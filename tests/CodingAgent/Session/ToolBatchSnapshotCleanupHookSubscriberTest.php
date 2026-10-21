@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
@@ -127,9 +128,77 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         $subscriber = $this->subscriber($this->createStore(), $inputStore);
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
             runId: 'run-1', turnNo: 1, status: RunStatus::Running->value,
-            events: [new AfterTurnCommitEventSummary(1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call']])],
+            events: [new AfterTurnCommitEventSummary(1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call', 'result' => ['tool_name' => 'fork']]])],
             effectsCount: 0, runState: new RunState('run-1', RunStatus::Running, turnNo: 1),
         ));
+    }
+
+    public function testOrdinaryResultsDoNotResolveOrDeleteLaunchInput(): void
+    {
+        $store = $this->createMock(ToolBatchStoreInterface::class);
+        $store->expects($this->never())->method('findUnresolvedToolCallIds');
+        $store->expects($this->never())->method('hasUnresolvedExecution');
+        $input = $this->createMock(ToolLaunchInputStoreInterface::class);
+        $input->expects($this->never())->method('delete');
+        $events = [];
+        foreach (['read', 'bash', 'echo'] as $i => $name) {
+            $events[] = new AfterTurnCommitEventSummary($i + 1, RunEventTypeEnum::ToolExecutionEnd->value,
+                ['tool_result' => ['tool_call_id' => $name, 'result' => ['tool_name' => $name]]],
+            );
+        }
+        $this->subscriber($store, $input)->handleAfterTurnCommit($this->context($events));
+    }
+
+    public function testDuplicateTerminalEventsResolveLaunchOwnersOnceAndDeleteBatchWithoutPreflight(): void
+    {
+        $store = $this->createMock(ToolBatchStoreInterface::class);
+        $store->expects($this->once())->method('findUnresolvedToolCallIds')->with('run-1', ['failed-fork', 'pending-child'])->willReturn(['pending-child']);
+        $store->expects($this->never())->method('hasUnresolvedExecution');
+        $store->expects($this->never())->method('loadSchedule');
+        $store->expects($this->once())->method('delete')->with('run-1', 1, 'tools');
+        $input = $this->createMock(ToolLaunchInputStoreInterface::class);
+        $input->expects($this->once())->method('delete')->with('run-1', 'failed-fork');
+        $events = [];
+        foreach (['failed-fork' => 'fork', 'pending-child' => 'subagent'] as $id => $name) {
+            $events[] = new AfterTurnCommitEventSummary(1, RunEventTypeEnum::ToolExecutionEnd->value,
+                ['tool_result' => ['tool_call_id' => $id, 'result' => ['tool_name' => $name]]],
+            );
+        }
+        $events[] = $events[0];
+        $events[] = new AfterTurnCommitEventSummary(3, RunEventTypeEnum::ToolBatchCommitted->value, ['turn_no' => 1, 'step_id' => 'tools']);
+        $this->subscriber($store, $input)->handleAfterTurnCommit($this->context($events));
+    }
+
+    public function testExplicitAndTerminalDeletionRetainUnsettledBatches(): void
+    {
+        $store = $this->createStore();
+        foreach (['unfinished', 'human', 'queued', 'inflight'] as $step) {
+            $call = new ExecuteToolCall('run-1', 1, $step, 1, $step, $step, 'fork', [], 0);
+            $this->seedBatch($store, 'run-1', 1, $step, new ToolBatchStateDTO(
+                [$step => 0], [$step => $call], 'queued' === $step ? [$step] : [],
+                'inflight' === $step ? [$step => true] : [], [], 'unfinished' !== $step, 1,
+                'human' === $step ? [$step => 'question'] : [],
+            ));
+        }
+        $input = $this->createMock(ToolLaunchInputStoreInterface::class);
+        $input->expects($this->never())->method('deleteAllForRun');
+        $subscriber = $this->subscriber($store, $input);
+        foreach (['unfinished', 'human', 'queued', 'inflight'] as $step) {
+            $subscriber->handleAfterTurnCommit($this->context([
+                new AfterTurnCommitEventSummary(1, RunEventTypeEnum::ToolBatchCommitted->value, ['turn_no' => 1, 'step_id' => $step]),
+            ]));
+            $this->assertNotNull($store->loadSchedule('run-1', 1, $step));
+        }
+        $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
+            runId: 'run-1', turnNo: 1, status: RunStatus::Cancelled->value,
+            events: [new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, [])], effectsCount: 0,
+            runState: new RunState('run-1', RunStatus::Cancelled, turnNo: 1),
+        ));
+        $this->assertEqualsCanonicalizing(['unfinished', 'human', 'queued', 'inflight'], $store->findUnresolvedToolCallIds('run-1', ['unfinished', 'human', 'queued', 'inflight', 'absent']));
+        $this->assertSame([], $store->findUnresolvedToolCallIds('other-run', ['human']));
+        foreach (['unfinished', 'human', 'queued', 'inflight'] as $step) {
+            $this->assertNotNull($store->loadSchedule('run-1', 1, $step));
+        }
     }
 
     public function testFailedCanonicalCommitDoesNotDeleteLaunchInput(): void
@@ -150,7 +219,13 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
         );
         $this->expectExceptionMessage('append failed');
-        $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call']])]);
+        $commit->commit($previous, new RunState('run-1', RunStatus::Running, version: 1, turnNo: 1, model: 'test-model'), [new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call', 'result' => ['tool_name' => 'fork']]])]);
+    }
+
+    /** @param list<AfterTurnCommitEventSummary> $events */
+    private function context(array $events): AfterTurnCommitHookContext
+    {
+        return new AfterTurnCommitHookContext('run-1', 1, RunStatus::Running->value, $events, 0, new RunState('run-1', RunStatus::Running, turnNo: 1));
     }
 
     private function seedBatch(ToolBatchStoreInterface $store, string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batch): void
