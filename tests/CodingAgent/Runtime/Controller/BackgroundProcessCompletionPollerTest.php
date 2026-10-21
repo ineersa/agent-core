@@ -25,6 +25,7 @@ use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
@@ -98,9 +99,14 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             }
 
             /** @return list<never> */
-            public function backgroundProcesses(string $runId): array
+            public function foregroundChildren(string $runId): array
             {
                 return [];
+            }
+
+            public function backgroundWork(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
+            {
+                return new BackgroundWorkSnapshotDTO([], []);
             }
 
             public function stopBackgroundProcess(string $runId, int $recordId): bool

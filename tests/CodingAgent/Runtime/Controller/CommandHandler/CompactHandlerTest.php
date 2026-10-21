@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -124,9 +125,14 @@ final class CompactSpySessionClient implements AgentSessionClient
     }
 
     /** @return list<never> */
-    public function backgroundProcesses(string $runId): array
+    public function foregroundChildren(string $runId): array
     {
         return [];
+    }
+
+    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
+    {
+        return new BackgroundWorkSnapshotDTO([], []);
     }
 
     public function stopBackgroundProcess(string $runId, int $recordId): bool
