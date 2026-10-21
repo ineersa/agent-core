@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Messenger;
 
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
 use Symfony\Component\Messenger\Middleware\StackInterface;
@@ -29,7 +30,8 @@ final readonly class SubagentExecuteToolCallRoutingMiddleware implements Middlew
     {
         $message = $envelope->getMessage();
 
-        if (!$message instanceof ExecuteToolCall) {
+        $toolName = $message instanceof ExecuteToolCall ? $message->toolName : ($message instanceof ToolPayloadMessage && 'call' === $message->reference->kind ? $message->reference->toolName : null);
+        if (null === $toolName) {
             return $stack->next()->handle($envelope, $stack);
         }
 
@@ -41,7 +43,7 @@ final readonly class SubagentExecuteToolCallRoutingMiddleware implements Middlew
             return $stack->next()->handle($envelope, $stack);
         }
 
-        if (!\in_array($message->toolName, [self::SUBAGENT_TOOL_NAME, self::AGENT_RESUME_TOOL_NAME], true)) {
+        if (!\in_array($toolName, [self::SUBAGENT_TOOL_NAME, self::AGENT_RESUME_TOOL_NAME], true)) {
             return $stack->next()->handle($envelope, $stack);
         }
 

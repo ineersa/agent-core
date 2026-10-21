@@ -8,7 +8,12 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 
 /** In-memory scheduling store for collector/finalizer unit proofs. */
 final class TestToolBatchStore implements ToolBatchStoreInterface
@@ -22,6 +27,55 @@ final class TestToolBatchStore implements ToolBatchStoreInterface
     public function load(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO
     {
         return $this->batches[$this->key($runId, $turnNo, $stepId)] ?? null;
+    }
+
+    public function loadSchedule(string $runId, int $turnNo, string $stepId): ?ToolBatchScheduleDTO
+    {
+        $batch = $this->load($runId, $turnNo, $stepId);
+        if (null === $batch) {
+            return null;
+        }
+
+        return new ToolBatchScheduleDTO(
+            $batch->expectedOrder,
+            array_map(static fn (ExecuteToolCall $call): string => (ToolExecutionMode::tryFrom($call->mode ?? ToolExecutionMode::Sequential->value) ?? ToolExecutionMode::Sequential)->value, $batch->calls),
+            $batch->pendingQueue,
+            $batch->inFlight,
+            array_fill_keys(array_keys($batch->results), true),
+            $batch->finalized,
+            $batch->maxParallelism,
+            $batch->awaitingHumanInput,
+        );
+    }
+
+    public function loadCall(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ExecuteToolCall
+    {
+        return $this->load($runId, $turnNo, $stepId)?->calls[$toolCallId] ?? null;
+    }
+
+    public function loadCallReference(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ToolPayloadReferenceDTO
+    {
+        $call = $this->loadCall($runId, $turnNo, $stepId, $toolCallId);
+        if (null === $call) {
+            return null;
+        }
+        // The fake has no files; hash its actual retained data, including answers.
+        $body = serialize($call);
+
+        return new ToolPayloadReferenceDTO('call', $runId, $turnNo, $stepId, $call->attempt(), $call->idempotencyKey(), $toolCallId, $call->orderIndex, $call->toolName, hash('sha256', $body), \strlen($body));
+    }
+
+    public function loadResult(string $runId, int $turnNo, string $stepId, string $toolCallId): ?ToolCallResult
+    {
+        return $this->load($runId, $turnNo, $stepId)?->results[$toolCallId] ?? null;
+    }
+
+    public function loadResults(string $runId, int $turnNo, string $stepId): array
+    {
+        $results = $this->load($runId, $turnNo, $stepId)?->results ?? [];
+        uasort($results, static fn (ToolCallResult $left, ToolCallResult $right): int => $left->orderIndex <=> $right->orderIndex);
+
+        return $results;
     }
 
     public function delete(string $runId, int $turnNo, string $stepId): void

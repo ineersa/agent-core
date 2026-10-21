@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -25,6 +28,8 @@ use Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory;
 use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 {
@@ -50,7 +55,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         $this->seedBatch($store, 'run-1', 3, 'step-x', $finalized);
         $this->seedBatch($store, 'run-1', 3, 'step-other', new ToolBatchStateDTO([], [], [], [], [], false, 2));
 
-        $subscriber = new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class));
+        $subscriber = $this->subscriber($store);
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
             runId: 'run-1',
             turnNo: 3,
@@ -76,7 +81,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         $this->seedBatch($store, 'run-1', 1, 's1', new ToolBatchStateDTO([], [], [], [], [], true, 2));
         $this->seedBatch($store, 'run-1', 2, 's2', new ToolBatchStateDTO([], [], [], [], [], true, 2));
 
-        $subscriber = new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class));
+        $subscriber = $this->subscriber($store);
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
             runId: 'run-1',
             turnNo: 2,
@@ -116,10 +121,10 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 
     public function testCanonicalToolResultDeletesFailedLaunchInputWithoutWaitingForSiblings(): void
     {
-        $inputStore = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
+        $inputStore = $this->createMock(ToolLaunchInputStoreInterface::class);
         $inputStore->expects($this->once())->method('delete')->with('run-1', 'fork-call');
         $inputStore->expects($this->never())->method('deleteAllForRun');
-        $subscriber = new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore);
+        $subscriber = $this->subscriber($this->createStore(), $inputStore);
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
             runId: 'run-1', turnNo: 1, status: RunStatus::Running->value,
             events: [new AfterTurnCommitEventSummary(1, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_result' => ['tool_call_id' => 'fork-call']])],
@@ -129,7 +134,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 
     public function testFailedCanonicalCommitDoesNotDeleteLaunchInput(): void
     {
-        $inputStore = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
+        $inputStore = $this->createMock(ToolLaunchInputStoreInterface::class);
         $inputStore->expects($this->never())->method('delete');
         $inputStore->expects($this->never())->method('deleteAllForRun');
         $eventStore = $this->createStub(PreparedTransitionEventStoreInterface::class);
@@ -141,7 +146,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             activeRunContext: $active,
             eventStore: $eventStore,
             logger: new TestLogger(),
-            hookDispatcher: new HookDispatcher([new ToolBatchSnapshotCleanupHookSubscriber($this->createStore(), new TestLogger(), $inputStore)]),
+            hookDispatcher: new HookDispatcher([$this->subscriber($this->createStore(), $inputStore)]),
             finalizer: TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())),
         );
         $this->expectExceptionMessage('append failed');
@@ -190,10 +195,19 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
         return new TestToolBatchStore();
     }
 
+    private function subscriber(ToolBatchStoreInterface $store, ?ToolLaunchInputStoreInterface $inputStore = null): ToolBatchSnapshotCleanupHookSubscriber
+    {
+        return new ToolBatchSnapshotCleanupHookSubscriber(
+            $store, new TestLogger(), $inputStore ?? $this->createStub(ToolLaunchInputStoreInterface::class),
+            $this->createStub(ToolPayloadStoreInterface::class),
+            new RunLockManager(new LockFactory(new InMemoryStore())),
+        );
+    }
+
     private function createRunCommit(ToolBatchStoreInterface $store, TestActiveRunContext $activeRunContext): RunCommit
     {
         $hookDispatcher = new HookDispatcher([
-            new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger(), $this->createStub(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class)),
+            $this->subscriber($store),
         ]);
         $eventStore = new CleanupHookSubscriberNoOpEventStore();
 

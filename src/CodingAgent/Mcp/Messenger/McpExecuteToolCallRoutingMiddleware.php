@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Mcp\Messenger;
 
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Psr\Log\LoggerInterface;
@@ -42,7 +43,8 @@ final readonly class McpExecuteToolCallRoutingMiddleware implements MiddlewareIn
     {
         $message = $envelope->getMessage();
 
-        if (!$message instanceof ExecuteToolCall) {
+        $toolName = $message instanceof ExecuteToolCall ? $message->toolName : ($message instanceof ToolPayloadMessage && 'call' === $message->reference->kind ? $message->reference->toolName : null);
+        if (null === $toolName) {
             return $stack->next()->handle($envelope, $stack);
         }
 
@@ -71,7 +73,7 @@ final readonly class McpExecuteToolCallRoutingMiddleware implements MiddlewareIn
                 'mcp_event' => 'middleware.catalog_read_failed',
                 'run_id' => $runId,
                 'session_id' => $runId,
-                'tool_name' => $message->toolName,
+                'tool_name' => $toolName,
                 'error_class' => $e::class,
                 'error_message' => $e->getMessage(),
             ]);
@@ -87,14 +89,14 @@ final readonly class McpExecuteToolCallRoutingMiddleware implements MiddlewareIn
 
         // Check whether this tool name belongs to a connected MCP server
         // in the catalog.
-        if ($this->isMcpTool($message->toolName, $catalog)) {
+        if ($this->isMcpTool($toolName, $catalog)) {
             $this->logger->debug('Routing MCP-backed tool call to mcp transport', [
                 'component' => 'mcp',
                 'event_type' => 'middleware.routing_mcp',
                 'mcp_event' => 'middleware.routing_mcp',
                 'run_id' => $runId,
                 'session_id' => $runId,
-                'tool_name' => $message->toolName,
+                'tool_name' => $toolName,
             ]);
 
             return $stack->next()->handle(

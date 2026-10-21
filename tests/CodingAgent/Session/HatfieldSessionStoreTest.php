@@ -4,16 +4,25 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
+use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatch;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\ToolBatchSchedule;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionToolPayloadStore;
+use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Symfony\Component\Clock\Clock;
@@ -136,6 +145,77 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
             $this->assertSame($expected, $commands->countPending($runId));
             $this->assertSame($expected, $entityManager->getRepository(ToolBatchSchedule::class)->count(['runId' => $runId]));
         }
+    }
+
+    public function testSqlDeletionFailureRetainsParentAndChildPayloadsUntilSuccessfulDeletion(): void
+    {
+        $container = self::getContainer();
+        $connection = $container->get(Connection::class);
+        $owner = $this->store->createSession('rollback owner');
+        $foreign = $this->store->createSession('foreign owner');
+        $child = 'payload-child-'.$owner;
+        $grandchild = 'payload-grandchild-'.$owner;
+        $entry = $container->get(AgentArtifactRegistry::class)->create($owner, 'payload-child', $child, 'fork', AgentArtifactKindEnum::Fork);
+        $container->get(AgentChildRunDirectory::class)->register($entry);
+        $nested = $container->get(AgentArtifactRegistry::class)->create($child, 'payload-grandchild', $grandchild, 'fork', AgentArtifactKindEnum::Fork);
+        $container->get(AgentChildRunDirectory::class)->register($nested);
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        $payloads = $container->get(SessionToolPayloadStore::class);
+        $paths = $container->get(ToolBatchRunStoragePathsInterface::class);
+        $files = [];
+        foreach ([$owner, $child, $grandchild, $foreign] as $run) {
+            $call = new ExecuteToolCall($run, 1, 'tools', 1, 'key', 'call', 'echo', ['text' => $run], 0);
+            $register = new RegisterToolBatchDTO($run, 1, 'tools', [$call], ['call' => 0], [], ['call' => true], 1);
+            $apply = $batches->prepareChanges([$register], new VerifiedTransitionDTO('register', ['run_id' => $run, 'actions' => [$register]]));
+            $connection->transactional($apply);
+            $reference = $payloads->publish($call);
+            $files[$run] = \dirname($paths->resolveToolBatchesDirectory($run)).'/tool-payloads/'.hash('sha256', 'call').'/'.$reference->sha256.'.json';
+            $this->assertFileExists($files[$run]);
+        }
+        $ownerDirectory = $this->store->resolveSessionsBasePath().'/'.$owner;
+        $this->assertStringStartsWith($ownerDirectory.'/artifacts/agents/payload-child/', $files[$child]);
+        // Nested artifact registries are parent-run scoped, not all beneath the
+        // numeric owner directory. Removing only that tree misses this body.
+        $this->assertStringStartsWith($this->store->resolveSessionsBasePath().'/'.$child.'/artifacts/agents/payload-grandchild/', $files[$grandchild]);
+        $dispatcher = $container->get(EventDispatcherInterface::class);
+        $failure = function (ControllerSessionShutdownEvent $event) use ($connection, $owner, $child, $grandchild, $foreign): void {
+            if (!$event->permanentDeletion || $event->sessionId !== $owner) {
+                return;
+            }
+            // The high-priority listener has already deleted these scopes. A
+            // genuine later SQL constraint failure must roll those deletes back.
+            foreach ([$owner, $child, $grandchild] as $run) {
+                $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM tool_batch WHERE run_id = ?', [$run]));
+            }
+            $connection->executeStatement('INSERT INTO tool_batch SELECT * FROM tool_batch WHERE run_id = ?', [$foreign]);
+        };
+        $dispatcher->addListener(ControllerSessionShutdownEvent::class, $failure, -8192);
+        try {
+            $this->store->deleteSession($owner);
+            $this->fail('Later SQL failure must abort permanent deletion.');
+        } catch (UniqueConstraintViolationException $exception) {
+            $this->assertStringContainsString('UNIQUE', $exception->getMessage());
+        } finally {
+            $dispatcher->removeListener(ControllerSessionShutdownEvent::class, $failure);
+        }
+        $this->assertTrue($this->store->exists($owner));
+        foreach ($files as $run => $file) {
+            $this->assertFileExists($file);
+            $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM tool_batch WHERE run_id = ?', [(string) $run]));
+            $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM tool_batch_call WHERE run_id = ?', [(string) $run]));
+        }
+        $this->store->deleteSession($owner);
+        $this->assertFalse($this->store->exists($owner));
+        $this->assertDirectoryDoesNotExist($ownerDirectory);
+        $this->assertFileDoesNotExist($files[$owner]);
+        $this->assertFileDoesNotExist($files[$child]);
+        $this->assertFileDoesNotExist($files[$grandchild]);
+        $this->assertFileExists($files[$foreign]);
+        $this->assertTrue($this->store->exists($foreign));
+        foreach ([$owner, $child, $grandchild] as $run) {
+            $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM tool_batch_call WHERE run_id = ?', [$run]));
+        }
+        $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM tool_batch_call WHERE run_id = ?', [$foreign]));
     }
 
     public function testDeleteSessionCleansParentAndChildOutputCapScopesThroughTheContainerLifecycleListener(): void

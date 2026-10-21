@@ -4,15 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Messenger;
 
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
@@ -24,11 +31,22 @@ use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
  *
  * @coversNothing
  */
+#[Group('db')]
 final class RunResultMessagesRouteToRunControlTest extends IsolatedKernelTestCase
 {
     #[DataProvider('runResultMessageProvider')]
     public function testDispatchEnqueuesOnRunControlTransport(object $message): void
     {
+        if ($message instanceof ToolCallResult) {
+            $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
+            TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $message->runId(), $message->turnNo(), $message->stepId(), [
+                new ExecuteToolCall(
+                    $message->runId(), $message->turnNo(), $message->stepId(), $message->attempt(), $message->idempotencyKey(),
+                    $message->toolCallId, 'read', [], $message->orderIndex,
+                ),
+            ]);
+        }
+
         /** @var InMemoryTransport $transport */
         $transport = self::getContainer()->get('messenger.transport.run_control');
         $transport->reset();
@@ -39,6 +57,14 @@ final class RunResultMessagesRouteToRunControlTest extends IsolatedKernelTestCas
 
         $sent = $transport->getSent();
         $this->assertCount(1, $sent, 'Expected exactly one envelope on run_control after dispatch.');
+        if ($message instanceof ToolCallResult) {
+            $reference = $sent[0]->getMessage();
+            $this->assertInstanceOf(ToolPayloadMessage::class, $reference);
+            $this->assertEquals($message->finalized(), self::getContainer()->get(ToolPayloadStoreInterface::class)->read($reference->reference));
+
+            return;
+        }
+
         $this->assertSame($message, $sent[0]->getMessage());
     }
 

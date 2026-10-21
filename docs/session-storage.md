@@ -71,8 +71,48 @@ Sessions may be renamed via `/rename`. Display names are metadata only — they 
 - Transient streamed text is separate from durable events. Resume rebuilds from
   committed history, not from an unfinished stream.
 
-Active `tool_batch_schedule` rows retain calls, collected results, scheduling order,
-and human-input waits. `run_command` retains pending command bodies only. Applying
+Active `tool_batch` rows retain scheduling order, admission and human-input waits.
+`tool_batch_call` and `tool_batch_result` retain bounded file references under unique
+run, turn, step and call identities. `tool_deferred_completion` retains correlation
+and completion markers, with its invocation data in a separate file. These rows
+contain no invocation arguments, result bodies or serialized Messenger envelopes.
+Normal collection reads scheduling metadata and loads only newly admitted calls.
+Accepting one result inserts its reference without rewriting earlier results.
+Completion reads collected bodies in invocation order.
+
+Tool data lives beside the batch runtime directory in
+`runtime/tool-payloads/<call-id-sha256>/<body-sha256>.json`. Each private immutable
+file contains a typed JSON data document, not a Messenger envelope or stamps.
+References include producing identity, SHA-256 and byte length, never a path.
+Publication seals the file before transport or SQL receives its reference.
+Payload callers hold the existing run lock across admission and publication,
+reads or deletion. The payload store adds no per-call lock. Transport middleware,
+deferred registration and lookup, owner metadata preparation, repair and cleanup
+use that same ownership boundary. Nested same-run operations reuse its lock.
+Batch publication, loading and cleanup resolve the run's payload root once per
+operation. They do not retain a process-wide path cache. Reads validate file size
+before loading JSON, then check its byte count and SHA-256 from the loaded bytes.
+Tool execution, direct shell commands, ordinary results and deferred completions
+cross the broker as `ToolPayloadMessage` references. Routing retains the small
+tool identity. Owner initialization and journal recovery precede result-body
+admission. Superseded deliveries do not require legitimately cleaned files;
+missing or corrupt active data fails closed.
+
+Batch cleanup removes the header and reference rows together after human and
+deferred work settles, then removes unreferenced call data under the run lock.
+The SQL transaction commits before file removal, within the same critical section;
+cleanup does not wait for lock release or reacquire it through a callback.
+The SQL deletes are scoped to the requested run or batch. One surviving-ID lookup
+protects call data still referenced by another batch before filesystem cleanup.
+Direct shell completion, terminal commits without unresolved work and permanent
+session deletion also clean their data. Approval and deferred waits retain it.
+
+The schema replaces and discards obsolete `tool_batch_schedule` and
+`deferred_tool_completion` rows on upgrade. There is no backfill of unfinished
+tool batches or old-format reader. Canonical history, broker queues and deferred
+child-supervision records are not deleted by this cutover.
+
+`run_command` retains pending command bodies only. Applying
 or rejecting a command deletes its whole row, so a completed command ID can be
 submitted again. Redelivery after completion can repeat user input.
 
@@ -80,6 +120,10 @@ There is no import of legacy batch files or cached commands. Rebuilding the runt
 database does not recover their pending payloads from conversation events.
 Permanent session deletion removes pending command and batch rows for the owner
 and all descendants found through artifact registries and deferred reservations.
+The owner session tree and captured descendant payload directories are removed
+only after that metadata transaction succeeds. Nested child registries can live
+outside the numeric owner's tree, so their paths are captured before ownership
+metadata disappears. A metadata rollback leaves all those payload files intact.
 Ordinary shutdown retains those rows. Startup and idle recovery use the same
 ownership traversal to finish interrupted canonical transitions, not to resend
 completed transitions.

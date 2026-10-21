@@ -11,7 +11,9 @@
 #
 # ORM entities on the default connection:
 #   - background_process  — BackgroundProcessManager durable tracking
-#   - tool_batch_schedule — DoctrineToolBatchStore scheduling metadata
+#   - tool_batch          — DoctrineToolBatchStore scheduling metadata
+#   - tool_batch_call     — individually encoded batch invocations
+#   - tool_batch_result   — individually encoded collected results
 #
 
 doctrine:

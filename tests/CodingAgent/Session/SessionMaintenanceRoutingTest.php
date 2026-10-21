@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -24,6 +25,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -925,7 +927,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $call = $this->executionMessage($callEnvelope);
         $registration = $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class)->registerPending(new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(
             $batchId, $run, $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->toolName, $call->args, $call->orderIndex,
-            $call->toolIdempotencyKey, $call->mode, $call->timeoutSeconds, $call->maxParallelism, null, $call->argSchema, $call->toolsRef,
+            $call->toolIdempotencyKey, $call->mode, $call->timeoutSeconds, $call->maxParallelism, argSchema: $call->argSchema, toolsRef: $call->toolsRef,
         ));
         $intents = [];
         $childIds = [];
@@ -987,7 +989,10 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             result: ['content' => [['type' => 'text', 'text' => str_repeat('Collected tool output. ', 30)]]],
         ));
         $toolTransport->ack($envelopes[0]);
-        $this->assertInstanceOf(ToolCallResult::class, $this->consumeNextOwnerMessage());
+        $receivedResult = $this->consumeNextOwnerMessage();
+        $this->assertInstanceOf(ToolPayloadMessage::class, $receivedResult);
+        $this->assertSame('result', $receivedResult->reference->kind);
+        $this->assertSame($tool->toolCallId, $receivedResult->reference->toolCallId);
 
         return $run;
     }
@@ -1074,7 +1079,15 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
 
     private function executionMessage(Envelope $envelope): object
     {
-        return $envelope->getMessage();
+        $message = $envelope->getMessage();
+        $this->assertNotInstanceOf(ExecuteToolCall::class, $message, 'Tool transport must carry references, not inline invocations.');
+        if ($message instanceof ToolPayloadMessage) {
+            $this->assertSame('call', $message->reference->kind);
+
+            return self::getContainer()->get(ToolPayloadStoreInterface::class)->read($message->reference);
+        }
+
+        return $message;
     }
 
     private function completeExecution(Envelope $envelope, \Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage $result): void

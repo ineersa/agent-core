@@ -25,6 +25,9 @@ final readonly class CompleteDeferredToolCallHandler
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function __invoke(CompleteDeferredToolCall $message): void
     {
+        if ('completed' === $this->deferredRepository->status($message->deferredId)) {
+            return;
+        }
         $correlation = $this->deferredRepository->findByDeferredId($message->deferredId);
         if (null === $correlation) {
             $this->logger->warning('deferred_tool_completion.unknown_correlation', [
@@ -62,10 +65,7 @@ final readonly class CompleteDeferredToolCallHandler
             $this->locks->afterRelease($correlation->runId, function () use ($message, $correlation, $toolCallResult): void {
                 try {
                     $this->commandBus->dispatch($toolCallResult);
-                    $this->deferredRepository->markCompleted($message->deferredId);
-                    // Synchronous delivery may have retained the finalized batch
-                    // while its deferred correlation was still pending.
-                    $this->batches->delete($correlation->runId, $correlation->turnNo, $correlation->stepId);
+                    $this->settle($message->deferredId, $correlation->runId, $correlation->turnNo, $correlation->stepId);
                 } catch (\Throwable $exception) {
                     $this->logger->warning('deferred_tool_completion.delivery_failed', [
                         'run_id' => $correlation->runId,
@@ -80,5 +80,16 @@ final readonly class CompleteDeferredToolCallHandler
         } finally {
             RunLogContext::leave();
         }
+    }
+
+    /** Settle sent or explicitly discarded completions, then retry guarded cleanup. */
+    public function settle(string $deferredId, string $runId, int $turnNo, string $stepId): void
+    {
+        $this->locks->synchronized($runId, function () use ($deferredId, $runId, $turnNo, $stepId): void {
+            $this->deferredRepository->markCompleted($deferredId);
+            // Synchronous delivery and obsolete destinations can leave a settled
+            // batch retained solely by its pending deferred marker.
+            $this->batches->delete($runId, $turnNo, $stepId);
+        });
     }
 }
