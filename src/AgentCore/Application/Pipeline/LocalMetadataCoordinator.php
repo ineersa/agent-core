@@ -27,6 +27,10 @@ final readonly class LocalMetadataCoordinator
     public function apply(TransitionPlan $plan): void
     {
         $transition = $plan->verified ?? throw new \RuntimeException('Local metadata requires verified transition evidence.');
+        if ([] === $plan->localActions) {
+            return;
+        }
+
         $batchActions = [];
         foreach ($plan->localActions as $action) {
             if ($action instanceof FinalizeToolBatchDTO || $action instanceof RegisterToolBatchDTO) {
