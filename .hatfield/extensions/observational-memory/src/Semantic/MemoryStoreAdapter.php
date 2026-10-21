@@ -16,7 +16,7 @@ final class MemoryStoreAdapter implements StoreInterface
 {
     private bool $truncated = false;
 
-    /** @param (\Closure(VectorDocumentInterface): bool)|null $filter */
+    /** @param (\Closure(list<VectorDocumentInterface>): array<string, true>)|null $filter */
     public function __construct(private readonly StoreInterface $store, private readonly bool $text, private readonly int $chunkCount, private readonly ?\Closure $filter = null)
     {
     }
@@ -71,16 +71,47 @@ final class MemoryStoreAdapter implements StoreInterface
         $fetch = min(max(1, $this->chunkCount), null === $this->filter ? $limit : 500);
         $count = 0;
         $seen = 0;
+        $page = [];
         foreach ($this->store->query($query, [$this->text ? 'maxItems' : 'k' => $fetch]) as $document) {
-            ++$seen;
-            $this->truncated = $seen >= $fetch && $this->chunkCount > $seen;
-            if (null !== $this->filter && !($this->filter)($document)) {
+            $page[] = $document;
+            if (\count($page) < 100) {
                 continue;
             }
-            yield $document;
+            foreach ($this->accepted($page) as $position => $candidate) {
+                yield $candidate;
+                if (++$count >= $limit) {
+                    $this->truncated = $this->chunkCount > $seen + $position + 1;
+
+                    return;
+                }
+            }
+            $seen += \count($page);
+            $page = [];
+        }
+        foreach ($this->accepted($page) as $position => $candidate) {
+            yield $candidate;
             if (++$count >= $limit) {
-                $this->truncated = $this->truncated || $this->chunkCount > $seen;
-                break;
+                $this->truncated = $this->chunkCount > $seen + $position + 1;
+
+                return;
+            }
+        }
+        $seen += \count($page);
+        $this->truncated = $seen >= $fetch && $this->chunkCount > $seen;
+    }
+
+    /** @param list<VectorDocumentInterface> $page
+     * @return iterable<VectorDocumentInterface>
+     */
+    private function accepted(array $page): iterable
+    {
+        if ([] === $page) {
+            return;
+        }
+        $accepted = null === $this->filter ? null : ($this->filter)($page);
+        foreach ($page as $position => $document) {
+            if (null === $accepted || isset($accepted[$document->getId()])) {
+                yield $position => $document;
             }
         }
     }

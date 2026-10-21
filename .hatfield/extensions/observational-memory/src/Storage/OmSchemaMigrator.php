@@ -211,7 +211,46 @@ final class OmSchemaMigrator
                     complete INTEGER NOT NULL
                 )',
             ],
+            '20261021_006_semantic_source_revisions' => $this->migration006Statements(),
         ];
+    }
+
+    /**
+     * Extension-local handwritten migration explicitly authorized for source tracking.
+     * Triggers include direct canonical SQL writes, not only repository callers.
+     * Pending identities coalesce repeated writes and retain deletion tombstones
+     * until reconciliation consumes them atomically with its revision cursor.
+     *
+     * @return list<string>
+     */
+    private function migration006Statements(): array
+    {
+        $statements = [
+            'CREATE TABLE om_source_revision (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL)',
+            'INSERT INTO om_source_revision (id, revision) VALUES (1, 0)',
+            'CREATE TABLE om_source_change (kind TEXT NOT NULL, source_id TEXT NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY (kind, source_id))',
+            'CREATE INDEX idx_om_source_change_revision ON om_source_change (revision)',
+            'CREATE TABLE om_semantic_progress (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL, source_hash TEXT NOT NULL, initialized INTEGER NOT NULL, obsolete INTEGER NOT NULL)',
+            "INSERT INTO om_semantic_progress (id, revision, source_hash, initialized, obsolete) VALUES (1, 0, '".str_repeat('0', 64)."', 0, 0)",
+            // Existing derived manifests use the old corpus hash. Rebuild once.
+            'UPDATE om_semantic_state SET dirty = 1, complete = 0',
+        ];
+        foreach ([
+            'observation' => ['observation_id', ['observation_id', 'run_id', 'content', 'timestamp', 'relevance']],
+            'reflection' => ['reflection_id', ['reflection_id', 'run_id', 'content', 'created_at']],
+        ] as $kind => [$id, $fields]) {
+            $changed = implode(' OR ', array_map(static fn (string $field): string => 'OLD.'.$field.' IS NOT NEW.'.$field, $fields));
+            foreach (['INSERT', 'UPDATE', 'DELETE'] as $event) {
+                $rows = 'UPDATE' === $event ? ['OLD', 'NEW'] : [('DELETE' === $event ? 'OLD' : 'NEW')];
+                $body = 'UPDATE om_source_revision SET revision = revision + 1 WHERE id = 1; ';
+                foreach ($rows as $row) {
+                    $body .= "INSERT INTO om_source_change (kind, source_id, revision) SELECT '".$kind."', ".$row.'.'.$id.', revision FROM om_source_revision WHERE id = 1 ON CONFLICT(kind, source_id) DO UPDATE SET revision = excluded.revision; ';
+                }
+                $statements[] = 'CREATE TRIGGER om_'.$kind.'_semantic_'.strtolower($event).' AFTER '.$event.' ON om_'.$kind.('UPDATE' === $event ? ' WHEN '.$changed : '').' BEGIN '.$body.'END';
+            }
+        }
+
+        return $statements;
     }
 
     /**
@@ -433,6 +472,7 @@ final class OmSchemaMigrator
             '20260726_003_active_generation_and_relevance_text' => 'Relevance TEXT + timestamp; chunk/part coverage; request_fingerprint; active generation tables',
             '20260729_004_current_activity' => 'Ephemeral om_current_activity for live TUI status notices',
             '20260922_005_semantic_health' => 'Durable health and restart state for derived semantic storage',
+            '20261021_006_semantic_source_revisions' => 'Transactional canonical source revisions and incremental semantic reconciliation progress',
         ];
     }
 }
