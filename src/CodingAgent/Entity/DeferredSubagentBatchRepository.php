@@ -575,7 +575,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             ->setParameter('parentRunId', $parentRunId)
             ->setParameter('launched', DeferredSubagentBatchLaunchStatusEnum::Launched)
             ->setParameter('pending', 'pending')
-            ->setParameter('tools', ['subagent', 'fork'])
+            ->setParameter('tools', ['subagent', 'fork', 'agent_resume'])
             ->orderBy('batch.id', 'ASC');
     }
 

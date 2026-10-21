@@ -7,7 +7,7 @@ description: Background process tracking, logs, stop behavior, and related setti
 
 Long-running shell work can detach into tracked background processes so the conversation loop stays responsive.
 
-Press **Ctrl+B** while a Bash, subagent or fork tool runs to move it to background.
+Press **Ctrl+B** while a `bash`, `subagent`, `fork` or `agent_resume` tool runs to move it to background.
 If several eligible invocations are running in the visible session, choose one in the
 picker. Enter or Ctrl+B confirms; Escape cancels. In child live view, the shortcut
 targets that child's Bash tool rather than its parent's invocation.
@@ -18,12 +18,12 @@ After backgrounding, open `/bg` to inspect or stop jobs yourself, or ask the age
 
 ## Child invocations
 
-Backgrounding a subagent or fork releases the parent's wait with one acknowledgment.
+Backgrounding a `subagent`, `fork` or `agent_resume` invocation releases the parent's wait with one acknowledgment.
 The same child continues under its original deadline and cancellation supervision.
 Its handoff arrives as a follow-up when it settles, not as a second result for the
 original tool call. Independent child calls can run concurrently.
-`agent_resume` invocations do not support detachment. Use `agent_retrieve` for existing
-artifact details and handoff history. The transcript card is marked backgrounded once,
+Use `agent_retrieve` for existing artifact details and handoff history.
+The transcript card is marked backgrounded once,
 then remains frozen. Open `/agents-live` for current child status, inspection or steering.
 
 A child can also background its own Bash tool. If a completion reaches an active owner,
