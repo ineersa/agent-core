@@ -61,7 +61,7 @@ final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
         $store = $container->get(SessionToolPayloadStore::class)->forRun($run);
         $call = new ExecuteToolCall($run, 1, 'tools', 1, 'key', 'same-call', 'echo', ['value' => 42], 0);
         $result = new ToolCallResult($run, 1, 'tools', 1, 'key', 'same-call', 0, ['tool_name' => 'echo', 'content' => [['type' => 'text', 'text' => 'done']]]);
-        $correlation = new DeferredToolCompletionCorrelation('deferred', $run, 1, 'tools', 1, 'key', 'same-call', 'echo', ['value' => 42], 0);
+        $correlation = new DeferredToolCompletionCorrelation('deferred', $run, 1, 'tools', 1, 'key', 'same-call', 'echo', ['value' => 42], 0, argSchema: ['type' => 'object', 'properties' => ['value' => ['type' => 'integer']]], toolsRef: 'tools-ref');
         $callRef = $store->publish($call);
         $resultRef = $store->publish($result);
         $correlationRef = $store->publishCorrelation($correlation);
@@ -72,6 +72,7 @@ final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
         $root = $container->get(HatfieldSessionStore::class)->resolveSessionsBasePath().'/'.$run.'/runtime/tool-payloads/'.hash('sha256', 'same-call');
         $path = $root.'/'.$callRef->sha256.'.json';
         $this->assertSame(0600, fileperms($path) & 0777);
+        $this->assertSame(0600, fileperms($root.'/'.$correlationRef->sha256.'.json') & 0777);
         $this->assertSame(0700, fileperms($root) & 0777);
         $original = file_get_contents($path);
         $this->assertIsString($original);

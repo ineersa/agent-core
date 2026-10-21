@@ -5,13 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Tool;
 
 /**
- * Durable snapshot of the original ExecuteToolCall envelope for later completion.
+ * Immutable invocation data and correlation identity for deferred completion.
  */
 final readonly class DeferredToolCompletionCorrelation
 {
     /**
      * @param array<string, mixed>      $arguments
-     * @param array<string, mixed>|null $assistantMessage
      * @param array<string, mixed>|null $argSchema
      */
     public function __construct(
@@ -29,7 +28,6 @@ final readonly class DeferredToolCompletionCorrelation
         public ?string $mode = null,
         public ?int $timeoutSeconds = null,
         public ?int $maxParallelism = null,
-        public ?array $assistantMessage = null,
         public ?array $argSchema = null,
         public ?string $toolsRef = null,
     ) {
