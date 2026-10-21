@@ -12,6 +12,9 @@ use Symfony\Contracts\EventDispatcher\Event;
  */
 final class ControllerSessionShutdownEvent extends Event
 {
+    /** @var list<string> Captured before ownership metadata disappears; removed only after successful deletion. */
+    public array $payloadDirectories = [];
+
     public function __construct(
         public readonly string $sessionId,
         public readonly bool $permanentDeletion = false,

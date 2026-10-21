@@ -85,6 +85,9 @@ Tool data lives beside the batch runtime directory in
 file contains a typed JSON data document, not a Messenger envelope or stamps.
 References include producing identity, SHA-256 and byte length, never a path.
 Publication seals the file before transport or SQL receives its reference.
+Batch publication, loading and cleanup resolve the run's payload root once per
+operation. They do not retain a process-wide path cache. Reads validate file size
+before loading JSON, then check its byte count and SHA-256 from the loaded bytes.
 Tool execution, direct shell commands, ordinary results and deferred completions
 cross the broker as `ToolPayloadMessage` references. Routing retains the small
 tool identity. Owner initialization and journal recovery precede result-body
@@ -93,6 +96,8 @@ missing or corrupt active data fails closed.
 
 Batch cleanup removes the header and reference rows together after human and
 deferred work settles, then removes unreferenced call data under the run lock.
+The SQL deletes are scoped to the requested run or batch. One surviving-ID lookup
+protects call data still referenced by another batch before filesystem cleanup.
 Direct shell completion, terminal commits without unresolved work and permanent
 session deletion also clean their data. Approval and deferred waits retain it.
 
@@ -109,6 +114,10 @@ There is no import of legacy batch files or cached commands. Rebuilding the runt
 database does not recover their pending payloads from conversation events.
 Permanent session deletion removes pending command and batch rows for the owner
 and all descendants found through artifact registries and deferred reservations.
+The owner session tree and captured descendant payload directories are removed
+only after that metadata transaction succeeds. Nested child registries can live
+outside the numeric owner's tree, so their paths are captured before ownership
+metadata disappears. A metadata rollback leaves all those payload files intact.
 Ordinary shutdown retains those rows. Startup and idle recovery use the same
 ownership traversal to finish interrupted canonical transitions, not to resend
 completed transitions.

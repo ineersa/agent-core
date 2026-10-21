@@ -299,18 +299,19 @@ final class HatfieldSessionStore
 
         // Scope deletion to the DB-issued identity, including numeric aliases.
         $sessionId = (string) $id;
+        $sessionDir = $this->getSessionDir($sessionId);
+        $shutdown = new ControllerSessionShutdownEvent($sessionId, permanentDeletion: true);
 
         $connection = $this->entityManager->getConnection();
-        $connection->transactional(function () use ($sessionId, $entity): void {
+        $connection->transactional(function () use ($shutdown, $entity): void {
             // Permanent-deletion listeners remove pending SQL work before other
             // shutdown listeners dispose child ownership evidence. Ordinary shutdown retains it.
-            $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($sessionId, permanentDeletion: true));
+            $this->dispatcher->dispatch($shutdown);
             $this->entityManager->remove($entity);
             $this->entityManager->flush();
         });
 
-        $sessionDir = $this->getSessionDir($sessionId);
-        (new Filesystem())->remove($sessionDir);
+        (new Filesystem())->remove(array_unique([$sessionDir, ...$shutdown->payloadDirectories]));
     }
 
     /**
