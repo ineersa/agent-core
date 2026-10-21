@@ -7,7 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
@@ -15,8 +17,8 @@ use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Support\UnusedBackgroundProcessManagerFactory;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
-use PHPUnit\Framework\TestCase;
 
 /**
  * /repair must round-trip through the controller JSONL seam and wait for
@@ -24,18 +26,20 @@ use PHPUnit\Framework\TestCase;
  *
  * @covers \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient
  */
-final class JsonlProcessAgentSessionClientRepairTest extends TestCase
+final class JsonlProcessAgentSessionClientRepairTest extends IsolatedKernelTestCase
 {
     private string $tmpDir;
 
     protected function setUp(): void
     {
+        parent::setUp();
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('jsonl-repair');
     }
 
     protected function tearDown(): void
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        parent::tearDown();
     }
 
     public function testRepairWaitsForCompletedEventAndReturnsScalars(): void
@@ -199,6 +203,8 @@ PHP);
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
             sessionStore: \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tmpDir),
+            childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
+            backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
         );
     }
 }

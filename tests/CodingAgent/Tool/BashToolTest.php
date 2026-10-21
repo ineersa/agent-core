@@ -25,13 +25,12 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
-use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
@@ -64,6 +63,8 @@ use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Validator\ConstraintValidatorFactory;
 use Symfony\Component\Validator\ValidatorBuilder;
 
@@ -804,17 +805,18 @@ final class BashToolTest extends IsolatedKernelTestCase
             } while (hrtime(true) < $deadline);
             $this->assertNotNull($record?->finishedAt);
             $this->assertSame(1, substr_count((string) file_get_contents($selected->logPath), "started\n"));
-            $client = $this->createMock(AgentSessionClient::class);
-            $client->expects($this->once())->method('send')->with(self::TEST_SESSION, $this->callback(
-                static fn (UserCommand $command): bool => 'append_message' === $command->type && str_contains($command->text ?? '', 'finished'),
-            ));
+            $bus = $this->createMock(MessageBusInterface::class);
+            $bus->expects($this->once())->method('dispatch')->with($this->callback(
+                static fn (DeliverBackgroundCompletionDTO $message): bool => self::TEST_SESSION === $message->runId() && str_contains($message->text, 'finished'),
+            ))->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
             $poller = new BackgroundProcessCompletionPoller(
                 static::getContainer()->get(ProcessStore::class),
                 $this->manager,
-                $client,
+                $bus,
                 new RuntimeEventEmitter(new NullLogger()),
                 new NullLogger(),
                 static::getContainer()->get(AgentArtifactRegistry::class),
+                static::getContainer()->get(BackgroundCompletionReceiptRepository::class),
                 self::TEST_SESSION,
             );
             $poll = new \ReflectionMethod($poller, 'poll');
@@ -942,7 +944,6 @@ final class BashToolTest extends IsolatedKernelTestCase
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
             logger: $this->logger,
-            relationshipReader: self::getContainer()->get(RunRelationshipReaderInterface::class),
             config: $this->bashConfig,
         );
     }

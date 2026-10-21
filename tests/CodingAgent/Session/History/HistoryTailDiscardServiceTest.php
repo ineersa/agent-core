@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session\History;
 
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -13,17 +14,18 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
 use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[CoversClass(HistoryTailDiscardService::class)]
-final class HistoryTailDiscardServiceTest extends TestCase
+final class HistoryTailDiscardServiceTest extends IsolatedKernelTestCase
 {
     private string $tempDir;
 
@@ -62,6 +64,8 @@ final class HistoryTailDiscardServiceTest extends TestCase
         $service = new HistoryTailDiscardService(
             HistoryEventStoreFactory::create($sessionStore, $events),
             new NullLogger(),
+            self::getContainer()->get(ActiveRunContextInterface::class),
+            self::getContainer()->get(BackgroundCompletionReceiptRepository::class),
         );
         $state = new RunState(
             runId: $runId,
@@ -94,6 +98,8 @@ final class HistoryTailDiscardServiceTest extends TestCase
         $service = new HistoryTailDiscardService(
             HistoryEventStoreFactory::create($sessionStore, $events),
             new NullLogger(),
+            self::getContainer()->get(ActiveRunContextInterface::class),
+            self::getContainer()->get(BackgroundCompletionReceiptRepository::class),
         );
         $state = new RunState(
             runId: $runId,
@@ -116,7 +122,7 @@ final class HistoryTailDiscardServiceTest extends TestCase
             $this->event($runId, 2, 4, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 4]),
             $this->event($runId, 3, 100, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 100]),
         ]);
-        $service = new HistoryTailDiscardService($store, new NullLogger());
+        $service = new HistoryTailDiscardService($store, new NullLogger(), self::getContainer()->get(ActiveRunContextInterface::class), self::getContainer()->get(BackgroundCompletionReceiptRepository::class));
         $state = new RunState(runId: $runId, status: RunStatus::Completed, version: 1, turnNo: 100, lastSeq: 3);
         $this->assertSame(100, $service->prepareForwardTailDiscard($runId, $state)?->payload['after_turn_no']);
         $this->assertNull($service->prepareForwardTailDiscard($runId, $state->with(['turnNo' => 99])));
@@ -130,6 +136,8 @@ final class HistoryTailDiscardServiceTest extends TestCase
         $service = new HistoryTailDiscardService(
             HistoryEventStoreFactory::create($sessionStore),
             new NullLogger(),
+            self::getContainer()->get(ActiveRunContextInterface::class),
+            self::getContainer()->get(BackgroundCompletionReceiptRepository::class),
         );
 
         $this->assertTrue($service->isContextMutatingMessage(new AdvanceRun(

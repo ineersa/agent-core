@@ -9,25 +9,21 @@ use Amp\TimeoutCancellation;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Event\PostLoadEventArgs;
 use Doctrine\ORM\Events;
-use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
-use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Messenger\SerializedBrokerSendersLocator;
@@ -51,7 +47,9 @@ use Revolt\EventLoop;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\DependencyInjection\ServiceLocator;
+use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBus;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Middleware\SendMessageMiddleware;
 use Symfony\Component\Messenger\Transport\Sender\SendersLocator;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
@@ -73,10 +71,10 @@ use function Amp\Socket\listen;
 #[CoversClass(BackgroundProcessCompletionPoller::class)]
 final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 {
-    /** @var array<array{string, UserCommand}> */
+    /** @var array<array{string, DeliverBackgroundCompletionDTO}> */
     private array $sentCommands = [];
 
-    private AgentSessionClient $clientSpy;
+    private MessageBusInterface $commandBus;
     private string $tmpDir;
 
     protected function setUp(): void
@@ -85,101 +83,12 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $this->sentCommands = [];
 
-        $this->clientSpy = new class($this->sentCommands) implements AgentSessionClient {
-            /** @param array<array{string, UserCommand}> $sentCommands */
-            public function __construct(
-                private array &$sentCommands,
-            ) {
-            }
+        $this->commandBus = $this->createStub(MessageBusInterface::class);
+        $this->commandBus->method('dispatch')->willReturnCallback(function (DeliverBackgroundCompletionDTO $message): Envelope {
+            $this->sentCommands[] = [$message->runId(), $message];
 
-            /** @return list<BashBackgroundCandidateDTO> */
-            public function foregroundBash(string $runId): array
-            {
-                return [];
-            }
-
-            /** @return list<never> */
-            public function foregroundChildren(string $runId): array
-            {
-                return [];
-            }
-
-            public function backgroundWork(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
-            {
-                return new BackgroundWorkSnapshotDTO([], []);
-            }
-
-            public function stopBackgroundProcess(string $runId, int $recordId): bool
-            {
-                throw new \LogicException('Unexpected background stop.');
-            }
-
-            public function start(\Ineersa\CodingAgent\Runtime\Contract\StartRunRequest $request): \Ineersa\CodingAgent\Runtime\Contract\RunHandle
-            {
-                throw new \RuntimeException('Not expected in test');
-            }
-
-            public function acknowledgeBootstrap(array $cut): void
-            {
-            }
-
-            public function cancelBootstrap(string $runId): void
-            {
-            }
-
-            public function attach(string $runId): \Ineersa\CodingAgent\Runtime\Contract\RunHandle
-            {
-                throw new \RuntimeException('Not expected in test');
-            }
-
-            public function send(string $runId, UserCommand $command): void
-            {
-                $this->sentCommands[] = [$runId, $command];
-            }
-
-            public function beginObservingChildRun(string $childRunId): void
-            {
-            }
-
-            public function endObservingChildRun(string $childRunId): void
-            {
-            }
-
-            public function events(string $runId, int $afterSeq = 0): iterable
-            {
-                return [];
-            }
-
-            /**
-             * No-op shutdown: this spy owns no runtime to tear down.
-             */
-            public function shutdown(): void
-            {
-            }
-
-            public function refreshMcpCatalog(string $runId): void
-            {
-            }
-
-            public function cancel(string $runId): void
-            {
-            }
-
-            public function shellExecute(string $command, string $sessionId, string $cwd): \Ineersa\CodingAgent\Runtime\Contract\RunHandle
-            {
-                throw new \RuntimeException('Not expected in test');
-            }
-
-            public function compact(string $runId, ?string $customInstructions = null): void
-            {
-            }
-
-            public function repair(string $runId, bool $apply = true): \Ineersa\CodingAgent\Runtime\Contract\RepairResult
-            {
-                return new \Ineersa\CodingAgent\Runtime\Contract\RepairResult(false, false, 'No repairable corruption detected.');
-            }
-        };
-
+            return new Envelope($message);
+        });
         $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_poller_test');
     }
 
@@ -330,7 +239,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertCount(1, $this->sentCommands);
         [$runId, $command] = $this->sentCommands[0];
         $this->assertSame('test-poller-run', $runId);
-        $this->assertSame('append_message', $command->type);
+        $this->assertInstanceOf(DeliverBackgroundCompletionDTO::class, $command);
         $this->assertStringContainsString('[BG_PROCESS_DONE]', $command->text ?? '');
         $this->assertStringContainsString('PID 10001', $command->text ?? '');
         $this->assertStringContainsString('Hello world', $command->text ?? '');
@@ -352,12 +261,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $server = listen('unix://'.$dir.'/s');
         $transport = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($dir.'/s'), [], new PhpSerializer());
         $locator = new SerializedBrokerSendersLocator(new SendersLocator(['*' => ['queue']], new ServiceLocator(['queue' => static fn () => $transport])));
-        $runner = new AgentRunner(new MessageBus([new SendMessageMiddleware($locator)]), self::getContainer()->get('serializer'));
-        $this->clientSpy = $this->createStub(AgentSessionClient::class);
-        $this->clientSpy->method('send')->willReturnCallback(static function (string $runId, UserCommand $command) use ($runner): void {
-            self::assertSame('append_message', $command->type);
-            $runner->appendMessage($runId, new AgentMessage('user', [['type' => 'text', 'text' => $command->text]]));
-        });
+        $this->commandBus = new MessageBus([new SendMessageMiddleware($locator)]);
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
         $poller = $this->createPoller($store, new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger()), $config, new NullLogger()));
@@ -539,12 +443,13 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $poller = new BackgroundProcessCompletionPoller(
             processStore: $store,
             processManager: $manager,
-            sessionClient: $this->clientSpy,
+            commandBus: $this->commandBus,
             emitter: new RuntimeEventEmitter(
                 logger: $this->createStub(LoggerInterface::class),
             ),
             logger: $this->createStub(LoggerInterface::class),
             artifactRegistry: self::getContainer()->get(AgentArtifactRegistry::class),
+            receipts: self::getContainer()->get(BackgroundCompletionReceiptRepository::class),
             sessionId: '',
         );
 
@@ -600,7 +505,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertCount(1, $this->sentCommands);
         [$runId, $command] = $this->sentCommands[0];
         $this->assertSame('test-regression-run', $runId);
-        $this->assertSame('append_message', $command->type);
+        $this->assertInstanceOf(DeliverBackgroundCompletionDTO::class, $command);
         $this->assertStringContainsString('[BG_PROCESS_DONE]', $command->text ?? '');
         $this->assertStringContainsString('PID '.$pid, $command->text ?? '');
         $this->assertStringContainsString('regression output', $command->text ?? '');
@@ -651,7 +556,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertCount(1, $this->sentCommands);
         [$runId, $command] = $this->sentCommands[0];
         $this->assertSame('child-run-bg', $runId);
-        $this->assertSame('append_message', $command->type);
+        $this->assertInstanceOf(DeliverBackgroundCompletionDTO::class, $command);
         $this->assertStringContainsString('[BG_PROCESS_DONE]', $command->text ?? '');
     }
 
@@ -759,7 +664,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertNotSame($record, $independent, 'The reader must hydrate its own ORM object.');
             $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status);
             $this->assertNull($independent->finishedAt);
-            $owner->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished('timeout-run'));
+            $owner->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(['timeout-run']));
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $store->fetchByRecordId($process->id)?->status);
             $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status, 'Timeout must not refresh the suspended reader.');
             $this->assertSame(8, fwrite($release, "release\n"));
@@ -777,7 +682,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertSame(0, $persisted->exitCode);
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $persisted->status);
             $this->assertFalse($persisted->stoppedByUser);
-            $owner->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished('timeout-run'));
+            $owner->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(['timeout-run']));
             $grace = new \ReflectionProperty($owner, 'timeoutGraceDeadlines');
             $this->assertSame([], $grace->getValue($owner));
             $poller = $this->createPoller($store, $owner, 'timeout-run');
@@ -861,12 +766,14 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $events = $em->getEventManager();
         $events->addEventListener([Events::preFlush, Events::onFlush], $counter);
         $published = 0;
-        $this->clientSpy = $this->createStub(AgentSessionClient::class);
-        $this->clientSpy->method('send')->willReturnCallback(function () use ($em, &$published): void {
+        $this->commandBus = $this->createStub(MessageBusInterface::class);
+        $this->commandBus->method('dispatch')->willReturnCallback(function (object $message) use ($em, &$published): Envelope {
             $db = $em->getConnection();
             $this->assertSame(0, (int) $db->fetchOne('SELECT COUNT(*) FROM background_process WHERE finished_at IS NULL'));
             $this->assertSame($published, (int) $db->fetchOne('SELECT COUNT(*) FROM background_process WHERE completion_notified_at IS NOT NULL'), 'Each previous delivery must already be durable before the next send.');
             ++$published;
+
+            return new Envelope($message);
         });
         $logger = self::getContainer()->get('test.sql_logger');
         $this->assertInstanceOf(TestLogger::class, $logger);
@@ -1126,12 +1033,13 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         return new BackgroundProcessCompletionPoller(
             processStore: $store,
             processManager: $manager,
-            sessionClient: $this->clientSpy,
+            commandBus: $this->commandBus,
             emitter: new RuntimeEventEmitter(
                 logger: $this->createStub(LoggerInterface::class),
             ),
             logger: $logger ?? $this->createStub(LoggerInterface::class),
             artifactRegistry: self::getContainer()->get(AgentArtifactRegistry::class),
+            receipts: self::getContainer()->get(BackgroundCompletionReceiptRepository::class),
             sessionId: $controllerSessionId,
         );
     }

@@ -1001,6 +1001,8 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             $logger ?? $this->logger,
             \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(\Doctrine\ORM\EntityManagerInterface::class), $directory),
             static::getContainer()->get(\Ineersa\CodingAgent\Tool\BackgroundProcessManager::class),
+            static::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService::class),
+            static::getContainer()->get(\Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider::class),
         );
 
         return [$client, $directory];
