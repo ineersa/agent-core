@@ -18,7 +18,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
@@ -26,7 +26,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
-use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
@@ -39,65 +38,13 @@ use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
 
 /**
- * Normalized deferred batch launch and production executeParallel cutover (Piece 4C2).
+ * Deferred single-child launch, durable retries, and failure recovery.
  */
 #[CoversClass(DeferredSubagentBatchLaunchService::class)]
 #[CoversClass(SubagentExecutionService::class)]
 #[Group('db')]
 final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
 {
-    public function testOrderedTwoChildBatchLaunchPreservesParallelModeAndStartOrder(): void
-    {
-        $parentRunId = 'parent-batch-4a-1';
-        $toolCallId = 'call-batch-4a-1';
-        $identityFactory = new DeferredSubagentBatchIdentityFactory();
-        $lifecycleId = $identityFactory->batchLifecycleId($parentRunId, $toolCallId);
-        $childOne = $identityFactory->childIdentity($parentRunId, $toolCallId, 1);
-        $childTwo = $identityFactory->childIdentity($parentRunId, $toolCallId, 2);
-
-        $startOrder = [];
-        $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->exactly(2))->method('start')->willReturnCallback(static function ($input) use (&$startOrder): string {
-            $startOrder[] = $input->runId;
-
-            return $input->runId;
-        });
-
-        $batchLaunch = $this->buildBatchLaunchService($agentRunner, [
-            $this->parallelDefinition('batch-a'),
-            $this->parallelDefinition('batch-b'),
-        ]);
-        $execution = new SubagentExecutionService($batchLaunch);
-
-        $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $execution->executeParallel(
-            $parentRunId,
-            [
-                new SubagentTaskDTO(agent: 'batch-a', task: 'Task A'),
-                new SubagentTaskDTO(agent: 'batch-b', task: 'Task B'),
-            ],
-        ));
-
-        $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
-        $this->assertSame($lifecycleId, $outcome->deferredId);
-
-        /** @var DeferredSubagentBatchRepository $batchRepo */
-        $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
-        $batch = $batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId);
-        $this->assertNotNull($batch);
-        $this->assertSame(ChildRunBatchExecutionModeEnum::Parallel, $batch->executionMode);
-        $this->assertSame(2, $batch->totalChildCount);
-        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batch->launchStatus);
-        $this->assertCount(2, $batch->children);
-        $this->assertSame(1, $batch->children[0]->batchIndex);
-        $this->assertSame(2, $batch->children[1]->batchIndex);
-        $this->assertSame($childOne['childRunId'], $batch->children[0]->childRunId);
-        $this->assertSame($childTwo['childRunId'], $batch->children[1]->childRunId);
-        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Launched, $batch->children[0]->launchStatus);
-        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Launched, $batch->children[1]->launchStatus);
-
-        $this->assertSame([$childOne['childRunId'], $childTwo['childRunId']], $startOrder);
-    }
-
     public function testRetryConvergesOnSameIdentitiesWithoutSecondStartAndRejectsMismatchedIntent(): void
     {
         $parentRunId = 'parent-batch-4a-2';
@@ -109,19 +56,18 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $agentRunner->expects($this->once())->method('start');
 
         $service = $this->buildBatchLaunchService($agentRunner, [
-            $this->parallelDefinition('batch-retry'),
+            $this->definition('batch-retry'),
         ]);
 
-        $tasks = [new SubagentTaskDTO(agent: 'batch-retry', task: 'Same task')];
         $first = $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch(
             $parentRunId,
-            $tasks,
-            ChildRunBatchExecutionModeEnum::Parallel,
+            'batch-retry',
+            'Same task',
         ));
         $second = $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch(
             $parentRunId,
-            $tasks,
-            ChildRunBatchExecutionModeEnum::Parallel,
+            'batch-retry',
+            'Same task',
         ));
 
         $this->assertSame($lifecycleId, $first->deferredId);
@@ -133,144 +79,50 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $this->assertNotNull($batchAfterRetry);
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batchAfterRetry->launchStatus);
 
-        $partialLifecycleId = $identityFactory->batchLifecycleId('parent-batch-4a-partial', 'call-batch-4a-partial');
-        $partialChildOne = $identityFactory->childIdentity('parent-batch-4a-partial', 'call-batch-4a-partial', 1);
-        $partialChildTwo = $identityFactory->childIdentity('parent-batch-4a-partial', 'call-batch-4a-partial', 2);
-        $partialStartedAt = new \DateTimeImmutable('2026-07-13 12:00:00');
-        $batchRepo->reserveBatch(
-            lifecycleId: $partialLifecycleId,
-            parentRunId: 'parent-batch-4a-partial',
-            parentTurnNo: 2,
-            parentToolCallId: 'call-batch-4a-partial',
-            parentOrderIndex: 0,
-            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-            totalChildCount: 2,
-            deadlineAt: new \DateTimeImmutable('2026-07-13 13:00:00'),
-            childIntents: [
-                [
-                    'batchIndex' => 1,
-                    'childRunId' => $partialChildOne['childRunId'],
-                    'artifactId' => $partialChildOne['artifactId'],
-                    'agentName' => 'batch-retry',
-                    'task' => 'Partial one',
-                    'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium',
-                ],
-                [
-                    'batchIndex' => 2,
-                    'childRunId' => $partialChildTwo['childRunId'],
-                    'artifactId' => $partialChildTwo['artifactId'],
-                    'agentName' => 'batch-retry',
-                    'task' => 'Partial two',
-                    'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium',
-                ],
-            ],
-        );
-
-        try {
-            $batchRepo->applyLaunchSuccessState(
-                'parent-batch-4a-partial',
-                'call-batch-4a-partial',
-                $partialLifecycleId,
-                $partialStartedAt,
-                [1],
-            );
-            $this->fail('Expected RuntimeException for incomplete batch launch persistence');
-        } catch (\RuntimeException $e) {
-            $this->assertStringContainsString('left batch Reserved', $e->getMessage());
-        }
-
-        $partialBatch = $batchRepo->findByParentRunAndToolCall('parent-batch-4a-partial', 'call-batch-4a-partial');
-        $this->assertNotNull($partialBatch);
-        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $partialBatch->launchStatus);
-        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Launched, $partialBatch->children[0]->launchStatus);
-        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $partialBatch->children[1]->launchStatus);
-
         $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('does not match the durable reservation');
+        $this->expectExceptionMessage('Deferred invocation reservation does not match its launch intent.');
 
         $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch(
             $parentRunId,
-            [new SubagentTaskDTO(agent: 'batch-retry', task: 'Different task')],
-            ChildRunBatchExecutionModeEnum::Parallel,
+            'batch-retry',
+            'Different task',
         ));
     }
 
-    public function testPartialRuntimeStartFailureCancelsStartedChildOnlyAndBlocksDuplicateRetry(): void
+    public function testRuntimeStartFailureCancelsItsRunningChildAndBlocksDuplicateRetry(): void
     {
-        $parentRunId = 'parent-batch-4a-3';
-        $toolCallId = 'call-batch-4a-3';
-        $identityFactory = new DeferredSubagentBatchIdentityFactory();
-        $lifecycleId = $identityFactory->batchLifecycleId($parentRunId, $toolCallId);
-        $childOne = $identityFactory->childIdentity($parentRunId, $toolCallId, 1);
-        $childTwo = $identityFactory->childIdentity($parentRunId, $toolCallId, 2);
-        $childThree = $identityFactory->childIdentity($parentRunId, $toolCallId, 3);
-
+        $parentRunId = 'parent-batch-runtime-failure';
+        $toolCallId = 'call-batch-runtime-failure';
+        $child = (new DeferredSubagentBatchIdentityFactory())->childIdentity($parentRunId, $toolCallId, 1);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->exactly(2))->method('start')->willReturnCallback(static function ($input) use ($childTwo, $childOne, $parentRunId, $registry): string {
-            if ($input->runId === $childTwo['childRunId']) {
-                // Simulate post-start artifact Running persistence degradation (Pending) for child one.
-                $registry->update($parentRunId, $childOne['artifactId'], AgentArtifactStatusEnum::Pending);
-
-                throw new \RuntimeException('second child start refused');
-            }
-
-            return $input->runId;
+        $agentRunner->expects($this->once())->method('start')->willReturnCallback(static function () use ($registry, $parentRunId, $child): never {
+            $registry->update($parentRunId, $child['artifactId'], AgentArtifactStatusEnum::Running);
+            throw new \RuntimeException('start failed after running transition');
         });
-        $agentRunner->expects($this->once())->method('cancel')->with($childOne['childRunId'], $this->anything());
-
-        $service = $this->buildBatchLaunchService($agentRunner, [
-            $this->parallelDefinition('batch-one'),
-            $this->parallelDefinition('batch-two'),
-            $this->parallelDefinition('batch-three'),
-        ]);
-
+        $agentRunner->expects($this->once())->method('cancel')->with($child['childRunId'], $this->anything());
+        $service = $this->buildBatchLaunchService($agentRunner, [$this->definition('batch-one')]);
         try {
-            $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch(
-                $parentRunId,
-                [
-                    new SubagentTaskDTO(agent: 'batch-one', task: 'One'),
-                    new SubagentTaskDTO(agent: 'batch-two', task: 'Two'),
-                    new SubagentTaskDTO(agent: 'batch-three', task: 'Three'),
-                ],
-                ChildRunBatchExecutionModeEnum::Parallel,
-            ));
+            $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch($parentRunId, 'batch-one', 'One'));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('Subagent batch launch failed', $e->getMessage());
         }
-
-        /** @var DeferredSubagentBatchRepository $batchRepo */
-        $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
-        $batch = $batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($parentRunId, $toolCallId);
         $this->assertNotNull($batch);
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch->launchStatus);
-        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Launched, $batch->children[0]->launchStatus);
-        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $batch->children[1]->launchStatus);
-        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $batch->children[2]->launchStatus);
-
-        $third = $registry->get($parentRunId, $childThree['artifactId']);
-        $this->assertNull($third, 'Never-started child must not leave a Pending artifact reservation after launch abort.');
-
+        $this->assertCount(1, $batch->children);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $batch->children[0]->launchStatus);
+        $this->assertSame(AgentArtifactStatusEnum::Failed, $registry->get($parentRunId, $child['artifactId'])?->status);
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('previously failed');
-
-        $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch(
-            $parentRunId,
-            [
-                new SubagentTaskDTO(agent: 'batch-one', task: 'One'),
-                new SubagentTaskDTO(agent: 'batch-two', task: 'Two'),
-                new SubagentTaskDTO(agent: 'batch-three', task: 'Three'),
-            ],
-            ChildRunBatchExecutionModeEnum::Parallel,
-        ));
+        $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch($parentRunId, 'batch-one', 'One'));
     }
 
-    public function testSingleBatchLaunchUsesForegroundPolicyAndRejectsTwoTasksBeforeReservation(): void
+    public function testSingleInvocationLaunchesExactlyOneChild(): void
     {
         $parentRunId = 'parent-batch-single-4d1';
         $toolCallId = 'call-batch-single-4d1';
-        $otherTool = 'call-batch-single-4d1-other';
         $identityFactory = new DeferredSubagentBatchIdentityFactory();
 
         $foregroundOnly = new AgentDefinitionDTO(
@@ -278,20 +130,11 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             description: 'Foreground only',
             tools: ['read'],
             instructions: 'Test.',
-            parallelAllowed: false,
         );
-        $parallelOnly = new AgentDefinitionDTO(
-            name: 'par-only',
-            description: 'Parallel only',
-            tools: ['read'],
-            instructions: 'Test.',
-            parallelAllowed: true,
-        );
-
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
         $agentRunner->expects($this->once())->method('start')->willReturnCallback(static fn ($input) => $input->runId);
 
-        $batchLaunch = $this->buildBatchLaunchService($agentRunner, [$foregroundOnly, $parallelOnly]);
+        $batchLaunch = $this->buildBatchLaunchService($agentRunner, [$foregroundOnly]);
         $execution = new SubagentExecutionService($batchLaunch);
 
         $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $execution->execute(
@@ -304,26 +147,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $batch = $batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId);
         $this->assertNotNull($batch);
-        $this->assertSame(ChildRunBatchExecutionModeEnum::Single, $batch->executionMode);
-        $this->assertSame(1, $batch->totalChildCount);
         $this->assertCount(1, $batch->children);
-
-        $service = $batchLaunch;
-        try {
-            $this->withToolContext($parentRunId, $otherTool, static fn () => $service->launch(
-                $parentRunId,
-                [
-                    new SubagentTaskDTO(agent: 'fg-only', task: 'A'),
-                    new SubagentTaskDTO(agent: 'fg-only', task: 'B'),
-                ],
-                ChildRunBatchExecutionModeEnum::Single,
-            ));
-            $this->fail('Expected ToolCallException');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('exactly one task', $e->getMessage());
-        }
-
-        $this->assertNull($batchRepo->findByParentRunAndToolCall($parentRunId, $otherTool));
     }
 
     public function testOrdinaryLaunchApiHasNoNullableProfileAndProfiledPathIsRequiredSingleChild(): void
@@ -349,38 +173,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         );
     }
 
-    public function testExecuteParallelHardCapRejectsBeforeReservation(): void
-    {
-        $parentRunId = 'parent-batch-cap';
-        $toolCallId = 'call-batch-cap';
-        $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->never())->method('start');
-
-        $batchLaunch = $this->buildBatchLaunchService($agentRunner, [
-            $this->parallelDefinition('cap-a'),
-            $this->parallelDefinition('cap-b'),
-        ], agentsConfig: new AgentsConfig(maxAgents: 1));
-        $execution = new SubagentExecutionService($batchLaunch);
-
-        try {
-            $this->withToolContext($parentRunId, $toolCallId, static fn () => $execution->executeParallel(
-                $parentRunId,
-                [
-                    new SubagentTaskDTO(agent: 'cap-a', task: 'A'),
-                    new SubagentTaskDTO(agent: 'cap-b', task: 'B'),
-                ],
-            ));
-            $this->fail('Expected ToolCallException');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('at most 1 agents', $e->getMessage());
-        }
-
-        /** @var DeferredSubagentBatchRepository $batchRepo */
-        $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
-        $this->assertNull($batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId));
-    }
-
-    public function testExecuteParallelPreparationFailureLeavesFailedBatchAndNoStarts(): void
+    public function testPreparationFailureLeavesFailedInvocationAndNoStarts(): void
     {
         $parentRunId = 'parent-batch-prep';
         $toolCallId = 'call-batch-prep';
@@ -388,13 +181,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $agentRunner->expects($this->never())->method('start');
         $agentRunner->expects($this->never())->method('cancel');
 
-        $def = static fn (string $name) => new AgentDefinitionDTO(
-            name: $name,
-            description: $name,
-            tools: ['read'],
-            instructions: 'x',
-            parallelAllowed: true,
-        );
         $brokenSecond = new AgentDefinitionDTO(
             name: 'second-agent',
             description: 'second-agent',
@@ -402,25 +188,21 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             extensions: ['MissingExtension'],
             inheritProjectContext: false,
             instructions: 'x',
-            parallelAllowed: true,
         );
 
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $pathResolver = self::getContainer()->get(SessionAgentArtifactPathResolver::class);
         $batchLaunch = $this->buildBatchLaunchService(
             $agentRunner,
-            [$def('first-agent'), $brokenSecond, $def('third-agent')],
+            [$brokenSecond],
         );
         $execution = new SubagentExecutionService($batchLaunch);
 
         try {
-            $this->withToolContext($parentRunId, $toolCallId, static fn () => $execution->executeParallel(
+            $this->withToolContext($parentRunId, $toolCallId, static fn () => $execution->execute(
                 $parentRunId,
-                [
-                    new SubagentTaskDTO(agent: 'first-agent', task: 'ok'),
-                    new SubagentTaskDTO(agent: 'second-agent', task: 'boom'),
-                    new SubagentTaskDTO(agent: 'third-agent', task: 'never'),
-                ],
+                'second-agent',
+                'boom',
             ));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
@@ -433,20 +215,16 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $batch = $batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId);
         $this->assertNotNull($batch);
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch->launchStatus);
-        $this->assertCount(3, $batch->children);
+        $this->assertCount(1, $batch->children);
         foreach ($batch->children as $child) {
             $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $child->launchStatus);
         }
 
         $entries = $registry->list($parentRunId);
-        $this->assertCount(2, $entries);
+        $this->assertCount(1, $entries);
         foreach ($entries as $entry) {
             $this->assertSame(AgentArtifactStatusEnum::Failed, $entry->status);
         }
-
-        $thirdChild = $batch->children[2];
-        $this->assertNull($registry->get($parentRunId, $thirdChild->artifactId));
-        $this->assertDirectoryDoesNotExist($pathResolver->resolveArtifactDir($parentRunId, $thirdChild->artifactId));
     }
 
     public function testLaunchSkipsPrepareAndStartWhenInterruptionIntentAlreadyPersisted(): void
@@ -464,13 +242,8 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             parentTurnNo: 2,
             parentToolCallId: $toolCallId,
             parentOrderIndex: 0,
-            executionMode: ChildRunBatchExecutionModeEnum::Single,
-            totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
-            childIntents: [
-                // Match withToolContext parentModel so reserveBatch re-entry accepts the intents.
-                ['batchIndex' => 1, 'childRunId' => $child['childRunId'], 'artifactId' => $child['artifactId'], 'agentName' => 'batch-a', 'task' => 'Late start', 'launchModel' => 'test-model', 'launchReasoning' => 'medium'],
-            ],
+            childIntent: new DeferredSubagentBatchChildIntentDTO(1, $child['childRunId'], $child['artifactId'], 'batch-a', 'Late start', 'test-model', 'medium'),
         );
         $row = $repo->findEntityByLifecycleId($lifecycleId);
         $this->assertNotNull($row);
@@ -485,11 +258,11 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $agentRunner->expects($this->never())->method('start');
         $agentRunner->expects($this->never())->method('cancel');
 
-        $service = $this->buildBatchLaunchService($agentRunner, [$this->parallelDefinition('batch-a')]);
+        $service = $this->buildBatchLaunchService($agentRunner, [$this->definition('batch-a')]);
         $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch(
             $parentRunId,
-            [new SubagentTaskDTO(agent: 'batch-a', task: 'Late start')],
-            ChildRunBatchExecutionModeEnum::Single,
+            'batch-a',
+            'Late start',
         ));
 
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
@@ -505,7 +278,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $batch->launchStatus);
     }
 
-    public function testInsertReservedChildrenRebindsExistingTerminalChildOntoNewBatch(): void
+    public function testInsertReservedChildRebindsExistingTerminalChildOntoNewInvocation(): void
     {
         $childRunId = 'child-resume-rebind-01';
         $oldBatchLifecycleId = 'batch-old-resume-rebind-01';
@@ -553,16 +326,8 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
 
         /** @var DeferredSubagentChildRepository $childRepo */
         $childRepo = self::getContainer()->get(DeferredSubagentChildRepository::class);
-        $intent = [
-            'batchIndex' => 1,
-            'childRunId' => $childRunId,
-            'artifactId' => $newArtifactId,
-            'agentName' => 'scout',
-            'task' => 'continue after handoff',
-            'launchModel' => 'new/model',
-            'launchReasoning' => 'high',
-        ];
-        $childRepo->insertReservedChildren($newBatchLifecycleId, [$intent]);
+        $intent = new DeferredSubagentBatchChildIntentDTO(1, $childRunId, $newArtifactId, 'scout', 'continue after handoff', 'new/model', 'high');
+        $childRepo->insertReservedChild($newBatchLifecycleId, $intent);
         $em->clear();
 
         $rebound = $childRepo->findByChildRunId($childRunId);
@@ -588,7 +353,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $this->assertSame('high', $projection->reasoning);
 
         // Second reserve against the same new batch/index converges without another unique conflict.
-        $childRepo->insertReservedChildren($newBatchLifecycleId, [$intent]);
+        $childRepo->insertReservedChild($newBatchLifecycleId, $intent);
         $em->clear();
         $again = $childRepo->findByChildRunId($childRunId);
         $this->assertNotNull($again);
@@ -664,14 +429,13 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         );
     }
 
-    private function parallelDefinition(string $name): AgentDefinitionDTO
+    private function definition(string $name): AgentDefinitionDTO
     {
         return new AgentDefinitionDTO(
             name: $name,
             description: 'Parallel worker',
             tools: ['read'],
             instructions: 'Test.',
-            parallelAllowed: true,
         );
     }
 

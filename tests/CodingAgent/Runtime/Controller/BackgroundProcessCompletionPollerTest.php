@@ -736,8 +736,9 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
 
         $selects = array_filter($logger->records, static fn (array $record): bool => str_starts_with($record['context']['sql'] ?? '', 'SELECT'));
-        $this->assertCount(1, $selects, 'Empty historical children must not add process SELECTs.');
-        $this->assertStringContainsString('background_process', array_values($selects)[0]['context']['sql']);
+        $this->assertCount(2, $selects, 'Historical children must not add per-child SELECTs.');
+        $this->assertCount(1, array_filter($selects, static fn (array $record): bool => str_contains($record['context']['sql'], 'FROM background_process ')));
+        $this->assertCount(1, array_filter($selects, static fn (array $record): bool => str_contains($record['context']['sql'], 'FROM background_completion_receipt ')));
         $this->assertSame([], $this->sentCommands);
     }
 

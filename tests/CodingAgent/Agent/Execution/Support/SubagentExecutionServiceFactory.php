@@ -43,7 +43,7 @@ final class SubagentExecutionServiceFactory
             'childRunDirectory' => null,
             'contextAccessor' => null,
             'logger' => null,
-            'agentsConfig' => new AgentsConfig(maxAgents: 8),
+            'agentsConfig' => new AgentsConfig(),
             'appConfig' => null,
             'modelResolver' => null,
             'batchRepository' => null,
@@ -97,10 +97,8 @@ final class SubagentExecutionServiceFactory
         );
         $lifecyclePolicy = new ChildRunBatchLifecyclePolicyDTO(
             parentCancelSingleReason: 'Parent run cancelled subagent tool.',
-            parentCancelParallelReason: 'Parent run cancelled parallel subagent tool.',
             singleTimeoutCancelReason: 'Subagent timed out.',
-            parallelTimeoutCancelReason: 'Parallel subagent timed out.',
-            launchAbortSiblingCancelReason: 'Parallel subagent launch aborted after sibling failure.',
+            launchAbortCancelReason: 'Subagent launch aborted.',
         );
 
         $batchLaunchService = new ChildRunBatchLaunchService(

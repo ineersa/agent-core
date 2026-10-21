@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\Support;
 
-use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider;
-use Ineersa\CodingAgent\Tool\Schema\SubagentTasksSchemaProvider;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Symfony\AI\Agent\Toolbox\MapToolArgumentsDescriber;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
@@ -71,7 +69,6 @@ final class NativeToolSchemaProbe
             new ValidatorConstraintsDescriber(),
             new SchemaAttributeDescriber([
                 BashTimeoutSchemaProvider::class => new BashTimeoutSchemaProvider(new BashToolConfig()),
-                SubagentTasksSchemaProvider::class => new SubagentTasksSchemaProvider(new AgentsConfig()),
             ]),
         ])));
     }
