@@ -623,7 +623,13 @@ final readonly class RunHistoryIndex
                                 && false !== $db->fetchOne('SELECT seq FROM event_location WHERE turn_no = ? LIMIT 1', [$newTurn]));
                         }
                         $this->indexRecord($db, $record, $location['offset'], $location['length'], $selected, $tip);
-                        $navigation = \in_array($record['type'], ['history_position_set', 'history_tail_discarded'], true);
+                        // Advances already move the presentation position. Their
+                        // confirmation markers do not invalidate it, but a real
+                        // selection can suppress seeds even at the same position.
+                        $navigation = 'history_tail_discarded' === $record['type']
+                            || ('history_position_set' === $record['type']
+                                && ('history_select' === ($record['payload']['reason'] ?? null)
+                                    || (int) ($record['payload']['position_turn_no'] ?? $record['turn_no']) !== $position));
                         if ($navigation) {
                             $navigationPending = true;
                             $rebuildPresentation = true;

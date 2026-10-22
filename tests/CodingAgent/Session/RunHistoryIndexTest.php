@@ -576,11 +576,11 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('summaryTerminals')]
-    public function testFirstSummaryAndOrdinaryPublicationUseOnlyBoundedPhysicalWork(string $reason): void
+    public function testFirstSummaryAndOrdinaryPublicationUseOnlyBoundedPhysicalWork(string $reason, string $advanceReason): void
     {
         $this->path = \dirname($this->path).'/artifacts/agents/long-child/events.jsonl';
         (new Filesystem())->mkdir(\dirname($this->path));
-        $events = [RunEvent::forAppend('indexed', 0, 'run_started', ['payload' => ['messages' => [$this->presentationMessage('user', 'Initial')]]]), RunEvent::forAppend('indexed', 1, 'turn_advanced', ['turn_no' => 1])];
+        $events = [RunEvent::forAppend('indexed', 0, 'run_started', ['payload' => ['messages' => [$this->presentationMessage('user', 'Initial')]]]), RunEvent::forAppend('indexed', 1, 'turn_advanced', ['turn_no' => 1]), RunEvent::forAppend('indexed', 1, 'history_position_set', ['position_turn_no' => 1, 'previous_position_turn_no' => null, 'reason' => 'continue'])];
         for ($i = 0; $i < 512; ++$i) {
             $events[] = RunEvent::forAppend('indexed', 1, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Answer '.$i.' '.str_repeat('x', 8192))]);
         }
@@ -598,20 +598,38 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $this->assertSame(0, $this->readLines('index_cold_rebuild'));
         $this->assertSame(1, $this->readLines('index_boundary_validation'));
         $this->assertSame(513, $first->messageCount);
-        $this->assertSame(515, $first->eventCount);
+        $this->assertSame(516, $first->eventCount);
         $this->assertSame('failed' === $reason ? \Ineersa\AgentCore\Domain\Run\RunStatus::Failed : \Ineersa\AgentCore\Domain\Run\RunStatus::Cancelled, $first->status);
         $start = hrtime(true);
         $this->assertSummaryParity($reader);
         $canonicalMs = (hrtime(true) - $start) / 1_000_000;
         $this->logger->records = [];
         $publication = [];
+        $suffixRecords = 0;
         for ($i = 0; $i < 16; ++$i) {
-            $start = hrtime(true);
             $turn = $i + 2;
-            $this->publish([RunEvent::forAppend('indexed', $turn, 'turn_advanced', ['turn_no' => $turn]), RunEvent::forAppend('indexed', $turn, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Suffix '.$i)])]);
-            $publication[] = (hrtime(true) - $start) / 1_000_000;
+            $advance = [RunEvent::forAppend('indexed', $turn, 'turn_advanced', ['turn_no' => $turn]), RunEvent::forAppend('indexed', $turn, 'history_position_set', ['position_turn_no' => $turn, 'previous_position_turn_no' => $turn - 1, 'reason' => $advanceReason])];
+            $completion = [RunEvent::forAppend('indexed', $turn, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Suffix '.$i)])];
+            if ('shell_command' === $advanceReason) {
+                $key = 'shell-'.$i;
+                $id = 'sh_'.hash('sha256', $key);
+                // ApplyShellCommandHandler seeds on the previous turn, then
+                // publishes advance, confirmation and start in one transition.
+                array_unshift($advance, RunEvent::forAppend('indexed', $turn - 1, 'agent_command_applied', ['kind' => 'shell_command', 'idempotency_key' => $key, 'text' => '!printf suffix', 'standalone' => true, 'current_operation' => ['turn_no' => $turn, 'step_id' => $key, 'attempt' => 1, 'idempotency_key' => $key]]));
+                $advance[] = RunEvent::forAppend('indexed', $turn, 'tool_execution_start', ['tool_call_id' => $id, 'tool_name' => 'bash', 'order_index' => 0, 'attempt' => 1, 'arguments' => ['command' => 'printf suffix']]);
+                $codec = static::getContainer()->get(ToolExecutionEndPayloadCodec::class);
+                $completion = [RunEvent::forAppend('indexed', $turn, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult('indexed', $turn, $key, 1, $key, $id, 0, ['tool_name' => 'bash', 'output' => 'suffix']))), RunEvent::forAppend('indexed', $turn, 'agent_end', ['reason' => 'completed'])];
+            }
+            foreach ([$advance, $completion] as $transition) {
+                $start = hrtime(true);
+                $this->publish($transition);
+                $publication[] = (hrtime(true) - $start) / 1_000_000;
+                $suffixRecords += \count($transition);
+                $this->assertSummaryParity($reader);
+            }
         }
-        $this->assertSame(32, $this->readLines('index_suffix_catch_up'));
+        fwrite(\STDERR, 'production presentation publication: '.json_encode(['reason' => $reason, 'advance_reason' => $advanceReason, 'archive_bytes' => filesize($this->path), 'initial_publication_ms' => $initialMs, 'first_summary_ms' => $summaryMs, 'canonical_parity_ms' => $canonicalMs, 'transition_publication_ms' => $publication, 'suffix_records' => $suffixRecords, 'presentation_rebuild_lines' => $this->readLines('index_presentation_rebuild'), 'presentation_rebuild_bytes' => $this->readBytes('index_presentation_rebuild')], \JSON_THROW_ON_ERROR)."\n");
+        $this->assertSame($suffixRecords, $this->readLines('index_suffix_catch_up'));
         $this->assertSame(0, $this->readLines('index_presentation_rebuild'));
         $this->assertSame(0, $this->readLines('index_cold_rebuild'));
         $this->assertSummaryParity($reader);
@@ -623,13 +641,50 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         } finally {
             $db->close();
         }
-        fwrite(\STDERR, 'presentation publication: '.json_encode(['reason' => $reason, 'archive_bytes' => filesize($this->path), 'initial_publication_ms' => $initialMs, 'first_summary_ms' => $summaryMs, 'canonical_parity_ms' => $canonicalMs, 'ordinary_publication_ms' => $publication, 'snapshot_bytes' => $stateBytes], \JSON_THROW_ON_ERROR)."\n");
     }
 
     public static function summaryTerminals(): iterable
     {
-        yield 'failed' => ['failed'];
-        yield 'cancelled' => ['cancelled'];
+        foreach (['failed', 'cancelled'] as $terminal) {
+            foreach (['continue', 'shell_command'] as $advance) {
+                yield $terminal.'_'.$advance => [$terminal, $advance];
+            }
+        }
+    }
+
+    public function testActualNavigationStillRebuildsAndInvalidatesFollowingAdvance(): void
+    {
+        $reader = $this->presentationReader();
+        $this->publish([RunEvent::forAppend('indexed', 0, 'run_started'), RunEvent::forAppend('indexed', 1, 'turn_advanced', ['turn_no' => 1]), RunEvent::forAppend('indexed', 1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'continue']), RunEvent::forAppend('indexed', 1, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Retained')]), RunEvent::forAppend('indexed', 2, 'turn_advanced', ['turn_no' => 2]), RunEvent::forAppend('indexed', 2, 'history_position_set', ['position_turn_no' => 2, 'reason' => 'continue']), RunEvent::forAppend('indexed', 2, 'agent_end', ['reason' => 'completed']), RunEvent::forAppend('indexed', 2, 'agent_command_applied', ['kind' => 'follow_up', 'message' => $this->presentationMessage('user', 'Restored seed')])]);
+        $cases = [
+            'same-position selection' => [true, true, [[2, 'history_position_set', ['position_turn_no' => 2, 'reason' => 'history_select']]]],
+            'confirmation preserves pending navigation' => [false, true, [[2, 'history_position_set', ['position_turn_no' => 2, 'reason' => 'shell_command']]]],
+            'advance restores suppressed seed' => [true, false, [[3, 'turn_advanced', ['turn_no' => 3]], [3, 'history_position_set', ['position_turn_no' => 3, 'reason' => 'continue']]]],
+            'subsequent ordinary advance' => [false, false, [[4, 'turn_advanced', ['turn_no' => 4]], [4, 'history_position_set', ['position_turn_no' => 4, 'reason' => 'continue']]]],
+            'continue marker actually changes selection' => [true, true, [[1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'continue']]]],
+            'same-position discard' => [true, true, [[1, 'history_tail_discarded', ['after_turn_no' => 1]]]],
+            'advance after changed selection' => [true, false, [[5, 'turn_advanced', ['turn_no' => 5]], [5, 'history_position_set', ['position_turn_no' => 5, 'reason' => 'continue']]]],
+            'discard' => [true, true, [[1, 'history_tail_discarded', ['after_turn_no' => 1]]]],
+            'displayed turn reintroduction' => [true, false, [[2, 'turn_advanced', ['turn_no' => 2]], [2, 'history_position_set', ['position_turn_no' => 2, 'reason' => 'continue']]]],
+        ];
+        foreach ($cases as $label => [$rebuild, $pending, $specs]) {
+            $this->logger->records = [];
+            $this->publish(array_map(static fn (array $spec): RunEvent => RunEvent::forAppend('indexed', ...$spec), $specs));
+            $this->assertSame($rebuild, $this->readLines('index_presentation_rebuild') > 0, $label);
+            $this->assertSummaryParity($reader);
+            $db = $this->db();
+            try {
+                $state = json_decode($db->fetchOne('SELECT state_json FROM presentation_state'), true, flags: \JSON_THROW_ON_ERROR);
+                $this->assertSame($pending, $state['navigation_pending'], $label);
+            } finally {
+                $db->close();
+            }
+            if ('same-position selection' === $label) {
+                $this->assertSame(1, $reader->read('indexed', 0, 800)->messageCount);
+            } elseif ('advance restores suppressed seed' === $label) {
+                $this->assertSame(2, $reader->read('indexed', 0, 800)->messageCount);
+            }
+        }
     }
 
     public function testSummarySurvivesNavigationCompactionRefreshAndRetroactiveSeedMapping(): void

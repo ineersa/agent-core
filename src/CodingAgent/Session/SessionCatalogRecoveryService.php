@@ -27,9 +27,25 @@ use function Symfony\Component\String\u;
  * ON CONFLICT(id) DO NOTHING on the primary key. Malformed event logs are skipped
  * with privacy-safe diagnostics (no raw prompt/event/tool content). DB/storage
  * infrastructure failures propagate to StartupDatabaseMigrator.
+ *
+ * @phpstan-type RecoveredMetadata array{
+ *     cwd: string,
+ *     prompt: ?string,
+ *     parent_id: ?string,
+ *     model: ?string,
+ *     model_provider: ?string,
+ *     model_name: ?string,
+ *     reasoning: ?string,
+ *     name: string,
+ *     provider_cache_key: string,
+ *     created_at: \DateTimeImmutable,
+ *     updated_at: \DateTimeImmutable
+ * }
  */
 final class SessionCatalogRecoveryService
 {
+    private const int MAX_RECOVERED_PAYLOAD_BYTES = 1_048_576;
+
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly HatfieldSessionStore $sessionStore,
@@ -88,6 +104,7 @@ final class SessionCatalogRecoveryService
                 [ArrayParameterType::INTEGER],
             ), true);
             $recovered = [];
+            $payloadBytes = 0;
             foreach ($chunk as $sessionId) {
                 if (isset($existing[(int) $sessionId])) {
                     continue;
@@ -96,7 +113,7 @@ final class SessionCatalogRecoveryService
                 // Corrupt orphan history degrades locally. Database failures must
                 // still propagate, and canonical reads stay outside write transactions.
                 try {
-                    $recovered[$sessionId] = $this->deriveMetadata($this->eventStore->rangeFor($sessionId, 1, \PHP_INT_MAX));
+                    $meta = $this->deriveMetadata($this->eventStore->rangeFor($sessionId, 1, \PHP_INT_MAX));
                 } catch (\Throwable $e) {
                     $this->logger->warning('session_catalog_recovery.orphan_skipped', [
                         'component' => 'session_catalog_recovery',
@@ -106,28 +123,56 @@ final class SessionCatalogRecoveryService
                         'exception_class' => $e::class,
                         'reason' => 'unrecoverable_orphan',
                     ]);
-                }
-            }
-            if ([] !== $recovered) {
-                $inserted = $this->connection->transactional(function () use ($recovered): array {
-                    $ids = [];
-                    foreach ($recovered as $sessionId => $meta) {
-                        if ($this->insertRecoveredRow((int) $sessionId, $meta)) {
-                            $ids[] = (string) $sessionId;
-                        }
-                    }
 
-                    return $ids;
-                });
-                foreach ($inserted as $sessionId) {
-                    $this->logger->info('session_catalog_recovery.recovered', [
-                        'component' => 'session_catalog_recovery',
-                        'event_type' => 'session_catalog_recovery.recovered',
-                        'session_id' => $sessionId,
-                        'run_id' => $sessionId,
-                    ]);
+                    continue;
+                }
+
+                $metaBytes = array_sum(array_map(static fn (mixed $value): int => \is_string($value) ? \strlen($value) : 0, $meta));
+                if ($payloadBytes + $metaBytes > self::MAX_RECOVERED_PAYLOAD_BYTES) {
+                    $this->flushRecoveredRows($recovered);
+                    $recovered = [];
+                    $payloadBytes = 0;
+                }
+                $recovered[(int) $sessionId] = $meta;
+                $payloadBytes += $metaBytes;
+                unset($meta);
+                // Keep an oversized prompt intact, but flush it alone before
+                // reading another orphan. Earlier successful batches stay committed
+                // if a later canonical read or database write fails.
+                if ($payloadBytes >= self::MAX_RECOVERED_PAYLOAD_BYTES) {
+                    $this->flushRecoveredRows($recovered);
+                    $recovered = [];
+                    $payloadBytes = 0;
                 }
             }
+            $this->flushRecoveredRows($recovered);
+        }
+    }
+
+    /** @param array<int, RecoveredMetadata> $recovered */
+    private function flushRecoveredRows(array $recovered): void
+    {
+        if ([] === $recovered) {
+            return;
+        }
+
+        $inserted = $this->connection->transactional(function () use ($recovered): array {
+            $ids = [];
+            foreach ($recovered as $sessionId => $meta) {
+                if ($this->insertRecoveredRow($sessionId, $meta)) {
+                    $ids[] = (string) $sessionId;
+                }
+            }
+
+            return $ids;
+        });
+        foreach ($inserted as $sessionId) {
+            $this->logger->info('session_catalog_recovery.recovered', [
+                'component' => 'session_catalog_recovery',
+                'event_type' => 'session_catalog_recovery.recovered',
+                'session_id' => $sessionId,
+                'run_id' => $sessionId,
+            ]);
         }
     }
 
@@ -150,21 +195,7 @@ final class SessionCatalogRecoveryService
         return (string) $asInt === $entry;
     }
 
-    /**
-     * @param array{
-     *     cwd: string,
-     *     prompt: ?string,
-     *     parent_id: ?string,
-     *     model: ?string,
-     *     model_provider: ?string,
-     *     model_name: ?string,
-     *     reasoning: ?string,
-     *     name: string,
-     *     provider_cache_key: string,
-     *     created_at: \DateTimeImmutable,
-     *     updated_at: \DateTimeImmutable
-     * } $meta
-     */
+    /** @param RecoveredMetadata $meta */
     private function insertRecoveredRow(int $id, array $meta): bool
     {
         // Explicit ID insert; ON CONFLICT(id) ignores only concurrent PK races.
@@ -199,19 +230,7 @@ final class SessionCatalogRecoveryService
     /**
      * @param iterable<RunEvent> $events
      *
-     * @return array{
-     *     cwd: string,
-     *     prompt: ?string,
-     *     parent_id: ?string,
-     *     model: ?string,
-     *     model_provider: ?string,
-     *     model_name: ?string,
-     *     reasoning: ?string,
-     *     name: string,
-     *     provider_cache_key: string,
-     *     created_at: \DateTimeImmutable,
-     *     updated_at: \DateTimeImmutable
-     * }
+     * @return RecoveredMetadata
      */
     private function deriveMetadata(iterable $events): array
     {
