@@ -39,6 +39,7 @@ use Ineersa\CodingAgent\Session\RunHistorySourceDTO;
 use Ineersa\CodingAgent\Session\SessionToolPayloadStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Filesystem\Filesystem;
@@ -64,7 +65,7 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         parent::setUp();
         $container = self::getContainer();
         $this->logger = new TestLogger();
-        $this->log = new JsonlRunEventLog($container->get(EventPayloadNormalizer::class), $container->get(LockFactory::class), $container->get(RunSequenceAllocatorInterface::class), new EventLogMaxSeqBootstrapReader(), $this->logger);
+        $this->log = new JsonlRunEventLog($container->get(EventPayloadNormalizer::class), $container->get(LockFactory::class), $container->get(RunSequenceAllocatorInterface::class), new EventLogMaxSeqBootstrapReader(), $this->logger, presentations: HistoryEventStoreFactory::presentationFactory());
         $this->path = getcwd().'/.hatfield/sessions/indexed/events.jsonl';
         $container->get(Filesystem::class)->mkdir(\dirname($this->path));
         $sources = $this->createStub(RunHistorySourceProviderInterface::class);

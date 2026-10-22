@@ -8,6 +8,8 @@ use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Kernel;
+use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use PHPUnit\Framework\Attributes\Test;
@@ -91,6 +93,41 @@ final class ProcessStoreFreshnessTest extends IsolatedKernelTestCase
         );
         $this->assertIsArray($row);
         $this->assertSame('2026-09-16 12:02:00', $row['completion_notified_at']);
+    }
+
+    #[Test]
+    #[TestWith([400])]
+    #[TestWith([401])]
+    public function deletesBoundedGroupsAndObservesAlreadyDeletedManagedRows(int $count): void
+    {
+        $first = $this->store->insertRecord([
+            'pid' => 4242, 'session_id' => 'cleanup-batch', 'command' => 'fixture',
+            'log_path' => '/not-used.log', 'status_path' => '/not-used.status',
+            'started_at' => new \DateTimeImmutable('2026-09-16 12:00:00'),
+        ]);
+        $template = $this->connection->fetchAssociative('SELECT * FROM background_process WHERE id = ?', [$first]);
+        $this->assertIsArray($template);
+        unset($template['id']);
+        $ids = [$first];
+        for ($i = 1; $i < $count; ++$i) {
+            $this->connection->insert('background_process', $template);
+            $ids[] = (int) $this->connection->lastInsertId();
+        }
+        $stale = $this->store->fetchByRecordId($first);
+        $removed = $this->store->fetchByRecordId($ids[1]);
+        $this->assertNotNull($stale);
+        $this->assertNotNull($removed);
+        $this->connection->delete('background_process', ['id' => $first]);
+        $sql = self::getContainer()->get('test.sql_logger');
+        $sql->records = [];
+
+        $this->assertSame($count - 1, $this->store->deleteByIds([...$ids, $first]));
+        $selects = array_filter($sql->records, static fn (array $row): bool => str_starts_with($row['context']['sql'] ?? '', 'SELECT') && str_contains($row['context']['sql'], 'background_process'));
+        $this->assertCount((int) ceil($count / 400), $selects);
+        $this->assertFalse($this->entityManager->contains($removed), 'ORM deletion must detach removed identities.');
+        $this->assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM background_process'));
+        $this->assertSame(0, $this->store->deleteByIds([]));
+        $this->assertSame(0, $this->store->deleteByIds([999999]));
     }
 
     #[Test]
@@ -209,5 +246,10 @@ final class ProcessStoreFreshnessTest extends IsolatedKernelTestCase
 
         $this->assertFalse($this->store->deleteById($recordId));
         $this->assertTrue($this->entityManager->contains($entity));
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new SqlLoggingKernel('test', false);
     }
 }

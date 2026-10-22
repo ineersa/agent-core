@@ -49,6 +49,7 @@ use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\DTO\AgentResumeArgumentsDTO;
@@ -583,7 +584,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             self::getContainer()->get(LockFactory::class),
             $readLog,
             self::getContainer()->get(RunSequenceAllocatorInterface::class),
-        );
+            presentations: HistoryEventStoreFactory::presentationFactory());
         $store = $factory->create($parent, $child, $artifact);
         $history = [];
         for ($turn = 1; $turn <= 100; ++$turn) {

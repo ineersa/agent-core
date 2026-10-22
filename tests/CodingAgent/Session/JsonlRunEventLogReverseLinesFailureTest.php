@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
 use Ineersa\CodingAgent\Session\JsonlAppendJournal;
 use Ineersa\CodingAgent\Session\JsonlPhysicalReadObservation;
 use Ineersa\CodingAgent\Session\JsonlRunEventLog;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -300,7 +301,7 @@ final class JsonlRunEventLogReverseLinesFailureTest extends TestCase
             $this->createStub(RunSequenceAllocatorInterface::class),
             new EventLogMaxSeqBootstrapReader(),
             new \Psr\Log\NullLogger(),
-        );
+            presentations: HistoryEventStoreFactory::presentationFactory());
     }
 
     private function path(string $mode): string

@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
+use Ineersa\CodingAgent\Session\History\RunPresentationProjectorFactory;
 use Ineersa\CodingAgent\Session\JsonlPhysicalReadObservation;
 use Ineersa\CodingAgent\Session\JsonlRunEventLog;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
@@ -56,11 +57,12 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
         private readonly string $parentRunId,
         private readonly string $agentRunId,
         private readonly string $artifactId,
+        RunPresentationProjectorFactory $presentations,
         EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
     ) {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
-        $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader, $logger);
+        $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader, $logger, $presentations);
     }
 
     /**

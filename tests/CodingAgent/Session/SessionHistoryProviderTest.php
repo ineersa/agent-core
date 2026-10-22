@@ -42,6 +42,7 @@ use Ineersa\CodingAgent\Session\SessionHistoryProvider;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTNativeReplayFixture;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthStorageInterface;
@@ -95,7 +96,7 @@ final class SessionHistoryProviderTest extends PerMethodIsolatedKernelTestCase
         // Discard both the event-store instance and ORM identity map. Nothing from the streamed result feeds the next request.
         $em->clear();
         $sessions = new HatfieldSessionStore($container->get(AppConfig::class), $em, new EventDispatcher());
-        $cold = new SessionRunEventStore($sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new LockFactory(new FlockStore()), new NullLogger(), new FileRunSequenceAllocator());
+        $cold = new SessionRunEventStore($sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new LockFactory(new FlockStore()), new NullLogger(), new FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
         $history = (new SessionHistoryProvider($cold, $container->get(RunHistoryIndex::class)))->forSession($runId);
         $this->assertSame('Read both fixtures', $history->entries[0]->text);
         $coordinator = $container->get(SessionReplayCoordinator::class);

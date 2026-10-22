@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator;
+use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Filesystem\Filesystem;
@@ -45,6 +49,32 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
         $this->assertFileExists(\dirname($this->path).'/history-index.sqlite');
     }
 
+    public function testPendingSnapshotUsesOneMailboxReadForLongHistoryAndMissingIndex(): void
+    {
+        $this->write(1, 0, 'run_started', ['payload' => ['messages' => [$this->message('root')]]]);
+        for ($i = 0; $i < 256; ++$i) {
+            $this->write(2 + 2 * $i, 0, 'agent_command_queued', ['kind' => 'steer', 'idempotency_key' => 'reused', 'text' => 'Old text '.$i]);
+            $this->write(3 + 2 * $i, 0, 'agent_command_rejected', ['kind' => 'steer', 'idempotency_key' => 'reused', 'reason' => 'settled']);
+        }
+        $this->write(514, 0, 'agent_command_queued', ['kind' => 'steer', 'idempotency_key' => 'reused', 'text' => 'Current text']);
+        self::getContainer()->get(CommandStoreInterface::class)->enqueue(new PendingCommand($this->runId, 'steer', 'reused', ['text' => 'Current text']));
+        $sql = self::getContainer()->get('test.sql_logger');
+        foreach (['cold', 'missing', 'corrupt'] as $indexState) {
+            if ('cold' !== $indexState) {
+                (new Filesystem())->remove(\dirname($this->path).'/history-index.sqlite');
+            }
+            if ('corrupt' === $indexState) {
+                file_put_contents(\dirname($this->path).'/history-index.sqlite', 'not a SQLite database');
+            }
+            $sql->records = [];
+            $result = $this->coordinator->reconstruct(RunState::queued($this->runId), withTranscript: true);
+            $this->assertSame(['reused' => 'Current text'], $result?->resume['queued_messages']);
+            $reads = array_filter($sql->records, static fn (array $row): bool => str_starts_with($row['context']['sql'] ?? '', 'SELECT') && str_contains($row['context']['sql'], 'run_command'));
+            $this->assertCount(1, $reads, 'Mailbox reads must depend on current pending work, not 257 queue events.');
+            $this->assertStringNotContainsString('payload', array_values($reads)[0]['context']['sql']);
+        }
+    }
+
     public function testReusedPendingKeyNeverRetainsHistoricalTextAndStateOnlyReplayCollectsNone(): void
     {
         $this->write(1, 0, 'run_started', ['payload' => ['messages' => [$this->message('question')]]]);
@@ -52,8 +82,8 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
         $this->write(5, 1, 'agent_command_queued', ['kind' => 'steer', 'idempotency_key' => 'current', 'text' => str_repeat('x', 5 * 1024 * 1024)]);
         $this->write(7, 1, 'agent_command_rejected', ['kind' => 'steer', 'idempotency_key' => 'current', 'reason' => 'settled']);
         $this->write(9, 1, 'agent_command_queued', ['kind' => 'steer', 'idempotency_key' => 'current', 'text' => 'Still pending']);
-        static::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class)->enqueue(
-            new \Ineersa\AgentCore\Domain\Command\PendingCommand($this->runId, 'steer', 'current', ['text' => 'Still pending']),
+        static::getContainer()->get(CommandStoreInterface::class)->enqueue(
+            new PendingCommand($this->runId, 'steer', 'current', ['text' => 'Still pending']),
         );
         $display = $this->coordinator->reconstruct(RunState::queued($this->runId), withTranscript: true);
         $this->assertSame(['current' => 'Still pending'], $display?->resume['queued_messages']);
@@ -312,6 +342,11 @@ final class SessionReplayCoordinatorTest extends IsolatedKernelTestCase
         } finally {
             TestDirectoryIsolation::removeDirectory($directory);
         }
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new SqlLoggingKernel('test', false);
     }
 
     /** @return array<string, mixed> */

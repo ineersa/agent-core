@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -474,7 +475,7 @@ final class SessionRunEventStoreTest extends TestCase
             foreach ([$production, $wholeFile, $stream] as $payload) {
                 $this->assertSame(1800, $payload['decoded_count']);
                 $this->assertSame($prepare['archive_bytes'], $payload['archive_bytes']);
-                $this->assertSame($prepare['archive_bytes'] * ('range-stream' === $payload['mode'] ? 2 : 1), $payload['archive_bytes_read']);
+                $this->assertSame($prepare['archive_bytes'] * ('range-stream' === $payload['mode'] ? 2 : 1) + $payload['presentation_bytes_read'], $payload['archive_bytes_read']);
                 $this->assertTrue($payload['full_scan']);
                 $this->assertFalse($payload['early_exit']);
                 $this->assertLessThan(134217728, $payload['peak_after_bytes']);
@@ -555,7 +556,7 @@ final class SessionRunEventStoreTest extends TestCase
             lockFactory: new LockFactory(new FlockStore()),
             logger: $logger ?? new NullLogger(),
             sequenceAllocator: new FileRunSequenceAllocator(),
-        );
+            presentations: HistoryEventStoreFactory::presentationFactory());
     }
 
     private function rmDir(string $dir): void

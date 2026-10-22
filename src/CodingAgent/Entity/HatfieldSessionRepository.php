@@ -64,4 +64,21 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
             ->getQuery()
             ->getSingleScalarResult();
     }
+
+    /** @return list<array{session_id: string, name: string, prompt: ?string}> */
+    public function findForCompletion(string $prefix, int $limit): array
+    {
+        if ($limit < 1 || ('' !== $prefix && !ctype_digit($prefix))) {
+            return [];
+        }
+
+        return $this->getEntityManager()->getConnection()->createQueryBuilder()
+            ->select('CAST(id AS TEXT) AS session_id', 'name', "CASE WHEN name = '' THEN prompt ELSE NULL END AS prompt")
+            ->from('hatfield_session')
+            ->where('CAST(id AS TEXT) LIKE :prefix')
+            ->setParameter('prefix', $prefix.'%')
+            ->orderBy('updated_at', 'DESC')
+            ->setMaxResults($limit)
+            ->executeQuery()->fetchAllAssociative();
+    }
 }

@@ -473,9 +473,11 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     }
 
     /**
-     * @return list<DeferredSubagentBatchProjectionDTO>
+     * Headers only: startup recovery and parent cancellation do not need children.
+     *
+     * @return list<DeferredSubagentBatch>
      */
-    public function findUnfinishedByParentRunId(string $parentRunId): array
+    public function findUnfinishedHeadersByParentRunId(string $parentRunId): array
     {
         $qb = $this->createQueryBuilder('b')
             ->andWhere('b.parentRunId = :parentRunId')
@@ -487,12 +489,9 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                 DeferredSubagentBatchLaunchStatusEnum::Launched->value,
             ]);
 
-        return array_map(
-            $this->toDto(...),
-            $qb->getQuery()
-                ->setHint(Query::HINT_REFRESH, true)
-                ->getResult(),
-        );
+        return $qb->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getResult();
     }
 
     /**

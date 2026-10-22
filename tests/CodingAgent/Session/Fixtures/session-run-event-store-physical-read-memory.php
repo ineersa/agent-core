@@ -26,6 +26,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -111,7 +112,9 @@ $entityManagerFactory = new class('physical-read-fixture') extends TestCase {
     }
 };
 
-$createStore = static function (?TestLogger $logger = null) use ($projectDir, $entityManagerFactory): SessionRunEventStore {
+// Measure archive-read allocation rather than cold Serializer dependency autoload.
+$presentations = HistoryEventStoreFactory::presentationFactory();
+$createStore = static function (?TestLogger $logger = null) use ($projectDir, $entityManagerFactory, $presentations): SessionRunEventStore {
     return new SessionRunEventStore(
         hatfieldSessionStore: new HatfieldSessionStore(
             appConfig: new AppConfig(
@@ -126,7 +129,7 @@ $createStore = static function (?TestLogger $logger = null) use ($projectDir, $e
         lockFactory: new LockFactory(new FlockStore()),
         logger: $logger ?? new TestLogger(),
         sequenceAllocator: new FileRunSequenceAllocator(),
-    );
+        presentations: $presentations);
 };
 
 gc_collect_cycles();
@@ -203,13 +206,14 @@ switch ($mode) {
             $logger->records,
             static fn (array $record): bool => 'history_index.physical_read' === $record['message'],
         ));
-        if (3 !== count($records)) {
-            fwrite(\STDERR, 'expected boundary validation, cold index rebuild and indexed range records, got '.count($records)."\n");
+        if (5 !== count($records)) {
+            fwrite(\STDERR, 'expected boundary validation, two presentation passes, cold index rebuild and indexed range records, got '.count($records)."\n");
             exit(3);
         }
-        // Cold range reading does one metadata pass and one body pass. Count both.
+        // Cold recovery adds two presentation passes to the scalar and requested reads.
         $archiveBytesRead = array_sum(array_column(array_column($records, 'context'), 'archive_bytes_read'));
-        $fullScan = $records[1]['context']['full_scan'] && $records[2]['context']['full_scan'];
+        $presentationBytesRead = array_sum(array_map(static fn (array $record): int => 'index_presentation_rebuild' === $record['context']['read_reason'] ? $record['context']['archive_bytes_read'] : 0, $records));
+        $fullScan = $records[3]['context']['full_scan'] && $records[4]['context']['full_scan'];
         $earlyExit = false;
         break;
 
@@ -236,6 +240,7 @@ $result = [
     'peak_after_bytes' => $peakAfter,
     'peak_delta_bytes' => max(0, $peakAfter - $peakBefore),
     'archive_bytes_read' => $archiveBytesRead,
+    'presentation_bytes_read' => $presentationBytesRead ?? 0,
     'full_scan' => $fullScan,
     'early_exit' => $earlyExit,
     'memory_limit' => ini_get('memory_limit'),
