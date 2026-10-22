@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception as DbalException;
@@ -12,6 +13,8 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Session\DTO\PendingToolInvocationDTO;
 use Ineersa\CodingAgent\Session\History\HistoryAssistantTextExtractor;
 use Ineersa\CodingAgent\Session\History\HistoryPromptTextExtractor;
+use Ineersa\CodingAgent\Session\History\HistoryReplayPlan;
+use Ineersa\CodingAgent\Session\History\RunPresentationDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
@@ -21,7 +24,7 @@ final readonly class RunHistoryIndex
 {
     public const int PAGE_SIZE = 32;
     public const int PREVIEW_BYTES = 240;
-    private const int VERSION = 6;
+    private const int VERSION = 7;
 
     public function __construct(private LockFactory $locks, private LoggerInterface $logger)
     {
@@ -222,9 +225,16 @@ final readonly class RunHistoryIndex
         }
     }
 
-    /** Lookup within the index already validated by this owner's selected replay. */
-    public function isLatestCommand(string $path, string $runId, string $key, int $sequence): bool
+    /** Lookup within the index already validated by this owner's selected replay.
+     * @param list<string> $keys
+     *
+     * @return array<string, int>
+     */
+    public function latestCommandSequences(string $path, string $runId, array $keys, int $sequence): array
     {
+        if ([] === $keys) {
+            return [];
+        }
         if (is_file($this->indexPath($path).'.unavailable')) {
             throw new \RuntimeException('Resume command evidence requires a usable history index.');
         }
@@ -235,7 +245,22 @@ final readonly class RunHistoryIndex
                 throw new \RuntimeException('Resume command evidence does not match its indexed cut.');
             }
 
-            return $sequence === (int) $db->fetchOne('SELECT sequence FROM command_resolution WHERE identity_hash = ?', [hash('sha256', $key)]);
+            $positions = [];
+            foreach (array_chunk(array_values(array_unique($keys)), 400) as $chunk) {
+                $rows = $db->fetchAllKeyValue(
+                    'SELECT identity_hash, sequence FROM command_resolution WHERE identity_hash IN (?)',
+                    [array_map(static fn (string $key): string => hash('sha256', $key), $chunk)],
+                    [ArrayParameterType::STRING],
+                );
+                foreach ($chunk as $key) {
+                    $hash = hash('sha256', $key);
+                    if (isset($rows[$hash])) {
+                        $positions[$key] = (int) $rows[$hash];
+                    }
+                }
+            }
+
+            return $positions;
         } finally {
             $db->close();
         }
@@ -351,6 +376,75 @@ final readonly class RunHistoryIndex
         }
     }
 
+    public function presentationSummary(JsonlRunEventLog $log, string $path, string $runId, int $sequence): RunPresentationDTO
+    {
+        $lock = $this->locks->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+        try {
+            $db = $this->synchronize($log, $path, $runId);
+            $watermark = (int) $db->fetchOne('SELECT last_seq FROM index_meta');
+            $state = $this->loadPresentation($db, $runId, $watermark);
+            // Invisible schema versions occupy physical index locations but do
+            // not extend the presentation reader's visible canonical cut.
+            if (null === $state || null === $state['projection'] || $sequence > $watermark || $state['projection']['lastObservedSequence'] > $sequence) {
+                throw new \UnexpectedValueException('Canonical history cannot provide a verified presentation summary.');
+            }
+            $projector = $log->presentationProjector();
+            $projector->restore($state['projection']);
+
+            return $projector->presentation($state['turn'], $sequence);
+        } finally {
+            if (isset($db)) {
+                $db->close();
+            }
+            $lock->release();
+        }
+    }
+
+    /** @return array{sequence: int, turn: int, navigation_pending: bool, projection: array<string, mixed>|null}|null */
+    private function loadPresentation(Connection $db, string $runId, int $sequence): ?array
+    {
+        $row = $db->fetchAssociative('SELECT state_json, state_hash FROM presentation_state WHERE singleton = 1');
+        if (false === $row) {
+            return null;
+        }
+        try {
+            if (hash('sha256', $row['state_json']) !== $row['state_hash']) {
+                throw new \UnexpectedValueException('Presentation snapshot checksum mismatch.');
+            }
+            $state = json_decode($row['state_json'], true, flags: \JSON_THROW_ON_ERROR);
+            if (!\is_array($state) || ($state['sequence'] ?? null) !== $sequence || !\is_int($state['turn'] ?? null)
+                || !\is_bool($state['navigation_pending'] ?? null)
+                || !\array_key_exists('projection', $state) || (null !== $state['projection'] && !\is_array($state['projection']))) {
+                throw new \UnexpectedValueException('Presentation snapshot watermark or shape mismatch.');
+            }
+
+            return $state;
+        } catch (\JsonException|\UnexpectedValueException $exception) {
+            $this->logger->warning('history_index.presentation_invalid_rebuild', $this->context($runId) + ['exception_class' => $exception::class]);
+
+            return null;
+        }
+    }
+
+    /** @return \Generator<int, \Ineersa\AgentCore\Domain\Event\RunEvent> */
+    private function presentationEvents(JsonlRunEventLog $log, string $path, string $runId, int $endOffset): \Generator
+    {
+        $observation = new JsonlPhysicalReadObservation();
+        try {
+            foreach ($log->locatedLines($path, 0, $observation, $endOffset) as $location) {
+                $record = $log->decodeLine($location['line']);
+                $event = \is_array($record) ? $log->denormalizeRunEvent($record) : null;
+                if (null !== $event) {
+                    yield $event;
+                }
+                unset($location, $record, $event);
+            }
+        } finally {
+            $this->observe($runId, 'index_presentation_rebuild', $observation);
+        }
+    }
+
     private function indexPath(string $path): string
     {
         return \dirname($path).'/history-index.sqlite';
@@ -385,7 +479,7 @@ final readonly class RunHistoryIndex
         // synchronization per table/index before the first event is indexed.
         $db->transactional(static function (Connection $db): void {
             $db->executeStatement('CREATE TABLE IF NOT EXISTS index_meta (version INTEGER NOT NULL, run_id TEXT NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL, end_offset INTEGER NOT NULL, last_seq INTEGER NOT NULL, selected_anchor INTEGER NOT NULL, tip_anchor INTEGER NOT NULL, boundary_offset INTEGER NOT NULL, boundary_length INTEGER NOT NULL, boundary_hash TEXT NOT NULL)');
-            $db->executeStatement('CREATE TABLE IF NOT EXISTS turn_anchor (anchor INTEGER PRIMARY KEY, turn_no INTEGER NOT NULL, predecessor INTEGER NOT NULL, retained INTEGER NOT NULL, completion_seq INTEGER NOT NULL DEFAULT 0, prompt_seq INTEGER, prompt_preview TEXT, answer_seq INTEGER, answer_preview TEXT)');
+            $db->executeStatement('CREATE TABLE IF NOT EXISTS turn_anchor (anchor INTEGER PRIMARY KEY, turn_no INTEGER NOT NULL, predecessor INTEGER NOT NULL, retained INTEGER NOT NULL, presentation_member INTEGER NOT NULL DEFAULT 0, completion_seq INTEGER NOT NULL DEFAULT 0, prompt_seq INTEGER, prompt_preview TEXT, answer_seq INTEGER, answer_preview TEXT)');
             $db->executeStatement('CREATE TABLE IF NOT EXISTS pending_prompt (kind TEXT PRIMARY KEY, seq INTEGER NOT NULL, preview TEXT NOT NULL)');
             $db->executeStatement('CREATE INDEX IF NOT EXISTS turn_display ON turn_anchor (turn_no, anchor)');
             $db->executeStatement('CREATE INDEX IF NOT EXISTS turn_answers ON turn_anchor (answer_seq) WHERE retained = 1 AND answer_seq IS NOT NULL');
@@ -400,6 +494,7 @@ final readonly class RunHistoryIndex
             $db->executeStatement('CREATE TABLE IF NOT EXISTS tool_invocation_location (tool_call_id TEXT PRIMARY KEY, seq INTEGER NOT NULL, turn_no INTEGER NOT NULL, step_id TEXT, attempt INTEGER NOT NULL, shell BOOLEAN NOT NULL, standalone BOOLEAN NOT NULL)');
             $db->executeStatement('CREATE TABLE IF NOT EXISTS admission_step_location (singleton INTEGER PRIMARY KEY, turn_no INTEGER NOT NULL, step_id TEXT)');
             $db->executeStatement('CREATE TABLE IF NOT EXISTS admission_anchor (anchor INTEGER PRIMARY KEY)');
+            $db->executeStatement('CREATE TABLE IF NOT EXISTS presentation_state (singleton INTEGER PRIMARY KEY, state_json TEXT NOT NULL, state_hash TEXT NOT NULL)');
         });
     }
 
@@ -421,7 +516,7 @@ final readonly class RunHistoryIndex
                 $meta = $db->fetchAssociative('SELECT * FROM index_meta');
                 // Check disposable schema presence on every new connection, including
                 // replaced files. Missing objects require a rebuild, not repeated DDL.
-                $schemaComplete = 16 === (int) $db->fetchOne("SELECT COUNT(*) FROM sqlite_master WHERE (type = 'table' AND name IN ('index_meta', 'turn_anchor', 'pending_prompt', 'event_location', 'command_record', 'command_resolution', 'history_change', 'context_checkpoint_location', 'tool_invocation_location', 'admission_step_location', 'admission_anchor')) OR (type = 'index' AND name IN ('turn_display', 'turn_answers', 'event_turn_anchor', 'event_anchor', 'unresolved_commands'))");
+                $schemaComplete = 17 === (int) $db->fetchOne("SELECT COUNT(*) FROM sqlite_master WHERE (type = 'table' AND name IN ('index_meta', 'turn_anchor', 'pending_prompt', 'event_location', 'command_record', 'command_resolution', 'history_change', 'context_checkpoint_location', 'tool_invocation_location', 'admission_step_location', 'admission_anchor', 'presentation_state')) OR (type = 'index' AND name IN ('turn_display', 'turn_answers', 'event_turn_anchor', 'event_anchor', 'unresolved_commands'))");
                 $valid = $schemaComplete && !is_file($this->indexPath($path).'.unavailable') && false !== $meta
                     && self::VERSION === (int) $meta['version'] && $meta['run_id'] === $runId
                     && (int) $meta['device'] === $identity['device'] && (int) $meta['inode'] === $identity['inode']
@@ -468,16 +563,31 @@ final readonly class RunHistoryIndex
             $lastSeq = $valid ? (int) $meta['last_seq'] : 0;
             $selected = $valid ? (int) $meta['selected_anchor'] : 0;
             $tip = $valid ? (int) $meta['tip_anchor'] : 0;
+            $presentation = $valid ? $this->loadPresentation($db, $runId, $lastSeq) : null;
+            $projector = $log->presentationProjector();
+            if (null !== $presentation && null !== $presentation['projection']) {
+                try {
+                    $projector->restore($presentation['projection']);
+                } catch (\Throwable $exception) {
+                    // This view is disposable independently of scalar locations.
+                    $this->logger->warning('history_index.presentation_invalid_rebuild', $this->context($runId) + ['exception_class' => $exception::class]);
+                    $presentation = null;
+                }
+            }
+            $rebuildPresentation = null === $presentation;
+            $presentationFailed = null !== $presentation && null === $presentation['projection'];
+            $position = $presentation['turn'] ?? 0;
+            $navigationPending = $presentation['navigation_pending'] ?? false;
             // A validated index may legitimately trail the archive. A range already
             // covered by that watermark needs no scan of unrelated newer records.
-            if ($valid && ($start === $identity['end_offset'] || (null !== $requestedEndSeq && $lastSeq >= $requestedEndSeq))) {
+            if ($valid && !$rebuildPresentation && ($start === $identity['end_offset'] || (null !== $requestedEndSeq && $lastSeq >= $requestedEndSeq))) {
                 return $db;
             }
             $observation = new JsonlPhysicalReadObservation();
             $db->beginTransaction();
             try {
                 if (!$valid) {
-                    foreach (['index_meta', 'event_location', 'turn_anchor', 'pending_prompt', 'command_record', 'command_resolution', 'history_change', 'context_checkpoint_location', 'tool_invocation_location', 'admission_step_location', 'admission_anchor'] as $table) {
+                    foreach (['index_meta', 'event_location', 'turn_anchor', 'pending_prompt', 'command_record', 'command_resolution', 'history_change', 'context_checkpoint_location', 'tool_invocation_location', 'admission_step_location', 'admission_anchor', 'presentation_state'] as $table) {
                         $db->executeStatement('DELETE FROM '.$table);
                     }
                 }
@@ -504,7 +614,47 @@ final readonly class RunHistoryIndex
                     if ($log->isIncompatibleSchemaVersion($record)) {
                         $db->insert('event_location', ['seq' => $record['seq'], 'offset' => $location['offset'], 'length' => $location['length'], 'type' => $record['type'], 'turn_no' => $record['turn_no'], 'anchor' => 0]);
                     } else {
+                        if ('turn_advanced' === $record['type']) {
+                            $newTurn = (int) ($record['payload']['turn_no'] ?? $record['turn_no']);
+                            // Reusing a displayed turn can re-include old canonical
+                            // records even when no navigation occurs in this suffix.
+                            $rebuildPresentation = $rebuildPresentation || ($newTurn > 0
+                                && false === $db->fetchOne('SELECT anchor FROM turn_anchor WHERE turn_no = ? AND presentation_member = 1 LIMIT 1', [$newTurn])
+                                && false !== $db->fetchOne('SELECT seq FROM event_location WHERE turn_no = ? LIMIT 1', [$newTurn]));
+                        }
                         $this->indexRecord($db, $record, $location['offset'], $location['length'], $selected, $tip);
+                        // Advances already move the presentation position. Their
+                        // confirmation markers do not invalidate it, but a real
+                        // selection can suppress seeds even at the same position.
+                        $navigation = 'history_tail_discarded' === $record['type']
+                            || ('history_position_set' === $record['type']
+                                && ('history_select' === ($record['payload']['reason'] ?? null)
+                                    || (int) ($record['payload']['position_turn_no'] ?? $record['turn_no']) !== $position));
+                        if ($navigation) {
+                            $navigationPending = true;
+                            $rebuildPresentation = true;
+                        } elseif ('turn_advanced' === $record['type'] && (int) ($record['payload']['turn_no'] ?? $record['turn_no']) > 0) {
+                            // A previously suppressed seed can become visible when a
+                            // later ordinary advance binds it, without another select.
+                            $rebuildPresentation = $rebuildPresentation || $navigationPending;
+                            $navigationPending = false;
+                            $position = (int) ($record['payload']['turn_no'] ?? $record['turn_no']);
+                        }
+                        if (!$rebuildPresentation && !$presentationFailed) {
+                            $included = 0 === $record['turn_no'] || false !== $db->fetchOne('SELECT t.anchor FROM turn_anchor t WHERE t.presentation_member = 1 AND t.turn_no = ? AND t.anchor <= (SELECT anchor FROM turn_anchor WHERE presentation_member = 1 AND turn_no = ? LIMIT 1) LIMIT 1', [$record['turn_no'], $position]);
+                            try {
+                                $event = $log->denormalizeRunEvent($record);
+                                if (null !== $event) {
+                                    $projector->observe($event, $included);
+                                }
+                                unset($event);
+                            } catch (\Throwable $exception) {
+                                // A malformed presentation payload must not poison
+                                // unrelated location or admission lookups.
+                                $this->logger->warning('history_index.presentation_failed', $this->context($runId) + ['exception_class' => $exception::class]);
+                                $presentationFailed = true;
+                            }
+                        }
                     }
                     $lastSeq = $record['seq'];
                     $end = $location['offset'] + $location['length'];
@@ -516,6 +666,23 @@ final readonly class RunHistoryIndex
                 if ($end !== $identity['end_offset']) {
                     throw new \RuntimeException('Canonical index scan did not reach the committed boundary.');
                 }
+                if ($rebuildPresentation) {
+                    try {
+                        $projector = $log->presentationProjector();
+                        $plan = HistoryReplayPlan::build($this->presentationEvents($log, $path, $runId, $end));
+                        foreach ($this->presentationEvents($log, $path, $runId, $end) as $event) {
+                            $projector->observe($event, $plan->includes($event));
+                        }
+                        unset($event);
+                        $position = $plan->positionTurnNo;
+                        $presentationFailed = false;
+                    } catch (\Throwable $exception) {
+                        $this->logger->warning('history_index.presentation_failed', $this->context($runId) + ['exception_class' => $exception::class]);
+                        $presentationFailed = true;
+                    }
+                }
+                $state = json_encode(['sequence' => $lastSeq, 'turn' => $position, 'navigation_pending' => $navigationPending, 'projection' => $presentationFailed ? null : $projector->snapshot()], \JSON_THROW_ON_ERROR);
+                $db->executeStatement('INSERT INTO presentation_state (singleton, state_json, state_hash) VALUES (1, ?, ?) ON CONFLICT (singleton) DO UPDATE SET state_json = excluded.state_json, state_hash = excluded.state_hash', [$state, hash('sha256', $state)]);
                 $db->executeStatement('DELETE FROM index_meta');
                 $db->insert('index_meta', ['version' => self::VERSION, 'run_id' => $runId] + $identity + ['last_seq' => $lastSeq, 'selected_anchor' => $selected, 'tip_anchor' => $tip, 'boundary_offset' => $boundaryOffset, 'boundary_length' => $boundaryLength, 'boundary_hash' => $boundaryHash]);
                 $db->commit();
@@ -554,7 +721,10 @@ final readonly class RunHistoryIndex
             $turn = (int) ($payload['turn_no'] ?? $turn);
             if ($turn > 0) {
                 $anchor = $seq;
-                $db->insert('turn_anchor', ['anchor' => $anchor, 'turn_no' => $turn, 'predecessor' => $selected, 'retained' => 1]);
+                // Presentation follows HistoryRetentionTracker's displayed-turn
+                // retention, while scalar routing preserves immutable branch anchors.
+                $member = false === $db->fetchOne('SELECT anchor FROM turn_anchor WHERE turn_no = ? AND presentation_member = 1 LIMIT 1', [$turn]);
+                $db->insert('turn_anchor', ['anchor' => $anchor, 'turn_no' => $turn, 'predecessor' => $selected, 'retained' => 1, 'presentation_member' => (int) $member]);
                 $prompt = $db->fetchAssociative("SELECT seq, preview FROM pending_prompt ORDER BY CASE kind WHEN 'human' THEN 0 ELSE 1 END LIMIT 1");
                 if (false !== $prompt) {
                     $db->executeStatement('UPDATE turn_anchor SET prompt_seq = ?, prompt_preview = ? WHERE anchor = ?', [$prompt['seq'], $prompt['preview'], $anchor]);
@@ -584,6 +754,7 @@ final readonly class RunHistoryIndex
             $selected = $this->anchorForTurn($db, $after);
             // Linear retained order is anchor creation order, never displayed numbers.
             $db->executeStatement('UPDATE turn_anchor SET retained = 0 WHERE retained = 1 AND anchor > ?', [$selected]);
+            $db->executeStatement('UPDATE turn_anchor SET presentation_member = 0 WHERE turn_no > ?', [$after]);
             $tip = $selected;
             $db->insert('history_change', ['seq' => $seq, 'kind' => $type, 'anchor' => $selected]);
         } elseif (\in_array($type, ['agent_end', 'llm_step_completed'], true) && $anchor > 0) {

@@ -138,6 +138,22 @@ final class DoctrineCommandStoreTest extends IsolatedKernelTestCase
         $this->assertFalse($store->has('failure', 'key'));
     }
 
+    public function testPendingKeysAreRunScopedFifoAndDoNotDecodeBodies(): void
+    {
+        $store = self::getContainer()->get(CommandStoreInterface::class);
+        $store->enqueue(new PendingCommand('keys', 'steer', 'first'));
+        $store->enqueue(new PendingCommand('other', 'steer', 'foreign'));
+        $store->enqueue(new PendingCommand('keys', 'steer', 'second'));
+        self::getContainer()->get(Connection::class)->executeStatement('UPDATE run_command SET payload = ? WHERE run_id = ?', ['not serialized', 'keys']);
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->never())->method('decode');
+        $reader = $this->freshStore($serializer);
+        $this->assertSame(['first', 'second'], $reader->pendingKeys('keys'));
+        $store->markApplied('keys', 'first');
+        $this->assertSame(['second'], $reader->pendingKeys('keys'));
+        $this->assertSame([], $reader->pendingKeys('absent'));
+    }
+
     private function freshStore(?SerializerInterface $serializer = null): DoctrineCommandStore
     {
         $container = self::getContainer();

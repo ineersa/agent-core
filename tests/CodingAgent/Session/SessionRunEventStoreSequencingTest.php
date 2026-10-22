@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -46,7 +47,7 @@ final class SessionRunEventStoreSequencingTest extends TestCase
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
             sequenceAllocator: new FileRunSequenceAllocator(),
-        );
+            presentations: HistoryEventStoreFactory::presentationFactory());
     }
 
     protected function tearDown(): void

@@ -20,6 +20,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\RunPresentationReader;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
@@ -422,7 +423,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
     private function makeService(?EventStoreInterface $eventStore = null): AgentArtifactRetrievalService
     {
         $eventStore ??= $this->createStub(EventStoreInterface::class);
-        $presentation = new RunPresentationReader($eventStore, self::getContainer()->get(RunLockManager::class), new ReplayAssistantMessageFactory(), self::getContainer()->get(ToolExecutionEndPayloadCodec::class));
+        $presentation = new RunPresentationReader($eventStore, self::getContainer()->get(RunLockManager::class), new ReplayAssistantMessageFactory(), self::getContainer()->get(ToolExecutionEndPayloadCodec::class), sources: self::getContainer()->get(RunHistorySourceProviderInterface::class));
 
         return new AgentArtifactRetrievalService(
             artifactRegistry: $this->registry,

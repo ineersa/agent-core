@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -563,6 +564,6 @@ final class AgentChildRunEventStoreTest extends TestCase
             parentRunId: $parentRunId,
             agentRunId: $agentRunId,
             artifactId: $artifactId,
-        );
+            presentations: HistoryEventStoreFactory::presentationFactory());
     }
 }

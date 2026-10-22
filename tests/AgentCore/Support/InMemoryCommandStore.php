@@ -42,6 +42,11 @@ final class InMemoryCommandStore implements CommandStoreInterface
         return \count($this->commandsByRun[$runId] ?? []);
     }
 
+    public function pendingKeys(string $runId): array
+    {
+        return array_map(strval(...), array_keys($this->commandsByRun[$runId] ?? []));
+    }
+
     public function markApplied(string $runId, string $idempotencyKey): void
     {
         unset($this->commandsByRun[$runId][$idempotencyKey]);

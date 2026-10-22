@@ -6,14 +6,23 @@ namespace Ineersa\CodingAgent\Tests\Session;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
+use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
 use Ineersa\CodingAgent\Session\History\HistoryReplayPlan;
+use Ineersa\CodingAgent\Session\History\RunPresentationReader;
 use Ineersa\CodingAgent\Session\JsonlRunEventLog;
 use Ineersa\CodingAgent\Session\RunHistoryIndex;
+use Ineersa\CodingAgent\Session\RunHistorySourceDTO;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Filesystem\Filesystem;
@@ -25,12 +34,13 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
     private JsonlRunEventLog $log;
     private TestLogger $logger;
     private string $path;
+    private int $publishedSequence = 0;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->logger = new TestLogger();
-        $this->log = new JsonlRunEventLog(static::getContainer()->get(EventPayloadNormalizer::class), static::getContainer()->get(LockFactory::class), static::getContainer()->get(RunSequenceAllocatorInterface::class), new EventLogMaxSeqBootstrapReader(), $this->logger);
+        $this->log = new JsonlRunEventLog(static::getContainer()->get(EventPayloadNormalizer::class), static::getContainer()->get(LockFactory::class), static::getContainer()->get(RunSequenceAllocatorInterface::class), new EventLogMaxSeqBootstrapReader(), $this->logger, presentations: HistoryEventStoreFactory::presentationFactory());
         $this->path = getcwd().'/.hatfield/sessions/indexed/events.jsonl';
         (new Filesystem())->mkdir(\dirname($this->path));
     }
@@ -191,7 +201,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->assertSame($expected, $index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows']);
             $db = $this->db();
             try {
-                $this->assertSame(6, (int) $db->fetchOne('SELECT version FROM index_meta'));
+                $this->assertSame(7, (int) $db->fetchOne('SELECT version FROM index_meta'));
                 $this->assertSame('CREATE INDEX turn_answers ON turn_anchor (answer_seq) WHERE retained = 1 AND answer_seq IS NOT NULL', $db->fetchOne("SELECT sql FROM sqlite_master WHERE name = 'turn_answers'"));
             } finally {
                 $db->close();
@@ -472,7 +482,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->assertSame([1], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
             $this->assertGreaterThan(0, $this->readBytes('index_cold_rebuild'));
             $db = $this->db();
-            $this->assertSame(16, (int) $db->fetchOne("SELECT COUNT(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"));
+            $this->assertSame(17, (int) $db->fetchOne("SELECT COUNT(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"));
             $db->close();
         }
     }
@@ -533,13 +543,320 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->assertLessThan(128 * 1024 * 1024, $large['peak_bytes']);
             $this->assertLessThanOrEqual($small['peak_bytes'] + 4 * 1024 * 1024, $large['peak_bytes']);
             foreach ($measurements as $measurement) {
-                $this->assertSame($measurement['archive_bytes'] * 2, $measurement['archive_bytes_read']);
+                // Cold recovery now reconstructs the bounded presentation too:
+                // one scalar scan, two canonical presentation passes, one requested read.
+                $this->assertSame($measurement['archive_bytes'] * 4, $measurement['archive_bytes_read']);
                 $this->assertSame($measurement['count'], $measurement['records']);
             }
             fwrite(\STDERR, 'history-index memory: '.json_encode($measurements, \JSON_THROW_ON_ERROR)."\n");
         } finally {
             TestDirectoryIsolation::removeDirectory($directory);
         }
+    }
+
+    public function testBulkCommandPositionsPreserveLatestOccurrencesAcrossPageBoundary(): void
+    {
+        $this->write(1, 0, 'run_started');
+        $keys = [];
+        for ($i = 0; $i < 401; ++$i) {
+            $key = 'bulk-'.$i;
+            $keys[] = $key;
+            $this->write(2 + $i, 0, 'agent_command_queued', ['kind' => 'steer', 'idempotency_key' => $key, 'text' => 'text']);
+        }
+        $this->write(403, 0, 'agent_command_rejected', ['kind' => 'steer', 'idempotency_key' => 'bulk-0', 'reason' => 'settled']);
+        $this->write(404, 0, 'agent_command_queued', ['kind' => 'steer', 'idempotency_key' => 'bulk-1', 'text' => 'latest']);
+        $this->assertSame(404, $this->log->historyCut($this->path, 'indexed')['sequence']);
+        $positions = $this->log->latestCommandSequences($this->path, 'indexed', [...$keys, 'bulk-0', 'missing'], 404);
+        $this->assertCount(401, $positions);
+        $this->assertSame(403, $positions['bulk-0']);
+        $this->assertSame(404, $positions['bulk-1']);
+        $this->assertSame(402, $positions['bulk-400']);
+        $this->assertArrayNotHasKey('missing', $positions);
+        $this->assertSame([], $this->log->latestCommandSequences($this->path, 'indexed', [], 404));
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('summaryTerminals')]
+    public function testFirstSummaryAndOrdinaryPublicationUseOnlyBoundedPhysicalWork(string $reason, string $advanceReason): void
+    {
+        $this->path = \dirname($this->path).'/artifacts/agents/long-child/events.jsonl';
+        (new Filesystem())->mkdir(\dirname($this->path));
+        $events = [RunEvent::forAppend('indexed', 0, 'run_started', ['payload' => ['messages' => [$this->presentationMessage('user', 'Initial')]]]), RunEvent::forAppend('indexed', 1, 'turn_advanced', ['turn_no' => 1]), RunEvent::forAppend('indexed', 1, 'history_position_set', ['position_turn_no' => 1, 'previous_position_turn_no' => null, 'reason' => 'continue'])];
+        for ($i = 0; $i < 512; ++$i) {
+            $events[] = RunEvent::forAppend('indexed', 1, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Answer '.$i.' '.str_repeat('x', 8192))]);
+        }
+        $events[] = RunEvent::forAppend('indexed', 1, 'agent_end', ['reason' => $reason]);
+        $start = hrtime(true);
+        $this->publish($events);
+        $initialMs = (hrtime(true) - $start) / 1_000_000;
+        $this->logger->records = [];
+        $reader = $this->presentationReader();
+        $start = hrtime(true);
+        $first = $reader->read('indexed', 0, 800);
+        $summaryMs = (hrtime(true) - $start) / 1_000_000;
+        $this->assertSame(0, $this->readLines('index_presentation_rebuild'));
+        $this->assertSame(0, $this->readLines('indexed_range'));
+        $this->assertSame(0, $this->readLines('index_cold_rebuild'));
+        $this->assertSame(1, $this->readLines('index_boundary_validation'));
+        $this->assertSame(513, $first->messageCount);
+        $this->assertSame(516, $first->eventCount);
+        $this->assertSame('failed' === $reason ? \Ineersa\AgentCore\Domain\Run\RunStatus::Failed : \Ineersa\AgentCore\Domain\Run\RunStatus::Cancelled, $first->status);
+        $start = hrtime(true);
+        $this->assertSummaryParity($reader);
+        $canonicalMs = (hrtime(true) - $start) / 1_000_000;
+        $this->logger->records = [];
+        $publication = [];
+        $suffixRecords = 0;
+        for ($i = 0; $i < 16; ++$i) {
+            $turn = $i + 2;
+            $advance = [RunEvent::forAppend('indexed', $turn, 'turn_advanced', ['turn_no' => $turn]), RunEvent::forAppend('indexed', $turn, 'history_position_set', ['position_turn_no' => $turn, 'previous_position_turn_no' => $turn - 1, 'reason' => $advanceReason])];
+            $completion = [RunEvent::forAppend('indexed', $turn, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Suffix '.$i)])];
+            if ('shell_command' === $advanceReason) {
+                $key = 'shell-'.$i;
+                $id = 'sh_'.hash('sha256', $key);
+                // ApplyShellCommandHandler seeds on the previous turn, then
+                // publishes advance, confirmation and start in one transition.
+                array_unshift($advance, RunEvent::forAppend('indexed', $turn - 1, 'agent_command_applied', ['kind' => 'shell_command', 'idempotency_key' => $key, 'text' => '!printf suffix', 'standalone' => true, 'current_operation' => ['turn_no' => $turn, 'step_id' => $key, 'attempt' => 1, 'idempotency_key' => $key]]));
+                $advance[] = RunEvent::forAppend('indexed', $turn, 'tool_execution_start', ['tool_call_id' => $id, 'tool_name' => 'bash', 'order_index' => 0, 'attempt' => 1, 'arguments' => ['command' => 'printf suffix']]);
+                $codec = static::getContainer()->get(ToolExecutionEndPayloadCodec::class);
+                $completion = [RunEvent::forAppend('indexed', $turn, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult('indexed', $turn, $key, 1, $key, $id, 0, ['tool_name' => 'bash', 'output' => 'suffix']))), RunEvent::forAppend('indexed', $turn, 'agent_end', ['reason' => 'completed'])];
+            }
+            foreach ([$advance, $completion] as $transition) {
+                $start = hrtime(true);
+                $this->publish($transition);
+                $publication[] = (hrtime(true) - $start) / 1_000_000;
+                $suffixRecords += \count($transition);
+                $this->assertSummaryParity($reader);
+            }
+        }
+        fwrite(\STDERR, 'production presentation publication: '.json_encode(['reason' => $reason, 'advance_reason' => $advanceReason, 'archive_bytes' => filesize($this->path), 'initial_publication_ms' => $initialMs, 'first_summary_ms' => $summaryMs, 'canonical_parity_ms' => $canonicalMs, 'transition_publication_ms' => $publication, 'suffix_records' => $suffixRecords, 'presentation_rebuild_lines' => $this->readLines('index_presentation_rebuild'), 'presentation_rebuild_bytes' => $this->readBytes('index_presentation_rebuild')], \JSON_THROW_ON_ERROR)."\n");
+        $this->assertSame($suffixRecords, $this->readLines('index_suffix_catch_up'));
+        $this->assertSame(0, $this->readLines('index_presentation_rebuild'));
+        $this->assertSame(0, $this->readLines('index_cold_rebuild'));
+        $this->assertSummaryParity($reader);
+        $db = $this->db();
+        try {
+            $stateBytes = (int) $db->fetchOne('SELECT length(state_json) FROM presentation_state');
+            $this->assertLessThan(4096, $stateBytes);
+            $this->assertSame(1, (int) $db->fetchOne('SELECT COUNT(*) FROM presentation_state'));
+        } finally {
+            $db->close();
+        }
+    }
+
+    public static function summaryTerminals(): iterable
+    {
+        foreach (['failed', 'cancelled'] as $terminal) {
+            foreach (['continue', 'shell_command'] as $advance) {
+                yield $terminal.'_'.$advance => [$terminal, $advance];
+            }
+        }
+    }
+
+    public function testActualNavigationStillRebuildsAndInvalidatesFollowingAdvance(): void
+    {
+        $reader = $this->presentationReader();
+        $this->publish([RunEvent::forAppend('indexed', 0, 'run_started'), RunEvent::forAppend('indexed', 1, 'turn_advanced', ['turn_no' => 1]), RunEvent::forAppend('indexed', 1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'continue']), RunEvent::forAppend('indexed', 1, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Retained')]), RunEvent::forAppend('indexed', 2, 'turn_advanced', ['turn_no' => 2]), RunEvent::forAppend('indexed', 2, 'history_position_set', ['position_turn_no' => 2, 'reason' => 'continue']), RunEvent::forAppend('indexed', 2, 'agent_end', ['reason' => 'completed']), RunEvent::forAppend('indexed', 2, 'agent_command_applied', ['kind' => 'follow_up', 'message' => $this->presentationMessage('user', 'Restored seed')])]);
+        $cases = [
+            'same-position selection' => [true, true, [[2, 'history_position_set', ['position_turn_no' => 2, 'reason' => 'history_select']]]],
+            'confirmation preserves pending navigation' => [false, true, [[2, 'history_position_set', ['position_turn_no' => 2, 'reason' => 'shell_command']]]],
+            'advance restores suppressed seed' => [true, false, [[3, 'turn_advanced', ['turn_no' => 3]], [3, 'history_position_set', ['position_turn_no' => 3, 'reason' => 'continue']]]],
+            'subsequent ordinary advance' => [false, false, [[4, 'turn_advanced', ['turn_no' => 4]], [4, 'history_position_set', ['position_turn_no' => 4, 'reason' => 'continue']]]],
+            'continue marker actually changes selection' => [true, true, [[1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'continue']]]],
+            'same-position discard' => [true, true, [[1, 'history_tail_discarded', ['after_turn_no' => 1]]]],
+            'advance after changed selection' => [true, false, [[5, 'turn_advanced', ['turn_no' => 5]], [5, 'history_position_set', ['position_turn_no' => 5, 'reason' => 'continue']]]],
+            'discard' => [true, true, [[1, 'history_tail_discarded', ['after_turn_no' => 1]]]],
+            'displayed turn reintroduction' => [true, false, [[2, 'turn_advanced', ['turn_no' => 2]], [2, 'history_position_set', ['position_turn_no' => 2, 'reason' => 'continue']]]],
+        ];
+        foreach ($cases as $label => [$rebuild, $pending, $specs]) {
+            $this->logger->records = [];
+            $this->publish(array_map(static fn (array $spec): RunEvent => RunEvent::forAppend('indexed', ...$spec), $specs));
+            $this->assertSame($rebuild, $this->readLines('index_presentation_rebuild') > 0, $label);
+            $this->assertSummaryParity($reader);
+            $db = $this->db();
+            try {
+                $state = json_decode($db->fetchOne('SELECT state_json FROM presentation_state'), true, flags: \JSON_THROW_ON_ERROR);
+                $this->assertSame($pending, $state['navigation_pending'], $label);
+            } finally {
+                $db->close();
+            }
+            if ('same-position selection' === $label) {
+                $this->assertSame(1, $reader->read('indexed', 0, 800)->messageCount);
+            } elseif ('advance restores suppressed seed' === $label) {
+                $this->assertSame(2, $reader->read('indexed', 0, 800)->messageCount);
+            }
+        }
+    }
+
+    public function testSummarySurvivesNavigationCompactionRefreshAndRetroactiveSeedMapping(): void
+    {
+        $reader = $this->presentationReader();
+        $fixtures = [
+            [0, 'run_started', ['payload' => ['messages' => [$this->presentationMessage('system', 'System'), $this->presentationMessage('user', 'Initial')]]]],
+            [1, 'turn_advanced', ['turn_no' => 1]],
+            [1, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Retained')]],
+            [1, 'agent_end', ['reason' => 'completed']],
+            [1, 'agent_command_applied', ['kind' => 'follow_up', 'message' => $this->presentationMessage('user', 'Restored seed')]],
+            [1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'history_select']],
+            [2, 'turn_advanced', ['turn_no' => 2]],
+            [2, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Forward secret')]],
+            [1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'history_select']],
+            [1, 'history_tail_discarded', ['after_turn_no' => 1]],
+            [3, 'turn_advanced', ['turn_no' => 3]],
+            [3, 'context_compacted', ['messages' => [$this->presentationMessage('system', 'Compacted'), $this->presentationMessage('user', 'Checkpoint'), $this->presentationMessage('assistant', 'Checkpoint answer')]]],
+            [3, 'context_refreshed', ['messages' => [$this->presentationMessage('system', 'Refreshed'), ['role' => 'user-context', 'content' => [['type' => 'text', 'text' => 'Generated']], 'metadata' => ['source' => 'agents_context']]]]],
+            [3, 'waiting_human', ['question_id' => 'one']],
+            [3, 'waiting_human', ['question_id' => 'two']],
+            [3, 'agent_command_applied', ['kind' => 'human_response', 'question_id' => 'one', 'message' => $this->presentationMessage('user', 'Yes')]],
+            [3, 'agent_command_applied', ['kind' => 'human_response', 'question_id' => 'two', 'message' => $this->presentationMessage('user', 'No')]],
+            [3, 'context_compaction_started', ['step_id' => 'compact']],
+            [3, 'context_compaction_failed', ['step_id' => 'compact', 'continue_after_compaction' => false]],
+            [3, 'agent_end', ['reason' => 'cancelled']],
+        ];
+        foreach ($fixtures as [$turn, $type, $payload]) {
+            $this->publish([RunEvent::forAppend('indexed', $turn, $type, $payload)]);
+            $this->assertSummaryParity($reader);
+        }
+        $this->assertStringNotContainsString('Forward secret', $reader->read('indexed', 0, 800)->assistantExcerpt);
+    }
+
+    public function testSummaryRestoresPendingToolShellAndQuestionAccumulators(): void
+    {
+        $codec = static::getContainer()->get(ToolExecutionEndPayloadCodec::class);
+        $assistant = $this->presentationMessage('assistant', 'Partial');
+        $assistant['tool_calls'] = [['id' => 'ordinary', 'function' => ['name' => 'read', 'arguments' => '{}']]];
+        $this->publish([RunEvent::forAppend('indexed', 0, 'run_started'), RunEvent::forAppend('indexed', 1, 'turn_advanced', ['turn_no' => 1]), RunEvent::forAppend('indexed', 1, 'llm_step_completed', ['assistant_message' => $assistant]), RunEvent::forAppend('indexed', 1, 'agent_command_applied', ['kind' => 'shell_command', 'idempotency_key' => 'shell'])]);
+        foreach (['ordinary', 'sh_'.hash('sha256', 'shell')] as $id) {
+            $this->publish([RunEvent::forAppend('indexed', 1, 'tool_execution_end', $codec->toEventPayload(new ToolCallResult('indexed', 1, 'step', 1, 'key', $id, 0, ['tool_name' => 'read', 'output' => 'output'])))]);
+            $this->assertSummaryParity($this->presentationReader());
+        }
+        $this->publish([RunEvent::forAppend('indexed', 1, 'waiting_human', ['question_id' => 'question'])]);
+        $this->assertSummaryParity($this->presentationReader());
+        $this->publish([RunEvent::forAppend('indexed', 1, 'agent_command_applied', ['kind' => 'human_response', 'question_id' => 'question', 'message' => $this->presentationMessage('user', 'Proceed')]), RunEvent::forAppend('indexed', 1, 'agent_end', ['reason' => 'failed'])]);
+        $this->assertSummaryParity($this->presentationReader());
+        $this->assertSame(1, $this->presentationReader()->read('indexed', 0, 800)->pendingToolCallCount);
+        $this->publish([RunEvent::forAppend('indexed', 1, 'tool_batch_committed')]);
+        $this->assertSummaryParity($this->presentationReader());
+        $this->assertSame(0, $this->presentationReader()->read('indexed', 0, 800)->pendingToolCallCount);
+    }
+
+    public function testSummaryRecoveryAndUnpublishedJournalCutoff(): void
+    {
+        $this->publish([RunEvent::forAppend('indexed', 0, 'run_started'), RunEvent::forAppend('indexed', 1, 'turn_advanced', ['turn_no' => 1]), RunEvent::forAppend('indexed', 1, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Committed')])]);
+        $reader = $this->presentationReader();
+        $expected = $reader->read('indexed', 0, 800);
+        foreach (['missing_projection', 'bad_hash', 'bad_shape', 'stale_projection', 'stale_schema', 'missing_index', 'corrupt_index'] as $fault) {
+            if ('missing_index' === $fault || 'corrupt_index' === $fault) {
+                (new Filesystem())->remove([\dirname($this->path).'/history-index.sqlite', \dirname($this->path).'/history-index.sqlite-wal', \dirname($this->path).'/history-index.sqlite-shm']);
+                if ('corrupt_index' === $fault) {
+                    file_put_contents(\dirname($this->path).'/history-index.sqlite', 'not sqlite');
+                }
+            } else {
+                $db = $this->db();
+                try {
+                    if ('missing_projection' === $fault) {
+                        $db->executeStatement('DELETE FROM presentation_state');
+                    } elseif ('bad_hash' === $fault) {
+                        $db->executeStatement("UPDATE presentation_state SET state_hash = 'wrong'");
+                    } elseif ('stale_schema' === $fault) {
+                        $db->executeStatement('UPDATE index_meta SET version = 6');
+                    } else {
+                        $state = json_decode($db->fetchOne('SELECT state_json FROM presentation_state'), true, flags: \JSON_THROW_ON_ERROR);
+                        if ('bad_shape' === $fault) {
+                            $state['projection']['messages']['messageCount'] = [];
+                        } else {
+                            --$state['sequence'];
+                        }
+                        $json = json_encode($state, \JSON_THROW_ON_ERROR);
+                        $db->executeStatement('UPDATE presentation_state SET state_json = ?, state_hash = ?', [$json, hash('sha256', $json)]);
+                    }
+                } finally {
+                    $db->close();
+                }
+            }
+            $this->logger->records = [];
+            $this->assertEquals($expected, $reader->read('indexed', 0, 800), $fault);
+            $this->assertGreaterThan(0, $this->readLines('index_presentation_rebuild'), $fault);
+        }
+        $this->logger->records = [];
+        $persisted = $this->log->appendMany($this->path, [RunEvent::forAppend('indexed', 1, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Unpublished')])], work: ['run_id' => 'indexed', 'predecessor_seq' => $this->publishedSequence]);
+        $this->assertEquals($expected, $reader->read('indexed', 0, 800));
+        $verified = $this->log->verifiedPendingTransition($this->path, 'indexed');
+        $this->assertNotNull($verified);
+        $this->log->finalizeVerifiedTransition($this->path, 'indexed', $verified);
+        $this->publishedSequence = $persisted[0]->seq;
+        $this->assertSame('Unpublished', $reader->read('indexed', 0, 800)->assistantExcerpt);
+        $this->assertSame(0, $this->readLines('index_presentation_rebuild'));
+    }
+
+    public function testPresentationFailureDoesNotInvalidateScalarIndexAndCanBeRetired(): void
+    {
+        $this->publish([RunEvent::forAppend('indexed', 0, 'run_started'), RunEvent::forAppend('indexed', 1, 'turn_advanced', ['turn_no' => 1]), RunEvent::forAppend('indexed', 1, 'agent_end', ['reason' => 'completed']), RunEvent::forAppend('indexed', 2, 'turn_advanced', ['turn_no' => 2]), RunEvent::forAppend('indexed', 2, 'tool_execution_end', ['tool_result' => ['tool_call_id' => 'malformed']])]);
+        $this->assertSame(5, $this->log->historyCut($this->path, 'indexed')['sequence']);
+        $this->assertSame([1, 2, 3, 4, 5], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 5)));
+        $this->assertNotEmpty(array_filter($this->logger->records, static fn (array $record): bool => 'history_index.presentation_failed' === $record['message']));
+        try {
+            $this->presentationReader()->read('indexed', 0, 800);
+            $this->fail('Malformed selected result was silently accepted.');
+        } catch (\UnexpectedValueException $exception) {
+            $this->assertStringContainsString('verified presentation', $exception->getMessage());
+        }
+        $this->publish([RunEvent::forAppend('indexed', 1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'history_select']), RunEvent::forAppend('indexed', 1, 'history_tail_discarded', ['after_turn_no' => 1])]);
+        $this->assertSummaryParity($this->presentationReader());
+    }
+
+    public function testInvisibleSchemaTailDoesNotInvalidateTheVisibleSummaryCut(): void
+    {
+        $this->publish([RunEvent::forAppend('indexed', 0, 'run_started'), RunEvent::forAppend('indexed', 1, 'turn_advanced', ['turn_no' => 1])]);
+        $expected = $this->presentationReader()->read('indexed', 0, 800);
+        $normalizer = static::getContainer()->get(EventPayloadNormalizer::class);
+        $record = $normalizer->normalize('indexed', 3, 1, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'Invisible')]);
+        $record['schema_version'] = '999.0';
+        file_put_contents($this->path, json_encode($record, \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+        (new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger))->updateAfterCommit($this->log, $this->path, 'indexed');
+        $this->assertEquals($expected, $this->presentationReader()->read('indexed', 0, 800));
+        $this->assertSame(3, $this->log->historyCut($this->path, 'indexed')['sequence']);
+    }
+
+    /** @param list<RunEvent> $events */
+    private function publish(array $events): void
+    {
+        $persisted = $this->log->appendMany($this->path, $events, work: ['run_id' => 'indexed', 'predecessor_seq' => $this->publishedSequence]);
+        $verified = $this->log->verifiedPendingTransition($this->path, 'indexed');
+        $this->assertNotNull($verified);
+        $this->log->finalizeVerifiedTransition($this->path, 'indexed', $verified);
+        $this->publishedSequence = $persisted[array_key_last($persisted)]->seq;
+    }
+
+    private function presentationReader(): RunPresentationReader
+    {
+        $events = $this->createStub(EventStoreInterface::class);
+        $events->method('latestSequenceFor')->willReturnCallback(fn (): int => $this->publishedSequence);
+        $events->method('rangeFor')->willReturnCallback(function (string $runId, int $start, int $end): iterable {
+            foreach ($this->log->indexedLines($this->path, $runId, $start, $end) as $line) {
+                $event = $this->log->denormalizeRunEvent($this->log->decodeLine($line));
+                if (null !== $event) {
+                    yield $event;
+                }
+            }
+        });
+        $sources = $this->createStub(RunHistorySourceProviderInterface::class);
+        $sources->method('historySource')->willReturn(new RunHistorySourceDTO($this->log, $this->path));
+
+        return new RunPresentationReader($events, static::getContainer()->get(RunLockManager::class), new ReplayAssistantMessageFactory(), static::getContainer()->get(ToolExecutionEndPayloadCodec::class), $sources);
+    }
+
+    private function assertSummaryParity(RunPresentationReader $reader): void
+    {
+        $expected = get_object_vars($reader->read('indexed', 1, 800));
+        $actual = get_object_vars($reader->read('indexed', 0, 800));
+        unset($expected['historyLines'], $actual['historyLines']);
+        $this->assertSame($expected, $actual);
+    }
+
+    /** @return array{role: string, content: list<array{type: string, text: string}>} */
+    private function presentationMessage(string $role, string $text): array
+    {
+        return ['role' => $role, 'content' => [['type' => 'text', 'text' => $text]]];
     }
 
     /** @return iterable<string> */

@@ -44,7 +44,7 @@ final readonly class SessionReplayCoordinator
             $resume = $withTranscript ? new SessionResumeMetadataProjection() : null;
             $events = $source->log->selectedEvents($source->path, $existing->runId, $cut['sequence'], $cut['anchor']);
             if ($withTranscript) {
-                $events = $this->projectAlongside($events, $resume);
+                $events = $this->projectAlongside($events, $resume, $cut['sequence']);
             }
             $state = $this->reducer->replay($existing, $events)->with(['lastSeq' => $cut['sequence']]);
             if (null !== $positionTurnNo) {
@@ -88,7 +88,7 @@ final readonly class SessionReplayCoordinator
         $this->projector->reset();
         try {
             $resume = new SessionResumeMetadataProjection();
-            foreach ($this->projectAlongside($source->log->selectedEvents($source->path, $current->runId, $cut['sequence'], $cut['anchor']), $resume) as $event) {
+            foreach ($this->projectAlongside($source->log->selectedEvents($source->path, $current->runId, $cut['sequence'], $cut['anchor']), $resume, $cut['sequence']) as $event) {
                 unset($event);
             }
 
@@ -112,7 +112,7 @@ final readonly class SessionReplayCoordinator
         }
         $this->projector->reset();
         try {
-            foreach ($this->projectAlongside($source->log->selectedEvents($source->path, $runId, $cut['sequence'], $cut['anchor']), null) as $event) {
+            foreach ($this->projectAlongside($source->log->selectedEvents($source->path, $runId, $cut['sequence'], $cut['anchor']), null, $cut['sequence']) as $event) {
                 unset($event);
             }
 
@@ -128,7 +128,7 @@ final readonly class SessionReplayCoordinator
     {
         $this->projector->replaceProjectedBlocks($blocks);
         try {
-            foreach ($this->projectAlongside([$committed], $resume) as $event) {
+            foreach ($this->projectAlongside([$committed], $resume, $committed->seq) as $event) {
                 unset($event);
             }
 
@@ -141,21 +141,28 @@ final readonly class SessionReplayCoordinator
     /** @param iterable<RunEvent> $events
      * @return \Generator<int, RunEvent>
      */
-    private function projectAlongside(iterable $events, ?SessionResumeMetadataProjection $resume): \Generator
+    private function projectAlongside(iterable $events, ?SessionResumeMetadataProjection $resume, int $sequence): \Generator
     {
         $sizes = [];
-        $hasPending = null;
+        $positions = null;
         foreach ($events as $event) {
-            $hasPending ??= null !== $resume && $this->commands->countPending($event->runId) > 0;
             $runtime = $this->mapper->toRuntimeEvent($event);
+            if (null === $positions && 'user.message_queued' === $runtime?->type) {
+                $positions = [];
+                if (null !== $resume) {
+                    // This runs within the existing owner-coordinated replay. Keep
+                    // only current identities, never all historical queued text.
+                    $keys = $this->commands->pendingKeys($event->runId);
+                    if ([] !== $keys) {
+                        $source = $this->eventStore->historySource($event->runId);
+                        $positions = $source->log->latestCommandSequences($source->path, $event->runId, $keys, $sequence);
+                    }
+                }
+            }
             // Completed mailbox rows are deleted. Consult current pending evidence
             // before retaining text, rather than accumulating historical queues.
-            $pending = $hasPending && 'user.message_queued' === $runtime?->type
-                && $this->commands->has($event->runId, (string) ($runtime->payload['idempotency_key'] ?? ''));
-            if ($pending) {
-                $source = $this->eventStore->historySource($event->runId);
-                $pending = $source->log->isLatestCommand($source->path, $event->runId, (string) $runtime->payload['idempotency_key'], $event->seq);
-            }
+            $pending = 'user.message_queued' === $runtime?->type
+                && $event->seq === ($positions[(string) ($runtime->payload['idempotency_key'] ?? '')] ?? null);
             $resume?->observe($event, $runtime, $pending);
             if (null !== $runtime) {
                 $this->projector->accept($runtime);

@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
+use Ineersa\CodingAgent\Session\History\RunPresentationProjectorFactory;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
@@ -43,10 +44,11 @@ final class SessionRunEventStore implements \Ineersa\AgentCore\Contract\Prepared
         LockFactory $lockFactory,
         private readonly LoggerInterface $logger,
         RunSequenceAllocatorInterface $sequenceAllocator,
+        RunPresentationProjectorFactory $presentations,
         EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
-        $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader, $logger);
+        $this->eventLog = new JsonlRunEventLog($eventPayloadNormalizer, $lockFactory, $sequenceAllocator, $bootstrapReader, $logger, $presentations);
     }
 
     public function appendTransition(array $events, array $work): array

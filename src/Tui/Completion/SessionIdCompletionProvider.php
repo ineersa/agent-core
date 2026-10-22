@@ -42,31 +42,20 @@ final readonly class SessionIdCompletionProvider implements CompletionProvider
 
         [$command, $prefix] = $parsed;
 
-        $sessions = $this->sessionSource->listCompletionSessions();
+        $sessions = $this->sessionSource->listCompletionSessions($prefix, self::MAX_SUGGESTIONS);
 
         if ([] === $sessions) {
             return [];
         }
 
-        $prefixLower = mb_strtolower($prefix);
         $replacementStart = \strlen('/'.$command.' ');
         $replacementLength = \strlen($prefix);
 
         $suggestions = [];
-        $count = 0;
 
         foreach ($sessions as $session) {
-            if ($count >= self::MAX_SUGGESTIONS) {
-                break;
-            }
-
             $sessionId = $session->sessionId;
             $displayTitle = $session->displayTitle;
-
-            // Filter by session ID prefix (case-insensitive, but IDs are numeric)
-            if ('' !== $prefixLower && !str_starts_with($sessionId, $prefixLower)) {
-                continue;
-            }
 
             $suggestions[] = new CompletionSuggestion(
                 display: '#'.$sessionId.' — '.$displayTitle,
@@ -75,8 +64,6 @@ final readonly class SessionIdCompletionProvider implements CompletionProvider
                 replacementStart: $replacementStart,
                 replacementLength: $replacementLength,
             );
-
-            ++$count;
         }
 
         return $suggestions;

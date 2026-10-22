@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\RunPresentationReader;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
@@ -154,7 +155,7 @@ final class RunPresentationReaderTest extends IsolatedKernelTestCase
                 yield $event;
             }
         });
-        $reader = new RunPresentationReader($observed, self::getContainer()->get(RunLockManager::class), new ReplayAssistantMessageFactory(), self::getContainer()->get(ToolExecutionEndPayloadCodec::class));
+        $reader = new RunPresentationReader($observed, self::getContainer()->get(RunLockManager::class), new ReplayAssistantMessageFactory(), self::getContainer()->get(ToolExecutionEndPayloadCodec::class), sources: self::getContainer()->get(RunHistorySourceProviderInterface::class));
         $product = $reader->read($run, 2, 240);
         $this->assertSame(12, $product->messageCount);
         $this->assertSame(12, $product->eligibleMessageCount);
