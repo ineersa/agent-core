@@ -448,12 +448,15 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
     #[TestWith([[700000, 700000, 700000], [[20001], [20002], [20003]]])]
     #[TestWith([[524288, 524288, 4096], [[20001, 20002], [20003]]])]
     #[TestWith([[524288, 524289, 4096], [[20001], [20002, 20003]]])]
-    #[TestWith([[4096, 1048577, 4096], [[20001], [20002], [20003]]])]
+    #[TestWith([[4096, 2097152, 4096], [[20001], [20002], [20003]]])]
     public function testRecoveryBatchesAlsoRespectAggregatePayloadBytes(array $payloadBytes, array $expectedBatches): void
     {
         // The internal budget is 1 MiB of retained string metadata, not an
         // estimate of PHP allocator overhead. Observe real DB transaction ends.
         $prompts = $this->writeOrphansWithMetadataBytes($payloadBytes);
+        if (max($payloadBytes) > 1_048_576) {
+            $this->assertGreaterThan(1_048_576, \strlen($prompts[20002]), 'The oversized case must exceed the budget in prompt bytes alone.');
+        }
         $sql = self::getContainer()->get('test.sql_logger');
         $sql->records = [];
         ($this->recovery)();
