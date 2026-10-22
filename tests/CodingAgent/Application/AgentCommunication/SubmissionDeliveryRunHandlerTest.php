@@ -10,6 +10,9 @@ use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -29,6 +32,53 @@ use Symfony\Component\Filesystem\Filesystem;
 
 final class SubmissionDeliveryRunHandlerTest extends IsolatedKernelTestCase
 {
+    public function testFullSharedMailboxRejectsNoticeWithoutEnqueueOrWakeAndKeepsDecision(): void
+    {
+        $c = self::getContainer();
+        $f = new SubmissionFixture($c);
+        $c->get(DeferredSubagentBatchRepository::class)->markBackgrounded($f->lifecycle, new \DateTimeImmutable());
+        $f->status($f->parent, RunStatus::Completed);
+        $delivery = $this->accept($f, true);
+        $state = $f->parentState->with(['lastSeq' => 3, 'status' => RunStatus::Completed, 'pendingToolCalls' => [], 'activeStepId' => null]);
+        $mailbox = $c->get(CommandStoreInterface::class);
+        for ($i = 0; $i < 100; ++$i) {
+            $mailbox->enqueue(new PendingCommand($f->parent, CoreCommandKind::AppendMessage, 'existing-'.$i, [], new CommandCancellationOptions()));
+        }
+        $handler = $c->get(SubmissionDeliveryRunHandler::class);
+        $result = $handler->handle($delivery, $state);
+        Assert::assertSame('agent_command_rejected', $result->events[0]->type);
+        Assert::assertSame('Pending command mailbox cap (100) exceeded for run.', $result->events[0]->payload['reason']);
+        Assert::assertSame($delivery->identity, $result->events[0]->payload['agent_communication']['identity']);
+        Assert::assertSame([], $result->postCommitActions);
+        Assert::assertSame([], $result->effects);
+        Assert::assertSame([], $result->postCommitEffects);
+        Assert::assertSame(100, $mailbox->countPending($f->parent));
+        Assert::assertFalse($mailbox->has($f->parent, $delivery->identity));
+        $this->commit($state, $result);
+        $mailbox->markApplied($f->parent, 'existing-0');
+        $duplicate = $handler->handle($delivery, $result->nextState);
+        Assert::assertNull($duplicate->nextState);
+        Assert::assertSame([], $duplicate->events);
+        Assert::assertSame([], $duplicate->postCommitActions);
+        Assert::assertSame(99, $mailbox->countPending($f->parent));
+    }
+
+    public function testAuthoredMessageCanUseTheLastSharedMailboxSlot(): void
+    {
+        $c = self::getContainer();
+        $f = new SubmissionFixture($c);
+        $delivery = $this->accept($f);
+        $mailbox = $c->get(CommandStoreInterface::class);
+        for ($i = 0; $i < 99; ++$i) {
+            $mailbox->enqueue(new PendingCommand($f->child, CoreCommandKind::AppendMessage, 'existing-'.$i, [], new CommandCancellationOptions()));
+        }
+        $result = $c->get(SubmissionDeliveryRunHandler::class)->handle($delivery, $f->childState);
+        Assert::assertSame('agent_command_queued', $result->events[0]->type);
+        $this->commit($f->childState, $result);
+        Assert::assertSame(100, $mailbox->countPending($f->child));
+        Assert::assertTrue($mailbox->has($f->child, $delivery->identity));
+    }
+
     public function testDeliveryAndSourceDuplicatesRemainNoOpsAfterMailboxConsumptionAndIndexRebuild(): void
     {
         $c = self::getContainer();

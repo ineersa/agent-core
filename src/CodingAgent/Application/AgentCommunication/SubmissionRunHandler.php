@@ -47,6 +47,17 @@ final readonly class SubmissionRunHandler implements RunMessageHandler
             // since resumed. It never reauthorizes or creates another submission.
             return new HandlerResult(postCommitEffects: [$this->completion($receipt), $this->delivery($receipt)]);
         }
+        $metadata = $this->deferred->findMetadataByDeferredId($message->identity);
+        if (null === $metadata || $metadata->reference->runId !== $state->runId
+            || !\in_array($metadata->reference->toolName, ['agent_steer', 'notify_parent'], true)) {
+            throw new \RuntimeException('Agent submission lacks its native deferred correlation.');
+        }
+        // Refused submissions have no accepted receipt. Their native completed
+        // marker still fences redelivery after correlation-body cleanup or a
+        // later source turn; never reinterpret it as a fresh authorization.
+        if ('completed' === $metadata->status) {
+            return new HandlerResult();
+        }
         $source = $this->deferred->findByDeferredId($message->identity);
         if (null === $source || $source->runId !== $state->runId
             || !\in_array($source->toolName, ['agent_steer', 'notify_parent'], true)) {

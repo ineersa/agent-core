@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Application\AgentCommunication;
 
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\AcceptSubmissionDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\SubmissionReceiptRepository;
@@ -17,9 +21,45 @@ use Ineersa\CodingAgent\Tests\Support\SubmissionFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Assert;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
 final class SubmissionRunHandlerTest extends IsolatedKernelTestCase
 {
+    public function testCompletedRefusalRedeliveryDoesNotDisturbLaterSourceWork(): void
+    {
+        $c = self::getContainer();
+        $f = new SubmissionFixture($c);
+        $receipt = $f->prepare();
+        $f->register($receipt);
+        $f->status($f->child, RunStatus::Cancelled);
+        $active = $c->get(ActiveRunContextInterface::class);
+        $active->loadRecovered($f->parentState);
+        $bus = $c->get('agent.command.bus');
+        $transport = $c->get('messenger.transport.run_control');
+        $transport->reset();
+        $message = new AcceptSubmissionDTO($f->parent, $receipt->identity);
+        $bus->dispatch($message, [new ReceivedStamp('run_control')]);
+        $reply = $transport->getSent()[0];
+        Assert::assertTrue($reply->getMessage()->completion->isError);
+        $bus->dispatch($reply->with(new ReceivedStamp('run_control')));
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        Assert::assertSame('completed', $deferred->status($receipt->identity));
+        Assert::assertNull($deferred->findByDeferredId($receipt->identity));
+        Assert::assertNull($c->get(SubmissionReceiptRepository::class)->receipt($f->parent, $receipt->identity));
+        $f->append($f->parent, 4, 8, 'turn_advanced', ['turn_no' => 8, 'step_id' => 'later-step']);
+        $f->append($f->parent, 5, 8, 'llm_step_completed', ['step_id' => 'later-step', 'assistant_message' => ['tool_calls' => [['id' => 'unrelated']]]]);
+        $later = $f->parentState->with(['lastSeq' => 5, 'turnNo' => 8, 'activeStepId' => 'later-step', 'pendingToolCalls' => ['unrelated' => false]]);
+        $active->loadRecovered($later);
+        $seq = $c->get(EventStoreInterface::class)->latestSequenceFor($f->parent);
+        $transport->reset();
+        $bus->dispatch($message, [new ReceivedStamp('run_control')]);
+        Assert::assertSame($later, $active->requireLoaded($f->parent));
+        Assert::assertSame($seq, $c->get(EventStoreInterface::class)->latestSequenceFor($f->parent));
+        Assert::assertSame([], $transport->getSent());
+        $this->expectException(\RuntimeException::class);
+        $c->get(SubmissionRunHandler::class)->handle(new AcceptSubmissionDTO($f->child, $receipt->identity), $f->childState);
+    }
+
     public function testOwnerAcceptanceIsRecoverableAndDuplicateKeepsOriginalReceipt(): void
     {
         $c = self::getContainer();

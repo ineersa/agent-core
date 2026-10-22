@@ -19,7 +19,12 @@ final readonly class SubmissionCompletionHandler
     public function __invoke(CompleteSubmissionDTO $message): void
     {
         $identity = $message->completion->deferredId;
-        if ('completed' === $this->deferred->status($identity)) {
+        $metadata = $this->deferred->findMetadataByDeferredId($identity);
+        if (null === $metadata || $metadata->reference->runId !== $message->runId()
+            || !\in_array($metadata->reference->toolName, ['agent_steer', 'notify_parent'], true)) {
+            throw new \RuntimeException('Agent submission reply differs from its native source.');
+        }
+        if ('completed' === $metadata->status) {
             return;
         }
         $source = $this->deferred->findByDeferredId($identity);

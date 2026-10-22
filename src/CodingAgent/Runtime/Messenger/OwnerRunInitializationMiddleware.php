@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Application\AgentCommunication\DTO\CompleteSubmissionDTO;
 use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
@@ -83,9 +84,14 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
                         $this->logger->warning('child_run.artifact_running_persist_failed', ['run_id' => $runId, 'parent_run_id' => $child->parentRunId, 'artifact_id' => $child->artifactId, 'component' => 'run_control', 'event_type' => 'child_run.artifact_running_persist_failed', 'exception_class' => $exception::class]);
                     }
                 }
+            }
 
-                // Owner StartRun post-handling is done. A late envelope must not
-                // retain a recovered terminal child's execution state.
+            if ($message instanceof StartRun || $message instanceof CompleteSubmissionDTO) {
+                $child = $this->children->locate($runId);
+                $status = $this->operationalStatus->findOperationalStatus($runId)?->status;
+                // These handlers can settle a late envelope without entering
+                // RunMessageProcessor's terminal no-op release. Owner recovery
+                // must not leave that finished child's execution graph resident.
                 if (null !== $child && null !== $status && $status->isTerminal()) {
                     $this->registry->release($runId);
                 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Application\AgentCommunication;
 
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
+use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
@@ -23,7 +24,7 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final readonly class SubmissionDeliveryRunHandler implements RunMessageHandler
 {
-    public function __construct(private SubmissionReceiptRepository $receipts, private SubmissionDeliveryPolicy $policy, private RunHistorySourceProviderInterface $sources, private EventFactory $events, private NormalizerInterface $normalizer)
+    public function __construct(private SubmissionReceiptRepository $receipts, private SubmissionDeliveryPolicy $policy, private RunHistorySourceProviderInterface $sources, private EventFactory $events, private NormalizerInterface $normalizer, private ApplyCommandHandler $commands)
     {
     }
 
@@ -49,6 +50,7 @@ final readonly class SubmissionDeliveryRunHandler implements RunMessageHandler
         $provenance = ['identity' => $receipt->identity, 'source_run_id' => $receipt->sourceRunId,
             'tool_name' => $receipt->toolName, 'lifecycle_id' => $receipt->lifecycleId];
         $reason = $this->policy->refusal($receipt, $state);
+        $reason ??= $this->commands->mailboxCapacityRejection($state->runId, CoreCommandKind::AppendMessage);
         $payload = ['kind' => CoreCommandKind::AppendMessage, 'idempotency_key' => $receipt->identity, 'agent_communication' => $provenance];
         $actions = [];
         if (null === $reason) {
