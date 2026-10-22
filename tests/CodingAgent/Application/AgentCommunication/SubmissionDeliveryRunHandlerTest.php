@@ -28,10 +28,39 @@ use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Tests\Support\SubmissionFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Assert;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Filesystem\Filesystem;
 
 final class SubmissionDeliveryRunHandlerTest extends IsolatedKernelTestCase
 {
+    public static function parentCompletionBoundaries(): iterable
+    {
+        yield 'before recipient admission' => [true];
+        yield 'after queueing, before consumption' => [false];
+    }
+
+    #[DataProvider('parentCompletionBoundaries')]
+    public function testAcceptedSteeringSurvivesNormalParentCompletion(bool $beforeAdmission): void
+    {
+        $c = self::getContainer();
+        $f = new SubmissionFixture($c);
+        $c->get(DeferredSubagentBatchRepository::class)->markBackgrounded($f->lifecycle, new \DateTimeImmutable());
+        $delivery = $this->accept($f);
+        if ($beforeAdmission) {
+            $f->status($f->parent, RunStatus::Completed);
+        }
+        $result = $c->get(SubmissionDeliveryRunHandler::class)->handle($delivery, $f->childState);
+        Assert::assertSame('agent_command_queued', $result->events[0]->type);
+        Assert::assertCount(1, $result->postCommitActions); // enqueue only, never wake the parent
+        $this->commit($f->childState, $result);
+        $f->status($f->parent, RunStatus::Completed);
+        $boundary = $c->get(CommandMailboxPolicy::class)->applyPendingTurnStartCommands($result->nextState->with(['pendingToolCalls' => [], 'activeStepId' => null]));
+        Assert::assertSame('agent_command_applied', $boundary->eventSpecs[0]['type']);
+        Assert::assertSame('agent_communication', $boundary->state->messages[array_key_last($boundary->state->messages)]->role);
+        Assert::assertStringContainsString('Important guidance', $boundary->eventSpecs[0]['payload']['text']);
+        Assert::assertSame(RunStatus::Running, $boundary->state->status);
+    }
+
     public function testFullSharedMailboxRejectsNoticeWithoutEnqueueOrWakeAndKeepsDecision(): void
     {
         $c = self::getContainer();

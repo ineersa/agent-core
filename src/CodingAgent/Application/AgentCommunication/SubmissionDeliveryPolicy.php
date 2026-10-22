@@ -59,8 +59,10 @@ final readonly class SubmissionDeliveryPolicy implements CommandConsumptionPolic
         if ('agent_steer' === $receipt->toolName && $childStatus->isTerminal()) {
             return 'Steering cannot resume a terminal child.';
         }
-        if (RunStatus::Completed === $parentStatus) {
-            if ('notify_parent' !== $receipt->toolName || !$receipt->backgrounded || $childStatus->isTerminal() || null !== $state->parentRunId) {
+        // Only notices revive the parent. Accepted steering remains valid when
+        // its source finishes normally before the child's next safe boundary.
+        if ('notify_parent' === $receipt->toolName && RunStatus::Completed === $parentStatus) {
+            if (!$receipt->backgrounded || $childStatus->isTerminal() || null !== $state->parentRunId) {
                 return 'Only a current running background child may continue its idle parent.';
             }
         }
