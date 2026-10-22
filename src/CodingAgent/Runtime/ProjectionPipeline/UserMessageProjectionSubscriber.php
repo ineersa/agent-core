@@ -92,17 +92,6 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
         string $text,
         array $metadata,
     ): TranscriptBlock {
-        if (\is_array($metadata['agent_communication'] ?? null)) {
-            return new TranscriptBlock(
-                id: $id,
-                kind: TranscriptBlockKindEnum::System,
-                runId: $runId,
-                seq: $seq,
-                text: $text,
-                meta: ['agent_communication' => $metadata['agent_communication']],
-            );
-        }
-
         if (true === ($metadata['system_reminder'] ?? null)) {
             $reminderBody = self::extractSystemReminderBody($text);
             if (null !== $reminderBody) {

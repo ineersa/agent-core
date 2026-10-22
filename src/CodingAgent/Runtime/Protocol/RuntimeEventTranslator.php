@@ -8,7 +8,10 @@ use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
  * Translates AgentCore RunEvent domain events into stable RuntimeEvent DTOs.
@@ -43,6 +46,7 @@ final class RuntimeEventTranslator
     public function __construct(
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly ToolExecutionEndPayloadCodec $toolExecutionEndPayloadCodec,
+        private readonly NormalizerInterface $normalizer,
         private readonly AgentMessageNormalizer $messageNormalizer = new AgentMessageNormalizer(),
     ) {
         $this->dispatchTable = [
@@ -58,7 +62,7 @@ final class RuntimeEventTranslator
             RunEventTypeEnum::ToolExecutionStart->value => $this->onToolExecutionStarted(...),
             RunEventTypeEnum::ToolExecutionUpdate->value => $this->onToolExecutionUpdate(...),
             RunEventTypeEnum::ToolExecutionEnd->value => $this->onToolExecutionEnded(...),
-            // Model notification (generic, tool-scoped for now)
+            // Model notification
             RunEventTypeEnum::ModelNotification->value => $this->onModelNotification(...),
             // HITL
             RunEventTypeEnum::WaitingHuman->value => $this->onWaitingHuman(...),
@@ -432,6 +436,7 @@ final class RuntimeEventTranslator
 
     /**
      * Resolve agent_command_applied with explicit priority:
+     * authored agent communication → model.notification,
      * steer / follow_up / append_message / shell_command → user.message_submitted,
      * human_response → human_input.answered,
      * cancel → cancellation.requested,
@@ -494,6 +499,29 @@ final class RuntimeEventTranslator
                 'idempotency_key' => $idempotencyKey,
             ];
             $metadata = \is_array($messagePayload) ? ($messagePayload['metadata'] ?? null) : null;
+            if ('append_message' === $kind && 'agent_communication' === ($messagePayload['role'] ?? null)
+                && \is_array($metadata) && \is_array($metadata['agent_communication'] ?? null)) {
+                // System transcript blocks are presentation, not system-role
+                // authority. Keep the canonical custom-role message unchanged
+                // and never announce agent traffic as human activity.
+                $provenance = $metadata['agent_communication'];
+                $notification = new ModelNotificationDTO(
+                    id: $provenance['identity'],
+                    source: 'agent_communication',
+                    kind: $provenance['tool_name'],
+                    severity: 'info',
+                    delivery: 'message',
+                    text: $text,
+                    metadata: ['agent_communication' => $provenance],
+                );
+
+                return new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::ModelNotification->value,
+                    runId: $runEvent->runId,
+                    seq: $runEvent->seq,
+                    payload: ModelNotificationCodec::toEventSpecs($this->normalizer, [$notification])[0]['payload'],
+                );
+            }
             if (\is_array($metadata) && [] !== $metadata) {
                 $payload['metadata'] = $metadata;
             }
@@ -515,7 +543,7 @@ final class RuntimeEventTranslator
         $kind = (string) ($p['kind'] ?? '');
 
         // Authored agent traffic is not pending human input. Its applied
-        // message carries attribution to the transcript projector instead.
+        // message becomes an attributed model notification instead.
         if (\is_array($p['agent_communication'] ?? null)) {
             return null;
         }

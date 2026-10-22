@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Support;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -16,6 +17,9 @@ use Ineersa\CodingAgent\Application\AgentCommunication\DTO\AcceptSubmissionDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\CompleteSubmissionDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\DeliverSubmissionDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\SubmissionReceiptRepository;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\History\HistoryPromptTextExtractor;
 use PHPUnit\Framework\Assert;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
@@ -68,5 +72,26 @@ final class AgentCommunicationToolProof
         Assert::assertSame('agent_communication', $message->role);
         Assert::assertStringContainsString('Important guidance', $message->content[0]['text']);
         Assert::assertSame($accept->identity, $message->metadata['agent_communication']['identity']);
+        Assert::assertStringContainsString($notice ? 'child (informational notice)' : 'parent task owner (guidance)', $message->content[0]['text']);
+        $notifications = [];
+        $mapper = $c->get(RuntimeEventMapper::class);
+        foreach ($c->get(EventStoreInterface::class)->allFor($target->runId) as $event) {
+            if ($accept->identity !== ($event->payload['idempotency_key'] ?? null)) {
+                continue;
+            }
+            Assert::assertSame('', HistoryPromptTextExtractor::extract($event->type, $event->payload));
+            $runtime = $mapper->toRuntimeEvent($event);
+            if (null === $runtime) {
+                continue;
+            }
+            Assert::assertNotContains($runtime->type, [RuntimeEventTypeEnum::UserMessageSubmitted->value, RuntimeEventTypeEnum::UserMessageQueued->value]);
+            if (RuntimeEventTypeEnum::ModelNotification->value === $runtime->type) {
+                $notifications[] = $runtime;
+            }
+        }
+        Assert::assertCount(1, $notifications);
+        Assert::assertSame($message->content[0]['text'], $notifications[0]->payload['text']);
+        Assert::assertSame($accept->identity, $notifications[0]->payload['id']);
+        Assert::assertSame($notice ? 'notify_parent' : 'agent_steer', $notifications[0]->payload['kind']);
     }
 }

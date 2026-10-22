@@ -167,14 +167,17 @@ final class TranscriptProjectorTest extends TestCase
     {
         $text = 'Agent message from child run child-1. Not a human request.';
         $provenance = ['identity' => 'submission-1', 'source_run_id' => 'child-1'];
-        $this->accept('user.message_submitted', [
-            'message_id' => 'agent-1', 'text' => $text,
+        $this->accept('model.notification', [
+            'id' => 'submission-1', 'text' => $text,
+            'source' => 'agent_communication', 'kind' => 'notify_parent', 'severity' => 'info', 'delivery' => 'message',
             'metadata' => ['agent_communication' => $provenance],
         ]);
         $this->accept('user.message_submitted', ['message_id' => 'human-1', 'text' => $text]);
         $blocks = $this->projector->blocks();
         Assert::assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
-        Assert::assertSame($provenance, $blocks[0]->meta['agent_communication']);
+        Assert::assertSame($provenance, $blocks[0]->meta['producer_metadata']['agent_communication']);
+        Assert::assertSame('submission-1', $blocks[0]->meta['notification_id']);
+        Assert::assertSame('notify_parent', $blocks[0]->meta['kind']);
         Assert::assertSame($text, $blocks[0]->text);
         Assert::assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[1]->kind);
     }

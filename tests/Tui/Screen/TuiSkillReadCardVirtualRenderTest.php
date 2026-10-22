@@ -200,7 +200,7 @@ final class TuiSkillReadCardVirtualRenderTest extends TestCase
                 'tool_calls' => $toolCalls,
             ],
         ]);
-        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
         $completion = $translator->translate($canonical);
         $this->assertNotNull($completion);
         $projector->accept($completion);

@@ -87,7 +87,7 @@ final class AssistantStreamProjectionSubscriberTest extends TestCase
                 $content[] = ['type' => 'tool_call', 'tool_call_index' => 0];
             }
         }
-        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
         $event = $translator->translate(new RunEvent('run', 10, 1, 'llm_step_completed', ['step_id' => 'step', 'assistant_message' => ['content' => $content, 'details' => ['thinking' => 'Summary'], 'tool_calls' => [['id' => 'call', 'name' => 'read', 'arguments' => []]]]]));
         $this->assertNotNull($event);
 

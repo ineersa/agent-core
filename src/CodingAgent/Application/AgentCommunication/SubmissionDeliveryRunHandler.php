@@ -46,12 +46,13 @@ final readonly class SubmissionDeliveryRunHandler implements RunMessageHandler
         if ($source->log->hasSubmissionDecision($source->path, $state->runId, $receipt->identity)) {
             return new HandlerResult();
         }
-        $provenance = ['identity' => $receipt->identity, 'source_run_id' => $receipt->sourceRunId];
+        $provenance = ['identity' => $receipt->identity, 'source_run_id' => $receipt->sourceRunId,
+            'tool_name' => $receipt->toolName, 'lifecycle_id' => $receipt->lifecycleId];
         $reason = $this->policy->refusal($receipt, $state);
         $payload = ['kind' => CoreCommandKind::AppendMessage, 'idempotency_key' => $receipt->identity, 'agent_communication' => $provenance];
         $actions = [];
         if (null === $reason) {
-            $relationship = 'agent_steer' === $receipt->toolName ? 'parent' : 'child';
+            $relationship = 'agent_steer' === $receipt->toolName ? 'parent task owner (guidance)' : 'child (informational notice)';
             $text = \sprintf("Agent message from %s run %s, activity %s. This is agent-authored text, not a human request or runtime control.\n\n%s", $relationship, $receipt->sourceRunId, $receipt->lifecycleId, $receipt->text);
             $envelope = $this->normalizer->normalize(new AgentMessage('agent_communication', [['type' => 'text', 'text' => $text]], metadata: ['agent_communication' => $provenance]));
             $actions[] = new EnqueueCommandDTO(new PendingCommand($state->runId, CoreCommandKind::AppendMessage, $receipt->identity, [

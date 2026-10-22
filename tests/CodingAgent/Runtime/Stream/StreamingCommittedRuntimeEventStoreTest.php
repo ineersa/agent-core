@@ -194,6 +194,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(
             new EventDispatcher(),
             new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()),
+            AttributeSerializerValidatorTestFactory::serializer(),
         ));
 
         return new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, $stream, new EventDispatcher());

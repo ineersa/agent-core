@@ -25,11 +25,39 @@ final class RuntimeEventMapperTest extends TestCase
     protected function setUp(): void
     {
         $this->mapper = new RuntimeEventMapper(
-            new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())),
+            new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer()),
         );
     }
 
     // ── Lifecycle normalization ──────────────────────────────────────────────
+
+    public function testAuthoredCommunicationUsesNotificationInsteadOfHumanEvents(): void
+    {
+        foreach (['agent_steer', 'notify_parent'] as $tool) {
+            $provenance = ['identity' => 'receipt-'.$tool, 'source_run_id' => 'source', 'tool_name' => $tool, 'lifecycle_id' => 'activity'];
+            $queued = $this->runEvent('agent_command_queued', [
+                'kind' => 'append_message', 'idempotency_key' => $provenance['identity'], 'agent_communication' => $provenance,
+            ]);
+            $this->assertNull($this->mapper->toRuntimeEvent($queued));
+            $applied = $this->runEvent('agent_command_applied', [
+                'kind' => 'append_message', 'idempotency_key' => $provenance['identity'],
+                'message' => ['role' => 'agent_communication', 'content' => [['type' => 'text', 'text' => 'Exact authored text']],
+                    'metadata' => ['agent_communication' => $provenance]],
+            ]);
+            $runtime = $this->mapper->toRuntimeEvent($applied);
+            $this->assertNotNull($runtime);
+            $this->assertSame(RuntimeEventTypeEnum::ModelNotification->value, $runtime->type);
+            $this->assertSame($applied->seq, $runtime->seq);
+            $this->assertSame($applied->runId, $runtime->runId);
+            $this->assertSame($provenance['identity'], $runtime->payload['id']);
+            $this->assertSame('agent_communication', $runtime->payload['source']);
+            $this->assertSame($tool, $runtime->payload['kind']);
+            $this->assertSame('info', $runtime->payload['severity']);
+            $this->assertSame('Exact authored text', $runtime->payload['text']);
+            $this->assertSame($provenance, $runtime->payload['metadata']['agent_communication']);
+            $this->assertSame('agent_communication', $applied->payload['message']['role']);
+        }
+    }
 
     public function testToolTimingUsesCanonicalEventTimestamps(): void
     {
