@@ -90,7 +90,7 @@ final readonly class SubmissionFactory
             throw new ToolCallException('Direct child activity is no longer authorized.', retryable: false);
         }
         $childStatus = $this->statuses->findOperationalStatus($child->childRunId)?->status;
-        if (!\in_array($childStatus, [RunStatus::Running, RunStatus::WaitingHuman], true)) {
+        if (!\in_array($childStatus, [RunStatus::Running, RunStatus::WaitingHuman, RunStatus::Compacting], true)) {
             throw new ToolCallException('Agent communication requires an active child.', retryable: false);
         }
         $parentStatus = $this->statuses->findOperationalStatus($batch->parentRunId)?->status;

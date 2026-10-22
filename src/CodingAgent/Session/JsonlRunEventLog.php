@@ -508,6 +508,11 @@ final class JsonlRunEventLog
         throw new \RuntimeException('Agent submission index does not resolve its canonical receipt.');
     }
 
+    public function hasSubmissionDecision(string $path, string $runId, string $identity): bool
+    {
+        return null !== $this->historyIndex->submissionSequence($this, $path, $runId, $identity);
+    }
+
     /** @return array{sequence: int, end_offset: int, anchor: int}|null */
     public function historyCut(string $path, string $runId, ?int $positionTurnNo = null): ?array
     {

@@ -79,11 +79,13 @@ final readonly class CommandMailboxPolicy
         foreach ($pendingCommands as $pendingCommand) {
             $metadata = [];
             $retirementReason = null;
+            $defer = false;
             foreach ($this->consumptionPolicies as $policy) {
                 $decision = $policy->prepare($state, $pendingCommand);
                 if (null !== $decision) {
                     $metadata = array_replace($metadata, $decision->metadata);
                     $retirementReason ??= $decision->retirementReason;
+                    $defer = $defer || $decision->defer;
                 }
             }
             if (null !== $retirementReason) {
@@ -91,6 +93,11 @@ final readonly class CommandMailboxPolicy
                 $event['payload']['consumption_metadata'] = $metadata;
                 $eventSpecs[] = $event;
 
+                continue;
+            }
+            // A deferred decision leaves the row and its original continuation
+            // untouched. Only an applied or rejected event settles the mailbox.
+            if ($defer) {
                 continue;
             }
             if (\in_array($pendingCommand->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {

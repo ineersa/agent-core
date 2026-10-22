@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
+use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -160,6 +161,22 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame('manual-1', $blocks[1]->id);
         $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[1]->kind);
         $this->assertSame($wrapped, $blocks[1]->text);
+    }
+
+    public function testAgentAuthoredMessageIsAttributedWithoutBecomingAHumanPrompt(): void
+    {
+        $text = 'Agent message from child run child-1. Not a human request.';
+        $provenance = ['identity' => 'submission-1', 'source_run_id' => 'child-1'];
+        $this->accept('user.message_submitted', [
+            'message_id' => 'agent-1', 'text' => $text,
+            'metadata' => ['agent_communication' => $provenance],
+        ]);
+        $this->accept('user.message_submitted', ['message_id' => 'human-1', 'text' => $text]);
+        $blocks = $this->projector->blocks();
+        Assert::assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
+        Assert::assertSame($provenance, $blocks[0]->meta['agent_communication']);
+        Assert::assertSame($text, $blocks[0]->text);
+        Assert::assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[1]->kind);
     }
 
     public function testQueuedUserMessageDoesNotProjectBlock(): void

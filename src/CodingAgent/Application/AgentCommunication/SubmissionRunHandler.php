@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\AcceptSubmissionDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\CompleteSubmissionDTO;
+use Ineersa\CodingAgent\Application\AgentCommunication\DTO\DeliverSubmissionDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\SubmissionReceiptDTO;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -44,7 +45,7 @@ final readonly class SubmissionRunHandler implements RunMessageHandler
 
             // A duplicate returns the original receipt, even if this child has
             // since resumed. It never reauthorizes or creates another submission.
-            return new HandlerResult(postCommitEffects: [$this->completion($receipt)]);
+            return new HandlerResult(postCommitEffects: [$this->completion($receipt), $this->delivery($receipt)]);
         }
         $source = $this->deferred->findByDeferredId($message->identity);
         if (null === $source || $source->runId !== $state->runId
@@ -73,8 +74,13 @@ final readonly class SubmissionRunHandler implements RunMessageHandler
 
         return new HandlerResult(
             $state->with(['lastSeq' => $state->lastSeq + 1, 'version' => $state->version + 1]), [$event],
-            postCommitEffects: [$this->completion($receipt)],
+            postCommitEffects: [$this->completion($receipt), $this->delivery($receipt)],
         );
+    }
+
+    private function delivery(SubmissionReceiptDTO $receipt): DeliverSubmissionDTO
+    {
+        return new DeliverSubmissionDTO('agent_steer' === $receipt->toolName ? $receipt->childRunId : $receipt->parentRunId, $receipt->sourceRunId, $receipt->identity);
     }
 
     private function completion(SubmissionReceiptDTO $receipt): CompleteSubmissionDTO

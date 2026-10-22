@@ -567,6 +567,9 @@ final readonly class RunHistoryIndex
         if ('tool_execution_update' === $type && \is_string($payload['submission_receipt']['identity'] ?? null)) {
             $db->executeStatement('INSERT OR IGNORE INTO agent_submission_location (identity_hash, seq) VALUES (?, ?)', [hash('sha256', $payload['submission_receipt']['identity']), $seq]);
         }
+        if (\in_array($type, ['agent_command_queued', 'agent_command_rejected'], true) && \is_string($payload['agent_communication']['identity'] ?? null)) {
+            $db->executeStatement('INSERT OR IGNORE INTO agent_submission_location (identity_hash, seq) VALUES (?, ?)', [hash('sha256', $payload['agent_communication']['identity']), $seq]);
+        }
         $promptText = HistoryPromptTextExtractor::extract($type, $payload);
         if ('' !== $promptText) {
             $kind = 'run_started' === $type ? 'initial' : 'human';

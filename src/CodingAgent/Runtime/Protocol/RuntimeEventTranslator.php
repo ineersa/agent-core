@@ -514,6 +514,12 @@ final class RuntimeEventTranslator
         $p = $runEvent->payload;
         $kind = (string) ($p['kind'] ?? '');
 
+        // Authored agent traffic is not pending human input. Its applied
+        // message carries attribution to the transcript projector instead.
+        if (\is_array($p['agent_communication'] ?? null)) {
+            return null;
+        }
+
         if (!\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
             return null;
         }
