@@ -5,16 +5,20 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionCatalogRecoveryService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Tests\Support\ResumeCanonicalEventsFixture;
+use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -360,6 +364,81 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
         } finally {
             TestDirectoryIsolation::removeDirectory($directory);
         }
+    }
+
+    #[TestWith([400])]
+    #[TestWith([401])]
+    public function testCatalogLookupsArePagedAndRecoveryIsIdempotent(int $count): void
+    {
+        for ($i = 1; $i <= $count; ++$i) {
+            $id = (string) (10000 + $i);
+            $dir = $this->sessionStore->resolveSessionsBasePath().'/'.$id;
+            mkdir($dir, 0700, true);
+            file_put_contents($dir.'/events.jsonl', $this->minimalRunStartedJsonl($id, 'Recovered '.$id));
+        }
+        $sql = self::getContainer()->get('test.sql_logger');
+        $sql->records = [];
+        ($this->recovery)();
+        $lookups = array_filter($sql->records, static fn (array $row): bool => str_starts_with($row['context']['sql'] ?? '', 'SELECT id FROM hatfield_session WHERE id IN'));
+        $this->assertCount((int) ceil($count / 400), $lookups);
+        $this->assertSame($count, (int) $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM hatfield_session'));
+        $sql->records = [];
+        ($this->recovery)();
+        $lookups = array_filter($sql->records, static fn (array $row): bool => str_starts_with($row['context']['sql'] ?? '', 'SELECT id FROM hatfield_session WHERE id IN'));
+        $inserts = array_filter($sql->records, static fn (array $row): bool => str_starts_with($row['context']['sql'] ?? '', 'INSERT INTO hatfield_session'));
+        $this->assertCount((int) ceil($count / 400), $lookups);
+        $this->assertSame([], $inserts);
+    }
+
+    public function testConcurrentInsertAtConflictBoundaryKeepsWinnerAndContinuesBatch(): void
+    {
+        foreach (['77', '78'] as $id) {
+            $dir = $this->sessionStore->resolveSessionsBasePath().'/'.$id;
+            mkdir($dir, 0700, true);
+            file_put_contents($dir.'/events.jsonl', $this->minimalRunStartedJsonl($id, 'Recovered '.$id));
+        }
+        $connection = $this->em->getConnection();
+        // Deterministically inject the competing insert after the existence read.
+        // This proves conflict handling, not OS-level transaction scheduling.
+        $connection->executeStatement("CREATE TRIGGER catalog_insert_race BEFORE INSERT ON hatfield_session WHEN NEW.id = 77 BEGIN INSERT INTO hatfield_session (id, cwd, name, provider_cache_key, created_at, updated_at) VALUES (NEW.id, NEW.cwd, 'Concurrent winner', NEW.provider_cache_key, NEW.created_at, NEW.updated_at); END");
+        try {
+            ($this->recovery)();
+            $this->assertSame('Concurrent winner', $connection->fetchOne('SELECT name FROM hatfield_session WHERE id = 77'));
+            $this->assertSame('Recovered 78', $connection->fetchOne('SELECT name FROM hatfield_session WHERE id = 78'));
+            $this->assertSame(2, (int) $connection->fetchOne('SELECT COUNT(*) FROM hatfield_session'));
+        } finally {
+            $connection->executeStatement('DROP TRIGGER catalog_insert_race');
+        }
+    }
+
+    public function testDatabaseFailureRollsBackTheBoundedBatchAndDoesNotLogRecovery(): void
+    {
+        foreach (['77', '78'] as $id) {
+            $dir = $this->sessionStore->resolveSessionsBasePath().'/'.$id;
+            mkdir($dir, 0700, true);
+            file_put_contents($dir.'/events.jsonl', $this->minimalRunStartedJsonl($id, 'Recovered '.$id));
+        }
+        $connection = $this->em->getConnection();
+        $connection->executeStatement("CREATE TRIGGER catalog_failure BEFORE INSERT ON hatfield_session WHEN NEW.id = 78 BEGIN SELECT RAISE(ABORT, 'catalog write refused'); END");
+        try {
+            try {
+                ($this->recovery)();
+                $this->fail('Infrastructure failures must propagate, not degrade as corrupt history.');
+            } catch (Exception $exception) {
+                $this->assertStringContainsString('catalog write refused', $exception->getMessage());
+            }
+            $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM hatfield_session'));
+            $this->assertSame([], array_values(array_filter($this->logger->records, static fn (array $row): bool => 'session_catalog_recovery.recovered' === $row['message'])));
+        } finally {
+            $connection->executeStatement('DROP TRIGGER catalog_failure');
+        }
+        ($this->recovery)();
+        $this->assertSame(2, (int) $connection->fetchOne('SELECT COUNT(*) FROM hatfield_session'));
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new SqlLoggingKernel('test', false);
     }
 
     private function minimalRunStartedJsonl(string $runId, string $prompt): string

@@ -37,7 +37,7 @@ final readonly class DeferredSubagentBatchRecoveryService
 
     public function recover(string $batchLifecycleId): void
     {
-        $batch = $this->batchRepository->findByLifecycleId($batchLifecycleId);
+        $batch = $this->batchRepository->findEntityByLifecycleId($batchLifecycleId);
         if (null === $batch) {
             return;
         }
@@ -60,7 +60,7 @@ final readonly class DeferredSubagentBatchRecoveryService
 
         $children = $this->childRepository->findOrderedByBatchLifecycleId($batchLifecycleId);
         foreach ($children as $child) {
-            $batch = $this->batchRepository->findByLifecycleId($batchLifecycleId);
+            $batch = $this->batchRepository->findEntityByLifecycleId($batchLifecycleId);
             if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt) {
                 return;
             }

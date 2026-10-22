@@ -542,6 +542,27 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         }
     }
 
+    public function testBulkCommandPositionsPreserveLatestOccurrencesAcrossPageBoundary(): void
+    {
+        $this->write(1, 0, 'run_started');
+        $keys = [];
+        for ($i = 0; $i < 401; ++$i) {
+            $key = 'bulk-'.$i;
+            $keys[] = $key;
+            $this->write(2 + $i, 0, 'agent_command_queued', ['kind' => 'steer', 'idempotency_key' => $key, 'text' => 'text']);
+        }
+        $this->write(403, 0, 'agent_command_rejected', ['kind' => 'steer', 'idempotency_key' => 'bulk-0', 'reason' => 'settled']);
+        $this->write(404, 0, 'agent_command_queued', ['kind' => 'steer', 'idempotency_key' => 'bulk-1', 'text' => 'latest']);
+        $this->assertSame(404, $this->log->historyCut($this->path, 'indexed')['sequence']);
+        $positions = $this->log->latestCommandSequences($this->path, 'indexed', [...$keys, 'bulk-0', 'missing'], 404);
+        $this->assertCount(401, $positions);
+        $this->assertSame(403, $positions['bulk-0']);
+        $this->assertSame(404, $positions['bulk-1']);
+        $this->assertSame(402, $positions['bulk-400']);
+        $this->assertArrayNotHasKey('missing', $positions);
+        $this->assertSame([], $this->log->latestCommandSequences($this->path, 'indexed', [], 404));
+    }
+
     /** @return iterable<string> */
     private function retainedLines(): iterable
     {

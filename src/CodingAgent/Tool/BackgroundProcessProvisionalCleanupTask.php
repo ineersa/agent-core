@@ -47,6 +47,7 @@ final class BackgroundProcessProvisionalCleanupTask
         $cutoff = Clock::get()->now()->modify('-'.self::INTERVAL_SECONDS.' seconds');
         $cleaned = 0;
         $failed = 0;
+        $ids = [];
 
         foreach ($this->store->fetchFinishedProvisionalBefore($cutoff, $sessionIds) as $entity) {
             if (!$this->lifecycle->deleteExactRecordSidecars($entity->logPath, $entity->statusPath)) {
@@ -54,12 +55,11 @@ final class BackgroundProcessProvisionalCleanupTask
                 continue;
             }
 
-            if ($this->store->deleteById($entity->id)) {
-                ++$cleaned;
-            } else {
-                ++$failed;
-            }
+            $ids[] = $entity->id;
         }
+
+        $cleaned = $this->store->deleteByIds($ids);
+        $failed += \count($ids) - $cleaned;
 
         $this->logger->info('background_process.provisional_cleanup_completed', [
             'component' => 'tool.background_process',

@@ -81,6 +81,14 @@ final readonly class DoctrineCommandStore implements CommandStoreInterface
         return $pending;
     }
 
+    public function pendingKeys(string $runId): array
+    {
+        return array_map(
+            static fn (array $row): string => (string) $row['idempotencyKey'],
+            $this->records($runId)->select('c.idempotencyKey')->orderBy('c.id', 'ASC')->getQuery()->getScalarResult(),
+        );
+    }
+
     public function countPending(string $runId): int
     {
         return (int) $this->records($runId)->select('COUNT(c.id)')->getQuery()->getSingleScalarResult();

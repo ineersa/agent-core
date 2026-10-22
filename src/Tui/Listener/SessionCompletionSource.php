@@ -26,10 +26,10 @@ final readonly class SessionCompletionSource implements SessionCompletionSourceI
     /**
      * @return list<SessionCompletionRow>
      */
-    public function listCompletionSessions(): array
+    public function listCompletionSessions(string $prefix, int $limit): array
     {
         $rows = [];
-        foreach ($this->sessionStore->listSessions() as $session) {
+        foreach ($this->sessionStore->listCompletionSessions($prefix, $limit) as $session) {
             $rows[] = new SessionCompletionRow(
                 sessionId: $session['sessionId'],
                 displayTitle: $session['displayTitle'],

@@ -28,7 +28,7 @@ final readonly class DeferredSubagentBatchParentCancelHookSubscriber implements 
         }
 
         $actions = [];
-        foreach ($this->batchRepository->findUnfinishedByParentRunId($context->runId) as $batch) {
+        foreach ($this->batchRepository->findUnfinishedHeadersByParentRunId($context->runId) as $batch) {
             $actions[] = new \Ineersa\CodingAgent\Application\Message\DeferredAfterTurnCoordinationDTO(
                 $context->runId, $predecessorSequence,
                 new InterruptDeferredSubagentBatchMessage($batch->lifecycleId, DeferredSubagentInterruptionKindEnum::ParentCancelled),

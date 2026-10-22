@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception as DbalException;
@@ -222,9 +223,16 @@ final readonly class RunHistoryIndex
         }
     }
 
-    /** Lookup within the index already validated by this owner's selected replay. */
-    public function isLatestCommand(string $path, string $runId, string $key, int $sequence): bool
+    /** Lookup within the index already validated by this owner's selected replay.
+     * @param list<string> $keys
+     *
+     * @return array<string, int>
+     */
+    public function latestCommandSequences(string $path, string $runId, array $keys, int $sequence): array
     {
+        if ([] === $keys) {
+            return [];
+        }
         if (is_file($this->indexPath($path).'.unavailable')) {
             throw new \RuntimeException('Resume command evidence requires a usable history index.');
         }
@@ -235,7 +243,22 @@ final readonly class RunHistoryIndex
                 throw new \RuntimeException('Resume command evidence does not match its indexed cut.');
             }
 
-            return $sequence === (int) $db->fetchOne('SELECT sequence FROM command_resolution WHERE identity_hash = ?', [hash('sha256', $key)]);
+            $positions = [];
+            foreach (array_chunk(array_values(array_unique($keys)), 400) as $chunk) {
+                $rows = $db->fetchAllKeyValue(
+                    'SELECT identity_hash, sequence FROM command_resolution WHERE identity_hash IN (?)',
+                    [array_map(static fn (string $key): string => hash('sha256', $key), $chunk)],
+                    [ArrayParameterType::STRING],
+                );
+                foreach ($chunk as $key) {
+                    $hash = hash('sha256', $key);
+                    if (isset($rows[$hash])) {
+                        $positions[$key] = (int) $rows[$hash];
+                    }
+                }
+            }
+
+            return $positions;
         } finally {
             $db->close();
         }
