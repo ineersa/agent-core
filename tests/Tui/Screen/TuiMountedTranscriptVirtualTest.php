@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -66,8 +66,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
                 )),
                 meta: [
                     'tool_name' => 'subagent',
-                    'subagent_progress' => new SubagentProgressSingleSnapshotDTO(
-                        mode: 'single',
+                    'subagent_progress' => new SubagentProgressSnapshotDTO(
                         status: 'completed',
                         agentName: 'scout',
                         artifactId: 'agent_virtual_mounted',

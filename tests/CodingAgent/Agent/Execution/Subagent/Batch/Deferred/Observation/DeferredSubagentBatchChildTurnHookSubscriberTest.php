@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\DeferredSubagentBatchChildTurnHookSubscriber;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage;
@@ -55,12 +55,8 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
                 parentTurnNo: 2,
                 parentToolCallId: $tool,
                 parentOrderIndex: 0,
-                executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-                totalChildCount: 1,
                 deadlineAt: new \DateTimeImmutable('+600 seconds'),
-                childIntents: [
-                    ['batchIndex' => 1, 'childRunId' => $onlyFailed['childRunId'], 'artifactId' => $onlyFailed['artifactId'], 'agentName' => 'worker', 'task' => 'T2', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
-                ],
+                childIntent: new DeferredSubagentBatchChildIntentDTO(batchIndex: 1, childRunId: $onlyFailed['childRunId'], artifactId: $onlyFailed['artifactId'], agentName: 'worker', task: 'T2', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
             );
             $batchRepo->applyLaunchFailurePreparation($parent, $tool, $lifecycle);
             $failed = $onlyFailed;
@@ -71,14 +67,10 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
                 parentTurnNo: 2,
                 parentToolCallId: $tool,
                 parentOrderIndex: 0,
-                executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-                totalChildCount: 1,
                 deadlineAt: new \DateTimeImmutable('+600 seconds'),
-                childIntents: [
-                    ['batchIndex' => 1, 'childRunId' => $tracked['childRunId'], 'artifactId' => $tracked['artifactId'], 'agentName' => 'worker', 'task' => 'T1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
-                ],
+                childIntent: new DeferredSubagentBatchChildIntentDTO(batchIndex: 1, childRunId: $tracked['childRunId'], artifactId: $tracked['artifactId'], agentName: 'worker', task: 'T1', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
             );
-            $batchRepo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
+            $batchRepo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable());
         }
 
         $bus = new TestMessageBus();
@@ -156,14 +148,10 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
             parentTurnNo: 1,
             parentToolCallId: $tool,
             parentOrderIndex: 0,
-            executionMode: ChildRunBatchExecutionModeEnum::Single,
-            totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
-            childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $child['childRunId'], 'artifactId' => $child['artifactId'], 'agentName' => 'worker', 'task' => 'task', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
-            ],
+            childIntent: new DeferredSubagentBatchChildIntentDTO(batchIndex: 1, childRunId: $child['childRunId'], artifactId: $child['artifactId'], agentName: 'worker', task: 'task', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
         );
-        $batchRepo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
+        $batchRepo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable());
 
         $subscriber = new DeferredSubagentBatchChildTurnHookSubscriber($childRepo);
         $actions = $subscriber->prepareAfterTurnCommit(new AfterTurnCommitHookContext(

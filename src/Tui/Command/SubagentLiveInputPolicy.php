@@ -68,8 +68,7 @@ final readonly class SubagentLiveInputPolicy
         }
 
         if ($parseResult instanceof SlashCommand) {
-            // /bg is local and scoped to the visible child, never the parent.
-            return 'bg' !== strtolower($parseResult->name) && !$this->isAllowedSlashCommand($parseResult->name);
+            return !$this->isAllowedSlashCommand($parseResult->name);
         }
 
         return false;

@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLaunchAbortContextDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLaunchAbortPhaseEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
@@ -29,52 +29,32 @@ final class DeferredSubagentBatchRuntimeStartService
     }
 
     /**
-     * @param list<ChildRunIdentityDTO>      $identities
-     * @param list<PreparedAgentChildRunDTO> $preparedChildren
-     *
      * @throws DeferredSubagentBatchRuntimeStartFailure when a runtime start fails (after abort cleanup)
      */
-    public function startPreparedInOrder(
+    public function startPrepared(
         string $parentRunId,
         string $toolCallId,
-        array $identities,
-        array $preparedChildren,
+        ChildRunIdentityDTO $identity,
+        PreparedAgentChildRunDTO $prepared,
     ): void {
-        $policy = $this->lifecyclePolicy;
-        /** @var list<string> $knownStartedChildRunIds */
-        $knownStartedChildRunIds = [];
+        $artifactStatus = $this->artifactLifecycle->getArtifactStatus($parentRunId, $prepared->identity->artifactId);
+        if ($this->isArtifactBeyondPending($artifactStatus)) {
+            return;
+        }
 
-        foreach ($preparedChildren as $prepared) {
-            $artifactStatus = $this->artifactLifecycle->getArtifactStatus($parentRunId, $prepared->identity->artifactId);
-            if ($this->isArtifactBeyondPending($artifactStatus)) {
-                continue;
-            }
+        try {
+            $this->agentRunner->start($prepared->startRunInput);
+        } catch (\Throwable $e) {
+            $this->abortAfterRuntimeFailure($parentRunId, $toolCallId, $identity, $this->lifecyclePolicy, $e);
 
-            try {
-                $this->agentRunner->start($prepared->startRunInput);
-                $knownStartedChildRunIds[] = $prepared->identity->childRunId;
-            } catch (\Throwable $e) {
-                $this->abortAfterRuntimeFailure(
-                    $parentRunId,
-                    $toolCallId,
-                    $identities,
-                    $policy,
-                    $e,
-                    $knownStartedChildRunIds,
-                );
-
-                throw new DeferredSubagentBatchRuntimeStartFailure($prepared->identity->batchIndex, $e);
-            }
+            throw new DeferredSubagentBatchRuntimeStartFailure($prepared->identity->batchIndex, $e);
         }
     }
 
-    /**
-     * @param list<ChildRunIdentityDTO> $identities
-     */
     public function abortAfterPreparationFailure(
         string $parentRunId,
         string $toolCallId,
-        array $identities,
+        ChildRunIdentityDTO $identity,
         \Throwable $cause,
         int $failureBatchIndex,
     ): void {
@@ -82,10 +62,10 @@ final class DeferredSubagentBatchRuntimeStartService
         try {
             $this->batchLaunchService->abort(
                 $parentRunId,
-                $identities,
+                $identity,
                 $policy,
                 $cause,
-                ChildRunBatchLaunchAbortContextDTO::preparationFailure($failureBatchIndex),
+                ChildRunBatchLaunchAbortPhaseEnum::Preparation,
             );
         } catch (\Throwable $abortFailure) {
             $this->logger->warning('deferred_subagent_batch.launch_abort_failed', [
@@ -100,26 +80,20 @@ final class DeferredSubagentBatchRuntimeStartService
         }
     }
 
-    /**
-     * @param list<ChildRunIdentityDTO> $identities
-     * @param list<string>              $knownStartedChildRunIds
-     */
     private function abortAfterRuntimeFailure(
         string $parentRunId,
         string $toolCallId,
-        array $identities,
+        ChildRunIdentityDTO $identity,
         ChildRunBatchLifecyclePolicyDTO $policy,
         \Throwable $cause,
-        array $knownStartedChildRunIds,
     ): void {
         try {
             $this->batchLaunchService->abort(
                 $parentRunId,
-                $identities,
+                $identity,
                 $policy,
                 $cause,
-                ChildRunBatchLaunchAbortContextDTO::runtimeStart(),
-                $knownStartedChildRunIds,
+                ChildRunBatchLaunchAbortPhaseEnum::RuntimeStart,
             );
         } catch (\Throwable $abortFailure) {
             $this->logger->warning('deferred_subagent_batch.launch_abort_failed', [

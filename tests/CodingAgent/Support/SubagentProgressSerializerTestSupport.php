@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Support;
 
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Runtime\SubagentLiveCatalog;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -43,10 +43,10 @@ final class SubagentProgressSerializerTestSupport
 
     public static function ingestCatalogEvent(SubagentLiveCatalog $catalog, RuntimeEvent $event): void
     {
-        /** @var SubagentProgressSnapshotInterface $snapshot */
+        /** @var SubagentProgressSnapshotDTO $snapshot */
         $snapshot = self::denormalizer()->denormalize(
             $event->payload['subagent_progress'],
-            SubagentProgressSnapshotInterface::class,
+            SubagentProgressSnapshotDTO::class,
         );
         $catalog->ingestSnapshot($snapshot);
     }
@@ -66,7 +66,6 @@ final class SubagentProgressSerializerTestSupport
         int $elapsedMs = 100,
     ): array {
         return [
-            'mode' => 'single',
             'status' => $status,
             'agent_name' => $agentName,
             'artifact_id' => $artifactId,

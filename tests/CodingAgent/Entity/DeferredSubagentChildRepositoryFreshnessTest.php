@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Entity;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -178,18 +178,16 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
             parentTurnNo: 1,
             parentToolCallId: $tool,
             parentOrderIndex: 0,
-            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-            totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
-            childIntents: [[
-                'batchIndex' => 1,
-                'childRunId' => $child['childRunId'],
-                'artifactId' => $child['artifactId'],
-                'agentName' => 'fresh-agent',
-                'task' => 'fresh task',
-                'launchModel' => 'deepseek/deepseek-v4-flash',
-                'launchReasoning' => 'medium',
-            ]],
+            childIntent: new DeferredSubagentBatchChildIntentDTO(
+                batchIndex: 1,
+                childRunId: $child['childRunId'],
+                artifactId: $child['artifactId'],
+                agentName: 'fresh-agent',
+                task: 'fresh task',
+                launchModel: 'deepseek/deepseek-v4-flash',
+                launchReasoning: 'medium',
+            ),
         );
 
         return [$lifecycle, $child['childRunId']];

@@ -31,7 +31,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
-use Ineersa\CodingAgent\Agent\Execution\AgentResumeTaskDTO;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
@@ -49,6 +48,7 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\DTO\AgentResumeArgumentsDTO;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
@@ -217,8 +217,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $container->get(AgentArtifactRegistry::class)->update($parent, $child->artifactId, status: AgentArtifactStatusEnum::Completed);
             $resume = $container->get(AgentResumeExecutionService::class);
             $this->withToolContext($parent, 'cache-resume', static fn () => $resume->resume($parent,
-                [new AgentResumeTaskDTO(artifact_id: $child->artifactId, task: 'resume')],
-                \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum::Single,
+                new AgentResumeArgumentsDTO(artifact_id: $child->artifactId, task: 'resume'),
             ), toolName: 'agent_resume');
             $messages[] = new AgentMessage('assistant', [['type' => 'text', 'text' => $third->assistantMessage->asText()]]);
             $messages[] = new AgentMessage('user', [['type' => 'text', 'text' => 'resume']]);

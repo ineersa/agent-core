@@ -340,6 +340,10 @@ final class RuntimeEventTranslator
             $payload['result'] = $resultText;
         }
 
+        if (true === ($typedResult->result['details']['backgrounded'] ?? false)) {
+            $payload['backgrounded'] = true;
+        }
+
         if (isset($p['duration_ms']) && \is_int($p['duration_ms'])) {
             $payload['duration_ms'] = $p['duration_ms'];
         }

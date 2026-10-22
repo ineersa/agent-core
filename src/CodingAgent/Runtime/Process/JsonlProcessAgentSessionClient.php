@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Process;
 
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundProcessDTO;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
@@ -161,6 +163,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         private readonly LoggerInterface $logger,
         private readonly HatfieldSessionStore $sessionStore,
         private readonly BackgroundProcessManager $backgroundProcesses,
+        private readonly ChildInvocationBackgroundService $childBackground,
+        private readonly BackgroundWorkSnapshotProvider $backgroundWork,
     ) {
         $this->compactEventBuffer = new RuntimeEventPerRunCompactBuffer();
         $this->eventBufferWatermarkActive = false;
@@ -172,30 +176,22 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->stopProcess();
     }
 
+    public function foregroundChildren(string $runId): array
+    {
+        return $this->childBackground->candidates($runId);
+    }
+
+    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
+    {
+        return $this->backgroundWork->snapshot($rootRunId, $observedProcessId);
+    }
+
     public function foregroundBash(string $runId): array
     {
         return array_map(
             static fn ($process): BashBackgroundCandidateDTO => new BashBackgroundCandidateDTO($process->id, (string) $process->toolCallId, $process->pid),
             $this->backgroundProcesses->foregroundTools($runId),
         );
-    }
-
-    public function backgroundProcesses(string $runId): array
-    {
-        $snapshot = [];
-        foreach ($this->backgroundProcesses->list($runId) as $process) {
-            if (null === $process->finishedAt) {
-                $snapshot[] = new BackgroundProcessDTO(
-                    $process->id,
-                    $process->pid,
-                    $process->command,
-                    $process->startedAt,
-                    'stopped' === $process->status->value ? 'stopping' : $process->status->value,
-                );
-            }
-        }
-
-        return $snapshot;
     }
 
     public function stopBackgroundProcess(string $runId, int $recordId): bool
@@ -446,12 +442,13 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'answer_human' => 'answer_human',
             'shell_command' => 'shell_command',
             'background_bash' => 'background_bash',
+            'background_child' => 'background_child',
             'select_history_turn' => 'select_history_turn',
             default => throw new \InvalidArgumentException(\sprintf('Unknown command type: "%s"', $command->type)),
         };
 
         $payload = match ($type) {
-            'background_bash' => $command->payload,
+            'background_bash', 'background_child' => $command->payload,
             'shell_command' => ['text' => $command->text],
             'select_history_turn' => array_filter([
                 'turn_no' => $command->payload['turn_no'] ?? null,

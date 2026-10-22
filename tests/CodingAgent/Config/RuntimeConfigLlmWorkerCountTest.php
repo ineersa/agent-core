@@ -23,7 +23,7 @@ use Symfony\Component\Yaml\Yaml;
 
 /**
  * Thesis: runtime.llm_worker_count is a typed bounded setting (default 4,
- * range 1..8), distinct from tools.execution.max_parallelism and agents.max_agents.
+ * range 1..8), distinct from tools.execution.max_parallelism.
  */
 #[CoversClass(RuntimeConfig::class)]
 final class RuntimeConfigLlmWorkerCountTest extends TestCase
@@ -73,7 +73,6 @@ final class RuntimeConfigLlmWorkerCountTest extends TestCase
         $this->assertSame(RuntimeConfig::DEFAULT_LLM_WORKER_COUNT, $config->runtime->llmWorkerCount);
         $this->assertSame(4, $config->runtime->llmWorkerCount);
         $this->assertSame(3, $config->tools->execution->maxParallelism);
-        $this->assertSame(4, $config->agents->maxAgents);
     }
 
     public function testConfiguredLlmWorkerCountIsAcceptedWithinBounds(): void

@@ -22,13 +22,11 @@ final readonly class AgentsConfig
     /**
      * @param bool         $enabled               Whether agent discovery is enabled
      * @param list<string> $paths                 Additional agent definition file or directory paths
-     * @param int          $maxAgents             Maximum parallel subagents per `subagent` tool call
      * @param list<string> $subagentExcludedTools Tool names removed from child agents by default/configuration
      */
     public function __construct(
         public bool $enabled = true,
         public array $paths = [],
-        public int $maxAgents = 4,
 
         public int $subagentToolTimeoutSeconds = 86400,
 
@@ -63,7 +61,6 @@ final readonly class AgentsConfig
         $unknown = array_diff(array_keys($raw), [
             'enabled',
             'paths',
-            'max_agents',
             'subagent_tool_timeout_seconds',
             'subagent_excluded_tools',
             'extensions',
@@ -100,17 +97,6 @@ final readonly class AgentsConfig
             }
         }
 
-        $maxAgents = 4;
-        if (\array_key_exists('max_agents', $raw)) {
-            if (!\is_int($raw['max_agents'])) {
-                throw new \InvalidArgumentException(\sprintf('Invalid value for agents.max_agents: expected a positive integer, got %s.', get_debug_type($raw['max_agents'])));
-            }
-            if ($raw['max_agents'] <= 0) {
-                throw new \InvalidArgumentException(\sprintf('Invalid value for agents.max_agents: %d is not a positive integer.', $raw['max_agents']));
-            }
-            $maxAgents = $raw['max_agents'];
-        }
-
         $subagentToolTimeoutSeconds = self::resolveSubagentToolTimeoutSeconds($raw);
         $subagentExcludedTools = self::resolveSubagentExcludedTools($raw);
         $extensions = \array_key_exists('extensions', $raw)
@@ -120,7 +106,6 @@ final readonly class AgentsConfig
         return new self(
             enabled: $enabled,
             paths: $paths,
-            maxAgents: $maxAgents,
             subagentToolTimeoutSeconds: $subagentToolTimeoutSeconds,
             subagentExcludedTools: $subagentExcludedTools,
             extensions: $extensions,

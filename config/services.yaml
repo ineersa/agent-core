@@ -16,11 +16,9 @@ parameters:
 
     app.write_prompt_cache_diagnostics: '%env(bool:HATFIELD_WRITE_PROMPT_CACHE_DIAGNOSTICS)%'
 
-    # Default session ID for background process completion polling.
-    # Empty means unscoped (operates across all sessions) in
-    # non-controller or test environments. HeadlessController sets
-    # HATFIELD_SESSION_ID to the actual run ID so the poller scopes
-    # its queries and avoids O(N) cross-session filesystem scans.
+    # Controller session ID for background process polling and maintenance.
+    # Empty disables both in non-controller or test environments. The controller
+    # environment supplies the actual run ID so queries stay within owned runs.
     env(HATFIELD_SESSION_ID): ''
 
     # Context-gate committed RuntimeEvent stdout streaming (not per-consumer selection).
@@ -74,6 +72,9 @@ services:
 
     Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface:
       tags: ['agent_core.coordination_action_validator']
+
+    Ineersa\AgentCore\Contract\CommandConsumptionPolicyInterface:
+      tags: ['agent_core.command_consumption_policy']
 
     Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface:
       tags: ['agent_core.command_handler']
@@ -317,10 +318,8 @@ services:
   Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO:
     arguments:
       $parentCancelSingleReason: 'Parent run cancelled subagent tool.'
-      $parentCancelParallelReason: 'Parent run cancelled parallel subagent tool.'
       $singleTimeoutCancelReason: 'Subagent timed out.'
-      $parallelTimeoutCancelReason: 'Parallel subagent timed out.'
-      $launchAbortSiblingCancelReason: 'Parallel subagent launch aborted after sibling failure.'
+      $launchAbortCancelReason: 'Subagent launch aborted after failure.'
 
   # Shared project qualification for resource tags and log correlation.
   Ineersa\CodingAgent\Logging\TelemetrySessionKeyProvider:
@@ -390,6 +389,10 @@ services:
       $config: '@Ineersa\CodingAgent\Config\BackgroundProcessConfig'
     calls:
       - registerShutdownHandler: []
+
+  Ineersa\CodingAgent\Tool\BackgroundProcessProvisionalCleanupTask:
+    arguments:
+      $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
   # Startup database migrator — runs known migration classes at startup via DBAL.
   # Uses the app-owned ApplicationMigrationExecutor instead of the Symfony
@@ -923,7 +926,7 @@ services:
   # ─── Tool schema providers & native JsonSchema chain ───
   #
   # DTO properties whose provider-visible schema depends on runtime settings
-  # (bash timeout max, subagent parallel limit) contribute a fragment through
+  # (Bash timeout max) contribute a fragment through
   # Symfony AI SchemaProviderInterface (#[Schema(provider: ...)]). The native
   # Describer default chain would instantiate SchemaAttributeDescriber without
   # providers, so the chain is rebuilt explicitly with the provider-aware
@@ -935,8 +938,6 @@ services:
     arguments:
       $providers:
         Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider'
-        Ineersa\CodingAgent\Tool\Schema\SubagentTasksSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\SubagentTasksSchemaProvider'
-        Ineersa\CodingAgent\Tool\Schema\AgentResumeTasksSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\AgentResumeTasksSchemaProvider'
 
   # Same default chain as Describer(null) plus the provider-aware describer.
   # The chain members are vendor classes outside the autowire resource, so

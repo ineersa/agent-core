@@ -10,8 +10,10 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
+use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -40,8 +42,8 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
     {
         parent::setUpBeforeClass();
 
+        // Only the client's reads use this fixture; background dependencies retain the prepared store.
         self::$eventStore = new ReverseOnlyEventStore();
-        self::getContainer()->set(EventStoreInterface::class, self::$eventStore);
     }
 
     #[Test]
@@ -178,6 +180,8 @@ final class InProcessAgentSessionClientEventsTest extends IsolatedKernelTestCase
             commandBus: $commandBus ?? new TestMessageBus(),
             backgroundRequests: self::getContainer()->get(BashBackgroundRequestService::class),
             backgroundProcesses: self::getContainer()->get(BackgroundProcessManager::class),
+            childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
+            backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
             bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),
             bootstrapTransfer: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer::class),
             transientSink: $transientSink,

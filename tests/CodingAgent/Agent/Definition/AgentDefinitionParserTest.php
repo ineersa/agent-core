@@ -58,7 +58,6 @@ final class AgentDefinitionParserTest extends TestCase
         $this->assertSame(['testing'], $dto->skills);
         $this->assertFalse($dto->inheritProjectContext);
         $this->assertSame(SystemPromptModeEnum::Append, $dto->systemPromptMode);
-        $this->assertTrue($dto->parallelAllowed);
         $this->assertSame('You are a scout. Explore and report findings.', $dto->instructions);
         $this->assertSame('/test/agent.md', $dto->sourcePath);
     }
@@ -79,7 +78,6 @@ final class AgentDefinitionParserTest extends TestCase
         $this->assertSame([], $dto->skills);
         $this->assertTrue($dto->inheritProjectContext);
         $this->assertSame(SystemPromptModeEnum::Replace, $dto->systemPromptMode);
-        $this->assertTrue($dto->parallelAllowed);
     }
 
     public function testThinkingOff(): void
@@ -106,27 +104,17 @@ final class AgentDefinitionParserTest extends TestCase
         $this->assertSame('xhigh', $dto->thinking);
     }
 
-    public function testParallelAllowedTrueByDefault(): void
+    public function testRemovedParallelAllowedIsUnknownField(): void
     {
-        $dto = $this->parse([
-            'name' => 'solo',
-            'description' => 'Solo agent',
-            'tools' => ['read'],
-        ]);
+        $this->expectException(AgentDefinitionValidationException::class);
+        $this->expectExceptionMessage('unknown field "parallelAllowed"');
 
-        $this->assertTrue($dto->parallelAllowed);
-    }
-
-    public function testParallelAllowedExplicitFalse(): void
-    {
-        $dto = $this->parse([
+        $this->parse([
             'name' => 'solo',
-            'description' => 'Solo agent',
+            'description' => 'Removed field',
             'tools' => ['read'],
             'parallelAllowed' => false,
         ]);
-
-        $this->assertFalse($dto->parallelAllowed);
     }
 
     public function testBodyWithMarkdownPreserved(): void
@@ -399,22 +387,6 @@ Body
         $this->expectExceptionMessageMatches('/must be of type bool/');
 
         $this->parser->parseContent($content, '/test/string-bool.md');
-    }
-
-    public function testParallelAllowedRejectsNonCoercibleValue(): void
-    {
-        // Serializer with strict type enforcement rejects arrays for bool properties.
-        $content = $this->wrapContent([
-            'name' => 'string-parallel',
-            'description' => 'Array for bool',
-            'tools' => ['read'],
-            'parallelAllowed' => [],
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/must be of type bool/');
-
-        $this->parser->parseContent($content, '/test/string-parallel.md');
     }
 
     public function testDisabledIsUnknownField(): void
@@ -765,23 +737,6 @@ Body
         $this->parser->parseContent($content, '/test/coerce-bool-yes.md');
     }
 
-    public function testParallelAllowedRejectsQuotedFalseString(): void
-    {
-        // "false" in YAML quotes is a string, not the YAML boolean false.
-        // Strict type enforcement must reject string for bool.
-        $content = $this->wrapContent([
-            'name' => 'coerce-parallel',
-            'description' => 'String false for bool',
-            'tools' => ['read'],
-            'parallelAllowed' => 'false',
-        ]);
-
-        $this->expectException(AgentDefinitionValidationException::class);
-        $this->expectExceptionMessageMatches('/parallelAllowed.*must be of type bool/');
-
-        $this->parser->parseContent($content, '/test/coerce-parallel-false.md');
-    }
-
     public function testRemovedInheritAgentsMdIsUnknownField(): void
     {
         $content = $this->wrapContent([
@@ -1028,7 +983,6 @@ Body
             'skills' => ['testing'],
             'inheritProjectContext' => false,
             'systemPromptMode' => 'append',
-            'parallelAllowed' => true,
         ];
     }
 }

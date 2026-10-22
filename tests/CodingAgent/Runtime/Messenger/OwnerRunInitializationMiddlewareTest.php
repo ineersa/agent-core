@@ -37,7 +37,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
         $lifecycle = $container->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
         $lifecycle->reservePending($identity);
         $input = new \Ineersa\AgentCore\Domain\Run\StartRunInput('instructions', [], $identity->childRunId, new RunMetadata(session: ['kind' => 'agent_child', 'parent_run_id' => $parent], model: 'test-model'));
-        $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService::class)->startPreparedInOrder($parent, 'launch-call', [$identity], [new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO($identity, $input)]);
+        $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService::class)->startPrepared($parent, 'launch-call', $identity, new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO($identity, $input));
         $queued = $container->get('messenger.transport.run_control')->getSent()[0];
         $this->assertInstanceOf(StartRun::class, $queued->getMessage());
         $artifacts = $container->get(AgentArtifactRegistry::class);
@@ -205,7 +205,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
                 new RunMetadata(session: ['kind' => 'agent_child', 'parent_run_id' => $parent], model: 'test-model'),
             );
             $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService::class)
-                ->startPreparedInOrder($parent, 'launch-call-'.$kind, [$identity], [new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO($identity, $input)]);
+                ->startPrepared($parent, 'launch-call-'.$kind, $identity, new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO($identity, $input));
             $queued = $container->get('messenger.transport.run_control')->getSent()[0];
             $this->assertInstanceOf(StartRun::class, $queued->getMessage());
             $container->get('agent.command.bus')->dispatch($queued->with(new ReceivedStamp('run_control')));

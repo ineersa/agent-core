@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Message\CommitSubagentProgress;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
@@ -186,7 +186,7 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
 
     private function command(int $revision): CommitSubagentProgress
     {
-        return new CommitSubagentProgress('parent', 1, 'batch', 'call', 0, $revision, ['mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout', 'artifact_id' => 'artifact', 'agent_run_id' => 'child']);
+        return new CommitSubagentProgress('parent', 1, 'batch', 'call', 0, $revision, ['status' => 'completed', 'agent_name' => 'scout', 'artifact_id' => 'artifact', 'agent_run_id' => 'child']);
     }
 
     private function consume(CommitSubagentProgress $command): void
@@ -197,9 +197,7 @@ final class CommitSubagentProgressIntegrationTest extends PerMethodIsolatedKerne
     private function seed(int $revision = 1): void
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
-        $repo->reserveBatch('batch', 'parent', 1, 'call', 0, ChildRunBatchExecutionModeEnum::Single, 1, new \DateTimeImmutable('+1 hour'), [
-            ['batchIndex' => 1, 'childRunId' => 'child', 'artifactId' => 'artifact', 'agentName' => 'scout', 'task' => 'task', 'launchModel' => 'model', 'launchReasoning' => 'medium'],
-        ]);
+        $repo->reserveBatch('batch', 'parent', 1, 'call', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, 'child', 'artifact', 'scout', 'task', 'model', 'medium'));
         $row = $repo->findEntityByLifecycleId('batch');
         $row->aggregateProgressRevision = $revision;
         self::getContainer()->get('doctrine.orm.entity_manager')->flush();

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -220,7 +220,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $blockId = 'tool_result_'.$toolCallId;
         $block = $state->getBlock($blockId);
 
-        if (null === $block) {
+        if (null === $block || true === ($block->meta['backgrounded'] ?? false)) {
             return;
         }
 
@@ -229,8 +229,8 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             if (!\is_array($rawProgress)) {
                 throw new \InvalidArgumentException('subagent_progress payload must be an array when present.');
             }
-            /** @var SubagentProgressSnapshotInterface $progress */
-            $progress = $this->denormalizer->denormalize($rawProgress, SubagentProgressSnapshotInterface::class);
+            /** @var SubagentProgressSnapshotDTO $progress */
+            $progress = $this->denormalizer->denormalize($rawProgress, SubagentProgressSnapshotDTO::class);
             $meta = $block->meta;
             $meta['subagent_progress'] = $progress;
             if (isset($p['tool_name']) && \is_string($p['tool_name']) && '' !== $p['tool_name']) {
@@ -257,6 +257,11 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $blockId = 'tool_result_'.$toolCallId;
 
         $existing = $state->getBlock($blockId);
+
+        // Background acknowledgment already froze this historical card.
+        if (true === ($existing?->meta['backgrounded'] ?? false)) {
+            return;
+        }
 
         // Non-empty completion result wins over accumulated progress text.
         // Empty canonical tool_execution_end must preserve useful progress
@@ -285,6 +290,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $meta = [
             'tool_call_id' => $toolCallId,
             'is_error' => false,
+            'backgrounded' => true === ($p['backgrounded'] ?? false),
             ...$this->terminalTimingMeta($p, $existing),
         ];
         if ('' !== $result) {
@@ -295,7 +301,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
                 $meta['tool_name'] = $existing->meta['tool_name'];
             }
             $priorProgress = $existing->meta['subagent_progress'] ?? null;
-            if ($priorProgress instanceof SubagentProgressSnapshotInterface) {
+            if ($priorProgress instanceof SubagentProgressSnapshotDTO) {
                 $meta['subagent_progress'] = $priorProgress;
                 $meta['subagent_final'] = true;
             }
@@ -303,7 +309,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
 
         $displayText = $result;
         $progress = $meta['subagent_progress'] ?? null;
-        if ($progress instanceof SubagentProgressSnapshotInterface) {
+        if ($progress instanceof SubagentProgressSnapshotDTO) {
             $widgetText = $this->subagentProgressFormatter->format($progress);
             $displayText = '' !== $result ? $widgetText."\n\n".$result : $widgetText;
         }
@@ -320,6 +326,9 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $blockId = 'tool_result_'.$toolCallId;
 
         $existing = $state->getBlock($blockId);
+        if (true === ($existing?->meta['backgrounded'] ?? false)) {
+            return;
+        }
         $meta = [
             'tool_call_id' => $toolCallId,
             'is_error' => true,
@@ -333,7 +342,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
                 $meta['tool_name'] = $existing->meta['tool_name'];
             }
             $priorProgress = $existing->meta['subagent_progress'] ?? null;
-            if ($priorProgress instanceof SubagentProgressSnapshotInterface) {
+            if ($priorProgress instanceof SubagentProgressSnapshotDTO) {
                 $meta['subagent_progress'] = $priorProgress;
                 $meta['subagent_final'] = true;
             }
@@ -341,7 +350,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
 
         $displayText = $result;
         $progress = $meta['subagent_progress'] ?? null;
-        if ($progress instanceof SubagentProgressSnapshotInterface) {
+        if ($progress instanceof SubagentProgressSnapshotDTO) {
             $widgetText = $this->subagentProgressFormatter->format($progress);
             $displayText = '' !== $result ? $widgetText."\n\n".$result : $widgetText;
         }
@@ -356,6 +365,10 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $blockId = 'tool_result_'.$toolCallId;
         $timedOut = (bool) ($p['timed_out'] ?? false);
+
+        if (true === ($state->getBlock($blockId)?->meta['backgrounded'] ?? false)) {
+            return;
+        }
 
         $meta = [
             ...($state->getBlock($blockId)->meta ?? []),

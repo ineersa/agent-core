@@ -59,7 +59,19 @@ final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
             }
 
             $runId = $context->state->visibleQuestionOwnerRunId();
-            $candidates = $context->client->foregroundBash($runId);
+            $candidates = [];
+            foreach ($context->client->foregroundBash($runId) as $candidate) {
+                $candidates[] = [
+                    'label' => \sprintf('Bash %s (PID %d)', $candidate->toolCallId, $candidate->pid),
+                    'command' => new UserCommand('background_bash', payload: ['record_id' => $candidate->id, 'tool_call_id' => $candidate->toolCallId]),
+                ];
+            }
+            foreach ($context->client->foregroundChildren($runId) as $candidate) {
+                $candidates[] = [
+                    'label' => $candidate->label,
+                    'command' => new UserCommand('background_child', payload: ['lifecycle_id' => $candidate->lifecycleId, 'tool_call_id' => $candidate->toolCallId]),
+                ];
+            }
             if ([] === $candidates) {
                 return;
             }
@@ -74,10 +86,7 @@ final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
                 if ($context->state->visibleQuestionOwnerRunId() !== $runId) {
                     return;
                 }
-                $context->client->send($runId, new UserCommand('background_bash', payload: [
-                    'record_id' => $candidate->id,
-                    'tool_call_id' => $candidate->toolCallId,
-                ]));
+                $context->client->send($runId, $candidate['command']);
             };
             if (1 === \count($candidates)) {
                 $choose(0);
@@ -86,15 +95,15 @@ final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
             }
 
             $items = [];
-            foreach ($candidates as $index => $candidate) {
-                $items[] = ['label' => \sprintf('Bash %s (PID %d)', $candidate->toolCallId, $candidate->pid), 'value' => (string) $index];
+            foreach ($candidates as $index => $option) {
+                $items[] = ['label' => $option['label'], 'value' => (string) $index];
             }
             $list = new SelectListWidget(items: $items, maxVisible: SelectListKeybindings::MAX_VISIBLE);
             $list->onSelect(static function (SelectEvent $event) use ($choose): void {
                 $choose((int) $event->getItem()['value']);
             });
             $list->onCancel($close);
-            $overlay->mount($context->tui, $context->screen, $list, new TextWidget(text: 'Background Bash: select a command, Enter or Ctrl+B confirms, Esc cancels'));
+            $overlay->mount($context->tui, $context->screen, $list, new TextWidget(text: 'Background invocation: select a tool, Enter or Ctrl+B confirms, Esc cancels'));
         }, priority: InputPriority::COMPLETION_SUBAGENT + 1);
     }
 }

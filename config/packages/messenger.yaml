@@ -106,6 +106,8 @@ framework:
         routing:
             # ToolPayloadMiddleware selects tool/agent/mcp/run_control through
             # TransportNamesStamp. Inline tool messages have no fallback route.
+            Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO: run_control
+            Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO: run_control
             Ineersa\CodingAgent\Application\Message\AttachRun: run_control
             Ineersa\CodingAgent\Application\Message\SelectHistoryEntry: run_control
             Ineersa\CodingAgent\Application\Message\RepairSession: run_control

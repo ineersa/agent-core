@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Transcript;
 
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
@@ -27,7 +27,7 @@ final class SubagentProgressCardViewportRenderTest extends TestCase
 {
     #[RunInSeparateProcess]
     #[PreserveGlobalState(false)]
-    public function testParallelProgressUpdatesStayDifferentialBelowNativeScrollback(): void
+    public function testSingleProgressUpdatesStayDifferentialBelowNativeScrollback(): void
     {
         $rows = 40;
         $output = new VirtualTerminal(columns: 120, rows: $rows);
@@ -50,17 +50,17 @@ final class SubagentProgressCardViewportRenderTest extends TestCase
             seq: 1,
         );
 
-        $screen->setTranscriptBlocks([$transcript, $this->parallelBlock($this->parallelProgress('running', 0, null), 2)]);
+        $screen->setTranscriptBlocks([$transcript, $this->progressBlock($this->progress('running', 0, null), 2)]);
         $tui->requestRender();
         $tui->processRender();
         $output->consumeOutput();
 
-        $screen->setTranscriptBlocks([$transcript, $this->parallelBlock($this->parallelProgress('running', 0, 'read: path="AGENTS.md"'), 2)]);
+        $screen->setTranscriptBlocks([$transcript, $this->progressBlock($this->progress('running', 0, 'read: path="AGENTS.md"'), 2)]);
         $tui->requestRender();
         $tui->processRender();
         $runningDelta = $output->consumeOutput();
 
-        $screen->setTranscriptBlocks([$transcript, $this->parallelBlock($this->parallelProgress('completed', 2, null), 2)]);
+        $screen->setTranscriptBlocks([$transcript, $this->progressBlock($this->progress('completed', 2, null), 2)]);
         $tui->requestRender();
         $tui->processRender();
         $completedDelta = $output->consumeOutput();
@@ -69,21 +69,21 @@ final class SubagentProgressCardViewportRenderTest extends TestCase
             $this->assertStringNotContainsString("\x1b[2J", $delta);
             $this->assertStringNotContainsString("\x1b[3J", $delta);
             $this->assertGreaterThan(0, substr_count($delta, "\x1b[2K"));
-            $this->assertLessThanOrEqual(8, substr_count($delta, "\x1b[2K"), 'A compact parallel card update must stay within its eight-row footprint.');
+            $this->assertLessThanOrEqual(9, substr_count($delta, "\x1b[2K"), 'A single-child card update must stay within its nine-row footprint.');
         }
     }
 
     /** @param array<string, mixed> $progress */
-    private function parallelBlock(array $progress, int $seq): TranscriptBlock
+    private function progressBlock(array $progress, int $seq): TranscriptBlock
     {
         $snapshot = SubagentProgressSerializerTestSupport::denormalizer()->denormalize(
             $progress,
-            SubagentProgressSnapshotInterface::class,
+            SubagentProgressSnapshotDTO::class,
         );
-        $this->assertInstanceOf(SubagentProgressSnapshotInterface::class, $snapshot);
+        $this->assertInstanceOf(SubagentProgressSnapshotDTO::class, $snapshot);
 
         return new TranscriptBlock(
-            id: 'tool_result_parallel',
+            id: 'tool_result_single',
             kind: TranscriptBlockKindEnum::ToolResult,
             runId: 'compact-progress',
             seq: $seq,
@@ -94,27 +94,13 @@ final class SubagentProgressCardViewportRenderTest extends TestCase
     }
 
     /** @return array<string, mixed> */
-    private function parallelProgress(string $status, int $completedCount, ?string $activeTool): array
+    private function progress(string $status, int $toolCount, ?string $activeTool): array
     {
-        $child = static fn (int $index): array => [
-            'index' => $index,
-            'agent_name' => 1 === $index ? 'scout' : 'reviewer',
-            'status' => $status,
-            'artifact_id' => 'agent_'.$index,
-            'agent_run_id' => 'run-'.$index,
-            'task_summary' => 1 === $index ? 'Read docs' : 'Review patch',
-            'model' => 'test/model',
-            'reasoning' => 'medium',
+        return array_replace(SubagentProgressSerializerTestSupport::canonicalSingleWire(
+            artifactId: 'agent_1', agentRunId: 'run-1', taskSummary: 'Read docs', status: $status,
+        ), [
             'active_tool' => $activeTool,
-            'tool_count' => null === $activeTool ? $completedCount : 1,
-        ];
-
-        return [
-            'mode' => 'parallel',
-            'status' => $status,
-            'completed_count' => $completedCount,
-            'total_count' => 2,
-            'children' => [$child(1), $child(2)],
-        ];
+            'tool_count' => $toolCount,
+        ]);
     }
 }

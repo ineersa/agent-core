@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Listener;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -79,7 +80,8 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $this->open();
         $this->assertSame(1, $this->reads);
         $screen = $this->harness->plainScreenText();
-        $this->assertStringContainsString('PID '.$first->pid.' | stopping |', $screen);
+        $this->assertStringContainsString('bash [stopping]', $screen);
+        $this->assertStringContainsString('PID '.$first->pid.' |', $screen);
         $this->assertStringContainsString('read -r release', $screen);
         $this->assertStringContainsString('s |', $screen);
         $this->assertStringNotContainsString('PID '.$private->pid.' |', $screen);
@@ -88,7 +90,7 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $this->harness->sendInput("\x1b[B");
         $this->harness->sendInput("\r");
         $this->assertSame('no', $this->list()->getSelectedItem()['value']);
-        $this->assertStringContainsString('Stop this process?', $this->harness->plainScreenText());
+        $this->assertStringContainsString('Cancel this background work?', $this->harness->plainScreenText());
         $this->context->ticks->dispatch(new TickEvent());
         $this->harness->sendInput("\r"); // Default No restores the opening snapshot.
         $this->assertStringNotContainsString('PID '.$later->pid.' |', $this->harness->plainScreenText());
@@ -125,7 +127,7 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $this->confirm();
         $this->assertTrue($lifecycle->isAlive($process->pid), 'The input callback must return before termination grace ends.');
         $rendered = substr($this->harness->terminal()->getOutput(), $before);
-        $this->assertStringContainsString('stop requested', $rendered);
+        $this->assertStringContainsString('Cancellation requested', $rendered);
         $this->assertMatchesRegularExpression('/\e\[/', $rendered);
         $this->harness->sendInput('responsive');
         $this->assertStringContainsString('responsive', substr($this->harness->terminal()->getOutput(), $before));
@@ -149,7 +151,7 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $this->open();
         $this->assertSame(2, $this->reads);
         $this->assertFalse($this->harness->screen()->hasInputOverlay());
-        $this->assertStringContainsString('No background processes running.', $this->harness->plainScreenText());
+        $this->assertStringContainsString('No background work running.', $this->harness->plainScreenText());
     }
 
     #[DataProvider('clients')]
@@ -170,7 +172,7 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $this->assertNotNull($record->finishedAt);
         $this->confirm();
         $this->assertNull($this->manager->findByRecordId($process->id)->completionNotifiedAt);
-        $this->assertStringContainsString('had already finished', $this->harness->plainScreenText());
+        $this->assertStringContainsString('finished.', $this->harness->plainScreenText());
         $this->assertSame(1, $this->reads);
     }
 
@@ -192,7 +194,7 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
             $this->confirm();
             $this->assertTrue(posix_kill($process->pid, 0), 'Stale ID must not stop another row with the same PID.');
             $this->assertNull($replacement->finishedAt);
-            $this->assertStringContainsString('no longer available', $this->harness->plainScreenText());
+            $this->assertStringContainsString('termination is not confirmed', $this->harness->plainScreenText());
         } finally {
             $this->manager->stopByRecordId($replacement->id, 'visible');
         }
@@ -263,10 +265,14 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->never())->method('start');
         $client->expects($this->never())->method('send');
-        $client->method('backgroundProcesses')->willReturnCallback(function (string $runId): array {
-            ++$this->reads;
+        $client->method('backgroundWork')->willReturnCallback(function (string $runId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO {
+            // Count opening snapshots separately from exact-record stop revalidation
+            // and UI-only settlement; those must not refresh an open picker.
+            if (null === $observedProcessId) {
+                ++$this->reads;
+            }
 
-            return $this->native->backgroundProcesses($runId);
+            return $this->native->backgroundWork($runId, $observedProcessId);
         });
         $client->method('stopBackgroundProcess')->willReturnCallback(function (string $runId, int $id): bool {
             $this->assertFalse($this->harness->screen()->hasInputOverlay(), 'Close before the native stop action.');

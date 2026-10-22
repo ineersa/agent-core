@@ -8,18 +8,16 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
-use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
 
 /**
- * Durable idempotent deferred subagent batch launch for single and parallel tool calls.
+ * Durable idempotent one-child launch using deferred batch supervision.
  */
 final class DeferredSubagentBatchLaunchService
 {
@@ -33,28 +31,11 @@ final class DeferredSubagentBatchLaunchService
     ) {
     }
 
-    /**
-     * @param list<SubagentTaskDTO> $tasks
-     */
     public function launch(
         string $parentRunId,
-        array $tasks,
-        ChildRunBatchExecutionModeEnum $executionMode,
+        string $agentName,
+        string $task,
     ): DeferredToolCompletionOutcome {
-        if (ChildRunBatchExecutionModeEnum::Single === $executionMode && 1 !== \count($tasks)) {
-            throw new ToolCallException('Single subagent requires exactly one task.', retryable: false);
-        }
-
-        if ([] === $tasks) {
-            throw new ToolCallException('Deferred subagent batch launch requires at least one task.', retryable: false);
-        }
-
-        $maxAgents = $this->agentsConfig->maxAgents;
-        $taskCount = \count($tasks);
-        if ($taskCount > $maxAgents) {
-            throw new ToolCallException(\sprintf('Parallel subagent execution supports at most %d agents per tool call, but %d tasks were requested.', $maxAgents, $taskCount), retryable: false, hint: \sprintf('Split the work into multiple subagent calls with at most %d tasks each.', $maxAgents));
-        }
-
         $toolContext = $this->contextAccessor->requireCurrent();
         if ($parentRunId !== $toolContext->runId()) {
             throw new ToolCallException('Subagent parent run id does not match active tool context.', retryable: false);
@@ -64,8 +45,8 @@ final class DeferredSubagentBatchLaunchService
         $plan = $this->batchPreparation->buildLaunchPlan(
             $parentRunId,
             $toolCallId,
-            $tasks,
-            $executionMode,
+            $agentName,
+            $task,
             parentModel: $toolContext->parentModel(),
             launchContext: $toolContext->launchContext(),
         );
@@ -74,9 +55,7 @@ final class DeferredSubagentBatchLaunchService
             parentRunId: $parentRunId,
             toolCallId: $toolCallId,
             plan: $plan,
-            executionMode: $executionMode,
-            taskCount: $taskCount,
-            prepare: fn (DeferredSubagentBatchProjectionDTO $projection): array => $this->batchPreparation->preparePendingChildren(
+            prepare: fn (DeferredSubagentBatchProjectionDTO $projection): ?PreparedAgentChildRunDTO => $this->batchPreparation->preparePendingChild(
                 $parentRunId,
                 $projection,
                 $plan,
@@ -119,9 +98,7 @@ final class DeferredSubagentBatchLaunchService
             parentRunId: $parentRunId,
             toolCallId: $toolCallId,
             plan: $plan,
-            executionMode: ChildRunBatchExecutionModeEnum::Single,
-            taskCount: 1,
-            prepare: fn (DeferredSubagentBatchProjectionDTO $projection): array => $this->batchPreparation->preparePendingProfiledChild(
+            prepare: fn (DeferredSubagentBatchProjectionDTO $projection): ?PreparedAgentChildRunDTO => $this->batchPreparation->preparePendingProfiledChild(
                 $parentRunId,
                 $projection,
                 $plan,
@@ -131,14 +108,12 @@ final class DeferredSubagentBatchLaunchService
     }
 
     /**
-     * @param callable(DeferredSubagentBatchProjectionDTO): list<PreparedAgentChildRunDTO> $prepare
+     * @param callable(DeferredSubagentBatchProjectionDTO): ?PreparedAgentChildRunDTO $prepare
      */
     private function launchWithPlan(
         string $parentRunId,
         string $toolCallId,
         DeferredSubagentBatchLaunchPlanDTO $plan,
-        ChildRunBatchExecutionModeEnum $executionMode,
-        int $taskCount,
         callable $prepare,
     ): DeferredToolCompletionOutcome {
         $lifecycleId = $plan->lifecycleId;
@@ -157,10 +132,8 @@ final class DeferredSubagentBatchLaunchService
                 parentTurnNo: $toolContext->turnNo(),
                 parentToolCallId: $toolCallId,
                 parentOrderIndex: $toolContext->orderIndex(),
-                executionMode: $executionMode,
-                totalChildCount: $taskCount,
                 deadlineAt: $deadlineAt,
-                childIntents: $plan->reserveChildIntents(),
+                childIntent: $plan->childIntent,
                 parentModel: $plan->parentModel,
             );
 
@@ -173,10 +146,8 @@ final class DeferredSubagentBatchLaunchService
             parentTurnNo: $toolContext->turnNo(),
             parentToolCallId: $toolCallId,
             parentOrderIndex: $toolContext->orderIndex(),
-            executionMode: $executionMode,
-            totalChildCount: $taskCount,
             deadlineAt: $deadlineAt,
-            childIntents: $plan->reserveChildIntents(),
+            childIntent: $plan->childIntent,
             parentModel: $plan->parentModel,
         );
 
@@ -188,12 +159,12 @@ final class DeferredSubagentBatchLaunchService
         }
 
         try {
-            $preparedChildren = $prepare($projection);
+            $prepared = $prepare($projection);
         } catch (DeferredSubagentBatchPreparationFailure $e) {
             $this->runtimeStart->abortAfterPreparationFailure(
                 $parentRunId,
                 $toolCallId,
-                $plan->identities,
+                $plan->identity,
                 $e->getPrevious() ?? $e,
                 $e->failureBatchIndex,
             );
@@ -214,7 +185,7 @@ final class DeferredSubagentBatchLaunchService
             throw $this->launchFailedException($e->getPrevious() ?? $e);
         }
 
-        if ([] === $preparedChildren) {
+        if (null === $prepared) {
             $this->reconcileLaunchSuccessFromArtifacts($parentRunId, $toolCallId, $lifecycleId, $projection, $plan);
 
             return new DeferredToolCompletionOutcome($lifecycleId);
@@ -222,27 +193,19 @@ final class DeferredSubagentBatchLaunchService
 
         $startedAt = Clock::get()->now();
         try {
-            $this->runtimeStart->startPreparedInOrder(
+            $this->runtimeStart->startPrepared(
                 $parentRunId,
                 $toolCallId,
-                $plan->identities,
-                $preparedChildren,
+                $plan->identity,
+                $prepared,
             );
         } catch (DeferredSubagentBatchRuntimeStartFailure $e) {
             $failureIndex = $e->failureBatchIndex;
-            $launchedBeforeFailure = [];
-            foreach ($preparedChildren as $prepared) {
-                if ($prepared->identity->batchIndex < $failureIndex) {
-                    $launchedBeforeFailure[] = $prepared->identity->batchIndex;
-                }
-            }
             try {
-                $this->batchRepository->applyLaunchFailureRuntime(
+                $this->batchRepository->applyLaunchFailurePreparation(
                     $parentRunId,
                     $toolCallId,
                     $lifecycleId,
-                    $failureIndex,
-                    $launchedBeforeFailure,
                 );
             } catch (\Throwable $persistFailure) {
                 $this->logger->warning('deferred_subagent_batch.launch_failure_persist_failed', [
@@ -259,14 +222,8 @@ final class DeferredSubagentBatchLaunchService
             throw $this->launchFailedException($e->getPrevious() ?? $e);
         }
 
-        $launchedIndices = $this->batchPreparation->collectLaunchedBatchIndices(
-            $parentRunId,
-            $projection,
-            $plan,
-            $preparedChildren,
-        );
         try {
-            $this->batchRepository->applyLaunchSuccessState($parentRunId, $toolCallId, $lifecycleId, $startedAt, $launchedIndices);
+            $this->batchRepository->applyLaunchSuccessState($parentRunId, $toolCallId, $lifecycleId, $startedAt);
         } catch (\Throwable $persistFailure) {
             $this->logger->warning('deferred_subagent_batch.launch_success_persist_failed', [
                 'run_id' => $parentRunId,
@@ -309,8 +266,8 @@ final class DeferredSubagentBatchLaunchService
         DeferredSubagentBatchProjectionDTO $projection,
         DeferredSubagentBatchLaunchPlanDTO $plan,
     ): void {
-        $launchedIndices = $this->batchPreparation->collectLaunchedBatchIndices($parentRunId, $projection, $plan, []);
-        if ([] === $launchedIndices) {
+        $launched = $this->batchPreparation->isLaunched($parentRunId, $projection, $plan, null);
+        if (!$launched) {
             return;
         }
 
@@ -320,7 +277,6 @@ final class DeferredSubagentBatchLaunchService
                 $toolCallId,
                 $lifecycleId,
                 Clock::get()->now(),
-                $launchedIndices,
             );
         } catch (\Throwable $persistFailure) {
             $this->logger->warning('deferred_subagent_batch.launch_success_persist_failed', [

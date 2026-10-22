@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
@@ -211,6 +212,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $artifactId = 'agent_resume';
         $childRunId = 'child-run-resume';
         $client = $this->createStub(AgentSessionClient::class);
+        $client->method('backgroundWork')->willReturn(new BackgroundWorkSnapshotDTO([], []));
 
         $parentProjector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
         $poller = new RuntimeEventPoller(
@@ -394,9 +396,14 @@ final class ParentEventClient implements AgentSessionClient
     }
 
     /** @return list<never> */
-    public function backgroundProcesses(string $runId): array
+    public function foregroundChildren(string $runId): array
     {
         return [];
+    }
+
+    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
+    {
+        return new BackgroundWorkSnapshotDTO([], []);
     }
 
     public function stopBackgroundProcess(string $runId, int $recordId): bool

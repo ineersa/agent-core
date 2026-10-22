@@ -19,7 +19,6 @@ settings keys and discovery rules only.
 |---|---|---|
 | `agents.enabled` | Master switch for agent discovery | `true` |
 | `agents.paths` | Extra definition files/dirs (highest precedence) | `[]` |
-| `agents.max_agents` | Max parallel children per `subagent` call | `4` |
 | `agents.subagent_tool_timeout_seconds` | Deferred-batch deadline for foreground subagent tool | `86400` (min `60`) |
 | `agents.subagent_excluded_tools` | Tool names always removed from child runs | `hatfield_docs` |
 | `agents.extensions.always_on` | Extension classes always loaded for children | includes SafeGuard |

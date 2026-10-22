@@ -20,6 +20,27 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
         parent::__construct($registry, BackgroundProcess::class);
     }
 
+    /** @return list<array<string, mixed>> */
+    public function findOwnedBackgroundWork(string $rootRunId, ?int $observedRecordId): array
+    {
+        // Finished history is not loaded into the picker. A pending UI action
+        // may additionally observe its exact retained row until native settlement.
+        // child_run_id is unique, including resume rebinds. Resolve ownership
+        // and its attribution in this statement without duplicating process rows.
+        return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<'SQL'
+            SELECT process.id, process.pid, process.command, process.session_id,
+                process.status, process.finished_at, process.started_at,
+                child.agent_name AS owner_name, child.artifact_id AS owner_artifact_id
+            FROM background_process process
+            LEFT JOIN deferred_subagent_child child ON child.child_run_id = process.session_id
+            LEFT JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
+            WHERE process.backgrounded_at IS NOT NULL
+                AND (process.finished_at IS NULL OR process.id = :observed)
+                AND (process.session_id = :root OR batch.parent_run_id = :root)
+            ORDER BY process.id
+            SQL, ['root' => $rootRunId, 'observed' => $observedRecordId]);
+    }
+
     /**
      * Check whether a row exists for the given PID.
      *
@@ -74,22 +95,24 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
     }
 
     /**
-     * Find all unfinished processes (finishedAt IS NULL), optionally filtered by session.
+     * Find unfinished processes across the controller-owned runs in one query.
+     *
+     * @param list<string> $sessionIds
      *
      * @return BackgroundProcess[]
      */
-    public function findUnfinished(?string $sessionId = null): array
+    public function findUnfinished(array $sessionIds): array
     {
-        $qb = $this->createQueryBuilder('bp')
-            ->where('bp.finishedAt IS NULL')
-            ->orderBy('bp.id', 'DESC');
-
-        if (null !== $sessionId) {
-            $qb->andWhere('bp.sessionId = :sessionId')
-                ->setParameter('sessionId', $sessionId);
+        if ([] === $sessionIds) {
+            return [];
         }
 
-        return $qb->getQuery()
+        return $this->createQueryBuilder('bp')
+            ->where('bp.finishedAt IS NULL')
+            ->andWhere('bp.sessionId IN (:sessionIds)')
+            ->setParameter('sessionIds', $sessionIds)
+            ->orderBy('bp.id', 'DESC')
+            ->getQuery()
             ->setHint(Query::HINT_REFRESH, true)
             ->getResult();
     }
@@ -136,6 +159,23 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
             ->getResult();
     }
 
+    /** @return list<BackgroundProcess> */
+    public function findForegroundTools(string $sessionId): array
+    {
+        return $this->createQueryBuilder('bp')
+            ->where('bp.sessionId = :sessionId')
+            ->andWhere('bp.finishedAt IS NULL')
+            ->andWhere('bp.toolCallId IS NOT NULL')
+            ->andWhere('bp.backgroundedAt IS NULL')
+            ->andWhere('bp.backgroundRequested = :requested')
+            ->setParameter('sessionId', $sessionId)
+            ->setParameter('requested', false)
+            ->orderBy('bp.id', 'DESC')
+            ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getResult();
+    }
+
     /**
      * Resolve a user-accepted background process by PID within one run.
      */
@@ -158,14 +198,22 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
      * Find private foreground-supervision rows that have remained finished
      * for at least one cleanup interval.
      *
+     * @param list<string> $sessionIds Controller-owned runs
+     *
      * @return BackgroundProcess[]
      */
-    public function findFinishedProvisionalBefore(\DateTimeImmutable $cutoff): array
+    public function findFinishedProvisionalBefore(\DateTimeImmutable $cutoff, array $sessionIds): array
     {
+        if ([] === $sessionIds) {
+            return [];
+        }
+
         return $this->createQueryBuilder('bp')
             ->where('bp.backgroundedAt IS NULL')
+            ->andWhere('bp.sessionId IN (:sessionIds)')
             ->andWhere('bp.finishedAt IS NOT NULL')
             ->andWhere('bp.finishedAt <= :cutoff')
+            ->setParameter('sessionIds', $sessionIds)
             ->setParameter('cutoff', $cutoff)
             ->orderBy('bp.id', 'ASC')
             ->getQuery()

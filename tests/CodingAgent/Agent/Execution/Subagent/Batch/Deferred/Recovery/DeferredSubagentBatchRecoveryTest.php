@@ -16,8 +16,8 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnHandler;
@@ -54,7 +54,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         TestDirectoryIsolation::createHatfieldTree((string) getcwd(), withSessions: true);
     }
 
-    public function testGapRecoveryReconcilesAllChildrenWithFreshBatchVersionsAndDuplicateNoOp(): void
+    public function testGapRecoveryReconcilesChildWithFreshVersionsAndDuplicateNoOp(): void
     {
         /** @var DeferredSubagentBatchRepository $batchRepo */
         $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
@@ -65,22 +65,16 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $tool = 'tool-batch-gap';
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
-        $c2 = $factory->childIdentity($parent, $tool, 2);
         $batchRepo->reserveBatch(
             lifecycleId: $lifecycle,
             parentRunId: $parent,
             parentTurnNo: 1,
             parentToolCallId: $tool,
             parentOrderIndex: 0,
-            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-            totalChildCount: 2,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
-            childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'g-one', 'task' => 'G1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
-                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'g-two', 'task' => 'G2', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
-            ],
+            childIntent: new DeferredSubagentBatchChildIntentDTO(batchIndex: 1, childRunId: $c1['childRunId'], artifactId: $c1['artifactId'], agentName: 'g-one', task: 'G1', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
         );
-        $batchRepo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1, 2]);
+        $batchRepo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable());
 
         $child1Entity = $childRepo->findEntityByBatchLifecycleAndIndex($lifecycle, 1);
         $this->assertNotNull($child1Entity);
@@ -102,10 +96,6 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         );
 
         $this->writeChildEventLine($parent, $c1['artifactId'], $c1['childRunId'], 2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']);
-        $this->writeChildEventLine($parent, $c2['artifactId'], $c2['childRunId'], 1, RunEventTypeEnum::LlmStepCompleted->value, [
-            'assistant_message' => ['content' => [['type' => 'text', 'text' => 'child2']]],
-        ]);
-        $this->writeChildEventLine($parent, $c2['artifactId'], $c2['childRunId'], 2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']);
 
         $bus = new TestMessageBus();
         $observe = new ObserveDeferredSubagentBatchChildTurnHandler(
@@ -143,23 +133,18 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $recovery->recover($lifecycle);
 
         $child1Recovered = $childRepo->findEntityByBatchLifecycleAndIndex($lifecycle, 1);
-        $child2Recovered = $childRepo->findEntityByBatchLifecycleAndIndex($lifecycle, 2);
         $this->assertSame(2, $child1Recovered?->childEventCursor);
         $this->assertSame('completed', $child1Recovered?->childLifecycleProjection['child_status'] ?? null);
-        $this->assertSame(2, $child2Recovered?->childEventCursor);
-        $this->assertSame('completed', $child2Recovered?->childLifecycleProjection['child_status'] ?? null);
 
         $batchAfterRecovery = $batchRepo->findByLifecycleId($lifecycle);
-        $this->assertSame(2, $batchAfterRecovery->aggregateProgressRevision);
+        $this->assertSame(1, $batchAfterRecovery->aggregateProgressRevision);
         $this->assertInstanceOf(DeliverDeferredSubagentBatchLifecycleMessage::class, $recoveryBus->messages[0]);
 
         $recovery->recover($lifecycle);
         $child1Dup = $childRepo->findEntityByBatchLifecycleAndIndex($lifecycle, 1);
-        $child2Dup = $childRepo->findEntityByBatchLifecycleAndIndex($lifecycle, 2);
         $this->assertSame(2, $child1Dup?->childEventCursor);
-        $this->assertSame(2, $child2Dup?->childEventCursor);
         $batchDup = $batchRepo->findByLifecycleId($lifecycle);
-        $this->assertSame(2, $batchDup->aggregateProgressRevision);
+        $this->assertSame(1, $batchDup->aggregateProgressRevision);
     }
 
     public function testWorkerStartScopesRecoveryAndResumesDeadlineOrInterruption(): void
@@ -180,14 +165,10 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             parentTurnNo: 1,
             parentToolCallId: $unfinishedTool,
             parentOrderIndex: 0,
-            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-            totalChildCount: 1,
             deadlineAt: $deadline,
-            childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $u1['childRunId'], 'artifactId' => $u1['artifactId'], 'agentName' => 'w-one', 'task' => 'W1', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
-            ],
+            childIntent: new DeferredSubagentBatchChildIntentDTO(batchIndex: 1, childRunId: $u1['childRunId'], artifactId: $u1['artifactId'], agentName: 'w-one', task: 'W1', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
         );
-        $batchRepo->applyLaunchSuccessState($sessionId, $unfinishedTool, $unfinishedLifecycle, new \DateTimeImmutable(), [1]);
+        $batchRepo->applyLaunchSuccessState($sessionId, $unfinishedTool, $unfinishedLifecycle, new \DateTimeImmutable());
 
         $reservedTool = 'tool-reserved';
         $reservedLifecycle = $factory->batchLifecycleId($sessionId, $reservedTool);
@@ -198,12 +179,8 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             parentTurnNo: 1,
             parentToolCallId: $reservedTool,
             parentOrderIndex: 1,
-            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-            totalChildCount: 1,
             deadlineAt: $deadline,
-            childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $r1['childRunId'], 'artifactId' => $r1['artifactId'], 'agentName' => 'w-res', 'task' => 'WR', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
-            ],
+            childIntent: new DeferredSubagentBatchChildIntentDTO(batchIndex: 1, childRunId: $r1['childRunId'], artifactId: $r1['artifactId'], agentName: 'w-res', task: 'WR', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
         );
 
         $interruptTool = 'tool-interrupt';
@@ -215,14 +192,10 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             parentTurnNo: 1,
             parentToolCallId: $interruptTool,
             parentOrderIndex: 2,
-            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-            totalChildCount: 1,
             deadlineAt: $deadline,
-            childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $i1['childRunId'], 'artifactId' => $i1['artifactId'], 'agentName' => 'w-int', 'task' => 'WI', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
-            ],
+            childIntent: new DeferredSubagentBatchChildIntentDTO(batchIndex: 1, childRunId: $i1['childRunId'], artifactId: $i1['artifactId'], agentName: 'w-int', task: 'WI', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
         );
-        $batchRepo->applyLaunchSuccessState($sessionId, $interruptTool, $interruptLifecycle, new \DateTimeImmutable(), [1]);
+        $batchRepo->applyLaunchSuccessState($sessionId, $interruptTool, $interruptLifecycle, new \DateTimeImmutable());
         $interruptBatch = $batchRepo->findByLifecycleId($interruptLifecycle);
         $batchRepo->persistInterruptionIntent(
             $interruptLifecycle,
@@ -240,14 +213,10 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             parentTurnNo: 1,
             parentToolCallId: $otherTool,
             parentOrderIndex: 0,
-            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-            totalChildCount: 1,
             deadlineAt: $deadline,
-            childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $o1['childRunId'], 'artifactId' => $o1['artifactId'], 'agentName' => 'w-oth', 'task' => 'WO', 'launchModel' => 'deepseek/deepseek-v4-flash', 'launchReasoning' => 'medium'],
-            ],
+            childIntent: new DeferredSubagentBatchChildIntentDTO(batchIndex: 1, childRunId: $o1['childRunId'], artifactId: $o1['artifactId'], agentName: 'w-oth', task: 'WO', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
         );
-        $batchRepo->applyLaunchSuccessState($otherParent, $otherTool, $otherLifecycle, new \DateTimeImmutable(), [1]);
+        $batchRepo->applyLaunchSuccessState($otherParent, $otherTool, $otherLifecycle, new \DateTimeImmutable());
 
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
         $unfinishedCorrelation = new DeferredToolCompletionCorrelation(

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Infrastructure\Doctrine\CommandRecord;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceipt;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletion;
 use Ineersa\CodingAgent\Entity\ToolBatchCall;
 use Ineersa\CodingAgent\Entity\ToolBatchResult;
@@ -43,6 +44,8 @@ final readonly class PendingRuntimeSessionDeletionSubscriber
         }
         $this->entityManager->createQueryBuilder()->delete(ToolBatchSchedule::class, 'b')
             ->where('b.runId IN (:runs)')->setParameter('runs', $runs)->getQuery()->execute();
+        $this->entityManager->createQueryBuilder()->delete(BackgroundCompletionReceipt::class, 'r')
+            ->where('r.rootRunId IN (:runs)')->setParameter('runs', $runs)->getQuery()->execute();
         // HatfieldSessionStore removes these paths and the owner tree only after
         // this metadata transaction succeeds. No filesystem deletion happens here.
     }

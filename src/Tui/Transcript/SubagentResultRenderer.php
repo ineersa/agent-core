@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -53,7 +52,7 @@ final readonly class SubagentResultRenderer
         $progress = $block->meta['subagent_progress'] ?? null;
         $resultText = $this->resolveResultText($block);
 
-        if ($progress instanceof SubagentProgressSnapshotInterface) {
+        if ($progress instanceof SubagentProgressSnapshotDTO) {
             return $this->buildProgressWidget($block, $theme, $progress, $resultText);
         }
 
@@ -69,7 +68,7 @@ final readonly class SubagentResultRenderer
     private function buildProgressWidget(
         TranscriptBlock $block,
         TuiTheme $theme,
-        SubagentProgressSnapshotInterface $progress,
+        SubagentProgressSnapshotDTO $progress,
         string $resultText,
     ): AbstractWidget {
         $resultColor = $this->resultColor($block);
@@ -85,6 +84,7 @@ final readonly class SubagentResultRenderer
             progress: $progress,
             streaming: $block->streaming,
             expandHandoffHint: $expandHandoffHint,
+            backgrounded: true === ($block->meta['backgrounded'] ?? false),
         ));
 
         if ($isError && '' !== trim($resultText)) {
@@ -172,7 +172,7 @@ final readonly class SubagentResultRenderer
         return \count($lines) > $this->displayConfig->toolResultPreviewLines;
     }
 
-    private function resolveHandoffMarkdown(SubagentProgressSnapshotInterface $progress, string $resultText): string
+    private function resolveHandoffMarkdown(SubagentProgressSnapshotDTO $progress, string $resultText): string
     {
         if (!$this->isTerminalCardStatus($this->resolveCardStatus($progress))) {
             return '';
@@ -190,12 +190,12 @@ final readonly class SubagentResultRenderer
         return \in_array($status, ['completed', 'failed', 'cancelled'], true);
     }
 
-    private function resolveCardStatus(SubagentProgressSnapshotInterface $progress): string
+    private function resolveCardStatus(SubagentProgressSnapshotDTO $progress): string
     {
-        return match ($progress->status()) {
+        return match ($progress->status) {
             'needs_clarification' => 'waiting_human',
             'starting' => 'running',
-            default => $progress->status(),
+            default => $progress->status,
         };
     }
 
@@ -206,15 +206,13 @@ final readonly class SubagentResultRenderer
         return \is_string($result) && '' !== $result ? $result : $block->text;
     }
 
-    private function isRedundantHandoff(SubagentProgressSnapshotInterface $progress, string $resultText): bool
+    private function isRedundantHandoff(SubagentProgressSnapshotDTO $progress, string $resultText): bool
     {
         $normalized = trim($resultText);
         if ('' === $normalized) {
             return true;
         }
-        $artifactId = $progress instanceof SubagentProgressSingleSnapshotDTO
-            ? $progress->artifactId
-            : '';
+        $artifactId = $progress->artifactId;
 
         return '' !== $artifactId && str_contains($normalized, $artifactId) && !str_contains($normalized, "\n\n");
     }

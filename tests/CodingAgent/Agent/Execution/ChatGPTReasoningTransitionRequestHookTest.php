@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
@@ -28,6 +29,7 @@ use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ChatGPT\ChatGPTSymfonyAiProviderBuilder;
@@ -329,7 +331,7 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
     public function testCommittedHistoryTailDiscardRemovesSwitchAnchorWithoutChangingCacheIdentity(): void
     {
         $store = $this->startCanonicalReasoningEpoch();
-        $service = new \Ineersa\CodingAgent\Session\History\HistoryTailDiscardService($store, new NullLogger());
+        $service = new \Ineersa\CodingAgent\Session\History\HistoryTailDiscardService($store, new NullLogger(), self::getContainer()->get(ActiveRunContextInterface::class), self::getContainer()->get(BackgroundCompletionReceiptRepository::class));
         $tip = $this->coldReplay($store);
         $this->assertNull($service->prepareForwardTailDiscard($this->sessionId, $tip));
         \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($this->sessionId, 1, 'history_position_set', ['position_turn_no' => 1, 'reason' => 'history_select']));

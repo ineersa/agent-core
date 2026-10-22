@@ -9,7 +9,7 @@ use Doctrine\ORM\Event\PostLoadEventArgs;
 use Doctrine\ORM\Events;
 use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressDeliveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressSnapshotFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
@@ -108,9 +108,7 @@ final class DeferredSubagentBatchProgressDeliveryServiceTest extends IsolatedKer
     private function reserve(): DeferredSubagentBatchProjectionDTO
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
-        $repo->reserveBatch('marker-lifecycle', 'marker-parent', 1, 'marker-tool', 0, ChildRunBatchExecutionModeEnum::Parallel, 1, new \DateTimeImmutable('+1 hour'), [
-            ['batchIndex' => 1, 'childRunId' => 'marker-child', 'artifactId' => 'marker-artifact', 'agentName' => 'worker', 'task' => 'task', 'launchModel' => 'model', 'launchReasoning' => 'medium'],
-        ]);
+        $repo->reserveBatch('marker-lifecycle', 'marker-parent', 1, 'marker-tool', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, 'marker-child', 'marker-artifact', 'worker', 'task', 'model', 'medium'));
         self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement('UPDATE deferred_subagent_batch SET aggregate_progress_revision = 2 WHERE lifecycle_id = ?', ['marker-lifecycle']);
         $batch = $repo->findByLifecycleId('marker-lifecycle');
         $this->assertNotNull($batch);

@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -754,11 +755,14 @@ final class SubagentLivePickerControllerTest extends TestCase
 
     private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
+        $client = $this->createStub(AgentSessionClient::class);
+        $client->method('backgroundWork')->willReturn(new BackgroundWorkSnapshotDTO([], []));
+
         return new SubagentLivePickerController(
             $harness->tui(),
             $harness->screen(),
             $state,
-            $this->createStub(AgentSessionClient::class),
+            $client,
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->createStub(ChildAgentEventsPathResolverInterface::class),
@@ -861,11 +865,14 @@ final class SubagentLivePickerControllerTest extends TestCase
 
     private function exportPicker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
+        $client = $this->createStub(AgentSessionClient::class);
+        $client->method('backgroundWork')->willReturn(new BackgroundWorkSnapshotDTO([], []));
+
         return new SubagentLivePickerController(
             $harness->tui(),
             $harness->screen(),
             $state,
-            $this->createStub(AgentSessionClient::class),
+            $client,
             new SubagentLiveChildViewPoller(new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()), new NullLogger(), SubagentProgressSerializerTestSupport::denormalizer()),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
             $this->childEventsPathResolver(),

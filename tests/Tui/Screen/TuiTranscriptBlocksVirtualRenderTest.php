@@ -15,7 +15,7 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -153,7 +153,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[DataProvider('childCacheDisplays')]
-    public function testChildCacheReuseAppearsWhileRunningInLiveViewAndAfterCompletion(string $tool, bool $parallel, ?float $percentage): void
+    public function testChildCacheReuseAppearsWhileRunningInLiveViewAndAfterCompletion(string $tool, ?float $percentage): void
     {
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
@@ -171,9 +171,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $applier->apply($state, new RuntimeEvent(type: 'tool_execution.started', runId: self::SESSION_ID, seq: 1,
             payload: ['tool_call_id' => 'cache-call', 'tool_name' => $tool]));
 
-        $progress = $parallel
-            ? ['mode' => 'parallel', 'status' => 'running', 'total_count' => 1, 'completed_count' => 0, 'children' => [$child + ['index' => 1, 'status' => 'running']]]
-            : $child + ['mode' => 'single', 'status' => 'running'];
+        $progress = $child + ['status' => 'running'];
         $applier->apply($state, new RuntimeEvent(type: 'tool_execution.output_delta', runId: self::SESSION_ID, seq: 2,
             payload: ['tool_call_id' => 'cache-call', 'tool_name' => $tool, 'delta' => '', 'subagent_progress' => $progress]));
         $harness->screen()->setTranscriptBlocks($projector->blocks());
@@ -201,10 +199,6 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $state->subagentLiveView->exit();
         $progress['status'] = 'completed';
-        if ($parallel) {
-            $progress['completed_count'] = 1;
-            $progress['children'][0]['status'] = 'completed';
-        }
         $applier->apply($state, new RuntimeEvent(type: 'tool_execution.output_delta', runId: self::SESSION_ID, seq: 3,
             payload: ['tool_call_id' => 'cache-call', 'tool_name' => $tool, 'delta' => '', 'subagent_progress' => $progress]));
         $applier->apply($state, new RuntimeEvent(type: 'tool_execution.completed', runId: self::SESSION_ID, seq: 4,
@@ -220,61 +214,61 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         }
     }
 
-    /** @return iterable<string, array{string, bool, ?float}> */
+    /** @return iterable<string, array{string, ?float}> */
     public static function childCacheDisplays(): iterable
     {
-        yield 'fork' => ['fork', false, 93.0];
-        yield 'uncached subagent' => ['subagent', false, 0.0];
-        yield 'parallel child' => ['subagent', true, 93.0];
-        yield 'unreported telemetry' => ['subagent', false, null];
+        yield 'fork' => ['fork', 93.0];
+        yield 'uncached subagent' => ['subagent', 0.0];
+        yield 'unreported telemetry' => ['subagent', null];
     }
 
-    #[DataProvider('parallelContextWidths')]
-    public function testParallelContextUsageSurvivesCompletion(int $columns): void
+    #[DataProvider('contextWidths')]
+    public function testIndependentChildContextUsageSurvivesCompletion(int $columns): void
     {
         $dispatcher = new EventDispatcher();
         $dispatcher->addSubscriber(new ToolProjectionSubscriber(new SubagentProgressDisplayFormatter(), SubagentProgressSerializerTestSupport::denormalizer()));
         $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
         $state = new TuiSessionState(self::SESSION_ID);
         $applier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
-        $harness = new VirtualTuiHarness(columns: $columns, rows: 30, sessionId: self::SESSION_ID);
+        $harness = new VirtualTuiHarness(columns: $columns, rows: 50, sessionId: self::SESSION_ID);
         $harness->screen()->setWorkingVisible(false);
         $child = static fn (int $index, int $latest, int $window): array => [
-            'index' => $index, 'status' => 'running', 'agent_name' => 'worker-'.$index,
+            'status' => 'running', 'agent_name' => 'worker-'.$index,
             'artifact_id' => 'agent_ctx_'.$index, 'agent_run_id' => 'child-ctx-'.$index,
             'task_summary' => 'Inspect context', 'model' => 'test/model', 'reasoning' => 'medium',
             'input_tokens' => 9_100_000, 'total_tokens' => 9_100_000,
             'latest_input_tokens' => $latest, 'context_window' => $window,
             'cache_read_hit_percentage' => 98, 'recent_tools' => ['read'],
         ];
-        $progress = [
-            'mode' => 'parallel', 'status' => 'running', 'total_count' => 3, 'completed_count' => 0,
-            'children' => [$child(1, 196_900, 200_000), $child(2, 40_000, 80_000), $child(3, 0, 200_000)],
-        ];
-        $applier->apply($state, new RuntimeEvent(type: 'tool_execution.started', runId: self::SESSION_ID, seq: 1,
-            payload: ['tool_call_id' => 'ctx-call', 'tool_name' => 'subagent']));
-        $applier->apply($state, new RuntimeEvent(type: 'tool_execution.output_delta', runId: self::SESSION_ID, seq: 2,
-            payload: ['tool_call_id' => 'ctx-call', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $progress]));
+        $progress = [$child(1, 196_900, 200_000), $child(2, 40_000, 80_000), $child(3, 0, 200_000)];
+        $seq = 0;
+        foreach ($progress as $index => $row) {
+            $applier->apply($state, new RuntimeEvent(type: 'tool_execution.started', runId: self::SESSION_ID, seq: ++$seq,
+                payload: ['tool_call_id' => 'ctx-call-'.$index, 'tool_name' => 'subagent']));
+            $applier->apply($state, new RuntimeEvent(type: 'tool_execution.output_delta', runId: self::SESSION_ID, seq: ++$seq,
+                payload: ['tool_call_id' => 'ctx-call-'.$index, 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $row]));
+        }
         $harness->screen()->setTranscriptBlocks($projector->blocks());
         $running = $harness->plainScreenText();
-        $this->assertStringContainsString('parallel subagents (0/3 completed)', $running);
+        $this->assertStringContainsString('worker-1 [running]', $running);
         $this->assertStringContainsString('CTX 98% 196.9k/200.0k', $running);
         $this->assertStringContainsString('CTX 50% 40.0k/80.0k', $running);
         $this->assertSame(2, substr_count($running, 'CTX '), 'Missing latest usage must not fall back to cumulative input.');
         $this->assertStringContainsString('↻ 98%', $running);
         $this->assertStringContainsString('9.1M tok', $running);
-        $this->assertStringContainsString('› read · Task Inspect context', $running);
+        $this->assertStringContainsString('› read', $running);
+        $this->assertStringContainsString('Task Inspect context', $running);
 
-        $progress['status'] = 'completed';
-        $progress['completed_count'] = 3;
-        $progress['children'] = array_map(static fn (array $row): array => array_replace($row, ['status' => 'completed']), $progress['children']);
-        $applier->apply($state, new RuntimeEvent(type: 'tool_execution.output_delta', runId: self::SESSION_ID, seq: 3,
-            payload: ['tool_call_id' => 'ctx-call', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $progress]));
-        $applier->apply($state, new RuntimeEvent(type: 'tool_execution.completed', runId: self::SESSION_ID, seq: 4,
-            payload: ['tool_call_id' => 'ctx-call', 'tool_name' => 'subagent', 'result' => 'Children finished']));
+        foreach ($progress as $index => $row) {
+            $row['status'] = 'completed';
+            $applier->apply($state, new RuntimeEvent(type: 'tool_execution.output_delta', runId: self::SESSION_ID, seq: ++$seq,
+                payload: ['tool_call_id' => 'ctx-call-'.$index, 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $row]));
+            $applier->apply($state, new RuntimeEvent(type: 'tool_execution.completed', runId: self::SESSION_ID, seq: ++$seq,
+                payload: ['tool_call_id' => 'ctx-call-'.$index, 'tool_name' => 'subagent', 'result' => 'Child finished']));
+        }
         $harness->screen()->setTranscriptBlocks($projector->blocks());
         $completed = $harness->plainScreenText();
-        $this->assertStringContainsString('parallel subagents (3/3 completed)', $completed);
+        $this->assertStringContainsString('worker-1 [completed]', $completed);
         $this->assertStringContainsString('CTX 98% 196.9k/200.0k', $completed);
         $this->assertStringContainsString('CTX 50% 40.0k/80.0k', $completed);
         $this->assertSame(2, substr_count($completed, 'CTX '));
@@ -282,7 +276,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     /** @return iterable<string, array{int}> */
-    public static function parallelContextWidths(): iterable
+    public static function contextWidths(): iterable
     {
         yield 'narrow card' => [80];
         yield 'wide card' => [120];
@@ -492,8 +486,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                     'tool_name' => 'agent_resume',
                     'result' => 'agent_resume failed visibly',
                     'is_error' => true,
-                    'subagent_progress' => new SubagentProgressSingleSnapshotDTO(
-                        mode: 'single',
+                    'subagent_progress' => new SubagentProgressSnapshotDTO(
                         status: 'running',
                         agentName: 'worker',
                         artifactId: 'artifact-1',

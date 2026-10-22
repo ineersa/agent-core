@@ -7,7 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
@@ -16,16 +18,16 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Support\UnusedBackgroundProcessManagerFactory;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
 
 /**
  * Session-boundary teardown contract: shutdown() must synchronously stop a
  * spawned controller process and clear client-local cross-run buffers during
  * /reload and /new|/resume switches.
  */
-final class JsonlProcessAgentSessionClientShutdownTest extends TestCase
+final class JsonlProcessAgentSessionClientShutdownTest extends IsolatedKernelTestCase
 {
     private string $tmpDir;
 
@@ -35,6 +37,7 @@ final class JsonlProcessAgentSessionClientShutdownTest extends TestCase
 
     protected function setUp(): void
     {
+        parent::setUp();
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('jsonl-shutdown');
         $this->pidFile = $this->tmpDir.'/controller.pid';
         $this->fakeScript = $this->tmpDir.'/controller.php';
@@ -59,6 +62,7 @@ PHP);
     protected function tearDown(): void
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        parent::tearDown();
     }
 
     #[Test]
@@ -147,6 +151,8 @@ PHP);
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
             sessionStore: \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tmpDir),
+            childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
+            backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
         );
     }
 

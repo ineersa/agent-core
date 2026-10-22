@@ -40,6 +40,8 @@ final readonly class AgentArtifactEntryDTO
         public ?string $summary = null,
         public ?string $failureReason = null,
         public ?string $needsClarification = null,
+        // Survives resume so old immutable handoff publication cannot restore terminal status.
+        public int $terminalPublicationSequence = 0,
     ) {
     }
 }

@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Agent\Tool;
 
 use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolDefinitionBuilder;
 use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
-use Ineersa\CodingAgent\Config\AgentsConfig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -16,7 +15,6 @@ final class AgentResumeToolDefinitionBuilderTest extends TestCase
     public function testDefinitionMentionsForkResumeWithoutWorkflowRequirements(): void
     {
         $definition = AgentResumeToolDefinitionBuilder::build(
-            new AgentsConfig(maxAgents: 4),
             new \stdClass(),
         );
 

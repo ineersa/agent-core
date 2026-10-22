@@ -65,16 +65,15 @@ final class SubagentLiveCatalogTest extends TestCase
         ]));
     }
 
-    public function testIngestsParallelChildrenRows(): void
+    public function testIngestsIndependentChildSnapshots(): void
     {
         $catalog = new SubagentLiveCatalog();
-        SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
-            'mode' => 'parallel', 'status' => 'running',
-            'children' => [
-                ['index' => 1, 'agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
-                ['index' => 2, 'agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'completed', 'task_summary' => 'Two', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
-            ],
-        ]));
+        foreach ([
+            ['agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
+            ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'completed', 'task_summary' => 'Two', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
+        ] as $progress) {
+            SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', $progress));
+        }
         $this->assertCount(2, $catalog->all());
         $this->assertSame(SubagentLiveStatusEnum::Completed, $catalog->findByArtifactId('a2')?->status);
     }
@@ -121,13 +120,12 @@ final class SubagentLiveCatalogTest extends TestCase
     public function testWaitingHumanChildrenSortBeforeRunning(): void
     {
         $catalog = new SubagentLiveCatalog();
-        SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
-            'mode' => 'parallel', 'status' => 'running',
-            'children' => [
-                ['index' => 1, 'agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
-                ['index' => 2, 'agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'waiting_human', 'task_summary' => 'Two', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
-            ],
-        ]));
+        foreach ([
+            ['agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
+            ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'waiting_human', 'task_summary' => 'Two', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
+        ] as $progress) {
+            SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', $progress));
+        }
 
         $all = $catalog->all();
         $this->assertSame('a2', $all[0]->artifactId);
@@ -203,27 +201,6 @@ final class SubagentLiveCatalogTest extends TestCase
         $this->assertSame('high', $this->childContextString($child, 'reasoning'));
         $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS, $this->childContextInt($child, 'latestInputTokens'));
         $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW, $this->childContextInt($child, 'contextWindow'));
-    }
-
-    public function testEqualLastActivityAtMsSortsByAttentionThenActivityOnly(): void
-    {
-        $catalog = new SubagentLiveCatalog();
-        // Single parallel event stamps identical lastActivityAtMs for both children.
-        SubagentProgressSerializerTestSupport::ingestCatalogEvent($catalog, $this->progressEvent('parent-1', [
-            'mode' => 'parallel', 'status' => 'running',
-            'children' => [
-                ['index' => 1, 'agent_name' => 'scout', 'artifact_id' => 'zzz', 'agent_run_id' => 'run-z', 'status' => 'completed', 'task_summary' => 'Later id', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium'],
-                ['index' => 2, 'agent_name' => 'worker', 'artifact_id' => 'aaa', 'agent_run_id' => 'run-a', 'status' => 'waiting_human', 'task_summary' => 'Needs input', 'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'high'],
-            ],
-        ]));
-
-        $all = $catalog->all();
-        $this->assertCount(2, $all);
-        $this->assertSame('aaa', $all[0]->artifactId, 'attention rows still sort first');
-        $this->assertTrue($all[0]->needsAttention());
-        $this->assertSame($all[0]->lastActivityAtMs, $all[1]->lastActivityAtMs, 'same event shares activity timestamp');
-        // No artifactId secondary key: both rows may retain equal timestamps; order among
-        // equal non-attention rows is lastActivity only (stable usort is acceptable).
     }
 
     /** @param array<string, mixed> $progress */

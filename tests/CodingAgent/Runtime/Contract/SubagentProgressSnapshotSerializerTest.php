@@ -4,13 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Contract;
 
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary;
-use Ineersa\CodingAgent\Agent\Execution\SubagentProgressParallelChildReportDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -22,70 +18,45 @@ use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 
 /**
- * Thesis: Symfony Serializer + DiscriminatorMap produce/consume canonical
+ * Symfony Serializer produces and consumes canonical
  * subagent_progress payloads; Validator rejects invalid fixed fields.
  */
 final class SubagentProgressSnapshotSerializerTest extends TestCase
 {
     #[DataProvider('cachePercentageWireCases')]
-    public function testCachePercentageSurvivesJsonlRoundTrip(bool $parallel, ?float $percentage): void
+    public function testCachePercentageSurvivesJsonlRoundTrip(?float $percentage): void
     {
         $builder = new SubagentProgressSnapshotBuilder();
         $summary = new SubagentChildProgressSummary(model: 'test/model', reasoning: 'medium', cacheReadHitPercentage: $percentage);
-        $snapshot = $parallel
-            ? $builder->parallelSnapshot(
-                reports: ['child' => new SubagentProgressParallelChildReportDTO(index: 1, agentName: 'scout', task: 'Task', artifactId: 'a1', agentRunId: 'r1', terminal: false, status: AgentArtifactStatusEnum::Running, elapsedMs: 0)],
-                activeTurns: ['r1' => 1], elapsedMs: 0, enrichmentByAgentRunId: ['r1' => $summary], aggregateStatus: 'running',
-            )
-            : $builder->singleFromChildTurn(agentName: 'scout', artifactId: 'a1', agentRunId: 'r1', taskSummary: 'Task', childTurnNo: 1, elapsedMs: 0, enrichment: $summary);
+        $snapshot = $builder->singleFromChildTurn(agentName: 'scout', artifactId: 'a1', agentRunId: 'r1', taskSummary: 'Task', childTurnNo: 1, elapsedMs: 0, enrichment: $summary);
         $payload = SubagentProgressSerializerTestSupport::normalizer()->normalize($snapshot, null, [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
         $event = JsonlCodec::decodeEvent(JsonlCodec::encodeEvent(new RuntimeEvent(
             RuntimeEventTypeEnum::ToolExecutionOutputDelta->value, 'parent', 1, ['tool_call_id' => 'call1', 'subagent_progress' => $payload],
         )));
-        $raw = $event->payload['subagent_progress'];
-        $decoded = SubagentProgressSerializerTestSupport::denormalizer()->denormalize($raw, SubagentProgressSnapshotInterface::class);
-        if ($parallel) {
-            $this->assertInstanceOf(SubagentProgressParallelSnapshotDTO::class, $decoded);
-            $this->assertCount(1, $decoded->children);
-            $actual = $decoded->children[0]->cacheReadHitPercentage;
-        } else {
-            $this->assertInstanceOf(SubagentProgressSingleSnapshotDTO::class, $decoded);
-            $actual = $decoded->cacheReadHitPercentage;
-        }
+        $decoded = SubagentProgressSerializerTestSupport::denormalizer()->denormalize($event->payload['subagent_progress'], SubagentProgressSnapshotDTO::class);
+        $this->assertInstanceOf(SubagentProgressSnapshotDTO::class, $decoded);
+        $actual = $decoded->cacheReadHitPercentage;
         $this->assertSame($percentage, null === $actual ? null : (float) $actual);
     }
 
     public static function cachePercentageWireCases(): iterable
     {
-        foreach (['single' => false, 'parallel' => true] as $mode => $parallel) {
-            yield $mode.' zero hits' => [$parallel, 0.0];
-            yield $mode.' all hits' => [$parallel, 100.0];
-            yield $mode.' fractional hits' => [$parallel, 93.5];
-            yield $mode.' missing telemetry' => [$parallel, null];
-        }
+        yield 'zero hits' => [0.0];
+        yield 'all hits' => [100.0];
+        yield 'fractional hits' => [93.5];
+        yield 'missing telemetry' => [null];
     }
 
-    #[DataProvider('cachePercentageModes')]
-    public function testCachePercentageRejectsNumericStrings(bool $parallel): void
+    public function testCachePercentageRejectsNumericStrings(): void
     {
         $raw = SubagentProgressSerializerTestSupport::canonicalSingleWire();
         $raw['cache_read_hit_percentage'] = '100';
-        if ($parallel) {
-            unset($raw['mode']);
-            $raw = ['mode' => 'parallel', 'status' => 'running', 'children' => [['index' => 1, ...$raw]]];
-        }
         $this->expectException(SerializerExceptionInterface::class);
         $this->expectExceptionMessage('cacheReadHitPercentage');
-        SubagentProgressSerializerTestSupport::denormalizer()->denormalize($raw, SubagentProgressSnapshotInterface::class);
+        SubagentProgressSerializerTestSupport::denormalizer()->denormalize($raw, SubagentProgressSnapshotDTO::class);
     }
 
-    public static function cachePercentageModes(): iterable
-    {
-        yield 'single' => [false];
-        yield 'parallel' => [true];
-    }
-
-    public function testNormalizeSingleMatchesHistoricalKeysAndOmissions(): void
+    public function testNormalizeMatchesCanonicalKeysAndOmissions(): void
     {
         $builder = new SubagentProgressSnapshotBuilder();
         $snapshot = $builder->singleFromChildTurn(
@@ -113,7 +84,7 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
 
         $payload = SubagentProgressSerializerTestSupport::normalizer()->normalize($snapshot, null, [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
 
-        $this->assertSame('single', $payload['mode']);
+        $this->assertArrayNotHasKey('mode', $payload);
         $this->assertSame('running', $payload['status']);
         $this->assertSame('scout', $payload['agent_name']);
         $this->assertSame('agent_abc', $payload['artifact_id']);
@@ -138,64 +109,10 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
         $this->assertArrayNotHasKey('children', $payload);
     }
 
-    public function testNormalizeParallelIncludesChildrenAndAggregateZeros(): void
-    {
-        $builder = new SubagentProgressSnapshotBuilder();
-        $snapshot = $builder->parallelSnapshot(
-            reports: [
-                'c1' => new SubagentProgressParallelChildReportDTO(
-                    index: 1,
-                    agentName: 'reviewer',
-                    task: 'Review',
-                    artifactId: 'a1',
-                    agentRunId: 'r1',
-                    terminal: true,
-                    status: AgentArtifactStatusEnum::Completed,
-                    elapsedMs: 45000,
-                ),
-                'c2' => new SubagentProgressParallelChildReportDTO(
-                    index: 2,
-                    agentName: 'scout',
-                    task: 'Scout',
-                    artifactId: 'a2',
-                    agentRunId: 'r2',
-                    terminal: false,
-                    status: AgentArtifactStatusEnum::Running,
-                    elapsedMs: 12000,
-                ),
-            ],
-            activeTurns: ['r1' => 3, 'r2' => 1],
-            elapsedMs: 9000,
-            enrichmentByAgentRunId: [
-                'r1' => new SubagentChildProgressSummary(model: 'test/model', reasoning: 'medium'),
-                'r2' => new SubagentChildProgressSummary(model: 'test/model', reasoning: 'low'),
-            ],
-            aggregateStatus: 'running',
-        );
-
-        $payload = SubagentProgressSerializerTestSupport::normalizer()->normalize($snapshot, null, [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
-
-        $this->assertSame('parallel', $payload['mode']);
-        $this->assertSame(1, $payload['completed_count']);
-        $this->assertSame(2, $payload['total_count']);
-        $this->assertSame(9000, $payload['elapsed_ms']);
-        $this->assertSame(0, $payload['tool_count']);
-        $this->assertSame(0, $payload['input_tokens']);
-        $this->assertArrayNotHasKey('cost', $payload);
-        $this->assertCount(2, $payload['children']);
-        $this->assertSame('reviewer', $payload['children'][0]['agent_name']);
-        $this->assertSame('completed', $payload['children'][0]['status']);
-        $this->assertSame('scout', $payload['children'][1]['agent_name']);
-        $this->assertSame('running', $payload['children'][1]['status']);
-        $this->assertSame(45000, $payload['children'][0]['elapsed_ms']);
-        $this->assertSame(12000, $payload['children'][1]['elapsed_ms']);
-    }
-
-    public function testDenormalizeRoundTripAndRejectsInvalidMode(): void
+    public function testDenormalizeSuppliesCounterDefaults(): void
     {
         $denormalizer = SubagentProgressSerializerTestSupport::denormalizer();
         $single = $denormalizer->denormalize([
-            'mode' => 'single',
             'status' => 'running',
             'agent_name' => 'scout',
             'artifact_id' => 'a1',
@@ -205,46 +122,18 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
             'reasoning' => 'medium',
             'turn_no' => 1,
             'elapsed_ms' => 100,
-        ], SubagentProgressSnapshotInterface::class);
-        $this->assertInstanceOf(SubagentProgressSingleSnapshotDTO::class, $single);
+        ], SubagentProgressSnapshotDTO::class);
+        $this->assertInstanceOf(SubagentProgressSnapshotDTO::class, $single);
         $this->assertSame('scout', $single->agentName);
 
-        $parallel = $denormalizer->denormalize([
-            'mode' => 'parallel',
-            'status' => 'running',
-            'completed_count' => 0,
-            'total_count' => 1,
-            'elapsed_ms' => 10,
-            'children' => [
-                [
-                    'index' => 1,
-                    'agent_name' => 'scout',
-                    'status' => 'running',
-                    'artifact_id' => 'a1',
-                    'agent_run_id' => 'r1',
-                    'task_summary' => 'T',
-                    'model' => 'test/model',
-                    'reasoning' => 'medium',
-                    'turn_no' => 0,
-                ],
-            ],
-            'tool_count' => 0,
-            'input_tokens' => 0,
-            'output_tokens' => 0,
-            'reasoning_tokens' => 0,
-            'total_tokens' => 0,
-        ], SubagentProgressSnapshotInterface::class);
-        $this->assertInstanceOf(SubagentProgressParallelSnapshotDTO::class, $parallel);
-        $this->assertCount(1, $parallel->children);
-
-        $this->expectException(SerializerExceptionInterface::class);
-        $denormalizer->denormalize(['mode' => 'weird', 'status' => 'running'], SubagentProgressSnapshotInterface::class);
+        $this->assertSame(0, $single->toolCount);
+        $this->assertSame(0, $single->inputTokens);
+        $this->assertSame([], $single->recentTools);
     }
 
     public function testValidatorRejectsBlankStatus(): void
     {
         $snapshot = SubagentProgressSerializerTestSupport::denormalizer()->denormalize([
-            'mode' => 'single',
             'status' => '',
             'agent_name' => 'scout',
             'elapsed_ms' => 0,
@@ -254,7 +143,7 @@ final class SubagentProgressSnapshotSerializerTest extends TestCase
             'model' => 'test/model',
             'reasoning' => 'medium',
             'turn_no' => 0,
-        ], SubagentProgressSnapshotInterface::class);
+        ], SubagentProgressSnapshotDTO::class);
 
         $violations = SubagentProgressSerializerTestSupport::validator()->validate($snapshot);
         $this->assertGreaterThan(0, $violations->count());

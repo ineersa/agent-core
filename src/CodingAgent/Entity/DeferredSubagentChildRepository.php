@@ -11,6 +11,7 @@ use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
@@ -82,64 +83,60 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         return $out;
     }
 
-    /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, launchModel: string, launchReasoning: string}> $childIntents
-     */
-    public function insertReservedChildren(string $batchLifecycleId, array $childIntents, ?Connection $conn = null): void
+    public function insertReservedChild(string $batchLifecycleId, DeferredSubagentBatchChildIntentDTO $childIntent, ?Connection $conn = null): void
     {
         $conn ??= $this->getEntityManager()->getConnection();
         $now = Clock::get()->now()->format('Y-m-d H:i:s');
 
-        foreach ($childIntents as $intent) {
-            try {
-                $conn->insert('deferred_subagent_child', [
-                    'batch_lifecycle_id' => $batchLifecycleId,
-                    'batch_index' => $intent['batchIndex'],
-                    'child_run_id' => $intent['childRunId'],
-                    'provider_cache_key' => UuidV7::v7()->toRfc4122(),
-                    'artifact_id' => $intent['artifactId'],
-                    'agent_name' => $intent['agentName'],
-                    'task' => $intent['task'],
-                    'launch_model' => $intent['launchModel'],
-                    'launch_reasoning' => $intent['launchReasoning'],
-                    'launch_status' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
-                    'child_event_cursor' => 0,
-                    'projection_version' => 1,
-                    'started_at' => null,
-                    'terminal_completed_at' => null,
-                    'terminal_status' => null,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
-            } catch (UniqueConstraintViolationException) {
-                $existing = $this->findFreshOneBy([
-                    'batchLifecycleId' => $batchLifecycleId,
-                    'batchIndex' => $intent['batchIndex'],
-                ]);
-                if (!$existing instanceof DeferredSubagentChild) {
-                    $byChildRun = $this->findFreshEntityByChildRunId($intent['childRunId']);
-                    if ($byChildRun instanceof DeferredSubagentChild) {
-                        // Resume rebinds an existing terminal child onto a new batch.
-                        $this->rebindExistingChildToResumeBatch(
-                            batchLifecycleId: $batchLifecycleId,
-                            batchIndex: $intent['batchIndex'],
-                            childRunId: $intent['childRunId'],
-                            artifactId: $intent['artifactId'],
-                            agentName: $intent['agentName'],
-                            task: $intent['task'],
-                            launchModel: $intent['launchModel'],
-                            launchReasoning: $intent['launchReasoning'],
-                            conn: $conn,
-                            existing: $byChildRun,
-                        );
+        $intent = $childIntent->toReserveArray();
+        try {
+            $conn->insert('deferred_subagent_child', [
+                'batch_lifecycle_id' => $batchLifecycleId,
+                'batch_index' => $intent['batchIndex'],
+                'child_run_id' => $intent['childRunId'],
+                'provider_cache_key' => UuidV7::v7()->toRfc4122(),
+                'artifact_id' => $intent['artifactId'],
+                'agent_name' => $intent['agentName'],
+                'task' => $intent['task'],
+                'launch_model' => $intent['launchModel'],
+                'launch_reasoning' => $intent['launchReasoning'],
+                'launch_status' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
+                'child_event_cursor' => 0,
+                'projection_version' => 1,
+                'started_at' => null,
+                'terminal_completed_at' => null,
+                'terminal_status' => null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            $existing = $this->findFreshOneBy([
+                'batchLifecycleId' => $batchLifecycleId,
+                'batchIndex' => $intent['batchIndex'],
+            ]);
+            if (!$existing instanceof DeferredSubagentChild) {
+                $byChildRun = $this->findFreshEntityByChildRunId($intent['childRunId']);
+                if ($byChildRun instanceof DeferredSubagentChild) {
+                    // Resume rebinds an existing terminal child onto a new batch.
+                    $this->rebindExistingChildToResumeBatch(
+                        batchLifecycleId: $batchLifecycleId,
+                        batchIndex: $intent['batchIndex'],
+                        childRunId: $intent['childRunId'],
+                        artifactId: $intent['artifactId'],
+                        agentName: $intent['agentName'],
+                        task: $intent['task'],
+                        launchModel: $intent['launchModel'],
+                        launchReasoning: $intent['launchReasoning'],
+                        conn: $conn,
+                        existing: $byChildRun,
+                    );
 
-                        continue;
-                    }
-
-                    throw new \RuntimeException(\sprintf('Deferred subagent child reserve conflict for batch "%s" index %d but row missing.', $batchLifecycleId, $intent['batchIndex']));
+                    return;
                 }
-                $this->assertChildMatchesIntent($existing, $intent);
+
+                throw new \RuntimeException(\sprintf('Deferred subagent child reserve conflict for batch "%s" index %d but row missing.', $batchLifecycleId, $intent['batchIndex']));
             }
+            $this->assertChildMatchesIntent($existing, $intent);
         }
     }
 

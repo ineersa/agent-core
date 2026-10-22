@@ -36,7 +36,7 @@ final class TestTransitionFinalizerFactory
         return new TransitionFinalizer(
             $store,
             $dispatcher,
-            new LocalMetadataCoordinator($transactions, $batches ?? new TestToolBatchStore(), $commands ?? new InMemoryCommandStore()),
+            new LocalMetadataCoordinator($transactions, $batches ?? new TestToolBatchStore(), $commands ?? new InMemoryCommandStore(), $dispatcher),
             new TransitionPlanFactory(),
             $locks ?? new RunLockManager(new LockFactory(new InMemoryStore())),
         );

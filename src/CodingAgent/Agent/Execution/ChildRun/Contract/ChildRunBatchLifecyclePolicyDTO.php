@@ -13,10 +13,8 @@ final readonly class ChildRunBatchLifecyclePolicyDTO
 {
     public function __construct(
         public string $parentCancelSingleReason,
-        public string $parentCancelParallelReason,
         public string $singleTimeoutCancelReason,
-        public string $parallelTimeoutCancelReason,
-        public string $launchAbortSiblingCancelReason,
+        public string $launchAbortCancelReason,
     ) {
     }
 }
