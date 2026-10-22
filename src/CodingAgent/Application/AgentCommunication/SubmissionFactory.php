@@ -107,6 +107,6 @@ final readonly class SubmissionFactory
             $batch->parentRunId, $child->childRunId, $batch->lifecycleId, $input->text,
         ], 'json'));
 
-        return new SubmissionReceiptDTO($identity, $runId, $toolCallId, $toolName, $batch->parentRunId, $child->childRunId, $batch->lifecycleId, $input->text, null !== $batch->backgroundedAt);
+        return new SubmissionReceiptDTO($identity, $runId, $toolName, $batch->parentRunId, $child->childRunId, $batch->lifecycleId, $input->text, null !== $batch->backgroundedAt);
     }
 }

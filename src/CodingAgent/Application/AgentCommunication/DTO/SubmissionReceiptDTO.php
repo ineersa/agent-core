@@ -9,7 +9,6 @@ final readonly class SubmissionReceiptDTO
     public function __construct(
         public string $identity,
         public string $sourceRunId,
-        public string $sourceToolCallId,
         public string $toolName,
         public string $parentRunId,
         public string $childRunId,
