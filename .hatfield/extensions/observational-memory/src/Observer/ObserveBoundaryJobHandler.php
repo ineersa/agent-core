@@ -94,6 +94,9 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
         ?string $jobId,
         ?string $correlationId,
     ): void {
+        if ($repository->activeCandidateStats($runId)['token_count'] <= $settings->reflectAfterObservationTokens) {
+            return;
+        }
         $candidate = $repository->activeCandidateSet($runId);
         if ($candidate['token_count'] <= $settings->reflectAfterObservationTokens) {
             return;

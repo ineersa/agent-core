@@ -196,6 +196,27 @@ final class MemoryGenerationRepository
         return $this->listReflectionsForGeneration($generationId);
     }
 
+    /** @return array{retained_count: int, reflection_count: int, reflection_tokens: int} */
+    public function activeStats(string $runId): array
+    {
+        $generationId = $this->activeGenerationId($runId);
+        if (null === $generationId) {
+            return ['retained_count' => 0, 'reflection_count' => 0, 'reflection_tokens' => 0];
+        }
+        $row = $this->connection->fetchAssociative(
+            'SELECT COUNT(*) AS count, COALESCE(SUM(CAST(r.token_count AS INTEGER)), 0) AS tokens
+             FROM om_generation_reflection gr JOIN om_reflection r ON r.reflection_id = gr.reflection_id
+             WHERE gr.generation_id = ?',
+            [$generationId],
+        );
+
+        return [
+            'retained_count' => (int) $this->connection->fetchOne("SELECT COUNT(*) FROM om_generation_retained_observation WHERE generation_id = ? AND observation_id <> ''", [$generationId]),
+            'reflection_count' => (int) $row['count'],
+            'reflection_tokens' => (int) $row['tokens'],
+        ];
+    }
+
     /**
      * @return list<array{
      *   reflection_id: string,
