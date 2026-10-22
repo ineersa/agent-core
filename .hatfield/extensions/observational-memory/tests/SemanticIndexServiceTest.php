@@ -459,14 +459,20 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
         for ($i = 0; $i < 12; ++$i) {
             $this->observation('alpha source '.$i);
         }
-        $this->assertFalse($this->index()->synchronize());
         $pdo = $this->connection->getNativeConnection();
         $previous = $pdo->getAttribute(\PDO::ATTR_STATEMENT_CLASS);
         $pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, [Support\SemanticReadStatement::class]);
         Support\SemanticReadStatement::$changedSources = 0;
         Support\SemanticReadStatement::$loadedSources = 0;
         Support\SemanticReadStatement::$chunkLookups = [];
+        Support\SemanticReadStatement::$sourceReads = [];
         try {
+            $this->assertFalse($this->index()->synchronize());
+            $this->assertCount(1, Support\SemanticReadStatement::$sourceReads, 'Full reconstruction streams canonical rows without per-source reads.');
+            $this->assertSame(12, Support\SemanticReadStatement::$changedSources);
+            Support\SemanticReadStatement::$changedSources = 0;
+            Support\SemanticReadStatement::$loadedSources = 0;
+            Support\SemanticReadStatement::$chunkLookups = [];
             $this->assertFalse($this->index()->synchronize());
             $this->assertSame(0, Support\SemanticReadStatement::$changedSources);
             $this->assertSame(4, Support\SemanticReadStatement::$loadedSources);
@@ -492,6 +498,17 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
             $this->assertTrue($this->index()->synchronize());
             $this->assertSame(1, Support\SemanticReadStatement::$changedSources);
             $this->assertSame(1, Support\SemanticReadStatement::$loadedSources);
+            for ($i = 0; $i < 205; ++$i) {
+                $this->observation('alpha incremental source '.$i);
+            }
+            Support\SemanticReadStatement::$sourceReads = [];
+            $this->assertFalse($this->index()->synchronize());
+            $this->assertSame(206, Support\SemanticReadStatement::$changedSources);
+            $this->assertCount(2, Support\SemanticReadStatement::$sourceReads, '205 changed identities require two joined pages, not per-source reads.');
+            foreach (Support\SemanticReadStatement::$sourceReads as $sql) {
+                $this->assertStringContainsString('FROM om_source_change c', $sql);
+                $this->assertStringContainsString('LIMIT 200', $sql);
+            }
         } finally {
             $pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, $previous);
         }

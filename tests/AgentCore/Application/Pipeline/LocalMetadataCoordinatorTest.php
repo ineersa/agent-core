@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
@@ -12,6 +13,9 @@ use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Coordination\TransitionPlan;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 final class LocalMetadataCoordinatorTest extends TestCase
 {
@@ -26,7 +30,7 @@ final class LocalMetadataCoordinatorTest extends TestCase
             $commands->expects($this->never())->method($method);
         }
 
-        $coordinator = new LocalMetadataCoordinator($transactions, $batches, $commands);
+        $coordinator = new LocalMetadataCoordinator($transactions, $batches, $commands, $this->dispatcher());
         $coordinator->apply(new TransitionPlan('run-1', new VerifiedTransitionDTO('verified', []), [], [], []));
     }
 
@@ -36,7 +40,7 @@ final class LocalMetadataCoordinatorTest extends TestCase
         $transactions->expects($this->never())->method('transactional');
         $batches = $this->createMock(ToolBatchStoreInterface::class);
         $batches->expects($this->never())->method('prepareChanges');
-        $coordinator = new LocalMetadataCoordinator($transactions, $batches, $this->createStub(CommandStoreInterface::class));
+        $coordinator = new LocalMetadataCoordinator($transactions, $batches, $this->createStub(CommandStoreInterface::class), $this->dispatcher());
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Local metadata requires verified transition evidence.');
@@ -65,9 +69,17 @@ final class LocalMetadataCoordinatorTest extends TestCase
                 $order[] = 'command_apply';
             });
 
-        $coordinator = new LocalMetadataCoordinator($transactions, $batches, $commands);
+        $coordinator = new LocalMetadataCoordinator($transactions, $batches, $commands, $this->dispatcher());
         $coordinator->apply(new TransitionPlan('run-1', $verified, [new MarkCommandAppliedDTO('run-1', 'command-1')], [], []));
 
         $this->assertSame(['begin', 'batch_apply', 'command_apply', 'commit'], $order);
+    }
+
+    private function dispatcher(): StepDispatcher
+    {
+        $bus = $this->createMock(MessageBusInterface::class);
+        $bus->expects($this->never())->method('dispatch');
+
+        return new StepDispatcher($bus, $bus, new NullLogger(), new EventDispatcher());
     }
 }
