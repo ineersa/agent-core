@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interrupti
 use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeferredSubagentBatchLifecycleDeliveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
@@ -51,6 +50,12 @@ final readonly class DeferredSubagentBatchInterruptionService
 
         $projection = $this->batchRepository->findByLifecycleId($batchLifecycleId);
         if (null === $projection) {
+            return;
+        }
+
+        if (null !== $projection->completionSource) {
+            $this->deliveryService->deliver($batchLifecycleId);
+
             return;
         }
 
@@ -136,7 +141,7 @@ final readonly class DeferredSubagentBatchInterruptionService
             return;
         }
 
-        if ('completed' === $deferredStatus) {
+        if ('completed' === $deferredStatus && null === $projection->backgroundedAt) {
             $this->deliveryService->deliver($batchLifecycleId);
 
             return;
@@ -152,14 +157,9 @@ final readonly class DeferredSubagentBatchInterruptionService
         DeferredSubagentInterruptionKindEnum $effectiveKind,
     ): void {
         $policy = $this->lifecyclePolicy;
-        $isSingle = ChildRunBatchExecutionModeEnum::Single === $projection->executionMode;
         $cancelReason = match ($effectiveKind) {
-            DeferredSubagentInterruptionKindEnum::Timeout => $isSingle
-                ? $policy->singleTimeoutCancelReason
-                : $policy->parallelTimeoutCancelReason,
-            DeferredSubagentInterruptionKindEnum::ParentCancelled => $isSingle
-                ? $policy->parentCancelSingleReason
-                : $policy->parentCancelParallelReason,
+            DeferredSubagentInterruptionKindEnum::Timeout => $policy->singleTimeoutCancelReason,
+            DeferredSubagentInterruptionKindEnum::ParentCancelled => $policy->parentCancelSingleReason,
         };
 
         foreach ($projection->children as $child) {

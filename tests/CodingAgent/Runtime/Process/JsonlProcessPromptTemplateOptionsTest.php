@@ -7,15 +7,17 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Support\UnusedBackgroundProcessManagerFactory;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
-use PHPUnit\Framework\TestCase;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient
@@ -23,13 +25,14 @@ use PHPUnit\Framework\TestCase;
  * Tests that PromptTemplatesRuntimeConfig.controllerArgs() output
  * is forwarded to the spawned controller process argv.
  */
-final class JsonlProcessPromptTemplateOptionsTest extends TestCase
+final class JsonlProcessPromptTemplateOptionsTest extends IsolatedKernelTestCase
 {
     private string $tmpDir;
     private string $fakeScript;
 
     protected function setUp(): void
     {
+        parent::setUp();
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('pt-jsonl');
         $this->fakeScript = $this->tmpDir.'/controller.php';
 
@@ -85,6 +88,7 @@ PHP);
     protected function tearDown(): void
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        parent::tearDown();
     }
 
     // ── Tests ──────────────────────────────────────────────────────
@@ -178,6 +182,8 @@ PHP);
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
             sessionStore: \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tmpDir),
+            childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
+            backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
         );
 
         $handle = $client->start(new StartRunRequest(

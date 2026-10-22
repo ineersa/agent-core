@@ -6,6 +6,9 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Kernel;
@@ -17,14 +20,18 @@ use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BackgroundProcessProvisionalCleanupTask;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Scheduler\Attribute\AsPeriodicTask;
+use Symfony\Component\Uid\Uuid;
 
 #[CoversClass(BackgroundProcessProvisionalCleanupTask::class)]
 #[CoversClass(BackgroundProcessManager::class)]
 final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTestCase
 {
+    private const string OWNER = 'maintenance-owner';
+
     private string $tmpDir;
     private ProcessStore $store;
     private BackgroundProcessManager $manager;
@@ -53,7 +60,10 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
             $config,
             $this->logger,
         );
-        $this->task = new BackgroundProcessProvisionalCleanupTask($this->manager, $this->store, $this->lifecycle, $this->logger);
+        $this->task = new BackgroundProcessProvisionalCleanupTask(
+            $this->manager, $this->store, $this->lifecycle, $this->logger,
+            static::getContainer()->get(OwnedRunIdsProvider::class), self::OWNER,
+        );
     }
 
     protected function tearDown(): void
@@ -98,7 +108,10 @@ PHP);
             $this->assertNotSame(static::getContainer()->get(EntityManagerInterface::class), $container->get(EntityManagerInterface::class));
             $otherStore = $container->get(ProcessStore::class);
             $maintenance = new BackgroundProcessManager($otherStore, $this->lifecycle, $config, $this->logger);
-            $task = new BackgroundProcessProvisionalCleanupTask($maintenance, $otherStore, $this->lifecycle, $this->logger);
+            $task = new BackgroundProcessProvisionalCleanupTask(
+                $maintenance, $otherStore, $this->lifecycle, $this->logger,
+                $container->get(OwnedRunIdsProvider::class), 'accepted-cleanup',
+            );
             $invoke = escapeshellarg(\PHP_BINARY).' '.escapeshellarg($script).' '.escapeshellarg($address);
             // The cleanup child is spawned only after the first TERM. Unlike
             // its shell parent, it has default TERM handling, so a second group
@@ -110,7 +123,7 @@ PHP);
             $this->assertIsResource($running, 'The owned command must reach its initial IPC barrier.');
             stream_set_timeout($running, 3);
             $this->assertStringStartsWith('running:', (string) fgets($running));
-            $owner->refreshEntities($this->store->fetchAllUnfinished('accepted-cleanup'));
+            $owner->refreshEntities($this->store->fetchAllUnfinished(['accepted-cleanup']));
             $cleanup = stream_socket_accept($server, 3);
             $this->assertIsResource($cleanup, 'TERM must start the cleanup subprocess.');
             stream_set_timeout($cleanup, 3);
@@ -267,6 +280,60 @@ PHP);
     }
 
     #[Test]
+    public function handlerRefreshesOwnedChildrenWithoutResolvingOrCleaningForeignProcesses(): void
+    {
+        $childRunId = Uuid::v7()->toRfc4122();
+        static::getContainer()->get(AgentArtifactRegistry::class)->create(
+            self::OWNER, 'agent_owned', $childRunId, 'scout', AgentArtifactKindEnum::Subagent,
+        );
+        $child = $this->createRunningRecord('owned-child', $childRunId);
+        $foreign = $this->createRunningRecord('foreign', 'other-controller');
+        $foreignFinished = $this->createRecord('foreign-finished', $this->now->modify('-6 minutes'), sessionId: 'other-controller');
+        // Local PID absence must not finish a process owned by another controller.
+        foreach ([$child, $foreign] as $paths) {
+            $record = $this->store->fetchByRecordId($paths['id']);
+            $this->assertNotNull($record);
+            $record->pid = 2147483647;
+        }
+        $this->store->flush();
+
+        ($this->task)();
+
+        $this->assertSame(BackgroundProcessStatusEnum::FinishedUnclean, $this->store->fetchByRecordId($child['id'])?->status);
+        $record = $this->store->fetchByRecordId($foreign['id']);
+        $this->assertNotNull($record);
+        $this->assertSame(BackgroundProcessStatusEnum::Running, $record->status);
+        $this->assertNull($record->finishedAt);
+        $this->assertTrue($this->store->existsByRecordId($foreignFinished['id']));
+        foreach (['log', 'status', 'pid'] as $sidecar) {
+            $this->assertFileExists($foreignFinished[$sidecar]);
+        }
+    }
+
+    #[Test]
+    #[TestWith([''])]
+    #[TestWith(['unknown'])]
+    public function missingOwnerNeverEnablesAGlobalSweep(string $sessionId): void
+    {
+        $old = $this->createRecord('unscoped', $this->now->modify('-6 minutes'));
+        $private = $this->createRunningRecord('unscoped-running');
+        $record = $this->store->fetchByRecordId($private['id']);
+        $this->assertNotNull($record);
+        $record->pid = 2147483647;
+        $this->store->flush();
+        $task = new BackgroundProcessProvisionalCleanupTask(
+            $this->manager, $this->store, $this->lifecycle, $this->logger,
+            static::getContainer()->get(OwnedRunIdsProvider::class), $sessionId,
+        );
+
+        $task();
+
+        $this->assertTrue($this->store->existsByRecordId($old['id']));
+        $this->assertFileExists($old['log']);
+        $this->assertSame(BackgroundProcessStatusEnum::Running, $this->store->fetchByRecordId($private['id'])?->status);
+    }
+
+    #[Test]
     public function aggregateCleanupLogDoesNotExposeRecordData(): void
     {
         $this->createRecord('private', $this->now->modify('-6 minutes'), command: 'secret command /not/a/path 987654');
@@ -278,7 +345,7 @@ PHP);
             static fn (array $record): bool => 'background_process.provisional_cleanup_completed' === $record['message'],
         ));
         $this->assertCount(1, $records);
-        $this->assertSame(['component', 'event_type', 'cleaned_count', 'failed_count'], array_keys($records[0]['context']));
+        $this->assertSame(['component', 'event_type', 'run_id', 'session_id', 'cleaned_count', 'failed_count'], array_keys($records[0]['context']));
         $this->assertSame(1, $records[0]['context']['cleaned_count']);
         $this->assertSame(0, $records[0]['context']['failed_count']);
     }
@@ -286,13 +353,13 @@ PHP);
     /**
      * @return array{id: int, log: string, status: string, pid: string}
      */
-    private function createRecord(string $prefix, \DateTimeImmutable $finishedAt, bool $accepted = false, string $command = 'fixture'): array
+    private function createRecord(string $prefix, \DateTimeImmutable $finishedAt, bool $accepted = false, string $command = 'fixture', string $sessionId = self::OWNER): array
     {
         $paths = $this->createSidecars($prefix);
         $id = $this->store->insertRecord([
             'pid' => 100000 + hexdec(substr(hash('crc32b', $prefix), 0, 4)),
             'pgid' => null,
-            'session_id' => 'run-'.$prefix,
+            'session_id' => $sessionId,
             'command' => $command,
             'log_path' => $paths['log'],
             'status_path' => $paths['status'],
@@ -303,7 +370,7 @@ PHP);
         $entity->finish(0, $finishedAt);
         $this->store->flush();
         if ($accepted) {
-            $this->manager->markBackgroundedForRecord($id, 'run-'.$prefix);
+            $this->manager->markBackgroundedForRecord($id, $sessionId);
         }
 
         return ['id' => $id] + $paths;
@@ -319,7 +386,10 @@ PHP);
             $config,
             $this->logger,
         );
-        $this->task = new BackgroundProcessProvisionalCleanupTask($this->manager, $this->store, $this->lifecycle, $this->logger);
+        $this->task = new BackgroundProcessProvisionalCleanupTask(
+            $this->manager, $this->store, $this->lifecycle, $this->logger,
+            static::getContainer()->get(OwnedRunIdsProvider::class), self::OWNER,
+        );
     }
 
     private function createFinishedRecord(string $logPath, string $statusPath, \DateTimeImmutable $finishedAt): int
@@ -327,7 +397,7 @@ PHP);
         $id = $this->store->insertRecord([
             'pid' => 100000 + hexdec(substr(hash('crc32b', $logPath), 0, 4)),
             'pgid' => null,
-            'session_id' => 'run-fixture',
+            'session_id' => self::OWNER,
             'command' => 'fixture',
             'log_path' => $logPath,
             'status_path' => $statusPath,
@@ -341,13 +411,13 @@ PHP);
         return $id;
     }
 
-    private function createRunningRecord(string $prefix): array
+    private function createRunningRecord(string $prefix, string $sessionId = self::OWNER): array
     {
         $paths = $this->createSidecars($prefix, includeStatus: false);
         $id = $this->store->insertRecord([
             'pid' => (int) getmypid(),
             'pgid' => null,
-            'session_id' => 'run-'.$prefix,
+            'session_id' => $sessionId,
             'command' => 'fixture',
             'log_path' => $paths['log'],
             'status_path' => $paths['status'],

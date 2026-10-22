@@ -91,6 +91,12 @@ final class ProcessStore
         return $this->repository->findBackgrounded($sessionId);
     }
 
+    /** @return list<BackgroundProcess> */
+    public function fetchForegroundTools(string $sessionId): array
+    {
+        return $this->repository->findForegroundTools($sessionId);
+    }
+
     /**
      * Fetch a user-accepted background process by PID within one run.
      */
@@ -158,24 +164,28 @@ final class ProcessStore
     }
 
     /**
-     * Fetch all unfinished entities, optionally scoped by session.
+     * Fetch all unfinished entities for the controller-owned runs.
+     *
+     * @param list<string> $sessionIds
      *
      * @return BackgroundProcess[]
      */
-    public function fetchAllUnfinished(?string $sessionId = null): array
+    public function fetchAllUnfinished(array $sessionIds): array
     {
-        return $this->repository->findUnfinished($sessionId);
+        return $this->repository->findUnfinished($sessionIds);
     }
 
     /**
      * Fetch private foreground-supervision rows that are safely past their
      * five-minute cleanup grace interval.
      *
+     * @param list<string> $sessionIds Controller-owned runs
+     *
      * @return BackgroundProcess[]
      */
-    public function fetchFinishedProvisionalBefore(\DateTimeImmutable $cutoff): array
+    public function fetchFinishedProvisionalBefore(\DateTimeImmutable $cutoff, array $sessionIds): array
     {
-        return $this->repository->findFinishedProvisionalBefore($cutoff);
+        return $this->repository->findFinishedProvisionalBefore($cutoff, $sessionIds);
     }
 
     /**

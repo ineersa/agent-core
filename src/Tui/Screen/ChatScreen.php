@@ -397,6 +397,11 @@ final class ChatScreen
         $this->statusPanelWidget->setEntries($this->statusEntries);
     }
 
+    public function status(string $key): ?string
+    {
+        return $this->statusEntries[$key] ?? null;
+    }
+
     /**
      * Post a one-shot status-panel notice that clears on the next nonempty submit.
      *

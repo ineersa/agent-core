@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
@@ -71,8 +71,8 @@ final class SubagentProgressEventAppenderTest extends TestCase
             new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))), $stream);
     }
 
-    private function progress(string $status): SubagentProgressSnapshotInterface
+    private function progress(string $status): SubagentProgressSnapshotDTO
     {
-        return SubagentProgressSerializerTestSupport::denormalizer()->denormalize(SubagentProgressSerializerTestSupport::canonicalSingleWire(status: $status), SubagentProgressSnapshotInterface::class);
+        return SubagentProgressSerializerTestSupport::denormalizer()->denormalize(SubagentProgressSerializerTestSupport::canonicalSingleWire(status: $status), SubagentProgressSnapshotDTO::class);
     }
 }

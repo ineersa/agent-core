@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\DTO\SubagentChildRunArtifactPublicationDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -21,6 +22,11 @@ final class SubagentChildRunArtifactFinalizer
 
     public function apply(ChildRunTerminalOutcomeDTO $outcome): void
     {
+        $this->publish($this->preparePublication($outcome));
+    }
+
+    public function preparePublication(ChildRunTerminalOutcomeDTO $outcome, ?string $sourceId = null): SubagentChildRunArtifactPublicationDTO
+    {
         $identity = $outcome->identity;
 
         $handoff = $this->handoffRenderer->buildHandoffMarkdown(
@@ -34,20 +40,41 @@ final class SubagentChildRunArtifactFinalizer
             childPresentation: $outcome->childPresentation,
         );
 
-        // Outcome and immutable handoff are checked/persisted under one parent lock.
-        $this->artifactRegistry->update(
-            parentRunId: $identity->parentRunId,
-            artifactId: $identity->artifactId,
+        $reference = [
+            $identity->childRunId, $outcome->terminalEventCursor, $outcome->status->value,
+            $outcome->summary, $outcome->failureReason, $outcome->needsClarification, $handoff,
+        ];
+        if (null !== $sourceId) {
+            $reference[] = $sourceId;
+        }
+
+        return new SubagentChildRunArtifactPublicationDTO(
+            identity: $identity,
             status: $outcome->status,
-            completedAt: new \DateTimeImmutable(),
             summary: $outcome->summary,
             failureReason: $outcome->failureReason,
             needsClarification: $outcome->needsClarification,
             handoffContent: $handoff,
-            handoffId: null === $outcome->terminalEventCursor ? null : Uuid::v5(Uuid::fromString(Uuid::NAMESPACE_URL), json_encode([
-                $identity->childRunId, $outcome->terminalEventCursor, $outcome->status->value,
-                $outcome->summary, $outcome->failureReason, $outcome->needsClarification, $handoff,
-            ], \JSON_THROW_ON_ERROR))->toRfc4122(),
+            handoffId: null === $sourceId && null === $outcome->terminalEventCursor ? null : Uuid::v5(
+                Uuid::fromString(Uuid::NAMESPACE_URL), json_encode($reference, \JSON_THROW_ON_ERROR),
+            )->toRfc4122(),
+        );
+    }
+
+    public function publish(SubagentChildRunArtifactPublicationDTO $publication): void
+    {
+        $identity = $publication->identity;
+        // Outcome and immutable handoff are checked/persisted under one parent lock.
+        $this->artifactRegistry->update(
+            parentRunId: $identity->parentRunId,
+            artifactId: $identity->artifactId,
+            status: $publication->status,
+            completedAt: new \DateTimeImmutable(),
+            summary: $publication->summary,
+            failureReason: $publication->failureReason,
+            needsClarification: $publication->needsClarification,
+            handoffContent: $publication->handoffContent,
+            handoffId: $publication->handoffId,
         );
     }
 

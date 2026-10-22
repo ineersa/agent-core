@@ -12,6 +12,7 @@ enum SubagentLiveStatusEnum: string
     case Pending = 'pending';
     case Running = 'running';
     case WaitingHuman = 'waiting_human';
+    case Cancelling = 'cancelling';
     case Completed = 'completed';
     case Failed = 'failed';
     case Cancelled = 'cancelled';
@@ -22,12 +23,16 @@ enum SubagentLiveStatusEnum: string
     {
         $normalized = strtolower(trim($status));
 
-        return self::tryFrom($normalized) ?? self::Unknown;
+        return match ($normalized) {
+            'queued' => self::Pending,
+            'compacting' => self::Running,
+            default => self::tryFrom($normalized) ?? self::Unknown,
+        };
     }
 
     public function isActive(): bool
     {
-        return \in_array($this, [self::Pending, self::Running, self::WaitingHuman], true);
+        return \in_array($this, [self::Pending, self::Running, self::WaitingHuman, self::Cancelling], true);
     }
 
     public function isTerminal(): bool
@@ -52,6 +57,7 @@ enum SubagentLiveStatusEnum: string
         return match ($this) {
             self::Pending, self::Running => RunActivityStateEnum::Running,
             self::WaitingHuman => RunActivityStateEnum::WaitingHuman,
+            self::Cancelling => RunActivityStateEnum::Cancelling,
             self::Completed, self::Done => RunActivityStateEnum::Completed,
             self::Failed => RunActivityStateEnum::Failed,
             self::Cancelled => RunActivityStateEnum::Cancelled,

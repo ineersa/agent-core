@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Contract\CommandConsumptionPolicyInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
@@ -13,12 +14,16 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
 final readonly class CommandMailboxPolicy
 {
+    /** @param iterable<CommandConsumptionPolicyInterface> $consumptionPolicies */
     public function __construct(
         private CommandStoreInterface $commandStore,
         private CommandRouter $commandRouter,
+        #[AutowireIterator('agent_core.command_consumption_policy')]
+        private iterable $consumptionPolicies = [],
     ) {
     }
 
@@ -72,6 +77,22 @@ final readonly class CommandMailboxPolicy
         $shouldContinue = false;
 
         foreach ($pendingCommands as $pendingCommand) {
+            $metadata = [];
+            $retirementReason = null;
+            foreach ($this->consumptionPolicies as $policy) {
+                $decision = $policy->prepare($state, $pendingCommand);
+                if (null !== $decision) {
+                    $metadata = array_replace($metadata, $decision->metadata);
+                    $retirementReason ??= $decision->retirementReason;
+                }
+            }
+            if (null !== $retirementReason) {
+                $event = $this->rejectCommand($state, $pendingCommand, $retirementReason);
+                $event['payload']['consumption_metadata'] = $metadata;
+                $eventSpecs[] = $event;
+
+                continue;
+            }
             if (\in_array($pendingCommand->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
                 $messagePayload = $pendingCommand->payload['message'] ?? null;
                 if (!\is_array($messagePayload)) {
@@ -101,6 +122,7 @@ final readonly class CommandMailboxPolicy
                         'idempotency_key' => $pendingCommand->idempotencyKey,
                         'message' => $messageArray,
                         'text' => $text,
+                        ...([] === $metadata ? [] : ['consumption_metadata' => $metadata]),
                         'options' => [
                             'cancel_safe' => $pendingCommand->options->safe,
                         ],

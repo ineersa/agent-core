@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
+use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
+use Ineersa\AgentCore\Domain\Coordination\DTO\FinalizeCommandMetadataDTO;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Coordination\RejectCommandDTO;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -35,6 +37,12 @@ final class CommandMailboxCoordinationFactory
                     throw new \LogicException('Command rejection lacks its prepared reason.');
                 }
                 $actions[] = new RejectCommandDTO($event->runId, $key, $reason);
+            }
+            $metadata = $event->payload['consumption_metadata'] ?? [];
+            if (\is_array($metadata) && [] !== $metadata) {
+                // Both mailbox boundaries carry their exact prepared decision
+                // through canonical events into recoverable local coordination.
+                $actions[] = new DispatchLocalMetadataMessageDTO(new FinalizeCommandMetadataDTO($event->runId, $key, $metadata));
             }
         }
 

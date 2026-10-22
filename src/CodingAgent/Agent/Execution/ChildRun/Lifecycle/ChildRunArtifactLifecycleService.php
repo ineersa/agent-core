@@ -52,17 +52,4 @@ final class ChildRunArtifactLifecycleService
     {
         return null !== $this->artifactRegistry->get($parentRunId, $artifactId);
     }
-
-    public function removePendingReservation(ChildRunIdentityDTO $identity): void
-    {
-        try {
-            $this->artifactRegistry->discardPendingReservation($identity->parentRunId, $identity->artifactId);
-        } finally {
-            // Reservation always pre-registers this child run id in-process. Drop the cache entry even
-            // when filesystem sidecar removal fails after the canonical registry row was already written,
-            // so locate() cannot keep serving a discarded Pending child. A mistaken non-Pending call
-            // only clears cache; locate() can rediscover from registry.json while the row still exists.
-            $this->childRunDirectory->unregister($identity->childRunId);
-        }
-    }
 }

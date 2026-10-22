@@ -131,26 +131,20 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         $boundaryEventSpecs = $this->withAdvanceToken($mailboxResult->eventSpecs, $message->idempotencyKey());
         $mailboxEffects = $mailboxResult->effects;
 
-        // When pending commands (steer/follow-up/append_message) added new messages while
-        // the run was Completed, Failed, Cancelled, or WaitingHuman, transition to Running
-        // and proceed to the next turn — don't bail out early.
-        //
-        // Compact commands are excluded from this transition: compaction
-        // replaces messages in-place and should not advance the run turn.
-        // Compact-specific effects are handled by the effects guard below.
+        // Only applied messages or an applied explicit continue authorize revival.
+        // Rejections and other boundary bookkeeping must not restart terminal work.
+        // Compaction remains maintenance and does not authorize a model turn.
         if (\in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
-            // Check for boundary events that are NOT solely from compact
-            // (steer/follow-up/append_message/continue produce message-adding events).
-            $hasNonCompactBoundaryEvent = false;
+            $hasContinuation = false;
             foreach ($boundaryEventSpecs as $spec) {
-                $kind = (string) ($spec['payload']['kind'] ?? '');
-                if ('compact' !== $kind) {
-                    $hasNonCompactBoundaryEvent = true;
+                if (RunEventTypeEnum::AgentCommandApplied->value === $spec['type']
+                    && (\is_array($spec['payload']['message'] ?? null) || 'continue' === ($spec['payload']['kind'] ?? null))) {
+                    $hasContinuation = true;
                     break;
                 }
             }
 
-            if ($hasNonCompactBoundaryEvent && [] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
+            if ($hasContinuation) {
                 $preparedState = $preparedState->with([
                     'status' => RunStatus::Running,
                     'errorMessage' => null,

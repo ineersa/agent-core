@@ -7,15 +7,16 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 use function Symfony\Component\String\u;
 
@@ -59,10 +60,11 @@ final class BackgroundProcessCompletionPoller
     public function __construct(
         private readonly ProcessStore $processStore,
         private readonly BackgroundProcessManager $processManager,
-        private readonly AgentSessionClient $sessionClient,
+        private readonly MessageBusInterface $commandBus,
         private readonly RuntimeEventEmitter $emitter,
         private readonly LoggerInterface $logger,
         private readonly AgentArtifactRegistry $artifactRegistry,
+        private readonly BackgroundCompletionReceiptRepository $receipts,
         ?string $sessionId = null,
     ) {
         // Normalize empty string to null so repository null-guards
@@ -145,6 +147,26 @@ final class BackgroundProcessCompletionPoller
 
         $sessionIds = $this->resolveOwnedSessionIds($this->sessionId);
         $pendingByPid = [];
+
+        try {
+            // Terminal child mailboxes can need retirement without an AdvanceRun.
+            // Forwarding then remains outstanding until root admission commits.
+            foreach ($this->receipts->recoverableDeliveries($this->sessionId) as $receipt) {
+                $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
+                    $receipt->destinationRunId, $receipt->identity,
+                    $receipt->destinationRunId === $receipt->sourceRunId ? $receipt->text : $receipt->forwardedText,
+                    $receipt->sourceRunId,
+                ));
+            }
+        } catch (\Throwable $exception) {
+            $this->logger->warning('background_completion.forwarding_retry_failed', [
+                'run_id' => $this->sessionId,
+                'session_id' => $this->sessionId,
+                'component' => 'bg_process_completion.poller',
+                'event_type' => 'background_completion.forwarding_retry_failed',
+                'exception_class' => $exception::class,
+            ]);
+        }
 
         try {
             $candidates = $this->processStore->findCompletionCandidates($sessionIds);
@@ -297,10 +319,10 @@ final class BackgroundProcessCompletionPoller
             ],
         ));
 
-        // Send append_message so the model sees the completion (same text as TUI transcript).
-        $this->sessionClient->send($sessionId, new UserCommand(
-            type: 'append_message',
-            text: $notification,
+        // Recipient selection happens under the consuming owner's lock. A child
+        // that finishes before delivery must not be revived by its Bash result.
+        $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
+            $sessionId, 'background-process-'.$process->id, $notification,
         ));
 
         // Only mark notified after successful send.

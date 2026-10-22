@@ -7,7 +7,10 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator;
@@ -106,17 +109,40 @@ final class ControllerReplayBootstrapDeliveryTest extends ControllerReplayE2eTes
         $this->assertFileExists($spool);
         // Borrow the real controller pipes after the test's incremental mount.
         // The harness remains their only lifecycle owner; no second process starts.
-        $client = new JsonlProcessAgentSessionClient(
-            new RuntimeProcessConfig(new SourceTreeExecutableLocator($this->projectDir), $this->tempDir),
-            new PromptTemplatesRuntimeConfig(),
-            new ToolFilterRuntimeConfig(),
-            new TestLogger(),
-            \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tempDir),
-            UnusedBackgroundProcessManagerFactory::create(
-                $this->createStub(EntityManagerInterface::class),
-                $this->createStub(ManagerRegistry::class),
-            ),
-        );
+        $cwd = getcwd();
+        $oldCwdEnv = getenv('HATFIELD_CWD');
+        $oldCwdEntry = $_ENV['HATFIELD_CWD'] ?? null;
+        chdir($this->tempDir);
+        $kernel = new Kernel('test', false);
+        try {
+            $kernel->boot();
+            $container = $kernel->getContainer()->get('test.service_container');
+            $client = new JsonlProcessAgentSessionClient(
+                new RuntimeProcessConfig(new SourceTreeExecutableLocator($this->projectDir), $this->tempDir),
+                new PromptTemplatesRuntimeConfig(),
+                new ToolFilterRuntimeConfig(),
+                new TestLogger(),
+                \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tempDir),
+                UnusedBackgroundProcessManagerFactory::create(
+                    $this->createStub(EntityManagerInterface::class),
+                    $this->createStub(ManagerRegistry::class),
+                ),
+                $container->get(ChildInvocationBackgroundService::class),
+                $container->get(BackgroundWorkSnapshotProvider::class),
+            );
+        } finally {
+            $kernel->shutdown();
+            restore_exception_handler();
+            if (false !== $cwd) {
+                chdir($cwd);
+            }
+            putenv(false === $oldCwdEnv ? 'HATFIELD_CWD' : 'HATFIELD_CWD='.$oldCwdEnv);
+            if (null === $oldCwdEntry) {
+                unset($_ENV['HATFIELD_CWD']);
+            } else {
+                $_ENV['HATFIELD_CWD'] = $oldCwdEntry;
+            }
+        }
         $reflection = new \ReflectionClass($client);
         foreach (['process' => $this->process, 'pipes' => $this->pipes, 'activeRunId' => $this->runId,
             'sessionId' => $this->runId, 'processSessionId' => $this->runId, 'runtimeReadyReceived' => true,

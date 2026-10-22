@@ -22,7 +22,7 @@ servers. Tool availability does not bypass approval policy.
 | `ask_human` | Ask for text, confirmation, or a choice | Waits for a human response. Cancellation is not approval. |
 | `code_mode` | Run a PHP script that calls other tools through `tool(name, arguments)` | Disabled by default (`tools.code_mode.enabled`). Raw PHP bypasses toolbox hooks. Checkout/PHAR reuse the launching PHP CLI; fused native builds need `php` on PATH. |
 | `hatfield_docs` | List and read packaged Hatfield documentation | Does not automatically discover extension-package READMEs. |
-| `subagent` | Launch a named child agent, singly or in parallel | Uses discovered agent definitions and child tool policy. |
+| `subagent` | Launch one named child agent | Uses discovered agent definitions and child tool policy. |
 | `agent_resume` | Continue an existing child or fork with a follow-up task | Artifacts must belong to the current parent session. |
 | `agent_retrieve` | Read child handoffs, metadata, or bounded history | Retrieves existing artifacts; does not launch work. |
 | `fork` | Launch a child with inherited conversation context | Blocks for a handoff. Not a Git worktree creation tool. |

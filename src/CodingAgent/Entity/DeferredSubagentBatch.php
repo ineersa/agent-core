@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 
@@ -45,12 +44,6 @@ class DeferredSubagentBatch
     #[ORM\Column(name: 'parent_model', type: 'string', length: 255, nullable: true)]
     public ?string $parentModel = null;
 
-    #[ORM\Column(name: 'execution_mode', type: 'string', length: 16, enumType: ChildRunBatchExecutionModeEnum::class)]
-    public ChildRunBatchExecutionModeEnum $executionMode = ChildRunBatchExecutionModeEnum::Parallel;
-
-    #[ORM\Column(name: 'total_child_count', type: 'integer')]
-    public int $totalChildCount = 0;
-
     #[ORM\Column(name: 'launch_status', type: 'string', length: 32, enumType: DeferredSubagentBatchLaunchStatusEnum::class)]
     public DeferredSubagentBatchLaunchStatusEnum $launchStatus = DeferredSubagentBatchLaunchStatusEnum::Reserved;
 
@@ -62,6 +55,13 @@ class DeferredSubagentBatch
 
     #[ORM\Column(name: 'terminal_completion_enqueued_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $terminalCompletionEnqueuedAt = null;
+
+    #[ORM\Column(name: 'backgrounded_at', type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $backgroundedAt = null;
+
+    // Frozen before terminal artifact publication; child rows may be rebound by resume.
+    #[ORM\Column(name: 'completion_source', type: 'text', nullable: true)]
+    public ?string $completionSource = null;
 
     #[ORM\Version]
     #[ORM\Column(name: 'projection_version', type: 'integer', options: ['default' => 1])]

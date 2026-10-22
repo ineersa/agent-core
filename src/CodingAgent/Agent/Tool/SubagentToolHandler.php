@@ -7,8 +7,8 @@ namespace Ineersa\CodingAgent\Agent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
+use Ineersa\CodingAgent\Tool\DTO\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
@@ -24,7 +24,7 @@ final class SubagentToolHandler
 {
     public const string NAME = 'subagent';
 
-    public const string DESCRIPTION_TEMPLATE = 'Launch interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish. Single-mode results include the full child handoff inline; parallel results include summaries. Responses over 50,000 characters return a notice and artifact references instead. Use agent_retrieve for omitted handoffs or extra detail.';
+    public const string DESCRIPTION = 'Launch one interactive foreground subagent with "agent" and "task". Submit independent subagent, fork, or other tool calls together for concurrent execution. The call waits for its child and returns the full handoff inline. Responses over 50,000 characters return a notice and artifact references instead. Use agent_retrieve for omitted handoffs or extra detail.';
 
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 
@@ -51,19 +51,10 @@ final class SubagentToolHandler
                 throw new ToolCallException('Subagent tool requires a valid parent run ID. No run context is active.', retryable: false);
             }
 
-            $parsed = $arguments;
-
-            if ($parsed->isParallelMode()) {
-                // The per-call task-count limit (agents.max_agents) is enforced
-                // by SubagentTasksLimit on SubagentArgumentsDTO; execution only
-                // sees validated arguments.
-                return $this->executionService()->executeParallel($parentRunId, $parsed->parallelTasks());
-            }
-
             return $this->executionService()->execute(
                 parentRunId: $parentRunId,
-                agentName: (string) $parsed->trimmedAgent(),
-                task: (string) $parsed->trimmedTask(),
+                agentName: trim($arguments->agent),
+                task: trim($arguments->task),
             );
         });
     }

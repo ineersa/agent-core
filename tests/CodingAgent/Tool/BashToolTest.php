@@ -25,13 +25,12 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
-use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
@@ -64,6 +63,8 @@ use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Validator\ConstraintValidatorFactory;
 use Symfony\Component\Validator\ValidatorBuilder;
 
@@ -804,17 +805,18 @@ final class BashToolTest extends IsolatedKernelTestCase
             } while (hrtime(true) < $deadline);
             $this->assertNotNull($record?->finishedAt);
             $this->assertSame(1, substr_count((string) file_get_contents($selected->logPath), "started\n"));
-            $client = $this->createMock(AgentSessionClient::class);
-            $client->expects($this->once())->method('send')->with(self::TEST_SESSION, $this->callback(
-                static fn (UserCommand $command): bool => 'append_message' === $command->type && str_contains($command->text ?? '', 'finished'),
-            ));
+            $bus = $this->createMock(MessageBusInterface::class);
+            $bus->expects($this->once())->method('dispatch')->with($this->callback(
+                static fn (DeliverBackgroundCompletionDTO $message): bool => self::TEST_SESSION === $message->runId() && str_contains($message->text, 'finished'),
+            ))->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
             $poller = new BackgroundProcessCompletionPoller(
                 static::getContainer()->get(ProcessStore::class),
                 $this->manager,
-                $client,
+                $bus,
                 new RuntimeEventEmitter(new NullLogger()),
                 new NullLogger(),
                 static::getContainer()->get(AgentArtifactRegistry::class),
+                static::getContainer()->get(BackgroundCompletionReceiptRepository::class),
                 self::TEST_SESSION,
             );
             $poll = new \ReflectionMethod($poller, 'poll');
@@ -873,7 +875,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     /* ── Helpers ── */
 
-    public function testConfiguredChildBashStaysForegroundAndCannotLeaveOrphanNotification(): void
+    public function testConfiguredChildBashCanDetachWithoutEndingNativeExecution(): void
     {
         self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(new RunState(self::TEST_SESSION, RunStatus::Running, parentRunId: 'parent'));
         $manager = self::getContainer()->get(BackgroundProcessManager::class);
@@ -885,13 +887,12 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertIsResource($endpoint);
         $token = $this->createStub(CancellationTokenInterface::class);
         $checked = false;
-        $token->method('isCancellationRequested')->willReturnCallback(function () use ($manager, $endpoint, &$checked): bool {
+        $token->method('isCancellationRequested')->willReturnCallback(function () use ($manager, &$checked): bool {
             $records = $this->recordsForSession(self::TEST_SESSION);
             if (!$checked && [] !== $records) {
                 $checked = true;
-                $this->assertSame([], $manager->foregroundTools(self::TEST_SESSION));
-                $this->assertFalse($manager->requestBackground(self::TEST_SESSION, $records[0]->id, 'tc_child'));
-                $this->assertSame(8, fwrite($endpoint, "release\n"));
+                $this->assertCount(1, $manager->foregroundTools(self::TEST_SESSION));
+                $this->assertTrue($manager->requestBackground(self::TEST_SESSION, $records[0]->id, 'tc_child'));
             }
 
             return false;
@@ -900,13 +901,13 @@ final class BashToolTest extends IsolatedKernelTestCase
             $context = new ToolContext(self::TEST_SESSION, 1, 'tc_child', 'bash', $token, 2, stepId: 'child-step');
             $result = $accessor->with($context, static fn (): string => $tool(new BashArgumentsDTO(command: 'IFS= read -r release < '.escapeshellarg($fifo).'; printf child-finished', timeout: 2)));
             $this->assertTrue($checked);
-            $this->assertSame('child-finished', $result);
+            $this->assertStringContainsString('Command moved to background.', $result);
             $records = $this->recordsForSession(self::TEST_SESSION);
             $this->assertCount(1, $records);
-            $this->assertNull($records[0]->backgroundedAt);
-            $this->assertNotNull($records[0]->finishedAt);
-            $manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(self::TEST_SESSION));
-            $this->assertSame([], self::getContainer()->get(ProcessStore::class)->findCompletionCandidates([self::TEST_SESSION]));
+            $this->assertNotNull($records[0]->backgroundedAt);
+            $this->assertNull($records[0]->finishedAt);
+            $this->assertTrue(posix_kill($records[0]->pid, 0));
+            $this->assertSame(8, fwrite($endpoint, "release\n"));
         } finally {
             fclose($endpoint);
             $manager->shutdownCleanup();
@@ -942,7 +943,6 @@ final class BashToolTest extends IsolatedKernelTestCase
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
             logger: $this->logger,
-            relationshipReader: self::getContainer()->get(RunRelationshipReaderInterface::class),
             config: $this->bashConfig,
         );
     }

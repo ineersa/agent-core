@@ -34,7 +34,7 @@ use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
@@ -458,7 +458,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $preview = $bus->dispatch(new RepairSession($run, false, 'deferred-preview'));
         $bus->dispatch($preview->with(new ReceivedStamp('run_control')));
         $this->assertCount(0, $llm->getSent());
-        $this->assertCount($completedOrdinaryTool ? 2 : 1, $tools->getSent(), 'Preview must not requeue the parent fork invocation.');
+        $this->assertCount($children + ($completedOrdinaryTool ? 1 : 0), $tools->getSent(), 'Preview must not requeue the parent fork invocation.');
         foreach ($before as $id => $events) {
             $this->assertEquals($events, $store->allFor((string) $id));
             $registry->release((string) $id);
@@ -468,16 +468,16 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $result = $handled->last(HandledStamp::class)->getResult();
         $expected = $completedSibling ? [$childIds[0]] : $childIds;
         $this->assertCount(0, $llm->getSent(), 'Repair must cancel unfinished children without retrying their provider requests.');
-        $this->assertStringContainsString('cancelled', $result->message);
+        $this->assertSame($completedSibling ? 'Deferred child result delivery requested.' : 'Deferred children cancelled by session repair.', $result->message);
         $this->assertNull($result->refusalReason);
-        $this->assertCount($completedOrdinaryTool ? 2 : 1, $tools->getSent(), 'Do not launch or requeue another fork.');
+        $this->assertCount($children + ($completedOrdinaryTool ? 1 : 0), $tools->getSent(), 'Do not launch or requeue another fork.');
         foreach ($expected as $childId) {
             $this->assertSame(RunStatus::Cancelled, $container->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class)->findOperationalStatus($childId)->status);
             $cold = $container->get(RunStateRebuilderInterface::class)->rebuildIfStale(RunState::queued($childId), $childId)->rebuiltState;
             $this->assertSame(RunStatus::Cancelled, $cold->status, 'Cancellation must survive owner recreation.');
             $this->assertNull($cold->currentOperation);
         }
-        $rows = $container->get(DeferredSubagentChildRepository::class)->findOrderedByBatchLifecycleId($batchId);
+        $rows = array_map($container->get(DeferredSubagentChildRepository::class)->findByChildRunId(...), $childIds);
         $this->assertSame($childIds, array_column($rows, 'childRunId'));
         $this->assertSame($keys, array_map($container->get(DeferredSubagentChildRepository::class)->findProviderCacheKey(...), $childIds));
         foreach ($before as $id => $events) {
@@ -492,7 +492,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
     public static function deferredRepairCases(): iterable
     {
         yield 'fork' => [1, false];
-        yield 'parallel children' => [2, false];
+        yield 'independent child invocations' => [2, false];
         yield 'completed sibling stays completed' => [2, true];
         yield 'completed ordinary tool does not block child repair' => [1, false, true];
     }
@@ -899,11 +899,14 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'parent-step', 'operation_attempt' => 1, 'operation_idempotency_key' => 'parent-key']),
         ]);
         $bus = $container->get('agent.command.bus');
-        $calls = [['id' => 'fork-current', 'name' => 'fork', 'arguments' => ['task' => 'Finish existing work.']]];
+        $calls = [];
+        for ($i = 0; $i < $children; ++$i) {
+            $calls[] = ['id' => 0 === $i ? 'fork-current' : 'fork-current-'.$i, 'name' => 'fork', 'arguments' => ['task' => 'Finish existing work.']];
+        }
         if ($completedOrdinaryTool) {
             array_unshift($calls, ['id' => 'read-done', 'name' => 'read', 'arguments' => ['path' => './notes.txt']]);
         }
-        $queued = $bus->dispatch(new LlmStepResult($run, 1, 'parent-step', 1, 'parent-key', assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls($calls), model: 'llama_cpp_test/test', stopReason: 'tool_call'));
+        $queued = $bus->dispatch(new LlmStepResult($run, 1, 'parent-step', 1, 'parent-key', assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls($calls), model: 'llama_cpp_test/test', stopReason: 'tool_call', toolsRef: 'default'));
         $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
         $container->get('messenger.transport.run_control')->ack($queued);
         if ($completedOrdinaryTool) {
@@ -923,19 +926,22 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         }
         $factory = new DeferredSubagentBatchIdentityFactory();
         $batchId = $factory->batchLifecycleId($run, 'fork-current');
-        $callEnvelope = $container->get('messenger.transport.tool')->getSent()[$completedOrdinaryTool ? 1 : 0];
-        $call = $this->executionMessage($callEnvelope);
-        $registration = $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class)->registerPending(new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(
-            $batchId, $run, $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->toolName, $call->args, $call->orderIndex,
-            $call->toolIdempotencyKey, $call->mode, $call->timeoutSeconds, $call->maxParallelism, argSchema: $call->argSchema, toolsRef: $call->toolsRef,
-        ));
-        $intents = [];
         $childIds = [];
         for ($i = 0; $i < $children; ++$i) {
-            $identity = $factory->childIdentity($run, 'fork-current', $i + 1);
+            $toolId = 0 === $i ? 'fork-current' : 'fork-current-'.$i;
+            $lifecycle = $factory->batchLifecycleId($run, $toolId);
+            $call = $this->executionMessage($container->get('messenger.transport.tool')->getSent()[$i + ($completedOrdinaryTool ? 1 : 0)]);
+            $container->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class)->registerPending(new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(
+                $lifecycle, $run, $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->toolName, $call->args, $call->orderIndex,
+                $call->toolIdempotencyKey, $call->mode, $call->timeoutSeconds, $call->maxParallelism, argSchema: $call->argSchema, toolsRef: $call->toolsRef,
+            ));
+            $identity = $factory->childIdentity($run, $toolId, 1);
             $childIds[] = $child = $identity['childRunId'];
             $container->get(AgentArtifactRegistry::class)->create($run, $identity['artifactId'], $child, 'fork', AgentArtifactKindEnum::Fork);
-            $intents[] = ['batchIndex' => $i + 1, 'childRunId' => $child, 'artifactId' => $identity['artifactId'], 'agentName' => 'fork', 'task' => 'Finish existing work.', 'launchModel' => 'llama_cpp_test/test', 'launchReasoning' => 'medium'];
+            $intent = new DeferredSubagentBatchChildIntentDTO(1, $child, $identity['artifactId'], 'fork', 'Finish existing work.', 'llama_cpp_test/test', 'medium');
+            $batches = $container->get(DeferredSubagentBatchRepository::class);
+            $batches->reserveBatch($lifecycle, $run, 1, $toolId, $call->orderIndex, \Symfony\Component\Clock\Clock::get()->now()->modify('+1 hour'), $intent);
+            $batches->applyLaunchSuccessState($run, $toolId, $lifecycle, \Symfony\Component\Clock\Clock::get()->now());
             PreparedEventStoreSeeder::appendMany($store, [
                 RunEvent::forAppend($child, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'llama_cpp_test/test', 'reasoning' => 'medium', 'tools_scope' => ['allowed_tools' => []], 'session' => ['kind' => 'agent_child', 'child_kind' => 'fork', 'parent_run_id' => $run, 'agent_name' => 'fork', 'artifact_id' => $identity['artifactId']]], 'messages' => [
                     ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Finish child work.']]],
@@ -946,10 +952,6 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
                 PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 1, 'agent_end', ['reason' => 'completed']));
             }
         }
-        $batches = $container->get(DeferredSubagentBatchRepository::class);
-        $batches->reserveBatch($batchId, $run, 1, 'fork-current', $call->orderIndex, $children > 1 ? ChildRunBatchExecutionModeEnum::Parallel : ChildRunBatchExecutionModeEnum::Single, $children,
-            \Symfony\Component\Clock\Clock::get()->now()->modify('+1 hour'), $intents);
-        $batches->applyLaunchSuccessState($run, 'fork-current', $batchId, \Symfony\Component\Clock\Clock::get()->now(), range(1, $children));
 
         return [$run, $batchId, $childIds];
     }

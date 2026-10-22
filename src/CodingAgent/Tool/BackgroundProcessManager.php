@@ -520,10 +520,7 @@ final class BackgroundProcessManager
             return [];
         }
 
-        return array_values(array_filter(
-            $this->store->fetchAllUnfinished($runId),
-            static fn (BackgroundProcess $entity): bool => null !== $entity->toolCallId && null === $entity->backgroundedAt && !$entity->backgroundRequested,
-        ));
+        return $this->store->fetchForegroundTools($runId);
     }
 
     /**
@@ -600,8 +597,8 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Refresh all unfinished entities so finished_at is populated
-     * for processes that completed without a list() call.
+     * Refresh unfinished entities for controller-owned runs in one batch.
+     * Populate finished_at even when no list() call observes completion.
      *
      * Passive maintenance only: never signal a process. The owning controller
      * enforces accepted-job deadlines through refreshEntities(); maintenance
@@ -611,13 +608,11 @@ final class BackgroundProcessManager
      * status files and /proc/<pid>, and flushes any newly-resolved
      * entities. Already-finished entities are skipped.
      *
-     * @param string|null $sessionId optional session filter. When provided,
-     *                               only processes for this session are
-     *                               refreshed. Pass null for all.
+     * @param list<string> $sessionIds Controller-owned runs
      */
-    public function refreshAllUnfinished(?string $sessionId = null): void
+    public function refreshAllUnfinished(array $sessionIds): void
     {
-        $entities = $this->store->fetchAllUnfinished($sessionId);
+        $entities = $this->store->fetchAllUnfinished($sessionIds);
         foreach ($entities as $entity) {
             $this->resolveEntityStatus($entity);
         }

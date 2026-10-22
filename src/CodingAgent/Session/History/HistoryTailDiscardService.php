@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session\History;
 
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -13,6 +14,10 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Psr\Log\LoggerInterface;
 
@@ -34,11 +39,29 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
     public function __construct(
         private SessionRunEventStore $eventStore,
         private LoggerInterface $logger,
+        private ActiveRunContextInterface $contexts,
+        private BackgroundCompletionReceiptRepository $receipts,
     ) {
     }
 
     public function isContextMutatingMessage(AbstractAgentBusMessage $message): bool
     {
+        if ($message instanceof DeliverBackgroundCompletionDTO) {
+            // The processor has recovered pending transitions and holds the
+            // owner lock before asking this policy. Only actual admission has
+            // append-message history semantics; retries and transfers do not.
+            $receipt = $this->receipts->receipt($message->identity);
+            if (null !== $receipt) {
+                return BackgroundCompletionDispositionEnum::Forwarding === $receipt->disposition
+                    && $receipt->destinationRunId === $message->runId();
+            }
+            $state = $this->contexts->requireLoaded($message->runId());
+            if (null !== $message->sourceRunId && $message->sourceRunId !== $state->runId) {
+                return false;
+            }
+
+            return null === $state->parentRunId || (!$state->status->isTerminal() && RunStatus::Cancelling !== $state->status);
+        }
         if ($message instanceof AdvanceRun || $message instanceof ApplyShellCommand || $message instanceof CompactRun) {
             return true;
         }

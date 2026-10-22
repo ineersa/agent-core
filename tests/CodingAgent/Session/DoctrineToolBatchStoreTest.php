@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception as DbalException;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
@@ -323,7 +324,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $failingCommands->method('prepareEnqueue')->willReturn(static function (): bool {
             throw new \RuntimeException('Injected mailbox failure.');
         });
-        $coordinator = new LocalMetadataCoordinator($container->get(ApplicationDbTransactionInterface::class), $batches, $failingCommands);
+        $coordinator = new LocalMetadataCoordinator($container->get(ApplicationDbTransactionInterface::class), $batches, $failingCommands, $container->get(StepDispatcher::class));
         try {
             $coordinator->apply($plan);
             $this->fail('Mailbox failure must roll back batch registration.');

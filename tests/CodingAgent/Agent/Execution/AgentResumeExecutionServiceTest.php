@@ -32,8 +32,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
-use Ineersa\CodingAgent\Agent\Execution\AgentResumeTaskDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
@@ -53,6 +51,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\DTO\AgentResumeArgumentsDTO;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -72,7 +71,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: 'parent-unknown',
-            tasks: [new AgentResumeTaskDTO(artifact_id: 'agent_missing', task: 'continue')],
+            task: new AgentResumeArgumentsDTO(artifact_id: 'agent_missing', task: 'continue'),
         );
     }
 
@@ -110,7 +109,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'Address review: fix ownership wording')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'Address review: fix ownership wording'),
             childRunId: $childRunId,
             agentRunner: $agentRunner,
             toolCallId: 'tc-fork-resume-1',
@@ -181,7 +180,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue the scout notes')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue the scout notes'),
             childRunId: $childRunId,
             agentRunner: $agentRunner,
             toolCallId: 'tc-subagent-raw',
@@ -203,7 +202,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue'),
             childRunId: $childRunId,
         );
     }
@@ -226,7 +225,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue'),
             childRunId: $childRunId,
         );
     }
@@ -248,7 +247,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue'),
             childRunId: $childRunId,
             operationalStatusReader: $operationalStatusReader,
         );
@@ -267,7 +266,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->expectExceptionMessage('is not terminal (status=running)');
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue'),
             childRunId: $childRunId,
             runStatus: RunStatus::Running,
             agentRunner: $agentRunner,
@@ -286,7 +285,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue'),
             childRunId: $childRunId,
             runStatus: RunStatus::Completed,
         );
@@ -305,7 +304,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue'),
             childRunId: $childRunId,
             runStatus: RunStatus::Completed,
         );
@@ -323,7 +322,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue'),
             childRunId: $childRunId,
             runStatus: RunStatus::Completed,
         );
@@ -341,7 +340,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue'),
             childRunId: $childRunId,
             agentRunner: $agentRunner,
         );
@@ -349,7 +348,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame(AgentArtifactStatusEnum::Running, $this->registry()->get($parent, $artifactId)?->status);
     }
 
-    public function testResumesDistinctFailedAndCancelledArtifactsInParallelViaExistingChildRuns(): void
+    public function testIndependentCallsResumeFailedAndCancelledArtifactsViaBothIdentifiers(): void
     {
         $parent = 'parent-parallel';
         $failedArtifactId = 'agent_failed';
@@ -369,13 +368,15 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [
-                new AgentResumeTaskDTO(artifact_id: $failedArtifactId, task: 'verify failure fix'),
-                new AgentResumeTaskDTO(artifact_id: $cancelledArtifactId, task: 'continue cancellation-safe work'),
-            ],
+            task: new AgentResumeArgumentsDTO(artifact_id: $failedArtifactId, task: 'verify failure fix'),
             agentRunner: $agentRunner,
-            toolCallId: 'tc-parallel',
-            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
+            toolCallId: 'tc-failed',
+        );
+        $this->resume(
+            parentRunId: $parent,
+            task: new AgentResumeArgumentsDTO(agent_run_id: $cancelledChildRunId, task: 'continue cancellation-safe work'),
+            agentRunner: $agentRunner,
+            toolCallId: 'tc-cancelled',
         );
 
         $this->assertStringContainsString('verify failure fix', $followUps[$failedChildRunId]->content[0]['text']);
@@ -384,7 +385,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame(AgentArtifactStatusEnum::Running, $this->registry()->get($parent, $cancelledArtifactId)?->status);
 
         $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)
-            ->findByParentRunAndToolCall($parent, 'tc-parallel');
+            ->findByParentRunAndToolCall($parent, 'tc-failed');
         $this->assertNotNull($batch);
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batch->launchStatus);
     }
@@ -402,7 +403,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue'),
             childRunId: $childRunId,
             relationshipReader: StubRunRelationshipReader::child($parent, 'grandparent'),
         );
@@ -424,7 +425,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         try {
             $this->resume(
                 parentRunId: $parent,
-                tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+                task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue'),
                 childRunId: $childRunId,
                 runStatus: RunStatus::Completed,
                 agentRunner: $agentRunner,
@@ -450,7 +451,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->expectExceptionMessage('batch launch previously failed');
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue again')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue again'),
             childRunId: $childRunId,
             runStatus: RunStatus::Completed,
             toolCallId: $toolCallId,
@@ -478,7 +479,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $outcome = $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue'),
             childRunId: $childRunId,
             agentRunner: $agentRunner,
             toolCallId: $toolCallId,
@@ -504,7 +505,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue'),
             childRunId: $childRunId,
             toolCallId: 'tc-lifetime-before-attach',
         );
@@ -516,7 +517,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->expectExceptionMessage('belongs to a previous parent lifetime');
         $this->resume(
             parentRunId: $parent,
-            tasks: [new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue after attach')],
+            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue after attach'),
             childRunId: $childRunId,
             toolCallId: 'tc-lifetime-after-attach',
         );
@@ -532,7 +533,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $runner->expects($this->never())->method('followUp');
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('is unusable for resume');
-        $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')], agentRunner: $runner,
+        $this->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue'), agentRunner: $runner,
             operationalStatusReader: self::getContainer()->get(RunOperationalStatusReaderInterface::class));
     }
 
@@ -546,7 +547,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $runner->expects($this->never())->method('followUp');
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('is unusable for resume');
-        $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: 'agent_unavailable', task: 'continue')], agentRunner: $runner, operationalStatusReader: $reader);
+        $this->resume($parent, new AgentResumeArgumentsDTO(artifact_id: 'agent_unavailable', task: 'continue'), agentRunner: $runner, operationalStatusReader: $reader);
     }
 
     public function testConfiguredOperationalReaderObservesTerminalStatusThenFreshRunningStatus(): void
@@ -560,13 +561,13 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $reader = self::getContainer()->get(RunOperationalStatusReaderInterface::class);
         $runner = $this->createMock(AgentRunnerInterface::class);
         $runner->expects($this->once())->method('followUp')->with($child, $this->isInstanceOf(AgentMessage::class));
-        $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')], agentRunner: $runner, operationalStatusReader: $reader);
+        $this->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue'), agentRunner: $runner, operationalStatusReader: $reader);
         $this->registry()->update(parentRunId: $parent, artifactId: $artifact, status: AgentArtifactStatusEnum::Completed);
         self::getContainer()->get('doctrine')->getConnection()->executeStatement(
             'UPDATE run_operational_state SET status = ? WHERE run_id = ?', [RunStatus::Running->value, $child]);
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('is not terminal (status=running)');
-        $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')], agentRunner: $runner, operationalStatusReader: $reader);
+        $this->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue'), agentRunner: $runner, operationalStatusReader: $reader);
     }
 
     public function testCanonicalAppendWithoutProjectionPublicationRejectsResume(): void
@@ -602,7 +603,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $runner->expects($this->never())->method('followUp');
         $readLog->records = [];
         try {
-            $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')],
+            $this->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue'),
                 agentRunner: $runner, operationalStatusReader: $reader, eventStore: $store);
             $this->fail('A terminal projection behind canonical history must not authorize resume.');
         } catch (ToolCallException $e) {
@@ -642,55 +643,18 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             new RunState($child, RunStatus::Completed, parentRunId: $parent, lastSeq: $terminal->seq));
         $runner = $this->createMock(AgentRunnerInterface::class);
         $runner->expects($this->once())->method('followUp')->with($child, $this->isInstanceOf(AgentMessage::class));
-        $outcome = $this->resume($parent, [new AgentResumeTaskDTO(artifact_id: $artifact, task: 'continue')],
+        $outcome = $this->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue'),
             agentRunner: $runner, operationalStatusReader: self::getContainer()->get(RunOperationalStatusReaderInterface::class), eventStore: $store);
         $this->assertNotNull(self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByLifecycleId($outcome->deferredId));
     }
 
-    public function testRejectsDuplicateResolvedArtifactViaMixedIdentifiers(): void
-    {
-        $parent = 'parent-dup-mixed';
-        $artifactId = 'agent_dup_mixed';
-        $childRunId = 'child-dup-mixed';
-        $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000);
-
-        $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->never())->method('followUp');
-        $operationalStatusReader = $this->createMock(RunOperationalStatusReaderInterface::class);
-        $operationalStatusReader->expects($this->exactly(2))
-            ->method('findOperationalStatus')
-            ->with(
-                $childRunId,
-            )
-            ->willReturn(new RunOperationalStatusDTO(RunStatus::Completed, 1));
-
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage(\sprintf('Duplicate artifact_id "%s" in one agent_resume call.', $artifactId));
-
-        $this->resume(
-            parentRunId: $parent,
-            tasks: [
-                new AgentResumeTaskDTO(artifact_id: $artifactId, task: 'continue via artifact'),
-                new AgentResumeTaskDTO(agent_run_id: $childRunId, task: 'continue via run id'),
-            ],
-            childRunId: $childRunId,
-            agentRunner: $agentRunner,
-            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
-            operationalStatusReader: $operationalStatusReader,
-        );
-    }
-
-    /**
-     * @param list<AgentResumeTaskDTO> $tasks
-     */
     private function resume(
         string $parentRunId,
-        array $tasks,
+        AgentResumeArgumentsDTO $task,
         ?string $childRunId = null,
         RunStatus $runStatus = RunStatus::Completed,
         ?AgentRunnerInterface $agentRunner = null,
         string $toolCallId = 'tc-resume-1',
-        ChildRunBatchExecutionModeEnum $executionMode = ChildRunBatchExecutionModeEnum::Single,
         ?TestLogger $logger = null,
         ?RunOperationalStatusReaderInterface $operationalStatusReader = null,
         ?EventStoreInterface $eventStore = null,
@@ -723,7 +687,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             relationshipReader: $relationshipReader ?? StubRunRelationshipReader::topLevel($parentRunId),
             depthGuard: new AgentDepthGuard(),
             contextAccessor: $contextAccessor,
-            agentsConfig: new AgentsConfig(maxAgents: 4),
+            agentsConfig: new AgentsConfig(),
             logger: $logger ?? new NullLogger(),
         );
 
@@ -738,8 +702,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
                 orderIndex: 0,
                 parentModel: 'test/model',
             ),
-            static function () use ($service, $parentRunId, $tasks, $executionMode): \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome {
-                return $service->resume($parentRunId, $tasks, $executionMode);
+            static function () use ($service, $parentRunId, $task): \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome {
+                return $service->resume($parentRunId, $task);
             },
         );
     }

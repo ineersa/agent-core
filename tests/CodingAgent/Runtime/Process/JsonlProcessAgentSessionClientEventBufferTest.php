@@ -7,7 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeTransportException;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
@@ -19,20 +21,21 @@ use Ineersa\CodingAgent\Tests\Support\ControlledJsonlControllerFixture;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Support\UnusedBackgroundProcessManagerFactory;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolFilterRuntimeConfig;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient::events
  * @covers \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient::start
  */
-final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
+final class JsonlProcessAgentSessionClientEventBufferTest extends IsolatedKernelTestCase
 {
     private string $tmpDir;
 
     protected function setUp(): void
     {
+        parent::setUp();
         if (0 === posix_geteuid()) {
             $this->markTestSkipped('Controller pipe fixtures require a non-root process owner.');
         }
@@ -44,6 +47,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         if (isset($this->tmpDir)) {
             TestDirectoryIsolation::removeDirectory($this->tmpDir);
         }
+        parent::tearDown();
     }
 
     public function testStartBuffersLaterEventsFromSameStdoutReadChunk(): void
@@ -1040,6 +1044,8 @@ PHP);
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: $logger ?? new TestLogger(),
             sessionStore: \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(EntityManagerInterface::class), $this->tmpDir),
+            childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
+            backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
         );
     }
 

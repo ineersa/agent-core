@@ -11,7 +11,6 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
-use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
@@ -71,7 +70,6 @@ final class BashTool implements HatfieldToolProviderInterface
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
         private readonly LoggerInterface $logger,
-        private readonly RunRelationshipReaderInterface $relationshipReader,
         private readonly BashToolConfig $config = new BashToolConfig(),
     ) {
     }
@@ -109,9 +107,9 @@ final class BashTool implements HatfieldToolProviderInterface
             // Start the command immediately through BackgroundProcessManager.
             // This guarantees exactly one process execution per tool call.
             $deadline = hrtime(true) + $timeout * 1_000_000_000;
-            // Only top-level model tools are targets. Direct !shell has no
+            // Only direct model tools are targets, including child-run tools. Direct !shell has no
             // producing step; code-mode nested calls have a deeper context.
-            $toolCallId = null !== $context?->stepId() && 1 === $this->contextAccessor->depth() && $this->backgroundAllowed($sessionId) ? $context->toolCallId() : null;
+            $toolCallId = null !== $context?->stepId() && 1 === $this->contextAccessor->depth() ? $context->toolCallId() : null;
             $startResult = $this->manager->start($command, $sessionId, $toolCallId, $deadline);
             $pid = $startResult->pid;
             $dbId = $startResult->id;
@@ -311,27 +309,6 @@ final class BashTool implements HatfieldToolProviderInterface
             ]);
 
             return '';
-        }
-    }
-
-    private function backgroundAllowed(?string $sessionId): bool
-    {
-        if (null === $sessionId || '' === $sessionId) {
-            return true;
-        }
-
-        try {
-            return !$this->relationshipReader->isAgentChild($sessionId);
-        } catch (\Throwable $e) {
-            $this->logger->warning('bash_tool.background_policy_resolution_failed', [
-                'run_id' => $sessionId,
-                'session_id' => $sessionId,
-                'component' => 'tool.bash',
-                'event_type' => 'bash_tool.background_policy_resolution_failed',
-                'error_class' => $e::class,
-            ]);
-
-            return false;
         }
     }
 

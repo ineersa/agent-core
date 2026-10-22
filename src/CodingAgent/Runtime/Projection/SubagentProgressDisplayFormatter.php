@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Projection;
 
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressChildRowDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressParallelSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSingleSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 
 use function Symfony\Component\String\u;
 
@@ -23,39 +20,28 @@ use function Symfony\Component\String\u;
  */
 final class SubagentProgressDisplayFormatter
 {
-    public function format(SubagentProgressSnapshotInterface $snapshot): string
+    public function format(SubagentProgressSnapshotDTO $snapshot): string
     {
-        if ($snapshot instanceof SubagentProgressParallelSnapshotDTO) {
-            return $this->formatParallel($snapshot);
-        }
-        if (!$snapshot instanceof SubagentProgressSingleSnapshotDTO) {
-            throw new \InvalidArgumentException('Expected single subagent_progress snapshot.');
-        }
-
         return $this->formatSingle($snapshot);
     }
 
-    private function formatSingle(SubagentProgressSingleSnapshotDTO $progress): string
+    private function formatSingle(SubagentProgressSnapshotDTO $progress): string
     {
-        return implode("\n", $this->formatSingleWidgetLines($progress, null));
+        return implode("\n", $this->formatSingleWidgetLines($progress));
     }
 
     /**
      * @return list<string>
      */
-    private function formatSingleWidgetLines(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress, ?int $childIndex): array
+    private function formatSingleWidgetLines(SubagentProgressSnapshotDTO $progress): array
     {
         $status = $progress->status;
         $lines = [];
-        if (null === $childIndex) {
-            $lines[] = \sprintf('subagent %s', $progress->agentName);
-        } else {
-            $lines[] = \sprintf('#%d subagent %s', $childIndex, $progress->agentName);
-        }
+        $lines[] = \sprintf('subagent %s', $progress->agentName);
 
         $lines = array_merge($lines, $this->formatSingleWidgetBodyLines($progress, $progress->agentName, $status));
 
-        if (null === $childIndex && \in_array($status, ['completed', 'failed', 'cancelled'], true)) {
+        if (\in_array($status, ['completed', 'failed', 'cancelled'], true)) {
             $lines[] = $this->retrieveGuidance($status);
         }
 
@@ -66,7 +52,7 @@ final class SubagentProgressDisplayFormatter
      * @return list<string>
      */
     private function formatSingleWidgetBodyLines(
-        SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $progress,
+        SubagentProgressSnapshotDTO $progress,
         string $agentName,
         string $status,
     ): array {
@@ -111,40 +97,10 @@ final class SubagentProgressDisplayFormatter
         return $lines;
     }
 
-    private function formatParallel(SubagentProgressParallelSnapshotDTO $progress): string
-    {
-        $status = $progress->status;
-        $completed = $progress->completedCount;
-        $total = max($progress->totalCount, 1);
-
-        if ('running' === $status) {
-            $lines = [\sprintf('parallel subagents running (%d/%d completed)', $completed, $total)];
-        } else {
-            $lines = [\sprintf('parallel subagents (%d/%d completed)', $completed, $total)];
-        }
-
-        $sections = [];
-        foreach ($progress->children as $child) {
-            $sections[] = implode("\n", $this->formatSingleWidgetLines($child, $child->index));
-        }
-
-        if ([] !== $sections) {
-            $lines[] = '';
-            $lines[] = implode("\n\n", $sections);
-        }
-
-        if (\in_array($status, ['completed', 'failed', 'cancelled'], true)) {
-            $lines[] = '';
-            $lines[] = $this->retrieveGuidance($status);
-        }
-
-        return implode("\n", $lines);
-    }
-
     private function formatRunningSummary(
         string $status,
         string $agentName,
-        SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data,
+        SubagentProgressSnapshotDTO $data,
     ): string {
         $parts = [\sprintf('%s %s', $status, $agentName)];
         if (null !== $data->cacheReadHitPercentage) {
@@ -161,14 +117,12 @@ final class SubagentProgressDisplayFormatter
         if (null !== $tok) {
             $parts[] = $tok;
         }
-        if ($data instanceof SubagentProgressSingleSnapshotDTO || 'running' !== $status) {
-            $parts[] = $this->formatElapsedHuman($data->elapsedMs);
-        }
+        $parts[] = $this->formatElapsedHuman($data->elapsedMs);
 
         return implode(' | ', $parts);
     }
 
-    private function formatFooter(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data): string
+    private function formatFooter(SubagentProgressSnapshotDTO $data): string
     {
         // Presentation: suppress all-zero usage footer even though identity is always present.
         if (
@@ -210,7 +164,7 @@ final class SubagentProgressDisplayFormatter
         return implode(' ', $parts);
     }
 
-    private function formatTokenCompact(SubagentProgressSingleSnapshotDTO|SubagentProgressChildRowDTO $data): ?string
+    private function formatTokenCompact(SubagentProgressSnapshotDTO $data): ?string
     {
         if ($data->totalTokens > 0) {
             return $this->formatTokenCount($data->totalTokens).' tok';

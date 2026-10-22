@@ -28,11 +28,8 @@ use Symfony\Component\Validator\ValidatorBuilder;
 /**
  * Pending reservation lifecycle through the child-run artifact lifecycle adapter.
  *
- * Test thesis: reservePending() pre-registers the child run in AgentChildRunDirectory so
- * locate(childRunId) succeeds immediately; removePendingReservation() must drop both the
- * canonical registry row and the in-process cache entry so locate() returns null afterward.
- * Without the adapter's finally { unregister() }, a discarded Pending child would stay
- * cache-locatable even after discardPendingReservation() removed the registry row.
+ * reservePending() pre-registers the child run in AgentChildRunDirectory so
+ * locate(childRunId) succeeds immediately alongside the canonical artifact.
  */
 final class ChildRunArtifactLifecycleServiceTest extends IsolatedKernelTestCase
 {
@@ -81,9 +78,9 @@ final class ChildRunArtifactLifecycleServiceTest extends IsolatedKernelTestCase
         $this->adapter = new ChildRunArtifactLifecycleService($this->registry, $this->childRunDirectory);
     }
 
-    public function testRemovePendingReservationClearsRegistryAndDirectoryLocate(): void
+    public function testPendingReservationRegistersArtifactAndDirectoryLocation(): void
     {
-        $parentRunId = $this->hatfieldSessionStore->createSession('Lifecycle adapter pending discard');
+        $parentRunId = $this->hatfieldSessionStore->createSession('Lifecycle adapter pending reservation');
         $childRunId = 'lifecycle-pending-'.bin2hex(random_bytes(4));
         $artifactId = 'agent_'.bin2hex(random_bytes(8));
 
@@ -103,14 +100,5 @@ final class ChildRunArtifactLifecycleServiceTest extends IsolatedKernelTestCase
 
         $artifactPathResolver = new SessionAgentArtifactPathResolver($this->hatfieldSessionStore);
         $this->assertDirectoryExists($artifactPathResolver->resolveArtifactDir($parentRunId, $artifactId));
-
-        $this->adapter->removePendingReservation($identity);
-
-        $this->assertNull($this->registry->get($parentRunId, $artifactId));
-        $this->assertDirectoryDoesNotExist($artifactPathResolver->resolveArtifactDir($parentRunId, $artifactId));
-        $this->assertNull(
-            $this->childRunDirectory->locate($childRunId),
-            'Discarded Pending child must not remain locatable via pre-registered cache entry.',
-        );
     }
 }

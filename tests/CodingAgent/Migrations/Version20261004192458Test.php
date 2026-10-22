@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\DeferredSubagentBatchRecoveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatch;
@@ -34,17 +35,17 @@ final class Version20261004192458Test extends IsolatedKernelTestCase
             $batch->lifecycleId = $lifecycle;
             $batch->parentRunId = 'migration-parent';
             $batch->parentToolCallId = $lifecycle;
-            $batch->totalChildCount = 1;
             $batch->terminalCompletionEnqueuedAt = $completedAt;
             $entityManager->persist($batch);
         }
         $entityManager->flush();
 
-        $repository->insertReservedChildren('migration-cache-batch', [
-            ['batchIndex' => 1, 'childRunId' => 'child-one', 'artifactId' => 'agent_one', 'agentName' => 'worker', 'task' => 'one', 'launchModel' => 'test/model', 'launchReasoning' => 'medium'],
-            ['batchIndex' => 2, 'childRunId' => 'child-two', 'artifactId' => 'agent_two', 'agentName' => 'worker', 'task' => 'two', 'launchModel' => 'test/model', 'launchReasoning' => 'medium'],
-        ]);
-        $connection->update('deferred_subagent_child', ['batch_lifecycle_id' => 'migration-terminal-batch', 'batch_index' => 1], ['child_run_id' => 'child-two']);
+        $repository->insertReservedChild('migration-cache-batch', new DeferredSubagentBatchChildIntentDTO(
+            1, 'child-one', 'agent_one', 'worker', 'one', 'test/model', 'medium',
+        ));
+        $repository->insertReservedChild('migration-terminal-batch', new DeferredSubagentBatchChildIntentDTO(
+            1, 'child-two', 'agent_two', 'worker', 'two', 'test/model', 'medium',
+        ));
         $connection->executeStatement('UPDATE deferred_subagent_child SET child_event_cursor = 42, child_lifecycle_projection = ?', ['{"input_tokens":100}']);
 
         $this->migrateLegacyChildTable();
@@ -74,17 +75,15 @@ final class Version20261004192458Test extends IsolatedKernelTestCase
             $batch->lifecycleId = $lifecycle;
             $batch->parentRunId = 'migration-parent';
             $batch->parentToolCallId = $lifecycle;
-            $batch->totalChildCount = 1;
             $batch->terminalCompletionEnqueuedAt = 'old-batch' === $lifecycle ? new \DateTimeImmutable('2026-10-04') : null;
             $em->persist($batch);
         }
         $em->flush();
         $childId = Uuid::v4()->toRfc4122();
         $repository = $container->get(DeferredSubagentChildRepository::class);
-        $repository->insertReservedChildren('old-batch', [[
-            'batchIndex' => 1, 'childRunId' => $childId, 'artifactId' => 'agent_resume',
-            'agentName' => 'fork', 'task' => 'old task', 'launchModel' => 'test/model', 'launchReasoning' => 'medium',
-        ]]);
+        $repository->insertReservedChild('old-batch', new DeferredSubagentBatchChildIntentDTO(
+            1, $childId, 'agent_resume', 'fork', 'old task', 'test/model', 'medium',
+        ));
         $store = $container->get(AgentChildRunEventStoreFactory::class)->create('migration-parent', $childId, 'agent_resume');
         PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childId, 1, 'llm_step_completed', [
             'usage' => ['input_tokens' => 100, 'output_tokens' => 10, 'total_tokens' => 110, 'cost' => 0.1],

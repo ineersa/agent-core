@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle;
 
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchCompletionDispatcher;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchTerminalCompletionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\DeferredSubagentBatchInterruptionCompletionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressDeliveryService;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 
 /**
- * Durable deferred batch delivery orchestration: aggregate progress and terminal completion.
+ * Durable deferred batch delivery orchestration: progress and terminal completion.
  */
 final readonly class DeferredSubagentBatchLifecycleDeliveryService
 {
@@ -19,6 +20,7 @@ final readonly class DeferredSubagentBatchLifecycleDeliveryService
         private DeferredSubagentBatchProgressDeliveryService $progressDelivery,
         private DeferredSubagentBatchTerminalCompletionService $naturalCompletion,
         private DeferredSubagentBatchInterruptionCompletionService $interruptionCompletion,
+        private DeferredSubagentBatchCompletionDispatcher $completionDispatcher,
     ) {
     }
 
@@ -30,6 +32,11 @@ final readonly class DeferredSubagentBatchLifecycleDeliveryService
         }
 
         if (null !== $batch->terminalCompletionEnqueuedAt) {
+            return;
+        }
+
+        // Resume may already have moved the sole child row to another invocation.
+        if ($this->completionDispatcher->retryFrozenCompletion($batch)) {
             return;
         }
 

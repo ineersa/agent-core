@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 
 /**
@@ -18,27 +17,19 @@ use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
  */
 final class SubagentToolDefinitionBuilder
 {
-    public static function build(AgentsConfig $agentsConfig, object $handler): ToolDefinitionDTO
+    public static function build(object $handler): ToolDefinitionDTO
     {
-        $maxAgents = $agentsConfig->maxAgents;
-
         return new ToolDefinitionDTO(
             name: SubagentToolHandler::NAME,
-            description: \sprintf(
-                SubagentToolHandler::DESCRIPTION_TEMPLATE,
-                $maxAgents,
-            ),
+            description: SubagentToolHandler::DESCRIPTION,
             handler: $handler,
-            executionMode: ToolExecutionMode::Sequential,
+            executionMode: ToolExecutionMode::Parallel,
             timeoutSeconds: null,
-            promptLine: 'subagent — launch one or more interactive foreground subagents; oversized handoffs return artifact references',
+            promptLine: 'subagent — launch one interactive foreground subagent; oversized handoffs return artifact references',
             promptGuidelines: [
-                'Batch independent scouts/reviewers in one {"tasks":[{"agent":"...","task":"..."}]} call; use {"agent":"...","task":"..."} for one child or dependent/serialized work.',
-                \sprintf(
-                    'Tasks in one call run concurrently (max %d).',
-                    $maxAgents,
-                ),
-                'Single-mode success includes the full handoff inline; parallel results include summaries. Responses over 50,000 characters return a notice and artifact references instead. Use agent_retrieve with each Artifact: ID for omitted handoffs, failures, metadata, or history.',
+                'Use {"agent":"...","task":"..."} for one child. Submit separate independent tool calls together to run them concurrently, like Bash or fork calls. Wait for prerequisites before submitting dependent work.',
+                'Concurrent writers must not target the same worktree or file. Preserve worktree ownership when delegating.',
+                'Success includes the full handoff inline. Responses over 50,000 characters return a notice and artifact references instead. Use agent_retrieve with the Artifact: ID for omitted handoffs, failures, metadata, or history.',
             ],
         );
     }

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Transcript;
 
-use Ineersa\CodingAgent\Runtime\Contract\SubagentProgress\SubagentProgressSnapshotInterface;
+use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
@@ -23,7 +23,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testFactoryBuildsStructuredSubagentBlock(): void
     {
         $progress = [
-            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_01HX', 'task_summary' => 'inspect runtime events', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium',
             'turn_no' => 3, 'llm_step_count' => 3, 'elapsed_ms' => 18000,
         ];
@@ -54,7 +54,7 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertTrue(mb_check_encoding($box, 'UTF-8'));
         $task = str_repeat($box, 160);
         $progress = [
-            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_utf8', 'task_summary' => $task, 'agent_run_id' => 'child-run-utf8',
             'model' => 'test/model', 'reasoning' => 'medium',
             'turn_no' => 1, 'llm_step_count' => 1, 'elapsed_ms' => 1000,
@@ -79,7 +79,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testFooterRendersSingularLlmStepWithoutTurnLabel(): void
     {
         $progress = [
-            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'status' => 'completed', 'agent_name' => 'scout',
             'artifact_id' => 'agent_one', 'task_summary' => 'one step', 'agent_run_id' => 'child-run-1',
             'turn_no' => 99, 'llm_step_count' => 1,
             'input_tokens' => 100, 'output_tokens' => 20,
@@ -104,7 +104,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testRendersRichSingleProgressCardWithoutLastPrefixOnRecentTools(): void
     {
         $progress = [
-            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_01HX', 'agent_run_id' => 'run-child-abc',
             'task_summary' => 'inspect runtime events', 'turn_no' => 17,
             'elapsed_ms' => 139000, 'tool_count' => 38, 'total_tokens' => 49000,
@@ -144,7 +144,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testSingleProgressCardKeepsFixedHeightAcrossLifecycleUpdates(): void
     {
         $base = [
-            'mode' => 'single', 'agent_name' => 'scout',
+            'agent_name' => 'scout',
             'artifact_id' => 'agent_stable', 'agent_run_id' => 'run-stable',
             'task_summary' => 'Inspect runtime events', 'model' => 'test/model', 'reasoning' => 'medium',
         ];
@@ -185,65 +185,10 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertSame([9, 9, 9, 9, 9, 9, 9], $heights);
     }
 
-    public function testParallelProgressCardAllocatesTwoRowsPerChildAcrossLifecycleUpdates(): void
-    {
-        $child = static fn (int $index, string $status, ?string $activeTool = null): array => [
-            'index' => $index,
-            'agent_name' => 1 === $index ? 'scout' : 'reviewer',
-            'status' => $status,
-            'artifact_id' => 'agent_'.$index,
-            'agent_run_id' => 'run-'.$index,
-            'task_summary' => 1 === $index ? 'Read docs' : 'Review patch',
-            'model' => 'test/model',
-            'reasoning' => 'medium',
-            'latest_input_tokens' => 196_900,
-            'context_window' => 200_000,
-            'active_tool' => $activeTool,
-        ];
-        $snapshots = [
-            [
-                'mode' => 'parallel', 'status' => 'running', 'completed_count' => 0, 'total_count' => 2,
-                'children' => [$child(1, 'running')],
-            ],
-            [
-                'mode' => 'parallel', 'status' => 'running', 'completed_count' => 0, 'total_count' => 2,
-                'children' => [$child(1, 'running', 'read: path="docs.md"'), $child(2, 'waiting_human')],
-            ],
-            [
-                'mode' => 'parallel', 'status' => 'completed', 'completed_count' => 2, 'total_count' => 2,
-                'children' => [$child(1, 'completed'), $child(2, 'completed')],
-            ],
-            [
-                'mode' => 'parallel', 'status' => 'failed', 'completed_count' => 0, 'total_count' => 2,
-                'children' => [$child(1, 'failed'), $child(2, 'failed')],
-            ],
-            [
-                'mode' => 'parallel', 'status' => 'cancelled', 'completed_count' => 0, 'total_count' => 2,
-                'children' => [$child(1, 'cancelled'), $child(2, 'cancelled')],
-            ],
-        ];
-
-        $heights = [];
-        foreach ($snapshots as $index => $progress) {
-            $block = new TranscriptBlock(
-                id: 'tool_result_parallel_stable_'.$index,
-                kind: TranscriptBlockKindEnum::ToolResult,
-                runId: 'run1',
-                seq: $index + 1,
-                text: '',
-                meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)],
-                streaming: $index < \count($snapshots) - 1,
-            );
-            $heights[] = \count($this->renderBlockLines($block));
-        }
-
-        $this->assertSame([8, 8, 8, 8, 8], $heights);
-    }
-
     public function testWhitespaceOnlyTaskSummaryUsesReservedRow(): void
     {
         $progress = [
-            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_whitespace', 'agent_run_id' => 'run-whitespace',
             'task_summary' => " \t\n ", 'model' => 'test/model', 'reasoning' => 'medium',
         ];
@@ -261,7 +206,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testTerminalSingleCardKeepsCompactToolsTokensElapsedSummary(string $status): void
     {
         $progress = [
-            'mode' => 'single', 'status' => $status, 'agent_name' => 'scout',
+            'status' => $status, 'agent_name' => 'scout',
             'artifact_id' => 'agent_01HX', 'agent_run_id' => 'run-child-abc',
             'task_summary' => 'inspect runtime events', 'turn_no' => 17,
             'elapsed_ms' => 139000, 'tool_count' => 38, 'total_tokens' => 49000,
@@ -287,7 +232,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testSubsecondSummaryMatchesPlainText(int $milliseconds, string $expected): void
     {
         $snapshot = $this->snapshot([
-            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'status' => 'completed', 'agent_name' => 'scout',
             'artifact_id' => 'agent_ms', 'agent_run_id' => 'run-child-ms',
             'task_summary' => 'Read file', 'model' => 'test/model', 'reasoning' => 'medium',
             'elapsed_ms' => $milliseconds,
@@ -311,7 +256,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testRendersWaitingHumanNeedsInputCard(): void
     {
         $progress = [
-            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
+            'status' => 'waiting_human', 'agent_name' => 'scout',
             'artifact_id' => 'agent_wait', 'task_summary' => 'approve edit', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 2,
         ];
         $block = new TranscriptBlock(
@@ -334,7 +279,7 @@ final class SubagentResultRendererTest extends TestCase
     {
         $task = "You are a scout. Complete the following steps:\n\n1. Use `read` to list docs\n2. Summarize";
         $progress = [
-            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
+            'status' => 'waiting_human', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a70', 'task_summary' => $task, 'turn_no' => 1, 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium',
         ];
         $block = new TranscriptBlock(
@@ -354,7 +299,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testTerminalExpandHandoffHintIsRailAlignedBeforeBottomBorder(): void
     {
         $progress = [
-            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'status' => 'completed', 'agent_name' => 'scout',
             'artifact_id' => 'agent_done', 'task_summary' => 'task', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 3,
         ];
         $handoff = "# Handoff title\n\nUnique handoff body.\n\n- bullet one\n- bullet two\n- bullet three\n- bullet four\n- bullet five\n- bullet six\n- bullet seven\n- bullet eight\n- bullet nine";
@@ -379,7 +324,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testActiveProgressWithResultTextDoesNotRenderHandoffSection(): void
     {
         $progress = [
-            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_run', 'task_summary' => 'task', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 1,
         ];
         $handoff = "# Premature handoff\n\nShould not show while running.";
@@ -402,7 +347,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testWaitingHumanWithResultTextDoesNotRenderHandoffSection(): void
     {
         $progress = [
-            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
+            'status' => 'waiting_human', 'agent_name' => 'scout',
             'artifact_id' => 'agent_wait', 'task_summary' => 'approve', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 2,
         ];
         $block = new TranscriptBlock(
@@ -419,47 +364,10 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringNotContainsString('Draft handoff', $joined);
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('terminalStatuses')]
-    public function testRendersParallelProgressAsStackedCards(string $status): void
-    {
-        $progress = [
-            'mode' => 'parallel', 'status' => 'running', 'completed_count' => 0, 'total_count' => 2, 'elapsed_ms' => 60000,
-            'children' => [
-                [
-                    'index' => 1, 'agent_name' => 'scout', 'status' => 'running', 'artifact_id' => 'agent_1',
-                    'agent_run_id' => 'run-1', 'task_summary' => 'Read docs', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 4, 'tool_count' => 3, 'total_tokens' => 9000,
-                    'artifact_path' => 'artifacts/agents/agent_1',
-                ],
-                [
-                    'index' => 2, 'agent_name' => 'reviewer', 'status' => $status, 'artifact_id' => 'agent_2', 'agent_run_id' => 'run-1', 'model' => 'test/model', 'reasoning' => 'medium',
-                    'task_summary' => 'Review patch', 'turn_no' => 1, 'tool_count' => 5, 'total_tokens' => 12000, 'elapsed_ms' => 45000, 'active_tool' => 'read: path="AGENTS.md"',
-                ],
-            ],
-        ];
-        $block = new TranscriptBlock(
-            id: 'tool_result_tc_par', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
-            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $this->snapshot($progress)], streaming: true,
-        );
-        $joined = implode("\n", $this->renderBlockLines($block));
-        $this->assertStringContainsString('parallel subagents (0/2 completed)', $joined);
-        $this->assertStringContainsString('├─', $joined);
-        $this->assertStringContainsString('#1', $joined);
-        $this->assertStringContainsString('scout', $joined);
-        $this->assertStringContainsString('#2', $joined);
-        $this->assertStringContainsString('reviewer', $joined);
-        $this->assertStringContainsString('Task Read docs', $joined);
-        $this->assertStringContainsString('Task Review patch', $joined);
-        $this->assertStringContainsString('reviewer ['.$status.']', $joined);
-        $this->assertStringContainsString('5 tools', $joined);
-        $this->assertStringContainsString('12k tok', $joined);
-        $this->assertStringContainsString('45s', $joined);
-        $this->assertStringNotContainsString('running Step', $joined);
-    }
-
     public function testRendersTerminalWidgetWithMarkdownHandoffPreview(): void
     {
         $progress = [
-            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'status' => 'completed', 'agent_name' => 'scout',
             'artifact_id' => 'agent_done', 'task_summary' => 'task', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 3,
             'artifact_path' => 'artifacts/agents/agent_done',
         ];
@@ -489,7 +397,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testCollapsedHandoffEllipsisKeepsItalicAnsiAsSiblingWidget(): void
     {
         $progress = [
-            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'status' => 'completed', 'agent_name' => 'scout',
             'artifact_id' => 'agent_done', 'task_summary' => 'task', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 3,
             'artifact_path' => 'artifacts/agents/agent_done',
         ];
@@ -517,7 +425,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testExpandedHandoffShowsFullMarkdownBody(): void
     {
         $progress = [
-            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'status' => 'completed', 'agent_name' => 'scout',
             'artifact_id' => 'agent_done', 'task_summary' => 'task', 'agent_run_id' => 'child-run-1', 'model' => 'test/model', 'reasoning' => 'medium', 'turn_no' => 3,
         ];
         $handoff = "line0\nline1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9";
@@ -552,7 +460,7 @@ final class SubagentResultRendererTest extends TestCase
     public function testChildTranscriptCardContextUsageContract(): void
     {
         $base = [
-            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'status' => 'completed', 'agent_name' => 'scout',
             'artifact_id' => 'agent_ctx', 'agent_run_id' => 'child-run-ctx',
             'task_summary' => 'Context stats', 'reasoning' => 'medium', 'turn_no' => 3,
             'input_tokens' => 35000, 'output_tokens' => 14000,
@@ -604,13 +512,13 @@ final class SubagentResultRendererTest extends TestCase
     /**
      * @param array<string, mixed> $progress
      */
-    private function snapshot(array $progress): SubagentProgressSnapshotInterface
+    private function snapshot(array $progress): SubagentProgressSnapshotDTO
     {
         $snapshot = SubagentProgressSerializerTestSupport::denormalizer()->denormalize(
             $progress,
-            SubagentProgressSnapshotInterface::class,
+            SubagentProgressSnapshotDTO::class,
         );
-        $this->assertInstanceOf(SubagentProgressSnapshotInterface::class, $snapshot);
+        $this->assertInstanceOf(SubagentProgressSnapshotDTO::class, $snapshot);
         $violations = SubagentProgressSerializerTestSupport::validator()->validate($snapshot);
         $this->assertSame(0, $violations->count());
 

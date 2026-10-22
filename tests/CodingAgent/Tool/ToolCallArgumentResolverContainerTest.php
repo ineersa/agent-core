@@ -6,11 +6,9 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
-use Ineersa\CodingAgent\Agent\Execution\SubagentArgumentsDTO;
-use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
-use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\DTO\SubagentArgumentsDTO;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
@@ -60,7 +58,7 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         $this->assertArrayNotHasKey('agentRunId', $properties, 'agent_retrieve provider schema must not expose camelCase agentRunId.');
     }
 
-    public function testContainerResolverDenormalizesParallelSubagentTasksIntoDtos(): void
+    public function testContainerResolverDenormalizesSingleSubagentTask(): void
     {
         $resolver = self::getContainer()->get(ToolCallArgumentResolverInterface::class);
 
@@ -70,16 +68,14 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
                 name: 'probe',
                 description: 'Probe',
             ),
-            new ToolCall('call-subagent-container', 'probe', ['tasks' => [['agent' => 'scout', 'task' => 'one'], ['agent' => 'reviewer', 'task' => 'two']]]),
+            new ToolCall('call-subagent-container', 'probe', ['agent' => 'scout', 'task' => 'one']),
         );
 
         $this->assertArrayHasKey('arguments', $arguments);
         $dto = $arguments['arguments'];
         $this->assertInstanceOf(SubagentArgumentsDTO::class, $dto);
-        $this->assertIsArray($dto->tasks);
-        $this->assertCount(2, $dto->tasks);
-        $this->assertContainsOnlyInstancesOf(SubagentTaskDTO::class, $dto->tasks);
-        $this->assertSame('scout', $dto->tasks[0]->agent);
+        $this->assertSame('scout', $dto->agent);
+        $this->assertSame('one', $dto->task);
     }
 
     public function testContainerSchemaExposesConfiguredBashTimeoutBounds(): void
@@ -113,29 +109,12 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testContainerSchemaExposesConfiguredSubagentTasksLimit(): void
-    {
-        $config = self::getContainer()->get(AgentsConfig::class);
-        $tasks = $this->toolboxParameterSchema('subagent', 'tasks');
-
-        $this->assertSame($config->maxAgents, $tasks['maxItems']);
-        $this->assertSame(1, $tasks['minItems']);
-        $this->assertSame(
-            \sprintf('Parallel tasks (max %d per call). Use instead of agent/task for parallel mode.', $config->maxAgents),
-            $tasks['description'],
-        );
-    }
-
     public function testContainerSchemasFollowConstructorRequiredness(): void
     {
-        foreach (['bash' => ['command'], 'write' => ['path', 'content'], 'view_image' => ['path']] as $name => $required) {
+        foreach (['bash' => ['command'], 'write' => ['path', 'content'], 'view_image' => ['path'], 'subagent' => ['agent', 'task'], 'agent_resume' => ['task']] as $name => $required) {
             $parameters = $this->toolboxParameters($name);
             $this->assertSame($required, $parameters['required'] ?? [], $name);
         }
-
-        // Either single or parallel mode is valid, so no one field is required.
-        $parameters = $this->toolboxParameters('agent_resume');
-        $this->assertSame([], $parameters['required'] ?? []);
     }
 
     public function testContainerValidatorRejectsBashTimeoutAboveConfiguredMax(): void
@@ -147,25 +126,6 @@ final class ToolCallArgumentResolverContainerTest extends IsolatedKernelTestCase
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString(\sprintf('Timeout must not exceed %d seconds (%d provided).', $config->maxTimeoutSeconds, $config->maxTimeoutSeconds + 1), $message);
-    }
-
-    public function testContainerValidatorRejectsParallelSubagentTasksAboveConfiguredMax(): void
-    {
-        $config = self::getContainer()->get(AgentsConfig::class);
-        $toolbox = new FaultTolerantToolbox(self::getContainer()->get(ToolboxInterface::class));
-
-        $tasks = [];
-        for ($i = 0; $i < $config->maxAgents + 1; ++$i) {
-            $tasks[] = ['agent' => 'scout', 'task' => 't'.$i];
-        }
-
-        $result = $toolbox->execute(new ToolCall('call-subagent-max', 'subagent', ['tasks' => $tasks]));
-
-        $message = (string) $result->getResult();
-        $this->assertStringContainsString(
-            \sprintf('Parallel subagent execution supports at most %d agents per tool call, but %d tasks were requested.', $config->maxAgents, $config->maxAgents + 1),
-            $message,
-        );
     }
 
     public function testContainerValidatorEnforcesReadFileTargetClassConstraint(): void

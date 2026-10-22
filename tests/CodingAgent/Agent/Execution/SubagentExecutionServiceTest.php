@@ -191,7 +191,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
-            'agentsConfig' => new AgentsConfig(maxAgents: 8),
+            'agentsConfig' => new AgentsConfig(),
             'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'appConfig' => self::getContainer()->get(AppConfig::class),

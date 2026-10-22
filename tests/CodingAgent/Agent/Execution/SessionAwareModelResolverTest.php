@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
@@ -114,15 +115,15 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
     public function testCodexChildUsesPersistedUuidV7CacheKey(string $runId): void
     {
         $repository = static::getContainer()->get(DeferredSubagentChildRepository::class);
-        $repository->insertReservedChildren('cache-key-batch', [[
-            'batchIndex' => 1,
-            'childRunId' => $runId,
-            'artifactId' => 'agent_cache_key',
-            'agentName' => 'worker',
-            'task' => 'Check child cache identity',
-            'launchModel' => 'openai-codex/gpt-test',
-            'launchReasoning' => 'medium',
-        ]]);
+        $repository->insertReservedChild('cache-key-batch', new DeferredSubagentBatchChildIntentDTO(
+            batchIndex: 1,
+            childRunId: $runId,
+            artifactId: 'agent_cache_key',
+            agentName: 'worker',
+            task: 'Check child cache identity',
+            launchModel: 'openai-codex/gpt-test',
+            launchReasoning: 'medium',
+        ));
 
         $resolver = $this->createResolver($this->standardAiData());
         $first = $resolver->resolve('openai-codex/gpt-test', false, new ModelInvocationInput(runId: $runId), new ModelResolutionOptions());

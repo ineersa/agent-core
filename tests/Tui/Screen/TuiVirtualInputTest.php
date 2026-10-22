@@ -154,7 +154,7 @@ final class TuiVirtualInputTest extends TestCase
             );
         }
 
-        foreach (['Ctrl+B', 'Background Bash', 'Ctrl+C', 'Ctrl+D', 'Ctrl+O', 'Shift+Enter', 'Insert newline', 'Submit prompt', 'Enter', 'Tab'] as $entry) {
+        foreach (['Ctrl+B', 'Background tool', 'Ctrl+C', 'Ctrl+D', 'Ctrl+O', 'Shift+Enter', 'Insert newline', 'Submit prompt', 'Enter', 'Tab'] as $entry) {
             $this->assertStringContainsString(
                 $entry,
                 $screen,
