@@ -87,39 +87,6 @@ final class ObservationRepository
     }
 
     /**
-     * @return list<array{
-     *   observation_id: string,
-     *   content: string,
-     *   content_hash: string,
-     *   relevance: string,
-     *   timestamp: string,
-     *   token_count: int,
-     *   source_refs_json: string,
-     *   source_start_seq: int,
-     *   source_end_seq: int,
-     *   created_at: string
-     * }>
-     */
-    public function listObservationsForRun(string $runId): array
-    {
-        $rows = $this->connection->fetchAllAssociative(
-            'SELECT observation_id, content, content_hash, relevance, timestamp, token_count, source_refs_json,
-                    source_start_seq, source_end_seq, created_at
-             FROM om_observation
-             WHERE run_id = ?
-             ORDER BY timestamp ASC, observation_id ASC',
-            [$runId],
-        );
-
-        $out = [];
-        foreach ($rows as $row) {
-            $out[] = $this->mapObservationRow($row);
-        }
-
-        return $out;
-    }
-
-    /**
      * Active candidate observations for Observer/Reflector input and threshold tokens.
      *
      * @return list<array{

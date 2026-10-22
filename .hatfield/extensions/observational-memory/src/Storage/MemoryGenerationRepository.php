@@ -251,28 +251,6 @@ final class MemoryGenerationRepository
         return $out;
     }
 
-    /**
-     * @return list<string>
-     */
-    public function listRetainedObservationIds(string $generationId): array
-    {
-        $rows = $this->connection->fetchFirstColumn(
-            'SELECT observation_id FROM om_generation_retained_observation
-             WHERE generation_id = ?
-             ORDER BY position ASC',
-            [$generationId],
-        );
-
-        $out = [];
-        foreach ($rows as $id) {
-            if (\is_string($id) && '' !== $id) {
-                $out[] = $id;
-            }
-        }
-
-        return $out;
-    }
-
     public function hasRunningOrSucceededForSet(string $runId, string $observationSetHash): bool
     {
         $count = $this->connection->fetchOne(

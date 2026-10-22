@@ -721,7 +721,7 @@ final class OmQueryService
 
     /**
      * @param array<string, string> $supportReferences
-     * @param list<string> $supportIds
+     * @param list<string>          $supportIds
      *
      * @return list<string>
      */

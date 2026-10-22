@@ -100,6 +100,16 @@ final class MemoryStoreAdapter implements StoreInterface
         $this->truncated = $seen >= $fetch && $this->chunkCount > $seen;
     }
 
+    public function wasTruncated(): bool
+    {
+        return $this->truncated;
+    }
+
+    public function supports(string $queryClass): bool
+    {
+        return $this->store->supports($queryClass);
+    }
+
     /** @param list<VectorDocumentInterface> $page
      * @return iterable<VectorDocumentInterface>
      */
@@ -114,15 +124,5 @@ final class MemoryStoreAdapter implements StoreInterface
                 yield $position => $document;
             }
         }
-    }
-
-    public function wasTruncated(): bool
-    {
-        return $this->truncated;
-    }
-
-    public function supports(string $queryClass): bool
-    {
-        return $this->store->supports($queryClass);
     }
 }

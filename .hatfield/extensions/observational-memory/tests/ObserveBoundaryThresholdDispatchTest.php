@@ -26,6 +26,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
 use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
 
 /**
@@ -49,10 +50,11 @@ final class ObserveBoundaryThresholdDispatchTest extends IsolatedKernelTestCase
         parent::tearDown();
     }
 
-    public function testDispatchesThresholdWhenActiveTokensExceedLimit(): void
+    #[DataProvider('thresholdContentPrefixes')]
+    public function testDispatchesThresholdWhenActiveTokensExceedLimit(string $prefix): void
     {
         // Content large enough that estimator > 40000 tokens: ceil(chars/4) > 40000 => chars > 160000.
-        $content = str_repeat('a', 160_004);
+        $content = $prefix.str_repeat('a', 160_004);
         $this->assertGreaterThan(40_000, OmTokenEstimator::estimate($content));
 
         $events = [
@@ -115,6 +117,13 @@ final class ObserveBoundaryThresholdDispatchTest extends IsolatedKernelTestCase
         );
         $this->assertSame($expectedGeneration, $dispatched[0]->payload['generation_id']);
         $this->assertSame($expectedGeneration, $dispatched[0]->jobId);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function thresholdContentPrefixes(): iterable
+    {
+        yield 'ordinary text' => [''];
+        yield 'text after NUL must count toward reflection' => ["a\0"];
     }
 
     public function testSuppressesThresholdWhenUnderTokenLimit(): void
