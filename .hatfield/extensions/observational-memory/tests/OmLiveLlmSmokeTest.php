@@ -172,7 +172,10 @@ final class OmLiveLlmSmokeTest extends IsolatedKernelTestCase
             coveredAt: $now,
         );
         $this->assertSame(2, $repo->contiguousCoveredEndSeq('run-live-obs', '1', '1'));
-        $this->assertGreaterThanOrEqual(2, \count($repo->listObservationsForRun('run-live-obs')));
+        $this->assertGreaterThanOrEqual(2, (int) $connection->fetchOne(
+            'SELECT COUNT(*) FROM om_observation WHERE run_id = ?',
+            ['run-live-obs'],
+        ));
     }
 
     #[Test]

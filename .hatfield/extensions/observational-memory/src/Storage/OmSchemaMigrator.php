@@ -241,7 +241,7 @@ final class OmSchemaMigrator
         ] as $kind => [$id, $fields]) {
             $changed = implode(' OR ', array_map(static fn (string $field): string => 'OLD.'.$field.' IS NOT NEW.'.$field, $fields));
             foreach (['INSERT', 'UPDATE', 'DELETE'] as $event) {
-                $rows = 'UPDATE' === $event ? ['OLD', 'NEW'] : [('DELETE' === $event ? 'OLD' : 'NEW')];
+                $rows = 'UPDATE' === $event ? ['OLD', 'NEW'] : ['DELETE' === $event ? 'OLD' : 'NEW'];
                 $body = 'UPDATE om_source_revision SET revision = revision + 1 WHERE id = 1; ';
                 foreach ($rows as $row) {
                     $body .= "INSERT INTO om_source_change (kind, source_id, revision) SELECT '".$kind."', ".$row.'.'.$id.', revision FROM om_source_revision WHERE id = 1 ON CONFLICT(kind, source_id) DO UPDATE SET revision = excluded.revision; ';

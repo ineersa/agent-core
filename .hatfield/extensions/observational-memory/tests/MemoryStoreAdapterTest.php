@@ -23,7 +23,7 @@ final class MemoryStoreAdapterTest extends TestCase
                 yield new VectorDocument((string) $i, new Vector([1.0]));
             }
         });
-        $adapter = new MemoryStoreAdapter($store, false, 1_000_000, static fn (): bool => false);
+        $adapter = new MemoryStoreAdapter($store, false, 1_000_000, static fn (array $page): array => []);
         $this->assertSame([], iterator_to_array($adapter->query(new VectorQuery(new Vector([1.0])), ['maxItems' => 100])));
         $this->assertTrue($adapter->wasTruncated());
     }
@@ -35,7 +35,7 @@ final class MemoryStoreAdapterTest extends TestCase
         $store->expects($this->once())->method('query')->with($this->anything(), ['k' => 2])->willReturn([
             new VectorDocument('old', new Vector([1.0])), new VectorDocument('new', new Vector([1.0])),
         ]);
-        $adapter = new MemoryStoreAdapter($store, false, 2, static fn (VectorDocument $hit): bool => 'new' === $hit->getId());
+        $adapter = new MemoryStoreAdapter($store, false, 2, static fn (array $page): array => ['new' => true]);
         $hits = iterator_to_array($adapter->query(new VectorQuery(new Vector([1.0]))));
         $this->assertCount(1, $hits);
         $this->assertSame('new', $hits[0]->getId());
