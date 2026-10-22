@@ -65,6 +65,14 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return \Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory::finalize($this->prepare($message, $state));
     }
 
+    /** Shared owner-lock admission for producers using the same command mailbox. */
+    public function mailboxCapacityRejection(string $runId, string $kind): ?string
+    {
+        return CoreCommandKind::Cancel !== $kind && $this->commandStore->countPending($runId) >= $this->maxPendingCommands
+            ? \sprintf('Pending command mailbox cap (%d) exceeded for run.', $this->maxPendingCommands)
+            : null;
+    }
+
     private function prepare(object $message, RunState $state): HandlerResult
     {
         if (!$message instanceof ApplyCommand) {
@@ -85,11 +93,12 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             return $this->rejectCommand($state, $message, $reason);
         }
 
-        if (CoreCommandKind::Cancel !== $message->kind && $this->commandStore->countPending($runId) >= $this->maxPendingCommands) {
+        $capacityRejection = $this->mailboxCapacityRejection($runId, $message->kind);
+        if (null !== $capacityRejection) {
             return $this->rejectCommand(
                 $state,
                 $message,
-                \sprintf('Pending command mailbox cap (%d) exceeded for run.', $this->maxPendingCommands),
+                $capacityRejection,
             );
         }
 

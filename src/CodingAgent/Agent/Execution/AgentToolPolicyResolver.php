@@ -47,11 +47,11 @@ final readonly class AgentToolPolicyResolver
             }
         }
 
-        // Nested child launches are forbidden for every child run: always omit recursion tools
-        // after MCP merge so neither inherit-all nor explicit lists can reintroduce them.
+        // Children cannot launch descendants, so they also have no direct child
+        // to steer. Neither inherit-all nor explicit lists can reintroduce these tools.
         $tools = array_values(array_filter(
             $tools,
-            static fn (string $name): bool => 'subagent' !== $name && 'fork' !== $name && 'agent_resume' !== $name,
+            static fn (string $name): bool => !\in_array($name, ['subagent', 'fork', 'agent_resume', 'agent_steer'], true),
         ));
 
         // Parent-only tools (hatfield_docs, …) are stripped for every child,

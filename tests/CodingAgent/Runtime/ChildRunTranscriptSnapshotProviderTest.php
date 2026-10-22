@@ -152,7 +152,7 @@ final class ChildRunTranscriptSnapshotProviderTest extends TestCase
     private function createProviderWithStore(EventStoreInterface $store): ChildRunTranscriptSnapshotProvider
     {
         $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
-        $translator = new RuntimeEventTranslator($eventDispatcher, new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $translator = new RuntimeEventTranslator($eventDispatcher, new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
         $eventMapper = new RuntimeEventMapper($translator);
 
         $dispatcher = new EventDispatcher();

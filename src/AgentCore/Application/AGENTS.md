@@ -19,6 +19,10 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
 | `CommitSubagentProgress` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler` |
 | `RefreshRunContext` | Owner-local `RunMessageProcessor` call from attach, no bus route | `RefreshRunContextHandler` replaces generated messages and commits `context_refreshed` without advancing a turn |
+| `AcceptSubmissionDTO` | `agent.command.bus` (transport `run_control`) | App `SubmissionHandler` enters owner recovery; `SubmissionRunHandler` accepts a source receipt for a native deferred communication call |
+| `DeliverSubmissionDTO` | `agent.command.bus` (transport `run_control`) | App `SubmissionDeliveryHandler` enters recipient recovery; `SubmissionDeliveryRunHandler` admits a canonical source receipt to the existing mailbox |
+
+CodingAgent's `agent_steer` and `notify_parent` tools enter this communication path through normal native deferred registration. App `CompleteSubmissionDTO` gives the captured reply a run identity for effect dispatch, then App `SubmissionCompletionHandler` delegates to the native `CompleteDeferredToolCallHandler`. Source receipts live in canonical `tool_execution_update` events; recipient admission decisions live in canonical command events. The disposable history index provides identity lookups after mailbox consumption. CodingAgent revalidates the exact child activity at admission and application. Generic consumption decisions may defer a row without settling it or authorizing continuation. See `architecture/agent-communication.md`.
 
 ## Async workers (`agent.execution.bus`)
 

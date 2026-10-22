@@ -118,11 +118,13 @@ if (!\function_exists('tool')) {
             'subagent',
             'fork',
             'agent_resume',
+            'agent_steer',
+            'notify_parent',
             'ask_human',
         ];
         if (in_array($name, $unsupported, true)) {
             throw new RuntimeException(sprintf(
-                'Tool "%s" is not supported inside code_mode. Deferred child launches and interactive ask_human calls must run outside the script.',
+                'Tool "%s" is not supported inside code_mode. Child launches, agent communication, and interactive ask_human calls must run outside the script.',
                 $name,
             ));
         }

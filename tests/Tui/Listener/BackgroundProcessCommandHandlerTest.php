@@ -138,7 +138,9 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $deadline = hrtime(true) + 7_000_000_000;
         do {
             $this->manager->refreshEntities([$record]);
-            if (null !== $record->finishedAt) {
+            // Escalation records completion after sending KILL, before the OS
+            // necessarily schedules the wrapper's exit. Observe both facts.
+            if (null !== $record->finishedAt && !$lifecycle->isAlive($process->pid)) {
                 break;
             }
             usleep(10_000);
