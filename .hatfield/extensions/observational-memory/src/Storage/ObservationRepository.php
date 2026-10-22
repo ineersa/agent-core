@@ -67,7 +67,7 @@ final class ObservationRepository
                 AND MAX(CAST(part_index AS INTEGER)) = MIN(CAST(part_count AS INTEGER))
                 AND COUNT(DISTINCT CAST(part_index AS INTEGER)) = MIN(CAST(part_count AS INTEGER))
              ORDER BY source_start_seq ASC, source_end_seq DESC, chunk_key ASC',
-             [$runId, $rendererVersion, $observerSchemaVersion],
+            [$runId, $rendererVersion, $observerSchemaVersion],
         );
 
         $expected = 1;
@@ -143,16 +143,28 @@ final class ObservationRepository
     /** @return array{count: int, token_count: int} */
     public function activeCandidateStats(string $runId): array
     {
-        // Persisted token_count is not authoritative for the candidate estimator.
-        $estimate = OmTokenEstimator::sqliteEstimate('o.content');
-        [$predicate, $parameters] = $this->activeCandidatePredicate($runId);
-        $row = $this->connection->fetchAssociative(
-            'SELECT COUNT(*) AS count, COALESCE(SUM('.$estimate.'), 0) AS token_count
-             FROM om_observation o WHERE '.$predicate,
-            $parameters,
-        );
+        return $this->connection->transactional(function () use ($runId): array {
+            // Persisted token_count is not authoritative. Ordinary text stays in
+            // SQL; only NUL-containing bodies need the PHP Unicode estimator.
+            $estimate = OmTokenEstimator::sqliteEstimate('o.content');
+            [$predicate, $parameters] = $this->activeCandidatePredicate($runId);
+            $nul = 'instr(o.content, char(0)) > 0';
+            $row = $this->connection->fetchAssociative(
+                'SELECT COUNT(*) AS count,
+                    COALESCE(SUM(CASE WHEN '.$nul.' THEN 0 ELSE '.$estimate.' END), 0) AS token_count,
+                    COALESCE(SUM(CASE WHEN '.$nul.' THEN 1 ELSE 0 END), 0) AS nul_count
+                 FROM om_observation o WHERE '.$predicate,
+                $parameters,
+            );
+            $tokens = (int) $row['token_count'];
+            if (0 !== (int) $row['nul_count']) {
+                foreach ($this->connection->iterateColumn('SELECT o.content FROM om_observation o WHERE '.$predicate.' AND '.$nul, $parameters) as $content) {
+                    $tokens += OmTokenEstimator::estimate((string) $content);
+                }
+            }
 
-        return ['count' => (int) $row['count'], 'token_count' => (int) $row['token_count']];
+            return ['count' => (int) $row['count'], 'token_count' => $tokens];
+        });
     }
 
     public function countForRun(string $runId): int
@@ -162,7 +174,8 @@ final class ObservationRepository
 
     /** @param list<string> $ids
      * @param (\Closure(): void)|null $checkpoint
-     * @return array<string, string> Observation ID => source references JSON.
+     *
+     * @return array<string, string> observation ID => source references JSON
      */
     public function supportReferences(string $runId, array $ids, ?\Closure $checkpoint = null): array
     {
@@ -358,64 +371,6 @@ final class ObservationRepository
         return $this->buildCandidateSetPayload($runId, $this->activeCandidateRows($runId));
     }
 
-    /** @return list<array{
-     *   observation_id: string,
-     *   content: string,
-     *   content_hash: string,
-     *   relevance: string,
-     *   timestamp: string,
-     *   token_count: int,
-     *   source_refs_json: string,
-     *   source_start_seq: int,
-     *   source_end_seq: int,
-     *   created_at: string
-     * }> */
-    private function activeCandidateRows(string $runId): array
-    {
-        [$predicate, $parameters] = $this->activeCandidatePredicate($runId);
-        $rows = $this->connection->fetchAllAssociative(
-            'SELECT o.observation_id, o.content, o.content_hash, o.relevance, o.timestamp, o.token_count,
-                    o.source_refs_json, o.source_start_seq, o.source_end_seq, o.created_at
-             FROM om_observation o WHERE '.$predicate.' ORDER BY o.timestamp ASC, o.observation_id ASC',
-            $parameters,
-        );
-
-        return array_map($this->mapObservationRow(...), $rows);
-    }
-
-    /** @return array{string, list<string|int>} */
-    private function activeCandidatePredicate(string $runId): array
-    {
-        $activeGenerationId = $this->connection->fetchOne(
-            'SELECT generation_id FROM om_active_generation WHERE run_id = ?',
-            [$runId],
-        );
-
-        if (!\is_string($activeGenerationId) || '' === $activeGenerationId) {
-            return ['o.run_id = ?', [$runId]];
-        }
-
-        $watermark = $this->connection->fetchOne(
-            'SELECT required_end_seq FROM om_memory_generation
-             WHERE generation_id = ? AND status = ?',
-            [$activeGenerationId, 'succeeded'],
-        );
-        if (!\is_int($watermark) && !(\is_string($watermark) && is_numeric($watermark))) {
-            return ['o.run_id = ?', [$runId]];
-        }
-
-        return [
-            'o.run_id = ? AND (
-                    EXISTS (
-                        SELECT 1 FROM om_generation_retained_observation r
-                        WHERE r.generation_id = ? AND r.observation_id = o.observation_id
-                    )
-                    OR o.source_end_seq > ?
-               )',
-            [$runId, $activeGenerationId, (int) $watermark],
-        ];
-    }
-
     /**
      * @param list<array{
      *   observation_id: string,
@@ -540,6 +495,64 @@ final class ObservationRepository
         return [
             'status' => 'inserted',
             'observation_count' => \count($observations),
+        ];
+    }
+
+    /** @return list<array{
+     *   observation_id: string,
+     *   content: string,
+     *   content_hash: string,
+     *   relevance: string,
+     *   timestamp: string,
+     *   token_count: int,
+     *   source_refs_json: string,
+     *   source_start_seq: int,
+     *   source_end_seq: int,
+     *   created_at: string
+     * }> */
+    private function activeCandidateRows(string $runId): array
+    {
+        [$predicate, $parameters] = $this->activeCandidatePredicate($runId);
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT o.observation_id, o.content, o.content_hash, o.relevance, o.timestamp, o.token_count,
+                    o.source_refs_json, o.source_start_seq, o.source_end_seq, o.created_at
+             FROM om_observation o WHERE '.$predicate.' ORDER BY o.timestamp ASC, o.observation_id ASC',
+            $parameters,
+        );
+
+        return array_map($this->mapObservationRow(...), $rows);
+    }
+
+    /** @return array{string, list<string|int>} */
+    private function activeCandidatePredicate(string $runId): array
+    {
+        $activeGenerationId = $this->connection->fetchOne(
+            'SELECT generation_id FROM om_active_generation WHERE run_id = ?',
+            [$runId],
+        );
+
+        if (!\is_string($activeGenerationId) || '' === $activeGenerationId) {
+            return ['o.run_id = ?', [$runId]];
+        }
+
+        $watermark = $this->connection->fetchOne(
+            'SELECT required_end_seq FROM om_memory_generation
+             WHERE generation_id = ? AND status = ?',
+            [$activeGenerationId, 'succeeded'],
+        );
+        if (!\is_int($watermark) && !(\is_string($watermark) && is_numeric($watermark))) {
+            return ['o.run_id = ?', [$runId]];
+        }
+
+        return [
+            'o.run_id = ? AND (
+                    EXISTS (
+                        SELECT 1 FROM om_generation_retained_observation r
+                        WHERE r.generation_id = ? AND r.observation_id = o.observation_id
+                    )
+                    OR o.source_end_seq > ?
+               )',
+            [$runId, $activeGenerationId, (int) $watermark],
         ];
     }
 

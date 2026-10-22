@@ -65,6 +65,16 @@ final readonly class SemanticIndexService
             }
             $snapshot = $this->refreshSources();
             $sourceHash = $snapshot['hash'];
+            if ($snapshot['obsolete'] && null !== $state && 1 === (int) $state['complete']
+                && $state['source_hash'] === $sourceHash
+                && false === $this->connection->fetchOne($this->pendingSql().' LIMIT 1')
+                && false === $this->connection->fetchOne("WITH valid AS MATERIALIZED (SELECT c.value AS id FROM om_semantic_document s, json_each(s.metadata, '$.chunks') c WHERE s.id LIKE 'source:%') SELECT d.id FROM om_semantic_document d LEFT JOIN valid v ON v.id = d.id WHERE d.id NOT LIKE 'source:%' AND v.id IS NULL LIMIT 1")) {
+                // Only a healthy, clean, complete same-settings index reaches
+                // here. Restored source and exact chunk membership permit reuse;
+                // an earlier search may have marked the intermediate content obsolete.
+                $this->connection->update('om_semantic_progress', ['obsolete' => 0], ['id' => 1]);
+                $snapshot['obsolete'] = false;
+            }
             // Removed or changed chunk IDs require a physical rebuild. Vektor
             // tombstones can exhaust its fixed candidate buffer.
             if ($snapshot['obsolete']) {
@@ -355,17 +365,13 @@ final readonly class SemanticIndexService
                     if (!$full && $revision === (int) $progress['revision']) {
                         return ['hash' => bin2hex($hash), 'obsolete' => $obsolete];
                     }
-                    $source = $this->sourceSql();
-                    $identities = $full
-                        ? $this->connection->iterateAssociative('SELECT kind, id AS source_id FROM ('.$source.') ORDER BY kind, id')
-                        : $this->connection->iterateAssociative('SELECT kind, source_id FROM om_source_change WHERE revision > ? AND revision <= ? ORDER BY revision, kind, source_id', [(int) $progress['revision'], $revision]);
-                    foreach ($identities as $identity) {
-                        $parent = $identity['kind'].':'.$identity['source_id'];
-                        $oldJson = $this->connection->fetchOne('SELECT metadata FROM om_semantic_document WHERE id = ?', ['source:'.$parent]);
-                        $old = false === $oldJson ? null : json_decode((string) $oldJson, true, flags: \JSON_THROW_ON_ERROR);
-                        $memory = $this->connection->fetchAssociative('SELECT s.* FROM ('.$source.') s WHERE s.kind = ? AND s.id = ?', [$identity['kind'], $identity['source_id']]);
+                    $removed = [];
+                    foreach ($this->sourceChanges($full, (int) $progress['revision'], $revision) as $row) {
+                        $parent = $row['kind'].':'.$row['id'];
+                        $old = null === $row['old_metadata'] ? null : json_decode((string) $row['old_metadata'], true, flags: \JSON_THROW_ON_ERROR);
                         $metadata = null;
-                        if (false !== $memory) {
+                        if (null !== $row['canonical_id']) {
+                            $memory = array_intersect_key($row, array_flip(['kind', 'id', 'session_id', 'content', 'timestamp', 'importance']));
                             if (null === $memory['importance']) {
                                 unset($memory['importance']);
                             }
@@ -376,11 +382,16 @@ final readonly class SemanticIndexService
                         }
                         if (null !== $old) {
                             $hash ^= hex2bin($old['signature']);
-                            $removed = array_values(array_diff($old['chunks'], $metadata['chunks'] ?? []));
-                            foreach (array_chunk($removed, 400) as $page) {
-                                if (false !== $this->connection->fetchOne('SELECT id FROM om_semantic_document WHERE id IN (?) LIMIT 1', [$page], [ArrayParameterType::STRING])) {
-                                    $obsolete = true;
-                                    break;
+                            if (!$obsolete) {
+                                foreach (array_diff($old['chunks'], $metadata['chunks'] ?? []) as $id) {
+                                    $removed[] = $id;
+                                    if (400 === \count($removed)) {
+                                        $obsolete = $this->indexedChunkExists($removed);
+                                        $removed = [];
+                                        if ($obsolete) {
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -395,6 +406,7 @@ final readonly class SemanticIndexService
                             $this->connection->executeStatement('INSERT INTO om_semantic_document (id, vector, metadata) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET metadata = excluded.metadata', ['source:'.$parent, '[1.0]', json_encode($metadata, \JSON_THROW_ON_ERROR)]);
                         }
                     }
+                    $obsolete = $obsolete || ([] !== $removed && $this->indexedChunkExists($removed));
                     $hash = bin2hex($hash);
                     $this->connection->update('om_semantic_progress', ['revision' => $revision, 'source_hash' => $hash, 'initialized' => 1, 'obsolete' => (int) $obsolete], ['id' => 1]);
                     $this->connection->executeStatement('DELETE FROM om_source_change WHERE revision <= ?', [$revision]);
@@ -415,6 +427,52 @@ final readonly class SemanticIndexService
                 }
             }
         }
+    }
+
+    /**
+     * Full reconstruction follows rebuild(), which cleared all manifests.
+     * Incremental pages join old manifests and both canonical tables, retaining
+     * tombstones and old identities after primary-key changes through LEFT JOINs.
+     *
+     * @return iterable<array<string, mixed>>
+     */
+    private function sourceChanges(bool $full, int $fromRevision, int $revision): iterable
+    {
+        if ($full) {
+            yield from $this->connection->iterateAssociative('SELECT s.*, s.id AS canonical_id, NULL AS old_metadata FROM ('.$this->sourceSql().') s ORDER BY s.kind, s.id');
+
+            return;
+        }
+        $cursor = [$fromRevision, '', ''];
+        do {
+            $page = $this->connection->fetchAllAssociative(
+                "SELECT c.kind, c.source_id AS id,
+                    CASE c.kind WHEN 'observation' THEN o.run_id ELSE r.run_id END AS session_id,
+                    CASE c.kind WHEN 'observation' THEN o.content ELSE r.content END AS content,
+                    CASE c.kind WHEN 'observation' THEN o.timestamp ELSE r.created_at END AS timestamp,
+                    CASE c.kind WHEN 'observation' THEN o.relevance ELSE NULL END AS importance,
+                    COALESCE(o.observation_id, r.reflection_id) AS canonical_id,
+                    d.metadata AS old_metadata, c.revision AS change_revision
+                 FROM om_source_change c
+                 LEFT JOIN om_semantic_document d ON d.id = 'source:' || c.kind || ':' || c.source_id
+                 LEFT JOIN om_observation o ON c.kind = 'observation' AND o.observation_id = c.source_id
+                 LEFT JOIN om_reflection r ON c.kind = 'reflection' AND r.reflection_id = c.source_id
+                 WHERE c.revision > ? AND c.revision <= ?
+                    AND (c.revision, c.kind, c.source_id) > (?, ?, ?)
+                 ORDER BY c.revision, c.kind, c.source_id LIMIT 200",
+                [$fromRevision, $revision, ...$cursor],
+            );
+            foreach ($page as $row) {
+                $cursor = [(int) $row['change_revision'], $row['kind'], $row['id']];
+                yield $row;
+            }
+        } while (200 === \count($page));
+    }
+
+    /** @param list<string> $ids */
+    private function indexedChunkExists(array $ids): bool
+    {
+        return false !== $this->connection->fetchOne('SELECT id FROM om_semantic_document WHERE id IN (?) LIMIT 1', [$ids], [ArrayParameterType::STRING]);
     }
 
     /** @param array<string, Memory> $memories
