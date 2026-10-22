@@ -10,6 +10,9 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\DTO\PendingToolInvocationDTO;
+use Ineersa\CodingAgent\Session\History\RunPresentationDTO;
+use Ineersa\CodingAgent\Session\History\RunPresentationProjector;
+use Ineersa\CodingAgent\Session\History\RunPresentationProjectorFactory;
 use Symfony\Component\Lock\LockFactory;
 
 /**
@@ -39,6 +42,7 @@ final class JsonlRunEventLog
         private readonly RunSequenceAllocatorInterface $sequenceAllocator,
         private readonly EventLogMaxSeqBootstrapReader $bootstrapReader,
         private readonly \Psr\Log\LoggerInterface $logger,
+        private readonly RunPresentationProjectorFactory $presentations,
     ) {
         $this->historyIndex = new RunHistoryIndex($lockFactory, $logger);
     }
@@ -484,6 +488,16 @@ final class JsonlRunEventLog
     public function indexedLines(string $path, string $runId, int $startSeq, int $endSeq): iterable
     {
         return $this->historyIndex->records($this, $path, $runId, $startSeq, $endSeq);
+    }
+
+    public function presentationProjector(): RunPresentationProjector
+    {
+        return $this->presentations->create();
+    }
+
+    public function presentationSummary(string $path, string $runId, int $sequence): RunPresentationDTO
+    {
+        return $this->historyIndex->presentationSummary($this, $path, $runId, $sequence);
     }
 
     public function pendingToolInvocation(string $path, string $runId, string $toolCallId): ?PendingToolInvocationDTO

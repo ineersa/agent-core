@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ChatGPT\ChatGPTSymfonyAiProviderBuilder;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -227,7 +228,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
                     new \Symfony\Component\EventDispatcher\EventDispatcher(),
                 );
 
-                return new \Ineersa\CodingAgent\Session\SessionRunEventStore($sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator());
+                return new \Ineersa\CodingAgent\Session\SessionRunEventStore($sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
             };
             $payload = (new AgentMessageNormalizer())->assistantMessagePayload($result->assistantMessage);
             \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($createStore(), \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend(runId: 'fixture', turnNo: 1, type: 'llm_step_completed', payload: ['assistant_message' => $payload, 'model' => 'openai-codex/gpt-6.1-sol']));

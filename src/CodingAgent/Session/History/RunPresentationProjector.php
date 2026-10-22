@@ -28,15 +28,36 @@ final class RunPresentationProjector
     /** @var list<string> */
     private array $questions = [];
     private int $eventCount = 0;
+    private int $lastObservedSequence = 0;
 
     public function __construct(private readonly ReplayAssistantMessageFactory $assistantFactory, private readonly ToolExecutionEndPayloadCodec $toolCodec, private readonly int $limit, private readonly int $summaryChars)
     {
         $this->messages = new PresentationMessageAccumulator($this->limit, $this->summaryChars);
     }
 
+    /** @return array<string, mixed> */
+    public function snapshot(): array
+    {
+        return ['status' => $this->status->value, 'activeStep' => $this->activeStep, 'messages' => $this->messages->snapshot(), 'pending' => $this->pending, 'shells' => $this->shells, 'completed' => $this->completed, 'questions' => $this->questions, 'eventCount' => $this->eventCount, 'lastObservedSequence' => $this->lastObservedSequence];
+    }
+
+    /** @param array<string, mixed> $state */
+    public function restore(array $state): void
+    {
+        if (array_keys($state) !== array_keys($this->snapshot())) {
+            throw new \UnexpectedValueException('Invalid presentation snapshot.');
+        }
+        $this->status = RunStatus::from($state['status']);
+        $this->messages->restore($state['messages']);
+        foreach (['activeStep', 'pending', 'shells', 'completed', 'questions', 'eventCount', 'lastObservedSequence'] as $key) {
+            $this->{$key} = $state[$key];
+        }
+    }
+
     public function observe(RunEvent $event, bool $included = true): void
     {
         ++$this->eventCount;
+        $this->lastObservedSequence = $event->seq;
         if (!$included) {
             return;
         }

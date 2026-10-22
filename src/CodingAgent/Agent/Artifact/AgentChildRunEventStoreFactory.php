@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
+use Ineersa\CodingAgent\Session\History\RunPresentationProjectorFactory;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
@@ -29,6 +30,7 @@ final readonly class AgentChildRunEventStoreFactory
         private LockFactory $lockFactory,
         private LoggerInterface $logger,
         private RunSequenceAllocatorInterface $sequenceAllocator,
+        private RunPresentationProjectorFactory $presentations,
         private EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
     ) {
     }
@@ -45,6 +47,7 @@ final readonly class AgentChildRunEventStoreFactory
             agentRunId: $agentRunId,
             artifactId: $artifactId,
             bootstrapReader: $this->bootstrapReader,
+            presentations: $this->presentations,
         );
     }
 }

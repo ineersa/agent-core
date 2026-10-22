@@ -28,6 +28,33 @@ final class PresentationMessageAccumulator
     {
     }
 
+    /** @return array<string, mixed> */
+    public function snapshot(): array
+    {
+        $state = get_object_vars($this);
+        unset($state['limit'], $state['summaryChars']);
+
+        return $state;
+    }
+
+    /** @param array<string, mixed> $state */
+    public function restore(array $state): void
+    {
+        if (array_keys($state) !== array_keys($this->snapshot())) {
+            throw new \UnexpectedValueException('Invalid presentation message snapshot.');
+        }
+        $this->messageCount = $state['messageCount'];
+        $this->eligibleCount = $state['eligibleCount'];
+        $this->hasAssistant = $state['hasAssistant'];
+        $this->excerpt = $state['excerpt'];
+        $this->excerptRawPrefix = $state['excerptRawPrefix'];
+        $this->lines = $state['lines'];
+        $this->generatedCount = $state['generatedCount'];
+        $this->firstIsSystem = $state['firstIsSystem'];
+        $this->leadingSurvivingSystems = $state['leadingSurvivingSystems'];
+        $this->survivingPrefixEnded = $state['survivingPrefixEnded'];
+    }
+
     public function add(AgentMessage $message): void
     {
         $generated = GeneratedContext::isGeneratedUserContext($message);

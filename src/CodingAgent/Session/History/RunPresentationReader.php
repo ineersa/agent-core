@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 
 /** Explicit historical presentation read, not execution-state acquisition. */
 final readonly class RunPresentationReader
@@ -17,6 +18,7 @@ final readonly class RunPresentationReader
         private RunLockManager $locks,
         private ReplayAssistantMessageFactory $assistantFactory,
         private ToolExecutionEndPayloadCodec $toolCodec,
+        private RunHistorySourceProviderInterface $sources,
     ) {
     }
 
@@ -30,6 +32,11 @@ final readonly class RunPresentationReader
             $cut = $this->events->latestSequenceFor($runId);
             if (null === $cut) {
                 return null;
+            }
+            if (0 === $limit) {
+                $source = $this->sources->historySource($runId);
+
+                return $source->log->presentationSummary($source->path, $runId, $cut);
             }
             $plan = HistoryReplayPlan::build($this->events->rangeFor($runId, 1, $cut));
             $projector = new RunPresentationProjector($this->assistantFactory, $this->toolCodec, $limit, $summaryChars);
