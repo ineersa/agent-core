@@ -68,7 +68,7 @@ final class SubagentProgressEventAppenderTest extends TestCase
     private function appender(MessageBusInterface $bus, RuntimeEventSinkInterface $sink, bool $stream): SubagentProgressEventAppender
     {
         return new SubagentProgressEventAppender($bus, SubagentProgressSerializerTestSupport::normalizer(), SubagentProgressSerializerTestSupport::validator(), $sink,
-            new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()))), $stream);
+            new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer())), $stream);
     }
 
     private function progress(string $status): SubagentProgressSnapshotDTO

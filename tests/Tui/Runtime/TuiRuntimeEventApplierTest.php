@@ -41,6 +41,28 @@ final class TuiRuntimeEventApplierTest extends TestCase
         parent::tearDown();
     }
 
+    public function testAgentNotificationDoesNotSubmitHumanActivityOrAlterPendingHumanInput(): void
+    {
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer()));
+        $applier = $this->buildApplier();
+        foreach (['agent_steer', 'notify_parent'] as $tool) {
+            $event = $mapper->toRuntimeEvent(new RunEvent('run-agent', 12, 1, 'agent_command_applied', [
+                'kind' => 'append_message', 'idempotency_key' => 'submission',
+                'message' => ['role' => 'agent_communication', 'content' => [['type' => 'text', 'text' => 'Agent-authored guidance']],
+                    'metadata' => ['agent_communication' => ['identity' => 'submission', 'tool_name' => $tool, 'source_run_id' => 'source']]],
+            ]));
+            $this->assertNotNull($event);
+            foreach ([RunActivityStateEnum::Completed, RunActivityStateEnum::WaitingHuman, RunActivityStateEnum::Running] as $activity) {
+                $state = new TuiSessionState('run-agent', true);
+                $state->activity = $activity;
+                $state->queuedUserMessages = ['submission' => 'Real pending human text'];
+                $applier->apply($state, $event);
+                $this->assertSame($activity, $state->activity);
+                $this->assertSame(['submission' => 'Real pending human text'], $state->queuedUserMessages);
+            }
+        }
+    }
+
     public function testRunHistoryPositionChangedClearsStaleQueuedUserMessages(): void
     {
         // Thesis: without clearing queuedUserMessages on RunHistoryPositionChanged, history select/resume
@@ -166,7 +188,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
     public function testIdleFollowUpQueuedEventDoesNotPopulatePendingQueue(): void
     {
         // Thesis: idle follow_up should not emit user.message_queued (no ⏳ flicker).
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())));
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer()));
         $runEvent = new RunEvent(
             runId: 'run-fu',
             seq: 2,

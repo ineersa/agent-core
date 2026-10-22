@@ -8,7 +8,7 @@ description: Agent definitions, discovery, subagent execution, retrieval, and li
 Named child-agent roles live in Markdown files with YAML frontmatter. The
 model-visible `subagent` tool launches one foreground child per call. Submit independent
 calls together for concurrent execution through the normal tool scheduler.
-Background `subagent` launch is not implemented. The separate model-visible `fork` tool is shipped (see below).
+Launches start in the foreground. Use Ctrl+B to background a running child invocation; there is no model-selected background launch flag. The separate model-visible `fork` tool is shipped (see below).
 
 Settings keys: [settings-agents.md](settings-agents.md). Sessions/artifacts: [session-storage.md](session-storage.md).
 
@@ -79,7 +79,7 @@ hatfield agents:init
 - Concurrent writers must respect file and worktree ownership. Never assign concurrent writers to the same worktree.
 - Responses over 50,000 characters omit inline handoffs and return a notice with artifact references. The full handoffs remain available through `agent_retrieve`.
 - Default child denylist includes `hatfield_docs` (`agents.subagent_excluded_tools`). Empty list disables the denylist.
-- **Always stripped on every child:** `subagent`, `fork`, and `agent_resume` (no nested child launches/resumes).
+- **Always stripped on every child:** `subagent`, `fork`, and `agent_resume` (no nested child launches/resumes), plus parent-only `agent_steer`.
 - Durable timeout: `agents.subagent_tool_timeout_seconds` (default `86400`, min `60`) schedules deferred-batch interruption. This is not a generic ToolExecutor cap.
 - Child extensions: `agents.extensions.always_on` ∪ per-agent frontmatter `extensions` only (does **not** use `forks.extensions.*` or parent `extensions.enabled`).
 
@@ -92,6 +92,43 @@ Use `agent_resume` when an existing child run in the same parent session already
 Do not use `subagent` to continue an existing child, and do not use `agent_resume` as a fresh-task launcher. A resumed child keeps its existing identity and session history; provide a focused continuation instruction.
 
 Child runs cannot resume or launch other children. Resume is same-parent-session scoped. Eligible forks may be resumed with `agent_resume`.
+
+## Active-child communication
+
+| Tool | Arguments | Recipient |
+|---|---|---|
+| `agent_steer` | `text` and exactly one of `artifact_id` or `agent_run_id` | One active direct child in the current parent session |
+| `notify_parent` | `text` | The child's runtime-recorded parent; no destination argument |
+
+Both tools accept nonblank UTF-8 text up to 8,192 bytes. They return a persisted
+source-submission receipt, not confirmation that the recipient received, read, or
+followed the text. There are no subjects, attachments, urgency flags, inbox views,
+or tracked question/reply operations.
+
+Use `agent_steer` to amend a running subagent or fork's task or provide new facts.
+It also targets the current active `agent_resume` activity. It cannot resume a
+terminal child, and delayed guidance cannot become instructions for a later resume.
+Use `agent_resume` explicitly for terminal children instead.
+
+Children may use `notify_parent` for intermediate findings or a change that matters
+to the parent. This does not finish the child or release the parent's foreground
+tool wait. The child's final handoff still arrives through the existing completion
+path. A current running background child's notice may continue a normally completed
+main, but never a cancelled or failed main.
+
+Messages enter model context as attributed agent-authored text at a safe boundary.
+They do not interrupt provider requests, tools, human approvals, or compaction.
+They cannot approve a request, change permissions, cancel work, or act as human
+instructions. Human escalation still uses `ask_human`.
+
+`agent_steer` is parent-only. `notify_parent` is available to children only when
+their existing tool policy allows it. An explicit child `tools` list must include
+`notify_parent`; omitted tools inherit it when otherwise allowed. Exclusions and
+approval policy still apply. Neither tool works inside `code_mode`.
+
+Communication uses ordinary tool workers. If all eligible workers are occupied,
+submission waits; messaging has no reserved worker or preemption. Backgrounding a
+child wait does not create more execution capacity.
 
 ## `agent_resume`
 

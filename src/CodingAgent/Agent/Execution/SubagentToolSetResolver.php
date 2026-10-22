@@ -23,8 +23,8 @@ use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
  *  5. Filters executionModes to only include entries for tools that
  *     remain after intersection.
  *
- * For parent (non-child) runs or when child metadata is missing,
- * passes through to the inner resolver unchanged.
+ * Parent runs and runs without recorded child policy cannot expose the
+ * child-only notify_parent tool. Child policy cannot expose agent_steer.
  *
  * This approach avoids mutating the global ToolRegistry and naturally
  * supports concurrent runs with different policies.
@@ -48,10 +48,17 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
 
         $allowedTools = $this->metadataReader->readAllowedTools($runId);
         if (null === $allowedTools) {
-            // Not a child run or policy not available — pass through.
-
-            return $inner;
+            // Only a recorded child can address a runtime-derived parent.
+            return new ActiveToolSet(
+                toolNames: array_values(array_diff($inner->toolNames, ['notify_parent'])),
+                allowListNames: array_values(array_diff($inner->allowListNames, ['notify_parent'])),
+                executionModes: array_diff_key($inner->executionModes, ['notify_parent' => true]),
+                timeoutSeconds: array_diff_key($inner->timeoutSeconds, ['notify_parent' => true]),
+            );
         }
+
+        // Older child metadata cannot enable parent-only steering either.
+        $allowedTools = array_values(array_diff($allowedTools, ['agent_steer']));
 
         // Intersect the inner toolset with the child's allowed tools.
         $allowedLookup = array_flip($allowedTools);

@@ -83,7 +83,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $state = new TuiSessionState(self::SESSION_ID);
         $state->handle = new RunHandle(self::SESSION_ID);
         $applier = new TuiRuntimeEventApplier($projector, SubagentProgressSerializerTestSupport::denormalizer());
-        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        $translator = new RuntimeEventTranslator(new EventDispatcher(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()), AttributeSerializerValidatorTestFactory::serializer());
         $harness = new VirtualTuiHarness(columns: 120, rows: 30, sessionId: self::SESSION_ID);
         $harness->screen()->setWorkingVisible(false);
         $client = $this->createMock(AgentSessionClient::class);
@@ -566,7 +566,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $result = $executor->execute($call);
         $message = new ExecuteToolCall(self::SESSION_ID, 1, 'step-1', 1, 'execute-bash', $call->toolCallId, $call->toolName, $call->arguments, 0);
         $codec = new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer());
-        $translator = new RuntimeEventTranslator(new EventDispatcher(), $codec);
+        $translator = new RuntimeEventTranslator(new EventDispatcher(), $codec, AttributeSerializerValidatorTestFactory::serializer());
         $events = [
             new RunEvent(self::SESSION_ID, 1, 1, RunEventTypeEnum::ToolExecutionStart->value, [
                 'tool_call_id' => $call->toolCallId,

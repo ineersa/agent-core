@@ -24,6 +24,8 @@ servers. Tool availability does not bypass approval policy.
 | `hatfield_docs` | List and read packaged Hatfield documentation | Does not automatically discover extension-package READMEs. |
 | `subagent` | Launch one named child agent | Uses discovered agent definitions and child tool policy. |
 | `agent_resume` | Continue an existing child or fork with a follow-up task | Artifacts must belong to the current parent session. |
+| `agent_steer` | Send short guidance to one active direct child | Parent-only. Exactly one child handle. Does not resume terminal children. |
+| `notify_parent` | Send a short notice to the child's recorded parent | Child policy must allow it. Receipt confirms source persistence, not attention. |
 | `agent_retrieve` | Read child handoffs, metadata, or bounded history | Retrieves existing artifacts; does not launch work. |
 | `fork` | Launch a child with inherited conversation context | Blocks for a handoff. Not a Git worktree creation tool. |
 
@@ -83,8 +85,8 @@ calls bypass toolbox hooks and approvals. If you launch Hatfield under
 interpreter that launched Hatfield. Fused native/static binaries still need an
 installed PHP CLI available as `php` on `PATH`.
 
-`tool()` rejects `subagent`, `fork`, `agent_resume`, and `ask_human` before the
-handler runs. Those tools need deferred child ownership or interactive pause
+`tool()` rejects `subagent`, `fork`, `agent_resume`, `agent_steer`, `notify_parent`,
+and `ask_human` before the handler runs. Those tools need native deferred ownership or interactive pause
 flow that this bridge cannot complete. Script return values and nested tool results must be JSON-compatible scalars
 or arrays. Closures, resources, objects, non-finite floats, invalid UTF-8, and
 cyclic graphs fail instead of becoming empty or substituted data. Each script
@@ -107,6 +109,13 @@ work on an existing child or fork, and `agent_retrieve` to inspect their artifac
 fork inherits parent context rather than starting only with a named role prompt.
 Resume an eligible fork instead of launching a duplicate when its context still
 applies. Nested child launches are blocked.
+
+Use `agent_steer` for guidance to a current active child, and `notify_parent` for
+an intermediate notice from a child. Both accept nonblank UTF-8 `text` up to
+8,192 bytes and return a source-persistence receipt, not a delivery or attention
+guarantee. Text reaches a safe model boundary without interrupting human waits or
+in-flight work. Neither tool changes approval, cancellation, or permissions, and
+terminal handoffs are unchanged. See [active-child communication](agents.md#active-child-communication).
 
 Children do not automatically receive every parent tool or optional extension.
 MCP inheritance and explicit selectors are described in [MCP](mcp.md).
