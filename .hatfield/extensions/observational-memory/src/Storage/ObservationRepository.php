@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Storage;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\DBAL\ParameterType;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
 use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 
@@ -45,96 +47,33 @@ final class ObservationRepository
      */
     public function contiguousCoveredEndSeq(string $runId, string $rendererVersion, string $observerSchemaVersion): ?int
     {
-        $rows = $this->connection->fetchAllAssociative(
-            'SELECT coverage_key, chunk_key, part_index, part_count, source_start_seq, source_end_seq, source_digest
+        $intervals = $this->connection->iterateAssociative(
+            'SELECT chunk_key, MIN(CAST(source_start_seq AS INTEGER)) AS source_start_seq, MIN(CAST(source_end_seq AS INTEGER)) AS source_end_seq
              FROM om_coverage
-             WHERE run_id = ? AND renderer_version = ? AND observer_schema_version = ?',
+             WHERE run_id = ? AND renderer_version = ? AND observer_schema_version = ?
+               AND chunk_key IS NOT NULL AND chunk_key <> \'\'
+             GROUP BY chunk_key
+             HAVING MIN(CAST(part_count AS INTEGER)) >= 1
+                AND COUNT(part_count) = COUNT(*) AND COUNT(part_index) = COUNT(*)
+                AND COUNT(source_start_seq) = COUNT(*) AND COUNT(source_end_seq) = COUNT(*)
+                AND MIN(CAST(part_count AS INTEGER)) = MAX(CAST(part_count AS INTEGER))
+                AND MIN(CAST(source_start_seq AS INTEGER)) >= 1
+                AND MIN(CAST(source_start_seq AS INTEGER)) = MAX(CAST(source_start_seq AS INTEGER))
+                AND MIN(CAST(source_end_seq AS INTEGER)) >= MIN(CAST(source_start_seq AS INTEGER))
+                AND MIN(CAST(source_end_seq AS INTEGER)) = MAX(CAST(source_end_seq AS INTEGER))
+                AND MIN(source_digest) <> \'\' AND MIN(source_digest) = MAX(source_digest)
+                AND COUNT(source_digest) = COUNT(*)
+                AND MIN(CAST(part_index AS INTEGER)) = 1
+                AND MAX(CAST(part_index AS INTEGER)) = MIN(CAST(part_count AS INTEGER))
+                AND COUNT(DISTINCT CAST(part_index AS INTEGER)) = MIN(CAST(part_count AS INTEGER))
+             ORDER BY source_start_seq ASC, source_end_seq DESC, chunk_key ASC',
             [$runId, $rendererVersion, $observerSchemaVersion],
         );
 
-        if ([] === $rows) {
-            return null;
-        }
-
-        /** @var array<string, list<array<string, mixed>>> $byChunk */
-        $byChunk = [];
-        foreach ($rows as $row) {
-            $chunkKey = (string) ($row['chunk_key'] ?? '');
-            if ('' === $chunkKey) {
-                continue;
-            }
-            $byChunk[$chunkKey][] = $row;
-        }
-
-        $intervals = [];
-        foreach ($byChunk as $chunkKey => $parts) {
-            $partCount = null;
-            $start = null;
-            $end = null;
-            $digest = null;
-            $indexes = [];
-            foreach ($parts as $part) {
-                $pc = (int) ($part['part_count'] ?? 0);
-                $s = (int) ($part['source_start_seq'] ?? 0);
-                $e = (int) ($part['source_end_seq'] ?? 0);
-                $d = (string) ($part['source_digest'] ?? '');
-                $pi = (int) ($part['part_index'] ?? 0);
-                if ($pc < 1 || $s < 1 || $e < $s || '' === $d || $pi < 1) {
-                    continue 2;
-                }
-                if (null === $partCount) {
-                    $partCount = $pc;
-                    $start = $s;
-                    $end = $e;
-                    $digest = $d;
-                } elseif ($partCount !== $pc || $start !== $s || $end !== $e || $digest !== $d) {
-                    continue 2;
-                }
-                $indexes[$pi] = true;
-            }
-
-            if (null === $partCount || null === $start || null === $end) {
-                continue;
-            }
-
-            $distinct = \count($indexes);
-            if ($distinct !== $partCount) {
-                continue;
-            }
-            $min = min(array_keys($indexes));
-            $max = max(array_keys($indexes));
-            if (1 !== $min || $max !== $partCount) {
-                continue;
-            }
-
-            $intervals[] = [
-                'chunk_key' => $chunkKey,
-                'source_start_seq' => $start,
-                'source_end_seq' => $end,
-            ];
-        }
-
-        if ([] === $intervals) {
-            return null;
-        }
-
-        usort($intervals, static function (array $a, array $b): int {
-            $byStart = $a['source_start_seq'] <=> $b['source_start_seq'];
-            if (0 !== $byStart) {
-                return $byStart;
-            }
-            $byEnd = $b['source_end_seq'] <=> $a['source_end_seq'];
-            if (0 !== $byEnd) {
-                return $byEnd;
-            }
-
-            return strcmp($a['chunk_key'], $b['chunk_key']);
-        });
-
         $expected = 1;
         foreach ($intervals as $interval) {
-            $start = $interval['source_start_seq'];
-            $end = $interval['source_end_seq'];
+            $start = (int) $interval['source_start_seq'];
+            $end = (int) $interval['source_end_seq'];
             if ($end < $expected) {
                 continue;
             }
@@ -198,7 +137,62 @@ final class ObservationRepository
      */
     public function listActiveCandidateObservations(string $runId): array
     {
-        return $this->activeCandidateSet($runId)['observations'];
+        return $this->activeCandidateRows($runId);
+    }
+
+    /** @return array{count: int, token_count: int} */
+    public function activeCandidateStats(string $runId): array
+    {
+        return $this->connection->transactional(function () use ($runId): array {
+            // Persisted token_count is not authoritative. Ordinary text stays in
+            // SQL; only NUL-containing bodies need the PHP Unicode estimator.
+            $estimate = OmTokenEstimator::sqliteEstimate('o.content');
+            [$predicate, $parameters] = $this->activeCandidatePredicate($runId);
+            $nul = 'instr(o.content, char(0)) > 0';
+            $row = $this->connection->fetchAssociative(
+                'SELECT COUNT(*) AS count,
+                    COALESCE(SUM(CASE WHEN '.$nul.' THEN 0 ELSE '.$estimate.' END), 0) AS token_count,
+                    COALESCE(SUM(CASE WHEN '.$nul.' THEN 1 ELSE 0 END), 0) AS nul_count
+                 FROM om_observation o WHERE '.$predicate,
+                $parameters,
+            );
+            $tokens = (int) $row['token_count'];
+            if (0 !== (int) $row['nul_count']) {
+                foreach ($this->connection->iterateColumn('SELECT o.content FROM om_observation o WHERE '.$predicate.' AND '.$nul, $parameters) as $content) {
+                    $tokens += OmTokenEstimator::estimate((string) $content);
+                }
+            }
+
+            return ['count' => (int) $row['count'], 'token_count' => $tokens];
+        });
+    }
+
+    public function countForRun(string $runId): int
+    {
+        return (int) $this->connection->fetchOne('SELECT COUNT(*) FROM om_observation WHERE run_id = ?', [$runId]);
+    }
+
+    /** @param list<string> $ids
+     * @param (\Closure(): void)|null $checkpoint
+     *
+     * @return array<string, string> observation ID => source references JSON
+     */
+    public function supportReferences(string $runId, array $ids, ?\Closure $checkpoint = null): array
+    {
+        $references = [];
+        foreach (array_chunk(array_values(array_unique($ids)), 400) as $page) {
+            $checkpoint?->__invoke();
+            foreach ($this->connection->fetchAllAssociative(
+                'SELECT observation_id, source_refs_json FROM om_observation WHERE run_id = ? AND observation_id IN (?)',
+                [$runId, $page],
+                [ParameterType::STRING, ArrayParameterType::STRING],
+            ) as $row) {
+                $references[(string) $row['observation_id']] = (string) $row['source_refs_json'];
+            }
+            $checkpoint?->__invoke();
+        }
+
+        return $references;
     }
 
     /**
@@ -374,53 +368,7 @@ final class ObservationRepository
      */
     public function activeCandidateSet(string $runId): array
     {
-        $activeGenerationId = $this->connection->fetchOne(
-            'SELECT generation_id FROM om_active_generation WHERE run_id = ?',
-            [$runId],
-        );
-
-        if (!\is_string($activeGenerationId) || '' === $activeGenerationId) {
-            $observations = $this->listObservationsForRun($runId);
-
-            return $this->buildCandidateSetPayload($runId, $observations);
-        }
-
-        $watermark = $this->connection->fetchOne(
-            'SELECT required_end_seq FROM om_memory_generation
-             WHERE generation_id = ? AND status = ?',
-            [$activeGenerationId, 'succeeded'],
-        );
-        if (!\is_int($watermark) && !(\is_string($watermark) && is_numeric($watermark))) {
-            $observations = $this->listObservationsForRun($runId);
-
-            return $this->buildCandidateSetPayload($runId, $observations);
-        }
-        $requiredEndSeq = (int) $watermark;
-
-        // One query: retained rows for the active generation + observations committed after
-        // that generation's source watermark. No per-id fetch loop.
-        $rows = $this->connection->fetchAllAssociative(
-            'SELECT o.observation_id, o.content, o.content_hash, o.relevance, o.timestamp, o.token_count,
-                    o.source_refs_json, o.source_start_seq, o.source_end_seq, o.created_at
-             FROM om_observation o
-             WHERE o.run_id = ?
-               AND (
-                    EXISTS (
-                        SELECT 1 FROM om_generation_retained_observation r
-                        WHERE r.generation_id = ? AND r.observation_id = o.observation_id
-                    )
-                    OR o.source_end_seq > ?
-               )
-             ORDER BY o.timestamp ASC, o.observation_id ASC',
-            [$runId, $activeGenerationId, $requiredEndSeq],
-        );
-
-        $observations = [];
-        foreach ($rows as $row) {
-            $observations[] = $this->mapObservationRow($row);
-        }
-
-        return $this->buildCandidateSetPayload($runId, $observations);
+        return $this->buildCandidateSetPayload($runId, $this->activeCandidateRows($runId));
     }
 
     /**
@@ -547,6 +495,64 @@ final class ObservationRepository
         return [
             'status' => 'inserted',
             'observation_count' => \count($observations),
+        ];
+    }
+
+    /** @return list<array{
+     *   observation_id: string,
+     *   content: string,
+     *   content_hash: string,
+     *   relevance: string,
+     *   timestamp: string,
+     *   token_count: int,
+     *   source_refs_json: string,
+     *   source_start_seq: int,
+     *   source_end_seq: int,
+     *   created_at: string
+     * }> */
+    private function activeCandidateRows(string $runId): array
+    {
+        [$predicate, $parameters] = $this->activeCandidatePredicate($runId);
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT o.observation_id, o.content, o.content_hash, o.relevance, o.timestamp, o.token_count,
+                    o.source_refs_json, o.source_start_seq, o.source_end_seq, o.created_at
+             FROM om_observation o WHERE '.$predicate.' ORDER BY o.timestamp ASC, o.observation_id ASC',
+            $parameters,
+        );
+
+        return array_map($this->mapObservationRow(...), $rows);
+    }
+
+    /** @return array{string, list<string|int>} */
+    private function activeCandidatePredicate(string $runId): array
+    {
+        $activeGenerationId = $this->connection->fetchOne(
+            'SELECT generation_id FROM om_active_generation WHERE run_id = ?',
+            [$runId],
+        );
+
+        if (!\is_string($activeGenerationId) || '' === $activeGenerationId) {
+            return ['o.run_id = ?', [$runId]];
+        }
+
+        $watermark = $this->connection->fetchOne(
+            'SELECT required_end_seq FROM om_memory_generation
+             WHERE generation_id = ? AND status = ?',
+            [$activeGenerationId, 'succeeded'],
+        );
+        if (!\is_int($watermark) && !(\is_string($watermark) && is_numeric($watermark))) {
+            return ['o.run_id = ?', [$runId]];
+        }
+
+        return [
+            'o.run_id = ? AND (
+                    EXISTS (
+                        SELECT 1 FROM om_generation_retained_observation r
+                        WHERE r.generation_id = ? AND r.observation_id = o.observation_id
+                    )
+                    OR o.source_end_seq > ?
+               )',
+            [$runId, $activeGenerationId, (int) $watermark],
         ];
     }
 

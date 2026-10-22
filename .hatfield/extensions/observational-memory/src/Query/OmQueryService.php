@@ -51,27 +51,17 @@ final class OmQueryService
         $observations = new ObservationRepository($connection);
         $generations = new MemoryGenerationRepository($connection);
 
-        $recordedObs = $observations->listObservationsForRun($runId);
-        $recordedCount = \count($recordedObs);
-        $candidate = $observations->activeCandidateSet($runId);
-        $activeObs = $candidate['observations'] ?? [];
-        $activeCount = \count($activeObs);
+        $recordedCount = $observations->countForRun($runId);
+        $candidate = $observations->activeCandidateStats($runId);
+        $activeCount = $candidate['count'];
         $droppedCount = max(0, $recordedCount - $activeCount);
-        $activeTokens = (int) ($candidate['token_count'] ?? 0);
-
-        $activeGenerationId = $generations->activeGenerationId($runId);
-        $visibleObsCount = 0;
-        if (null !== $activeGenerationId) {
-            $visibleObsCount = \count($generations->listRetainedObservationIds($activeGenerationId));
-        }
+        $activeTokens = $candidate['token_count'];
+        $activeStats = $generations->activeStats($runId);
+        $visibleObsCount = $activeStats['retained_count'];
 
         $recordedRefCount = $generations->countReflectionsForRun($runId);
-        $activeReflections = $generations->listActiveReflections($runId);
-        $visibleRefCount = \count($activeReflections);
-        $reflectionTokens = 0;
-        foreach ($activeReflections as $reflection) {
-            $reflectionTokens += (int) ($reflection['token_count'] ?? 0);
-        }
+        $visibleRefCount = $activeStats['reflection_count'];
+        $reflectionTokens = $activeStats['reflection_tokens'];
 
         $covered = $observations->contiguousCoveredEndSeq(
             $runId,
@@ -134,6 +124,13 @@ final class OmQueryService
 
         $reflections = $generations->listActiveReflections($runId);
         $candidates = $observations->listActiveCandidateObservations($runId);
+        $supportIds = [];
+        foreach ($reflections as $reflection) {
+            foreach ($this->decodeStringList((string) ($reflection['supporting_observation_ids_json'] ?? '[]')) as $id) {
+                $supportIds[$id] = true;
+            }
+        }
+        $supportReferences = $observations->supportReferences($runId, array_keys($supportIds));
 
         $lines = [
             '## Reflections',
@@ -145,8 +142,7 @@ final class OmQueryService
         } else {
             foreach ($reflections as $reflection) {
                 $support = $this->supportIdsForRun(
-                    $observations,
-                    $runId,
+                    $supportReferences,
                     $this->decodeStringList((string) ($reflection['supporting_observation_ids_json'] ?? '[]')),
                 );
                 $lines[] = \sprintf(
@@ -481,23 +477,28 @@ final class OmQueryService
 
         $reflection = $refMatches[0];
         $fullId = (string) $reflection['reflection_id'];
+        $requestedSupportIds = $this->decodeStringList((string) $reflection['supporting_observation_ids_json']);
+        try {
+            $supportReferences = $observations->supportReferences($targetRunId, $requestedSupportIds, function () use ($cancellationToken, $timeoutSeconds, $deadlineNs): void {
+                if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled while hydrating supporting observations.'))) {
+                    throw new SearchInterruptedException($interrupt);
+                }
+            });
+        } catch (SearchInterruptedException $error) {
+            return $error->result;
+        }
         $supportIds = $this->supportIdsForRun(
-            $observations,
-            $targetRunId,
-            $this->decodeStringList((string) $reflection['supporting_observation_ids_json']),
+            $supportReferences,
+            $requestedSupportIds,
         );
         $refs = [];
         foreach ($supportIds as $supportId) {
             if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled while hydrating supporting observations.'))) {
                 return $interrupt;
             }
-            $support = $observations->findObservation($targetRunId, $supportId);
-            if (null === $support) {
-                continue;
-            }
             foreach ($this->sourceRefsForRun(
                 $targetRunId,
-                $this->decodeSourceRefs((string) $support['source_refs_json']),
+                $this->decodeSourceRefs($supportReferences[$supportId]),
             ) as $ref) {
                 $key = $ref['run_id'].':'.$ref['seq'];
                 $refs[$key] = $ref;
@@ -719,13 +720,13 @@ final class OmQueryService
     }
 
     /**
+     * @param array<string, string> $supportReferences
      * @param list<string> $supportIds
      *
      * @return list<string>
      */
     private function supportIdsForRun(
-        ObservationRepository $observations,
-        string $runId,
+        array $supportReferences,
         array $supportIds,
     ): array {
         $out = [];
@@ -735,7 +736,7 @@ final class OmQueryService
                 continue;
             }
             $seen[$supportId] = true;
-            if (null === $observations->findObservation($runId, $supportId)) {
+            if (!isset($supportReferences[$supportId])) {
                 continue;
             }
             $out[] = $supportId;
