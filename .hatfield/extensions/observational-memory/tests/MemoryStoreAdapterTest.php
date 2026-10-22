@@ -23,8 +23,14 @@ final class MemoryStoreAdapterTest extends TestCase
                 yield new VectorDocument((string) $i, new Vector([1.0]));
             }
         });
-        $adapter = new MemoryStoreAdapter($store, false, 1_000_000, static fn (array $page): array => []);
+        $pages = [];
+        $adapter = new MemoryStoreAdapter($store, false, 1_000_000, static function (array $hits) use (&$pages): array {
+            $pages[] = array_map(static fn (VectorDocument $hit): string => $hit->getId(), $hits);
+
+            return [];
+        });
         $this->assertSame([], iterator_to_array($adapter->query(new VectorQuery(new Vector([1.0])), ['maxItems' => 100])));
+        $this->assertSame(array_chunk(array_map(strval(...), range(0, 499)), 100), $pages);
         $this->assertTrue($adapter->wasTruncated());
     }
 
@@ -35,10 +41,38 @@ final class MemoryStoreAdapterTest extends TestCase
         $store->expects($this->once())->method('query')->with($this->anything(), ['k' => 2])->willReturn([
             new VectorDocument('old', new Vector([1.0])), new VectorDocument('new', new Vector([1.0])),
         ]);
-        $adapter = new MemoryStoreAdapter($store, false, 2, static fn (array $page): array => ['new' => true]);
+        $pages = [];
+        $adapter = new MemoryStoreAdapter($store, false, 2, static function (array $hits) use (&$pages): array {
+            $pages[] = array_map(static fn (VectorDocument $hit): string => $hit->getId(), $hits);
+
+            return ['new' => true];
+        });
         $hits = iterator_to_array($adapter->query(new VectorQuery(new Vector([1.0]))));
+        $this->assertSame([['old', 'new']], $pages);
         $this->assertCount(1, $hits);
         $this->assertSame('new', $hits[0]->getId());
+        $this->assertFalse($adapter->wasTruncated());
+    }
+
+    #[Test]
+    public function filtersFullAndPartialPagesWithoutReorderingAcceptedHits(): void
+    {
+        $store = $this->createMock(StoreInterface::class);
+        $store->expects($this->once())->method('query')->with($this->anything(), ['k' => 205])->willReturnCallback(static function (): iterable {
+            for ($i = 0; $i < 205; ++$i) {
+                yield new VectorDocument((string) $i, new Vector([1.0]));
+            }
+        });
+        $pages = [];
+        $adapter = new MemoryStoreAdapter($store, false, 205, static function (array $hits) use (&$pages): array {
+            $pages[] = array_map(static fn (VectorDocument $hit): string => $hit->getId(), $hits);
+
+            return ['99' => true, '100' => true, '204' => true];
+        });
+        $hits = iterator_to_array($adapter->query(new VectorQuery(new Vector([1.0])), ['maxItems' => 3]));
+
+        $this->assertSame(array_chunk(array_map(strval(...), range(0, 204)), 100), $pages);
+        $this->assertSame(['99', '100', '204'], array_map(static fn (VectorDocument $hit): string => $hit->getId(), $hits));
         $this->assertFalse($adapter->wasTruncated());
     }
 }

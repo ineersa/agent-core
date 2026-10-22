@@ -18,8 +18,8 @@ final class SourceRefreshStatement extends \PDOStatement
     public function fetch(int $mode = \PDO::FETCH_DEFAULT, int $cursorOrientation = \PDO::FETCH_ORI_NEXT, int $cursorOffset = 0): mixed
     {
         $row = parent::fetch($mode, $cursorOrientation, $cursorOffset);
-        if (\is_array($row) && str_starts_with($this->queryString, 'SELECT s.* FROM (')) {
-            $this->sourceRead();
+        if (\is_array($row)) {
+            $this->afterSourceRead();
         }
 
         return $row;
@@ -28,11 +28,8 @@ final class SourceRefreshStatement extends \PDOStatement
     public function fetchAll(int $mode = \PDO::FETCH_DEFAULT, mixed ...$args): array
     {
         $rows = parent::fetchAll($mode, ...$args);
-        // Incremental refresh materializes a change page through fetchAll(),
-        // which does not call this statement's fetch() override. Fence both
-        // paths after reading their snapshot and before any manifest write.
-        if ([] !== $rows && str_starts_with($this->queryString, 'SELECT c.kind, c.source_id AS id,')) {
-            $this->sourceRead();
+        if ([] !== $rows) {
+            $this->afterSourceRead();
         }
 
         return $rows;
@@ -48,9 +45,16 @@ final class SourceRefreshStatement extends \PDOStatement
         }
     }
 
-    private function sourceRead(): void
+    private function afterSourceRead(): void
     {
+        if (!str_starts_with($this->queryString, 'SELECT s.*, s.id AS canonical_id, NULL AS old_metadata FROM (')
+            && !str_starts_with($this->queryString, 'SELECT c.kind, c.source_id AS id,')) {
+            return;
+        }
+
         ++self::$sourceReads;
+        // Both the canonical stream and joined change page have acquired their
+        // WAL read snapshot. Commit independently before the manifest write.
         self::$afterSourceRead?->__invoke();
     }
 }

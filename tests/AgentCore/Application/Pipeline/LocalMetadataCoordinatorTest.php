@@ -12,10 +12,10 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\MarkCommandAppliedDTO;
 use Ineersa\AgentCore\Domain\Coordination\TransitionPlan;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
-use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 final class LocalMetadataCoordinatorTest extends TestCase
 {
@@ -77,6 +77,9 @@ final class LocalMetadataCoordinatorTest extends TestCase
 
     private function dispatcher(): StepDispatcher
     {
-        return new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), new EventDispatcher());
+        $bus = $this->createMock(MessageBusInterface::class);
+        $bus->expects($this->never())->method('dispatch');
+
+        return new StepDispatcher($bus, $bus, new NullLogger(), new EventDispatcher());
     }
 }

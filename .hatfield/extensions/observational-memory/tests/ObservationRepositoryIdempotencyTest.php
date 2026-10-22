@@ -6,6 +6,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 
@@ -152,11 +153,13 @@ final class ObservationRepositoryIdempotencyTest extends IsolatedKernelTestCase
         $retainedId = hash('sha256', 'retained');
         $droppedId = hash('sha256', 'dropped');
         $laterId = hash('sha256', 'later');
+        $retainedContent = "kept\0 observation";
+        $laterContent = 'later source observation 😀';
 
         foreach ([
-            [$retainedId, 1, 2, 'kept observation'],
-            [$droppedId, 3, 4, 'dropped same-second observation'],
-            [$laterId, 5, 6, 'later source observation'],
+            [$retainedId, 1, 2, $retainedContent],
+            [$droppedId, 3, 4, "dropped\0 same-second observation"],
+            [$laterId, 5, 6, $laterContent],
         ] as [$id, $start, $end, $content]) {
             $connection->insert('om_observation', [
                 'observation_id' => $id,
@@ -209,6 +212,10 @@ final class ObservationRepositoryIdempotencyTest extends IsolatedKernelTestCase
         $this->assertContains($laterId, $candidate['observation_ids'], 'later source_end_seq must be included even with same created_at');
         $this->assertNotContains($droppedId, $candidate['observation_ids'], 'dropped same-second observation must stay excluded');
         $this->assertSame(6, $candidate['max_source_end_seq']);
+        $this->assertSame([
+            'count' => 2,
+            'token_count' => OmTokenEstimator::estimate($retainedContent) + OmTokenEstimator::estimate($laterContent),
+        ], $repo->activeCandidateStats('run-a'));
         $this->assertSame(
             \Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity::observationSetHash('run-a', [$laterId, $retainedId]),
             $candidate['observation_set_hash'],
