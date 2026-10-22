@@ -19,13 +19,23 @@ final class SourceRefreshStatement extends \PDOStatement
     {
         $row = parent::fetch($mode, $cursorOrientation, $cursorOffset);
         if (\is_array($row) && str_starts_with($this->queryString, 'SELECT s.* FROM (')) {
-            ++self::$sourceReads;
-            // The first connection has acquired its WAL read snapshot. Commit
-            // on the second connection before the manifest upsert upgrades it.
-            self::$afterSourceRead?->__invoke();
+            $this->sourceRead();
         }
 
         return $row;
+    }
+
+    public function fetchAll(int $mode = \PDO::FETCH_DEFAULT, mixed ...$args): array
+    {
+        $rows = parent::fetchAll($mode, ...$args);
+        // Incremental refresh materializes a change page through fetchAll(),
+        // which does not call this statement's fetch() override. Fence both
+        // paths after reading their snapshot and before any manifest write.
+        if ([] !== $rows && str_starts_with($this->queryString, 'SELECT c.kind, c.source_id AS id,')) {
+            $this->sourceRead();
+        }
+
+        return $rows;
     }
 
     public function execute(?array $params = null): bool
@@ -36,5 +46,11 @@ final class SourceRefreshStatement extends \PDOStatement
             self::$conflictCodes[] = (int) ($error->errorInfo[1] ?? 0);
             throw $error;
         }
+    }
+
+    private function sourceRead(): void
+    {
+        ++self::$sourceReads;
+        self::$afterSourceRead?->__invoke();
     }
 }

@@ -665,9 +665,11 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
         $pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, [Support\SourceRefreshStatement::class]);
         Support\SourceRefreshStatement::$sourceReads = 0;
         Support\SourceRefreshStatement::$conflictCodes = [];
-        Support\SourceRefreshStatement::$afterSourceRead = static function () use ($other, $id): void {
+        Support\SourceRefreshStatement::$afterSourceRead = static function () use ($other, $id, $pdo): void {
+            self::assertTrue($pdo->inTransaction(), 'The concurrent commit must invalidate an active read snapshot.');
             Support\SourceRefreshStatement::$afterSourceRead = null;
             $other->update('om_observation', ['content' => 'omega committed'], ['observation_id' => $id]);
+            self::assertFalse($other->isTransactionActive(), 'The writer must commit before the reader upgrades its snapshot.');
         };
         $logger = new TestLogger();
         $semantic = $this->settings->semantic;
@@ -706,8 +708,10 @@ final class SemanticIndexServiceTest extends IsolatedKernelTestCase
         $pdo->setAttribute(\PDO::ATTR_STATEMENT_CLASS, [Support\SourceRefreshStatement::class]);
         Support\SourceRefreshStatement::$sourceReads = 0;
         Support\SourceRefreshStatement::$conflictCodes = [];
-        Support\SourceRefreshStatement::$afterSourceRead = static function () use ($other, $id): void {
+        Support\SourceRefreshStatement::$afterSourceRead = static function () use ($other, $id, $pdo): void {
+            self::assertTrue($pdo->inTransaction(), 'Each competing commit must invalidate an active read snapshot.');
             $other->update('om_observation', ['content' => 'alpha commit '.Support\SourceRefreshStatement::$sourceReads], ['observation_id' => $id]);
+            self::assertFalse($other->isTransactionActive());
         };
         $logger = new TestLogger();
         $semantic = $this->settings->semantic;
