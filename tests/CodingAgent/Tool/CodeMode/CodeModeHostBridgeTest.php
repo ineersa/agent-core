@@ -125,7 +125,7 @@ PHP);
             throw new \RuntimeException('toolbox should not execute '.$name);
         });
 
-        foreach (['subagent', 'fork', 'agent_resume', 'ask_human'] as $toolName) {
+        foreach (['subagent', 'fork', 'agent_resume', 'agent_steer', 'notify_parent', 'ask_human'] as $toolName) {
             try {
                 $this->runScript($bridge, "return tool('".$toolName."', ['x' => 1]);");
                 $this->fail('Expected rejection for '.$toolName);

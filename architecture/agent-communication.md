@@ -1,6 +1,14 @@
 # Agent communication delivery
 
-The internal communication path accepts short authored text for a current direct parent-child edge and delivers it through the recipient's existing command mailbox. Model-facing tools remain unregistered.
+The `agent_steer` and `notify_parent` built-ins accept short authored text for a current direct parent-child edge and deliver it through the recipient's existing command mailbox. They use normal tool registration, argument mapping, validation, execution policy, and native deferred completion. There is no inbox API.
+
+## Tool exposure
+
+Each invokable tool implements `HatfieldToolProviderInterface` and maps a data-only argument DTO with Symfony AI. Steering requires exactly one existing child handle; notices expose only text and derive their destination. Both reject nested tool contexts before resolving a source submission. The code-mode bootstrap also rejects their names before host invocation.
+
+The existing toolset resolver exposes steering to parents and notices to children whose canonical launch policy allows them. Explicit child allowlists and global exclusions still win. Child policy strips steering together with nested launch/resume tools; communication does not enable descendants. Inherit-all policies may inherit notices without modifying user-authored allowlists.
+
+Communication runs on ordinary tool worker capacity. Registration releases the execution worker through the existing native deferred outcome, while owner acceptance produces the source-persistence receipt. No reserved messaging worker or preemption path exists.
 
 ## Identity and authorization
 

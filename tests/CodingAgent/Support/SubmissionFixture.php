@@ -35,7 +35,8 @@ final class SubmissionFixture
     public RunState $parentState;
     public RunState $childState;
 
-    public function __construct(private readonly ContainerInterface $container)
+    /** @param list<string> $childTools */
+    public function __construct(private readonly ContainerInterface $container, array $childTools = ['notify_parent'])
     {
         $this->parent = $container->get(HatfieldSessionStore::class)->createSession();
         $this->child = 'child-'.Uuid::v7();
@@ -48,7 +49,11 @@ final class SubmissionFixture
         $this->childState = RunStateBuilder::running($this->child)->withTurnNo(1)->withLastSeq(3)->withActiveStepId('step')->withPendingToolCalls(['notice' => false])->build()->with(['parentRunId' => $this->parent]);
         foreach ([$this->parentState, $this->childState] as $state) {
             $container->get(RunOperationalProjectionRepository::class)->replace($state);
-            $this->append($state->runId, 1, 0, 'run_started', ['step_id' => 'step']);
+            $session = $state->runId === $this->parent ? [] : ['kind' => 'agent_child', 'parent_run_id' => $this->parent, 'agent_name' => 'scout', 'artifact_id' => $this->artifact];
+            $this->append($state->runId, 1, 0, 'run_started', ['step_id' => 'step', 'payload' => ['metadata' => [
+                'model' => 'model', 'reasoning' => 'medium', 'session' => $session,
+                'tools_scope' => ['allowed_tools' => $childTools, 'mcp' => ['mode' => 'none', 'tools' => []]],
+            ]]]);
             $this->append($state->runId, 2, 1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'step']);
             $this->append($state->runId, 3, 1, 'llm_step_completed', ['assistant_message' => ['tool_calls' => array_map(static fn (string $id): array => ['id' => $id], array_keys($state->pendingToolCalls))]]);
         }
