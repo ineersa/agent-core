@@ -191,7 +191,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->assertSame($expected, $index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows']);
             $db = $this->db();
             try {
-                $this->assertSame(6, (int) $db->fetchOne('SELECT version FROM index_meta'));
+                $this->assertSame(7, (int) $db->fetchOne('SELECT version FROM index_meta'));
                 $this->assertSame('CREATE INDEX turn_answers ON turn_anchor (answer_seq) WHERE retained = 1 AND answer_seq IS NOT NULL', $db->fetchOne("SELECT sql FROM sqlite_master WHERE name = 'turn_answers'"));
             } finally {
                 $db->close();
@@ -462,7 +462,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
     {
         $this->write(1, 1, 'turn_advanced');
         $this->assertSame([1], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
-        foreach (['DROP INDEX turn_answers', 'DROP TABLE command_resolution', 'DELETE FROM index_meta; DROP TABLE pending_prompt'] as $damage) {
+        foreach (['DROP INDEX turn_answers', 'DROP TABLE command_resolution', 'DROP TABLE retained_tool_invocation_location', 'DROP TABLE agent_submission_location', 'DELETE FROM index_meta; DROP TABLE pending_prompt'] as $damage) {
             $db = $this->db();
             foreach (explode('; ', $damage) as $sql) {
                 $db->executeStatement($sql);
@@ -472,7 +472,7 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->assertSame([1], $this->sequences($this->log->indexedLines($this->path, 'indexed', 1, 100)));
             $this->assertGreaterThan(0, $this->readBytes('index_cold_rebuild'));
             $db = $this->db();
-            $this->assertSame(16, (int) $db->fetchOne("SELECT COUNT(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"));
+            $this->assertSame(18, (int) $db->fetchOne("SELECT COUNT(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"));
             $db->close();
         }
     }

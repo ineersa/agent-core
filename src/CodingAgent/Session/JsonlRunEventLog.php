@@ -486,9 +486,26 @@ final class JsonlRunEventLog
         return $this->historyIndex->records($this, $path, $runId, $startSeq, $endSeq);
     }
 
-    public function pendingToolInvocation(string $path, string $runId, string $toolCallId): ?PendingToolInvocationDTO
+    public function pendingToolInvocation(string $path, string $runId, string $toolCallId, bool $requireCurrentStep = true): ?PendingToolInvocationDTO
     {
-        return $this->historyIndex->pendingToolInvocation($this, $path, $runId, $toolCallId);
+        return $this->historyIndex->pendingToolInvocation($this, $path, $runId, $toolCallId, $requireCurrentStep);
+    }
+
+    /** @return array<string, mixed>|null */
+    public function submissionReceipt(string $path, string $runId, string $identity): ?array
+    {
+        $sequence = $this->historyIndex->submissionSequence($this, $path, $runId, $identity);
+        if (null === $sequence) {
+            return null;
+        }
+        foreach ($this->indexedLines($path, $runId, $sequence, $sequence) as $line) {
+            $record = json_decode($line, true, flags: \JSON_THROW_ON_ERROR);
+            $receipt = $record['payload']['submission_receipt'] ?? null;
+            if (\is_array($receipt) && ($receipt['identity'] ?? null) === $identity) {
+                return $receipt;
+            }
+        }
+        throw new \RuntimeException('Agent submission index does not resolve its canonical receipt.');
     }
 
     /** @return array{sequence: int, end_offset: int, anchor: int}|null */

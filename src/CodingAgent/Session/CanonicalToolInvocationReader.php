@@ -14,10 +14,10 @@ final readonly class CanonicalToolInvocationReader
     {
     }
 
-    public function find(string $runId, string $toolCallId): ?PendingToolInvocationDTO
+    public function find(string $runId, string $toolCallId, bool $requireCurrentStep = true): ?PendingToolInvocationDTO
     {
         $source = $this->sources->historySource($runId);
 
-        return $source->log->pendingToolInvocation($source->path, $runId, $toolCallId);
+        return $source->log->pendingToolInvocation($source->path, $runId, $toolCallId, $requireCurrentStep);
     }
 }

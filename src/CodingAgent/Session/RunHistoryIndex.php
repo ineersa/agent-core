@@ -21,7 +21,7 @@ final readonly class RunHistoryIndex
 {
     public const int PAGE_SIZE = 32;
     public const int PREVIEW_BYTES = 240;
-    private const int VERSION = 6;
+    private const int VERSION = 7;
 
     public function __construct(private LockFactory $locks, private LoggerInterface $logger)
     {
@@ -315,7 +315,7 @@ final readonly class RunHistoryIndex
         }
     }
 
-    public function pendingToolInvocation(JsonlRunEventLog $log, string $path, string $runId, string $toolCallId): ?PendingToolInvocationDTO
+    public function pendingToolInvocation(JsonlRunEventLog $log, string $path, string $runId, string $toolCallId, bool $requireCurrentStep = true): ?PendingToolInvocationDTO
     {
         if (!is_file($path)) {
             throw new \RuntimeException('Invocation admission requires canonical history.');
@@ -329,10 +329,12 @@ final readonly class RunHistoryIndex
             }
             // The selected predecessor chain is materialized on history changes.
             // Anchor intervals cannot establish ancestry across retained branches.
-            $row = $db->fetchAssociative('SELECT i.* FROM tool_invocation_location i
+            $table = $requireCurrentStep ? 'tool_invocation_location' : 'retained_tool_invocation_location';
+            $stepFilter = $requireCurrentStep ? '(i.shell = 1 OR (i.turn_no = (SELECT turn_no FROM admission_step_location) AND (i.step_id IS NULL OR i.step_id = (SELECT step_id FROM admission_step_location))))' : '1 = 1';
+            $row = $db->fetchAssociative('SELECT i.* FROM '.$table.' i
                 JOIN event_location e ON e.seq = i.seq LEFT JOIN turn_anchor t ON t.anchor = e.anchor
                 LEFT JOIN command_record c ON c.seq = e.seq LEFT JOIN turn_anchor target ON target.anchor = c.target_anchor
-                WHERE i.tool_call_id = ? AND (i.shell = 1 OR (i.turn_no = (SELECT turn_no FROM admission_step_location) AND (i.step_id IS NULL OR i.step_id = (SELECT step_id FROM admission_step_location))))
+                WHERE i.tool_call_id = ? AND '.$stepFilter.'
                 AND (e.anchor = 0 OR (t.retained = 1 AND EXISTS (SELECT 1 FROM admission_anchor a WHERE a.anchor = e.anchor)))
                 AND (c.seq IS NULL OR (c.suppressed = 0 AND (c.target_anchor IS NULL OR (target.retained = 1 AND EXISTS (SELECT 1 FROM admission_anchor a WHERE a.anchor = c.target_anchor)))))', [$toolCallId]);
             if (false === $row) {
@@ -343,6 +345,23 @@ final readonly class RunHistoryIndex
             }
 
             return new PendingToolInvocationDTO((int) $row['turn_no'], $row['step_id'], (int) $row['attempt'], (bool) $row['shell'], (bool) $row['standalone']);
+        } finally {
+            if (isset($db)) {
+                $db->close();
+            }
+            $lock->release();
+        }
+    }
+
+    public function submissionSequence(JsonlRunEventLog $log, string $path, string $runId, string $identity): ?int
+    {
+        $lock = $this->locks->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+        try {
+            $db = $this->synchronize($log, $path, $runId);
+            $sequence = $db->fetchOne('SELECT seq FROM agent_submission_location WHERE identity_hash = ?', [hash('sha256', $identity)]);
+
+            return false === $sequence ? null : (int) $sequence;
         } finally {
             if (isset($db)) {
                 $db->close();
@@ -398,6 +417,8 @@ final readonly class RunHistoryIndex
             $db->executeStatement('CREATE TABLE IF NOT EXISTS history_change (seq INTEGER PRIMARY KEY, kind TEXT NOT NULL, anchor INTEGER NOT NULL)');
             $db->executeStatement('CREATE TABLE IF NOT EXISTS context_checkpoint_location (seq INTEGER PRIMARY KEY, anchor INTEGER NOT NULL, offset INTEGER NOT NULL, length INTEGER NOT NULL)');
             $db->executeStatement('CREATE TABLE IF NOT EXISTS tool_invocation_location (tool_call_id TEXT PRIMARY KEY, seq INTEGER NOT NULL, turn_no INTEGER NOT NULL, step_id TEXT, attempt INTEGER NOT NULL, shell BOOLEAN NOT NULL, standalone BOOLEAN NOT NULL)');
+            $db->executeStatement('CREATE TABLE IF NOT EXISTS retained_tool_invocation_location (tool_call_id TEXT PRIMARY KEY, seq INTEGER NOT NULL, turn_no INTEGER NOT NULL, step_id TEXT, attempt INTEGER NOT NULL, shell BOOLEAN NOT NULL, standalone BOOLEAN NOT NULL)');
+            $db->executeStatement('CREATE TABLE IF NOT EXISTS agent_submission_location (identity_hash TEXT PRIMARY KEY, seq INTEGER NOT NULL)');
             $db->executeStatement('CREATE TABLE IF NOT EXISTS admission_step_location (singleton INTEGER PRIMARY KEY, turn_no INTEGER NOT NULL, step_id TEXT)');
             $db->executeStatement('CREATE TABLE IF NOT EXISTS admission_anchor (anchor INTEGER PRIMARY KEY)');
         });
@@ -421,7 +442,7 @@ final readonly class RunHistoryIndex
                 $meta = $db->fetchAssociative('SELECT * FROM index_meta');
                 // Check disposable schema presence on every new connection, including
                 // replaced files. Missing objects require a rebuild, not repeated DDL.
-                $schemaComplete = 16 === (int) $db->fetchOne("SELECT COUNT(*) FROM sqlite_master WHERE (type = 'table' AND name IN ('index_meta', 'turn_anchor', 'pending_prompt', 'event_location', 'command_record', 'command_resolution', 'history_change', 'context_checkpoint_location', 'tool_invocation_location', 'admission_step_location', 'admission_anchor')) OR (type = 'index' AND name IN ('turn_display', 'turn_answers', 'event_turn_anchor', 'event_anchor', 'unresolved_commands'))");
+                $schemaComplete = 18 === (int) $db->fetchOne("SELECT COUNT(*) FROM sqlite_master WHERE (type = 'table' AND name IN ('index_meta', 'turn_anchor', 'pending_prompt', 'event_location', 'command_record', 'command_resolution', 'history_change', 'context_checkpoint_location', 'tool_invocation_location', 'retained_tool_invocation_location', 'agent_submission_location', 'admission_step_location', 'admission_anchor')) OR (type = 'index' AND name IN ('turn_display', 'turn_answers', 'event_turn_anchor', 'event_anchor', 'unresolved_commands'))");
                 $valid = $schemaComplete && !is_file($this->indexPath($path).'.unavailable') && false !== $meta
                     && self::VERSION === (int) $meta['version'] && $meta['run_id'] === $runId
                     && (int) $meta['device'] === $identity['device'] && (int) $meta['inode'] === $identity['inode']
@@ -543,6 +564,9 @@ final readonly class RunHistoryIndex
         $type = $record['type'];
         $turn = $record['turn_no'];
         $payload = $record['payload'];
+        if ('tool_execution_update' === $type && \is_string($payload['submission_receipt']['identity'] ?? null)) {
+            $db->executeStatement('INSERT OR IGNORE INTO agent_submission_location (identity_hash, seq) VALUES (?, ?)', [hash('sha256', $payload['submission_receipt']['identity']), $seq]);
+        }
         $promptText = HistoryPromptTextExtractor::extract($type, $payload);
         if ('' !== $promptText) {
             $kind = 'run_started' === $type ? 'initial' : 'human';
@@ -652,6 +676,10 @@ final readonly class RunHistoryIndex
             foreach ($payload['assistant_message']['tool_calls'] ?? [] as $call) {
                 if (\is_string($call['id'] ?? null)) {
                     $this->storeInvocationLocation($db, $call['id'], $record['seq'], $record['turn_no'], false === $step ? null : $step, 1, false, false);
+                    // Detached activity still needs its immutable origin after the
+                    // batch settles. Ancestry checks, not current-step membership,
+                    // determine whether that origin survives history navigation.
+                    $db->executeStatement('INSERT OR IGNORE INTO retained_tool_invocation_location SELECT * FROM tool_invocation_location WHERE tool_call_id = ?', [$call['id']]);
                 }
             }
         } elseif ('tool_execution_start' === $type && \is_string($payload['tool_call_id'] ?? null)) {

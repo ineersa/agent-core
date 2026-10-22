@@ -19,6 +19,9 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
 | `CommitSubagentProgress` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler` |
 | `RefreshRunContext` | Owner-local `RunMessageProcessor` call from attach, no bus route | `RefreshRunContextHandler` replaces generated messages and commits `context_refreshed` without advancing a turn |
+| `AcceptSubmissionDTO` | `agent.command.bus` (transport `run_control`) | App `SubmissionHandler` enters owner recovery; `SubmissionRunHandler` accepts a source receipt for a native deferred communication call |
+
+The internal communication source path does not register model tools or deliver to recipients. App `CompleteSubmissionDTO` gives the captured reply a run identity for effect dispatch, then App `SubmissionCompletionHandler` delegates to the native `CompleteDeferredToolCallHandler`. Source receipts live in canonical `tool_execution_update` events; the disposable history index provides identity lookups. See `architecture/agent-communication.md`.
 
 ## Async workers (`agent.execution.bus`)
 
