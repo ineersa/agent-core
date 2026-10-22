@@ -16,10 +16,10 @@ namespace Ineersa\Tui\Completion;
 interface SessionCompletionSourceInterface
 {
     /**
-     * Return all sessions available for completion, ordered most
-     * recent first.
+     * Return matching numeric session IDs, ordered most recent first,
+     * with at most $limit rows.
      *
      * @return list<SessionCompletionRow>
      */
-    public function listCompletionSessions(): array;
+    public function listCompletionSessions(string $prefix, int $limit): array;
 }

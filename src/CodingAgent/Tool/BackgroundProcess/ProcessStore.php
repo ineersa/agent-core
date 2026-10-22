@@ -223,6 +223,29 @@ final class ProcessStore
         return true;
     }
 
+    /** @param list<int> $ids */
+    public function deleteByIds(array $ids): int
+    {
+        $deleted = 0;
+        foreach (array_chunk(array_values(array_unique($ids)), 400) as $chunk) {
+            $deleted += $this->entityManager->getConnection()->transactional(function () use ($chunk): int {
+                // Query the database even for managed entities: another process may
+                // already have deleted a row. Keep ORM removal/identity-map semantics.
+                $entities = $this->repository->findBy(['id' => $chunk]);
+                foreach ($entities as $entity) {
+                    $this->entityManager->remove($entity);
+                }
+                if ([] !== $entities) {
+                    $this->flush();
+                }
+
+                return \count($entities);
+            });
+        }
+
+        return $deleted;
+    }
+
     /**
      * Flush pending entity changes to the database.
      */

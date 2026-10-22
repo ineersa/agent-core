@@ -44,7 +44,7 @@ final readonly class DeferredSubagentBatchRunControlWorkerStartedSubscriber
             return;
         }
 
-        foreach ($this->batchRepository->findUnfinishedByParentRunId($sessionId) as $batch) {
+        foreach ($this->batchRepository->findUnfinishedHeadersByParentRunId($sessionId) as $batch) {
             try {
                 $this->commandBus->dispatch(new RecoverDeferredSubagentBatchLifecycleMessage($batch->lifecycleId));
             } catch (ExceptionInterface $exception) {

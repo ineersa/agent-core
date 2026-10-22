@@ -368,6 +368,20 @@ final class HatfieldSessionStore
         return $result;
     }
 
+    /** @return list<array{sessionId: string, displayTitle: string}> */
+    public function listCompletionSessions(string $prefix, int $limit): array
+    {
+        $rows = [];
+        foreach ($this->getRepository()->findForCompletion($prefix, $limit) as $session) {
+            $rows[] = [
+                'sessionId' => $session['session_id'],
+                'displayTitle' => $this->resolveDisplayTitle($session['session_id'], $session['name'], $this->resolvePromptPreview($session['prompt'])),
+            ];
+        }
+
+        return $rows;
+    }
+
     /**
      * Resolve the sessions base path from Hatfield config.
      *

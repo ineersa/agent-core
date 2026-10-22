@@ -5,16 +5,20 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionCatalogRecoveryService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Tests\Support\ResumeCanonicalEventsFixture;
+use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -360,6 +364,187 @@ final class SessionCatalogRecoveryServiceTest extends IsolatedKernelTestCase
         } finally {
             TestDirectoryIsolation::removeDirectory($directory);
         }
+    }
+
+    #[TestWith([400])]
+    #[TestWith([401])]
+    public function testCatalogLookupsArePagedAndRecoveryIsIdempotent(int $count): void
+    {
+        for ($i = 1; $i <= $count; ++$i) {
+            $id = (string) (10000 + $i);
+            $dir = $this->sessionStore->resolveSessionsBasePath().'/'.$id;
+            mkdir($dir, 0700, true);
+            file_put_contents($dir.'/events.jsonl', $this->minimalRunStartedJsonl($id, 'Recovered '.$id));
+            if ($i < 400) {
+                // Keep the real 400/401-ID lookup boundary without building
+                // hundreds of independent cold history indexes in one case.
+                // The remaining orphan(s) straddle the lookup-page boundary.
+                $this->em->getConnection()->insert('hatfield_session', ['id' => (int) $id, 'cwd' => $this->isolatedCwd(), 'name' => 'Existing '.$id, 'provider_cache_key' => UuidV7::v7()->toRfc4122(), 'created_at' => '2026-01-01 00:00:00', 'updated_at' => '2026-01-01 00:00:00']);
+            }
+        }
+        $sql = self::getContainer()->get('test.sql_logger');
+        $sql->records = [];
+        ($this->recovery)();
+        $lookups = array_filter($sql->records, static fn (array $row): bool => str_starts_with($row['context']['sql'] ?? '', 'SELECT id FROM hatfield_session WHERE id IN'));
+        $this->assertCount((int) ceil($count / 400), $lookups);
+        $this->assertSame(array_map(\count(...), array_chunk(range(1, $count), 400)), array_values(array_map(static fn (array $row): int => \count($row['context']['params']), $lookups)));
+        $this->assertSame(400 === $count ? [[10400]] : [[10400], [10401]], $this->recoveredDatabaseBatches());
+        $this->assertSame('Existing 10001', $this->em->getConnection()->fetchOne('SELECT name FROM hatfield_session WHERE id = 10001'));
+        $this->assertSame($count, (int) $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM hatfield_session'));
+        $sql->records = [];
+        ($this->recovery)();
+        $lookups = array_filter($sql->records, static fn (array $row): bool => str_starts_with($row['context']['sql'] ?? '', 'SELECT id FROM hatfield_session WHERE id IN'));
+        $inserts = array_filter($sql->records, static fn (array $row): bool => str_starts_with($row['context']['sql'] ?? '', 'INSERT INTO hatfield_session'));
+        $this->assertCount((int) ceil($count / 400), $lookups);
+        $this->assertSame([], $inserts);
+    }
+
+    public function testConcurrentInsertAtConflictBoundaryKeepsWinnerAndContinuesBatch(): void
+    {
+        foreach (['77', '78'] as $id) {
+            $dir = $this->sessionStore->resolveSessionsBasePath().'/'.$id;
+            mkdir($dir, 0700, true);
+            file_put_contents($dir.'/events.jsonl', $this->minimalRunStartedJsonl($id, 'Recovered '.$id));
+        }
+        $connection = $this->em->getConnection();
+        // Deterministically inject the competing insert after the existence read.
+        // This proves conflict handling, not OS-level transaction scheduling.
+        $connection->executeStatement("CREATE TRIGGER catalog_insert_race BEFORE INSERT ON hatfield_session WHEN NEW.id = 77 BEGIN INSERT INTO hatfield_session (id, cwd, name, provider_cache_key, created_at, updated_at) VALUES (NEW.id, NEW.cwd, 'Concurrent winner', NEW.provider_cache_key, NEW.created_at, NEW.updated_at); END");
+        try {
+            ($this->recovery)();
+            $this->assertSame('Concurrent winner', $connection->fetchOne('SELECT name FROM hatfield_session WHERE id = 77'));
+            $this->assertSame('Recovered 78', $connection->fetchOne('SELECT name FROM hatfield_session WHERE id = 78'));
+            $this->assertSame(2, (int) $connection->fetchOne('SELECT COUNT(*) FROM hatfield_session'));
+        } finally {
+            $connection->executeStatement('DROP TRIGGER catalog_insert_race');
+        }
+    }
+
+    public function testDatabaseFailureRollsBackTheBoundedBatchAndDoesNotLogRecovery(): void
+    {
+        foreach (['77', '78'] as $id) {
+            $dir = $this->sessionStore->resolveSessionsBasePath().'/'.$id;
+            mkdir($dir, 0700, true);
+            file_put_contents($dir.'/events.jsonl', $this->minimalRunStartedJsonl($id, 'Recovered '.$id));
+        }
+        $connection = $this->em->getConnection();
+        $connection->executeStatement("CREATE TRIGGER catalog_failure BEFORE INSERT ON hatfield_session WHEN NEW.id = 78 BEGIN SELECT RAISE(ABORT, 'catalog write refused'); END");
+        try {
+            try {
+                ($this->recovery)();
+                $this->fail('Infrastructure failures must propagate, not degrade as corrupt history.');
+            } catch (Exception $exception) {
+                $this->assertStringContainsString('catalog write refused', $exception->getMessage());
+            }
+            $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM hatfield_session'));
+            $this->assertSame([], array_values(array_filter($this->logger->records, static fn (array $row): bool => 'session_catalog_recovery.recovered' === $row['message'])));
+        } finally {
+            $connection->executeStatement('DROP TRIGGER catalog_failure');
+        }
+        ($this->recovery)();
+        $this->assertSame(2, (int) $connection->fetchOne('SELECT COUNT(*) FROM hatfield_session'));
+    }
+
+    #[TestWith([[700000, 700000, 700000], [[20001], [20002], [20003]]])]
+    #[TestWith([[524288, 524288, 4096], [[20001, 20002], [20003]]])]
+    #[TestWith([[524288, 524289, 4096], [[20001], [20002, 20003]]])]
+    #[TestWith([[4096, 2097152, 4096], [[20001], [20002], [20003]]])]
+    public function testRecoveryBatchesAlsoRespectAggregatePayloadBytes(array $payloadBytes, array $expectedBatches): void
+    {
+        // The internal budget is 1 MiB of retained string metadata, not an
+        // estimate of PHP allocator overhead. Observe real DB transaction ends.
+        $prompts = $this->writeOrphansWithMetadataBytes($payloadBytes);
+        if (max($payloadBytes) > 1_048_576) {
+            $this->assertGreaterThan(1_048_576, \strlen($prompts[20002]), 'The oversized case must exceed the budget in prompt bytes alone.');
+        }
+        $sql = self::getContainer()->get('test.sql_logger');
+        $sql->records = [];
+        ($this->recovery)();
+        $this->assertSame($expectedBatches, $this->recoveredDatabaseBatches());
+        $lookups = array_filter($sql->records, static fn (array $row): bool => str_starts_with($row['context']['sql'] ?? '', 'SELECT id FROM hatfield_session WHERE id IN'));
+        $this->assertCount(1, $lookups, 'Byte flushing must not shrink existence-lookup pages.');
+        foreach ($prompts as $id => $prompt) {
+            $this->assertSame($prompt, $this->em->getConnection()->fetchOne('SELECT prompt FROM hatfield_session WHERE id = ?', [$id]), 'Oversized prompts must remain intact.');
+        }
+        $this->assertSame([20001, 20002, 20003], array_map(static fn (array $row): int => (int) $row['context']['session_id'], array_values(array_filter($this->logger->records, static fn (array $row): bool => 'session_catalog_recovery.recovered' === $row['message']))));
+    }
+
+    #[TestWith([true])]
+    #[TestWith([false])]
+    public function testByteBoundedRecoveryFailurePreservesOnlyEarlierCommittedBatches(bool $earlyFlush): void
+    {
+        $this->writeOrphansWithMetadataBytes([700000, 700000, $earlyFlush ? 700000 : 4096]);
+        $connection = $this->em->getConnection();
+        $failedId = $earlyFlush ? 20002 : 20003;
+        // Early failure happens while processing the next orphan, not in the
+        // final page flush. Neither path may be caught as corrupt canonical data.
+        $connection->executeStatement('CREATE TRIGGER catalog_byte_failure BEFORE INSERT ON hatfield_session WHEN NEW.id = '.$failedId." BEGIN SELECT RAISE(ABORT, 'catalog byte batch refused'); END");
+        try {
+            try {
+                ($this->recovery)();
+                $this->fail('A failed byte-budget flush must propagate.');
+            } catch (Exception $exception) {
+                $this->assertStringContainsString('catalog byte batch refused', $exception->getMessage());
+            }
+            $this->assertSame([20001], array_map(intval(...), $connection->fetchFirstColumn('SELECT id FROM hatfield_session ORDER BY id')));
+            $this->assertSame(['20001'], array_column(array_column(array_values(array_filter($this->logger->records, static fn (array $row): bool => 'session_catalog_recovery.recovered' === $row['message'])), 'context'), 'session_id'));
+            $this->assertSame([], array_values(array_filter($this->logger->records, static fn (array $row): bool => 'session_catalog_recovery.orphan_skipped' === $row['message'])));
+        } finally {
+            $connection->executeStatement('DROP TRIGGER catalog_byte_failure');
+        }
+        ($this->recovery)();
+        $this->assertSame([20001, 20002, 20003], array_map(intval(...), $connection->fetchFirstColumn('SELECT id FROM hatfield_session ORDER BY id')));
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new SqlLoggingKernel('test', false);
+    }
+
+    /** @param list<int> $payloadBytes
+     * @return array<int, string> */
+    private function writeOrphansWithMetadataBytes(array $payloadBytes): array
+    {
+        $appConfig = self::getContainer()->get(AppConfig::class);
+        // Match the fixture's metadata strings, including the duplicated
+        // 200-byte title and the fixed-width newly generated UUIDv7.
+        $overhead = \strlen($appConfig->cwd) + \strlen('openai/gpt-test') + \strlen('openai') + \strlen('gpt-test') + \strlen('low') + 200 + 36;
+        $prompts = [];
+        foreach ($payloadBytes as $offset => $bytes) {
+            $id = 20001 + $offset;
+            $prompt = str_repeat(\chr(97 + $offset), $bytes - $overhead);
+            $this->assertGreaterThanOrEqual(200, \strlen($prompt));
+            $dir = $this->sessionStore->resolveSessionsBasePath().'/'.$id;
+            mkdir($dir, 0700, true);
+            file_put_contents($dir.'/events.jsonl', $this->minimalRunStartedJsonl((string) $id, $prompt));
+            $prompts[$id] = $prompt;
+        }
+
+        return $prompts;
+    }
+
+    /** @return list<list<int>> */
+    private function recoveredDatabaseBatches(): array
+    {
+        $batches = [];
+        $batch = [];
+        foreach (self::getContainer()->get('test.sql_logger')->records as $record) {
+            $sql = $record['context']['sql'] ?? '';
+            if (str_starts_with($sql, 'INSERT INTO hatfield_session')) {
+                $batch[] = (int) array_values($record['context']['params'])[0];
+            }
+            // DAMA's test transaction wraps the real DB connection, so nested
+            // application commits appear as savepoint releases in this kernel.
+            if (str_starts_with($sql, 'RELEASE SAVEPOINT') || 'Committing transaction' === $record['message']) {
+                if ([] !== $batch) {
+                    $batches[] = $batch;
+                    $batch = [];
+                }
+            }
+        }
+        $this->assertSame([], $batch, 'Every successful insert must belong to a completed transaction.');
+
+        return $batches;
     }
 
     private function minimalRunStartedJsonl(string $runId, string $prompt): string

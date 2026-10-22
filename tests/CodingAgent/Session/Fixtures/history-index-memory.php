@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
 use Ineersa\CodingAgent\Session\JsonlRunEventLog;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
 
@@ -42,7 +43,7 @@ try {
         fclose($handle);
     }
     $logger = new TestLogger();
-    $log = new JsonlRunEventLog($normalizer, $container->get(LockFactory::class), $container->get(RunSequenceAllocatorInterface::class), new EventLogMaxSeqBootstrapReader(), $logger);
+    $log = new JsonlRunEventLog($normalizer, $container->get(LockFactory::class), $container->get(RunSequenceAllocatorInterface::class), new EventLogMaxSeqBootstrapReader(), $logger, presentations: HistoryEventStoreFactory::presentationFactory());
     $records = 0;
     foreach ($log->indexedLines($path, 'indexed', 1, \PHP_INT_MAX) as $line) {
         ++$records;

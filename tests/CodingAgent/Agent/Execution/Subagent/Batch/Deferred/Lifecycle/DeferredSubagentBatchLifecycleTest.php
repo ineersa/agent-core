@@ -59,6 +59,7 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\History\RunPresentationReader;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -1069,7 +1070,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         );
         $events = $this->createMock(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
         $events->expects($this->once())->method('latestSequenceFor')->willThrowException(new \RuntimeException('SECRET canonical read failed'));
-        $reader = new RunPresentationReader($events, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec::class));
+        $reader = new RunPresentationReader($events, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec::class), sources: self::getContainer()->get(RunHistorySourceProviderInterface::class));
         $logger = new TestLogger();
 
         $outcome = $this->createOutcomeFactory($reader, $logger)->buildNaturalArtifactOutcome(

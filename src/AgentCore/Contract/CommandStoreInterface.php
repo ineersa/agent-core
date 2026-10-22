@@ -24,6 +24,9 @@ interface CommandStoreInterface
      */
     public function pending(string $runId): array;
 
+    /** @return list<string> Current identities without loading command bodies. */
+    public function pendingKeys(string $runId): array;
+
     public function countPending(string $runId): int;
 
     public function markApplied(string $runId, string $idempotencyKey): void;

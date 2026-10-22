@@ -31,6 +31,7 @@ use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\AI\Platform\Message\Content\Text;
@@ -398,7 +399,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
             lockFactory: new LockFactory(new FlockStore()),
             logger: new TestLogger(),
             sequenceAllocator: new FileRunSequenceAllocator(),
-        );
+            presentations: HistoryEventStoreFactory::presentationFactory());
     }
 
     private function artifactRegistry(HatfieldSessionStore $sessionStore): AgentArtifactRegistry
@@ -424,7 +425,7 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
             lockFactory: new LockFactory(new FlockStore()),
             logger: new TestLogger(),
             sequenceAllocator: new FileRunSequenceAllocator(),
-        );
+            presentations: HistoryEventStoreFactory::presentationFactory());
     }
 
     private function diagStore(

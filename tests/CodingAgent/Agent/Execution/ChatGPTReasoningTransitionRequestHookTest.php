@@ -35,6 +35,7 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ChatGPT\ChatGPTSymfonyAiProviderBuilder;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\NullLogger;
@@ -356,7 +357,7 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
 
     private function startCanonicalReasoningEpoch(string $effort = 'high', bool $withToolExchange = false): \Ineersa\CodingAgent\Session\SessionRunEventStore
     {
-        $store = new \Ineersa\CodingAgent\Session\SessionRunEventStore($this->sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator());
+        $store = new \Ineersa\CodingAgent\Session\SessionRunEventStore($this->sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
         $append = fn (int $turn, string $type, array $payload) => \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($this->sessionId, $turn, $type, $payload));
         $append(0, 'run_started', ['payload' => ['messages' => [self::user('first')->toArray()]]]);
         $append(1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'first']);

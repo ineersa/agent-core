@@ -350,6 +350,27 @@ PHP);
         $this->assertSame(0, $records[0]['context']['failed_count']);
     }
 
+    #[Test]
+    public function failedSidecarCleanupDoesNotEnterTheDeletionBatch(): void
+    {
+        $failed = $this->createRecord('failed-sidecar', $this->now->modify('-10 minutes'));
+        $success = $this->createRecord('successful-sidecar', $this->now->modify('-10 minutes'));
+        $entity = $this->store->fetchByRecordId($failed['id']);
+        $this->assertNotNull($entity);
+        $entity->statusPath .= '.invalid';
+        $this->store->flush();
+
+        ($this->task)();
+
+        $this->assertNotNull($this->store->fetchByRecordId($failed['id']));
+        $this->assertNull($this->store->fetchByRecordId($success['id']));
+        $this->assertFileExists($failed['log']);
+        $this->assertFileExists($failed['status']);
+        $records = array_values(array_filter($this->logger->records, static fn (array $row): bool => 'background_process.provisional_cleanup_completed' === $row['message']));
+        $this->assertSame(1, $records[0]['context']['cleaned_count']);
+        $this->assertSame(1, $records[0]['context']['failed_count']);
+    }
+
     /**
      * @return array{id: int, log: string, status: string, pid: string}
      */

@@ -13,6 +13,8 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredS
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatch;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Kernel;
+use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -147,13 +149,13 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
     }
 
     #[Test]
-    public function findUnfinishedByParentRunIdRefreshesMutableFieldsInListResult(): void
+    public function findUnfinishedHeadersByParentRunIdRefreshesMutableFieldsInListResult(): void
     {
         $parent = 'parent-batch-fresh-list';
         $tool = 'tool-batch-fresh-list';
         $lifecycle = $this->reserveOneChild($parent, $tool);
 
-        $first = $this->repository->findUnfinishedByParentRunId($parent);
+        $first = $this->repository->findUnfinishedHeadersByParentRunId($parent);
         $this->assertCount(1, $first);
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $first[0]->launchStatus);
 
@@ -168,9 +170,32 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
             ],
         );
 
-        $again = $this->repository->findUnfinishedByParentRunId($parent);
+        $again = $this->repository->findUnfinishedHeadersByParentRunId($parent);
         $this->assertCount(1, $again);
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $again[0]->launchStatus);
+    }
+
+    #[Test]
+    public function unfinishedHeadersDoNotFetchOrDecodeChildProjections(): void
+    {
+        $this->reserveOneChild('header-parent', 'first');
+        $this->reserveOneChild('header-parent', 'second');
+        $this->connection->executeStatement('UPDATE deferred_subagent_child SET child_lifecycle_projection = ?', ['invalid JSON']);
+        $sql = self::getContainer()->get('test.sql_logger');
+        $sql->records = [];
+
+        $headers = $this->repository->findUnfinishedHeadersByParentRunId('header-parent');
+
+        $this->assertCount(2, $headers);
+        $reads = array_filter($sql->records, static fn (array $row): bool => str_starts_with($row['context']['sql'] ?? '', 'SELECT'));
+        $this->assertCount(1, $reads);
+        $childReads = array_filter($reads, static fn (array $row): bool => str_contains($row['context']['sql'], 'deferred_subagent_child'));
+        $this->assertSame([], $childReads);
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new SqlLoggingKernel('test', false);
     }
 
     private function reserveOneChild(string $parent, string $tool): string

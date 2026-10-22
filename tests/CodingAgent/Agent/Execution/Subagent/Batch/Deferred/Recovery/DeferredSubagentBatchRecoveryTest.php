@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Recovery;
 
+use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Event\PostLoadEventArgs;
+use Doctrine\ORM\Events;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -30,10 +34,13 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubag
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatch;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
+use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
+use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
@@ -130,7 +137,11 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             $recoveryBus,
             new TestLogger(),
         );
+        $sql = self::getContainer()->get('test.sql_logger');
+        $sql->records = [];
         $recovery->recover($lifecycle);
+        $childReads = array_filter($sql->records, static fn (array $row): bool => str_starts_with($row['context']['sql'] ?? '', 'SELECT') && str_contains($row['context']['sql'], 'deferred_subagent_child'));
+        $this->assertCount(2, $childReads, 'One identity list and one fresh cursor read; headers must not fetch children.');
 
         $child1Recovered = $childRepo->findEntityByBatchLifecycleAndIndex($lifecycle, 1);
         $this->assertSame(2, $child1Recovered?->childEventCursor);
@@ -145,6 +156,47 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $this->assertSame(2, $child1Dup?->childEventCursor);
         $batchDup = $batchRepo->findByLifecycleId($lifecycle);
         $this->assertSame(1, $batchDup->aggregateProgressRevision);
+    }
+
+    public function testRecoveryRereadsInterruptionHeaderBeforeReadingChildCursor(): void
+    {
+        $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $repo->reserveBatch('header-race', 'header-parent', 1, 'header-tool', 0, new \DateTimeImmutable('+1 hour'),
+            new DeferredSubagentBatchChildIntentDTO(1, 'header-child', 'header-artifact', 'worker', 'task', 'model', 'medium'));
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $listener = new class($em->getConnection()) {
+            public bool $fired = false;
+
+            public function __construct(private Connection $connection)
+            {
+            }
+
+            public function postLoad(PostLoadEventArgs $event): void
+            {
+                $entity = $event->getObject();
+                if ($this->fired || !$entity instanceof DeferredSubagentBatch) {
+                    return;
+                }
+                $this->fired = true;
+                $this->connection->executeStatement('UPDATE deferred_subagent_batch SET interruption_kind = ?, projection_version = projection_version + 1 WHERE lifecycle_id = ?', [DeferredSubagentInterruptionKindEnum::ParentCancelled->value, $entity->lifecycleId]);
+            }
+        };
+        $bus = new TestMessageBus();
+        $recovery = new DeferredSubagentBatchRecoveryService($repo,
+            self::getContainer()->get(DeferredSubagentChildRepository::class),
+            self::getContainer()->get(AgentChildRunEventStoreFactory::class),
+            self::getContainer()->get(DeferredChildRunEventProjector::class), $bus, new TestLogger());
+        $em->getEventManager()->addEventListener([Events::postLoad], $listener);
+        try {
+            $recovery->recover('header-race');
+        } finally {
+            $em->getEventManager()->removeEventListener([Events::postLoad], $listener);
+        }
+        $this->assertTrue($listener->fired);
+        $this->assertCount(1, $bus->messages);
+        $this->assertInstanceOf(InterruptDeferredSubagentBatchMessage::class, $bus->messages[0]);
+        $this->assertSame(DeferredSubagentInterruptionKindEnum::ParentCancelled, $bus->messages[0]->kind);
+        $this->assertSame(0, (int) $em->getConnection()->fetchOne('SELECT child_event_cursor FROM deferred_subagent_child WHERE batch_lifecycle_id = ?', ['header-race']));
     }
 
     public function testWorkerStartScopesRecoveryAndResumesDeadlineOrInterruption(): void
@@ -327,11 +379,16 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $this->assertSame(DeferredSubagentInterruptionKindEnum::ParentCancelled, $interruptRecoveryBus->messages[0]->kind);
     }
 
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new SqlLoggingKernel('test', false);
+    }
+
     private function writeChildEventLine(string $parentRunId, string $artifactId, string $childRunId, int $seq, string $type, array $payload): void
     {
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: (string) getcwd()),
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: $this->createStub(EntityManagerInterface::class),
             dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
         $resolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);

@@ -38,6 +38,7 @@ use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
@@ -943,7 +944,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             lockFactory: new LockFactory(new FlockStore($lockDir)),
             logger: new NullLogger(),
             sequenceAllocator: new FileRunSequenceAllocator(),
-        );
+            presentations: HistoryEventStoreFactory::presentationFactory());
 
         return new SessionRepairService(
             eventStore: $eventStore,
@@ -1038,7 +1039,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             lockFactory: new LockFactory(new FlockStore($lockDir)),
             logger: new NullLogger(),
             sequenceAllocator: new FileRunSequenceAllocator(),
-        );
+            presentations: HistoryEventStoreFactory::presentationFactory());
 
         $events = $eventStore->allFor($runId);
         $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), $events);
@@ -1066,7 +1067,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             lockFactory: new LockFactory(new FlockStore($lockDir)),
             logger: new NullLogger(),
             sequenceAllocator: new FileRunSequenceAllocator(),
-        );
+            presentations: HistoryEventStoreFactory::presentationFactory());
 
         $events = $eventStore->allFor($runId);
         $replayed = (new RunStateReducer(AttributeSerializerValidatorTestFactory::denormalizer(), new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer())))->replay(RunState::queued($runId), $events);
