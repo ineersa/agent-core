@@ -42,6 +42,15 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
 {
+    public function testPendingCompletionIndexCoversCleanupCorrelation(): void
+    {
+        $connection = self::getContainer()->get(Connection::class);
+        $index = $connection->createSchemaManager()->listTableIndexes('tool_deferred_completion')['idx_deferred_pending'];
+        $this->assertSame(['run_id', 'status', 'turn_no', 'step_id'], $index->getColumns());
+        $plan = $connection->fetchAllAssociative("EXPLAIN QUERY PLAN SELECT 1 FROM tool_deferred_completion d WHERE d.run_id = ? AND d.turn_no = ? AND d.step_id = ? AND d.status = 'pending'", ['run', 1, 'step']);
+        $this->assertStringContainsString('COVERING INDEX idx_deferred_pending', implode(' ', array_column($plan, 'detail')));
+    }
+
     #[DataProvider('completionBoundaries')]
     public function testObsoleteCompletionSettlesMetadataAndRemovesRetainedBatchWithoutBodies(bool $producer): void
     {
