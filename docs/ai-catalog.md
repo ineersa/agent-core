@@ -137,6 +137,10 @@ Input token classes are billed once as
 present. Impossible counts are clamped to remaining input. Historical sessions
 cannot recover `cache_write_tokens` that were never persisted.
 
+Output cost uses inclusive `output_tokens`. Supported OpenResponses and Generic
+Completions extractors already include reasoning in that total and expose
+`thinking_tokens` only as detail, so Hatfield does not add thinking again.
+
 Audit limits (OpenAI docs and models.dev checked 2026-10-23):
 
 - Sources: [prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching),
@@ -149,7 +153,3 @@ Audit limits (OpenAI docs and models.dev checked 2026-10-23):
 - Long-context premiums above 272k and 12h write pricing are not modeled. Mapping
   from request retention settings to the pricing table's 12h column remains
   undocumented for these models and is not implemented.
-- OpenResponses reports reasoning inside `output_tokens` and also as
-  `output_tokens_details.reasoning_tokens`. Hatfield currently stores that detail
-  as `thinking_tokens` and adds it again at the output rate, so totals can overstate
-  cost when reasoning is present. This change does not alter that behavior.

@@ -1298,20 +1298,11 @@ final class PlatformIntegrationTest extends TestCase
             ]],
         ]);
 
-        $calculator = new AiCostCalculator(new HatfieldModelCatalog(new AiConfig(
-            providers: [
-                'openai-codex' => new AiProviderConfig(
-                    id: 'openai-codex',
-                    enabled: true,
-                    models: [
-                        'gpt-5.6-sol' => new AiModelDefinition(
-                            id: 'gpt-5.6-sol',
-                            cost: new AiCost(input: 4.0, output: 20.0, cacheRead: 0.40, cacheWrite: 5.0),
-                        ),
-                    ],
-                ),
-            ],
-        )));
+        $calculator = $this->catalogCalculator(
+            providerId: 'openai-codex',
+            modelId: 'gpt-5.6-sol',
+            cost: new AiCost(input: 4.0, output: 20.0, cacheRead: 0.40, cacheWrite: 5.0),
+        );
 
         $response = $this->createAdapterForPlatform(
             $this->platformReturningDeferred($deferred),
@@ -1326,6 +1317,151 @@ final class PlatformIntegrationTest extends TestCase
         // Short-context tier only: uncached 70k × $4 + read 20k × $0.40 + write 10k × $5
         // + output 10k × $20 = 0.28 + 0.008 + 0.05 + 0.20 = 0.538
         $this->assertEqualsWithDelta(0.538, $response->usage['cost'] ?? 0.0, 0.0001);
+    }
+
+    /**
+     * Prove supported converters keep reasoning as thinking telemetry while cost
+     * bills inclusive output/completion totals once.
+     */
+    #[DataProvider('provideInclusiveReasoningCostCases')]
+    public function testInclusiveReasoningDoesNotDoubleBillOutput(
+        string $family,
+        string $model,
+        int $inputTokens,
+        int $outputTokens,
+        int $thinkingTokens,
+        float $expectedCost,
+    ): void {
+        $deferred = match ($family) {
+            'openresponses', 'chatgpt' => $this->deferredOpenResponsesStream([
+                ['type' => 'response.output_item.added', 'output_index' => 0, 'item' => array_replace($this->assistantMessage('msg_reason'), ['content' => [], 'status' => 'in_progress'])],
+                ['type' => 'response.output_text.delta', 'item_id' => 'msg_reason', 'delta' => 'ok'],
+                ['type' => 'response.output_item.done', 'output_index' => 0, 'item' => $this->assistantMessage('msg_reason')],
+                ['type' => 'response.completed', 'response' => [
+                    'output' => [$this->assistantMessage('msg_reason')],
+                    'usage' => [
+                        'input_tokens' => $inputTokens,
+                        'output_tokens' => $outputTokens,
+                        'total_tokens' => $inputTokens + $outputTokens,
+                        'output_tokens_details' => ['reasoning_tokens' => $thinkingTokens],
+                    ],
+                    'model' => $model,
+                ]],
+            ], chatGpt: 'chatgpt' === $family),
+            'generic' => $this->deferredGenericCompletionsStream([
+                [
+                    'id' => 'chatcmpl-reason',
+                    'object' => 'chat.completion.chunk',
+                    'model' => $model,
+                    'choices' => [[
+                        'index' => 0,
+                        'delta' => ['role' => 'assistant', 'content' => 'ok'],
+                        'finish_reason' => null,
+                    ]],
+                ],
+                [
+                    'id' => 'chatcmpl-reason',
+                    'object' => 'chat.completion.chunk',
+                    'model' => $model,
+                    'choices' => [[
+                        'index' => 0,
+                        'delta' => [],
+                        'finish_reason' => 'stop',
+                    ]],
+                    'usage' => [
+                        'prompt_tokens' => $inputTokens,
+                        'completion_tokens' => $outputTokens,
+                        'total_tokens' => $inputTokens + $outputTokens,
+                        'completion_tokens_details' => ['reasoning_tokens' => $thinkingTokens],
+                    ],
+                ],
+            ]),
+            default => throw new \InvalidArgumentException('Unknown family: '.$family),
+        };
+
+        $parts = explode('/', $model, 2);
+        $calculator = $this->catalogCalculator(
+            providerId: $parts[0],
+            modelId: $parts[1] ?? $parts[0],
+            cost: new AiCost(input: 4.0, output: 20.0, cacheRead: 0.40, cacheWrite: 5.0),
+        );
+
+        $response = $this->createAdapterForPlatform(
+            $this->platformReturningDeferred($deferred),
+            costCalculator: $calculator,
+        )->invoke($this->simpleRequest($model, 'run-inclusive-reasoning-'.$family));
+
+        $this->assertNull($response->error);
+        $this->assertSame($inputTokens, $response->usage['input_tokens'] ?? null);
+        $this->assertSame($outputTokens, $response->usage['output_tokens'] ?? null);
+        $this->assertSame($thinkingTokens, $response->usage['thinking_tokens'] ?? null);
+        $this->assertEqualsWithDelta($expectedCost, $response->usage['cost'] ?? 0.0, 0.0001);
+    }
+
+    /**
+     * @return iterable<string, array{0: string, 1: string, 2: int, 3: int, 4: int, 5: float}>
+     */
+    public static function provideInclusiveReasoningCostCases(): iterable
+    {
+        // input 1k × $4 + inclusive output 100 × $20 = 0.004 + 0.002 = 0.006
+        // Double-billing thinking would be 0.0068.
+        yield 'openresponses streamed' => ['openresponses', 'openai-codex/gpt-5.6-sol', 1_000, 100, 40, 0.006];
+        yield 'chatgpt streamed' => ['chatgpt', 'openai-codex/gpt-5.6-sol', 1_000, 100, 40, 0.006];
+        yield 'generic streamed' => ['generic', 'generic/test', 1_000, 100, 40, 0.006];
+    }
+
+    public function testOpenResponsesNonStreamReasoningStaysInclusiveForCost(): void
+    {
+        $usagePayload = [
+            'input_tokens' => 1_000,
+            'output_tokens' => 100,
+            'total_tokens' => 1_100,
+            'output_tokens_details' => [
+                'reasoning_tokens' => 40,
+            ],
+        ];
+        $message = $this->assistantMessage('msg_reason_ns');
+        $body = json_encode([
+            'id' => 'resp_reason_ns',
+            'status' => 'completed',
+            'output' => [$message],
+            'usage' => $usagePayload,
+            'model' => 'gpt-5.6-sol',
+        ], \JSON_THROW_ON_ERROR);
+        $http = new MockHttpClient([
+            new MockResponse($body, [
+                'http_code' => 200,
+                'response_headers' => ['content-type' => 'application/json'],
+            ]),
+        ]);
+        $raw = new RawHttpResult($http->request('POST', 'https://example.test/v1/responses'));
+        $deferred = new DeferredResult(
+            new OpenResponsesResultConverter(),
+            $raw,
+            ['stream' => false],
+        );
+        $deferred->getResult();
+        $tokenUsage = $deferred->getMetadata()->get('token_usage');
+        $this->assertInstanceOf(TokenUsageInterface::class, $tokenUsage);
+        $this->assertSame(100, $tokenUsage->getCompletionTokens());
+        $this->assertSame(40, $tokenUsage->getThinkingTokens());
+
+        $calculator = $this->catalogCalculator(
+            providerId: 'openai-codex',
+            modelId: 'gpt-5.6-sol',
+            cost: new AiCost(input: 4.0, output: 20.0, cacheRead: 0.40, cacheWrite: 5.0),
+        );
+        $response = $this->createAdapterForPlatform(
+            $this->createSymfonyPlatform(
+                new FakeSymfonyModelClient($tokenUsage),
+                static fn (): iterable => [new TextDelta('ok')],
+            ),
+            costCalculator: $calculator,
+        )->invoke($this->simpleRequest('openai-codex/gpt-5.6-sol', 'run-inclusive-reasoning-nonstream'));
+
+        $this->assertSame(100, $response->usage['output_tokens'] ?? null);
+        $this->assertSame(40, $response->usage['thinking_tokens'] ?? null);
+        $this->assertEqualsWithDelta(0.006, $response->usage['cost'] ?? 0.0, 0.0001);
     }
 
     /**
@@ -1539,6 +1675,24 @@ final class PlatformIntegrationTest extends TestCase
             ),
             clock: new MockClock(),
         );
+    }
+
+    private function catalogCalculator(string $providerId, string $modelId, AiCost $cost): AiCostCalculator
+    {
+        return new AiCostCalculator(new HatfieldModelCatalog(new AiConfig(
+            providers: [
+                $providerId => new AiProviderConfig(
+                    id: $providerId,
+                    enabled: true,
+                    models: [
+                        $modelId => new AiModelDefinition(
+                            id: $modelId,
+                            cost: $cost,
+                        ),
+                    ],
+                ),
+            ],
+        )));
     }
 
     private function invokeWithPlatform(

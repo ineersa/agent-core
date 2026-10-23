@@ -57,7 +57,9 @@ final class AiCostCalculatorTest extends TestCase
 
     public function testCalculateCostWithThinkingTokens(): void
     {
-        // Thinking tokens billed at output rate.
+        // Removed wrong behavior: billing output_tokens + thinking_tokens.
+        // Supported extractors include reasoning inside output_tokens and expose
+        // thinking_tokens only as detail, so cost uses the inclusive output total.
         $cost = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
             'input_tokens' => 100_000,
             'output_tokens' => 50_000,
@@ -65,9 +67,21 @@ final class AiCostCalculatorTest extends TestCase
         ]);
 
         // input: 100k × $3/M = $0.30
-        // output + thinking: 80k × $15/M = $1.20
-        // total: $1.50
-        $this->assertEqualsWithDelta(1.50, $cost, 0.01);
+        // output (includes reasoning): 50k × $15/M = $0.75
+        // total: $1.05
+        $this->assertEqualsWithDelta(1.05, $cost, 0.01);
+
+        $absentThinking = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 100_000,
+            'output_tokens' => 50_000,
+        ]);
+        $zeroThinking = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 100_000,
+            'output_tokens' => 50_000,
+            'thinking_tokens' => 0,
+        ]);
+        $this->assertEqualsWithDelta(1.05, $absentThinking, 0.01);
+        $this->assertEqualsWithDelta(1.05, $zeroThinking, 0.01);
     }
 
     public function testCalculateCostPartitionsCacheReadAndWrite(): void
