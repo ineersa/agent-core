@@ -17,6 +17,10 @@ use Ineersa\CodingAgent\Runtime\Messenger\PendingTransitionRecoverySubscriber;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
+use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\Messenger\Event\WorkerRunningEvent;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
@@ -115,6 +119,26 @@ final class PendingTransitionRecoverySubscriberTest extends IsolatedKernelTestCa
         $this->assertSame(6, $this->ownershipSelectCount());
     }
 
+    // Recovery cases above construct shared services; isolate the first-use proof.
+    #[Test]
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function nonRunControlWorkerStartDoesNotInitializeRecoveryDependencies(): void
+    {
+        $subscriber = $this->resolveSubscriber();
+
+        $worker = new Worker(['llm' => new InMemoryTransport()], new TestMessageBus());
+        $subscriber->onStarted(new WorkerStartedEvent($worker));
+
+        $privates = new \ReflectionProperty(Container::class, 'privates');
+        $this->assertArrayNotHasKey(PendingTransitionRecovery::class, $privates->getValue(self::$kernel->getContainer()));
+
+        $this->assertLazyUninitialized($subscriber, 'transitions', PreparedTransitionEventStoreInterface::class);
+        $this->assertLazyUninitialized($subscriber, 'recovery', PendingTransitionRecovery::class);
+        $this->assertLazyUninitialized($subscriber, 'locks', RunLockManager::class);
+        $this->assertLazyUninitialized($subscriber, 'ownership', OwnedRunIdsProvider::class);
+    }
+
     protected static function createKernel(array $options = []): Kernel
     {
         return new SqlLoggingKernel('test', false);
@@ -150,5 +174,26 @@ final class PendingTransitionRecoverySubscriberTest extends IsolatedKernelTestCa
         $this->assertInstanceOf(TestLogger::class, $logger);
 
         return \count(array_filter($logger->records, static fn (array $record): bool => str_contains($record['context']['sql'] ?? '', 'SELECT child.child_run_id FROM deferred_subagent_child')));
+    }
+
+    private function resolveSubscriber(): PendingTransitionRecoverySubscriber
+    {
+        $subscriber = self::getContainer()->get(PendingTransitionRecoverySubscriber::class);
+        $this->assertInstanceOf(PendingTransitionRecoverySubscriber::class, $subscriber);
+
+        return $subscriber;
+    }
+
+    /**
+     * @param class-string $expectedType
+     */
+    private function assertLazyUninitialized(PendingTransitionRecoverySubscriber $subscriber, string $property, string $expectedType): void
+    {
+        $value = (new \ReflectionProperty(PendingTransitionRecoverySubscriber::class, $property))->getValue($subscriber);
+        $this->assertInstanceOf($expectedType, $value);
+        $this->assertTrue(
+            (new \ReflectionClass($value))->isUninitializedLazyObject($value),
+            \sprintf('Expected %s to remain uninitialized for non-owner recovery path.', $property),
+        );
     }
 }

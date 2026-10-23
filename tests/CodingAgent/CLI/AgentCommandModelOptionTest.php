@@ -8,18 +8,24 @@ use Ineersa\CodingAgent\CLI\AgentCommand;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
+use Ineersa\CodingAgent\Runtime\Controller\HeadlessController;
+use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Tui\Application\InteractiveMode;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Theme\ThemeRegistry;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Command\InvokableCommand;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
+use Symfony\Component\DependencyInjection\Container;
 
 /**
  * @covers \Ineersa\CodingAgent\CLI\AgentCommand
@@ -229,6 +235,29 @@ final class AgentCommandModelOptionTest extends IsolatedKernelTestCase
         $this->assertSame('medium', $session->reasoning);
     }
 
+    // Other startup cases initialize the shared command. A fresh process proves
+    // construction before first use without depending on test order.
+    #[Test]
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function resolvingAgentCommandDoesNotInitializeModeSpecificDependencies(): void
+    {
+        $agentCommand = $this->resolveContainerAgentCommand();
+
+        $this->assertLazyUninitialized($agentCommand, 'inProcessClient', InProcessAgentSessionClient::class);
+        $this->assertLazyUninitialized($agentCommand, 'processClient', JsonlProcessAgentSessionClient::class);
+        $this->assertLazyUninitialized($agentCommand, 'interactiveMode', InteractiveMode::class);
+        $this->assertLazyUninitialized($agentCommand, 'controller', HeadlessController::class);
+
+        $container = self::getContainer();
+        $privates = new \ReflectionProperty(Container::class, 'privates');
+        $this->assertArrayNotHasKey(JsonlProcessAgentSessionClient::class, $privates->getValue(self::$kernel->getContainer()));
+        $client = (new \ReflectionProperty(AgentCommand::class, 'processClient'))->getValue($agentCommand);
+        $realClient = (new \ReflectionClass($client))->initializeLazyObject($client);
+        $this->assertSame($container->get(JsonlProcessAgentSessionClient::class), $realClient);
+        $this->assertSame($realClient, $privates->getValue(self::$kernel->getContainer())[JsonlProcessAgentSessionClient::class]);
+    }
+
     protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
     {
         // Seed a second available model before AppConfig boots so public resume
@@ -403,5 +432,18 @@ YAML);
         $method = new \ReflectionMethod(AgentCommand::class, 'buildInitialRequest');
 
         return $method->invoke(null, $prompt, $model, $reasoning);
+    }
+
+    /**
+     * @param class-string $expectedType
+     */
+    private function assertLazyUninitialized(AgentCommand $agentCommand, string $property, string $expectedType): void
+    {
+        $value = (new \ReflectionProperty(AgentCommand::class, $property))->getValue($agentCommand);
+        $this->assertInstanceOf($expectedType, $value);
+        $this->assertTrue(
+            (new \ReflectionClass($value))->isUninitializedLazyObject($value),
+            \sprintf('Expected %s to remain uninitialized after AgentCommand resolution.', $property),
+        );
     }
 }
