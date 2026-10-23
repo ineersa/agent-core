@@ -58,7 +58,8 @@ use Symfony\AI\Platform\TokenUsage\TokenUsage;
  *     receiving an id, are excluded from the canonical tool‑call list.
  *
  * Non-stream conversion, HTTP status handling, token usage extraction,
- * and finish-reason metadata follow Symfony AI Generic v0.14.
+ * and finish-reason metadata follow Symfony AI Generic v0.15. The inherited
+ * non-stream conversion throws MaxOutputTokensException when the output limit cuts a tool call.
  *
  * @internal
  *
@@ -85,7 +86,7 @@ final class DurableResultConverter extends ResultConverter
     }
 
     /**
-     * Route streaming through the durable converter; delegate non-stream paths to Generic v0.14.
+     * Route streaming through the durable converter; delegate non-stream paths to Generic v0.15.
      */
     public function convert(RawResultInterface|RawHttpResult $result, array $options = []): ResultInterface
     {

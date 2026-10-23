@@ -1470,6 +1470,7 @@ final class PlatformIntegrationTest extends TestCase
             logger: new NullLogger(),
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             requestRetryPolicy: new LlmRequestRetryPolicy(
+                // Keep retries for provider-error coverage, but avoid real wall backoff.
                 maxRetries: $maxRetries,
                 baseDelayMs: 0,
             ),
