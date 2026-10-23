@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
@@ -23,8 +24,10 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
+use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
 
 /**
@@ -404,15 +407,155 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
         $this->assertSame(90, $repo->contiguousCoveredEndSeq('run-gap', 'r1', 'o1'));
     }
 
+    public function testSpoolingPreservesSortedInputAndDelayedToolCompletionOrder(): void
+    {
+        $call = static fn (string $id): array => ['assistant_message' => ['content' => 'Calling '.$id, 'tool_calls' => [['id' => $id, 'name' => 'read', 'arguments' => ['path' => $id]]]]];
+        // Input is deliberately unsorted. A matched pair renders at result arrival,
+        // while the unmatched call flushes at EOF, not at its earlier call seq.
+        $events = [
+            $this->event(9, 'agent_end', ['reason' => 'completed']),
+            $this->event(7, 'tool_execution_end', ['tool_result' => ['tool_call_id' => 'paired', 'result' => ['tool_name' => 'read', 'content' => 'PAIRED_RESULT']]]),
+            $this->event(5, 'agent_command_applied', ['text' => 'INTERVENING_USER']),
+            $this->event(3, 'llm_step_completed', $call('unmatched')),
+            $this->event(1, 'llm_step_completed', $call('paired')),
+        ];
+        $requests = [];
+        $api = $this->buildApi($events, static function (AgentCallRequestDTO $request) use (&$requests): void {
+            $requests[] = $request->input;
+        });
+        $this->observe($api, 9);
+        $this->assertCount(1, $requests);
+        $input = $requests[0];
+        $positions = [];
+        foreach ([5, 1, 9, 3] as $seq) {
+            $position = strpos($input, '[Source entry id: spool-run:'.$seq.']');
+            $this->assertNotFalse($position);
+            $positions[] = $position;
+        }
+        $ordered = $positions;
+        sort($ordered);
+        $this->assertSame($ordered, $positions);
+        $this->assertStringContainsString('PAIRED_RESULT', $input);
+        $this->assertSame(1, substr_count($input, '[Tool call paired '));
+        $this->assertSame(1, substr_count($input, '[Tool call unmatched '));
+    }
+
+    public function testMalformedLateEventFailsBeforeAnyPreparedRequestRuns(): void
+    {
+        $calls = 0;
+        $api = $this->buildApi([
+            $this->event(1, 'agent_command_applied', ['text' => str_repeat('valid ', 10000)]),
+            $this->event(2, 'tool_execution_end', ['tool_result' => 'malformed']),
+        ], static function () use (&$calls): void { ++$calls; }, 4096);
+        try {
+            $this->observe($api, 2);
+            $this->fail('Late malformed input must fail during full preparation.');
+        } catch (\UnexpectedValueException $exception) {
+            $this->assertSame('ToolExecutionEnd requires an array tool_result payload.', $exception->getMessage());
+        }
+        $this->assertSame(0, $calls);
+        $connection = $this->omDatabaseFactory()->connect($this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite', new NullLogger());
+        $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM om_coverage'));
+    }
+
+    public function testNonemptyMemorySnapshotStaysFrozenAcrossSpooledRequests(): void
+    {
+        $seed = $this->buildApi([$this->event(1, 'agent_command_applied', ['text' => 'Seed'])], static function (AgentCallRequestDTO $request): void {
+            ($request->tools[0]->handler)(['observations' => [['content' => 'FROZEN_OBSERVATION', 'timestamp' => '2026-10-23 00:00', 'relevance' => 'high', 'source_refs' => [['run_id' => 'spool-run', 'seq' => 1]]]]]);
+        });
+        $this->observe($seed, 1);
+        $connection = $this->omDatabaseFactory()->connect($this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite', new NullLogger());
+        $observationId = (string) $connection->fetchOne('SELECT observation_id FROM om_observation');
+        $generations = new MemoryGenerationRepository($connection);
+        $generations->claimGeneration('frozen-generation', 'spool-run', 'threshold', 'frozen-set', 'test/model', 'rv1', '2026-10-23T00:00:00+00:00');
+        $generations->commitSucceededGeneration('frozen-generation', 'spool-run', 'frozen-set', 'test/model', 'rv1', [['reflection_id' => 'frozen-reflection', 'content' => 'FROZEN_REFLECTION', 'supporting_observation_ids_json' => json_encode([$observationId], \JSON_THROW_ON_ERROR), 'token_count' => 10]], [$observationId], '2026-10-23T00:00:00+00:00');
+        $snapshots = [];
+        $api = $this->buildApi([$this->event(2, 'agent_command_applied', ['text' => str_repeat('payload ', 3000)])], function (AgentCallRequestDTO $request) use (&$snapshots): void {
+            $source = strpos($request->input, 'NEW SOURCE-ADDRESSED CONVERSATION CHUNK:');
+            $this->assertNotFalse($source);
+            $snapshots[] = substr($request->input, 0, $source);
+            ($request->tools[0]->handler)(['observations' => [['content' => 'NEW_DURING_JOB', 'timestamp' => '2026-10-23 00:01', 'relevance' => 'high', 'source_refs' => [['run_id' => 'spool-run', 'seq' => 2]]]]]);
+        }, 4096);
+        $this->observe($api, 2);
+        $this->assertGreaterThan(1, \count($snapshots));
+        $this->assertCount(1, array_unique($snapshots));
+        $this->assertStringContainsString('FROZEN_OBSERVATION', $snapshots[0]);
+        $this->assertStringContainsString('FROZEN_REFLECTION', $snapshots[0]);
+        $this->assertStringNotContainsString('NEW_DURING_JOB', $snapshots[0]);
+        $this->assertSame(2, (int) $connection->fetchOne('SELECT COUNT(*) FROM om_observation'));
+    }
+
+    /** @return iterable<string, array{\RuntimeException}> */
+    public static function interruptedRequests(): iterable
+    {
+        yield 'provider failure' => [new \RuntimeException('synthetic provider failure')];
+        yield 'cancelled model stream' => [new LlmStreamCancelledException()];
+    }
+
+    #[DataProvider('interruptedRequests')]
+    public function testPartialMultipartCoverageSurvivesInterruptionAndFreshHandlerRetry(\RuntimeException $failure): void
+    {
+        // Exceed the spool's memory threshold so interruption also exercises
+        // disk-backed requests, not only the small in-memory path.
+        $events = [
+            $this->event(1, 'agent_command_queued', []),
+            $this->event(2, 'agent_command_applied', ['text' => str_repeat('payload ', 140000)]),
+            $this->event(3, 'agent_command_queued', []),
+        ];
+        $calls = 0;
+        $api = $this->buildApi($events, static function () use (&$calls, $failure): void {
+            if (2 === ++$calls) {
+                throw $failure;
+            }
+        });
+        try {
+            $this->observe($api, 3);
+            $this->fail('Second request must propagate its interruption.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame($failure, $exception);
+        }
+        $connection = $this->omDatabaseFactory()->connect($this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite', new NullLogger());
+        $repo = new ObservationRepository($connection);
+        $firstRow = $connection->fetchAssociative('SELECT * FROM om_coverage');
+        $this->assertIsArray($firstRow);
+        $this->assertSame(1, (int) $firstRow['part_index']);
+        $this->assertGreaterThan(1, (int) $firstRow['part_count']);
+        $this->assertNull($repo->contiguousCoveredEndSeq('spool-run', 'r1', 'o1'));
+        $partCount = (int) $firstRow['part_count'];
+        $retryCalls = 0;
+        $retry = $this->buildApi($events, static function () use (&$retryCalls): void { ++$retryCalls; });
+        // Fresh handler opens the same durable DB; the ephemeral spool is rebuilt.
+        $this->observe($retry, 3);
+        $this->assertSame($partCount - 1, $retryCalls);
+        $this->assertSame(3, $repo->contiguousCoveredEndSeq('spool-run', 'r1', 'o1'));
+        $this->assertSame($partCount, (int) $connection->fetchOne('SELECT COUNT(*) FROM om_coverage'));
+        $this->assertSame(1, (int) $connection->fetchOne('SELECT MIN(source_start_seq) FROM om_coverage'));
+        $this->assertSame(3, (int) $connection->fetchOne('SELECT MAX(source_end_seq) FROM om_coverage'));
+        $this->assertSame($firstRow, $connection->fetchAssociative('SELECT * FROM om_coverage WHERE coverage_key = ?', [$firstRow['coverage_key']]));
+        $this->observe($retry, 3);
+        $this->assertSame($partCount - 1, $retryCalls, 'Completed redelivery invokes no model.');
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function event(int $seq, string $type, array $payload): SessionEventDTO
+    {
+        return new SessionEventDTO('spool-run', $seq, 1, $type, $payload, '2026-10-23T00:00:00+00:00');
+    }
+
+    private function observe(ExtensionApiInterface $api, int $endSeq): void
+    {
+        (new ObserveBoundaryJobHandler(new NullLogger()))->handle($api, ['run_id' => 'spool-run', 'terminal_end_seq' => $endSeq, 'terminal_status' => 'completed', 'renderer_version' => 'r1', 'observer_schema_version' => 'o1'], 'spool-job', 'spool-run');
+    }
+
     /**
      * @param list<SessionEventDTO>              $events
      * @param callable(AgentCallRequestDTO):void $onAgentRun
      */
-    private function buildApi(array $events, callable $onAgentRun): ExtensionApiInterface
+    private function buildApi(array $events, callable $onAgentRun, int $contextWindow = 128000): ExtensionApiInterface
     {
         $cwd = $this->projectDir;
 
-        return new class($cwd, $events, $onAgentRun) implements ExtensionApiInterface {
+        return new class($cwd, $events, $onAgentRun, $contextWindow) implements ExtensionApiInterface {
             /**
              * @param list<SessionEventDTO>              $events
              * @param callable(AgentCallRequestDTO):void $onAgentRun
@@ -421,6 +564,7 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
                 private readonly string $cwd,
                 private readonly array $events,
                 private readonly mixed $onAgentRun,
+                private readonly int $contextWindow,
             ) {
             }
 
@@ -501,11 +645,11 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
             {
                 $onAgentRun = $this->onAgentRun;
 
-                return new class($onAgentRun) implements AgentRunnerInterface {
+                return new class($onAgentRun, $this->contextWindow) implements AgentRunnerInterface {
                     /**
                      * @param callable(AgentCallRequestDTO):void $onAgentRun
                      */
-                    public function __construct(private readonly mixed $onAgentRun)
+                    public function __construct(private readonly mixed $onAgentRun, private readonly int $contextWindow)
                     {
                     }
 
@@ -516,7 +660,7 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
 
                     public function contextWindow(string $exactModel): ?int
                     {
-                        return 128000;
+                        return $this->contextWindow;
                     }
                 };
             }
