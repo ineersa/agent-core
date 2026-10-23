@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\RedriveDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
@@ -95,11 +96,12 @@ final readonly class CompleteDeferredToolCallHandler
                 throw new \RuntimeException('Accepted deferred completion is not a tool result.');
             }
 
-            // Keep the pending correlation until sending succeeds. A transport
-            // loss needs explicit repair, not another publication queue.
-            $this->locks->afterRelease($correlation->runId, function () use ($message, $correlation, $result): void {
+            // Failed sends retain the first accepted result for explicit repair.
+            // Acknowledged results also wait for durable mailbox admission.
+            $acknowledged = null !== $this->deferredRepository->acknowledgedAt($message->deferredId);
+            $this->locks->afterRelease($correlation->runId, function () use ($message, $correlation, $result, $acknowledged): void {
                 try {
-                    if (null !== $this->deferredRepository->acknowledgedAt($message->deferredId)) {
+                    if ($acknowledged) {
                         if (null === $this->acknowledgedRouter) {
                             throw new \LogicException('Acknowledged deferred completion requires a CodingAgent router.');
                         }
@@ -119,16 +121,36 @@ final readonly class CompleteDeferredToolCallHandler
 
                     return;
                 }
-                // Settlement failures must surface for owner recovery; only send
-                // failures stay pending for explicit repair.
-                $this->settle($message->deferredId, $correlation->runId, $correlation->turnNo, $correlation->stepId);
+                // Acknowledged work settles only after durable background-completion
+                // receipt admission. Successful enqueue alone is not settlement.
+                if (!$acknowledged) {
+                    $this->settle($message->deferredId, $correlation->runId, $correlation->turnNo, $correlation->stepId);
+                }
             });
         } finally {
             RunLogContext::leave();
         }
     }
 
-    /** Settle sent or explicitly discarded completions, then retry guarded cleanup. */
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function redrive(RedriveDeferredToolCall $message): void
+    {
+        $this->locks->synchronized($message->runId(), function () use ($message): void {
+            if ('completed' === $this->deferredRepository->status($message->deferredId)) {
+                return;
+            }
+            $metadata = $this->deferredRepository->findMetadataByDeferredId($message->deferredId);
+            if (null === $metadata || $metadata->reference->runId !== $message->runId()
+                || null === $this->deferredRepository->findAcceptedResultReferenceByDeferredId($message->deferredId)) {
+                throw new \RuntimeException('Deferred repair requires an accepted result for the same run.');
+            }
+            // The accepted-reference check prevents repair from manufacturing a
+            // terminal outcome. __invoke reads the first frozen result, not this body.
+            $this(new CompleteDeferredToolCall($message->deferredId, []));
+        });
+    }
+
+    /** Settle admitted or explicitly discarded completions, then retry guarded cleanup. */
     public function settle(string $deferredId, string $runId, int $turnNo, string $stepId): void
     {
         $this->locks->synchronized($runId, function () use ($deferredId, $runId, $turnNo, $stepId): void {

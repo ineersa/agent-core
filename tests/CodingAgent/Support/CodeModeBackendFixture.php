@@ -24,11 +24,12 @@ final readonly class CodeModeBackendFixture
     public RunState $state;
     public ExecuteToolCall $call;
 
-    public function __construct(private ContainerInterface $container, string $script)
+    public function __construct(private ContainerInterface $container, string $script, string $toolName = 'code_mode')
     {
         $run = $container->get(HatfieldSessionStore::class)->createSession();
-        $this->call = new ExecuteToolCall($run, 1, 'step', 1, 'original-execution', 'cm', 'code_mode', ['script' => $script], 0, mode: 'sequential', timeoutSeconds: 8);
-        $assistant = new AgentMessage('assistant', [], metadata: ['tool_calls' => [['id' => 'cm', 'name' => 'code_mode', 'arguments' => ['script' => $script], 'order_index' => 0]]]);
+        $arguments = 'code_mode' === $toolName ? ['script' => $script] : ['agent' => 'scout', 'task' => $script];
+        $this->call = new ExecuteToolCall($run, 1, 'step', 1, 'original-execution', 'cm', $toolName, $arguments, 0, mode: 'sequential', timeoutSeconds: 8);
+        $assistant = new AgentMessage('assistant', [], metadata: ['tool_calls' => [['id' => 'cm', 'name' => $toolName, 'arguments' => $arguments, 'order_index' => 0]]]);
         $this->state = RunStateBuilder::running($run)->withTurnNo(1)->withLastSeq(3)->withActiveStepId('step')->withPendingToolCalls(['cm' => false])->withMessages([$assistant])->build();
         $events = (new EventFactory())->eventsFromSpecs($run, 1, 1, [
             ['type' => 'run_started', 'payload' => ['step_id' => 'step', 'payload' => ['metadata' => ['model' => 'model', 'reasoning' => 'medium']]]],

@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -20,6 +21,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Message\RedriveDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -55,6 +57,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private RunCommit $runCommit,
         private \Ineersa\CodingAgent\Session\History\HistoryReplayFilter $historyReplayFilter,
         private DeferredSubagentBatchRepository $deferredBatches,
+        private DeferredToolCompletionRepositoryInterface $deferredCompletions,
     ) {
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
@@ -168,6 +171,15 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         }
 
         $replayed = $this->retainedReplay($runId, $sorted);
+
+        // Normally idle roots can still own acknowledged work. Redrive its
+        // accepted terminal delivery without executing the original invocation.
+        if (RunStatus::Completed === $replayed->status || (!$this->hasTerminalAgentEnd($sorted) && RunStatus::Cancelling !== $replayed->status)) {
+            $acceptedRedrive = $this->pendingAcceptedDeferredRedrive($runId, $apply, $leadingActions);
+            if (null !== $acceptedRedrive) {
+                return $acceptedRedrive;
+            }
+        }
 
         if ($this->hasTerminalAgentEnd($sorted)) {
             if ($this->terminalReasonIs($sorted, $replayed, RunStatus::Failed, 'failed')) {
@@ -833,8 +845,39 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     }
 
     /**
-     * A manual /repair explicitly requests the current operation again. It never appends a synthetic completion event: workers and
-     * result handlers remain the authoritative completion path.
+     * @param list<object> $leadingActions
+     */
+    private function pendingAcceptedDeferredRedrive(string $runId, bool $apply, array $leadingActions): RepairResult|SessionRepairPlan|null
+    {
+        $deferredIds = $this->deferredCompletions->listPendingAcceptedDeferredIdsForRun($runId);
+        if ([] === $deferredIds) {
+            return null;
+        }
+        if (!$apply) {
+            return new RepairResult(false, false, 'Pending accepted deferred completion repair available. External effects may already have occurred.');
+        }
+        $effects = [];
+        foreach ($deferredIds as $deferredId) {
+            if (null === $this->deferredCompletions->findAcceptedResultReferenceByDeferredId($deferredId)) {
+                throw new \RuntimeException('Pending accepted deferred completion lost its frozen result.');
+            }
+            $effects[] = new RedriveDeferredToolCall($runId, $deferredId);
+        }
+        $stored = $this->activeRunContext->requireLoaded($runId);
+
+        return new SessionRepairPlan(
+            $stored,
+            $stored,
+            [],
+            $leadingActions,
+            new RepairResult(false, false, 'Pending accepted deferred completion redrive requested. Delivery runs after owner-lock release. External effects may already have occurred.', activeOperationsRedriven: \count($effects)),
+            $effects,
+        );
+    }
+
+    /**
+     * Manual repair requests the current operation again, without fabricating a
+     * completion. Workers and result handlers remain the completion authority.
      *
      * @param list<RunEvent> $events
      * @param list<object>   $leadingActions

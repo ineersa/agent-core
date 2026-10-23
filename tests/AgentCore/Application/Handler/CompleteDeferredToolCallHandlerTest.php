@@ -74,6 +74,46 @@ final class CompleteDeferredToolCallHandlerTest extends TestCase
         $this->assertSame(!$sendSucceeds, $pending);
     }
 
+    public function testAcknowledgedPendingCorrelationDoesNotSettleOnSuccessfulEnqueue(): void
+    {
+        $pending = true;
+        $correlation = new DeferredToolCompletionCorrelation('deferred', 'run', 1, 'step', 1, 'key', 'call', 'echo', [], 0);
+        $call = new ExecuteToolCall('run', 1, 'step', 1, 'key', 'call', 'echo', [], 0);
+        $result = new ToolCallResult('run', 1, 'step', 1, 'key', 'call', 0, ['tool_name' => 'echo', 'content' => []]);
+        $invocation = new ToolPayloadReferenceDTO('call', 'run', 1, 'step', 1, 'key', 'call', 0, 'echo', str_repeat('a', 64), 10);
+        $accepted = new ToolPayloadReferenceDTO('result', 'run', 1, 'step', 1, 'key', 'call', 0, 'echo', str_repeat('b', 64), 10);
+        $repository = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
+        $repository->method('status')->willReturnCallback(static fn (): string => $pending ? 'pending' : 'completed');
+        $repository->method('findByDeferredId')->willReturn($correlation);
+        $repository->method('acknowledgedAt')->willReturn(new \DateTimeImmutable('2026-10-23T00:00:00Z'));
+        $repository->method('findAcceptedResultReferenceByDeferredId')->willReturn(null);
+        $repository->method('findInvocationReferenceByDeferredId')->willReturn($invocation);
+        $repository->expects($this->once())->method('acceptResult')->willReturn($accepted);
+        $repository->expects($this->never())->method('markCompleted');
+        $batches = $this->createMock(ToolBatchStoreInterface::class);
+        $batches->expects($this->never())->method('delete');
+        $payloads = $this->createStub(ToolPayloadStoreInterface::class);
+        $payloads->method('read')->willReturnCallback(static fn (ToolPayloadReferenceDTO $reference): object => 'call' === $reference->kind ? $call : $result);
+        $payloads->method('publish')->willReturn($accepted);
+        $router = $this->createMock(\Ineersa\AgentCore\Contract\Tool\DeferredAcknowledgedCompletionRouterInterface::class);
+        $router->expects($this->once())->method('deliver')->with('deferred', $result);
+        $bus = $this->createMock(MessageBusInterface::class);
+        $bus->expects($this->never())->method('dispatch');
+        $handler = new CompleteDeferredToolCallHandler(
+            $repository,
+            $bus,
+            new RunLockManager(new LockFactory(new InMemoryStore())),
+            $batches,
+            $payloads,
+            new DeferredToolInvocationFence(new Serializer()),
+            new TestLogger(),
+            $router,
+            null,
+        );
+        $handler(new CompleteDeferredToolCall('deferred', []));
+        $this->assertTrue($pending);
+    }
+
     public static function sendOutcomes(): iterable
     {
         yield 'successful send' => [true];

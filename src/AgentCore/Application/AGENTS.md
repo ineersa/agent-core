@@ -17,6 +17,7 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `CompactRun` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler` (App layer; depends on compaction services) |
 | `CompactionStepResult` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler` |
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
+| `RedriveDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler::redrive()` validates the accepted result before reusing terminal delivery |
 | `CommitSubagentProgress` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler` |
 | `RefreshRunContext` | Owner-local `RunMessageProcessor` call from attach, no bus route | `RefreshRunContextHandler` replaces generated messages and commits `context_refreshed` without advancing a turn |
 | `AcceptSubmissionDTO` | `agent.command.bus` (transport `run_control`) | App `SubmissionHandler` enters owner recovery; `SubmissionRunHandler` accepts a source receipt for a native deferred communication call |
@@ -53,8 +54,13 @@ original batch slot with `tool_call_acknowledged`, not an execution-end event.
 Shared `acknowledged_at` joins `LocalMetadataCoordinator`'s transaction while the
 deferred registration stays pending. `CompleteDeferredToolCallHandler` freezes the
 first accepted result reference and routes waiting callers ordinarily or
-acknowledged work through CodingAgent's background-completion mailbox. See
-`architecture/code-mode-execution.md`.
+acknowledged work through CodingAgent's background-completion mailbox.
+Acknowledged settlement waits for durable receipt admission. Receipt and source
+status commit with mailbox metadata; the background-completion owner facade
+deletes settled batch files only after verified finalization. Duplicate admission
+retries guarded cleanup. `/repair` captures `RedriveDeferredToolCall` for pending
+accepted results, including normally completed roots, without repeating source
+execution or terminal processing. See `architecture/code-mode-execution.md`.
 
 - `StartRun` — `AgentRunner::start()`
 - `ApplyCommand` — `AgentRunner` steer/followUp/cancel/answerHuman via `applyCoreCommand()`

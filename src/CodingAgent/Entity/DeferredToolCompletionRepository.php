@@ -224,6 +224,21 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         );
     }
 
+    public function listPendingAcceptedDeferredIdsForRun(string $runId): array
+    {
+        return $this->locks->synchronized($runId, function () use ($runId): array {
+            $rows = $this->getEntityManager()->getConnection()->fetchFirstColumn(
+                'SELECT deferred_id FROM tool_deferred_completion WHERE run_id = :run_id AND status = :pending AND accepted_result_reference_json IS NOT NULL ORDER BY id ASC',
+                [
+                    'run_id' => $runId,
+                    'pending' => 'pending',
+                ],
+            );
+
+            return array_values(array_map(static fn (mixed $id): string => (string) $id, $rows));
+        });
+    }
+
     public function markCompleted(string $deferredId): void
     {
         $em = $this->getEntityManager();

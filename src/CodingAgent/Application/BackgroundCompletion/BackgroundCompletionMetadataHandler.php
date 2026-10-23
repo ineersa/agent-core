@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Coordination\DTO\FinalizeCommandMetadataDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\ConsumeBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\RecordBackgroundCompletionDTO;
+use Ineersa\CodingAgent\Application\Deferred\DeferredBackgroundCompletionSettlement;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -18,8 +19,12 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final readonly class BackgroundCompletionMetadataHandler implements CoordinationActionValidatorInterface
 {
-    public function __construct(private BackgroundCompletionReceiptRepository $receipts, private ValidatorInterface $validator, private DenormalizerInterface $denormalizer)
-    {
+    public function __construct(
+        private BackgroundCompletionReceiptRepository $receipts,
+        private ValidatorInterface $validator,
+        private DenormalizerInterface $denormalizer,
+        private DeferredBackgroundCompletionSettlement $deferredSettlement,
+    ) {
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]
@@ -28,6 +33,9 @@ final readonly class BackgroundCompletionMetadataHandler implements Coordination
         $this->assertCaptured($action, $pending);
         $this->validate($action);
         $this->receipts->record($action->receipt);
+        if (BackgroundCompletionDispositionEnum::Forwarding !== $action->receipt->disposition) {
+            $this->deferredSettlement->recordAdmission($action->receipt->identity, $action->receipt->sourceRunId);
+        }
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]

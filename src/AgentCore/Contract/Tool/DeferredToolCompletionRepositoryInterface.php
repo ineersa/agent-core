@@ -52,5 +52,12 @@ interface DeferredToolCompletionRepositoryInterface
      */
     public function acceptResult(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO;
 
+    /**
+     * Pending registrations for one run that already froze a terminal result.
+     *
+     * @return list<string>
+     */
+    public function listPendingAcceptedDeferredIdsForRun(string $runId): array;
+
     public function markCompleted(string $deferredId): void;
 }

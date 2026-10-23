@@ -42,9 +42,21 @@ freezes the first accepted result on the shared deferred record and dispatches
 `CompleteDeferredToolCall`. That common path routes a still-waiting caller through
 the ordinary result handler, or an acknowledged completion through the existing
 background-completion mailbox with paths to retained processed and original
-structured results. Child terminal delivery uses the same path. Failed sends keep
-the first accepted reference for explicit repair. Detached producer and receiver
-admission validate the retained invocation after the parent turn advances.
+structured results. Child terminal delivery uses the same path. Failed sends and
+acknowledged deliveries without durable mailbox admission retain the first
+accepted reference for explicit `/repair`. Repair captures a bounded
+`RedriveDeferredToolCall` through the existing owner transition. It reads the
+frozen result without repeating execution or terminal processing, even when
+the root completed normally. Preview and refused repair do not send or mutate.
+Detached producer and receiver admission validate the retained invocation after
+the parent turn advances.
+
+Mailbox admission commits the background receipt and deferred source status in
+the same metadata transaction. A forwarding obligation alone does not settle the
+source. After verified owner finalization, the background-completion facade
+deletes the original batch through guarded cleanup. Duplicate admission retries
+cleanup without admitting or consuming the notice twice. Rollback retains the
+first accepted result and its invocation files.
 
 ## Evidence and cleanup
 

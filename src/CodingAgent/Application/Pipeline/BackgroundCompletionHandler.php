@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
+use Ineersa\CodingAgent\Application\Deferred\DeferredBackgroundCompletionSettlement;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -18,6 +19,7 @@ final readonly class BackgroundCompletionHandler
         private RunLockManager $locks,
         private OwnerRunInitializationMiddleware $initialization,
         private RunMessageProcessor $processor,
+        private DeferredBackgroundCompletionSettlement $deferredSettlement,
     ) {
     }
 
@@ -27,6 +29,9 @@ final readonly class BackgroundCompletionHandler
         $this->locks->synchronized($runId, function () use ($message, $runId): void {
             $this->initialization->initializeForOwner($runId, $message);
             $this->processor->process('background_completion', $message);
+            // Receipt/status metadata has committed and canonical finalization
+            // succeeded. Duplicate admission also retries guarded file cleanup.
+            $this->deferredSettlement->cleanup($message->identity);
         });
     }
 }

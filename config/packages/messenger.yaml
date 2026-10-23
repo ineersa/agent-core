@@ -116,6 +116,7 @@ framework:
             Ineersa\CodingAgent\Application\Message\SelectHistoryEntry: run_control
             Ineersa\CodingAgent\Application\Message\RepairSession: run_control
             Ineersa\AgentCore\Domain\Message\StartRun: run_control
+            Ineersa\AgentCore\Domain\Message\RedriveDeferredToolCall: run_control
             Ineersa\AgentCore\Domain\Message\ApplyCommand: run_control
             Ineersa\AgentCore\Domain\Message\ApplyShellCommand: run_control
             Ineersa\AgentCore\Domain\Message\LlmStepResult: run_control

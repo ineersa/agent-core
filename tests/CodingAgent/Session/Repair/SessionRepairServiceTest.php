@@ -27,6 +27,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -966,6 +967,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
                 actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
             ),
             deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
+            deferredCompletions: new InMemoryDeferredToolCompletionRepository(),
         );
     }
 
