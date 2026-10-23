@@ -6,7 +6,9 @@ namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -14,6 +16,7 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeIpc;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Process\Process;
 
 /**
@@ -207,7 +210,7 @@ PHP);
                 ),
                 static function () use ($bridge): mixed {
                     return $bridge->execute(
-                        'for ($i = 0, $end = hrtime(true) + 3_000_000_000; hrtime(true) < $end; ++$i) {} return $i;',
+                        'echo "timeout-out"; fwrite(STDERR, "timeout-err"); for ($i = 0, $end = hrtime(true) + 3_000_000_000; hrtime(true) < $end; ++$i) {} return $i;',
                         120,
                         256,
                     );
@@ -216,6 +219,9 @@ PHP);
             $this->fail('Expected timeout');
         } catch (ToolCallException $exception) {
             $this->assertStringContainsString('timed out after 1 seconds', $exception->getMessage());
+            $this->assertStringContainsString("stdout:\ntimeout-out", $exception->getMessage());
+            $this->assertStringContainsString("stderr:\ntimeout-err", $exception->getMessage());
+            $this->assertFalse($exception->retryable());
         }
     }
 
@@ -405,6 +411,102 @@ PHP);
 
         $this->assertNull($this->runScript($bridge, 'return null;'));
         $this->assertNull($this->runScript($bridge, '// no return'));
+    }
+
+    #[DataProvider('failureDiagnosticsCases')]
+    public function testFailureDiagnosticsSurviveWorkspaceCleanup(bool $nestedFailure): void
+    {
+        $workspace = null;
+        $calls = 0;
+        $bridge = $this->bridgeWithToolbox(function (string $name, array $arguments) use (&$workspace, &$calls, $nestedFailure): array {
+            ++$calls;
+            $this->assertSame('read', $name);
+            $workspace = $arguments['workspace'];
+            $this->assertIsString($workspace);
+            $this->assertDirectoryExists($workspace);
+            $this->assertFileExists($workspace.'/script.php');
+            $this->assertFileExists($workspace.'/s.sock');
+
+            if ($nestedFailure) {
+                throw new ToolCallException('nested-failure', retryable: false);
+            }
+
+            return ['original' => 'nested-value'];
+        });
+
+        try {
+            $this->runScript($bridge, <<<'PHP'
+echo "failure-out";
+fwrite(STDERR, "failure-err\n");
+$value = tool('read', ['workspace' => __DIR__]);
+if ($value !== ['original' => 'nested-value']) {
+    throw new RuntimeException('nested return changed');
+}
+throw new RuntimeException('script-failure');
+PHP);
+            $this->fail('Expected script or nested-tool failure');
+        } catch (ToolCallException $exception) {
+            $message = $exception->getMessage();
+            $this->assertStringContainsString($nestedFailure ? 'nested-failure' : 'script-failure', $message);
+            $this->assertStringContainsString("stdout:\nfailure-out", $message);
+            $this->assertStringContainsString("stderr:\nfailure-err", $message);
+            $this->assertSame(1, substr_count($message, 'failure-out'));
+            $this->assertSame(1, substr_count($message, 'failure-err'));
+            $this->assertFalse($exception->retryable());
+        }
+
+        $this->assertSame(1, $calls);
+        $this->assertIsString($workspace);
+        $this->assertDirectoryDoesNotExist($workspace);
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function failureDiagnosticsCases(): iterable
+    {
+        yield 'script exception after real nested return' => [false];
+        yield 'nested tool exception' => [true];
+    }
+
+    public function testCancellationPreservesPartialDiagnostics(): void
+    {
+        $token = new class implements CancellationTokenInterface {
+            public bool $cancelled = false;
+
+            public function isCancellationRequested(): bool
+            {
+                return $this->cancelled;
+            }
+        };
+        $workspace = null;
+        $bridge = $this->bridgeWithToolbox(static function (string $name, array $arguments) use ($token, &$workspace): null {
+            $workspace = $arguments['workspace'];
+            $token->cancelled = true;
+
+            return null;
+        });
+        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+
+        try {
+            $accessor->with(
+                new ToolContext('cancelled-code-mode', 1, 'call', 'code_mode', $token, 10),
+                static fn (): mixed => $bridge->execute('echo "cancel-out"; fwrite(STDERR, "cancel-err"); return tool("read", ["workspace" => __DIR__]);'),
+            );
+            $this->fail('Expected cancellation at the nested-tool boundary');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('Code-mode execution cancelled.', $exception->getMessage());
+            $this->assertStringContainsString("stdout:\ncancel-out", $exception->getMessage());
+            $this->assertStringContainsString("stderr:\ncancel-err", $exception->getMessage());
+            $this->assertFalse($exception->retryable());
+        }
+
+        $this->assertIsString($workspace);
+        $this->assertDirectoryDoesNotExist($workspace);
+    }
+
+    public function testFailureDiagnosticsRejectMalformedOutput(): void
+    {
+        $this->expectException(MalformedToolResultException::class);
+        $this->runScript($this->bridge(), 'echo "\xB1"; throw new RuntimeException("script-failure");');
     }
 
     public function testDieWithoutReturnReportsExitWithoutReturning(): void
@@ -597,7 +699,7 @@ PHP);
     }
 
     /**
-     * @param callable(string): mixed $executor
+     * @param callable(string, array<string, mixed>): mixed $executor
      */
     private function bridgeWithToolbox(callable $executor): CodeModeHostBridge
     {
@@ -624,9 +726,7 @@ PHP);
 
                     public function execute(\Symfony\AI\Platform\Result\ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
                     {
-                        ($this->executor)($toolCall->getName());
-
-                        return new \Symfony\AI\Agent\Toolbox\ToolResult($toolCall, null);
+                        return new \Symfony\AI\Agent\Toolbox\ToolResult($toolCall, ($this->executor)($toolCall->getName(), $toolCall->getArguments()));
                     }
                 };
             }

@@ -70,14 +70,34 @@ final readonly class CodeModeHostBridge
             $connection = null;
 
             try {
-                $this->writeScript($workspace['script'], $script);
-                $server = $this->createSocketServer($workspace['socket']);
-                $process = $this->startProcess($workspace, $cancelToken, $memoryLimit);
-                $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
+                try {
+                    $this->writeScript($workspace['script'], $script);
+                    $server = $this->createSocketServer($workspace['socket']);
+                    $process = $this->startProcess($workspace, $cancelToken, $memoryLimit);
+                    $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
 
-                return $this->serve($connection, $process, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
+                    return $this->serve($connection, $process, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
+                } finally {
+                    $this->stopProcess($process);
+                }
+            } catch (ToolCallException $exception) {
+                if (null === $process) {
+                    throw $exception;
+                }
+
+                // Seal failure evidence after process settlement, before workspace
+                // cleanup. Script and nested-tool failures otherwise lose both streams.
+                $diagnostics = CodeModeDiagnostics::prepare(
+                    $process->getOutput(),
+                    $process->getErrorOutput(),
+                    self::SCRIPT_WRAPPER_PREFIX_LINES,
+                );
+                if ([] === $diagnostics) {
+                    throw $exception;
+                }
+
+                throw new ToolCallException(CodeModeDiagnostics::appendToMessage($exception->getMessage(), $diagnostics), retryable: $exception->retryable(), hint: $exception->hint(), previous: $exception);
             } finally {
-                $this->stopProcess($process);
                 $this->closeResource($connection);
                 $this->closeResource($server);
                 $this->cleanupWorkspace($workspace);
@@ -694,16 +714,7 @@ final readonly class CodeModeHostBridge
             null === $exitCode ? 'unknown' : (string) $exitCode,
         );
 
-        $diagnostics = CodeModeDiagnostics::prepare(
-            $process->getOutput(),
-            $process->getErrorOutput(),
-            self::SCRIPT_WRAPPER_PREFIX_LINES,
-        );
-
-        return new ToolCallException(
-            CodeModeDiagnostics::appendToMessage($message, $diagnostics),
-            retryable: false,
-        );
+        return new ToolCallException($message, retryable: false);
     }
 
     private function drainProcessOutput(Process $process): void
