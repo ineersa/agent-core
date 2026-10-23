@@ -108,13 +108,13 @@ final class SessionResourceSamplerTaskTest extends TestCase
                 stream_socket_recvfrom($socket, 4096),
             );
             $this->assertSame('session.resource_sample.sent', $logger->records[0]['message']);
-            // Fake top PIDs disappear from /proc; the real PHPUnit PID remains readable.
+            // Fake top PIDs are missing from /proc; the real PHPUnit PID remains readable.
             $this->assertSame('partial', $logger->records[0]['context']['memory_counter_status']);
             $this->assertNull($logger->records[0]['context']['pss_bytes']);
             $this->assertNull($logger->records[0]['context']['uss_bytes']);
             $this->assertSame(1, $logger->records[0]['context']['memory_counter_readable']);
-            $this->assertSame(0, $logger->records[0]['context']['memory_counter_unreadable']);
-            $this->assertSame(4, $logger->records[0]['context']['memory_counter_exited']);
+            $this->assertSame(4, $logger->records[0]['context']['memory_counter_unreadable']);
+            $this->assertArrayNotHasKey('memory_counter_exited', $logger->records[0]['context']);
             $processor = new LogContextProcessor(new TelemetrySessionKeyProvider($this->directory));
             $record = $processor(new LogRecord(new \DateTimeImmutable(), 'test', Level::Info, $logger->records[0]['message'], $logger->records[0]['context']));
             $this->assertSame($key, $record->extra['session_key']);
@@ -173,58 +173,13 @@ final class SessionResourceSamplerTaskTest extends TestCase
             $this->assertGreaterThan(0, $records[0]['context']['pss_bytes']);
             $this->assertGreaterThan(0, $records[0]['context']['uss_bytes']);
             $this->assertSame(0, $records[0]['context']['memory_counter_unreadable']);
-            $this->assertSame(0, $records[0]['context']['memory_counter_exited']);
+            $this->assertArrayNotHasKey('memory_counter_exited', $records[0]['context']);
             $this->assertMatchesRegularExpression('/hatfield.session.cpu_percent:[0-9.]+\|g/', $payload);
             $this->assertMatchesRegularExpression('/hatfield.session.rss_bytes:[1-9][0-9]*\|g/', $payload);
             $this->assertMatchesRegularExpression('/hatfield.session.process_count:(?:[3-9]|[1-9][0-9]+)\|g/', $payload);
             $this->assertMatchesRegularExpression('/hatfield.session.pss_bytes:[1-9][0-9]*\|g/', $payload);
             $this->assertMatchesRegularExpression('/hatfield.session.uss_bytes:[1-9][0-9]*\|g/', $payload);
             $this->assertStringContainsString('session_id:native-tree', $payload);
-        } finally {
-            fclose($socket);
-        }
-    }
-
-    public function testLivePidWithoutReadableSmapsCountsAsUnreadableNotExited(): void
-    {
-        $self = (int) getmypid();
-        $this->command('ps', 'echo '.var_export("20 1\n21 20\n$self 21\n", true).';');
-        $header = "top - 00:00:00 up 1 day\n\nPID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND\n";
-        $frame = '';
-        foreach ([20, 21, $self] as $index => $pid) {
-            $frame .= "$pid user 20 0 0 ".(($index + 1) * 100).' 0 S '.($index + 1)." 0 0:00 fixture\n";
-        }
-        $this->command('top', 'echo '.var_export($header.$frame."\n".$header.$frame, true).';');
-
-        $procRoot = $this->directory.'/proc-root';
-        $this->assertTrue(mkdir($procRoot.'/20', 0755, true));
-        $this->assertTrue(mkdir($procRoot.'/21', 0755, true));
-        $this->assertTrue(mkdir($procRoot.'/'.$self, 0755, true));
-        // Live fake PIDs exist without smaps_rollup; only the real sampler PID is readable.
-        $selfRollup = @file_get_contents('/proc/'.$self.'/smaps_rollup');
-        $this->assertNotFalse($selfRollup);
-        $this->assertNotFalse(file_put_contents($procRoot.'/'.$self.'/smaps_rollup', $selfRollup));
-
-        $socket = stream_socket_server('udp://127.0.0.1:0', $errno, $error, \STREAM_SERVER_BIND);
-        $this->assertIsResource($socket);
-        try {
-            $address = stream_socket_get_name($socket, false);
-            $this->assertIsString($address);
-            $port = (int) substr($address, strrpos($address, ':') + 1);
-            $logger = new TestLogger();
-            $this->task($logger, port: $port, procRoot: $procRoot)(new SessionResourceSampleMessage());
-            $this->assertSame('session.resource_sample.sent', $logger->records[0]['message']);
-            $this->assertSame('partial', $logger->records[0]['context']['memory_counter_status']);
-            $this->assertNull($logger->records[0]['context']['pss_bytes']);
-            $this->assertNull($logger->records[0]['context']['uss_bytes']);
-            $this->assertSame(1, $logger->records[0]['context']['memory_counter_readable']);
-            $this->assertSame(2, $logger->records[0]['context']['memory_counter_unreadable']);
-            $this->assertSame(0, $logger->records[0]['context']['memory_counter_exited']);
-            $this->assertCount(1, $logger->records);
-            $payload = stream_socket_recvfrom($socket, 4096);
-            $this->assertIsString($payload);
-            $this->assertStringNotContainsString('hatfield.session.pss_bytes', $payload);
-            $this->assertStringNotContainsString('hatfield.session.uss_bytes', $payload);
         } finally {
             fclose($socket);
         }
@@ -424,9 +379,9 @@ final class SessionResourceSamplerTaskTest extends TestCase
         }
     }
 
-    private function task(TestLogger $logger, bool $enabled = true, string $sessionId = 'session-owned', int $port = 8125, string $procRoot = '/proc'): SessionResourceSamplerTask
+    private function task(TestLogger $logger, bool $enabled = true, string $sessionId = 'session-owned', int $port = 8125): SessionResourceSamplerTask
     {
-        return new SessionResourceSamplerTask($enabled, $sessionId, 'dev', '127.0.0.1', $port, $logger, new TelemetrySessionKeyProvider($this->directory), $procRoot);
+        return new SessionResourceSamplerTask($enabled, $sessionId, 'dev', '127.0.0.1', $port, $logger, new TelemetrySessionKeyProvider($this->directory));
     }
 
     private function schedule(bool $enabled = true, string $sessionId = 'session-owned'): SessionResourceSamplerSchedule

@@ -251,8 +251,8 @@ with other work. It sends:
 - `hatfield.session.cpu_percent`
 - `hatfield.session.rss_bytes`
 - `hatfield.session.process_count`
-- `hatfield.session.pss_bytes` when every live sampled PID has readable `smaps_rollup`
-- `hatfield.session.uss_bytes` when every live sampled PID has readable `smaps_rollup`
+- `hatfield.session.pss_bytes` when every sampled PID has readable `/proc/<pid>/smaps_rollup`
+- `hatfield.session.uss_bytes` when every sampled PID has readable `/proc/<pid>/smaps_rollup`
 
 Tags are `service:hatfield`, `env:<HATFIELD_TELEMETRY_ENV>`,
 `session_id:<raw owning session ID>`, and `session_key:<project hash>:<session ID>`.
@@ -266,13 +266,13 @@ RSS is summed resident bytes and can double-count shared pages. PSS comes from
 bounded Linux `/proc/<pid>/smaps_rollup` reads and proportions shared pages across
 users; USS sums only private pages. Do not treat PSS as private-only memory.
 The sample log keeps one `session.resource_sample.sent` event and adds
-`memory_counter_status` (`ok`, `partial`, or `unavailable`) plus readable,
-unreadable, and exited counts. Totals and DogStatsD gauges for PSS/USS are
-emitted only when status is `ok`. Partial or unavailable coverage omits those
-gauges and leaves the totals null rather than reporting zero. A sampled PID that
-still exists but lacks a readable `smaps_rollup` counts as unreadable or
-unsupported, not exited. Only PIDs that disappear from `/proc` count as exited.
-Neither case emits a per-PID warning or a false zero total.
+`memory_counter_status` (`ok`, `partial`, or `unavailable`) plus readable and
+unreadable counts. Exited, missing, unsupported, and unreadable sampled PIDs share
+the unreadable coverage bucket. Totals and DogStatsD gauges for PSS/USS are emitted
+only when status is `ok`. Partial or unavailable coverage omits those gauges and
+leaves the totals null rather than reporting zero. Unsupported platforms without
+readable `/proc` rollups stay unavailable or partial; they never report a false
+zero total. Coverage gaps do not emit per-PID warnings.
 The minute cadence can miss short-lived tools and short peaks. Failures stay
 local: bounded logs without raw command output or environment contents. UDP sends
 are non-blocking and do not acknowledge Datadog ingestion.

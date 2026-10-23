@@ -30,7 +30,6 @@ final class SessionResourceSamplerTask
         private readonly int $dogstatsdPort,
         private readonly LoggerInterface $logger,
         private readonly TelemetrySessionKeyProvider $sessionKeys,
-        private readonly string $procRoot = '/proc',
     ) {
     }
 
@@ -138,8 +137,7 @@ final class SessionResourceSamplerTask
      *     uss_bytes: ?int,
      *     memory_counter_status: 'ok'|'partial'|'unavailable',
      *     memory_counter_readable: int,
-     *     memory_counter_unreadable: int,
-     *     memory_counter_exited: int
+     *     memory_counter_unreadable: int
      * }
      */
     private function aggregate(string $frame, array $pids): array
@@ -190,31 +188,23 @@ final class SessionResourceSamplerTask
      *     uss_bytes: ?int,
      *     memory_counter_status: 'ok'|'partial'|'unavailable',
      *     memory_counter_readable: int,
-     *     memory_counter_unreadable: int,
-     *     memory_counter_exited: int
+     *     memory_counter_unreadable: int
      * }
      */
     private function aggregateUniqueMemory(array $pids): array
     {
         $pss = $uss = 0;
-        $readable = $unreadable = $exited = 0;
-        $procRoot = rtrim($this->procRoot, '/');
+        $readable = $unreadable = 0;
 
         foreach ($pids as $pid) {
-            $path = $procRoot.'/'.$pid.'/smaps_rollup';
-            // Exit only when the process itself is gone. Missing or unreadable
-            // smaps_rollup on a live PID is unsupported/unreadable coverage.
-            if (!file_exists($procRoot.'/'.$pid)) {
-                ++$exited;
-                continue;
-            }
+            $path = '/proc/'.$pid.'/smaps_rollup';
+            // Missing, exited, unsupported, or unreadable PIDs share one coverage bucket.
             if (!file_exists($path) || !is_readable($path)) {
                 ++$unreadable;
                 continue;
             }
             $text = @file_get_contents($path);
             if (false === $text) {
-                // Live PID with an unreadable or raced rollup stays unreadable.
                 ++$unreadable;
                 continue;
             }
@@ -232,20 +222,19 @@ final class SessionResourceSamplerTask
         }
 
         $status = match (true) {
-            $readable > 0 && 0 === $unreadable && 0 === $exited => 'ok',
+            $readable > 0 && 0 === $unreadable => 'ok',
             $readable > 0 => 'partial',
             default => 'unavailable',
         };
 
         return [
-            // Totals are omitted unless every live sampled PID contributed.
+            // Totals are omitted unless every sampled PID contributed.
             // Partial coverage stays countable without claiming a false zero.
             'pss_bytes' => 'ok' === $status ? $pss : null,
             'uss_bytes' => 'ok' === $status ? $uss : null,
             'memory_counter_status' => $status,
             'memory_counter_readable' => $readable,
             'memory_counter_unreadable' => $unreadable,
-            'memory_counter_exited' => $exited,
         ];
     }
 
@@ -258,8 +247,7 @@ final class SessionResourceSamplerTask
      *     uss_bytes: ?int,
      *     memory_counter_status: 'ok'|'partial'|'unavailable',
      *     memory_counter_readable: int,
-     *     memory_counter_unreadable: int,
-     *     memory_counter_exited: int
+     *     memory_counter_unreadable: int
      * } $sample
      */
     private function send(array $sample): void
