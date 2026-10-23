@@ -142,9 +142,12 @@ final class ApplicationMigrationExecutorTest extends TestCase
         $this->assertFalse($schemaManager->tablesExist(['tool_batch_schedule']));
         $pendingIndex = $schemaManager->listTableIndexes('tool_deferred_completion')['idx_deferred_pending'];
         $this->assertSame(['run_id', 'status', 'turn_no', 'step_id'], $pendingIndex->getColumns());
+        $this->assertArrayNotHasKey('idx_tool_batch_run', $schemaManager->listTableIndexes('tool_batch'));
+        $this->assertArrayNotHasKey('idx_deferred_subagent_child_batch', $schemaManager->listTableIndexes('deferred_subagent_child'));
+        $this->assertSame(1, (int) $connection->fetchOne('PRAGMA synchronous'));
         $this->assertNotFalse($connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
-            ['Version20261022224430'],
+            ['Version20261022235428'],
         ));
 
         $recordedDeferredBatch = $connection->fetchOne(

@@ -36,6 +36,7 @@ final class SqliteConnectionHardener
             if ('wal' !== $resultMode) {
                 throw new \RuntimeException(\sprintf('Failed to set SQLite journal_mode to WAL. Expected "wal", got "%s".', $resultMode));
             }
+            $this->connection->executeStatement('PRAGMA synchronous = NORMAL');
         }
 
         $busyTimeout = (int) $this->connection->executeQuery('PRAGMA busy_timeout')->fetchOne();

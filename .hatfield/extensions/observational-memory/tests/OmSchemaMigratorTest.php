@@ -35,6 +35,9 @@ final class OmSchemaMigratorTest extends IsolatedKernelTestCase
         $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
         $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath, new NullLogger());
 
+        $this->assertSame(1, (int) $connection->fetchOne('PRAGMA synchronous'));
+        $this->assertSame(1, (int) $connection->fetchOne('PRAGMA foreign_keys'));
+        $this->assertSame(5000, (int) $connection->fetchOne('PRAGMA busy_timeout'));
         $versions = $connection->fetchFirstColumn('SELECT version FROM om_schema_version');
         $this->assertContains('20260726_003_active_generation_and_relevance_text', $versions);
         $this->assertContains('20260729_004_current_activity', $versions);

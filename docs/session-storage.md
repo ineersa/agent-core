@@ -43,6 +43,14 @@ Base path: `sessions.path` setting (default under project `.hatfield/sessions/`)
 
 Table `hatfield_session` stores id, display name, timestamps, provider cache key, and related session metadata. Directory name is canonical; embedded IDs are validated on read.
 
+SQLite application metadata, session queues, history indexes, and observational
+memory use WAL with `synchronous=NORMAL`. WAL preserves database consistency,
+but a machine crash or power failure can lose recent committed transactions.
+An application process crash does not have that durability trade-off. History
+indexes can be rebuilt from canonical events; application metadata and queue
+commits do not gain extra durability from that rebuild. This setting does not
+change canonical event-journal synchronization.
+
 The nullable `reasoning_baseline` JSON column stores the provider-qualified model
 and fixed effort for Astra reasoning updates, plus the last emitted effort and
 history-bound transition markers keyed by surviving request segments. The selected
