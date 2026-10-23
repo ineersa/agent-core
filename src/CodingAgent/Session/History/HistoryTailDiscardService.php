@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
+use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Psr\Log\LoggerInterface;
 
@@ -41,12 +42,16 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
         private LoggerInterface $logger,
         private ActiveRunContextInterface $contexts,
         private BackgroundCompletionReceiptRepository $receipts,
+        private CodeModeExecutionRepository $codeModeExecutions,
     ) {
     }
 
     public function isContextMutatingMessage(AbstractAgentBusMessage $message): bool
     {
         if ($message instanceof DeliverBackgroundCompletionDTO) {
+            if (null !== $this->codeModeExecutions->completionInterruption($message->identity)) {
+                return false;
+            }
             // The processor has recovered pending transitions and holds the
             // owner lock before asking this policy. Only actual admission has
             // append-message history semantics; retries and transfers do not.

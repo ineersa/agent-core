@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Application\Deferred;
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
+use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 
 /** Settle acknowledged deferred sources only after durable background-completion receipt admission. */
 final readonly class DeferredBackgroundCompletionSettlement
@@ -15,6 +16,7 @@ final readonly class DeferredBackgroundCompletionSettlement
         private DeferredToolCompletionRepositoryInterface $deferred,
         private CompleteDeferredToolCallHandler $deferredHandler,
         private BackgroundCompletionReceiptRepository $receipts,
+        private CodeModeExecutionRepository $codeModeExecutions,
     ) {
     }
 
@@ -39,6 +41,17 @@ final readonly class DeferredBackgroundCompletionSettlement
     {
         $deferredId = $this->deferredId($identity);
         $receipt = $this->receipts->receipt($identity);
+        if (null !== $deferredId && null !== $this->codeModeExecutions->completionInterruption($identity)) {
+            $metadata = $this->deferred->findMetadataByDeferredId($deferredId);
+            if (null !== $metadata && null !== $this->deferred->findAcceptedResultReferenceByDeferredId($deferredId)) {
+                // An accepted terminal establishes physical completion. Retirement
+                // does not require admitting an abandoned output to a new turn.
+                $reference = $metadata->reference;
+                $this->deferredHandler->settle($deferredId, $reference->runId, $reference->turnNo, $reference->stepId);
+            }
+
+            return;
+        }
         if (null === $deferredId || null === $receipt) {
             return;
         }

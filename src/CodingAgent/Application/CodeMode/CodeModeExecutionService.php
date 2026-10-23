@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Application\CodeMode;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
@@ -17,6 +18,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Uid\Uuid;
@@ -35,6 +37,7 @@ final readonly class CodeModeExecutionService
         private SerializerInterface $serializer,
         private ApplicationDbTransactionInterface $transactions,
         private DeferredToolInvocationFence $fence,
+        private RunHistorySourceProviderInterface $histories,
     ) {
     }
 
@@ -54,6 +57,12 @@ final readonly class CodeModeExecutionService
                 || $call->runId() !== $context->runId() || $call->turnNo() !== $context->turnNo()
                 || $call->stepId() !== $context->stepId() || $call->toolCallId !== $context->toolCallId()) {
                 throw new \RuntimeException('Code-mode execution has no matching immutable invocation.');
+            }
+            $source = $this->histories->historySource($call->runId());
+            $current = $source->log->pendingToolInvocation($source->path, $call->runId(), $call->toolCallId);
+            if (null === $current || $current->turnNo !== $call->turnNo() || $current->stepId !== $call->stepId()
+                || $context->cancellationToken()->isCancellationRequested()) {
+                throw new ToolCallException('Code-mode invocation no longer belongs to the current execution boundary.', retryable: false);
             }
             $identity = Uuid::v7()->toRfc4122();
             if (null !== $this->executions->invocation($call->runId(), $call->toolCallId)) {
@@ -84,8 +93,18 @@ final readonly class CodeModeExecutionService
         $this->executions->ready($identity);
     }
 
+    public function cancellationToken(string $identity, CancellationTokenInterface $parent): CancellationTokenInterface
+    {
+        return new CodeModeCancellationToken($this->executions, $identity, $parent);
+    }
+
     public function preserve(string $identity, mixed $value, ?\Throwable $failure): void
     {
+        if (null === $this->deferred->findMetadataByDeferredId($identity)) {
+            // Permanent deletion removed ownership. The old host may clean its
+            // workspace, but must not reconstruct retained session artifacts.
+            return;
+        }
         $correlation = $this->deferred->findByDeferredId($identity);
         if (null === $correlation) {
             throw new \RuntimeException('Code-mode native correlation disappeared before settlement.');

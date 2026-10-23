@@ -25,6 +25,9 @@ final class CodeModeExecution
     #[ORM\Column]
     public bool $ready = false;
 
+    #[ORM\Column(name: 'interruption_reason', length: 32, nullable: true)]
+    public ?string $interruptionReason = null;
+
     #[ORM\Column(name: 'raw_reference', type: Types::TEXT, nullable: true)]
     public ?string $rawReference = null;
 }

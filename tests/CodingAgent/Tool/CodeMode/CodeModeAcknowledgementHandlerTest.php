@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
 use Doctrine\DBAL\Connection;
+use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
@@ -199,6 +200,7 @@ final class CodeModeAcknowledgementHandlerTest extends IsolatedKernelTestCase
             $c->get(CodeModeExecutionService::class),
             $c->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
             $bus,
+            $c->get(CompleteDeferredToolCallHandler::class),
         ))($event);
 
         return $bus;

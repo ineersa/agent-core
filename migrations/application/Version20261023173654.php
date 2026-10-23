@@ -10,24 +10,26 @@ use Doctrine\Migrations\AbstractMigration;
 /**
  * Auto-generated Migration: Please modify to your needs!
  */
-final class Version20261023002325 extends AbstractMigration
+final class Version20261023173654 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Retain code-mode hosts with shared deferred invocation, acknowledgement, and first accepted terminal references.';
+        return '';
     }
 
     public function up(Schema $schema): void
     {
-        $this->addSql('CREATE TABLE code_mode_execution (identity VARCHAR(255) NOT NULL, run_id VARCHAR(255) NOT NULL, tool_call_id VARCHAR(255) NOT NULL, ready BOOLEAN NOT NULL, raw_reference CLOB DEFAULT NULL, PRIMARY KEY (identity))');
+        // this up() migration is auto-generated, please modify it to your needs
+        $this->addSql('CREATE TABLE code_mode_execution (identity VARCHAR(255) NOT NULL, run_id VARCHAR(255) NOT NULL, tool_call_id VARCHAR(255) NOT NULL, ready BOOLEAN NOT NULL, interruption_reason VARCHAR(32) DEFAULT NULL, raw_reference CLOB DEFAULT NULL, PRIMARY KEY (identity))');
         $this->addSql('CREATE UNIQUE INDEX code_mode_invocation ON code_mode_execution (run_id, tool_call_id)');
         $this->addSql('ALTER TABLE tool_deferred_completion ADD COLUMN invocation_reference_json VARCHAR(16384) DEFAULT NULL');
-        $this->addSql('ALTER TABLE tool_deferred_completion ADD COLUMN acknowledged_at DATETIME DEFAULT NULL');
         $this->addSql('ALTER TABLE tool_deferred_completion ADD COLUMN accepted_result_reference_json VARCHAR(16384) DEFAULT NULL');
+        $this->addSql('ALTER TABLE tool_deferred_completion ADD COLUMN acknowledged_at DATETIME DEFAULT NULL');
     }
 
     public function down(Schema $schema): void
     {
+        // this down() migration is auto-generated, please modify it to your needs
         $this->addSql('DROP TABLE code_mode_execution');
         $this->addSql('CREATE TEMPORARY TABLE __temp__tool_deferred_completion AS SELECT id, deferred_id, run_id, turn_no, step_id, attempt, idempotency_key, tool_call_id, tool_name, body_reference_json, order_index, tool_idempotency_key, mode, timeout_seconds, max_parallelism, tools_ref, status, created_at, updated_at FROM tool_deferred_completion');
         $this->addSql('DROP TABLE tool_deferred_completion');

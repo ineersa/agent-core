@@ -64,6 +64,9 @@ final readonly class CodeModeHostBridge
         return $this->toolRuntime->run(function () use ($script, $timeoutSeconds, $memoryLimitMb, $executionId): mixed {
             $parentContext = $this->contextAccessor->current();
             $cancelToken = $parentContext?->cancellationToken() ?? new NullCancellationToken();
+            if (null !== $executionId) {
+                $cancelToken = $this->execution->cancellationToken($executionId, $cancelToken);
+            }
             $timeoutSeconds = $this->resolveScriptWallSeconds($timeoutSeconds, $parentContext?->timeoutSeconds());
             $memoryLimit = $this->formatMemoryLimit($memoryLimitMb);
 

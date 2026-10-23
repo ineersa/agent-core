@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\CodeMode;
 
+use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
@@ -23,6 +24,7 @@ final readonly class CodeModeProcessedResultSubscriber
         private CodeModeExecutionService $execution,
         private RunLockManager $locks,
         private MessageBusInterface $commandBus,
+        private CompleteDeferredToolCallHandler $completions,
     ) {
     }
 
@@ -40,18 +42,30 @@ final readonly class CodeModeProcessedResultSubscriber
         if (!$this->execution->sameInvocation($call, $event->invocation) || !$this->execution->matches($result, $call)) {
             throw new \RuntimeException('Code-mode terminal result does not match its frozen invocation.');
         }
-        $this->locks->synchronized($result->runId(), function () use ($result, $identity): void {
+        $publish = $this->locks->synchronized($result->runId(), function () use ($result, $identity): bool {
             $current = $this->executions->invocation($result->runId(), $result->toolCallId);
             if (null === $current || $current['identity'] !== $identity) {
                 throw new \RuntimeException('Code-mode owner changed before terminal publication.');
             }
-            if (!(bool) $current['ready']) {
+            if (null !== $current['interruption_reason']) {
+                // The host has physically returned. Preserve raw/processed evidence,
+                // but never let an abandoned invocation continue the current run.
+                $this->completions->settle($identity, $result->runId(), $result->turnNo(), $result->stepId());
+
+                return false;
+            }
+            if (!(bool) $current['ready'] && !$result->isError) {
                 throw new \RuntimeException('Code-mode terminal result arrived before host readiness.');
             }
             // First accepted terminal evidence is immutable across redelivery.
             $this->deferred->acceptResult($identity, $this->artifacts->publish($result));
+
+            return true;
         });
         $event->handled = true;
+        if (!$publish) {
+            return;
+        }
         $content = $result->result['content'] ?? [];
         $details = $result->result['details'] ?? null;
         $this->commandBus->dispatch(new CompleteDeferredToolCall(

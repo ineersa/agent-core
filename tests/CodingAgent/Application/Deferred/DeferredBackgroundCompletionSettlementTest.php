@@ -40,6 +40,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionReasonEnum;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
@@ -47,9 +48,11 @@ use Ineersa\CodingAgent\Application\Deferred\DeferredCallerAcknowledgementServic
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
+use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
+use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
@@ -73,6 +76,44 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
 {
     private InMemoryTransport $transport;
     private int $seen = 0;
+
+    public static function interruptionBoundaries(): iterable
+    {
+        yield 'before admission' => [false];
+        yield 'after admission before consumption' => [true];
+    }
+
+    #[DataProvider('interruptionBoundaries')]
+    public function testInterruptedInvocationCannotContinueTheRunThroughQueuedNotification(bool $admitted): void
+    {
+        [$fixture, $id] = $this->acknowledged();
+        $c = self::getContainer();
+        $run = $fixture->state->runId;
+        $identity = 'background-'.$id;
+        $this->publish($fixture, $id);
+        $this->drain(notifications: $admitted);
+        $c->get(CodeModeExecutionRepository::class)->interrupt($id, CodeModeInterruptionReasonEnum::Cancelled);
+        $this->assertFalse($c->get(HistoryTailDiscardService::class)->isContextMutatingMessage(new DeliverBackgroundCompletionDTO($run, $identity, '42')));
+        if (!$admitted) {
+            $this->dispatch(new DeliverBackgroundCompletionDTO($run, $identity, '42'));
+        } else {
+            $state = $c->get(ActiveRunContextInterface::class)->requireLoaded($run);
+            $this->dispatch(new AdvanceRun($run, $state->turnNo, 'retire-notice', 1, 'retire-notice'));
+        }
+        $this->drain(advances: true);
+        $events = $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run);
+        $this->assertNotContains('agent_command_applied', array_column($events, 'type'));
+        $this->assertSame([], $c->get(CommandStoreInterface::class)->pending($run));
+        $receipt = $c->get(BackgroundCompletionReceiptRepository::class)->receipt($identity);
+        if ($admitted) {
+            $this->assertSame(BackgroundCompletionDispositionEnum::Consumed, $receipt?->disposition);
+            $this->assertContains('agent_command_rejected', array_column($events, 'type'));
+        } else {
+            $this->assertNull($receipt);
+        }
+        $this->assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
+        $this->assertNull($c->get(ToolBatchStoreInterface::class)->loadSchedule($run, 1, 'step'));
+    }
 
     public static function publicationFailures(): iterable
     {

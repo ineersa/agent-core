@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Infrastructure\Doctrine\CommandRecord;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceipt;
+use Ineersa\CodingAgent\Entity\CodeModeExecution;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletion;
 use Ineersa\CodingAgent\Entity\ToolBatchCall;
 use Ineersa\CodingAgent\Entity\ToolBatchResult;
@@ -36,9 +37,12 @@ final readonly class PendingRuntimeSessionDeletionSubscriber
         // Nested child registries can live outside the numeric owner's tree.
         // Pass only captured paths to the existing post-transaction removal.
         $event->payloadDirectories = array_map(fn (string $runId): string => \dirname($this->paths->resolveToolBatchesDirectory($runId)).'/tool-payloads', $runs);
+        foreach ($runs as $runId) {
+            $event->payloadDirectories[] = \dirname($this->paths->resolveToolBatchesDirectory($runId)).'/code-mode-results';
+        }
         $this->entityManager->createQueryBuilder()->delete(CommandRecord::class, 'c')
             ->where('c.runId IN (:runs)')->setParameter('runs', $runs)->getQuery()->execute();
-        foreach ([ToolBatchResult::class, ToolBatchCall::class, DeferredToolCompletion::class] as $entity) {
+        foreach ([ToolBatchResult::class, ToolBatchCall::class, DeferredToolCompletion::class, CodeModeExecution::class] as $entity) {
             $this->entityManager->createQueryBuilder()->delete($entity, 'p')
                 ->where('p.runId IN (:runs)')->setParameter('runs', $runs)->getQuery()->execute();
         }

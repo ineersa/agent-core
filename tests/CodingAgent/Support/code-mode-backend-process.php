@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
+use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
@@ -13,9 +15,11 @@ use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
+use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
@@ -23,6 +27,7 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeAcknowledgementHandler;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionHookSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
@@ -31,6 +36,7 @@ use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -51,6 +57,7 @@ use Symfony\Component\Process\Process;
 require dirname(__DIR__, 3).'/vendor/autoload.php';
 
 [$unused, $directory, $role] = $argv;
+$scenario = $argv[3] ?? 'normal';
 if ('owner' === $role) {
     TestDirectoryIsolation::createHatfieldTree($directory, withSessions: true);
     $paths = TuiE2eDatabaseEnv::allocateIsolatedPaths(dirname(__DIR__, 3), $directory, 'code-mode');
@@ -75,8 +82,8 @@ try {
         $run = trim(file_get_contents($directory.'/run'));
         $call = $batches->loadCall($run, 1, 'step', 'cm');
         $contexts = $c->get(StackToolExecutionContextAccessor::class);
-        $nested = new class($directory) implements ToolboxInterface {
-            public function __construct(private string $directory)
+        $nested = new class($directory, $contexts) implements ToolboxInterface {
+            public function __construct(private string $directory, private StackToolExecutionContextAccessor $contexts)
             {
             }
 
@@ -93,6 +100,7 @@ try {
                     if (!flock($lock, \LOCK_SH)) {
                         throw new RuntimeException('Nested barrier failed.');
                     }
+                    file_put_contents($this->directory.'/nested-cancelled', json_encode($this->contexts->current()?->cancellationToken()->isCancellationRequested(), \JSON_THROW_ON_ERROR));
 
                     return new ToolboxResult($call, ['original' => 42]);
                 } finally {
@@ -153,6 +161,7 @@ try {
             $execution,
             $c->get(RunLockManager::class),
             $bus,
+            $c->get(CompleteDeferredToolCallHandler::class),
         );
         $dispatcher->addListener(ProcessedToolResultDTO::class, $subscriber);
         $workerHandler = new ExecuteToolCallWorker($bus, new TestLogger(), $executor, $c->get(DeferredToolCompletionRepositoryInterface::class), $results, $c->get(RunOperationalStatusReaderInterface::class), eventDispatcher: $dispatcher, payloads: $c->get(ToolPayloadStoreInterface::class));
@@ -173,7 +182,7 @@ try {
     if (!flock($barrier, \LOCK_EX)) {
         throw new RuntimeException('Owner barrier failed.');
     }
-    $worker = new Process([\PHP_BINARY, __FILE__, $directory, 'worker'], $directory);
+    $worker = new Process([\PHP_BINARY, __FILE__, $directory, 'worker', $scenario], $directory);
     $worker->start();
     $deadline = hrtime(true) + 5_000_000_000;
     while (!is_file($directory.'/blocked')) {
@@ -197,6 +206,14 @@ try {
         'host_pid' => $blocked['host'], 'owner_pid' => getmypid(),
         'duplicate_ack_events' => count($handler->handle($message, $state)->events),
         'schedule_in_flight' => $batches->loadSchedule($state->runId, 1, 'step')?->inFlight];
+    if ('cancel' === $scenario) {
+        $cancelled = $state->with(['status' => RunStatus::Cancelling]);
+        $actions = $c->get(CodeModeInterruptionHookSubscriber::class)->prepareAfterTurnCommit(AfterTurnCommitHookContext::fromRunState($cancelled, [], 0), $state->lastSeq);
+        $f->commit($state, new HandlerResult($cancelled, postCommitActions: $actions));
+        // The nested handler is still behind the lock, so it cannot have observed
+        // the transient parent status. Only the captured invocation fence survives.
+        $c->get(RunOperationalProjectionRepository::class)->replace($state->with(['turnNo' => 2, 'status' => RunStatus::Running]));
+    }
     flock($barrier, \LOCK_UN);
     fclose($barrier);
     $barrier = null;
@@ -205,6 +222,22 @@ try {
         throw new RuntimeException('Host failed: '.$worker->getErrorOutput().$worker->getOutput());
     }
     $done = json_decode(file_get_contents($directory.'/worker-done'), true, flags: \JSON_THROW_ON_ERROR);
+    if ('cancel' === $scenario) {
+        $row = $executions->invocation($state->runId, 'cm');
+        $rawReference = $execution->resultReference($row['raw_reference']);
+        echo json_encode([
+            'worker' => $done,
+            'nested_cancelled' => json_decode(file_get_contents($directory.'/nested-cancelled'), true, flags: \JSON_THROW_ON_ERROR),
+            'parent_status' => $c->get(RunOperationalStatusReaderInterface::class)->findOperationalStatus($state->runId)?->status->value,
+            'reason' => $row['interruption_reason'],
+            'deferred_status' => $deferred->status($row['identity']),
+            'raw_exists' => is_file($artifacts->path($rawReference)),
+            'workspace_cleaned' => !is_dir(dirname($blocked['script'])),
+            'batch_cleaned' => null === $batches->loadSchedule($state->runId, 1, 'step'),
+        ], \JSON_THROW_ON_ERROR)."\n";
+
+        return;
+    }
     $commandBus = $c->get('agent.command.bus');
     $transport = $c->get('messenger.transport.run_control');
     $transport->reset();

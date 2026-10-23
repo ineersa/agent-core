@@ -11,12 +11,13 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionProvenanceDTO;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
+use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final readonly class BackgroundCompletionConsumptionPolicy implements CommandConsumptionPolicyInterface
 {
-    public function __construct(private BackgroundCompletionReceiptRepository $receipts, private ValidatorInterface $validator)
+    public function __construct(private BackgroundCompletionReceiptRepository $receipts, private ValidatorInterface $validator, private CodeModeExecutionRepository $codeModeExecutions)
     {
     }
 
@@ -39,9 +40,13 @@ final readonly class BackgroundCompletionConsumptionPolicy implements CommandCon
             return new CommandConsumptionDecisionDTO('Background completion already consumed or transferred.');
         }
         $forward = null !== $state->parentRunId && ($state->status->isTerminal() || RunStatus::Cancelling === $state->status);
+        $interrupted = null !== $this->codeModeExecutions->completionInterruption($receipt->identity);
+        if ($interrupted) {
+            $forward = false;
+        }
 
         return new CommandConsumptionDecisionDTO(
-            $forward ? 'Background completion transferred to its root owner without resuming this child.' : null,
+            $interrupted ? 'Code-mode invocation ownership ended before notification consumption.' : ($forward ? 'Background completion transferred to its root owner without resuming this child.' : null),
             ['background_completion' => [
                 'identity' => $receipt->identity,
                 'source_run_id' => $receipt->sourceRunId,

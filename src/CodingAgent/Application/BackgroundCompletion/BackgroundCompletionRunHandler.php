@@ -25,6 +25,7 @@ use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletio
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\RecordBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
+use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
@@ -42,6 +43,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         private CommandStoreInterface $mailbox,
         private BackgroundCompletionConsumptionPolicy $consumption,
         private EventFactory $events,
+        private CodeModeExecutionRepository $codeModeExecutions,
     ) {
     }
 
@@ -58,6 +60,9 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         $errors = $this->validator->validate($message);
         if (\count($errors) > 0) {
             throw new ValidationFailedException($message, $errors);
+        }
+        if (null !== $this->codeModeExecutions->completionInterruption($message->identity)) {
+            return new HandlerResult();
         }
         $receipt = $this->receipts->receipt($message->identity);
         if (null !== $receipt) {

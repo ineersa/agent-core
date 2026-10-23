@@ -71,6 +71,32 @@ deletes the original batch through guarded cleanup. Duplicate admission retries
 cleanup without admitting or consuming the notice twice. Rollback retains the
 first accepted result and its invocation files.
 
+## Invocation interruption
+
+Host readiness gates caller acknowledgement, not terminal failure. A failure
+between native registration and IPC readiness settles through the ordinary
+deferred result path instead of leaving the original caller pending.
+
+Cancellation and `history_tail_discarded` capture exact native identities through
+the existing essential after-turn metadata transaction. Cancellation fences all
+unsettled invocations and unconsumed notices in that run. History discard fences
+only invocations from turns after its retained boundary. Selecting an older
+history entry alone does not interrupt a host. Captured identities cannot cancel
+an invocation registered after the transition was prepared.
+
+The host and nested `ToolContext` share an invocation cancellation token. Its
+durable interruption reason remains after the parent returns to `Running` or
+starts another turn. Nested tools remain cooperative; a blocking remote handler
+is not forcibly cancelled. Controller starting and ordinary shutdown fence the
+root and owned child scopes with distinct restart and shutdown reasons, without
+deleting retained evidence.
+
+A fenced host cannot become ready or acknowledge its original caller. Once its
+physical execution returns, late output settles the shared deferred marker
+without entering a newer turn. Notification admission, history mutation policy
+and mailbox consumption also check the native fence, so output queued before
+interruption cannot acquire authority later.
+
 ## Evidence and cleanup
 
 Native call and result artifacts use `SessionToolPayloadStore` under the owned
@@ -85,11 +111,18 @@ registration fails, the host leaves its workspace and `terminal.json` intact and
 returns a non-retryable failure with the evidence path. Normal settlement stops
 the subprocess, closes the socket and removes the workspace once.
 
+Permanent session deletion includes native rows and owned code-mode artifact
+directories in the existing SQL transaction and post-commit filesystem removal.
+Rolling back that transaction preserves the rows and files. Ordinary controller
+shutdown and restart retain evidence.
+
 ## Exposure boundary
 
 The retained-host backend has no controller command, TUI candidate or model-facing
 backgrounding option. It does not enable code-mode backgrounding for users.
-Invocation-sticky cancellation, controller shutdown, restart fencing, history
-discard and session-deletion integration must be completed and verified before
-capability exposure. Worker retention does not imply durable execution across
-controller or worker failure, and recovery must not replay ambiguous side effects.
+Waiting-caller recovery after controller loss and serialization of permanent
+deletion against late native and shared payload writers still require completion
+and proof before exposure. The native fence alone does not resolve an original
+caller whose physical host disappeared without a terminal result. Worker
+retention does not imply durable execution across controller or worker failure,
+and recovery must not replay ambiguous side effects.
