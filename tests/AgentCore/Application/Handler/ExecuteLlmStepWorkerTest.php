@@ -84,6 +84,27 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $this->assertCount(0, $retryLogs, 'No retry warning when first attempt succeeds.');
     }
 
+    public function testReceivedDeltaFactPreservesEmptyStreamDistinction(): void
+    {
+        foreach ([false, true] as $receivedStreamDeltas) {
+            $platform = $this->createAlternatingPlatform([new PlatformInvocationResult(
+                assistantMessage: null,
+                receivedStreamDeltas: $receivedStreamDeltas,
+                stopReason: 'stop',
+            )]);
+            $worker = new ExecuteLlmStepWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), $platform, logger: new TestLogger());
+            $result = $worker(new ExecuteLlmStep(
+                runId: 'synthetic-empty-stream', turnNo: 1, stepId: 'step', attempt: 1, idempotencyKey: 'key', toolsRef: 'tools',
+            ));
+            if ($receivedStreamDeltas) {
+                $this->assertNull($result->error);
+            } else {
+                $this->assertSame('empty_response', $result->error['type'] ?? null);
+            }
+            $this->assertSame(1, $platform->invocationCount);
+        }
+    }
+
     public function testNonRetryableProviderErrorDispatchesTerminalResultWithoutMessengerRetrySignal(): void
     {
         $errorResult = new PlatformInvocationResult(
@@ -119,7 +140,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
     {
         $aborted = new PlatformInvocationResult(
             assistantMessage: null,
-            deltas: [],
+            receivedStreamDeltas: false,
             usage: [],
             stopReason: 'aborted',
             error: null,
@@ -160,7 +181,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $thinkingOnly = new AssistantMessage(new Thinking('partial reasoning before cancel'));
         $aborted = new PlatformInvocationResult(
             assistantMessage: $thinkingOnly,
-            deltas: [],
+            receivedStreamDeltas: false,
             usage: [],
             stopReason: 'aborted',
             error: null,
@@ -339,7 +360,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
                 // Wrap an AssistantMessage in a successful PlatformInvocationResult.
                 return new PlatformInvocationResult(
                     assistantMessage: $item,
-                    deltas: [],
+                    receivedStreamDeltas: false,
                     usage: ['input_tokens' => 100, 'output_tokens' => 20],
                     stopReason: 'stop',
                     error: null,

@@ -122,7 +122,7 @@ final readonly class ExecuteLlmStepWorker
             ) {
                 $response = new PlatformInvocationResult(
                     assistantMessage: null,
-                    deltas: $response->deltas,
+                    receivedStreamDeltas: $response->receivedStreamDeltas,
                     usage: $response->usage,
                     stopReason: $response->stopReason,
                     error: [
@@ -141,7 +141,7 @@ final readonly class ExecuteLlmStepWorker
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
-            $hasStreamDeltas = [] !== $response->deltas();
+            $hasStreamDeltas = $response->receivedStreamDeltas;
             if (
                 !$isAborted
                 && null === $assistantMessage
@@ -150,7 +150,7 @@ final readonly class ExecuteLlmStepWorker
             ) {
                 $response = new PlatformInvocationResult(
                     assistantMessage: null,
-                    deltas: $response->deltas,
+                    receivedStreamDeltas: $response->receivedStreamDeltas,
                     usage: $response->usage,
                     stopReason: $response->stopReason,
                     model: $response->model,
