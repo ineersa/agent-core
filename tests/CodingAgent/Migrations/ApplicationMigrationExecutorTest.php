@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Migrations;
 
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
 use Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use PHPUnit\Framework\TestCase;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -22,7 +21,7 @@ use Symfony\Component\Uid\UuidV7;
  * explicit application migration list (not filesystem discovery). Messenger
  * migrations no longer create messenger_messages; queues use sqlite-queue.
  */
-final class ApplicationMigrationExecutorTest extends TestCase
+final class ApplicationMigrationExecutorTest extends IsolatedKernelTestCase
 {
     private string $isolatedDir;
 
@@ -700,16 +699,18 @@ SQL);
     /**
      * Create a SQLite connection for testing.
      *
-     * Uses explicit driverOptions to set PDO::ATTR_TIMEOUT, avoiding
-     * silent reliance on PHP PDO's 60000ms default.  This makes the
-     * timeout assertion meaningful.
+     * Uses the test-container Doctrine connection factory with an explicit
+     * per-fixture SQLite path. driverOptions set PDO::ATTR_TIMEOUT so the
+     * busy_timeout assertion is meaningful and not the PDO 60000ms default.
      *
      * @param int $timeout PDO::ATTR_TIMEOUT value in seconds (default 5).
      *                     Busy timeout in ms = $timeout * 1000.
      */
     private function createSqliteConnection(string $dbPath, int $timeout = 5): Connection
     {
-        return DriverManager::getConnection([
+        $factory = static::getContainer()->get('doctrine.dbal.connection_factory');
+
+        return $factory->createConnection([
             'driver' => 'pdo_sqlite',
             'path' => $dbPath,
             'driverOptions' => [\PDO::ATTR_TIMEOUT => $timeout],
