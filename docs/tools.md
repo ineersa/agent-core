@@ -46,6 +46,11 @@ Oversized text results are capped. The response can include a saved-file path an
 instructions for reading the omitted content. Those files are temporary; a path
 preserved in session history can outlive the actual saved output.
 
+`read` also applies an internal 1 MiB byte-safety threshold to its selected
+output. Larger selections are saved in full, even if their Unicode character
+count fits the normal character cap. Use the original file's line range for
+follow-up reads. This threshold does not change the normal character caps.
+
 ## code_mode
 
 `code_mode` is off by default. Enable it with `tools.code_mode.enabled: true` in
@@ -65,16 +70,20 @@ TOON conversion. `toon_encode()` rejects unsupported or lossy values.
 `toon_decode()` leaves valid scalar text unchanged. Nested tool failures throw
 `RuntimeException`. Missing or explicit `null` returns are visible as `null`.
 Boolean returns are visible as `true` or `false`.
-Bounded script stdout/stderr, including PHP warnings, are appended to the
+Script stdout/stderr, including PHP warnings, are appended to the
 model-facing return text. The child process starts with `display_errors=0` and
 `xdebug.mode=off`, so warnings log once on stderr without an stdout mirror or
-Xdebug stacks. Errors keep useful stacks and use stable `script.php` /
-`bootstrap.php` path labels. The combined return value and diagnostics then use
+Xdebug stacks. Small diagnostics keep useful stacks and use stable `script.php`
+and `bootstrap.php` path labels. The host redirects stdout and stderr into its
+private workspace. An internal 1 MiB byte-safety threshold applies to each
+diagnostic stream separately. Larger streams are saved in full as run-owned
+output artifacts; labeled notices replace their inline text. These raw artifacts
+preserve whitespace and paths unchanged. The script's structured return value is
+unchanged by diagnostic capture. The combined return text and diagnostic notices use
 ordinary output capping with the document-report 50,000-character selection and
-saved-output recovery for both successful and failed `code_mode` results. The
-host keeps child stdout/stderr through Symfony Process capture
-(`php://temp` buffers) so ordinary capping sees the full streams; timeout and
-memory limits still bound the subprocess.
+saved-output recovery for both successful and failed `code_mode` results.
+Timeout and memory limits still bound the subprocess. Arbitrary script return
+values and nested tool payloads are not covered by the diagnostic byte threshold.
 `die()`/`exit` without a return reports that the script exited without returning
 a value, even on exit code 0.
 
