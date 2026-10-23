@@ -19,6 +19,8 @@ final class SessionResourceSamplerTask
     public const string METRIC_CPU_PERCENT = 'hatfield.session.cpu_percent';
     public const string METRIC_RSS_BYTES = 'hatfield.session.rss_bytes';
     public const string METRIC_PROCESS_COUNT = 'hatfield.session.process_count';
+    public const string METRIC_PSS_BYTES = 'hatfield.session.pss_bytes';
+    public const string METRIC_USS_BYTES = 'hatfield.session.uss_bytes';
 
     public function __construct(
         private readonly bool $enabled,
@@ -127,7 +129,16 @@ final class SessionResourceSamplerTask
     /**
      * @param array<int, true> $pids
      *
-     * @return array{cpu_percent: float, rss_bytes: int, process_count: int}
+     * @return array{
+     *     cpu_percent: float,
+     *     rss_bytes: int,
+     *     process_count: int,
+     *     pss_bytes: ?int,
+     *     uss_bytes: ?int,
+     *     memory_counter_status: 'ok'|'partial'|'unavailable',
+     *     memory_counter_readable: int,
+     *     memory_counter_unreadable: int
+     * }
      */
     private function aggregate(string $frame, array $pids): array
     {
@@ -159,14 +170,86 @@ final class SessionResourceSamplerTask
             throw new \RuntimeException('No owned processes in top refresh.');
         }
 
+        $memory = $this->aggregateUniqueMemory(array_keys($rows));
+
         return [
             'cpu_percent' => round(array_sum(array_column($rows, 'cpu')), 3),
             'rss_bytes' => array_sum(array_column($rows, 'rss')),
             'process_count' => \count($rows),
+            ...$memory,
         ];
     }
 
-    /** @param array{cpu_percent: float, rss_bytes: int, process_count: int} $sample */
+    /**
+     * @param list<int> $pids
+     *
+     * @return array{
+     *     pss_bytes: ?int,
+     *     uss_bytes: ?int,
+     *     memory_counter_status: 'ok'|'partial'|'unavailable',
+     *     memory_counter_readable: int,
+     *     memory_counter_unreadable: int
+     * }
+     */
+    private function aggregateUniqueMemory(array $pids): array
+    {
+        $pss = $uss = 0;
+        $readable = $unreadable = 0;
+
+        foreach ($pids as $pid) {
+            $path = '/proc/'.$pid.'/smaps_rollup';
+            // Missing, exited, unsupported, or unreadable PIDs share one coverage bucket.
+            if (!file_exists($path) || !is_readable($path)) {
+                ++$unreadable;
+                continue;
+            }
+            $text = @file_get_contents($path);
+            if (false === $text) {
+                ++$unreadable;
+                continue;
+            }
+            if (
+                1 !== preg_match('/^Pss:\s+(\d+)\s+kB/m', $text, $pssMatch)
+                || 1 !== preg_match('/^Private_Clean:\s+(\d+)\s+kB/m', $text, $cleanMatch)
+                || 1 !== preg_match('/^Private_Dirty:\s+(\d+)\s+kB/m', $text, $dirtyMatch)
+            ) {
+                ++$unreadable;
+                continue;
+            }
+            $pss += (int) $pssMatch[1] * 1024;
+            $uss += ((int) $cleanMatch[1] + (int) $dirtyMatch[1]) * 1024;
+            ++$readable;
+        }
+
+        $status = match (true) {
+            $readable > 0 && 0 === $unreadable => 'ok',
+            $readable > 0 => 'partial',
+            default => 'unavailable',
+        };
+
+        return [
+            // Totals are omitted unless every sampled PID contributed.
+            // Partial coverage stays countable without claiming a false zero.
+            'pss_bytes' => 'ok' === $status ? $pss : null,
+            'uss_bytes' => 'ok' === $status ? $uss : null,
+            'memory_counter_status' => $status,
+            'memory_counter_readable' => $readable,
+            'memory_counter_unreadable' => $unreadable,
+        ];
+    }
+
+    /**
+     * @param array{
+     *     cpu_percent: float,
+     *     rss_bytes: int,
+     *     process_count: int,
+     *     pss_bytes: ?int,
+     *     uss_bytes: ?int,
+     *     memory_counter_status: 'ok'|'partial'|'unavailable',
+     *     memory_counter_readable: int,
+     *     memory_counter_unreadable: int
+     * } $sample
+     */
     private function send(array $sample): void
     {
         $tag = static fn (string $value): string => preg_replace('/[^A-Za-z0-9_.-]/', '_', $value) ?? '';
@@ -176,6 +259,10 @@ final class SessionResourceSamplerTask
         $payload = self::METRIC_CPU_PERCENT.':'.$sample['cpu_percent'].$tags
             .self::METRIC_RSS_BYTES.':'.$sample['rss_bytes'].$tags
             .self::METRIC_PROCESS_COUNT.':'.$sample['process_count'].$tags;
+        if (null !== $sample['pss_bytes'] && null !== $sample['uss_bytes']) {
+            $payload .= self::METRIC_PSS_BYTES.':'.$sample['pss_bytes'].$tags
+                .self::METRIC_USS_BYTES.':'.$sample['uss_bytes'].$tags;
+        }
         $socket = @stream_socket_client(
             \sprintf('udp://%s:%d', $this->dogstatsdHost, $this->dogstatsdPort),
             $errno,
