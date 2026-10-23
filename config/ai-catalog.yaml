@@ -8,7 +8,7 @@
 # Refresh: hatfield providers:update
 # Interactive setup: bin/console providers:setup (see providers-setup-command task)
 
-version: 14
+version: 15
 
 providers:
     deepseek:
@@ -145,7 +145,6 @@ providers:
             supports_developer_role: true
             supports_reasoning_effort: false
             thinking_format: chatgpt
-            supports_reasoning_configuration_updates: true
         auth_command: 'auth:chatgpt'
         models:
             gpt-6.1-sol:
@@ -154,7 +153,6 @@ providers:
                 compatibility:
                     # Pinned to the 272k cheap pricing tier; see gpt-6-astra below.
                     pin_context_window: true
-                    supports_reasoning_configuration_updates: true
                 thinking_level_map: { minimal: null, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                 tool_calling: true
                 input: [text, image]
@@ -168,7 +166,6 @@ providers:
                     # 272k is the cheap pricing tier boundary on the Codex backend;
                     # models.dev reports the raw 1.05M window. Keep the curated cap.
                     pin_context_window: true
-                    supports_reasoning_configuration_updates: true
                 thinking_level_map: { minimal: null, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                 tool_calling: true
                 input: [text, image]
@@ -181,7 +178,6 @@ providers:
                 compatibility:
                     # Pinned to the 272k cheap pricing tier; see gpt-6-astra above.
                     pin_context_window: true
-                    supports_reasoning_configuration_updates: true
                 thinking_level_map: { off: none, minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                 tool_calling: true
                 input: [text, image]
@@ -194,7 +190,6 @@ providers:
                 compatibility:
                     # Pinned to the 272k cheap pricing tier; see gpt-6-astra above.
                     pin_context_window: true
-                    supports_reasoning_configuration_updates: true
                 thinking_level_map: { off: none, minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                 tool_calling: true
                 input: [text, image]

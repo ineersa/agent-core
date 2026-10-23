@@ -184,7 +184,6 @@ providers:
                 name: GPT-6 Sol
                 reasoning: true
                 compatibility:
-                    supports_reasoning_configuration_updates: true
                     pin_context_window: true
                 thinking_level_map: { off: none, minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                 tool_calling: true

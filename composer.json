@@ -80,7 +80,7 @@
         "symfony/ai-sqlite-store": "^0.14",
         "symfony/ai-vektor-store": "^0.14",
         "centamiv/vektor": "^2.0",
-        "ineersa/symfony-ai-openai-chatgpt-platform": "dev-task/zstd-originator#cfb64a2a9859e9f4e930ccc91c0880d94e71a60f",
+        "ineersa/symfony-ai-openai-chatgpt-platform": "0.2.0",
         "ineersa/sqlite-queue": "dev-main#a19d6e7684772be355f8db961cb2200e21ed5cd9",
         "fabpot/amphp-sqlite3": "dev-development#2cf3d23e6a4645133954052d7356c19c30a2a7d8"
     },

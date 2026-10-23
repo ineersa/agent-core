@@ -1,0 +1,184 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
+
+use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\ControllerE2eTestCase;
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Path;
+
+/**
+ * Env-mapping contract for controller E2E cache reuse.
+ *
+ * Unit-level only: uses a test-local concrete harness to call the protected
+ * helper without replay fixtures, temp project setup, or process spawning.
+ */
+final class ControllerE2eCacheEnvTest extends TestCase
+{
+    public function testReusesQaCacheDirWhenPresent(): void
+    {
+        $previous = $this->snapshot('HATFIELD_CACHE_DIR');
+        $qaCache = '/tmp/hatfield-qa-cache-controller-e2e-env';
+
+        try {
+            $this->put('HATFIELD_CACHE_DIR', $qaCache);
+            $env = $this->harness()->exposeControllerSubprocessEnv();
+            $this->assertSame(['HATFIELD_CACHE_DIR' => $qaCache], $env);
+        } finally {
+            $this->restore('HATFIELD_CACHE_DIR', $previous);
+        }
+    }
+
+    public function testResolvesRelativeQaCacheDirAgainstProjectRootNotChildCwd(): void
+    {
+        $previous = $this->snapshot('HATFIELD_CACHE_DIR');
+        $projectDir = ProjectDir::get();
+        $relative = '.hatfield/cache-qa-controller-e2e-relative';
+        $childCwd = TestDirectoryIsolation::createProjectTempDir('controller-e2e-cache-env-child-cwd');
+
+        try {
+            $this->put('HATFIELD_CACHE_DIR', $relative);
+            $originalCwd = getcwd();
+            $this->assertNotFalse($originalCwd);
+            try {
+                chdir($childCwd);
+                $env = $this->harness($projectDir)->exposeControllerSubprocessEnv();
+            } finally {
+                chdir($originalCwd);
+            }
+
+            $expected = Path::makeAbsolute($relative, $projectDir);
+            $this->assertSame(['HATFIELD_CACHE_DIR' => $expected], $env);
+            $this->assertStringStartsWith($projectDir.'/', $env['HATFIELD_CACHE_DIR']);
+            $this->assertStringNotContainsString($childCwd, $env['HATFIELD_CACHE_DIR']);
+        } finally {
+            $this->restore('HATFIELD_CACHE_DIR', $previous);
+            TestDirectoryIsolation::removeDirectory($childCwd);
+        }
+    }
+
+    public function testOmitsCacheOverrideWhenQaCacheUnset(): void
+    {
+        $previous = $this->snapshot('HATFIELD_CACHE_DIR');
+
+        try {
+            $this->clear('HATFIELD_CACHE_DIR');
+            $env = $this->harness()->exposeControllerSubprocessEnv();
+            $this->assertSame([], $env);
+        } finally {
+            $this->restore('HATFIELD_CACHE_DIR', $previous);
+        }
+    }
+
+    public function testOmitsCacheOverrideWhenQaCacheEmpty(): void
+    {
+        $previous = $this->snapshot('HATFIELD_CACHE_DIR');
+
+        try {
+            $this->put('HATFIELD_CACHE_DIR', '   ');
+            $env = $this->harness()->exposeControllerSubprocessEnv();
+            $this->assertSame([], $env);
+        } finally {
+            $this->restore('HATFIELD_CACHE_DIR', $previous);
+        }
+    }
+
+    private function harness(?string $projectDir = null): ControllerE2eCacheEnvHarness
+    {
+        $harness = new ControllerE2eCacheEnvHarness('ControllerE2eCacheEnvHarness');
+        $harness->bindProjectDir($projectDir ?? ProjectDir::get());
+
+        return $harness;
+    }
+
+    /**
+     * @return array{process: string|false, env: mixed, server: mixed, envHadKey: bool, serverHadKey: bool}
+     */
+    private function snapshot(string $key): array
+    {
+        return [
+            'process' => getenv($key),
+            'env' => $_ENV[$key] ?? null,
+            'server' => $_SERVER[$key] ?? null,
+            'envHadKey' => \array_key_exists($key, $_ENV),
+            'serverHadKey' => \array_key_exists($key, $_SERVER),
+        ];
+    }
+
+    private function put(string $key, string $value): void
+    {
+        putenv($key.'='.$value);
+        $_ENV[$key] = $value;
+        $_SERVER[$key] = $value;
+    }
+
+    private function clear(string $key): void
+    {
+        putenv($key);
+        unset($_ENV[$key], $_SERVER[$key]);
+    }
+
+    /**
+     * @param array{process: string|false, env: mixed, server: mixed, envHadKey: bool, serverHadKey: bool} $saved
+     */
+    private function restore(string $key, array $saved): void
+    {
+        if (false === $saved['process']) {
+            putenv($key);
+        } else {
+            putenv($key.'='.$saved['process']);
+        }
+
+        if (!$saved['envHadKey']) {
+            unset($_ENV[$key]);
+        } else {
+            $_ENV[$key] = $saved['env'];
+        }
+
+        if (!$saved['serverHadKey']) {
+            unset($_SERVER[$key]);
+        } else {
+            $_SERVER[$key] = $saved['server'];
+        }
+    }
+}
+
+/**
+ * Test-local concrete harness that exposes only the env-mapping helper.
+ *
+ * Overrides setUp/tearDown so construction never creates a temp project or
+ * requires LLAMA_CPP_SMOKE_TEST / replay fixtures.
+ */
+final class ControllerE2eCacheEnvHarness extends ControllerE2eTestCase
+{
+    protected function setUp(): void
+    {
+        TestCase::setUp();
+    }
+
+    protected function tearDown(): void
+    {
+        TestCase::tearDown();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function exposeControllerSubprocessEnv(): array
+    {
+        return $this->controllerSubprocessEnv();
+    }
+
+    public function bindProjectDir(string $projectDir): void
+    {
+        $this->projectDir = $projectDir;
+    }
+
+    protected function tempDirPrefix(): string
+    {
+        return 'unused-controller-e2e-cache-env';
+    }
+}

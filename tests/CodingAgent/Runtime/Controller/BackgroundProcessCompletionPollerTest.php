@@ -625,7 +625,9 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertNotSame(self::getContainer()->get(EntityManagerInterface::class), $otherContainer->get(EntityManagerInterface::class));
             $otherStore = $otherContainer->get(ProcessStore::class);
             $reader = new BackgroundProcessManager($otherStore, $lifecycle, $config, new NullLogger());
-            $cleanup = 'IFS= read -r release < '.escapeshellarg($fifo).'; printf cleaned; exit 0';
+            // Group TERM and wrapper forwarding can both reach this child. Do not
+            // re-enter cleanup and consume the one-shot FIFO release a second time.
+            $cleanup = 'trap "" TERM; IFS= read -r release < '.escapeshellarg($fifo).'; printf cleaned; exit 0';
             $command = 'trap '.escapeshellarg($cleanup).' TERM; : > '.escapeshellarg($this->tmpDir.'/ready').'; while :; do sleep 0.05; done';
             $process = $owner->start($command, 'timeout-run', 'timeout-call', hrtime(true) - 1);
             $owner->markBackgroundedForRecord($process->id, 'timeout-run');
