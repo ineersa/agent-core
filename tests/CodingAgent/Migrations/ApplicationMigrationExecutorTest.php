@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Migrations;
 
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Schema\Schema;
+use DoctrineMigrations\Version20261022235428;
 use Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use PHPUnit\Framework\TestCase;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -22,7 +23,7 @@ use Symfony\Component\Uid\UuidV7;
  * explicit application migration list (not filesystem discovery). Messenger
  * migrations no longer create messenger_messages; queues use sqlite-queue.
  */
-final class ApplicationMigrationExecutorTest extends TestCase
+final class ApplicationMigrationExecutorTest extends IsolatedKernelTestCase
 {
     private string $isolatedDir;
 
@@ -140,6 +141,15 @@ final class ApplicationMigrationExecutorTest extends TestCase
         );
         $this->assertFalse($schemaManager->tablesExist(['deferred_tool_completion']));
         $this->assertFalse($schemaManager->tablesExist(['tool_batch_schedule']));
+        $pendingIndex = $schemaManager->listTableIndexes('tool_deferred_completion')['idx_deferred_pending'];
+        $this->assertSame(['run_id', 'status', 'turn_no', 'step_id'], $pendingIndex->getColumns());
+        $this->assertArrayNotHasKey('idx_tool_batch_run', $schemaManager->listTableIndexes('tool_batch'));
+        $this->assertArrayNotHasKey('idx_deferred_subagent_child_batch', $schemaManager->listTableIndexes('deferred_subagent_child'));
+        $this->assertSame(1, (int) $connection->fetchOne('PRAGMA synchronous'));
+        $this->assertNotFalse($connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20261022235428'],
+        ));
 
         $recordedDeferredBatch = $connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
@@ -200,6 +210,18 @@ final class ApplicationMigrationExecutorTest extends TestCase
         $busyTimeout = (int) $connection->executeQuery('PRAGMA busy_timeout')->fetchOne();
         $columns = $connection->createSchemaManager()->listTableColumns('hatfield_session');
         $this->assertArrayHasKey('provider_cache_key', $columns);
+        $this->assertArrayNotHasKey(
+            'reasoning_baseline',
+            $columns,
+            'Fresh startup schema must omit hatfield_session.reasoning_baseline',
+        );
+        $this->assertNotFalse(
+            $connection->fetchOne(
+                'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+                ['Version20261023000232'],
+            ),
+            'Version20261023000232 must be registered and applied by the default startup executor',
+        );
 
         $recordedProviderKey = $connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
@@ -542,6 +564,133 @@ SQL);
         $this->assertSame($keys, $keysAfterSecondPass);
     }
 
+    public function testDefaultStartupExecutorDropsLegacyReasoningBaselineWhilePreservingSessionIdentity(): void
+    {
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/legacy-reasoning-baseline.sqlite');
+        $now = '2026-10-22 00:00:00';
+        $providerCacheKey = UuidV7::v7()->toRfc4122();
+        $connection->executeStatement(<<<'SQL'
+CREATE TABLE hatfield_session (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    cwd VARCHAR(255) NOT NULL,
+    prompt VARCHAR(255) DEFAULT NULL,
+    parent_id VARCHAR(255) DEFAULT NULL,
+    root_id VARCHAR(255) DEFAULT NULL,
+    model VARCHAR(255) DEFAULT NULL,
+    model_provider VARCHAR(255) DEFAULT NULL,
+    model_name VARCHAR(255) DEFAULT NULL,
+    reasoning VARCHAR(255) DEFAULT NULL,
+    reasoning_baseline CLOB DEFAULT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    name VARCHAR(200) DEFAULT '' NOT NULL,
+    provider_cache_key VARCHAR(36) DEFAULT NULL
+)
+SQL);
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_hatfield_session_provider_cache_key ON hatfield_session (provider_cache_key)');
+        $connection->insert('hatfield_session', [
+            'id' => 95,
+            'cwd' => '/legacy/session-95',
+            'prompt' => 'keep-me',
+            'parent_id' => null,
+            'root_id' => null,
+            'model' => 'chatgpt/gpt-5',
+            'model_provider' => 'chatgpt',
+            'model_name' => 'gpt-5',
+            'reasoning' => 'high',
+            'reasoning_baseline' => '{"model":"chatgpt/gpt-5","effort":"medium"}',
+            'created_at' => $now,
+            'updated_at' => $now,
+            'name' => 'legacy-session-95',
+            'provider_cache_key' => $providerCacheKey,
+        ]);
+        $connection->insert('hatfield_session', [
+            'id' => 96,
+            'cwd' => '/legacy/session-96',
+            'prompt' => 'delete-me',
+            'parent_id' => null,
+            'root_id' => null,
+            'model' => 'chatgpt/gpt-5',
+            'model_provider' => 'chatgpt',
+            'model_name' => 'gpt-5',
+            'reasoning' => 'medium',
+            'reasoning_baseline' => '{"model":"chatgpt/gpt-5","effort":"low"}',
+            'created_at' => $now,
+            'updated_at' => $now,
+            'name' => 'legacy-session-96',
+            'provider_cache_key' => UuidV7::v7()->toRfc4122(),
+        ]);
+        $connection->delete('hatfield_session', ['id' => 96]);
+        $this->assertSame(
+            96,
+            (int) $connection->fetchOne('SELECT seq FROM sqlite_sequence WHERE name = ?', ['hatfield_session']),
+            'Pre-upgrade fixture must retain the deleted-id high-water mark',
+        );
+
+        // This fixture records older migrations as applied. Retain their deferred
+        // schema so later feature migrations see the tables those versions own.
+        $baseline = new Version20261022235428($connection, new NullLogger());
+        $baseline->up(new Schema());
+        foreach ($baseline->getSql() as $query) {
+            $statement = $query->getStatement();
+            if (str_starts_with($statement, 'CREATE TABLE tool_deferred_completion ') || str_contains($statement, ' ON tool_deferred_completion ')) {
+                $connection->executeStatement($statement);
+            }
+        }
+        $this->recordAppliedMigrationsThrough($connection, 'Version20261022235428');
+
+        (new ApplicationMigrationExecutor($connection, new NullLogger()))();
+
+        $columns = $connection->createSchemaManager()->listTableColumns('hatfield_session');
+        $this->assertArrayNotHasKey('reasoning_baseline', $columns);
+        $this->assertNotFalse(
+            $connection->fetchOne(
+                'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+                ['Version20261023000232'],
+            ),
+        );
+
+        $row = $connection->fetchAssociative('SELECT id, reasoning, provider_cache_key, model, name FROM hatfield_session');
+        $this->assertIsArray($row);
+        $this->assertSame(95, (int) $row['id']);
+        $this->assertSame('high', $row['reasoning']);
+        $this->assertSame($providerCacheKey, $row['provider_cache_key']);
+        $this->assertSame('chatgpt/gpt-5', $row['model']);
+        $this->assertSame('legacy-session-95', $row['name']);
+        $this->assertSame(
+            96,
+            (int) $connection->fetchOne('SELECT seq FROM sqlite_sequence WHERE name = ?', ['hatfield_session']),
+            'Upgrade must preserve the historical AUTOINCREMENT high-water mark after deleted ids',
+        );
+
+        $connection->insert('hatfield_session', [
+            'cwd' => '/post-upgrade',
+            'prompt' => null,
+            'parent_id' => null,
+            'root_id' => null,
+            'model' => 'chatgpt/gpt-5',
+            'model_provider' => 'chatgpt',
+            'model_name' => 'gpt-5',
+            'reasoning' => 'low',
+            'created_at' => $now,
+            'updated_at' => $now,
+            'name' => 'post-upgrade',
+            'provider_cache_key' => UuidV7::v7()->toRfc4122(),
+        ]);
+        $nextId = (int) $connection->fetchOne('SELECT id FROM hatfield_session WHERE name = ?', ['post-upgrade']);
+        $this->assertGreaterThan(96, $nextId);
+
+        $surviving = $connection->fetchAssociative(
+            'SELECT id, reasoning, provider_cache_key, model, name FROM hatfield_session WHERE id = ?',
+            [95],
+        );
+        $this->assertIsArray($surviving);
+        $this->assertSame('high', $surviving['reasoning']);
+        $this->assertSame($providerCacheKey, $surviving['provider_cache_key']);
+        $this->assertSame('chatgpt/gpt-5', $surviving['model']);
+        $this->assertSame('legacy-session-95', $surviving['name']);
+    }
+
     public function testBusyTimeoutBelowMinimumThrowsRuntimeException(): void
     {
         // PDO::ATTR_TIMEOUT=1 maps to busy_timeout=1000ms, which is below
@@ -588,6 +737,16 @@ SQL);
             'Version20260720120000',
             'Version20260723230000',
             'Version20260813031629',
+            'Version20260828223857',
+            'Version20260901015440',
+            'Version20260901163503',
+            'Version20260908010000',
+            'Version20261004192458',
+            'Version20261008200352',
+            'Version20261019185942',
+            'Version20261020210924',
+            'Version20261021034317',
+            'Version20261022235428',
         ];
 
         foreach ($ordered as $version) {
@@ -606,16 +765,18 @@ SQL);
     /**
      * Create a SQLite connection for testing.
      *
-     * Uses explicit driverOptions to set PDO::ATTR_TIMEOUT, avoiding
-     * silent reliance on PHP PDO's 60000ms default.  This makes the
-     * timeout assertion meaningful.
+     * Uses the test-container Doctrine connection factory with an explicit
+     * per-fixture SQLite path. driverOptions set PDO::ATTR_TIMEOUT so the
+     * busy_timeout assertion is meaningful and not the PDO 60000ms default.
      *
      * @param int $timeout PDO::ATTR_TIMEOUT value in seconds (default 5).
      *                     Busy timeout in ms = $timeout * 1000.
      */
     private function createSqliteConnection(string $dbPath, int $timeout = 5): Connection
     {
-        return DriverManager::getConnection([
+        $factory = static::getContainer()->get('doctrine.dbal.connection_factory');
+
+        return $factory->createConnection([
             'driver' => 'pdo_sqlite',
             'path' => $dbPath,
             'driverOptions' => [\PDO::ATTR_TIMEOUT => $timeout],

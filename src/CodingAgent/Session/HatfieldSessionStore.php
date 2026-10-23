@@ -151,9 +151,6 @@ final class HatfieldSessionStore
             $dirty = true;
         }
         if (\array_key_exists('model', $meta) && \is_string($meta['model'])) {
-            if ($entity->model !== $meta['model']) {
-                $entity->reasoningBaseline = null;
-            }
             $entity->model = $meta['model'];
             $dirty = true;
         }
@@ -214,70 +211,6 @@ final class HatfieldSessionStore
         }
 
         return $this->getRepository()->existsById($id);
-    }
-
-    /**
-     * Claim a chat epoch from retained history, not from a worker connection.
-     * Resume and appended turns retain the ordered prefix. Rewrites must reset it
-     * even when every transition anchor survives: controls depend on anchor context.
-     *
-     * @param array<string, string> $historyKeys ordered anchor keys mapped to canonical prefix fingerprints
-     *
-     * @return array{baseline: string, update: ?string}|null
-     */
-    public function claimReasoningBaseline(string $sessionId, string $model, string $effort, array $historyKeys): ?array
-    {
-        $entity = $this->fetchEntityOrNull($sessionId);
-        if (null === $entity) {
-            return null;
-        }
-        $baseline = $entity->reasoningBaseline;
-        $history = $baseline['history'] ?? null;
-        $valid = ($baseline['model'] ?? null) === $model && \is_string($baseline['effort'] ?? null)
-            && \is_array($history)
-            && \array_slice($historyKeys, 0, \count($history), true) === $history;
-        foreach ($baseline['transitions'] ?? [] as $transition) {
-            if (!isset($historyKeys[$transition['message_key']])) {
-                $valid = false;
-            }
-        }
-        if (!$valid) {
-            $entity->reasoningBaseline = ['model' => $model, 'effort' => $effort, 'last_emitted' => $effort, 'history' => $historyKeys, 'transitions' => []];
-            $this->entityManager->flush();
-
-            return null;
-        }
-        // Track appended anchors too, so later rewrites cannot hide behind an older prefix.
-        if ($history !== $historyKeys) {
-            $baseline['history'] = $historyKeys;
-            $entity->reasoningBaseline = $baseline;
-            $this->entityManager->flush();
-        }
-
-        return ['baseline' => $baseline['effort'], 'update' => $effort === ($baseline['last_emitted'] ?? $baseline['effort']) ? null : $effort];
-    }
-
-    public function rememberReasoningTransition(string $sessionId, string $model, string $messageKey, string $effort): void
-    {
-        $entity = $this->fetchEntityOrNull($sessionId);
-        if (null === $entity || ($entity->reasoningBaseline['model'] ?? null) !== $model) {
-            throw new \LogicException('Reasoning transition has no matching chat baseline.');
-        }
-        $baseline = $entity->reasoningBaseline;
-        $transitions = array_values(array_filter($baseline['transitions'] ?? [], static fn (array $entry): bool => $entry['message_key'] !== $messageKey));
-        $transitions[] = ['message_key' => $messageKey, 'effort' => $effort];
-        $baseline['transitions'] = $transitions;
-        $baseline['last_emitted'] = $effort;
-        $entity->reasoningBaseline = $baseline;
-        $this->entityManager->flush();
-    }
-
-    /** @return list<array{message_key: string, effort: string}> */
-    public function listReasoningTransitions(string $sessionId, string $model): array
-    {
-        $entity = $this->fetchEntityOrNull($sessionId);
-
-        return ($entity?->reasoningBaseline['model'] ?? null) === $model ? ($entity->reasoningBaseline['transitions'] ?? []) : [];
     }
 
     /**

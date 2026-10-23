@@ -1192,8 +1192,23 @@ services:
     arguments:
       $projectCwd: '%app.cwd%'
 
-  # Inject MCP lifecycle dispatcher into the session client so
-  # start/resume both trigger MCP initialize.
+  # Defer only these consumers' optional graphs, retaining the shared services.
+  # Lazy current([service]) factories resolve the original instance on first use.
+  Ineersa\CodingAgent\CLI\AgentCommand:
+    arguments:
+      $inProcessClient: !service { class: Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient, factory: current, arguments: [['@Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient']], lazy: true }
+      $processClient: !service { class: Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient, factory: current, arguments: [['@Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient']], lazy: true }
+      $interactiveMode: !service { class: Ineersa\Tui\Application\InteractiveMode, factory: current, arguments: [['@Ineersa\Tui\Application\InteractiveMode']], lazy: true }
+      $controller: !service { class: Ineersa\CodingAgent\Runtime\Controller\HeadlessController, factory: current, arguments: [['@Ineersa\CodingAgent\Runtime\Controller\HeadlessController']], lazy: true }
+
+  Ineersa\CodingAgent\Runtime\Messenger\PendingTransitionRecoverySubscriber:
+    arguments:
+      $transitions: !service { class: Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore, factory: current, arguments: [['@Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface']], lazy: true }
+      $recovery: !service { class: Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery, factory: current, arguments: [['@Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery']], lazy: true }
+      $locks: !service { class: Ineersa\AgentCore\Application\Handler\RunLockManager, factory: current, arguments: [['@Ineersa\AgentCore\Application\Handler\RunLockManager']], lazy: true }
+      $ownership: !service { class: Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider, factory: current, arguments: [['@Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider']], lazy: true }
+
+  # Inject MCP lifecycle dispatcher so start/resume both trigger MCP initialize.
   Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient:
     arguments:
       $commandBus: '@agent.command.bus'

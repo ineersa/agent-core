@@ -58,6 +58,8 @@ use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
+use Ineersa\CodingAgent\Tool\OutputCap;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as ToolboxResult;
@@ -123,13 +125,15 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
         }
         yield 'cold worker success' => ['subscriber', false, false];
         yield 'cold worker error' => ['subscriber', true, false];
+        yield 'bounded host diagnostics and explicit repair' => ['subscriber', false, true, true];
     }
 
     #[DataProvider('publicationFailures')]
-    public function testProcessedEvidenceSurvivesFailureBeforeAcceptance(string $failure, bool $error, bool $repair): void
+    public function testProcessedEvidenceSurvivesFailureBeforeAcceptance(string $failure, bool $error, bool $repair, bool $host = false): void
     {
         $c = self::getContainer();
-        $fixture = new CodeModeBackendFixture($c, 'return 42;');
+        $script = $host ? 'for ($i=0; $i<160; ++$i) { fwrite(STDOUT, str_repeat("O",8192)); fwrite(STDERR, str_repeat("E",8192)); } return ["answer"=>42,"nested"=>[false,null],"workspace"=>__DIR__];' : 'return 42;';
+        $fixture = new CodeModeBackendFixture($c, $script);
         $run = $fixture->state->runId;
         $execution = $c->get(CodeModeExecutionService::class);
         $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
@@ -137,7 +141,7 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
         $db = $c->get(Connection::class);
         $id = null;
         $runs = 0;
-        $invoke = function (ToolboxCall $call) use ($execution, $db, $failure, $run, &$runs, &$id): ToolboxResult {
+        $invoke = function (ToolboxCall $call) use ($execution, $db, $failure, $run, $host, $script, $c, &$runs, &$id): ToolboxResult {
             ++$runs;
             $id = $execution->begin();
             $this->assertNotNull($id);
@@ -146,7 +150,14 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
             $this->drain();
             $value = ['answer' => 42, 'nested' => [false, null]];
             $diagnostics = ['stdout' => 'OUT', 'stderr' => 'ERR'];
-            $execution->preserve($id, new CodeModeExecutionResult($value, $diagnostics), null);
+            if ($host) {
+                $captured = $c->get(CodeModeHostBridge::class)->execute($script, executionId: $id);
+                $this->assertInstanceOf(CodeModeExecutionResult::class, $captured);
+                $value = $captured->result;
+                $diagnostics = $captured->diagnostics;
+            } else {
+                $execution->preserve($id, new CodeModeExecutionResult($value, $diagnostics), null);
+            }
             if ('acceptance database' === $failure) {
                 $db->executeStatement("CREATE TRIGGER fail_terminal_acceptance BEFORE UPDATE OF accepted_result_reference_json ON tool_deferred_completion WHEN NEW.accepted_result_reference_json IS NOT NULL BEGIN SELECT RAISE(ABORT, 'terminal acceptance unavailable'); END");
             }
@@ -203,9 +214,25 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
         $this->assertSame(1, $runs);
         $this->assertSame(1, $processor->count);
         $this->assertSame($error, $result->isError);
-        $this->assertSame(['answer' => 42, 'nested' => [false, null]], $result->result['details']['raw_result']);
-        $this->assertStringContainsString('OUT', $result->result['content'][0]['text']);
-        $this->assertStringContainsString('ERR', $result->result['content'][0]['text']);
+        $paths = [];
+        $nativeReference = $c->get(CodeModeExecutionRepository::class)->invocation($run, 'cm')['raw_reference'];
+        if ($host) {
+            $rawValue = $result->result['details']['raw_result'];
+            $this->assertSame(42, $rawValue['answer']);
+            $this->assertSame([false, null], $rawValue['nested']);
+            $this->assertDirectoryDoesNotExist($rawValue['workspace']);
+            $this->assertSame(2, preg_match_all('/Saved full output: ([^\n]+)/', $result->result['content'][0]['text'], $matches));
+            $paths = $matches[1];
+            $this->assertLessThan(2048, \strlen($result->result['content'][0]['text']));
+            foreach ($paths as $index => $path) {
+                $this->assertSame(hash('sha256', str_repeat(0 === $index ? 'O' : 'E', 1310720)), hash_file('sha256', $path));
+            }
+            $this->assertCount(2, glob(\dirname($paths[0]).'/*.txt'), 'Sealing retained evidence must not capture either stream twice.');
+        } else {
+            $this->assertSame(['answer' => 42, 'nested' => [false, null]], $result->result['details']['raw_result']);
+            $this->assertStringContainsString('OUT', $result->result['content'][0]['text']);
+            $this->assertStringContainsString('ERR', $result->result['content'][0]['text']);
+        }
         $this->assertContains('runtime.result_send_failed', array_column($logger->records, 'message'));
         $this->assertNull($deferred->findAcceptedResultReferenceByDeferredId($id));
         $this->assertSame('pending', $deferred->status($id));
@@ -253,6 +280,15 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
         $this->assertNull($payloads->findProcessedResultReference($invocation), 'Completed redelivery must not recreate cleaned processed evidence.');
         $this->assertSame(1, $runs);
         $this->assertSame(1, $processor->count);
+        if ($host) {
+            $this->assertSame($nativeReference, $c->get(CodeModeExecutionRepository::class)->invocation($run, 'cm')['raw_reference']);
+            foreach ($paths as $index => $path) {
+                $this->assertStringContainsString($path, $c->get(CodeModeResultArtifactStore::class)->read($accepted)->result['content'][0]['text']);
+                $this->assertSame(hash('sha256', str_repeat(0 === $index ? 'O' : 'E', 1310720)), hash_file('sha256', $path));
+            }
+            $this->assertCount(2, glob(\dirname($paths[0]).'/*.txt'));
+            $c->get(OutputCap::class)->cleanupRun($run, 'test');
+        }
     }
 
     public function testGenericDeferredRepairAcceptsTheRetainedReferenceWithoutNativeOwnership(): void

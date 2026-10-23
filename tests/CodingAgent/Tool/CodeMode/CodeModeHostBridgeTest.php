@@ -10,13 +10,24 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeIpc;
+use Ineersa\CodingAgent\Tool\OutputCap;
+use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\Process;
 
 /**
@@ -88,6 +99,43 @@ PHP);
             'ok' => true,
             'result' => 42,
         ], $frame);
+    }
+
+    public function testServeReadsReturnQueuedDuringPostWaitOutputDrain(): void
+    {
+        [$host, $peer] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, 0);
+        stream_set_blocking($host, false);
+        $process = new class($peer) extends Process {
+            private int $polls = 0;
+            private bool $armed = false;
+
+            public function __construct(private mixed $peer)
+            {
+                parent::__construct(['unused']);
+                $this->armed = true;
+            }
+
+            public function isRunning(): bool
+            {
+                if (!$this->armed) {
+                    return false;
+                }
+                if (2 === ++$this->polls) {
+                    // First readiness wait saw no data. Its subsequent output
+                    // drain unblocks a child which queues the frame and exits.
+                    CodeModeIpc::write($this->peer, ['type' => 'return', 'ok' => true, 'result' => 42]);
+                }
+
+                return $this->polls < 2;
+            }
+        };
+        try {
+            $method = new \ReflectionMethod(CodeModeHostBridge::class, 'serve');
+            $this->assertSame(42, $method->invoke($this->bridge(), $host, $process, null, new NullCancellationToken(), 5, hrtime(true)));
+        } finally {
+            fclose($host);
+            fclose($peer);
+        }
     }
 
     public function testExecuteReturnsScalarAndArrayFromFastScripts(): void
@@ -296,6 +344,7 @@ PHP);
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService::class),
+            self::getContainer()->get(OutputCap::class),
         );
 
         $result = $accessor->with(
@@ -375,6 +424,7 @@ PHP);
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService::class),
+            self::getContainer()->get(OutputCap::class),
         );
 
         $result = $this->runScript($bridge, "return tool('code_mode', ['script' => 'return 1;']);");
@@ -401,7 +451,7 @@ PHP);
         $bridge = $this->bridge();
 
         $result = $this->runScript($bridge, 'echo "hello-out"; fwrite(STDERR, "hello-err\\n"); return 7;');
-        $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult::class, $result);
+        $this->assertInstanceOf(CodeModeExecutionResult::class, $result);
         $this->assertSame(7, $result->result);
         $this->assertStringContainsString('hello-out', $result->diagnostics['stdout'] ?? '');
         $this->assertStringContainsString('hello-err', $result->diagnostics['stderr'] ?? '');
@@ -560,7 +610,7 @@ PHP);
         }
 
         $result = $this->runScript($bridge, '$x = $undefinedVar; return 1;');
-        $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult::class, $result);
+        $this->assertInstanceOf(CodeModeExecutionResult::class, $result);
         $stderr = $result->diagnostics['stderr'] ?? '';
         $stdout = $result->diagnostics['stdout'] ?? '';
         $combined = $stdout."\n".$stderr;
@@ -586,7 +636,7 @@ PHP);
             $bridge,
             'echo "HEAD-MARKER-".str_repeat("X", 60000)."TAIL-MARKER"; return "tiny";',
         );
-        $this->assertInstanceOf(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult::class, $result);
+        $this->assertInstanceOf(CodeModeExecutionResult::class, $result);
         $this->assertSame('tiny', $result->result);
         $stdout = $result->diagnostics['stdout'] ?? '';
         $this->assertNotSame('', $stdout);
@@ -687,10 +737,95 @@ PHP);
             },
             new RuntimeProcessConfig($locator, $this->tmpDir),
             self::getContainer()->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService::class),
+            self::getContainer()->get(OutputCap::class),
         );
 
         $result = $this->runScript($bridge, 'return "path-php-ok";');
         $this->assertSame('path-php-ok', $result);
+    }
+
+    public function testLargeStreamsRemainRecoverableWithoutLosingReturnValue(): void
+    {
+        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/artifacts'), new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
+        $bridge = $this->bridgeWithToolbox(static fn () => null, $cap);
+        $result = $this->runScript($bridge, 'for ($i=0; $i<160; ++$i) { fwrite(STDOUT, str_repeat("O",8192)); fwrite(STDERR, str_repeat("E",8192)); } return ["answer"=>42];');
+        $this->assertInstanceOf(CodeModeExecutionResult::class, $result);
+        $this->assertSame(['answer' => 42], $result->result);
+        foreach (['stdout' => 'O', 'stderr' => 'E'] as $label => $byte) {
+            $notice = $result->diagnostics[$label];
+            $this->assertLessThan(1024, \strlen($notice));
+            $this->assertStringContainsString('Raw '.$label.' diagnostics: 1310720 bytes', $notice);
+            $this->assertSame(1, preg_match('/Saved full output: (.+)/', $notice, $matches));
+            $this->assertSame(hash('sha256', str_repeat($byte, 1310720)), hash_file('sha256', $matches[1]));
+        }
+        $call = new DomainToolCall('large-diagnostics', 'code_mode', [], 0, 'code-mode-bridge-test');
+        $raw = ['code_mode_value' => $result->result, 'code_mode_diagnostics' => $result->diagnostics];
+        $domain = new ToolResult('large-diagnostics', 'code_mode', [['type' => 'text', 'text' => json_encode($raw, \JSON_THROW_ON_ERROR)]], ['raw_result' => $raw]);
+        $domain = new CodeModeDiagnosticsToolResultProcessor()->process($domain, $call);
+        $domain = new OutputCapToolResultProcessor($cap, AttributeSerializerValidatorTestFactory::denormalizer())->process($domain, $call);
+        $this->assertSame(['answer' => 42], $domain->details['raw_result']);
+        $this->assertStringContainsString('"answer":42', $domain->content[0]['text']);
+        $this->assertStringContainsString("stdout:\n[Raw stdout", $domain->content[0]['text']);
+        $this->assertStringContainsString("stderr:\n[Raw stderr", $domain->content[0]['text']);
+        $cap->cleanupRun('code-mode-bridge-test', 'test');
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function diagnosticFailureModes(): iterable
+    {
+        yield 'early exit' => ['exit', 'exit code 7'];
+        yield 'script exception' => ['error', 'SCRIPT_FAILURE'];
+        yield 'wall deadline' => ['timeout', 'timed out'];
+        yield 'cancellation' => ['cancel', 'cancelled'];
+    }
+
+    #[DataProvider('diagnosticFailureModes')]
+    public function testLargeFailureDiagnosticsKeepAnExactArtifact(string $mode, string $message): void
+    {
+        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/artifacts'), new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
+        $bridge = $this->bridgeWithToolbox(static fn () => null, $cap);
+        $marker = $this->tmpDir.'/ready-to-cancel';
+        $token = new class($marker) implements CancellationTokenInterface {
+            public function __construct(private readonly string $marker)
+            {
+            }
+
+            public function isCancellationRequested(): bool
+            {
+                clearstatcache(true, $this->marker);
+
+                return is_file($this->marker);
+            }
+        };
+        // The writer flushes all diagnostic bytes before publishing its cancel
+        // marker. The wait exposes the real subprocess stop/deadline contract.
+        $ending = match ($mode) {
+            'exit' => 'exit(7);',
+            'error' => 'throw new RuntimeException("SCRIPT_FAILURE");',
+            'timeout' => 'sleep(3); return 42;',
+            'cancel' => 'file_put_contents('.var_export($marker, true).', "ready"); sleep(3); return 42;',
+        };
+        try {
+            $this->runScript($bridge, 'for ($i=0; $i<160; ++$i) fwrite(STDERR, str_repeat("E",8192)); '.$ending, timeoutSeconds: 1, cancelToken: $token);
+            $this->fail('Expected failed execution');
+        } catch (ToolCallException $exception) {
+            $this->assertSame(ToolCallException::class, $exception::class);
+            $this->assertFalse($exception->retryable());
+            $this->assertNull($exception->hint());
+            $this->assertStringContainsString($message, $exception->getMessage());
+            $this->assertLessThan(2048, \strlen($exception->getMessage()));
+            $this->assertSame(1, preg_match('/Saved full output: (.+)/', $exception->getMessage(), $matches));
+            $this->assertSame(hash('sha256', str_repeat('E', 1310720)), hash_file('sha256', $matches[1]));
+        } finally {
+            $cap->cleanupRun('code-mode-bridge-test', 'test');
+        }
+    }
+
+    public function testLargeInvalidUtf8DiagnosticsAreRefused(): void
+    {
+        $bridge = $this->bridge();
+        $this->expectException(MalformedToolResultException::class);
+        $this->runScript($bridge, 'for ($i=0; $i<160; ++$i) fwrite(STDOUT, str_repeat("O",8192)); echo "\\xff"; return 42;');
     }
 
     private function bridge(): CodeModeHostBridge
@@ -704,7 +839,7 @@ PHP);
     /**
      * @param callable(string, array<string, mixed>): mixed $executor
      */
-    private function bridgeWithToolbox(callable $executor): CodeModeHostBridge
+    private function bridgeWithToolbox(callable $executor, ?OutputCap $outputCap = null): CodeModeHostBridge
     {
         $locator = new class($executor) implements \Psr\Container\ContainerInterface {
             public function __construct(private mixed $executor)
@@ -746,6 +881,7 @@ PHP);
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService::class),
+            $outputCap ?? self::getContainer()->get(OutputCap::class),
         );
     }
 
@@ -755,6 +891,7 @@ PHP);
         int $timeoutSeconds = 10,
         int $memoryLimitMb = 256,
         ?int $parentTimeoutSeconds = 10,
+        ?CancellationTokenInterface $cancelToken = null,
     ): mixed {
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
@@ -765,7 +902,7 @@ PHP);
                 turnNo: 1,
                 toolCallId: 'code-mode-bridge-test-1',
                 toolName: 'code_mode',
-                cancellationToken: new NullCancellationToken(),
+                cancellationToken: $cancelToken ?? new NullCancellationToken(),
                 timeoutSeconds: $parentTimeoutSeconds,
                 orderIndex: 0,
                 humanInputAnswer: null,

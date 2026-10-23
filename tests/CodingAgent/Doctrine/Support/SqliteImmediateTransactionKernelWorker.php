@@ -70,6 +70,15 @@ exit(0);
 
 function nestedSavepointProbe(Connection $connection): void
 {
+    foreach ([false, true] as $reconnect) {
+        if ($reconnect) {
+            $connection->executeStatement('PRAGMA synchronous = FULL');
+            $connection->close();
+        }
+        if (1 !== (int) $connection->fetchOne('PRAGMA synchronous')) {
+            throw new RuntimeException('worker connection must use synchronous NORMAL, including after reconnect');
+        }
+    }
     $connection->beginTransaction();
     $connection->beginTransaction();
     try {

@@ -57,6 +57,41 @@ final class OutputCapTest extends TestCase
         $this->assertSame(86400, new OutputCapConfig()->retentionSeconds);
     }
 
+    public function testCaptureByteBoundaryLeavesSmallOutputForOrdinaryCharacterCapping(): void
+    {
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir));
+        $chunk = str_repeat('a', 8192);
+        $chunks = static function () use ($chunk): \Generator {
+            for ($i = 0; $i < 128; ++$i) {
+                yield $chunk;
+            }
+        };
+        $text = $cap->capture($chunks(), null);
+        $this->assertIsString($text);
+        $this->assertSame(OutputCap::STREAM_BYTE_LIMIT, \strlen($text));
+        $this->assertSame(0, iterator_count(new \FilesystemIterator($this->tmpDir)));
+        $result = $cap->capIfNeeded($text, 'boundary-run');
+        $this->assertNotNull($result);
+        $this->assertSame(OutputCap::STREAM_BYTE_LIMIT, $result->charCount);
+        $this->assertNull($result->byteCount);
+    }
+
+    public function testInterruptedCaptureDoesNotPublishAnArtifact(): void
+    {
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir));
+        $chunks = static function (): \Generator {
+            yield str_repeat('a', 8192);
+            throw new \RuntimeException('producer cancelled');
+        };
+        try {
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('producer cancelled');
+            $cap->capture($chunks(), 'cancelled-run');
+        } finally {
+            $this->assertSame(0, iterator_count(new \FilesystemIterator($this->tmpDir)));
+        }
+    }
+
     #[DataProvider('characterBoundaryCases')]
     public function testByteShortcutPreservesCharacterBoundaries(string $text, bool $fits): void
     {

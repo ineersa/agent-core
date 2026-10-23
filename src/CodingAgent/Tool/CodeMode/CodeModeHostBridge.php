@@ -8,12 +8,14 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
+use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -50,6 +52,7 @@ final readonly class CodeModeHostBridge
         private ContainerInterface $toolboxLocator,
         private RuntimeProcessConfig $runtimeProcessConfig,
         private CodeModeExecutionService $execution,
+        private OutputCap $outputCap,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -76,34 +79,45 @@ final readonly class CodeModeHostBridge
             $connection = null;
             $value = null;
             $failure = null;
+            $diagnostics = [];
+            $captureAttempted = false;
+            $capture = new CodeModeDiagnosticCapture($this->outputCap, $parentContext?->runId(), $workspace['dir']);
 
             try {
                 try {
                     $this->writeScript($workspace['script'], $script);
                     $server = $this->createSocketServer($workspace['socket']);
-                    $process = $this->startProcess($workspace, $cancelToken, $memoryLimit);
+                    $process = $this->startProcess($workspace, $cancelToken, $memoryLimit, $capture);
                     $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
                     if (null !== $executionId) {
                         $this->execution->ready($executionId);
                     }
 
-                    return $value = $this->serve($connection, $process, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
+                    $result = $this->serve($connection, $process, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
                 } finally {
+                    // Settle the owned writer before reading or persisting its files.
                     $this->stopProcess($process);
                 }
+                $captureAttempted = true;
+                $diagnostics = $capture->prepare(self::SCRIPT_WRAPPER_PREFIX_LINES);
+
+                return $value = $this->packExecutionResult($result, $diagnostics);
             } catch (\Throwable $exception) {
                 $failure = $exception;
-                if (null === $process) {
+                if (null === $process || $exception instanceof MalformedToolResultException) {
                     throw $exception;
                 }
 
-                // Seal failure evidence after process settlement, before workspace
-                // cleanup. Script and nested-tool failures otherwise lose both streams.
-                $diagnostics = CodeModeDiagnostics::prepare(
-                    $process->getOutput(),
-                    $process->getErrorOutput(),
-                    self::SCRIPT_WRAPPER_PREFIX_LINES,
-                );
+                // Capture once after writer settlement, including failure paths.
+                // Process buffers are empty because both streams go to files.
+                if (!$captureAttempted) {
+                    try {
+                        $diagnostics = $capture->prepare(self::SCRIPT_WRAPPER_PREFIX_LINES);
+                    } catch (\Throwable $captureFailure) {
+                        $failure = $captureFailure;
+                        throw $captureFailure;
+                    }
+                }
                 if ([] === $diagnostics) {
                     throw $exception;
                 }
@@ -115,7 +129,6 @@ final readonly class CodeModeHostBridge
                 if (null !== $executionId) {
                     // Keep local evidence if sealing the retained artifact fails.
                     // ACK does not authorize removing the only terminal snapshot.
-                    $diagnostics = null === $process ? [] : CodeModeDiagnostics::prepare($process->getOutput(), $process->getErrorOutput(), self::SCRIPT_WRAPPER_PREFIX_LINES);
                     $this->filesystem->dumpFile($workspace['dir'].'/terminal.json', json_encode([
                         'value' => $value instanceof CodeModeExecutionResult ? $value->result : $value,
                         'diagnostics' => $diagnostics,
@@ -156,8 +169,10 @@ final readonly class CodeModeHostBridge
 
             if (!$this->waitForReadable($connection, $cancelToken, $timeoutSeconds, $startedAtNs)) {
                 $this->drainProcessOutput($process);
-                if (!$process->isRunning()) {
-                    // No buffered bytes left after the child exited.
+                // The child can queue its return frame and exit after the
+                // readiness wait. Recheck queued IPC before classifying the
+                // newly observed exit as a missing return value.
+                if (!$process->isRunning() && !$this->waitForReadable($connection, $cancelToken, $timeoutSeconds, $startedAtNs)) {
                     throw $this->earlyExitException($process);
                 }
 
@@ -192,7 +207,7 @@ final readonly class CodeModeHostBridge
                         throw new ToolCallException(CodeModeDiagnostics::normalizePaths($exception->getMessage(), self::SCRIPT_WRAPPER_PREFIX_LINES), retryable: false, previous: $exception);
                     }
 
-                    return $this->packExecutionResult($result, $process);
+                    return $result;
                 }
 
                 $message = \is_string($frame['error'] ?? null) ? $frame['error'] : 'Code-mode script failed.';
@@ -515,7 +530,7 @@ final readonly class CodeModeHostBridge
     /**
      * @param array{dir: string, script: string, socket: string, startedAtNs: int} $workspace
      */
-    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit): Process
+    private function startProcess(array $workspace, CancellationTokenInterface $cancelToken, string $memoryLimit, CodeModeDiagnosticCapture $capture): Process
     {
         if ($cancelToken->isCancellationRequested()) {
             throw new ToolCallException('Code-mode execution cancelled before start.', retryable: false);
@@ -526,18 +541,24 @@ final readonly class CodeModeHostBridge
         $valueCodec = $this->materializeValueCodec($workspace['dir']);
         // Keep stderr for warnings/fatals, but suppress display_errors and Xdebug
         // stacks so each warning is not mirrored into stdout with a call stack.
-        // Symfony Process already buffers stdout/stderr on php://temp streams.
-        $process = new Process(
-            [
-                $this->phpCliBinary(),
-                '-d', 'display_errors=0',
-                '-d', 'display_startup_errors=0',
-                '-d', 'html_errors=0',
-                '-d', 'xdebug.mode=off',
-                '-d', 'log_errors=1',
-                '-d', 'error_log=',
-                $bootstrap,
-            ],
+        // Process's pipe reader can aggregate arbitrarily many bytes before
+        // callbacks run. Redirect into the private workspace instead; no full
+        // diagnostic stream enters Process buffers. Only fixed argv is shell
+        // quoted, never user script source. exec keeps the owned PID on PHP.
+        $command = [
+            $this->phpCliBinary(),
+            '-d', 'display_errors=0',
+            '-d', 'display_startup_errors=0',
+            '-d', 'html_errors=0',
+            '-d', 'xdebug.mode=off',
+            '-d', 'log_errors=1',
+            '-d', 'error_log=',
+            $bootstrap,
+        ];
+        $process = Process::fromShellCommandline(
+            'exec '.implode(' ', array_map(escapeshellarg(...), $command))
+                .' > '.escapeshellarg($capture->stdoutPath)
+                .' 2> '.escapeshellarg($capture->stderrPath),
             $this->runtimeProcessConfig->runtimeCwd(),
             [
                 'HATFIELD_CODE_MODE_SOCKET' => $workspace['socket'],
@@ -746,18 +767,13 @@ final readonly class CodeModeHostBridge
 
     private function drainProcessOutput(Process $process): void
     {
-        // Pump Process pipes into its php://temp stdout/stderr buffers.
+        // Refresh child liveness; stdout/stderr go directly to workspace files.
         $process->isRunning();
     }
 
-    private function packExecutionResult(mixed $result, Process $process): mixed
+    /** @param array<string, string> $diagnostics */
+    private function packExecutionResult(mixed $result, array $diagnostics): mixed
     {
-        $diagnostics = CodeModeDiagnostics::prepare(
-            $process->getOutput(),
-            $process->getErrorOutput(),
-            self::SCRIPT_WRAPPER_PREFIX_LINES,
-        );
-
         if ([] === $diagnostics) {
             return $result;
         }

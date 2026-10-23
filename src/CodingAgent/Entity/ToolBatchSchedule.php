@@ -16,7 +16,6 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'tool_batch')]
-#[ORM\Index(name: 'idx_tool_batch_run', columns: ['run_id'])]
 class ToolBatchSchedule
 {
     #[ORM\Id]

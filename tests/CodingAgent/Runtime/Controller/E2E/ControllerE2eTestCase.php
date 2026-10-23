@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Path;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -150,11 +151,26 @@ abstract class ControllerE2eTestCase extends TestCase
      */
     protected function controllerSubprocessEnv(): array
     {
-        return [
-            // Isolate compiled container from concurrent Castor lanes that share
-            // the project .hatfield/cache/test root when HATFIELD_CACHE_DIR is unset.
-            'HATFIELD_CACHE_DIR' => $this->tempDir.'/.hatfield/cache',
-        ];
+        $env = [];
+
+        // Reuse the Castor QA run cache when present. Overriding to a per-temp
+        // path forces a cold Symfony compile for every controller spawn and can
+        // starve broker/DB creation under full-gate contention before runtime.ready.
+        // Session/transport isolation still comes from HOME, HATFIELD_TEST_DATABASE_PATH,
+        // and the session-owned sqlite-queue paths.
+        $qaCacheDir = getenv('HATFIELD_CACHE_DIR');
+        if (false !== $qaCacheDir && '' !== trim($qaCacheDir)) {
+            // Castor initialize_qa_check_run / qa_standalone_test_cache_dir emit
+            // project-relative roots (e.g. .hatfield/cache-<id>). Kernel resolves
+            // relative HATFIELD_CACHE_DIR against runtime cwd, and controller
+            // children use --cwd=<tempDir>, so forward an absolute path rooted at
+            // the checkout that already owns the prewarmed cache.
+            $env['HATFIELD_CACHE_DIR'] = Path::isAbsolute($qaCacheDir)
+                ? $qaCacheDir
+                : Path::makeAbsolute($qaCacheDir, $this->projectDir);
+        }
+
+        return $env;
     }
 
     /**

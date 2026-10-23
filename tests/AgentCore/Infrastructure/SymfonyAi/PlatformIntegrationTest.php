@@ -18,28 +18,40 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
+use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Model\ProviderRequest;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult;
+use Symfony\AI\Platform\Bridge\Generic\Completions\ResultConverter as GenericCompletionsResultConverter;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\ResultConverter as ChatGptResultConverter;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\OpenResponsesContract;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
+use Symfony\AI\Platform\Bridge\OpenResponses\ResultConverter as OpenResponsesResultConverter;
+use Symfony\AI\Platform\Exception\MaxOutputTokensException;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
 use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Provider;
+use Symfony\AI\Platform\Result\DeferredResult;
 use Symfony\AI\Platform\Result\InMemoryRawResult;
+use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\ResultInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\DeltaInterface;
@@ -48,6 +60,7 @@ use Symfony\AI\Platform\Result\Stream\Delta\ThinkingComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingStart;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
+use Symfony\AI\Platform\Result\Stream\RawSseStream;
 use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\ResultConverterInterface;
@@ -55,7 +68,11 @@ use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\HttpClient\EventSourceHttpClient;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
 
 final class PlatformIntegrationTest extends TestCase
 {
@@ -155,7 +172,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            statusReader: new NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox),
             platform: $platform,
@@ -166,7 +183,7 @@ final class PlatformIntegrationTest extends TestCase
             modelResolver: $modelResolver,
             providerRequestPreparer: new ProviderRequestPreparer([$beforeProviderHook]),
             logger: new NullLogger(),
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -324,7 +341,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            statusReader: new NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -334,7 +351,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: $costCalculator,
             modelResolver: $modelResolver,
             logger: new NullLogger(),
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -412,7 +429,7 @@ final class PlatformIntegrationTest extends TestCase
             );
 
             $adapter = new LlmPlatformAdapter(
-                statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+                statusReader: new NullRunOperationalStatusReader(),
                 messageConverter: new AgentMessageConverter(),
                 toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
                 platform: $platform,
@@ -421,7 +438,7 @@ final class PlatformIntegrationTest extends TestCase
                 streamObserver: null,
                 costCalculator: null,
                 logger: new NullLogger(),
-                denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+                denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
             );
 
             $adapter->invoke(new ModelInvocationRequest(
@@ -446,13 +463,15 @@ final class PlatformIntegrationTest extends TestCase
 
     public function testStreamingCancellationReturnsAbortedWithPartialOutput(): void
     {
+        $resumedAfterCancellation = false;
         $platform = $this->createSymfonyPlatform(
             modelClient: new FakeSymfonyModelClient(new FakeTokenUsage(promptTokens: 11, completionTokens: 4, totalTokens: 15)),
-            streamFactory: static fn (): iterable => [
-                new TextDelta('A'),
-                new TextDelta('B'),
-                new TextDelta('C'),
-            ],
+            streamFactory: static function () use (&$resumedAfterCancellation): \Generator {
+                yield new TextDelta('A');
+                yield new TextDelta('B');
+                $resumedAfterCancellation = true;
+                yield new TextDelta('C');
+            },
         );
 
         // Poll 1 = before-stream; poll 2 = first delta (keep Running, emit A);
@@ -469,7 +488,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -483,6 +502,8 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame('aborted', $response->stopReason);
         $this->assertSame('A', $response->assistantMessage?->asText());
         $this->assertSame(15, $response->usage['total_tokens']);
+        $this->assertTrue($response->receivedStreamDeltas);
+        $this->assertFalse($resumedAfterCancellation, 'Partial reconstruction must not drain the cancelled provider stream.');
     }
 
     public function testStreamingCancellationAfterLastDeltaStillAborts(): void
@@ -507,7 +528,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -583,7 +604,7 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertFalse($result->error['retryable'] ?? true);
         $this->assertTrue($result->error['retry_exhausted'] ?? false);
         $this->assertSame(1, $result->error['retry_attempt_index'] ?? null);
-        $this->assertSame([], $result->deltas);
+        $this->assertTrue($result->receivedStreamDeltas);
     }
 
     public function testEmptyStreamExhaustsApplicationBudget(): void
@@ -610,7 +631,7 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame('empty_response', $result->error['type'] ?? null);
         $this->assertFalse($result->error['retryable'] ?? true);
         $this->assertTrue($result->error['retry_exhausted'] ?? false);
-        $this->assertSame([], $result->deltas);
+        $this->assertFalse($result->receivedStreamDeltas);
         $this->assertNull($result->assistantMessage);
     }
 
@@ -644,13 +665,7 @@ final class PlatformIntegrationTest extends TestCase
             ),
         ));
 
-        $completions = array_values(array_filter(
-            $response->deltas,
-            static fn (mixed $delta): bool => $delta instanceof ThinkingComplete,
-        ));
-        $this->assertCount(2, $completions);
-        $this->assertSame("First reasoning summary.\n", $completions[0]->getThinking());
-        $this->assertSame("First reasoning summary.\nRefined independently.", $completions[1]->getThinking());
+        $this->assertTrue($response->receivedStreamDeltas);
         $expectedThinking = "First reasoning summary.\nFirst reasoning summary.\nRefined independently.";
         $this->assertSame(["First reasoning summary.\n", $expectedThinking], $observedCompletions);
 
@@ -1051,7 +1066,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $adapter = new LlmPlatformAdapter(
-            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            statusReader: new NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
             platform: $platform,
@@ -1061,7 +1076,7 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -1090,6 +1105,270 @@ final class PlatformIntegrationTest extends TestCase
     }
 
     /**
+     * Verify that cache-creation tokens flow from TokenUsageInterface through
+     * extractUsage into the response usage payload for absent, zero, positive,
+     * and mixed cache-write/read values.
+     */
+    #[DataProvider('provideCacheCreationTokenCases')]
+    public function testCacheCreationTokensFlowToUsagePayload(
+        ?int $cacheCreationTokens,
+        ?int $cacheReadTokens,
+        ?int $cachedTokens,
+        bool $expectCacheCreationKey,
+        ?int $expectedCacheCreation,
+        ?int $expectedCacheRead,
+    ): void {
+        $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
+            promptTokens: 100,
+            completionTokens: 20,
+            cachedTokens: $cachedTokens,
+            cacheReadTokens: $cacheReadTokens,
+            cacheCreationTokens: $cacheCreationTokens,
+            totalTokens: 120,
+        ));
+
+        $platform = $this->createSymfonyPlatform(
+            modelClient: $modelClient,
+            streamFactory: static fn (): iterable => [new TextDelta('response')],
+        );
+
+        $response = $this->invokeWithPlatform($platform, 'fake', 'run-cache-creation');
+
+        if ($expectCacheCreationKey) {
+            $this->assertArrayHasKey('cache_creation_tokens', $response->usage);
+            $this->assertSame($expectedCacheCreation, $response->usage['cache_creation_tokens']);
+        } else {
+            $this->assertArrayNotHasKey('cache_creation_tokens', $response->usage);
+        }
+
+        if (null !== $expectedCacheRead) {
+            $this->assertSame($expectedCacheRead, $response->usage['cache_read_tokens']);
+        } else {
+            $this->assertArrayNotHasKey('cache_read_tokens', $response->usage);
+        }
+    }
+
+    /**
+     * @return iterable<string, array{0: ?int, 1: ?int, 2: ?int, 3: bool, 4: ?int, 5: ?int}>
+     */
+    public static function provideCacheCreationTokenCases(): iterable
+    {
+        yield 'absent' => [null, null, null, false, null, null];
+        yield 'zero' => [0, null, null, true, 0, null];
+        yield 'positive' => [15, null, null, true, 15, null];
+        yield 'mixed write and read' => [9, 40, 40, true, 9, 40];
+    }
+
+    /**
+     * Prove OpenResponses/ChatGPT streamed wire usage maps cache_write_tokens
+     * through public LlmPlatformAdapter invocation.
+     */
+    #[DataProvider('provideStreamedCacheWriteCases')]
+    public function testStreamedCacheWriteTokensReachHostUsage(
+        bool $chatGpt,
+        string $model,
+        string $messageId,
+        int $inputTokens,
+        int $outputTokens,
+        int $totalTokens,
+        int $cachedTokens,
+        int $cacheWriteTokens,
+        ?int $thinkingTokens,
+    ): void {
+        $message = $this->assistantMessage($messageId);
+        $usage = [
+            'input_tokens' => $inputTokens,
+            'output_tokens' => $outputTokens,
+            'total_tokens' => $totalTokens,
+            'input_tokens_details' => [
+                'cached_tokens' => $cachedTokens,
+                'cache_write_tokens' => $cacheWriteTokens,
+            ],
+        ];
+        if (null !== $thinkingTokens) {
+            $usage['output_tokens_details'] = ['reasoning_tokens' => $thinkingTokens];
+        }
+
+        $deferred = $this->deferredOpenResponsesStream([
+            ['type' => 'response.output_item.added', 'output_index' => 0, 'item' => array_replace($message, ['content' => [], 'status' => 'in_progress'])],
+            ['type' => 'response.output_text.delta', 'item_id' => $messageId, 'delta' => 'ok'],
+            ['type' => 'response.output_item.done', 'output_index' => 0, 'item' => $message],
+            ['type' => 'response.completed', 'response' => [
+                'output' => [$message],
+                'usage' => $usage,
+                'model' => $model,
+            ]],
+        ], chatGpt: $chatGpt);
+
+        $response = $this->invokeWithDeferredResult($deferred, $model, 'run-stream-cache-write');
+
+        $this->assertNull($response->error);
+        $this->assertSame($inputTokens, $response->usage['input_tokens'] ?? null);
+        $this->assertSame($outputTokens, $response->usage['output_tokens'] ?? null);
+        $this->assertSame($totalTokens, $response->usage['total_tokens'] ?? null);
+        $this->assertSame($cachedTokens, $response->usage['cached_tokens'] ?? null);
+        $this->assertSame($cacheWriteTokens, $response->usage['cache_creation_tokens'] ?? null);
+        if (null !== $thinkingTokens) {
+            $this->assertSame($thinkingTokens, $response->usage['thinking_tokens'] ?? null);
+        }
+    }
+
+    /**
+     * @return iterable<string, array{0: bool, 1: string, 2: string, 3: int, 4: int, 5: int, 6: int, 7: int, 8: ?int}>
+     */
+    public static function provideStreamedCacheWriteCases(): iterable
+    {
+        yield 'openresponses' => [false, 'openai-codex/gpt-test', 'msg_cache', 100, 20, 120, 40, 15, 5];
+        yield 'chatgpt' => [true, 'openai-codex/gpt-chatgpt', 'msg_chatgpt_cache', 80, 10, 90, 25, 7, null];
+    }
+
+    /**
+     * Host invoke always streams. Prove the non-streaming OpenResponses extractor
+     * still maps cache_write_tokens onto DeferredResult usage metadata.
+     */
+    public function testOpenResponsesNonStreamCacheWriteTokensReachDeferredResultMetadata(): void
+    {
+        $usagePayload = [
+            'input_tokens' => 100,
+            'output_tokens' => 20,
+            'total_tokens' => 120,
+            'input_tokens_details' => [
+                'cached_tokens' => 40,
+                'cache_write_tokens' => 15,
+            ],
+            'output_tokens_details' => [
+                'reasoning_tokens' => 5,
+            ],
+        ];
+        $message = $this->assistantMessage('msg_cache');
+        $body = json_encode([
+            'id' => 'resp_cache',
+            'status' => 'completed',
+            'output' => [$message],
+            'usage' => $usagePayload,
+            'model' => 'gpt-test',
+        ], \JSON_THROW_ON_ERROR);
+        $http = new MockHttpClient([
+            new MockResponse($body, [
+                'http_code' => 200,
+                'response_headers' => ['content-type' => 'application/json'],
+            ]),
+        ]);
+        $raw = new RawHttpResult($http->request('POST', 'https://example.test/v1/responses'));
+        $deferred = new DeferredResult(
+            new OpenResponsesResultConverter(),
+            $raw,
+            ['stream' => false],
+        );
+        $deferred->getResult();
+        $tokenUsage = $deferred->getMetadata()->get('token_usage');
+        $this->assertInstanceOf(TokenUsageInterface::class, $tokenUsage);
+        $this->assertSame(15, $tokenUsage->getCacheCreationTokens());
+    }
+
+    /**
+     * Prove Generic Completions 0.15 counts a repeated stream usage snapshot once.
+     */
+    public function testGenericStreamUsageSnapshotIsCountedOnce(): void
+    {
+        $chunks = [
+            [
+                'id' => 'chatcmpl-1',
+                'object' => 'chat.completion.chunk',
+                'model' => 'generic-test',
+                'choices' => [[
+                    'index' => 0,
+                    'delta' => ['role' => 'assistant', 'content' => 'hi'],
+                    'finish_reason' => null,
+                ]],
+            ],
+            [
+                'id' => 'chatcmpl-1',
+                'object' => 'chat.completion.chunk',
+                'model' => 'generic-test',
+                'choices' => [[
+                    'index' => 0,
+                    'delta' => [],
+                    'finish_reason' => 'stop',
+                ]],
+                'usage' => [
+                    'prompt_tokens' => 11,
+                    'completion_tokens' => 2,
+                    'total_tokens' => 13,
+                    'prompt_tokens_details' => ['cached_tokens' => 4],
+                ],
+            ],
+            [
+                'id' => 'chatcmpl-1',
+                'object' => 'chat.completion.chunk',
+                'model' => 'generic-test',
+                'choices' => [[
+                    'index' => 0,
+                    'delta' => [],
+                    'finish_reason' => null,
+                ]],
+                // Trailing duplicate usage snapshot must not double-count.
+                'usage' => [
+                    'prompt_tokens' => 11,
+                    'completion_tokens' => 2,
+                    'total_tokens' => 13,
+                    'prompt_tokens_details' => ['cached_tokens' => 4],
+                ],
+            ],
+        ];
+
+        $response = $this->invokeWithDeferredResult(
+            $this->deferredGenericCompletionsStream($chunks),
+            'generic/test',
+            'run-generic-usage-once',
+        );
+
+        $this->assertNull($response->error);
+        $this->assertSame(11, $response->usage['input_tokens'] ?? null);
+        $this->assertSame(2, $response->usage['output_tokens'] ?? null);
+        $this->assertSame(13, $response->usage['total_tokens'] ?? null);
+        $this->assertSame(4, $response->usage['cache_read_tokens'] ?? null);
+    }
+
+    /**
+     * Prove OpenResponses truncated tool calls surface as MaxOutputTokensException
+     * through the host adapter error path.
+     */
+    public function testOpenResponsesTruncatedToolCallSurfacesMaxOutputTokens(): void
+    {
+        $events = [
+            [
+                'type' => 'response.incomplete',
+                'response' => [
+                    'status' => 'incomplete',
+                    'incomplete_details' => ['reason' => 'max_output_tokens'],
+                    'output' => [[
+                        'type' => 'function_call',
+                        'id' => 'fc_cut',
+                        'call_id' => 'call_cut',
+                        'name' => 'bash',
+                        'arguments' => '{"command":"ec',
+                        'status' => 'incomplete',
+                    ]],
+                ],
+            ],
+        ];
+
+        $platform = $this->platformReturningDeferred(
+            fn (): DeferredResult => $this->deferredOpenResponsesStream($events),
+        );
+        $response = $this->createAdapterForPlatform($platform, maxRetries: 0)->invoke(
+            $this->simpleRequest('openai-codex/gpt-test', 'run-openresponses-max-output'),
+        );
+
+        $this->assertSame('error', $response->stopReason);
+        $this->assertIsArray($response->error);
+        $this->assertSame(MaxOutputTokensException::class, $response->error['type'] ?? null);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST, $response->error['error_category'] ?? null);
+        $this->assertTrue($response->error['retry_exhausted'] ?? false);
+    }
+
+    /**
      * Verify that cache-read falls back to getCachedTokens() when
      * getCacheReadTokens() returns null — the incremental provider
      * compatibility fallback.
@@ -1110,29 +1389,7 @@ final class PlatformIntegrationTest extends TestCase
             streamFactory: static fn (): iterable => [new TextDelta('response')],
         );
 
-        $adapter = new LlmPlatformAdapter(
-            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
-            platform: $platform,
-            transformContextHooks: [],
-            convertToLlmHooks: [],
-            streamObserver: null,
-            costCalculator: null,
-            modelResolver: null,
-            logger: new NullLogger(),
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
-
-        $response = $adapter->invoke(new ModelInvocationRequest(
-            model: 'fake',
-            input: new ModelInvocationInput(
-                runId: 'run-cache-02',
-                turnNo: 1,
-                stepId: 'step-cache-02',
-                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
-            ),
-        ));
+        $response = $this->invokeWithPlatform($platform, 'fake', 'run-cache-02');
 
         // cache_read_tokens must fall back to cached_tokens when explicit
         // cache-read is absent.
@@ -1154,41 +1411,7 @@ final class PlatformIntegrationTest extends TestCase
             yield new TextDelta('response');
         });
 
-        return new LlmPlatformAdapter(
-            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
-                new class implements ToolboxInterface {
-                    public function execute(ToolCall $toolCall): ToolResult
-                    {
-                        return new ToolResult($toolCall, new \Symfony\AI\Platform\Message\Content\Text(''));
-                    }
-
-                    public function getToolIterator(): \Traversable
-                    {
-                        return new \ArrayIterator([]);
-                    }
-
-                    public function getTools(): array
-                    {
-                        return [];
-                    }
-                },
-            ),
-            platform: $platform,
-            transformContextHooks: [],
-            convertToLlmHooks: [],
-            streamObserver: null,
-            costCalculator: null,
-            modelResolver: null,
-            logger: new NullLogger(),
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-            requestRetryPolicy: new \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy(
-                maxRetries: $maxRetries,
-                baseDelayMs: 0,
-            ),
-            clock: new \Symfony\Component\Clock\MockClock(),
-        );
+        return $this->createAdapterForPlatform($platform, maxRetries: $maxRetries);
     }
 
     private function createAdapter(
@@ -1202,8 +1425,23 @@ final class PlatformIntegrationTest extends TestCase
             yield new TextDelta('response');
         });
 
+        return $this->createAdapterForPlatform(
+            $platform,
+            transformHooks: $transformHooks,
+            convertHooks: $convertHooks,
+            streamObserver: $streamObserver,
+        );
+    }
+
+    private function createAdapterForPlatform(
+        SymfonyPlatformInterface $platform,
+        iterable $transformHooks = [],
+        iterable $convertHooks = [],
+        ?LlmStreamObserverInterface $streamObserver = null,
+        ?int $maxRetries = null,
+    ): LlmPlatformAdapter {
         return new LlmPlatformAdapter(
-            statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            statusReader: new NullRunOperationalStatusReader(),
             messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(
                 new class implements ToolboxInterface {
@@ -1230,18 +1468,117 @@ final class PlatformIntegrationTest extends TestCase
             costCalculator: null,
             modelResolver: null,
             logger: new NullLogger(),
-            denormalizer: \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-            requestRetryPolicy: new \Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy(
+            denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),
+            requestRetryPolicy: new LlmRequestRetryPolicy(
                 // Keep retries for provider-error coverage, but avoid real wall backoff.
+                maxRetries: $maxRetries,
                 baseDelayMs: 0,
             ),
-            clock: new \Symfony\Component\Clock\MockClock(),
+            clock: new MockClock(),
+        );
+    }
+
+    private function invokeWithPlatform(
+        SymfonyPlatformInterface $platform,
+        string $model,
+        string $runId,
+    ): PlatformInvocationResult {
+        return $this->createAdapterForPlatform($platform)->invoke($this->simpleRequest($model, $runId));
+    }
+
+    private function invokeWithDeferredResult(
+        DeferredResult $deferred,
+        string $model,
+        string $runId,
+    ): PlatformInvocationResult {
+        return $this->invokeWithPlatform($this->platformReturningDeferred($deferred), $model, $runId);
+    }
+
+    private function platformReturningDeferred(DeferredResult|\Closure $deferred): SymfonyPlatformInterface
+    {
+        $platform = $this->createStub(SymfonyPlatformInterface::class);
+        if ($deferred instanceof \Closure) {
+            $platform->method('invoke')->willReturnCallback($deferred);
+        } else {
+            $platform->method('invoke')->willReturn($deferred);
+        }
+
+        return $platform;
+    }
+
+    private function simpleRequest(string $model, string $runId): ModelInvocationRequest
+    {
+        return new ModelInvocationRequest(
+            model: $model,
+            input: new ModelInvocationInput(
+                runId: $runId,
+                turnNo: 1,
+                stepId: 'step-'.$runId,
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
+            ),
         );
     }
 
     /**
-     * @param \Closure(): iterable<mixed> $streamFactory
+     * @return array{type: string, id: string, role: string, status: string, content: list<array{type: string, text: string}>}
      */
+    private function assistantMessage(string $id): array
+    {
+        return [
+            'type' => 'message',
+            'id' => $id,
+            'role' => 'assistant',
+            'status' => 'completed',
+            'content' => [['type' => 'output_text', 'text' => 'ok']],
+        ];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $events
+     */
+    private function deferredOpenResponsesStream(array $events, bool $chatGpt = false): DeferredResult
+    {
+        $body = implode('', array_map(
+            static fn (array $event): string => 'data: '.json_encode($event, \JSON_THROW_ON_ERROR)."\n\n",
+            $events,
+        ));
+        $client = new EventSourceHttpClient(new MockHttpClient(new MockResponse($body)));
+        $raw = new RawHttpResult(
+            $client->request('POST', 'https://example.test/v1/responses'),
+            new RawSseStream(),
+        );
+
+        return new DeferredResult(
+            $chatGpt
+                ? new ChatGptResultConverter()
+                : new OpenResponsesResultConverter(),
+            $raw,
+            ['stream' => true],
+        );
+    }
+
+    /**
+     * @param list<array<string, mixed>> $chunks
+     */
+    private function deferredGenericCompletionsStream(array $chunks): DeferredResult
+    {
+        $body = implode('', array_map(
+            static fn (array $chunk): string => 'data: '.json_encode($chunk, \JSON_THROW_ON_ERROR)."\n\n",
+            $chunks,
+        ))."data: [DONE]\n\n";
+        $client = new EventSourceHttpClient(new MockHttpClient(new MockResponse($body)));
+        $raw = new RawHttpResult(
+            $client->request('POST', 'https://example.test/v1/chat/completions'),
+            new RawSseStream(),
+        );
+
+        return new DeferredResult(
+            new GenericCompletionsResultConverter(),
+            $raw,
+            ['stream' => true],
+        );
+    }
+
     private function createSymfonyPlatform(
         FakeSymfonyModelClient $modelClient,
         \Closure $streamFactory,

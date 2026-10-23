@@ -12,8 +12,8 @@ use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
  * Warning duplication and Xdebug stacks are prevented at process start
  * (display_errors=0, xdebug.mode=off, log_errors=1). This helper only
  * normalizes script/bootstrap paths and renders labeled stream sections.
- * Size limits belong to ordinary OutputCap, not a
- * separate diagnostics truncation marker.
+ * Byte-safe capture persists oversized raw streams before formatting. Ordinary
+ * OutputCap still applies character limits to the combined result text.
  *
  * @internal
  */
@@ -79,6 +79,12 @@ final class CodeModeDiagnostics
 
     public static function normalizePaths(string $text, int $wrapperPrefixLines = 3): string
     {
+        // Every supported path shape contains a slash. Avoid repeatedly scanning
+        // long, slash-free lines with the unanchored path patterns below.
+        if (!str_contains($text, '/')) {
+            return $text;
+        }
+
         $replace = static function (string $file, int $line) use ($wrapperPrefixLines): string {
             if ('script' === $file && $line > $wrapperPrefixLines) {
                 $line -= $wrapperPrefixLines;

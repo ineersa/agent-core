@@ -44,6 +44,7 @@ use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
+use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Ineersa\Tui\Tests\E2E\TuiE2eDatabaseEnv;
 use Psr\Container\ContainerInterface;
@@ -123,7 +124,7 @@ try {
                 return $this->toolbox;
             }
         };
-        $bridge = new CodeModeHostBridge($contexts, $c->get(ToolRuntime::class), $locator, $c->get(RuntimeProcessConfig::class), $execution);
+        $bridge = new CodeModeHostBridge($contexts, $c->get(ToolRuntime::class), $locator, $c->get(RuntimeProcessConfig::class), $execution, $c->get(OutputCap::class));
         $tool = new CodeModeTool($bridge, $execution);
         $toolbox = new class($tool) implements ToolboxInterface {
             public function __construct(private CodeModeTool $tool)

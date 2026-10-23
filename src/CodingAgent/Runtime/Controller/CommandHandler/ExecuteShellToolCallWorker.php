@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
+use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -27,6 +28,7 @@ final readonly class ExecuteShellToolCallWorker
         private MessageBusInterface $commandBus,
         private ToolExecutorInterface $toolExecutor,
         private LoggerInterface $logger,
+        private ToolExecutionResultStore $resultStore,
     ) {
     }
 
@@ -53,7 +55,10 @@ final readonly class ExecuteShellToolCallWorker
                     'event_type' => 'runtime.result_send_failed',
                     'exception_class' => $exception::class,
                 ]);
+
+                return $result;
             }
+            $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, 'bash', null);
 
             return $result;
         } finally {

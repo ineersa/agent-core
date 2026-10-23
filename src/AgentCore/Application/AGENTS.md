@@ -157,7 +157,7 @@ Owner reconstruction uses the disposable scalar index to resolve the committed c
 
 Explicit historical reconstruction clears operation, tool, shell, and human-input authorization. Committed `history_position_set` events with reason `history_select` preserve that fence during cold recovery and release staged results from superseded batches. Continuation position markers remain no-ops. View eviction removes closed user or tool/question exchanges without severing active calls or unanswered questions.
 
-`HistoryTailDiscardService` prepares an unsequenced discard event. `RunMessageProcessor` commits it separately before the normal handler, including no-op handlers, then clears the reasoning baseline after publication. Preparation cannot append or change metadata.
+`HistoryTailDiscardService` prepares an unsequenced discard event. `RunMessageProcessor` commits it separately before the normal handler, including no-op handlers. Preparation cannot append or change metadata.
 
 History selection validates its explicit rebuild before committing `history_position_set`. Repair retains preview/refusal/redrive rules and validates hypothetical repair before committing proposed events. Owner maintenance replies use existing `run.history_position_changed` and correlated `session.repair.completed` runtime events. In-process repair reads the narrow `RepairResult` from Messenger's `HandledStamp`.
 

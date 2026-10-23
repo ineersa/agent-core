@@ -88,9 +88,9 @@ Relative paths in settings resolve against the **active project CWD** (not the i
 | `logging.level` | Monolog level |
 | `logging.max_files` | Rotated file retention |
 
-### Cache-preserving reasoning updates
+### ChatGPT reasoning effort
 
-`ai.providers.<id>.compatibility.supports_reasoning_configuration_updates` enables native HTTP reasoning controls for ChatGPT. The selected model must also carry the same compatibility flag; bundled GPT-6 models do. Other models send the selected effort normally. Enabled chat sessions retain their initial top-level effort and persist ordered switches before durable user/tool anchors. Resume retains the baseline; rewritten history claims a new epoch. Explicit summary and fork overrides do not mutate the parent baseline. Live subscription-endpoint acceptance remains unverified.
+ChatGPT sends the selected reasoning level through request-level `reasoning.effort`. Effort changes can reduce prompt-cache reuse. Native inline configuration updates are unsupported.
 
 ### Compaction (summary)
 

@@ -27,5 +27,6 @@ final class OmSqliteConnectionConfigurator
         }
 
         $connection->executeStatement('PRAGMA busy_timeout = 5000');
+        $connection->executeStatement('PRAGMA synchronous = NORMAL');
     }
 }

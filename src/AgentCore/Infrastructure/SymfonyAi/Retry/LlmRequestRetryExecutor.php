@@ -177,7 +177,7 @@ final class LlmRequestRetryExecutor
 
         return new PlatformInvocationResult(
             assistantMessage: $result->assistantMessage,
-            deltas: $result->deltas,
+            receivedStreamDeltas: $result->receivedStreamDeltas,
             usage: $result->usage,
             stopReason: $result->stopReason,
             error: $error,
@@ -196,7 +196,7 @@ final class LlmRequestRetryExecutor
         // model metadata when available.
         return new PlatformInvocationResult(
             assistantMessage: null,
-            deltas: [],
+            receivedStreamDeltas: false,
             usage: $previous->usage ?? [],
             stopReason: 'aborted',
             error: null,

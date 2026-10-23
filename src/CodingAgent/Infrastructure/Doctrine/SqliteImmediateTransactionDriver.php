@@ -14,6 +14,9 @@ final class SqliteImmediateTransactionDriver extends AbstractDriverMiddleware
         array $params,
     ): DriverConnection {
         $connection = parent::connect($params);
+        // synchronous is connection-local: configure every worker and reconnect
+        // before any transaction, not only the process that migrates the schema.
+        $connection->exec('PRAGMA synchronous = NORMAL');
 
         return new SqliteImmediateTransactionConnection($connection);
     }

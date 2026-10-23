@@ -48,8 +48,11 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
     public function testSchemaBootstrapRollsBackAllNewObjectsOnDdlFailure(): void
     {
         $db = $this->db();
-        $db->executeStatement('CREATE TABLE event_location (seq INTEGER PRIMARY KEY)');
         $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
+        (new \ReflectionMethod(RunHistoryIndex::class, 'configureConnection'))->invoke($index, $db);
+        $this->assertSame(1, (int) $db->fetchOne('PRAGMA synchronous'));
+        $this->assertSame('wal', $db->fetchOne('PRAGMA journal_mode'));
+        $db->executeStatement('CREATE TABLE event_location (seq INTEGER PRIMARY KEY)');
         // Exercise the schema transaction directly: public synchronization repairs
         // a corrupt index and would hide whether bootstrap used separate commits.
         try {
@@ -189,9 +192,11 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $this->write(2, 1, 'llm_step_completed', ['assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Answer']]]]);
         $index = new RunHistoryIndex(static::getContainer()->get(LockFactory::class), $this->logger);
         $expected = $index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows'];
-        foreach ([4, 3] as $version) {
+        foreach ([8, 4, 3] as $version) {
             $db = $this->db();
             $db->executeStatement('DROP INDEX turn_answers');
+            $db->executeStatement('DROP INDEX unresolved_commands');
+            $db->executeStatement('CREATE INDEX unresolved_commands ON command_record (target_anchor, suppressed, source_anchor)');
             $db->executeStatement('UPDATE index_meta SET version = ?', [$version]);
             if (3 === $version) {
                 $db->executeStatement('ALTER TABLE turn_anchor DROP COLUMN answer_seq');
@@ -201,7 +206,8 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
             $this->assertSame($expected, $index->entryPage($this->log, $this->path, 'indexed', after: 0)['rows']);
             $db = $this->db();
             try {
-                $this->assertSame(8, (int) $db->fetchOne('SELECT version FROM index_meta'));
+                $this->assertSame(9, (int) $db->fetchOne('SELECT version FROM index_meta'));
+                $this->assertSame('CREATE INDEX unresolved_commands ON command_record (source_anchor, seq) WHERE target_anchor IS NULL AND suppressed = 0', $db->fetchOne("SELECT sql FROM sqlite_master WHERE name = 'unresolved_commands'"));
                 $this->assertSame('CREATE INDEX turn_answers ON turn_anchor (answer_seq) WHERE retained = 1 AND answer_seq IS NOT NULL', $db->fetchOne("SELECT sql FROM sqlite_master WHERE name = 'turn_answers'"));
             } finally {
                 $db->close();

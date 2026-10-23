@@ -45,10 +45,8 @@ final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
         $store = self::getContainer()->get(HatfieldSessionStore::class);
         $runId = $store->createSession();
         $store->updateMetadata($runId, ['reasoning' => 'high']);
-        $baseline = $store->findSession($runId)->reasoningBaseline;
         $handle = $client->attach($runId);
 
-        $this->assertSame($baseline, $store->findSession($runId)->reasoningBaseline, 'Producer attach must not reset owner reasoning state.');
         $this->assertSame('high', $store->findSession($runId)->reasoning);
         $this->assertSame($runId, $handle->runId);
         $this->assertSame('bootstrapping', $handle->status);
