@@ -32,7 +32,7 @@ interface DeferredToolCompletionRepositoryInterface
     /** Retained full ExecuteToolCall reference for pending registrations only. */
     public function findInvocationReferenceByDeferredId(string $deferredId): ?ToolPayloadReferenceDTO;
 
-    /** First accepted processed terminal reference for pending registrations. */
+    /** First accepted processed terminal reference for pending or parked registrations. */
     public function findAcceptedResultReferenceByDeferredId(string $deferredId): ?ToolPayloadReferenceDTO;
 
     /**
@@ -53,11 +53,16 @@ interface DeferredToolCompletionRepositoryInterface
     public function acceptResult(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO;
 
     /**
-     * Pending registrations for one run, without loading correlation bodies.
+     * Pending or parked registrations for one run, without loading correlation bodies.
      *
      * @return list<string>
      */
     public function listPendingDeferredIdsForRun(string $runId): array;
 
     public function markCompleted(string $deferredId): void;
+
+    /** Park delivery until explicit maintenance authorizes continuation. */
+    public function requireContinuation(string $deferredId, bool $required): void;
+
+    public function requiresContinuation(string $runId, string $toolCallId): bool;
 }

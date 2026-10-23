@@ -25,6 +25,7 @@ readonly class CommandApplicationResult
         public array $eventSpecs,
         public bool $shouldContinue = false,
         public array $effects = [],
+        public bool $continuationBlocked = false,
     ) {
     }
 }

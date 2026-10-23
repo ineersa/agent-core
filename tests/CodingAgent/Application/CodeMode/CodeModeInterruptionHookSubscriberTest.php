@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Application\CodeMode;
 
+use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
@@ -14,6 +15,7 @@ use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Domain\Message\RedriveDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -124,6 +126,9 @@ final class CodeModeInterruptionHookSubscriberTest extends IsolatedKernelTestCas
         $c->get(CodeModeProcessedResultSubscriber::class)($event);
         $this->assertTrue($event->handled);
         $this->assertSame('pending', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id), 'Late work cannot retire the controller recovery send.');
+        $f->consumeCompletions();
+        $this->assertSame('pending', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id), 'Passive recovery parks delivery.');
+        $c->get(CompleteDeferredToolCallHandler::class)->redrive(new RedriveDeferredToolCall($f->state->runId, $id));
         $f->consumeCompletions();
         $this->assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
         $this->assertNull($c->get(ToolBatchStoreInterface::class)->loadSchedule($f->state->runId, 1, 'step'));

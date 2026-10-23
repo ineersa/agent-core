@@ -3,11 +3,13 @@
 declare(strict_types=1);
 
 use Doctrine\DBAL\Connection;
+use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Domain\Message\RedriveDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -78,6 +80,12 @@ try {
         $listener->starting(new ControllerSessionStartingEvent($scope['owner']));
         $listener->starting(new ControllerSessionStartingEvent($scope['owner']));
         $transport = $c->get('messenger.transport.run_control');
+        if ([] !== $transport->getSent()) {
+            throw new RuntimeException('Passive controller recovery dispatched work.');
+        }
+        foreach ($scope['ids'] as $run => $id) {
+            $c->get(CompleteDeferredToolCallHandler::class)->redrive(new RedriveDeferredToolCall((string) $run, $id));
+        }
         $cursor = 0;
         for ($round = 0; $round < 8; ++$round) {
             $sent = $transport->getSent();

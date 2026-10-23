@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionProvenanceDTO;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionReasonEnum;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
@@ -40,7 +41,11 @@ final readonly class BackgroundCompletionConsumptionPolicy implements CommandCon
             return new CommandConsumptionDecisionDTO('Background completion already consumed or transferred.');
         }
         $forward = null !== $state->parentRunId && ($state->status->isTerminal() || RunStatus::Cancelling === $state->status);
-        $interrupted = null !== $this->codeModeExecutions->completionInterruption($receipt->identity);
+        $interruption = $this->codeModeExecutions->completionInterruption($receipt->identity);
+        if (\in_array($interruption, [CodeModeInterruptionReasonEnum::ControllerRestarted, CodeModeInterruptionReasonEnum::ControllerShutdown], true)) {
+            return new CommandConsumptionDecisionDTO(defer: true, blockContinuation: true);
+        }
+        $interrupted = null !== $interruption;
         if ($interrupted) {
             $forward = false;
         }

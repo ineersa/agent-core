@@ -17,6 +17,9 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
     /** @var array<string, string> runId|toolCallId => deferredId */
     private array $byRunToolCall = [];
 
+    /** @var array<string, bool> */
+    private array $continuationRequired = [];
+
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
     {
         $key = $correlation->runId.'|'.$correlation->toolCallId;
@@ -105,7 +108,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
     public function findAcceptedResultReferenceByDeferredId(string $deferredId): ?ToolPayloadReferenceDTO
     {
         $row = $this->byDeferredId[$deferredId] ?? null;
-        if (null === $row || 'pending' !== $row['status']) {
+        if (null === $row || ('pending' !== $row['status'] && !($this->continuationRequired[$deferredId] ?? false))) {
             return null;
         }
 
@@ -147,7 +150,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
     {
         $ids = [];
         foreach ($this->byDeferredId as $deferredId => $row) {
-            if ($row['correlation']->runId === $runId && 'pending' === $row['status']) {
+            if ($row['correlation']->runId === $runId && ('pending' === $row['status'] || ($this->continuationRequired[$deferredId] ?? false))) {
                 $ids[] = $deferredId;
             }
         }
@@ -160,5 +163,15 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         if (isset($this->byDeferredId[$deferredId])) {
             $this->byDeferredId[$deferredId]['status'] = 'completed';
         }
+    }
+
+    public function requireContinuation(string $deferredId, bool $required): void
+    {
+        $this->continuationRequired[$deferredId] = $required;
+    }
+
+    public function requiresContinuation(string $runId, string $toolCallId): bool
+    {
+        return $this->continuationRequired[$this->byRunToolCall[$runId.'|'.$toolCallId] ?? ''] ?? false;
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\BackgroundCompletion;
 
+use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\CommandMailboxCoordinationFactory;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
@@ -71,13 +72,20 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 && null !== $state->parentRunId && $state->status->isTerminal()) {
                 return $this->retireTerminalPending($receipt, $state);
             }
+            if ($message->explicitContinuation && BackgroundCompletionDispositionEnum::Pending === $receipt->disposition) {
+                if ($receipt->destinationRunId !== $state->runId) {
+                    return new HandlerResult(postCommitEffects: [$this->forward($receipt, true)]);
+                }
+
+                return new HandlerResult(postCommitActions: [AdvanceRunCoordinationFactory::create($state->runId, $state->turnNo, 'repair-background-completion')]);
+            }
             // A consumed child admission remains consumed even if the original
             // producer retries after cancellation or an explicit agent_resume.
             if (BackgroundCompletionDispositionEnum::Forwarding !== $receipt->disposition) {
                 return new HandlerResult();
             }
             if ($state->runId !== $receipt->destinationRunId) {
-                return new HandlerResult(postCommitEffects: [$this->forward($receipt)]);
+                return new HandlerResult(postCommitEffects: [$this->forward($receipt, $message->explicitContinuation)]);
             }
             $receipt = new BackgroundCompletionReceiptDTO(
                 $receipt->identity, $receipt->sourceRunId, $receipt->acceptedDestinationRunId,
@@ -154,6 +162,9 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 continue;
             }
             $decision = $this->consumption->prepare($state, $command);
+            if ($decision?->defer) {
+                return new HandlerResult();
+            }
             if (null === $decision || null === $decision->retirementReason) {
                 throw new \RuntimeException('Terminal background receipt lacks its native mailbox retirement decision.');
             }
@@ -179,8 +190,8 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         throw new \RuntimeException('Pending background receipt has no pending mailbox entry.');
     }
 
-    private function forward(BackgroundCompletionReceiptDTO $receipt): DeliverBackgroundCompletionDTO
+    private function forward(BackgroundCompletionReceiptDTO $receipt, bool $explicitContinuation = false): DeliverBackgroundCompletionDTO
     {
-        return new DeliverBackgroundCompletionDTO($receipt->destinationRunId, $receipt->identity, $receipt->forwardedText, $receipt->sourceRunId);
+        return new DeliverBackgroundCompletionDTO($receipt->destinationRunId, $receipt->identity, $receipt->forwardedText, $receipt->sourceRunId, $explicitContinuation);
     }
 }

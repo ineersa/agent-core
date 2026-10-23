@@ -64,6 +64,9 @@ final readonly class CompleteDeferredToolCallHandler
         ]);
 
         try {
+            if ($this->deferredRepository->requiresContinuation($correlation->runId, $correlation->toolCallId)) {
+                return;
+            }
             if ('completed' === $this->deferredRepository->status($message->deferredId)) {
                 return;
             }
@@ -139,10 +142,11 @@ final readonly class CompleteDeferredToolCallHandler
     public function redrive(RedriveDeferredToolCall $message): void
     {
         $this->locks->synchronized($message->runId(), function () use ($message): void {
-            if ('completed' === $this->deferredRepository->status($message->deferredId)) {
+            $completed = 'completed' === $this->deferredRepository->status($message->deferredId);
+            $metadata = $this->deferredRepository->findMetadataByDeferredId($message->deferredId);
+            if ($completed && (null === $metadata || !$this->deferredRepository->requiresContinuation($message->runId(), $metadata->reference->toolCallId))) {
                 return;
             }
-            $metadata = $this->deferredRepository->findMetadataByDeferredId($message->deferredId);
             if (null === $metadata || $metadata->reference->runId !== $message->runId()) {
                 throw new \RuntimeException('Deferred repair requires a retained result for the same run.');
             }
@@ -170,6 +174,30 @@ final readonly class CompleteDeferredToolCallHandler
             }
             // The accepted-reference check prevents repair from manufacturing a
             // terminal outcome. __invoke reads the first frozen result, not this body.
+            if ($completed) {
+                $accepted = $this->deferredRepository->findAcceptedResultReferenceByDeferredId($message->deferredId)
+                    ?? throw new \RuntimeException('Parked admitted completion lost its retained terminal.');
+                $result = $this->acceptedResults?->read($message->deferredId, $accepted) ?? $this->payloads->read($accepted);
+                if (!$result instanceof ToolCallResult || null === $this->acknowledgedRouter) {
+                    throw new \RuntimeException('Parked admission requires an acknowledged completion router.');
+                }
+                $this->deferredRepository->requireContinuation($message->deferredId, false);
+                $this->locks->afterRelease($message->runId(), function () use ($message, $result): void {
+                    try {
+                        $this->acknowledgedRouter->deliver($message->deferredId, $result, true);
+                    } catch (\Throwable $exception) {
+                        $this->deferredRepository->requireContinuation($message->deferredId, true);
+                        $this->logger->warning('deferred_tool_completion.recovery_delivery_failed', [
+                            'run_id' => $message->runId(), 'session_id' => $message->runId(),
+                            'component' => 'deferred_tool_completion', 'event_type' => 'deferred_tool_completion.recovery_delivery_failed',
+                            'deferred_id' => $message->deferredId, 'exception_class' => $exception::class,
+                        ]);
+                    }
+                });
+
+                return;
+            }
+            $this->deferredRepository->requireContinuation($message->deferredId, false);
             $this(new CompleteDeferredToolCall($message->deferredId, []));
         });
     }

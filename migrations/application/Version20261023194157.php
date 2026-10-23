@@ -10,7 +10,7 @@ use Doctrine\Migrations\AbstractMigration;
 /**
  * Auto-generated Migration: Please modify to your needs!
  */
-final class Version20261023173654 extends AbstractMigration
+final class Version20261023194157 extends AbstractMigration
 {
     public function getDescription(): string
     {
@@ -25,6 +25,7 @@ final class Version20261023173654 extends AbstractMigration
         $this->addSql('ALTER TABLE tool_deferred_completion ADD COLUMN invocation_reference_json VARCHAR(16384) DEFAULT NULL');
         $this->addSql('ALTER TABLE tool_deferred_completion ADD COLUMN accepted_result_reference_json VARCHAR(16384) DEFAULT NULL');
         $this->addSql('ALTER TABLE tool_deferred_completion ADD COLUMN acknowledged_at DATETIME DEFAULT NULL');
+        $this->addSql('ALTER TABLE tool_deferred_completion ADD COLUMN continuation_required BOOLEAN DEFAULT 0 NOT NULL');
     }
 
     public function down(Schema $schema): void

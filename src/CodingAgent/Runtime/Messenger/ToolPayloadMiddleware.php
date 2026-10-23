@@ -67,6 +67,9 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
                 if (null !== $message->deferredId) {
                     $metadata = $this->deferredMetadata($message->deferredId);
                     $this->assertDeferredReference($metadata, $message->reference);
+                    if ($this->deferred->requiresContinuation($metadata->reference->runId, $metadata->reference->toolCallId)) {
+                        return null;
+                    }
                     if ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, 'run_control' === $received->getTransportName(), $message->deferredId)) {
                         $ref = $metadata->reference;
                         $this->deferredHandler->settle($metadata->deferredId, $ref->runId, $ref->turnNo, $ref->stepId);
@@ -177,6 +180,9 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
         return $this->locks->synchronized($initial->reference->runId, function () use ($message, $initial): ?ToolPayloadReferenceDTO {
             $metadata = $this->deferredMetadata($message->deferredId);
             $this->assertDeferredReference($metadata, $initial->reference);
+            if ($this->deferred->requiresContinuation($metadata->reference->runId, $metadata->reference->toolCallId)) {
+                return null;
+            }
             if ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, false, $message->deferredId)) {
                 $ref = $metadata->reference;
                 $this->deferredHandler->settle($metadata->deferredId, $ref->runId, $ref->turnNo, $ref->stepId);

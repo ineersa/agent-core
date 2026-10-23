@@ -130,11 +130,10 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         $preparedState = $mailboxResult->state;
         $boundaryEventSpecs = $this->withAdvanceToken($mailboxResult->eventSpecs, $message->idempotencyKey());
         $mailboxEffects = $mailboxResult->effects;
-
         // Only applied messages or an applied explicit continue authorize revival.
         // Rejections and other boundary bookkeeping must not restart terminal work.
         // Compaction remains maintenance and does not authorize a model turn.
-        if (\in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
+        if ($mailboxResult->continuationBlocked || \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
             $hasContinuation = false;
             foreach ($boundaryEventSpecs as $spec) {
                 if (RunEventTypeEnum::AgentCommandApplied->value === $spec['type']

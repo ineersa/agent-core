@@ -25,7 +25,7 @@ final readonly class DeferredAcknowledgedCompletionRouter implements DeferredAck
     ) {
     }
 
-    public function deliver(string $deferredId, ToolCallResult $result): void
+    public function deliver(string $deferredId, ToolCallResult $result, bool $explicitContinuation = false): void
     {
         $text = implode("\n", array_column($result->result['content'] ?? [], 'text'));
         $row = $this->codeModeExecutions->invocation($result->runId(), $result->toolCallId);
@@ -45,6 +45,6 @@ final readonly class DeferredAcknowledgedCompletionRouter implements DeferredAck
             $identity = 'background-child-result-'.$deferredId;
         }
 
-        $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO($result->runId(), $identity, $text));
+        $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO($result->runId(), $identity, $text, explicitContinuation: $explicitContinuation));
     }
 }

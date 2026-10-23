@@ -117,7 +117,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
     public function findAcceptedResultReferenceByDeferredId(string $deferredId): ?ToolPayloadReferenceDTO
     {
         $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
-        if (!$entity instanceof DeferredToolCompletion || 'pending' !== $entity->status) {
+        if (!$entity instanceof DeferredToolCompletion || ('pending' !== $entity->status && !$entity->continuationRequired)) {
             return null;
         }
 
@@ -165,6 +165,26 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         }
         $entity->acknowledgedAt = $now;
         $em->flush();
+    }
+
+    public function requireContinuation(string $deferredId, bool $required): void
+    {
+        // A successful enqueue is not canonical caller admission. Reopen that
+        // narrow waiting-caller gap while its active batch still retains bodies.
+        // Already admitted background receipts keep their completed marker.
+        $this->getEntityManager()->getConnection()->executeStatement(<<<'SQL'
+            UPDATE tool_deferred_completion SET continuation_required = ?,
+                status = CASE WHEN CAST(? AS INTEGER) = 1 AND acknowledged_at IS NULL
+                    AND EXISTS (SELECT 1 FROM tool_batch_call c WHERE c.run_id = tool_deferred_completion.run_id AND c.turn_no = tool_deferred_completion.turn_no AND c.step_id = tool_deferred_completion.step_id AND c.tool_call_id = tool_deferred_completion.tool_call_id)
+                    AND NOT EXISTS (SELECT 1 FROM tool_batch_result r WHERE r.run_id = tool_deferred_completion.run_id AND r.turn_no = tool_deferred_completion.turn_no AND r.step_id = tool_deferred_completion.step_id AND r.tool_call_id = tool_deferred_completion.tool_call_id)
+                THEN 'pending' ELSE status END
+            WHERE deferred_id = ?
+            SQL, [(int) $required, (int) $required, $deferredId]);
+    }
+
+    public function requiresContinuation(string $runId, string $toolCallId): bool
+    {
+        return (bool) $this->getEntityManager()->getConnection()->fetchOne('SELECT continuation_required FROM tool_deferred_completion WHERE run_id = ? AND tool_call_id = ?', [$runId, $toolCallId]);
     }
 
     public function acceptResult(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO
@@ -228,7 +248,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
     {
         return $this->locks->synchronized($runId, function () use ($runId): array {
             $rows = $this->getEntityManager()->getConnection()->fetchFirstColumn(
-                'SELECT deferred_id FROM tool_deferred_completion WHERE run_id = :run_id AND status = :pending ORDER BY id ASC',
+                'SELECT deferred_id FROM tool_deferred_completion WHERE run_id = :run_id AND (status = :pending OR continuation_required = 1) ORDER BY id ASC',
                 [
                     'run_id' => $runId,
                     'pending' => 'pending',
@@ -427,7 +447,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
     private function pendingAcceptedResultReference(DeferredToolCompletion $entity): ?ToolPayloadReferenceDTO
     {
-        if ('pending' !== $entity->status || null === $entity->acceptedResultReferenceJson || '' === $entity->acceptedResultReferenceJson) {
+        if (('pending' !== $entity->status && !$entity->continuationRequired) || null === $entity->acceptedResultReferenceJson || '' === $entity->acceptedResultReferenceJson) {
             return null;
         }
         $reference = $this->serializer->deserialize($entity->acceptedResultReferenceJson, ToolPayloadReferenceDTO::class, 'json');

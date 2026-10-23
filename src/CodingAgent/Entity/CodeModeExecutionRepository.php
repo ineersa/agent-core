@@ -117,7 +117,7 @@ final class CodeModeExecutionRepository extends ServiceEntityRepository
         if (!str_starts_with($identity, 'background-')) {
             return null;
         }
-        $reason = $this->getEntityManager()->getConnection()->fetchOne('SELECT n.interruption_reason FROM code_mode_execution n JOIN tool_deferred_completion d ON d.deferred_id = n.identity WHERE n.identity = ? AND NOT (n.interruption_reason IN (?, ?) AND d.accepted_result_reference_json IS NOT NULL)', [substr($identity, \strlen('background-')), CodeModeInterruptionReasonEnum::ControllerRestarted->value, CodeModeInterruptionReasonEnum::ControllerShutdown->value]);
+        $reason = $this->getEntityManager()->getConnection()->fetchOne('SELECT n.interruption_reason FROM code_mode_execution n JOIN tool_deferred_completion d ON d.deferred_id = n.identity WHERE n.identity = ? AND NOT (n.interruption_reason IN (?, ?) AND d.accepted_result_reference_json IS NOT NULL AND d.continuation_required = 0)', [substr($identity, \strlen('background-')), CodeModeInterruptionReasonEnum::ControllerRestarted->value, CodeModeInterruptionReasonEnum::ControllerShutdown->value]);
 
         return \is_string($reason) ? CodeModeInterruptionReasonEnum::from($reason) : null;
     }
@@ -139,7 +139,7 @@ final class CodeModeExecutionRepository extends ServiceEntityRepository
     public function pendingControllerRecoveryIdentities(string $runId): array
     {
         return $this->getEntityManager()->getConnection()->fetchFirstColumn(
-            "SELECT n.identity FROM code_mode_execution n JOIN tool_deferred_completion d ON d.deferred_id = n.identity WHERE n.run_id = ? AND d.status = 'pending' AND (n.interruption_reason IS NULL OR n.interruption_reason IN (?, ?))",
+            "SELECT n.identity FROM code_mode_execution n JOIN tool_deferred_completion d ON d.deferred_id = n.identity WHERE n.run_id = ? AND (d.status = 'pending' OR (d.acknowledged_at IS NULL AND EXISTS (SELECT 1 FROM tool_batch_call c WHERE c.run_id = d.run_id AND c.turn_no = d.turn_no AND c.step_id = d.step_id AND c.tool_call_id = d.tool_call_id) AND NOT EXISTS (SELECT 1 FROM tool_batch_result r WHERE r.run_id = d.run_id AND r.turn_no = d.turn_no AND r.step_id = d.step_id AND r.tool_call_id = d.tool_call_id))) AND (n.interruption_reason IS NULL OR n.interruption_reason IN (?, ?))",
             [$runId, CodeModeInterruptionReasonEnum::ControllerRestarted->value, CodeModeInterruptionReasonEnum::ControllerShutdown->value],
         );
     }

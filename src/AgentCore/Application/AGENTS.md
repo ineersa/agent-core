@@ -65,6 +65,14 @@ retains processed terminals in shared payload storage, bound to the full
 invocation digest. Pending redelivery and explicit repair reuse that evidence
 when owner acceptance failed; it does not grant acceptance or routing authority.
 Completed deferred redelivery returns before touching cleaned payload files.
+Controller ownership loss parks accepted delivery through shared
+`continuation_required`. Explicit repair clears this delivery fence without
+clearing the native interruption. A queued foreground result can reopen its
+marker only while the uncollected active batch still retains its invocation.
+Already admitted notices keep their receipt and mailbox row; explicit redrive
+reschedules that row rather than creating another completion. Consumption policies
+may block an old successor while deferring a row. A newly applied continuation
+command remains independent of that fence.
 See `architecture/code-mode-execution.md`.
 
 - `StartRun` — `AgentRunner::start()`

@@ -71,6 +71,9 @@ final readonly class ToolPayloadAdmission
     /** Called under the existing run lock, before opening a possibly cleaned file. */
     public function accepts(ToolPayloadReferenceDTO $reference, bool $owner): bool
     {
+        if ('result' === $reference->kind && $this->deferred->requiresContinuation($reference->runId, $reference->toolCallId)) {
+            return false;
+        }
         $state = $owner ? $this->registry->requireLoaded($reference->runId) : null;
         if (null !== $state && 'result' === $reference->kind && !isset($state->pendingShellToolCalls[$reference->toolCallId])) {
             if (!\array_key_exists($reference->toolCallId, $state->pendingToolCalls)) {

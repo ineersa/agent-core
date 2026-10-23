@@ -12,5 +12,5 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
  */
 interface DeferredAcknowledgedCompletionRouterInterface
 {
-    public function deliver(string $deferredId, ToolCallResult $result): void;
+    public function deliver(string $deferredId, ToolCallResult $result, bool $explicitContinuation = false): void;
 }

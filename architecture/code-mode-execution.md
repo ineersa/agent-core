@@ -116,11 +116,20 @@ Controller ownership loss freezes a terminal result and the native interruption
 in one application metadata transaction. It preserves the first accepted result
 or existing processed evidence. Without either, it records a non-retryable
 interrupted failure that warns that external effects may already have occurred.
-Recovery does not rerun the script or result processors. A waiting caller resolves
-through ordinary result admission and its prepared transition. An acknowledged
-caller uses the existing background-completion admission. A failed send remains
-pending for cold startup or explicit repair. The native row does not own acceptance
-or settlement.
+Recovery does not rerun the script or result processors. Shared deferred
+`continuation_required` parks delivery until explicit `/repair` apply captures
+`RedriveDeferredToolCall`. Preview and refused repair do not release that fence.
+Cold attachment and shutdown send no completion or model successor. Delayed old
+completion envelopes leave the parked registration intact. Already admitted
+notices defer mailbox consumption and block an old successor from starting a
+model turn without a newly applied continuation command.
+
+Explicit repair resolves a waiting caller through ordinary result admission and
+its prepared transition. An acknowledged caller uses background-completion
+admission or its existing mailbox row. The shared repair fence can clear without
+clearing the native host's sticky interruption. A foreground send that had reached
+the queue but not canonical collection reopens only while its active batch still
+retains the exact invocation. The native row does not own acceptance or settlement.
 
 A fenced host cannot become ready or acknowledge its original caller. After
 cancellation or history discard, physical completion retires the shared deferred
@@ -160,10 +169,13 @@ cleanup. Rollback preserves write authority; committed deletion refuses late wri
 The boundary is independent of run-owner admission and never covers a host's
 physical execution or reserves worker-pool capacity.
 
-## Exposure boundary
+## Worker capacity proof
 
-The retained-host backend has no controller command, TUI candidate or model-facing
-backgrounding option. It does not enable code-mode backgrounding for users.
-Controller and TUI integration and actual worker-pool capacity proof remain
-required before exposure. Worker retention does not imply durable execution across
-controller or worker failure, and recovery must not replay ambiguous side effects.
+`ControllerReplayBackgroundCodeModeTest` runs the actual controller, broker and
+two tool consumers. FIFO-blocked nested calls retain independent worker, PHP and
+socket identities. Ordinary work finishes on the free worker after the first ACK.
+After the second ACK, broker reservations prove two occupied workers and one
+queued ordinary call. Releasing the first host admits that call while the second
+host stays blocked. Each host then delivers its original value and diagnostics
+once. This does not claim worker release or durable native execution across
+controller failure.

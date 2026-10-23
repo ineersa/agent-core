@@ -75,6 +75,7 @@ final readonly class CommandMailboxPolicy
         $eventSpecs = [];
         $effects = [];
         $shouldContinue = false;
+        $continuationBlocked = false;
 
         foreach ($pendingCommands as $pendingCommand) {
             $metadata = [];
@@ -86,6 +87,7 @@ final readonly class CommandMailboxPolicy
                     $metadata = array_replace($metadata, $decision->metadata);
                     $retirementReason ??= $decision->retirementReason;
                     $defer = $defer || $decision->defer;
+                    $continuationBlocked = $continuationBlocked || $decision->blockContinuation;
                 }
             }
             if (null !== $retirementReason) {
@@ -189,6 +191,7 @@ final readonly class CommandMailboxPolicy
             $eventSpecs,
             $shouldContinue,
             $effects,
+            $continuationBlocked,
         );
     }
 

@@ -14,6 +14,7 @@ final readonly class DeliverBackgroundCompletionDTO extends AbstractAgentBusMess
         #[Assert\NotBlank, Assert\Length(max: 255)] public string $identity,
         public string $text,
         #[Assert\NotBlank(allowNull: true)] public ?string $sourceRunId = null,
+        public bool $explicitContinuation = false,
     ) {
         parent::__construct($runId, 0, $identity, 1, $identity);
     }

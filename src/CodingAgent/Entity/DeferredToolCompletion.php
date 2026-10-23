@@ -77,6 +77,9 @@ class DeferredToolCompletion
     #[ORM\Column(name: 'acknowledged_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $acknowledgedAt = null;
 
+    #[ORM\Column(name: 'continuation_required', type: 'boolean', options: ['default' => false])]
+    public bool $continuationRequired = false;
+
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     public \DateTimeImmutable $createdAt;
 

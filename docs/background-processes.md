@@ -38,6 +38,13 @@ other hosts. The entry stays `stopping` until the host returns. Cancellation is
 cooperative: a blocking nested or remote handler may not observe it until it yields.
 The interface does not promise immediate termination of arbitrary nested work.
 
+Controller shutdown or restart fences the old host and retains its outcome,
+or an interrupted failure if no processed outcome exists. Opening the session
+does not restart the script or call the model for that recovered work. Run
+`/repair` to deliver the retained outcome and continue. The runtime protocol also
+supports a non-mutating preview. Repair does not clear cancellation of the old invocation
+or repeat its external effects.
+
 ## Child invocations
 
 Backgrounding a `subagent`, `fork` or `agent_resume` invocation releases the parent's wait with one acknowledgment.
