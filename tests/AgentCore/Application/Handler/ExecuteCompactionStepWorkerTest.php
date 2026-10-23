@@ -169,7 +169,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
 
                 return new PlatformInvocationResult(
                     assistantMessage: $msg,
-                    deltas: [],
+                    receivedStreamDeltas: false,
                     usage: [],
                     stopReason: 'stop',
                     error: null,
@@ -193,7 +193,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
             {
                 return new PlatformInvocationResult(
                     assistantMessage: null,
-                    deltas: [],
+                    receivedStreamDeltas: false,
                     usage: [],
                     stopReason: null,
                     error: $this->error,

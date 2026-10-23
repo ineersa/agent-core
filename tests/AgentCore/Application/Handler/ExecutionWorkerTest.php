@@ -249,7 +249,7 @@ final class ExecutionWorkerTest extends TestCase
                 // no stop reason, no error.
                 return new PlatformInvocationResult(
                     assistantMessage: null,
-                    deltas: [],
+                    receivedStreamDeltas: false,
                     usage: ['input_tokens' => 100, 'output_tokens' => 0],
                     stopReason: null,
                     modelNotifications: [],
@@ -306,7 +306,7 @@ final class ExecutionWorkerTest extends TestCase
                 // no stop reason, no error.
                 return new PlatformInvocationResult(
                     assistantMessage: null,
-                    deltas: [],
+                    receivedStreamDeltas: false,
                     usage: ['input_tokens' => 100, 'output_tokens' => 0],
                     stopReason: null,
                     modelNotifications: [],
@@ -346,7 +346,7 @@ final class ExecutionWorkerTest extends TestCase
 
                 return new PlatformInvocationResult(
                     assistantMessage: null,
-                    deltas: [],
+                    receivedStreamDeltas: false,
                     usage: ['input_tokens' => 10, 'output_tokens' => 0],
                     stopReason: 'stop',
                     modelNotifications: [],

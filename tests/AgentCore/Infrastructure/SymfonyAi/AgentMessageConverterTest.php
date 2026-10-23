@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ConversationHistoryConversion;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\OpenResponsesContract;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
@@ -21,6 +22,7 @@ use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\ToolCallMessage;
 use Symfony\AI\Platform\Message\UserMessage;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\DependencyInjection\ServicesResetterInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
@@ -32,6 +34,114 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
     {
         parent::setUp();
         $this->converter = new AgentMessageConverter();
+    }
+
+    #[DataProvider('payloadCutoffs')]
+    public function testEstimatedPayloadCutoffDoesNotTruncateConversion(int $length, bool $retained): void
+    {
+        $message = new AgentMessage('user', [['type' => 'text', 'text' => str_repeat('x', $length)]]);
+        $reference = \WeakReference::create($message);
+        $bag = $this->converter->toMessageBagForTarget([$message], 'target');
+        $bagReference = \WeakReference::create($bag);
+        $content = $bag->getMessages()[0]->getContent()[0];
+        $this->assertInstanceOf(Text::class, $content);
+        $this->assertSame($length, \strlen($content->getText()));
+        unset($message);
+        $this->assertSame($retained, null !== $reference->get());
+        unset($bag);
+        $this->assertSame($retained, null !== $bagReference->get());
+    }
+
+    public static function payloadCutoffs(): iterable
+    {
+        // Source and converted text count twice, plus 803 estimated bytes.
+        yield 'at cutoff' => [8 * 1024 * 1024 - 402, true];
+        yield 'above cutoff' => [8 * 1024 * 1024 - 401, false];
+    }
+
+    #[DataProvider('expandedPayloads')]
+    public function testConvertedPayloadDisablesRetentionWithoutTruncatingOutput(bool $structured): void
+    {
+        $part = str_repeat($structured ? "\0" : 'x', ($structured ? 3 : 6) * 1024 * 1024);
+        $message = $structured
+            ? new AgentMessage('tool', [], toolCallId: 'call', toolName: 'fixture', details: ['payload' => $part])
+            : new AgentMessage('user', [['type' => 'text', 'text' => $part], ['type' => 'text', 'text' => $part]]);
+        $expected = $structured ? json_encode(['payload' => $part], \JSON_THROW_ON_ERROR) : $part."\n".$part;
+        $sourceReference = \WeakReference::create($message);
+        $bag = $this->converter->toMessageBagForTarget([$message], 'target');
+        $bagReference = \WeakReference::create($bag);
+        $content = $bag->getMessages()[0]->getContent()[0];
+        $this->assertInstanceOf(Text::class, $content);
+        $this->assertSame($expected, $content->getText());
+        unset($message, $bag);
+        $this->assertNull($sourceReference->get(), 'Converted payload must count alongside retained source payload.');
+        $this->assertNull($bagReference->get());
+    }
+
+    public static function expandedPayloads(): iterable
+    {
+        yield 'multipart join' => [false];
+        yield 'escaped tool details' => [true];
+    }
+
+    public function testDetailsAndMetadataCountTowardRetentionWithoutChangingOutput(): void
+    {
+        foreach (['details', 'metadata'] as $field) {
+            $message = new AgentMessage('user', [['type' => 'text', 'text' => 'visible']], ...[
+                $field => ['nested' => ['payload' => str_repeat('x', 16 * 1024 * 1024)]],
+            ]);
+            $reference = \WeakReference::create($message);
+            $bag = $this->converter->toMessageBagForTarget([$message], 'target');
+            unset($message);
+            $this->assertNull($reference->get());
+            $this->assertSame('visible', $bag->getMessages()[0]->getContent()[0]->getText());
+        }
+    }
+
+    public function testOversizedAppendReleasesOldSourceAndKeepsFullResult(): void
+    {
+        $message = new AgentMessage('user', [['type' => 'text', 'text' => 'prefix']]);
+        $reference = \WeakReference::create($message);
+        $this->converter->toMessageBagForTarget([$message], 'target');
+        $bag = $this->converter->toMessageBagForTarget([
+            $message,
+            new AgentMessage('user', [['type' => 'text', 'text' => str_repeat('x', 16 * 1024 * 1024)]]),
+        ], 'target');
+        unset($message);
+        $this->assertNull($reference->get());
+        $this->assertCount(2, $bag->getMessages());
+    }
+
+    public function testIdleExpiryUsesLastCacheUseAndPreservesReturnedBag(): void
+    {
+        $clock = new MockClock();
+        $converter = new AgentMessageConverter(clock: $clock);
+        $messages = [new AgentMessage('user', [['type' => 'text', 'text' => 'kept']])];
+        $bag = $converter->toMessageBagForTarget($messages, 'target');
+        $clock->sleep(59);
+        $converter->evictIdleCache();
+        $this->assertSame($bag, $converter->toMessageBagForTarget($messages, 'target'));
+        $clock->sleep(59);
+        $converter->evictIdleCache();
+        $this->assertSame($bag, $converter->toMessageBagForTarget($messages, 'target'));
+        $clock->sleep(60);
+        $converter->evictIdleCache();
+        $this->assertNotSame($bag, $converter->toMessageBagForTarget($messages, 'target'));
+        $this->assertSame('kept', $bag->getMessages()[0]->getContent()[0]->getText());
+    }
+
+    public function testUnboundedSourceGraphsDisableRetention(): void
+    {
+        $cycle = [];
+        $cycle['self'] = &$cycle;
+        foreach ([['object' => new \stdClass()], $cycle, array_fill(0, 8192, 'x')] as $details) {
+            $message = new AgentMessage('user', [['type' => 'text', 'text' => 'visible']], details: $details);
+            $reference = \WeakReference::create($message);
+            $bag = $this->converter->toMessageBagForTarget([$message], 'target');
+            unset($message);
+            $this->assertNull($reference->get());
+            $this->assertCount(1, $bag->getMessages());
+        }
     }
 
     /**

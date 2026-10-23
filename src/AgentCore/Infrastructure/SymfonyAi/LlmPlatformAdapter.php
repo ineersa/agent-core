@@ -171,7 +171,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 if ($this->isStreamCancellation($exception)) {
                     return new PlatformInvocationResult(
                         assistantMessage: null,
-                        deltas: [],
+                        receivedStreamDeltas: false,
                         usage: [],
                         stopReason: 'aborted',
                         error: null,
@@ -184,7 +184,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 }
 
                 return $this->errorResult(
-                    deltas: [],
+                    assistantMessage: null,
+                    receivedStreamDeltas: false,
                     exception: $exception,
                     deferredResult: null,
                     modelName: $effectiveModel,
@@ -435,7 +436,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         int $availableToolsSchemaTokensEstimate = 0,
     ): PlatformInvocationResult {
         $aborted = false;
-        $deltas = [];
+        $builder = new AssistantStreamMessageBuilder();
+        $receivedStreamDeltas = false;
         $accumulatedThinking = '';
         $thinkingSegmentStart = null;
 
@@ -458,7 +460,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                     if ($delta instanceof DeltaInterface) {
                         // Preserve native segment completions for framework reconstruction;
                         // only live observers need cumulative thinking for display.
-                        $deltas[] = $delta;
+                        $receivedStreamDeltas = true;
+                        $builder->accumulate($delta);
                         if ($delta instanceof ThinkingDelta) {
                             $thinkingSegmentStart ??= \strlen($accumulatedThinking);
                             $accumulatedThinking .= $delta->getThinking();
@@ -466,7 +469,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                             // ThinkingComplete finalizes one reasoning segment, while one model
                             // stream may contain several segments. Normalize completion payloads
                             // to cumulative text for live observers only; canonical reconstruction
-                            // consumes the native segment completions already stored above.
+                            // consumes the native segment completions already accumulated above.
                             $thinkingSegmentStart ??= \strlen($accumulatedThinking);
                             $completedThinking = $delta->getThinking();
                             $accumulatedThinking = substr($accumulatedThinking, 0, $thinkingSegmentStart).$completedThinking;
@@ -495,8 +498,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 }
 
                 return new PlatformInvocationResult(
-                    assistantMessage: $this->buildAssistantMessage($deltas),
-                    deltas: $deltas,
+                    assistantMessage: $builder->getAssistantMessage(),
+                    receivedStreamDeltas: $receivedStreamDeltas,
                     usage: $this->extractUsage($deferredResult, $modelName),
                     stopReason: 'aborted',
                     error: null,
@@ -521,7 +524,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             ));
 
             return $this->errorResult(
-                $deltas,
+                $builder->getAssistantMessage(),
+                $receivedStreamDeltas,
                 $exception,
                 $deferredResult,
                 $modelName,
@@ -540,14 +544,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $this->abortConnection($deferredResult);
         }
 
-        $assistantMessage = $this->buildAssistantMessage($deltas);
+        $assistantMessage = $builder->getAssistantMessage();
         $stopReason = $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage, $deferredResult);
 
         if (!$aborted) {
             $thinkingOnly = null !== $assistantMessage
                 && !$assistantMessage->hasToolCalls()
                 && null === $assistantMessage->asText();
-            $emptyStream = null === $assistantMessage && [] === $deltas;
+            $emptyStream = null === $assistantMessage && !$receivedStreamDeltas;
             if ($thinkingOnly || $emptyStream) {
                 $type = $thinkingOnly ? 'empty_assistant_content' : 'empty_response';
                 $message = $thinkingOnly
@@ -556,7 +560,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
                 return new PlatformInvocationResult(
                     assistantMessage: null,
-                    deltas: [],
+                    receivedStreamDeltas: $receivedStreamDeltas,
                     usage: $this->extractUsage($deferredResult, $modelName),
                     stopReason: 'error',
                     error: [
@@ -577,7 +581,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         return new PlatformInvocationResult(
             assistantMessage: $assistantMessage,
-            deltas: $deltas,
+            receivedStreamDeltas: $receivedStreamDeltas,
             usage: $this->extractUsage($deferredResult, $modelName),
             stopReason: $stopReason,
             error: null,
@@ -730,14 +734,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * @param list<DeltaInterface>       $deltas
      * @param array<string, mixed>       $requestSummary     Privacy-safe request summary
      * @param list<ModelNotificationDTO> $modelNotifications generic model notifications
      *                                                       from transform context hooks
      * @param list<string>               $availableTools
      */
     private function errorResult(
-        array $deltas,
+        ?AssistantMessage $assistantMessage,
+        bool $receivedStreamDeltas,
         \Throwable $exception,
         ?DeferredResult $deferredResult,
         string $modelName = '',
@@ -775,8 +779,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $error = $this->errorClassifier->classify($error);
 
         return new PlatformInvocationResult(
-            assistantMessage: $this->buildAssistantMessage($deltas),
-            deltas: $deltas,
+            assistantMessage: $assistantMessage,
+            receivedStreamDeltas: $receivedStreamDeltas,
             usage: null !== $deferredResult ? $this->extractUsage($deferredResult, $modelName) : [],
             stopReason: 'error',
             error: $error,
@@ -819,14 +823,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $token = LlmInvocationCancelScope::current();
 
         return null !== $token && $token->isCancellationRequested();
-    }
-
-    /**
-     * @param list<DeltaInterface> $deltas
-     */
-    private function buildAssistantMessage(array $deltas): ?AssistantMessage
-    {
-        return (new AssistantStreamMessageBuilder())->build($deltas);
     }
 
     private function resolveStopReason(?AssistantMessage $assistantMessage, DeferredResult $deferredResult): ?string

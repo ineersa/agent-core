@@ -11,6 +11,8 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\Exception\TimeoutException;
 
@@ -282,8 +284,8 @@ final class LlmRequestRetryExecutorTest extends TestCase
                 ++$attempts;
                 if (1 === $attempts) {
                     return new PlatformInvocationResult(
-                        assistantMessage: null,
-                        deltas: [new \Symfony\AI\Platform\Result\Stream\Delta\TextDelta('partial-should-not-survive')],
+                        assistantMessage: new AssistantMessage(new Text('partial-should-not-survive')),
+                        receivedStreamDeltas: true,
                         error: (new LlmProviderErrorClassifier())->classify([
                             'type' => TimeoutException::class,
                             'message' => 'Idle timeout reached',
@@ -294,8 +296,8 @@ final class LlmRequestRetryExecutorTest extends TestCase
                 }
 
                 return new PlatformInvocationResult(
-                    assistantMessage: null,
-                    deltas: [new \Symfony\AI\Platform\Result\Stream\Delta\TextDelta('final')],
+                    assistantMessage: new AssistantMessage(new Text('final')),
+                    receivedStreamDeltas: true,
                     stopReason: 'stop',
                     model: 'final-model',
                 );
@@ -307,8 +309,8 @@ final class LlmRequestRetryExecutorTest extends TestCase
 
         $this->assertNull($result->error);
         $this->assertSame('final-model', $result->model);
-        $this->assertCount(1, $result->deltas);
-        $this->assertSame('final', $result->deltas[0]->getText());
+        $this->assertTrue($result->receivedStreamDeltas);
+        $this->assertSame('final', $result->assistantMessage?->asText());
         $this->assertSame(2, $attempts);
     }
 }

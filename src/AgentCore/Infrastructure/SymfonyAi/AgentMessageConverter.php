@@ -13,17 +13,22 @@ use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\MessageInterface;
+use Symfony\AI\Platform\Message\ToolCallMessage;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\NativeClock;
 
 /**
  * Converts AgentCore domain AgentMessages into Symfony AI MessageBag
  * for provider request construction.
  *
  * Owns one worker-local active MessageBag and the target model it was built
- * for. Exact same-target contexts reuse that bag. Appends convert only new
+ * for. Retained same-target contexts reuse that bag. Appends convert only new
  * AgentMessages. Target switches and replaced prefixes rebuild once. Generic
  * {@see toMessageBag()} callers always get a fresh bag and do not touch the
- * retained active bag.
+ * retained active bag. Retention is limited to 16 MiB of estimated payload;
+ * oversized contexts still convert fully. Worker idle events release the bag
+ * after 60 seconds without cache use, without invalidating returned messages.
  *
  * Supports image_ref content parts: when a tool AgentMessage contains
  * an image_ref content part, the converter emits a synthetic UserMessage
@@ -41,10 +46,15 @@ use Symfony\AI\Platform\Result\ToolCall;
  * non-vision models before calling toMessageBag().
  *
  * Intentionally does not implement ResetInterface so Messenger service
- * resets leave the disposable active bag intact across ExecuteLlmStep messages.
+ * resets preserve incremental reuse across ExecuteLlmStep messages. Size and
+ * idle eviction, rather than per-message resets, bound this disposable cache.
  */
 final class AgentMessageConverter
 {
+    private const int RETAINED_PAYLOAD_LIMIT = 16 * 1024 * 1024;
+
+    private ?\DateTimeImmutable $lastUsedAt = null;
+
     private ?MessageBag $activeBag = null;
 
     private ?string $activeTargetModel = null;
@@ -63,6 +73,7 @@ final class AgentMessageConverter
 
     public function __construct(
         private readonly ConversationHistoryConversion $historyConversion = new ConversationHistoryConversion(),
+        private readonly ClockInterface $clock = new NativeClock(),
     ) {
     }
 
@@ -108,6 +119,8 @@ final class AgentMessageConverter
             return $this->toMessageBag($agentMessages);
         }
 
+        $this->lastUsedAt = $this->clock->now();
+
         if (null === $this->activeBag
             || $this->activeTargetModel !== $targetModel
             || !$this->isExactPrefix($this->activeSourceMessages, $agentMessages)
@@ -115,7 +128,7 @@ final class AgentMessageConverter
         ) {
             $this->rebuildActiveBag($agentMessages, $targetModel);
 
-            return $this->activeBag;
+            return $this->releaseOversizedBag($agentMessages);
         }
 
         if (\count($this->activeSourceMessages) === \count($agentMessages)) {
@@ -124,7 +137,14 @@ final class AgentMessageConverter
 
         $this->appendToActiveBag($agentMessages, $targetModel);
 
-        return $this->activeBag;
+        return $this->releaseOversizedBag($agentMessages);
+    }
+
+    public function evictIdleCache(): void
+    {
+        if (null !== $this->lastUsedAt && $this->clock->now() >= $this->lastUsedAt->modify('+60 seconds')) {
+            $this->clearActiveBag();
+        }
     }
 
     /**
@@ -167,6 +187,87 @@ final class AgentMessageConverter
         }
 
         return $messages;
+    }
+
+    /** @param list<AgentMessage> $messages */
+    private function releaseOversizedBag(array $messages): MessageBag
+    {
+        \assert(null !== $this->activeBag);
+        $bag = $this->activeBag;
+        $remaining = self::RETAINED_PAYLOAD_LIMIT;
+        $nodes = 8192;
+        foreach ($messages as $message) {
+            if (!$this->consumePayloadBudget($message->toArray(), $remaining, $nodes)) {
+                $this->clearActiveBag();
+
+                return $bag;
+            }
+        }
+        // Conversion can allocate joined text or expanded JSON. Count both graphs,
+        // conservatively counting shared strings twice rather than missing copies.
+        foreach ($bag as $message) {
+            $content = $message->getContent();
+            $parts = \is_array($content) ? $content : [$content];
+            if ($message instanceof ToolCallMessage) {
+                $parts[] = $message->getToolCall();
+            }
+            foreach ($parts as $part) {
+                $payload = match (true) {
+                    $part instanceof Text => [$part->getText(), $part->getSignature()],
+                    $part instanceof Thinking => [$part->getContent(), $part->getSignature()],
+                    $part instanceof ToolCall => [$part->getId(), $part->getName(), $part->getArguments(), $part->getSignature()],
+                    // This converter creates file-backed images only. Count their
+                    // retained path/format without loading or encoding file bytes.
+                    $part instanceof Image && null !== $part->asPath() => [$part->asPath(), $part->getFormat()],
+                    default => $part,
+                };
+                if (!$this->consumePayloadBudget($payload, $remaining, $nodes)) {
+                    $this->clearActiveBag();
+
+                    return $bag;
+                }
+            }
+        }
+
+        return $bag;
+    }
+
+    /**
+     * Conservative payload estimate, not PHP heap accounting: shared strings count
+     * repeatedly and node allowances approximate containers. Never serialize the
+     * full context. Unknown objects, deep/cyclic arrays and excessive node counts
+     * disable retention rather than inspecting arbitrary graphs without a bound.
+     */
+    private function consumePayloadBudget(mixed $value, int &$remaining, int &$nodes, int $depth = 0): bool
+    {
+        if (0 >= --$nodes || 16 < $depth || (null !== $value && !\is_scalar($value) && !\is_array($value))) {
+            return false;
+        }
+        $remaining -= \is_string($value) ? \strlen($value) + 32 : 64;
+        if (0 > $remaining) {
+            return false;
+        }
+        if (\is_array($value)) {
+            foreach ($value as $key => $item) {
+                $remaining -= \is_string($key) ? \strlen($key) + 32 : 32;
+                if (!$this->consumePayloadBudget($item, $remaining, $nodes, $depth + 1)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private function clearActiveBag(): void
+    {
+        $this->activeBag = null;
+        $this->activeTargetModel = null;
+        $this->activeSourceMessages = [];
+        $this->idMap = [];
+        $this->usedIds = [];
+        $this->imageReadability = [];
+        $this->lastUsedAt = null;
     }
 
     /**
