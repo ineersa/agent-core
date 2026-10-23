@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
+use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
+use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
@@ -13,19 +15,31 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeAcknowledgementHandler;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
+use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
+use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeIpc;
+use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
+use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
+use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
+use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\Process;
@@ -286,6 +300,76 @@ PHP);
         $this->assertSame('64M', $limit);
     }
 
+    public static function nativeBudgetCases(): iterable
+    {
+        yield 'default without ambient deadline' => [null, null, 1800, 60];
+        yield 'explicit shorter script limit' => [30, null, 30, 0];
+        yield 'shorter parent deadline' => [null, 17, 17, 0];
+        yield 'maximum script limit' => [3600, null, 3600, 1800];
+    }
+
+    #[DataProvider('nativeBudgetCases')]
+    public function testNativeDefaultAndExplicitBudgetsReachTheHost(?int $scriptBudget, ?int $parentBudget, int $ceiling, int $floor): void
+    {
+        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $bridge = $this->bridgeWithToolbox(static fn (): ?int => $accessor->current()?->timeoutSeconds());
+        $arguments = ['script' => 'return tool("read", []);'];
+        if (null !== $scriptBudget) {
+            $arguments['timeout_seconds'] = $scriptBudget;
+        }
+        $call = ToolCallBuilder::create('native-budget')->withToolName('code_mode')->withRunId('native-budget')
+            ->withArguments($arguments)->withTimeoutSeconds($parentBudget)->build();
+        $result = $this->nativeExecutor($bridge)->execute($call);
+        $this->assertFalse($result->isError);
+        $remaining = $result->details['raw_result']['code_mode_value'];
+        $this->assertLessThanOrEqual($ceiling, $remaining);
+        $this->assertGreaterThan($floor, $remaining);
+    }
+
+    public function testNativeSchemaAdvertisesTheLongerWallBudget(): void
+    {
+        $schema = NativeToolSchemaProbe::for(self::getContainer()->get(CodeModeTool::class));
+        $this->assertSame(1, $schema['properties']['timeout_seconds']['minimum']);
+        $this->assertSame(3600, $schema['properties']['timeout_seconds']['maximum']);
+        $this->assertStringContainsString('default 1800', $schema['properties']['timeout_seconds']['description']);
+    }
+
+    public function testAcknowledgementDoesNotRestartTheOriginalHostDeadline(): void
+    {
+        $script = 'return [tool("read", []), tool("read", [])];';
+        $c = self::getContainer();
+        $fixture = new CodeModeBackendFixture($c, $script);
+        $accessor = $c->get(StackToolExecutionContextAccessor::class);
+        $budgets = [];
+        $bridge = $this->bridgeWithToolbox(function () use ($c, $fixture, $accessor, &$budgets): int {
+            $budget = $accessor->current()->timeoutSeconds();
+            $budgets[] = $budget;
+            if (1 === \count($budgets)) {
+                // Cross one real whole-second budget boundary before ACK. A reset
+                // would give the next nested call eight seconds again. This clock
+                // contract needs elapsed time; the host's eight seconds is the cap.
+                $boundary = hrtime(true) + 1_050_000_000;
+                do {
+                    usleep(10_000);
+                } while (hrtime(true) < $boundary);
+                $row = $c->get(CodeModeExecutionRepository::class)->invocation($fixture->call->runId(), 'cm');
+                $ack = $c->get(CodeModeAcknowledgementHandler::class)->handle(new CodeModeOwnerDTO($fixture->call->runId(), $row['identity'], 'cm', true), $fixture->state);
+                $this->assertContains('tool_call_acknowledged', array_column($ack->events, 'type'));
+                $fixture->commit($fixture->state, $ack);
+            }
+
+            return $budget;
+        });
+        $call = ToolCallBuilder::create('cm')->withToolName('code_mode')->withRunId($fixture->call->runId())
+            ->withArguments(['script' => $script])->withTimeoutSeconds(8)->withContext(['turn_no' => 1, 'step_id' => 'step'])->build();
+        $result = $this->nativeExecutor($bridge)->execute($call);
+        $this->assertFalse($result->isError);
+        $this->assertCount(2, $budgets);
+        $this->assertLessThanOrEqual(8, $budgets[0]);
+        $this->assertGreaterThan(0, $budgets[1]);
+        $this->assertLessThan($budgets[0], $budgets[1]);
+    }
+
     public function testNestedToolReceivesRemainingScriptBudget(): void
     {
         $seenTimeouts = [];
@@ -343,7 +427,7 @@ PHP);
             self::getContainer()->get(ToolRuntime::class),
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService::class),
+            self::getContainer()->get(CodeModeExecutionService::class),
             self::getContainer()->get(OutputCap::class),
         );
 
@@ -423,7 +507,7 @@ PHP);
             self::getContainer()->get(ToolRuntime::class),
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService::class),
+            self::getContainer()->get(CodeModeExecutionService::class),
             self::getContainer()->get(OutputCap::class),
         );
 
@@ -736,7 +820,7 @@ PHP);
                 }
             },
             new RuntimeProcessConfig($locator, $this->tmpDir),
-            self::getContainer()->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService::class),
+            self::getContainer()->get(CodeModeExecutionService::class),
             self::getContainer()->get(OutputCap::class),
         );
 
@@ -828,6 +912,18 @@ PHP);
         $this->runScript($bridge, 'for ($i=0; $i<160; ++$i) fwrite(STDOUT, str_repeat("O",8192)); echo "\\xff"; return 42;');
     }
 
+    private function nativeExecutor(CodeModeHostBridge $bridge): ToolExecutor
+    {
+        $c = self::getContainer();
+        $provider = new CodeModeTool($bridge, $c->get(CodeModeExecutionService::class));
+
+        return new ToolExecutor('sequential', 2, new ToolExecutionResultStore(), new RegistryBackedToolbox(
+            new ToolRegistry([$provider]),
+            new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            schemaFactory: NativeToolSchemaProbe::schemaFactory(),
+        ), $c->get(StackToolExecutionContextAccessor::class));
+    }
+
     private function bridge(): CodeModeHostBridge
     {
         $bridge = self::getContainer()->get('test.code_mode_host_bridge');
@@ -880,7 +976,7 @@ PHP);
             self::getContainer()->get(ToolRuntime::class),
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService::class),
+            self::getContainer()->get(CodeModeExecutionService::class),
             $outputCap ?? self::getContainer()->get(OutputCap::class),
         );
     }

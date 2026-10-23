@@ -15,6 +15,14 @@ use Symfony\Component\Validator\Validation;
  */
 final class CodeModeArgumentsDTOTest extends TestCase
 {
+    public function testDefaultAndMaximumWallBudgetsPassValidation(): void
+    {
+        $default = new CodeModeArgumentsDTO(script: 'return 1;');
+        $this->assertSame(1800, $default->timeout_seconds);
+        $this->assertSame([], $this->validate($default));
+        $this->assertSame([], $this->validate(new CodeModeArgumentsDTO(script: 'return 1;', timeout_seconds: 3600)));
+    }
+
     public function testCustomValuesInsideBoundsPassValidation(): void
     {
         $dto = new CodeModeArgumentsDTO(
@@ -37,11 +45,11 @@ final class CodeModeArgumentsDTOTest extends TestCase
         ];
         yield 'timeout below minimum' => [
             new CodeModeArgumentsDTO(script: 'return 1;', timeout_seconds: 0),
-            '"timeout_seconds" argument must be an integer between 1 and 300',
+            '"timeout_seconds" argument must be an integer between 1 and 3600',
         ];
         yield 'timeout above maximum' => [
-            new CodeModeArgumentsDTO(script: 'return 1;', timeout_seconds: 301),
-            '"timeout_seconds" argument must be an integer between 1 and 300',
+            new CodeModeArgumentsDTO(script: 'return 1;', timeout_seconds: 3601),
+            '"timeout_seconds" argument must be an integer between 1 and 3600',
         ];
         yield 'memory below minimum' => [
             new CodeModeArgumentsDTO(script: 'return 1;', memory_limit_mb: 0),

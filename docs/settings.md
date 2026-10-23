@@ -169,8 +169,10 @@ a successful late result into a timeout failure.
 want that capability. Direct PHP filesystem and process calls inside the script
 bypass toolbox hooks and approvals. Any launcher sandbox, such as `hatfield-safe`
 with bubblewrap, is inherited rather than created by the tool. Scripts use a
-60-second wall budget by default (`timeout_seconds`, max 300) and a 256 MiB PHP
-memory limit (`memory_limit_mb`, max 1024). Nested handlers remain cooperative
+1800-second wall budget by default (30 minutes, `timeout_seconds`, maximum 3600
+seconds or 1 hour) and a 256 MiB PHP memory limit (`memory_limit_mb`, max 1024).
+A shorter per-call limit or remaining parent budget still applies. Backgrounding
+does not restart the original deadline. Nested handlers remain cooperative
 while blocked. Checkout and PHAR reuse the launching PHP CLI. Fused/static binaries
 still need `php` on `PATH`. See [tools.md](tools.md).
 
