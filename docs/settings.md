@@ -88,7 +88,7 @@ Relative paths in settings resolve against the **active project CWD** (not the i
 | `logging.level` | Monolog level |
 | `logging.max_files` | Rotated file retention |
 
-### Cache-preserving reasoning updates
+### ChatGPT reasoning effort
 
 ChatGPT sends the selected reasoning level through request-level `reasoning.effort`. Effort changes can reduce prompt-cache reuse. Native inline configuration updates are unsupported.
 
