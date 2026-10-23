@@ -239,17 +239,9 @@ final class ProvidersUpdateCommand
                                 ? $models[$modelId]['cost']
                                 : [];
                             $incomingCost = \is_array($meta[$key]) ? $meta[$key] : [];
-                            $mergedCost = $existingCost;
-                            foreach (['input', 'output', 'cache_read', 'cache_write'] as $field) {
-                                if (\array_key_exists($field, $incomingCost)) {
-                                    $mergedCost[$field] = $incomingCost[$field];
-                                }
-                            }
-                            if ($mergedCost !== $existingCost) {
-                                $models[$modelId]['cost'] = $mergedCost;
-                                $changed = true;
-                            }
-                        } elseif (($models[$modelId][$key] ?? null) !== $meta[$key]) {
+                            $meta[$key] = array_merge($existingCost, $incomingCost);
+                        }
+                        if (($models[$modelId][$key] ?? null) !== $meta[$key]) {
                             $models[$modelId][$key] = $meta[$key];
                             $changed = true;
                         }
@@ -315,7 +307,7 @@ final class ProvidersUpdateCommand
         if (\is_array($cost)) {
             $mapped = [];
             foreach (['input', 'output', 'cache_read', 'cache_write'] as $field) {
-                if (\array_key_exists($field, $cost) && is_numeric($cost[$field])) {
+                if (isset($cost[$field]) && is_numeric($cost[$field])) {
                     $mapped[$field] = (float) $cost[$field];
                 }
             }

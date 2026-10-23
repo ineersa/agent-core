@@ -126,10 +126,16 @@ Related: [settings.md](settings.md), [settings-models.md](settings-models.md).
 
 Catalog `cost` values are Standard short-context API rates in USD per 1M tokens.
 For GPT-6 and GPT-5.6 models, Hatfield pins `context_window` to 272000 so
-estimates stay on that flat tier. Cache writes use the documented default 30m
-retention rate. ChatGPT subscription sessions still show API-priced estimates,
-not billed subscription charges. Historical sessions cannot recover
-`cache_write_tokens` that were never persisted.
+estimates stay on that flat tier. Only the documented default 30m cache-write
+rate is modeled. The 272k pin does not select or price 12h retention. ChatGPT
+subscription sessions still show API-priced estimates, not billed subscription
+charges.
+
+Input token classes are billed once as
+`ordinary = input_tokens - cache_read_tokens - cache_creation_tokens`, with
+`cache_read_tokens` preferred over the `cached_tokens` alias when both are
+present. Impossible counts are clamped to remaining input. Historical sessions
+cannot recover `cache_write_tokens` that were never persisted.
 
 Audit limits (OpenAI docs and models.dev checked 2026-10-23):
 
@@ -140,5 +146,10 @@ Audit limits (OpenAI docs and models.dev checked 2026-10-23):
   [gpt-5.6-terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra).
 - Exact official rates for `gpt-5.3-codex-spark` were not verified; the catalog
   keeps its prior values unchanged.
-- Long-context premiums and 12h write columns are not modeled; the 272k pin keeps
-  estimates on the documented Standard short-context rates.
+- Long-context premiums above 272k and 12h write pricing are not modeled. Mapping
+  from request retention settings to the pricing table's 12h column remains
+  undocumented for these models and is not implemented.
+- OpenResponses reports reasoning inside `output_tokens` and also as
+  `output_tokens_details.reasoning_tokens`. Hatfield currently stores that detail
+  as `thinking_tokens` and adds it again at the output rate, so totals can overstate
+  cost when reasoning is present. This change does not alter that behavior.

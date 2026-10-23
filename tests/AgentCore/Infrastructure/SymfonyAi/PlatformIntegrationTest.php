@@ -1286,12 +1286,12 @@ final class PlatformIntegrationTest extends TestCase
             ['type' => 'response.completed', 'response' => [
                 'output' => [$message],
                 'usage' => [
-                    'input_tokens' => 1_000_000,
-                    'output_tokens' => 100_000,
-                    'total_tokens' => 1_100_000,
+                    'input_tokens' => 100_000,
+                    'output_tokens' => 10_000,
+                    'total_tokens' => 110_000,
                     'input_tokens_details' => [
-                        'cached_tokens' => 200_000,
-                        'cache_write_tokens' => 100_000,
+                        'cached_tokens' => 20_000,
+                        'cache_write_tokens' => 10_000,
                     ],
                 ],
                 'model' => 'gpt-5.6-sol',
@@ -1319,13 +1319,13 @@ final class PlatformIntegrationTest extends TestCase
         )->invoke($this->simpleRequest('openai-codex/gpt-5.6-sol', 'run-cache-write-cost'));
 
         $this->assertNull($response->error);
-        $this->assertSame(1_000_000, $response->usage['input_tokens'] ?? null);
-        $this->assertSame(200_000, $response->usage['cached_tokens'] ?? null);
-        $this->assertSame(200_000, $response->usage['cache_read_tokens'] ?? null);
-        $this->assertSame(100_000, $response->usage['cache_creation_tokens'] ?? null);
-        // uncached 700k × $4 + read 200k × $0.40 + write 100k × $5 + output 100k × $20
-        // = 2.80 + 0.08 + 0.50 + 2.00 = 5.38
-        $this->assertEqualsWithDelta(5.38, $response->usage['cost'] ?? 0.0, 0.0001);
+        $this->assertSame(100_000, $response->usage['input_tokens'] ?? null);
+        $this->assertSame(20_000, $response->usage['cached_tokens'] ?? null);
+        $this->assertSame(20_000, $response->usage['cache_read_tokens'] ?? null);
+        $this->assertSame(10_000, $response->usage['cache_creation_tokens'] ?? null);
+        // Short-context tier only: uncached 70k × $4 + read 20k × $0.40 + write 10k × $5
+        // + output 10k × $20 = 0.28 + 0.008 + 0.05 + 0.20 = 0.538
+        $this->assertEqualsWithDelta(0.538, $response->usage['cost'] ?? 0.0, 0.0001);
     }
 
     /**
