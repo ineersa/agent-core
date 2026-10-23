@@ -295,6 +295,7 @@ PHP);
             self::getContainer()->get(ToolRuntime::class),
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService::class),
         );
 
         $result = $accessor->with(
@@ -373,6 +374,7 @@ PHP);
             self::getContainer()->get(ToolRuntime::class),
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService::class),
         );
 
         $result = $this->runScript($bridge, "return tool('code_mode', ['script' => 'return 1;']);");
@@ -684,6 +686,7 @@ PHP);
                 }
             },
             new RuntimeProcessConfig($locator, $this->tmpDir),
+            self::getContainer()->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService::class),
         );
 
         $result = $this->runScript($bridge, 'return "path-php-ok";');
@@ -742,6 +745,7 @@ PHP);
             self::getContainer()->get(ToolRuntime::class),
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService::class),
         );
     }
 

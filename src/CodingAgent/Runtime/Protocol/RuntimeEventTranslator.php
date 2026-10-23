@@ -62,6 +62,8 @@ final class RuntimeEventTranslator
             RunEventTypeEnum::ToolExecutionStart->value => $this->onToolExecutionStarted(...),
             RunEventTypeEnum::ToolExecutionUpdate->value => $this->onToolExecutionUpdate(...),
             RunEventTypeEnum::ToolExecutionEnd->value => $this->onToolExecutionEnded(...),
+            // Caller ACK is not native execution completion. No terminal UI event.
+            RunEventTypeEnum::ToolCallAcknowledged->value => $this->drop(...),
             // Model notification
             RunEventTypeEnum::ModelNotification->value => $this->onModelNotification(...),
             // HITL

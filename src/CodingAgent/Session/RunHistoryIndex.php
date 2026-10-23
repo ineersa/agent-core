@@ -863,7 +863,7 @@ final readonly class RunHistoryIndex
             $step = $db->fetchOne('SELECT step_id FROM admission_step_location');
             $db->executeStatement('INSERT OR IGNORE INTO tool_invocation_location (tool_call_id, seq, turn_no, step_id, attempt, shell, standalone) VALUES (?, ?, ?, ?, ?, 0, 0)', [$payload['tool_call_id'], $record['seq'], $record['turn_no'], false === $step ? null : $step, $payload['attempt'] ?? 1]);
             $db->executeStatement('UPDATE tool_invocation_location SET attempt = COALESCE(?, attempt) WHERE tool_call_id = ?', [\is_int($payload['attempt'] ?? null) ? $payload['attempt'] : null, $payload['tool_call_id']]);
-        } elseif ('tool_execution_end' === $type && \is_string($payload['tool_result']['tool_call_id'] ?? null)) {
+        } elseif (\in_array($type, ['tool_execution_end', 'tool_call_acknowledged'], true) && \is_string($payload['tool_result']['tool_call_id'] ?? null)) {
             // Ordinary completed calls remain members until batch settlement.
             $db->executeStatement('DELETE FROM tool_invocation_location WHERE tool_call_id = ? AND shell = 1', [$payload['tool_result']['tool_call_id']]);
         }

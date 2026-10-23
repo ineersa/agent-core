@@ -161,6 +161,7 @@ final class RunPresentationProjector
                 }
                 break;
             case RunEventTypeEnum::ToolExecutionEnd->value:
+            case RunEventTypeEnum::ToolCallAcknowledged->value:
                 // Decode one result for validation, then retain its identity only.
                 $result = $this->toolCodec->fromEventPayload($payload);
                 $id = $result->toolCallId;

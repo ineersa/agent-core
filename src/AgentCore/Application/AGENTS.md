@@ -39,6 +39,19 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 
 ## Dispatch ownership (producers)
 
+`ExecuteToolCallWorker` emits the worker-local `ProcessedToolResultDTO` after
+ordinary terminal processing. The event includes the original immutable execution
+envelope. A native producer may accept publication responsibility; otherwise the
+worker posts the ordinary `ToolCallResult`. This event has no Messenger route.
+It never reruns terminal processors or selects scheduling policy.
+
+CodingAgent's retained code-mode owner routes `CodeModeOwnerDTO` through
+`agent.command.bus` to `run_control`. Its handler validates the frozen invocation
+before caller acknowledgement or terminal delivery. `ToolCallResultHandler::acknowledge()`
+collects the original batch slot with `tool_call_acknowledged`, not an execution-end
+event. Native metadata actions join `LocalMetadataCoordinator`'s transaction with
+the captured batch changes. See `architecture/code-mode-execution.md`.
+
 - `StartRun` — `AgentRunner::start()`
 - `ApplyCommand` — `AgentRunner` steer/followUp/cancel/answerHuman via `applyCoreCommand()`
 - `ApplyShellCommand` — `AgentRunner::shell()`, controller shell path, in-process shell send

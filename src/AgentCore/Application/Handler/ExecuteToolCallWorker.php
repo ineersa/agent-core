@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
@@ -90,7 +91,11 @@ final readonly class ExecuteToolCallWorker
                 return null;
             }
             try {
-                $this->commandBus->dispatch($result);
+                $publication = new ProcessedToolResultDTO($result, $message);
+                $this->eventDispatcher?->dispatch($publication);
+                if (!$publication->handled) {
+                    $this->commandBus->dispatch($result);
+                }
             } catch (\Throwable $exception) {
                 $this->logger->warning('runtime.result_send_failed', [
                     'run_id' => $message->runId(),

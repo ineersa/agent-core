@@ -20,6 +20,11 @@ Ordering constraints are enforced at each event write/commit call site; there is
 
 ## Maintenance
 
+`ToolCallAcknowledged` resolves one caller slot without declaring native execution
+terminal. It carries the same validated result envelope as `ToolExecutionEnd` for
+batch projection and replay, but is not translated into a runtime execution-end
+event. Native ownership and terminal evidence remain with the producing executor.
+
 `ContextRefreshed` records generated instruction messages on session attach. Replay
 replaces only the generated context; conversation and compaction summaries remain.
 

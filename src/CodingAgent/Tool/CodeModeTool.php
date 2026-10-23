@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
@@ -28,6 +29,7 @@ final class CodeModeTool implements HatfieldToolProviderInterface
 
     public function __construct(
         private readonly CodeModeHostBridge $hostBridge,
+        private readonly CodeModeExecutionService $execution,
     ) {
     }
 
@@ -42,6 +44,7 @@ final class CodeModeTool implements HatfieldToolProviderInterface
             $arguments->script,
             $arguments->timeout_seconds,
             $arguments->memory_limit_mb,
+            $this->execution->begin(),
         );
 
         // Convert the host-only wrapper once to closed terminal data before

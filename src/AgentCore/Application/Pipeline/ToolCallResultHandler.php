@@ -50,6 +50,25 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
 
     public function handle(object $message, RunState $state): HandlerResult
     {
+        return $this->collect($message, $state, false);
+    }
+
+    /** Resolve only the original caller; native ownership must remain external. */
+    public function acknowledge(ToolCallResult $message, RunState $state): HandlerResult
+    {
+        if ($message->isError || $message->isHumanInputSuspension()) {
+            throw new \InvalidArgumentException('Caller acknowledgement must be a successful tool result.');
+        }
+        if ($state->status->isTerminal() || RunStatus::Cancelling === $state->status
+            || isset($state->pendingShellToolCalls[$message->toolCallId])) {
+            return new HandlerResult();
+        }
+
+        return $this->collect($message, $state, true);
+    }
+
+    private function collect(object $message, RunState $state, bool $acknowledgement): HandlerResult
+    {
         if (!$message instanceof ToolCallResult) {
             throw new \InvalidArgumentException('ToolCallResultHandler can only handle ToolCallResult messages.');
         }
@@ -241,7 +260,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler, RunMess
         }
 
         $eventSpecs = [[
-            'type' => RunEventTypeEnum::ToolExecutionEnd->value,
+            'type' => ($acknowledgement ? RunEventTypeEnum::ToolCallAcknowledged : RunEventTypeEnum::ToolExecutionEnd)->value,
             'payload' => $this->toolExecutionEndPayloadCodec->toEventPayload($message),
         ]];
 

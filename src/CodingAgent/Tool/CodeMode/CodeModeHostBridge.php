@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
@@ -48,6 +49,7 @@ final readonly class CodeModeHostBridge
         private ToolRuntime $toolRuntime,
         private ContainerInterface $toolboxLocator,
         private RuntimeProcessConfig $runtimeProcessConfig,
+        private CodeModeExecutionService $execution,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -57,8 +59,9 @@ final readonly class CodeModeHostBridge
         string $script,
         int $timeoutSeconds = CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS,
         int $memoryLimitMb = CodeModeArgumentsDTO::DEFAULT_MEMORY_LIMIT_MB,
+        ?string $executionId = null,
     ): mixed {
-        return $this->toolRuntime->run(function () use ($script, $timeoutSeconds, $memoryLimitMb): mixed {
+        return $this->toolRuntime->run(function () use ($script, $timeoutSeconds, $memoryLimitMb, $executionId): mixed {
             $parentContext = $this->contextAccessor->current();
             $cancelToken = $parentContext?->cancellationToken() ?? new NullCancellationToken();
             $timeoutSeconds = $this->resolveScriptWallSeconds($timeoutSeconds, $parentContext?->timeoutSeconds());
@@ -68,6 +71,8 @@ final readonly class CodeModeHostBridge
             $process = null;
             $server = null;
             $connection = null;
+            $value = null;
+            $failure = null;
 
             try {
                 try {
@@ -75,12 +80,16 @@ final readonly class CodeModeHostBridge
                     $server = $this->createSocketServer($workspace['socket']);
                     $process = $this->startProcess($workspace, $cancelToken, $memoryLimit);
                     $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
+                    if (null !== $executionId) {
+                        $this->execution->ready($executionId);
+                    }
 
-                    return $this->serve($connection, $process, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
+                    return $value = $this->serve($connection, $process, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
                 } finally {
                     $this->stopProcess($process);
                 }
-            } catch (ToolCallException $exception) {
+            } catch (\Throwable $exception) {
+                $failure = $exception;
                 if (null === $process) {
                     throw $exception;
                 }
@@ -96,10 +105,25 @@ final readonly class CodeModeHostBridge
                     throw $exception;
                 }
 
-                throw new ToolCallException(CodeModeDiagnostics::appendToMessage($exception->getMessage(), $diagnostics), retryable: $exception->retryable(), hint: $exception->hint(), previous: $exception);
+                throw $failure = new ToolCallException(CodeModeDiagnostics::appendToMessage($exception->getMessage(), $diagnostics), retryable: $exception instanceof ToolCallException && $exception->retryable(), hint: $exception instanceof ToolCallException ? $exception->hint() : null, previous: $exception);
             } finally {
                 $this->closeResource($connection);
                 $this->closeResource($server);
+                if (null !== $executionId) {
+                    // Keep local evidence if sealing the retained artifact fails.
+                    // ACK does not authorize removing the only terminal snapshot.
+                    $diagnostics = null === $process ? [] : CodeModeDiagnostics::prepare($process->getOutput(), $process->getErrorOutput(), self::SCRIPT_WRAPPER_PREFIX_LINES);
+                    $this->filesystem->dumpFile($workspace['dir'].'/terminal.json', json_encode([
+                        'value' => $value instanceof CodeModeExecutionResult ? $value->result : $value,
+                        'diagnostics' => $diagnostics,
+                        'failure' => null === $failure ? null : ['type' => $failure::class, 'message' => $failure->getMessage(), 'retryable' => $failure instanceof ToolCallException && $failure->retryable(), 'hint' => $failure instanceof ToolCallException ? $failure->hint() : null],
+                    ], \JSON_THROW_ON_ERROR));
+                    try {
+                        $this->execution->preserve($executionId, $value, $failure);
+                    } catch (\Throwable $preservationFailure) {
+                        throw new ToolCallException('Code-mode terminal artifact could not be sealed.', retryable: false, hint: 'Terminal evidence remains at '.$workspace['dir'].'/terminal.json', previous: $preservationFailure);
+                    }
+                }
                 $this->cleanupWorkspace($workspace);
             }
         });

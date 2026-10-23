@@ -16,6 +16,8 @@ enum RunEventTypeEnum: string
     case ToolExecutionStart = 'tool_execution_start';
     case ToolExecutionUpdate = 'tool_execution_update';
     case ToolExecutionEnd = 'tool_execution_end';
+    // Resolves the model's caller slot without ending its native execution.
+    case ToolCallAcknowledged = 'tool_call_acknowledged';
     case AgentEnd = 'agent_end';
 
     // ── Pipeline events ──────────────────────────────────────────────────
