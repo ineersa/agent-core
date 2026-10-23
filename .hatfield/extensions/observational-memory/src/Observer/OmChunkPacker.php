@@ -39,7 +39,7 @@ final class OmChunkPacker
      * @param list<array{id: string, line: string, tokens: int, timestamp?: string, relevance?: string}> $memoryObservations
      * @param list<array{id: string, line: string, tokens: int}>                                         $memoryReflections
      *
-     * @return list<array{
+     * @return \Generator<int, array{
      *   source_start_seq: int,
      *   source_end_seq: int,
      *   part_index: int,
@@ -64,9 +64,9 @@ final class OmChunkPacker
         int $envelopeTokens,
         string $localTimeFallback,
         int $fixedOverheadTokens,
-    ): array {
+    ): \Generator {
         if ([] === $blocks) {
-            return [];
+            return;
         }
 
         $trimmedMemory = $this->trimMemory($memoryReflections, $memoryObservations, $envelopeTokens, $fixedOverheadTokens);
@@ -78,7 +78,6 @@ final class OmChunkPacker
         $budgetForSource = max(64, $envelopeTokens - $fixedOverheadTokens - $memoryTokens - $timestampTokens - $framingTokens);
         $separatorTokens = OmTokenEstimator::estimate(self::BLOCK_SEPARATOR);
 
-        $chunks = [];
         $current = [];
         $currentTokens = 0;
 
@@ -95,7 +94,7 @@ final class OmChunkPacker
                     $timestampLine,
                     $budgetForSource,
                 ) as $part) {
-                    $chunks[] = $part;
+                    yield $part;
                 }
                 $current = [];
                 $currentTokens = 0;
@@ -111,7 +110,7 @@ final class OmChunkPacker
                     $timestampLine,
                     $budgetForSource,
                 ) as $part) {
-                    $chunks[] = $part;
+                    yield $part;
                 }
                 continue;
             }
@@ -135,11 +134,9 @@ final class OmChunkPacker
                 $timestampLine,
                 $budgetForSource,
             ) as $part) {
-                $chunks[] = $part;
+                yield $part;
             }
         }
-
-        return $chunks;
     }
 
     /**

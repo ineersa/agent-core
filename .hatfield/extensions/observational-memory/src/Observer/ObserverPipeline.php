@@ -130,24 +130,60 @@ final readonly class ObserverPipeline
             localTimeFallback: $localTime,
             fixedOverheadTokens: $fixedOverhead,
         );
+        // Finish all rendering/validation before the first model call, just as
+        // the eager pipeline did. Only packed request payloads spill to disk;
+        // sorting, delayed tool pairing and the frozen memory snapshot stay unchanged.
+        // SplTempFileObject owns and removes its spill file on success or exception.
+        $requests = new \SplTempFileObject(1024 * 1024);
+        $lengths = [];
+        $coverage = [];
+        foreach ($parts as $part) {
+            // Invocation-private arrays only. Preserve exact string bytes rather
+            // than introduce JSON encoding constraints on previously direct text.
+            $request = serialize([
+                'source_refs' => $part['source_refs'],
+                'user_message' => $part['user_message'],
+            ]);
+            $length = \strlen($request);
+            if ($requests->fwrite($request) !== $length) {
+                throw new \RuntimeException('Failed to spool prepared Observer request.');
+            }
+            $lengths[] = $length;
+            unset($part['rendered_part'], $part['source_refs'], $part['user_message']);
+            $coverage[] = $part;
+        }
+        // Exhaust and release the packer before model calls: its frame owns the
+        // complete block array, and later parts may still fail validation.
+        unset($parts, $part, $request, $events, $blocks, $memoryReflections, $memoryObservations);
+
         // Packer ranges come from renderable block seqs only. Expand coverage so the
         // canonical interval [sourceStartSeq, terminalEndSeq] has no holes while
         // leaving rendered text/source_refs/digests (and observation IDs) unchanged.
         $parts = $this->normalizeChunkCoverageRanges(
-            $parts,
+            $coverage,
             $runId,
             $sourceStartSeq,
             $terminalEndSeq,
             $rendererVersion,
             $observerSchemaVersion,
         );
+        unset($coverage);
+        $requests->rewind();
 
         $totalObservations = 0;
         $processed = 0;
         $firstStart = $sourceStartSeq;
         $lastEnd = $sourceStartSeq;
 
-        foreach ($parts as $part) {
+        foreach ($parts as $index => $part) {
+            $request = $requests->fread($lengths[$index]);
+            if (\strlen($request) !== $lengths[$index]) {
+                throw new \RuntimeException('Failed to read prepared Observer request.');
+            }
+            /** @var array{source_refs: list<array{run_id: string, seq: int}>, user_message: string} $payload */
+            $payload = unserialize($request, ['allowed_classes' => false]);
+            $part += $payload;
+            unset($request, $payload);
             if ($repository->hasCompatibleCoverage($part['coverage_key'], $part['source_digest'], $part['part_digest'])) {
                 ++$processed;
                 $lastEnd = max($lastEnd, $part['source_end_seq']);
@@ -250,9 +286,6 @@ final readonly class ObserverPipeline
      *   part_digest: string,
      *   chunk_key: string,
      *   coverage_key: string,
-     *   rendered_part: string,
-     *   source_refs: list<array{run_id: string, seq: int}>,
-     *   user_message: string,
      *   token_estimate: int
      * }> $parts
      *
@@ -265,9 +298,6 @@ final readonly class ObserverPipeline
      *   part_digest: string,
      *   chunk_key: string,
      *   coverage_key: string,
-     *   rendered_part: string,
-     *   source_refs: list<array{run_id: string, seq: int}>,
-     *   user_message: string,
      *   token_estimate: int
      * }>
      */
