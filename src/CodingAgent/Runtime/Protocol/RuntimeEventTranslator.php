@@ -501,6 +501,22 @@ final class RuntimeEventTranslator
                 'idempotency_key' => $idempotencyKey,
             ];
             $metadata = \is_array($messagePayload) ? ($messagePayload['metadata'] ?? null) : null;
+            $completion = $p['consumption_metadata']['background_completion'] ?? null;
+            if ('append_message' === $kind && \is_array($completion) && \is_array($completion['code_mode'] ?? null)) {
+                // Owner-captured native provenance is not a new human request.
+                // Bash and child completion protocol behavior stays unchanged.
+                $notification = new ModelNotificationDTO(
+                    id: $completion['identity'], source: 'code_mode', kind: 'completion',
+                    severity: 'info', delivery: 'message', text: $text,
+                    metadata: ['background_completion' => $completion],
+                );
+
+                return new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::ModelNotification->value,
+                    runId: $runEvent->runId, seq: $runEvent->seq,
+                    payload: ModelNotificationCodec::toEventSpecs($this->normalizer, [$notification])[0]['payload'],
+                );
+            }
             if ('append_message' === $kind && 'agent_communication' === ($messagePayload['role'] ?? null)
                 && \is_array($metadata) && \is_array($metadata['agent_communication'] ?? null)) {
                 // System transcript blocks are presentation, not system-role

@@ -27,6 +27,27 @@ not free the occupied worker, create another consumer or release explicit locks.
 
 ## Caller resolution and terminal delivery
 
+`AgentSessionClient::foregroundCodeMode()` supplies read-only candidates for the
+visible run. Both runtime clients use native readiness, unresolved deferred
+ownership and the current canonical invocation boundary. Ctrl+B sends
+`background_code_mode` with the immutable identity and tool-call ID. The controller
+validates that snapshot and dispatches `CodeModeOwnerDTO` to `run_control`.
+`CodeModeAcknowledgementHandler` revalidates readiness and shared invocation
+ownership under the owner lock. The picker cannot authorize acknowledgement.
+
+`BackgroundWorkSnapshotProvider` includes acknowledged hosts owned by the root
+or its child runs. It reads live rows and only the exact terminal row requested
+by a pending UI action, rather than loading finished host history. `/bg` confirms
+and revalidates a selection before sending `stop_code_mode`. The owner captures
+one `InterruptCodeModeDTO` through the existing prepared metadata transaction.
+This fences the selected invocation without cancelling its run or another host.
+The UI reports `stopping` until native raw or processed terminal evidence exists.
+
+Late code-mode result consumption captures the original run and tool-call
+provenance. Runtime translation emits `model.notification`, not human activity.
+The notice includes the immutable invocation identity and retained artifact paths.
+Bash and child completion protocol behavior is unchanged.
+
 Shared deferred acknowledgement validates the retained full invocation, current
 batch reference and unresolved caller. `ToolCallResultHandler::acknowledge()`
 settles that batch slot with `tool_call_acknowledged`, not `tool_execution_end`.

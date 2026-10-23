@@ -7,6 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Support;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -17,6 +20,7 @@ use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -47,6 +51,15 @@ final class CodeModeBackendFixture
         $container->get(RunOperationalProjectionRepository::class)->replace($this->state);
         $batches = $container->get(ToolBatchStoreInterface::class);
         TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $run, 1, 'step', [$this->call]);
+    }
+
+    public function registerReadyHost(): string
+    {
+        $service = $this->container->get(CodeModeExecutionService::class);
+        $identity = $this->container->get(StackToolExecutionContextAccessor::class)->with(new ToolContext($this->call->runId(), 1, 'cm', 'code_mode', new NullCancellationToken(), 8, 0, null, 'step'), $service->begin(...));
+        $service->ready($identity);
+
+        return $identity;
     }
 
     public function commit(RunState $state, HandlerResult $result): RunState

@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeBackgroundRequestService;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
@@ -214,6 +215,7 @@ final class InProcessSelectHistoryTurnEmitsRunHistoryPositionChangedTest extends
             commandBus: $bus,
             backgroundRequests: self::getContainer()->get(BashBackgroundRequestService::class),
             backgroundProcesses: self::getContainer()->get(BackgroundProcessManager::class),
+            codeModeBackground: self::getContainer()->get(CodeModeBackgroundRequestService::class),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
             bootstrapSpools: self::getContainer()->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore::class),

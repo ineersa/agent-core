@@ -33,7 +33,7 @@ final readonly class CodeModeAcknowledgementHandler implements RunMessageHandler
             throw new \InvalidArgumentException('Unsupported code-mode acknowledgement message.');
         }
         $row = $this->executions->invocation($state->runId, $message->toolCallId);
-        if (null === $row || $message->identity !== $row['identity'] || !(bool) $row['ready'] || null !== $row['interruption_reason']) {
+        if (null === $row || $message->identity !== $row['identity'] || !(bool) $row['ready'] || null !== $row['interruption_reason'] || null !== $row['raw_reference']) {
             return new HandlerResult();
         }
         if (null !== $this->deferred->acknowledgedAt($message->identity)

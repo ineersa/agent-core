@@ -58,11 +58,11 @@ try {
             $service = $c->get(CodeModeExecutionService::class);
             $id = $c->get(StackToolExecutionContextAccessor::class)->with(new ToolContext($run, 1, 'cm', 'code_mode', new NullCancellationToken(), 8, 0, null, 'step'), $service->begin(...));
             $ids[$run] = $id;
-            $service->preserve($id, ['diagnostics' => 'retained before process loss'], null);
             if ($fixture === $childFixture) {
                 $service->ready($id);
                 $fixture->commit($fixture->state, $c->get(CodeModeAcknowledgementHandler::class)->handle(new CodeModeOwnerDTO($run, $id, 'cm', true), $fixture->state));
             }
+            $service->preserve($id, ['diagnostics' => 'retained before process loss'], null);
         }
         file_put_contents($directory.'/scope', json_encode(['owner' => $root->state->runId, 'ids' => $ids], \JSON_THROW_ON_ERROR));
         $kernel->shutdown();

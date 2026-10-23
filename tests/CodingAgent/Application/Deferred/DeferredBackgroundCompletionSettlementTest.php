@@ -337,7 +337,7 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
         $this->drain();
         $receipt = $c->get(BackgroundCompletionReceiptRepository::class)->receipt($identity);
         $this->assertNotNull($receipt);
-        $this->assertStringStartsWith('42', $receipt->text);
+        $this->assertStringStartsWith($native ? \sprintf("Code-mode result (run: %s, tool call: cm, invocation: %s):\n42", $run, $id) : '42', $receipt->text);
         $this->assertStringNotContainsString('late replacement', $receipt->text);
         $this->assertSame('completed', $deferred->status($id));
         $this->assertNull($c->get(ToolBatchStoreInterface::class)->loadSchedule($run, 1, 'step'));

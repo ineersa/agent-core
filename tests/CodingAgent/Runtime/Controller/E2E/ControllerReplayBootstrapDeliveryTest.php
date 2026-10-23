@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeBackgroundRequestService;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
@@ -128,6 +129,7 @@ final class ControllerReplayBootstrapDeliveryTest extends ControllerReplayE2eTes
                     $this->createStub(ManagerRegistry::class),
                 ),
                 $container->get(ChildInvocationBackgroundService::class),
+                $container->get(CodeModeBackgroundRequestService::class),
                 $container->get(BackgroundWorkSnapshotProvider::class),
             );
         } finally {

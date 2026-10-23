@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\Contract;
 /**
  * A user-originated command sent to an active run.
  *
- * @phpstan-type UserCommandType = 'message'|'steer'|'follow_up'|'append_message'|'cancel'|'answer_human'|'shell_command'|'select_history_turn'|'background_bash'|'background_child'
+ * @phpstan-type UserCommandType = 'message'|'steer'|'follow_up'|'append_message'|'cancel'|'answer_human'|'shell_command'|'select_history_turn'|'background_bash'|'background_child'|'background_code_mode'|'stop_code_mode'
  */
 final readonly class UserCommand
 {

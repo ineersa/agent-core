@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\Contract;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BashBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\ChildBackgroundCandidateDTO;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\CodeModeBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
 /**
@@ -45,8 +46,11 @@ interface AgentSessionClient
     /** @return list<ChildBackgroundCandidateDTO> One candidate per registered fork/subagent invocation. */
     public function foregroundChildren(string $runId): array;
 
-    /** Read native root-owned state; optionally include one retained process's terminal outcome. */
-    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO;
+    /** @return list<CodeModeBackgroundCandidateDTO> Top-level ready native hosts only. */
+    public function foregroundCodeMode(string $runId): array;
+
+    /** Read native root-owned state; optionally include one retained invocation's terminal outcome. */
+    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null, ?string $observedCodeModeIdentity = null): BackgroundWorkSnapshotDTO;
 
     /** Request stop of the exact accepted record without waiting; false means it already finished. */
     public function stopBackgroundProcess(string $runId, int $recordId): bool;

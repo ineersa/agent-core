@@ -30,6 +30,7 @@ final readonly class DeferredAcknowledgedCompletionRouter implements DeferredAck
         $text = implode("\n", array_column($result->result['content'] ?? [], 'text'));
         $row = $this->codeModeExecutions->invocation($result->runId(), $result->toolCallId);
         if (null !== $row && $row['identity'] === $deferredId) {
+            $text = \sprintf("Code-mode result (run: %s, tool call: %s, invocation: %s):\n%s", $result->runId(), $result->toolCallId, $deferredId, $text);
             $accepted = $this->deferred->findAcceptedResultReferenceByDeferredId($deferredId);
             if (null !== $accepted) {
                 $text .= "\nRetained code-mode result: ".$this->codeModeArtifacts->path($accepted);

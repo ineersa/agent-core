@@ -291,12 +291,17 @@ final class SpySessionClient implements AgentSessionClient
     }
 
     /** @return list<never> */
+    public function foregroundCodeMode(string $runId): array
+    {
+        return [];
+    }
+
     public function foregroundChildren(string $runId): array
     {
         return [];
     }
 
-    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
+    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null, ?string $observedCodeModeIdentity = null): BackgroundWorkSnapshotDTO
     {
         return new BackgroundWorkSnapshotDTO([], []);
     }

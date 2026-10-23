@@ -7,14 +7,36 @@ description: Background process tracking, logs, stop behavior, and related setti
 
 Long-running shell work can detach into tracked background processes so the conversation loop stays responsive.
 
-Press **Ctrl+B** while a `bash`, `subagent`, `fork` or `agent_resume` tool runs to move it to background.
+Press **Ctrl+B** while a `bash`, `code_mode`, `subagent`, `fork` or `agent_resume` tool runs to move it to background.
 If several eligible invocations are running in the visible session, choose one in the
 picker. Enter or Ctrl+B confirms; Escape cancels. In child live view, the shortcut
-targets that child's Bash tool rather than its parent's invocation.
+targets that child's eligible tool rather than its parent's invocation.
 Questions, modal dialogs and completion overlays retain their keyboard handling.
 Without an eligible invocation, Ctrl+B keeps its editor cursor-left behavior.
 There is no model-facing background parameter or `bg_start` tool.
-After backgrounding, open `/bg` to inspect or stop jobs yourself, or ask the agent to use `bg_status`.
+After backgrounding, open `/bg` to inspect or stop work yourself. For Bash jobs,
+you can also ask the agent to use `bg_status`.
+
+## Code-mode invocations
+
+Press Ctrl+B after a top-level `code_mode` host is ready to release the conversation's
+wait. The same PHP process, socket and synchronous nested calls continue. Nested
+calls are not separate background targets. A host that has finished, been cancelled
+or already moved to background is not eligible.
+
+Backgrounding keeps the original deadline, memory limit, occupied worker and explicit
+locks. Later tools, including another code-mode script, use ordinary scheduling on
+available workers. If the pool is full, they wait in the normal queue.
+
+The result arrives once as an attributed runtime notice with the original run,
+tool call and retained result paths. It is not another result for the original
+call or a new human request. Use `/bg` to inspect or stop a code-mode invocation;
+`bg_status` remains Bash-only.
+
+Confirming a code-mode stop interrupts that invocation, not its parent run or
+other hosts. The entry stays `stopping` until the host returns. Cancellation is
+cooperative: a blocking nested or remote handler may not observe it until it yields.
+The interface does not promise immediate termination of arbitrary nested work.
 
 ## Child invocations
 
@@ -34,15 +56,16 @@ handoff. The parent can explicitly use `agent_resume` if more child work is need
 
 ## Background work picker: `/bg`
 
-Run `/bg` from the main view. It lists detached child invocations and accepted unfinished
-Bash jobs owned by the root session, including its children. Entries identify the owning
+Run `/bg` from the main view. It lists detached child invocations, background code-mode
+hosts and accepted unfinished Bash jobs owned by the root session, including its children. Entries identify the owning
 agent and run. Bash entries also show command, PID and elapsed seconds; jobs in termination
 grace appear as `stopping`. `bg_status` remains a Bash-only tool scoped to its current run.
 Select work and press Enter to open a Yes/No cancellation confirmation, defaulting to No.
 Escape returns to the original list; Escape again closes it. Confirming Yes closes
 the picker and requests a native stop or child run cancellation without waiting for exit.
-The terminal remains responsive during grace. The controller observes exit or escalates
-to KILL, even if the caller dies. Reopen `/bg` to inspect the current status.
+The terminal remains responsive while cancellation is pending. For Bash jobs, the
+controller observes exit or escalates to KILL, even if the caller dies. Code-mode
+stops remain cooperative. Reopen `/bg` to inspect the current status.
 Opening the picker does not call the model.
 
 The status panel shows cancellation requested until operational state confirms the outcome.

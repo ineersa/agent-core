@@ -109,6 +109,7 @@ framework:
             Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO: run_control
             Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO: run_control
             Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO: run_control
+            Ineersa\CodingAgent\Application\CodeMode\DTO\StopCodeModeDTO: run_control
             Ineersa\CodingAgent\Application\AgentCommunication\DTO\AcceptSubmissionDTO: run_control
             Ineersa\CodingAgent\Application\AgentCommunication\DTO\CompleteSubmissionDTO: run_control
             Ineersa\CodingAgent\Application\AgentCommunication\DTO\DeliverSubmissionDTO: run_control

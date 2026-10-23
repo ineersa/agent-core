@@ -121,6 +121,11 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
         if ($ready) {
             $service->ready($id);
         }
+        if ($acknowledged) {
+            // ACK must precede the host's terminal evidence, even when owner
+            // acceptance and controller recovery happen later.
+            $f->commit($f->state, $c->get(CodeModeAcknowledgementHandler::class)->handle(new CodeModeOwnerDTO($run, $id, 'cm', true), $f->state));
+        }
         $service->preserve($id, ['value' => 42], null);
         $raw = $c->get(CodeModeExecutionRepository::class)->invocation($run, 'cm')['raw_reference'];
         $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
@@ -129,9 +134,6 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
         if ($processed) {
             $reference = $deferred->findInvocationReferenceByDeferredId($id);
             $c->get(ToolPayloadStoreInterface::class)->retainProcessedResult($reference, $original);
-        }
-        if ($acknowledged) {
-            $f->commit($f->state, $c->get(CodeModeAcknowledgementHandler::class)->handle(new CodeModeOwnerDTO($run, $id, 'cm', true), $f->state));
         }
         $listener = $c->get(CodeModeControllerSessionLifecycleListener::class);
         $event = new ControllerSessionStartingEvent($owner);

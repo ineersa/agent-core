@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -13,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -29,6 +32,7 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
@@ -239,6 +243,40 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         $this->assertSame(['protocol.error'], $errors);
         $this->assertFalse($this->manager->findByRecordId($second->id)?->backgroundRequested);
         $harness->stopInputLoop();
+    }
+
+    public function testMixedPickerRoutesReadyCodeModeThroughControllerAndOwnerAcknowledgement(): void
+    {
+        $c = self::getContainer();
+        $fixture = new CodeModeBackendFixture($c, 'return 42;');
+        $identity = $fixture->registerReadyHost();
+        $this->manager->start($this->command, $fixture->state->runId, 'bash-call');
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->method('foregroundCodeMode')->willReturnCallback($c->get(JsonlProcessAgentSessionClient::class)->foregroundCodeMode(...));
+        $client->expects($this->once())->method('send')->willReturnCallback(function (string $runId, UserCommand $command) use ($identity): void {
+            $this->assertSame('background_code_mode', $command->type);
+            $this->assertSame(['identity' => $identity, 'tool_call_id' => 'cm'], $command->payload);
+            self::getContainer()->get(EventDispatcherInterface::class)->dispatch(new ControllerCommandEvent(
+                new RuntimeCommand(id: 'code-mode-ctrl-b', type: $command->type, runId: $runId, payload: $command->payload),
+                static fn (RuntimeEvent $event) => self::fail('Valid code-mode target refused: '.$event->type),
+            ));
+            $sent = self::getContainer()->get('messenger.transport.run_control')->getSent();
+            $owner = array_find($sent, static fn ($envelope): bool => $envelope->getMessage() instanceof CodeModeOwnerDTO);
+            $this->assertNotNull($owner);
+            self::getContainer()->get('agent.command.bus')->dispatch($owner->with(new ReceivedStamp('run_control')));
+        });
+        $harness = $this->mount($fixture->state->runId, $client);
+        try {
+            $harness->sendInput("\x02");
+            $this->assertStringContainsString('code_mode cm', $harness->plainScreenText());
+            $harness->sendInput("\x1b[B");
+            $harness->sendInput("\x02");
+            $this->assertNotNull($c->get(DeferredToolCompletionRepositoryInterface::class)->acknowledgedAt($identity));
+            $this->assertFalse($harness->screen()->hasInputOverlay());
+            $this->assertSame($harness->screen()->editorWidget(), $harness->tui()->getFocus());
+        } finally {
+            $harness->stopInputLoop();
+        }
     }
 
     private function mount(string $runId, AgentSessionClient $client, ?TuiSessionState $state = null): VirtualTuiHarness

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeBackgroundRequestService;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -118,6 +119,7 @@ PHP);
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
             sessionStore: self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class),
+            codeModeBackground: self::getContainer()->get(CodeModeBackgroundRequestService::class),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
         );
@@ -324,6 +326,7 @@ PHP);
             toolFilterConfig: new ToolFilterRuntimeConfig(),
             logger: new TestLogger(),
             sessionStore: self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class),
+            codeModeBackground: self::getContainer()->get(CodeModeBackgroundRequestService::class),
             childBackground: self::getContainer()->get(ChildInvocationBackgroundService::class),
             backgroundWork: self::getContainer()->get(BackgroundWorkSnapshotProvider::class),
         );

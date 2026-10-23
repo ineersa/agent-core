@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeBackgroundRequestService;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
@@ -75,6 +76,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly BashBackgroundRequestService $backgroundRequests,
         private readonly BackgroundProcessManager $backgroundProcesses,
         private readonly ChildInvocationBackgroundService $childBackground,
+        private readonly CodeModeBackgroundRequestService $codeModeBackground,
         private readonly BackgroundWorkSnapshotProvider $backgroundWork,
         private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapSpoolStore $bootstrapSpools,
         private readonly \Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapTransfer $bootstrapTransfer,
@@ -96,14 +98,19 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         return $this->startWithContext($request, $metadata, $messages);
     }
 
+    public function foregroundCodeMode(string $runId): array
+    {
+        return $this->codeModeBackground->candidates($runId);
+    }
+
     public function foregroundChildren(string $runId): array
     {
         return $this->childBackground->candidates($runId);
     }
 
-    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
+    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null, ?string $observedCodeModeIdentity = null): BackgroundWorkSnapshotDTO
     {
-        return $this->backgroundWork->snapshot($rootRunId, $observedProcessId);
+        return $this->backgroundWork->snapshot($rootRunId, $observedProcessId, $observedCodeModeIdentity);
     }
 
     public function foregroundBash(string $runId): array
@@ -213,6 +220,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             'shell_command' => $this->handleShellCommandSend($runId, $command),
             'background_bash' => $this->backgroundRequests->request($runId, $command->payload),
             'background_child' => $this->childBackground->request($runId, $command->payload),
+            'background_code_mode', 'stop_code_mode' => $this->codeModeBackground->request($runId, $command->payload, 'stop_code_mode' === $command->type),
             'select_history_turn' => $this->handleInProcessSelectHistoryTurn($runId, $command),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };

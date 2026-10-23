@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Runtime;
 use DateTimeImmutable as ImmutableDateTime;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
+use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundChildStatusDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkDTO;
@@ -15,11 +16,11 @@ use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 /** Read-only presentation over existing native ownership and operational rows. */
 final readonly class BackgroundWorkSnapshotProvider
 {
-    public function __construct(private DeferredSubagentBatchRepository $batches, private BackgroundProcessRepository $processes)
+    public function __construct(private DeferredSubagentBatchRepository $batches, private BackgroundProcessRepository $processes, private CodeModeExecutionRepository $codeMode)
     {
     }
 
-    public function snapshot(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
+    public function snapshot(string $rootRunId, ?int $observedProcessId = null, ?string $observedCodeModeIdentity = null): BackgroundWorkSnapshotDTO
     {
         $children = [];
         $invocations = [];
@@ -54,6 +55,15 @@ final readonly class BackgroundWorkSnapshotProvider
                 (string) $row['id'], 'bash', \sprintf('PID %d | %s | %s', $row['pid'], $owner, $row['command']),
                 $status, $terminal, [$runId], (int) $row['id'], new ImmutableDateTime((string) $row['started_at']),
             );
+        }
+
+        foreach ($this->codeMode->ownedBackgroundWork($rootRunId, $observedCodeModeIdentity) as $row) {
+            $terminal = null !== $row['raw_reference'] || null !== $row['accepted_result_reference_json'] || 'completed' === $row['deferred_status'];
+            $interrupted = null !== $row['interruption_reason'];
+            $status = $terminal ? ($interrupted ? 'interrupted' : 'finished') : ($interrupted ? 'stopping' : 'running');
+            $runId = (string) $row['run_id'];
+            $owner = $runId === $rootRunId ? 'main run:'.$rootRunId : \sprintf('%s agent_id:%s run:%s', $row['owner_name'], $row['owner_artifact_id'], $runId);
+            $work[] = new BackgroundWorkDTO((string) $row['identity'], 'code_mode', \sprintf('code_mode %s | %s', $row['tool_call_id'], $owner), $status, $terminal, [$runId], toolCallId: (string) $row['tool_call_id']);
         }
 
         return new BackgroundWorkSnapshotDTO($children, $work);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Runtime;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeBackgroundRequestService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
@@ -1005,6 +1006,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
             \Ineersa\CodingAgent\Tests\Support\ExplicitSessionStoreFactory::create($this->createStub(\Doctrine\ORM\EntityManagerInterface::class), $directory),
             static::getContainer()->get(\Ineersa\CodingAgent\Tool\BackgroundProcessManager::class),
             static::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService::class),
+            static::getContainer()->get(CodeModeBackgroundRequestService::class),
             static::getContainer()->get(\Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider::class),
         );
 

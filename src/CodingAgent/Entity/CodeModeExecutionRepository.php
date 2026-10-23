@@ -29,6 +29,52 @@ final class CodeModeExecutionRepository extends ServiceEntityRepository
         $this->getEntityManager()->getConnection()->insert('code_mode_execution', ['identity' => $identity, 'run_id' => $runId, 'tool_call_id' => $toolCallId, 'ready' => 0]);
     }
 
+    /** @return list<array<string, mixed>> */
+    public function foregroundCandidates(string $runId): array
+    {
+        return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<'SQL'
+            SELECT n.identity, n.tool_call_id
+            FROM code_mode_execution n
+            JOIN tool_deferred_completion d ON d.deferred_id = n.identity
+            JOIN run_operational_state state ON state.run_id = n.run_id
+            WHERE n.run_id = ? AND n.ready = 1 AND n.interruption_reason IS NULL
+                AND n.raw_reference IS NULL AND d.status = 'pending'
+                AND d.acknowledged_at IS NULL AND d.accepted_result_reference_json IS NULL
+                AND state.status = 'running'
+            ORDER BY d.id
+            SQL, [$runId]);
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function ownedBackgroundWork(string $rootRunId, ?string $observedIdentity): array
+    {
+        // Load live hosts plus only the exact terminal row a pending UI action
+        // observes. Completed host history must not grow the picker snapshot.
+        return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<'SQL'
+            SELECT n.*, d.accepted_result_reference_json, d.status AS deferred_status,
+                child.agent_name AS owner_name, child.artifact_id AS owner_artifact_id
+            FROM code_mode_execution n
+            JOIN tool_deferred_completion d ON d.deferred_id = n.identity
+            LEFT JOIN deferred_subagent_child child ON child.child_run_id = n.run_id
+            LEFT JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
+            WHERE d.acknowledged_at IS NOT NULL
+                AND ((n.raw_reference IS NULL AND d.accepted_result_reference_json IS NULL AND d.status = 'pending') OR n.identity = :observed)
+                AND (n.run_id = :root OR batch.parent_run_id = :root)
+            ORDER BY d.id
+            SQL, ['root' => $rootRunId, 'observed' => $observedIdentity]);
+    }
+
+    public function canStop(string $runId, string $identity, string $toolCallId): bool
+    {
+        return false !== $this->getEntityManager()->getConnection()->fetchOne(<<<'SQL'
+            SELECT n.identity FROM code_mode_execution n
+            JOIN tool_deferred_completion d ON d.deferred_id = n.identity
+            WHERE n.run_id = ? AND n.identity = ? AND n.tool_call_id = ?
+                AND n.raw_reference IS NULL AND n.interruption_reason IS NULL
+                AND d.acknowledged_at IS NOT NULL AND d.accepted_result_reference_json IS NULL AND d.status = 'pending'
+            SQL, [$runId, $identity, $toolCallId]);
+    }
+
     public function ready(string $identity): void
     {
         if (1 !== $this->getEntityManager()->getConnection()->executeStatement('UPDATE code_mode_execution SET ready = 1 WHERE identity = ? AND interruption_reason IS NULL', [$identity])) {
@@ -53,6 +99,17 @@ final class CodeModeExecutionRepository extends ServiceEntityRepository
             $parameters[] = CodeModeInterruptionReasonEnum::ControllerShutdown->value;
         }
         $this->getEntityManager()->getConnection()->executeStatement('UPDATE code_mode_execution SET interruption_reason = ? WHERE identity = ? AND '.$eligible, $parameters);
+    }
+
+    /** @return array{run_id: string, tool_call_id: string}|null */
+    public function completionOwner(string $identity): ?array
+    {
+        if (!str_starts_with($identity, 'background-')) {
+            return null;
+        }
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative('SELECT run_id, tool_call_id FROM code_mode_execution WHERE identity = ?', [substr($identity, \strlen('background-'))]);
+
+        return false === $row ? null : $row;
     }
 
     public function completionInterruption(string $identity): ?CodeModeInterruptionReasonEnum

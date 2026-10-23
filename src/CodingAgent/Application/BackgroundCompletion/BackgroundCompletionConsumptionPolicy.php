@@ -44,6 +44,7 @@ final readonly class BackgroundCompletionConsumptionPolicy implements CommandCon
         if ($interrupted) {
             $forward = false;
         }
+        $owner = $this->codeModeExecutions->completionOwner($receipt->identity);
 
         return new CommandConsumptionDecisionDTO(
             $interrupted ? 'Code-mode invocation ownership ended before notification consumption.' : ($forward ? 'Background completion transferred to its root owner without resuming this child.' : null),
@@ -52,6 +53,7 @@ final readonly class BackgroundCompletionConsumptionPolicy implements CommandCon
                 'source_run_id' => $receipt->sourceRunId,
                 'destination_run_id' => $state->runId,
                 'disposition' => $forward ? BackgroundCompletionDispositionEnum::Forwarding->value : BackgroundCompletionDispositionEnum::Consumed->value,
+                ...(null === $owner ? [] : ['code_mode' => $owner]),
             ]],
         );
     }

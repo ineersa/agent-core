@@ -5,11 +5,18 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeBackgroundRequestService;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
+use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
+use Ineersa\CodingAgent\Application\CodeMode\DTO\StopCodeModeDTO;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
+use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -25,6 +32,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Tui\Event\TickEvent;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 
@@ -249,6 +257,50 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         }
     }
 
+    #[DataProvider('clients')]
+    public function testCodeModeConfirmationStopsOnlyInvocationAndReportsCooperativeStopping(string $clientClass): void
+    {
+        $c = self::getContainer();
+        $fixture = new CodeModeBackendFixture($c, 'return 42;');
+        $identity = $fixture->registerReadyHost();
+        $service = $c->get(CodeModeBackgroundRequestService::class);
+        $this->assertTrue($service->request($fixture->state->runId, ['identity' => $identity, 'tool_call_id' => 'cm']));
+        $this->receiveCodeModeCommand(CodeModeOwnerDTO::class);
+        $this->mount($clientClass, $fixture->state->runId, function (string $runId, UserCommand $command) use ($service, $identity): void {
+            $this->assertFalse($this->harness->screen()->hasInputOverlay());
+            $this->assertSame('stop_code_mode', $command->type);
+            $this->assertSame(['identity' => $identity, 'tool_call_id' => 'cm'], $command->payload);
+            $this->assertTrue($service->request($runId, $command->payload, true));
+            $this->receiveCodeModeCommand(StopCodeModeDTO::class);
+        });
+        $this->assertCount(1, $this->native->backgroundWork($fixture->state->runId)->work);
+        $this->open();
+        $this->assertStringContainsString('code_mode [running]', $this->harness->plainScreenText());
+        $this->harness->sendInput("\r");
+        $this->harness->sendInput("\r"); // Default No restores without a request.
+        $this->assertNull($c->get(CodeModeExecutionRepository::class)->invocation($fixture->state->runId, 'cm')['interruption_reason']);
+        $this->confirm();
+        $this->assertStringContainsString('Cancellation requested', $this->harness->plainScreenText());
+        $this->assertSame('cancelled', $c->get(CodeModeExecutionRepository::class)->invocation($fixture->state->runId, 'cm')['interruption_reason']);
+        $this->open();
+        $this->assertStringContainsString('code_mode [stopping]', $this->harness->plainScreenText());
+    }
+
+    public function testCodeModeNaturalCompletionBeforeConfirmationReportsTerminalInsteadOfStopping(): void
+    {
+        $c = self::getContainer();
+        $fixture = new CodeModeBackendFixture($c, 'return 42;');
+        $identity = $fixture->registerReadyHost();
+        $this->assertTrue($c->get(CodeModeBackgroundRequestService::class)->request($fixture->state->runId, ['identity' => $identity, 'tool_call_id' => 'cm']));
+        $this->receiveCodeModeCommand(CodeModeOwnerDTO::class);
+        $this->mount(InProcessAgentSessionClient::class, $fixture->state->runId);
+        $this->open();
+        $c->get(CodeModeExecutionService::class)->preserve($identity, 42, null);
+        $this->confirm();
+        $this->assertStringContainsString('finished.', $this->harness->plainScreenText());
+        $this->assertNull($c->get(CodeModeExecutionRepository::class)->invocation($fixture->state->runId, 'cm')['interruption_reason']);
+    }
+
     private function start(string $runId = 'visible', bool $accepted = true, bool $resistant = false): StartResult
     {
         $command = ($resistant ? "trap '' TERM; : > ".escapeshellarg($this->directory.'/ready').'; ' : '')
@@ -261,20 +313,33 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         return $process;
     }
 
-    private function mount(string $clientClass): void
+    /** @param class-string $type */
+    private function receiveCodeModeCommand(string $type): void
+    {
+        $sent = self::getContainer()->get('messenger.transport.run_control')->getSent();
+        $message = array_find(array_reverse($sent), static fn ($envelope): bool => $envelope->getMessage() instanceof $type);
+        $this->assertNotNull($message);
+        self::getContainer()->get('agent.command.bus')->dispatch($message->with(new ReceivedStamp('run_control')));
+    }
+
+    private function mount(string $clientClass, string $root = 'visible', ?callable $send = null): void
     {
         $this->native = self::getContainer()->get($clientClass);
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->never())->method('start');
-        $client->expects($this->never())->method('send');
-        $client->method('backgroundWork')->willReturnCallback(function (string $runId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO {
+        if (null === $send) {
+            $client->expects($this->never())->method('send');
+        } else {
+            $client->expects($this->once())->method('send')->willReturnCallback($send);
+        }
+        $client->method('backgroundWork')->willReturnCallback(function (string $runId, ?int $observedProcessId = null, ?string $observedCodeModeIdentity = null): BackgroundWorkSnapshotDTO {
             // Count opening snapshots separately from exact-record stop revalidation
             // and UI-only settlement; those must not refresh an open picker.
             if (null === $observedProcessId) {
                 ++$this->reads;
             }
 
-            return $this->native->backgroundWork($runId, $observedProcessId);
+            return $this->native->backgroundWork($runId, $observedProcessId, $observedCodeModeIdentity);
         });
         $client->method('stopBackgroundProcess')->willReturnCallback(function (string $runId, int $id): bool {
             $this->assertFalse($this->harness->screen()->hasInputOverlay(), 'Close before the native stop action.');
@@ -282,8 +347,8 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
 
             return $this->native->stopBackgroundProcess($runId, $id);
         });
-        $this->harness = new VirtualTuiHarness(sessionId: 'visible');
-        $state = new TuiSessionState('visible');
+        $this->harness = new VirtualTuiHarness(sessionId: $root);
+        $state = new TuiSessionState($root);
         $catalog = new SlashCommandCatalog();
         $registrar = self::getContainer()->get(BackgroundProcessCommandRegistrar::class);
         $registrar->registerCatalog($catalog);
