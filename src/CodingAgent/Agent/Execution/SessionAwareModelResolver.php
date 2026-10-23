@@ -96,54 +96,6 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             $compatFeatures = $this->resolveCompatFeatures($modelRef);
             $reasoningOptions = $this->resolveReasoningOptions($modelRef, $reasoning);
 
-            // Explicit summary/fork overrides are separate operations. Only mutable
-            // chat sessions own a durable baseline; worker/socket lifetime is irrelevant.
-            if (null === $explicitModel && null === $explicitReasoning
-                && 'chatgpt' === $this->catalog->getProvider($modelRef->providerId)?->type
-                && true === $this->catalog->getProvider($modelRef->providerId)->compatibility?->supportsReasoningConfigurationUpdates
-                && true === $this->catalog->getModel($modelRef)?->compatibility?->supportsReasoningConfigurationUpdates
-                && $hasConversationMessages
-                && \is_string($reasoningOptions['reasoning']['effort'] ?? null)
-            ) {
-                $effort = $reasoningOptions['reasoning']['effort'];
-                $historyKeys = [];
-                $context = '';
-                foreach ($input->messages as $index => $message) {
-                    // Use canonical invocation history, before OutputCap or other request
-                    // transforms. Anchor identity alone cannot detect a rewritten prefix.
-                    // Match TransformHook::stringify() tolerance: a pathological message
-                    // must degrade the fingerprint, never fail model resolution. Key order
-                    // is part of the fingerprint, so content producers must build parts
-                    // with a consistent key order.
-                    // Tool-call content parts reference metadata by index, and source
-                    // identity controls native replay. Include those provider inputs,
-                    // not request-local reasoning-transition markers.
-                    $encoded = json_encode([
-                        $message->role, $message->content, $message->name,
-                        $message->toolCallId, $message->toolName, $message->details, $message->isError,
-                        [
-                            'tool_calls' => $message->metadata['tool_calls'] ?? [],
-                            'source_model' => $message->metadata['source_model'] ?? null,
-                        ],
-                    ], \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-                    $context = hash('sha256', $context.(false === $encoded ? '{}' : $encoded));
-                    $key = ChatGPTReasoningTransitionTransformHook::messageKeyInHistory($input->messages, $index);
-                    if (null !== $key) {
-                        $historyKeys[$key] = $context;
-                    }
-                }
-                $baseline = $this->sessionMetadataStore->claimReasoningBaseline($sessionId, $modelRef->toString(), $effort, $historyKeys);
-                $reasoningOptions[ChatGPTReasoningTransitionMetadata::ENABLED] = true;
-                $reasoningOptions['hatfield_run_id'] = $sessionId;
-                $reasoningOptions['hatfield_model_ref'] = $modelRef->toString();
-                if (null !== $baseline) {
-                    $reasoningOptions['reasoning']['effort'] = $baseline['baseline'];
-                    if (null !== $baseline['update']) {
-                        $reasoningOptions[ChatGPTReasoningTransitionMetadata::UPDATE] = $baseline['update'];
-                    }
-                }
-            }
-
             // Pass 'reasoning' compat when options are present (z.ai off sends disabled thinking).
             if ([] !== $reasoningOptions && !\in_array(ReasoningOptionsFeatureShaper::FEATURE, $compatFeatures, true)) {
                 $compatFeatures[] = ReasoningOptionsFeatureShaper::FEATURE;

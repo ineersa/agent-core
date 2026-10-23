@@ -27,7 +27,6 @@ Used by the TUI, runtime startup, and model selection in workers. Both the TUI a
 |---|---|---|---|
 | `findSession` | SELECT one session through `find()` | **Refresh** before returning its fields | Can otherwise return the model cached before another process changed it. Currently no refresh on main. |
 | `updateMetadata` | SELECT, assign fields, UPDATE | **Refresh** before assignments | Doctrine can skip a requested update if the selected value equals its stale cached value. Currently no refresh. |
-| `claimReasoningBaseline`, `resetReasoningBaseline` | SELECT baseline, then UPDATE | **Refresh** before checking/changing baseline | Another process can change the model or baseline. Refresh does not replace protection against simultaneous writes. |
 | `listSessions` → `findForCatalog` | SELECT session list | **Refresh** returned field values | The query can return up-to-date row IDs but old model/name fields from cached entities. Currently no refresh. |
 | `exists` | SELECT through `find()` | **Fresh existence query**, not entity refresh | A cached object can survive deletion by another process. Only existence is needed, not all fields. |
 | `createSession` | INSERT new row | **No refresh** | No existing entity to refresh. Keep it managed until insertion completes. |

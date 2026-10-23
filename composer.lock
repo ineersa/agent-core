@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2fa296d1c8f3aa443e864e1a318614ab",
+    "content-hash": "1813706716667a8be339f075c7b2e5fa",
     "packages": [
         {
             "name": "amphp/amp",
@@ -2893,11 +2893,11 @@
         },
         {
             "name": "ineersa/symfony-ai-openai-chatgpt-platform",
-            "version": "dev-task/zstd-originator",
+            "version": "v0.2.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform.git",
-                "reference": "cfb64a2a9859e9f4e930ccc91c0880d94e71a60f"
+                "reference": "a89e50f8af5d493811d93601c8f22420a55d27e2"
             },
             "require": {
                 "ext-openssl": "*",
@@ -2940,7 +2940,7 @@
                 "MIT"
             ],
             "description": "Single-account Sign in with ChatGPT OAuth and HTTP Responses bridge for Symfony AI.",
-            "time": "2026-10-12T23:51:55+00:00"
+            "time": "2026-10-23T13:19:58+00:00"
         },
         {
             "name": "kelunik/certificate",
@@ -14069,7 +14069,6 @@
         "fabpot/amphp-sqlite3": 20,
         "ineersa/hatfield-extension-api": 20,
         "ineersa/sqlite-queue": 20,
-        "ineersa/symfony-ai-openai-chatgpt-platform": 20,
         "mcp/sdk": 20,
         "symfony/tui": 20
     },
