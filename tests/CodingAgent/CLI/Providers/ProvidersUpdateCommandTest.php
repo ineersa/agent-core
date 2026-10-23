@@ -194,12 +194,31 @@ providers:
             gpt-5.6-sol:
                 name: GPT-5.6 Sol
                 reasoning: true
+                compatibility:
+                    pin_context_window: true
                 thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                 tool_calling: true
                 input: [text, image]
                 context_window: 272000
                 max_tokens: 128000
-                cost: { input: 5.00, output: 30.00, cache_read: 0.50, cache_write: 6.25 }
+                cost: { input: 4.00, output: 20.00, cache_read: 0.40, cache_write: 5.00 }
+    zai:
+        label: 'Z.ai'
+        kind: apikey
+        type: generic
+        enabled: false
+        base_url: https://api.z.ai/api/coding/paas/v4
+        api: openai-completions
+        completions_path: /chat/completions
+        models:
+            glm-5.3:
+                name: GLM 5.3
+                context_window: 1000000
+                max_tokens: 131072
+                input: [text]
+                tool_calling: true
+                reasoning: true
+                cost: { input: 0.5, output: 1.0, cache_read: 0.1, cache_write: 0.2 }
 YAML);
         file_put_contents($this->userCatalogPath, <<<'YAML'
 version: 1
@@ -242,6 +261,17 @@ YAML);
                     ],
                 ],
             ],
+            'zai' => [
+                'models' => [
+                    'glm-5.3' => [
+                        'limit' => ['context' => 1000000, 'output' => 131072],
+                        'modalities' => ['input' => ['text']],
+                        'reasoning' => true,
+                        'tool_call' => true,
+                        'cost' => ['input' => 0.6, 'output' => 1.2, 'cache_read' => 0.0, 'cache_write' => 0.0],
+                    ],
+                ],
+            ],
         ], \JSON_THROW_ON_ERROR);
 
         $client = new MockHttpClient([
@@ -260,8 +290,20 @@ YAML);
         $this->assertSame(2.5, $models['gpt-6-sol']['cost']['input']);
         $this->assertSame(['text', 'image'], $models['gpt-6-sol']['input']);
 
-        // Control: without the pin, models.dev context_window applies as before.
-        $this->assertSame(1050000, $models['gpt-5.6-sol']['context_window']);
+        // GPT-5.6 pin keeps the curated 272k window while partial cost sync preserves
+        // existing cache rates when upstream omits them.
+        $this->assertSame(272000, $models['gpt-5.6-sol']['context_window']);
+        $this->assertSame(5.0, $models['gpt-5.6-sol']['cost']['input']);
+        $this->assertSame(30.0, $models['gpt-5.6-sol']['cost']['output']);
+        $this->assertSame(0.40, $models['gpt-5.6-sol']['cost']['cache_read']);
+        $this->assertSame(5.00, $models['gpt-5.6-sol']['cost']['cache_write']);
+
+        // Another provider still refreshes and can apply explicit zero cache rates.
+        $zai = $after['providers']['zai']['models']['glm-5.3'];
+        $this->assertSame(0.6, $zai['cost']['input']);
+        $this->assertSame(1.2, $zai['cost']['output']);
+        $this->assertSame(0.0, $zai['cost']['cache_read']);
+        $this->assertSame(0.0, $zai['cost']['cache_write']);
     }
 
     public function testNetworkErrorLeavesUserCatalogUntouched(): void

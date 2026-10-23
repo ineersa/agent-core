@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
@@ -30,7 +31,12 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\AiCost;
+use Ineersa\CodingAgent\Config\Ai\AiCostCalculator;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
+use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -301,7 +307,7 @@ final class PlatformIntegrationTest extends TestCase
      */
     public function testCostIsCalculatedWhenRequestModelIsEmptyButResolverReturnsPricedModel(): void
     {
-        $costCalculator = new class implements \Ineersa\AgentCore\Domain\Model\CostCalculatorInterface {
+        $costCalculator = new class implements CostCalculatorInterface {
             public ?string $capturedModel = null;
 
             /** @var array<string, mixed> */
@@ -1267,6 +1273,62 @@ final class PlatformIntegrationTest extends TestCase
     }
 
     /**
+     * Prove streamed OpenResponses cache_write_tokens reach host usage and are
+     * billed once by the real catalog calculator at the Standard write rate.
+     */
+    public function testStreamedCacheWriteCostUsesCatalogCalculator(): void
+    {
+        $message = $this->assistantMessage('msg_cost');
+        $deferred = $this->deferredOpenResponsesStream([
+            ['type' => 'response.output_item.added', 'output_index' => 0, 'item' => array_replace($message, ['content' => [], 'status' => 'in_progress'])],
+            ['type' => 'response.output_text.delta', 'item_id' => 'msg_cost', 'delta' => 'ok'],
+            ['type' => 'response.output_item.done', 'output_index' => 0, 'item' => $message],
+            ['type' => 'response.completed', 'response' => [
+                'output' => [$message],
+                'usage' => [
+                    'input_tokens' => 1_000_000,
+                    'output_tokens' => 100_000,
+                    'total_tokens' => 1_100_000,
+                    'input_tokens_details' => [
+                        'cached_tokens' => 200_000,
+                        'cache_write_tokens' => 100_000,
+                    ],
+                ],
+                'model' => 'gpt-5.6-sol',
+            ]],
+        ]);
+
+        $calculator = new AiCostCalculator(new HatfieldModelCatalog(new AiConfig(
+            providers: [
+                'openai-codex' => new AiProviderConfig(
+                    id: 'openai-codex',
+                    enabled: true,
+                    models: [
+                        'gpt-5.6-sol' => new AiModelDefinition(
+                            id: 'gpt-5.6-sol',
+                            cost: new AiCost(input: 4.0, output: 20.0, cacheRead: 0.40, cacheWrite: 5.0),
+                        ),
+                    ],
+                ),
+            ],
+        )));
+
+        $response = $this->createAdapterForPlatform(
+            $this->platformReturningDeferred($deferred),
+            costCalculator: $calculator,
+        )->invoke($this->simpleRequest('openai-codex/gpt-5.6-sol', 'run-cache-write-cost'));
+
+        $this->assertNull($response->error);
+        $this->assertSame(1_000_000, $response->usage['input_tokens'] ?? null);
+        $this->assertSame(200_000, $response->usage['cached_tokens'] ?? null);
+        $this->assertSame(200_000, $response->usage['cache_read_tokens'] ?? null);
+        $this->assertSame(100_000, $response->usage['cache_creation_tokens'] ?? null);
+        // uncached 700k × $4 + read 200k × $0.40 + write 100k × $5 + output 100k × $20
+        // = 2.80 + 0.08 + 0.50 + 2.00 = 5.38
+        $this->assertEqualsWithDelta(5.38, $response->usage['cost'] ?? 0.0, 0.0001);
+    }
+
+    /**
      * Prove Generic Completions 0.15 counts a repeated stream usage snapshot once.
      */
     public function testGenericStreamUsageSnapshotIsCountedOnce(): void
@@ -1439,6 +1501,7 @@ final class PlatformIntegrationTest extends TestCase
         iterable $convertHooks = [],
         ?LlmStreamObserverInterface $streamObserver = null,
         ?int $maxRetries = null,
+        ?CostCalculatorInterface $costCalculator = null,
     ): LlmPlatformAdapter {
         return new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(),
@@ -1465,7 +1528,7 @@ final class PlatformIntegrationTest extends TestCase
             transformContextHooks: $transformHooks,
             convertToLlmHooks: $convertHooks,
             streamObserver: $streamObserver,
-            costCalculator: null,
+            costCalculator: $costCalculator,
             modelResolver: null,
             logger: new NullLogger(),
             denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(),

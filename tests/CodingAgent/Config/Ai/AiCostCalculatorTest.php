@@ -107,6 +107,52 @@ final class AiCostCalculatorTest extends TestCase
         $this->assertEqualsWithDelta(3.15, $cost, 0.01);
     }
 
+    public function testCalculateCostTreatsAbsentAndZeroCacheWritesAsOrdinaryInput(): void
+    {
+        $absent = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 1_000_000,
+            'output_tokens' => 0,
+        ]);
+        $zero = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 1_000_000,
+            'output_tokens' => 0,
+            'cache_creation_tokens' => 0,
+        ]);
+
+        $this->assertEqualsWithDelta(3.0, $absent, 0.01);
+        $this->assertEqualsWithDelta(3.0, $zero, 0.01);
+    }
+
+    public function testCalculateCostPrefersCacheReadTokensOverCachedAlias(): void
+    {
+        $cost = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 1_000_000,
+            'output_tokens' => 0,
+            'cache_read_tokens' => 100_000,
+            'cached_tokens' => 900_000,
+            'cache_creation_tokens' => 50_000,
+        ]);
+
+        // uncached: 850_000 × $3/M = $2.55
+        // cache read: 100_000 × $3.75/M = $0.375
+        // cache write: 50_000 × $6/M = $0.30
+        $this->assertEqualsWithDelta(3.225, $cost, 0.001);
+    }
+
+    public function testCalculateCostClampsMalformedCacheCountersToInput(): void
+    {
+        $cost = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 100_000,
+            'output_tokens' => 0,
+            'cache_read_tokens' => 150_000,
+            'cache_creation_tokens' => 80_000,
+        ]);
+
+        // Read clamps to 100_000; write clamps to remaining 0.
+        // cache read: 100_000 × $3.75/M = $0.375
+        $this->assertEqualsWithDelta(0.375, $cost, 0.001);
+    }
+
     public function testCalculateCostNoPricingReturnsZero(): void
     {
         $cost = $this->calculator->calculateCost('nonexistent/model', [
