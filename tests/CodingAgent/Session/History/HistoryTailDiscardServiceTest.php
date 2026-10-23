@@ -24,6 +24,8 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 #[CoversClass(HistoryTailDiscardService::class)]
 final class HistoryTailDiscardServiceTest extends IsolatedKernelTestCase
@@ -183,8 +185,7 @@ final class HistoryTailDiscardServiceTest extends IsolatedKernelTestCase
                 cwd: $this->tempDir,
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
     }
 
     /**

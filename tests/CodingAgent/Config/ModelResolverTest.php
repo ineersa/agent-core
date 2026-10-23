@@ -16,6 +16,8 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Pure unit tests for ModelResolver (read-only resolution).
@@ -612,8 +614,7 @@ class ModelResolverTest extends TestCase
         return new HatfieldSessionStore(
             appConfig: $this->makeAppConfig($this->standardAiData()),
             entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
     }
 
     private function makeAppConfig(array $aiData): AppConfig

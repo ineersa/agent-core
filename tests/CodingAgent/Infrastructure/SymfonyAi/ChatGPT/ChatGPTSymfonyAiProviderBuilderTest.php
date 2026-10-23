@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ChatGPT\ChatGPTSymfonyAiProviderBuilder;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\ChatGPTAuthFixture;
 use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -29,6 +30,8 @@ use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionPolicyExcepti
 use Symfony\AI\Platform\Platform;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
@@ -222,13 +225,12 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('chatgpt-cold-replay');
         try {
             $createStore = function () use ($directory): \Ineersa\CodingAgent\Session\SessionRunEventStore {
-                $sessions = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
+                $sessions = new HatfieldSessionStore(
                     new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig('default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
                     $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                    new \Symfony\Component\EventDispatcher\EventDispatcher(),
-                );
+                    new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
 
-                return new \Ineersa\CodingAgent\Session\SessionRunEventStore($sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
+                return new \Ineersa\CodingAgent\Session\SessionRunEventStore($sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new LockFactory(new FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
             };
             $payload = (new AgentMessageNormalizer())->assistantMessagePayload($result->assistantMessage);
             \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($createStore(), \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend(runId: 'fixture', turnNo: 1, type: 'llm_step_completed', payload: ['assistant_message' => $payload, 'model' => 'openai-codex/gpt-6.1-sol']));

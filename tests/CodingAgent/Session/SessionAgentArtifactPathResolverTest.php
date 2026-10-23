@@ -13,6 +13,8 @@ use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Test thesis: canonical session artifact paths are the single source of truth;
@@ -38,8 +40,7 @@ final class SessionAgentArtifactPathResolverTest extends TestCase
                 cwd: $this->projectDir,
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
     }
 
     protected function tearDown(): void

@@ -50,7 +50,11 @@ final readonly class CodeModeProcessedResultSubscriber
             if (null !== $current['interruption_reason']) {
                 // The host has physically returned. Preserve raw/processed evidence,
                 // but never let an abandoned invocation continue the current run.
-                $this->completions->settle($identity, $result->runId(), $result->turnNo(), $result->stepId());
+                // Controller recovery owns the interrupted terminal's ordinary
+                // delivery. A late worker must not retire its still-pending send.
+                if (!\in_array($current['interruption_reason'], [CodeModeInterruptionReasonEnum::ControllerRestarted->value, CodeModeInterruptionReasonEnum::ControllerShutdown->value], true)) {
+                    $this->completions->settle($identity, $result->runId(), $result->turnNo(), $result->stepId());
+                }
 
                 return false;
             }

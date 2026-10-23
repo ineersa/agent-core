@@ -41,6 +41,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Tui;
 
@@ -489,8 +491,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 cwd: $this->tempCwd,
             ),
             entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
 
         $this->client->expects($this->once())
             ->method('start')
@@ -552,8 +553,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $modelService = new \Ineersa\CodingAgent\Config\ModelSelectionService(
             $appConfig,
             new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $sessionStore, new NullLogger()),
@@ -844,8 +844,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 cwd: $this->tempCwd,
             ),
             entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
 
         $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
         $this->assertNotFalse($png);

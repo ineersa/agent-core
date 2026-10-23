@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapDescriptorDTO;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Replay\SessionResumeMetadataProjection;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -24,6 +25,8 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 #[AllowMockObjectsWithoutExpectations]
 final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
@@ -592,9 +595,9 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         $directory = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('resume-prompt');
         $client = null;
         try {
-            $store = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
+            $store = new HatfieldSessionStore(
                 new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
-                static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class), new \Symfony\Component\EventDispatcher\EventDispatcher());
+                static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class), new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
             $runId = $store->createSession('Original catalog prompt');
             $initializer = new \Ineersa\Tui\Application\SessionInitializer($store, new \Ineersa\Tui\Transcript\TranscriptBlockFactory());
             $state = $initializer->initialize($runId, new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Startup follow-up', cwd: $directory));

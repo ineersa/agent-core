@@ -54,6 +54,8 @@ use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Tui;
@@ -160,8 +162,7 @@ final class SubagentLiveScenarioHarness
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $entityManager,
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
 
         $context = new TuiRuntimeContext(
             tui: $tui,

@@ -91,11 +91,23 @@ is not forcibly cancelled. Controller starting and ordinary shutdown fence the
 root and owned child scopes with distinct restart and shutdown reasons, without
 deleting retained evidence.
 
-A fenced host cannot become ready or acknowledge its original caller. Once its
-physical execution returns, late output settles the shared deferred marker
-without entering a newer turn. Notification admission, history mutation policy
-and mailbox consumption also check the native fence, so output queued before
-interruption cannot acquire authority later.
+Controller ownership loss freezes a terminal result and the native interruption
+in one application metadata transaction. It preserves the first accepted result
+or existing processed evidence. Without either, it records a non-retryable
+interrupted failure that warns that external effects may already have occurred.
+Recovery does not rerun the script or result processors. A waiting caller resolves
+through ordinary result admission and its prepared transition. An acknowledged
+caller uses the existing background-completion admission. A failed send remains
+pending for cold startup or explicit repair. The native row does not own acceptance
+or settlement.
+
+A fenced host cannot become ready or acknowledge its original caller. After
+cancellation or history discard, physical completion retires the shared deferred
+marker without entering a newer turn. Notification admission, history mutation policy
+and mailbox consumption also check the native fence. A late worker cannot replace
+the recovery result or retire its pending delivery. Explicit cancellation or
+history discard can supersede a controller-loss fence while its recovery notice
+remains unconsumed; controller startup cannot weaken that abandonment.
 
 ## Evidence and cleanup
 
@@ -116,13 +128,21 @@ directories in the existing SQL transaction and post-commit filesystem removal.
 Rolling back that transaction preserves the rows and files. Ordinary controller
 shutdown and restart retain evidence.
 
+Permanent deletion and payload publication share a short Symfony storage lock for
+the owning numeric session. The path resolver retains original ownership through
+nested artifact ancestry, including parent-scoped directories outside the root
+session tree. Cached payload stores retain paths, not permission to recreate them.
+Each publication checks the owning session row while holding that lock. Generic
+payloads, processed-result bodies and their reference anchors, and native artifacts
+use the same boundary. Deletion holds it through the SQL transaction and filesystem
+cleanup. Rollback preserves write authority; committed deletion refuses late writes.
+The boundary is independent of run-owner admission and never covers a host's
+physical execution or reserves worker-pool capacity.
+
 ## Exposure boundary
 
 The retained-host backend has no controller command, TUI candidate or model-facing
 backgrounding option. It does not enable code-mode backgrounding for users.
-Waiting-caller recovery after controller loss and serialization of permanent
-deletion against late native and shared payload writers still require completion
-and proof before exposure. The native fence alone does not resolve an original
-caller whose physical host disappeared without a terminal result. Worker
-retention does not imply durable execution across controller or worker failure,
-and recovery must not replay ambiguous side effects.
+Controller and TUI integration and actual worker-pool capacity proof remain
+required before exposure. Worker retention does not imply durable execution across
+controller or worker failure, and recovery must not replay ambiguous side effects.

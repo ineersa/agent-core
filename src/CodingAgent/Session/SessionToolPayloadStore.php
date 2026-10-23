@@ -47,37 +47,12 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
 
     public function publish(ExecuteToolCall|ExecuteShellToolCall|ToolCallResult $message): ToolPayloadReferenceDTO
     {
-        $kind = match (true) {
-            $message instanceof ExecuteToolCall => 'call',
-            $message instanceof ExecuteShellToolCall => 'shell',
-            default => 'result',
-        };
-        // Preserve the configured snake-case representation. Private bus fields
-        // are explicit constructor inputs, not inferred getter properties.
-        $data = $message instanceof ToolCallResult
-            ? (new ToolExecutionEndPayloadCodec($this->serializer))->normalizeResult($message)
-            : $this->serializer->normalize($message);
-        $data += ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'attempt' => $message->attempt(), 'idempotency_key' => $message->idempotencyKey()];
-        $document = new ToolPayloadDataDTO($kind, $data);
-        $this->validate($document);
-        $json = $this->serializer->serialize($document, 'json');
-        $name = $message instanceof ExecuteToolCall ? $message->toolName : ($message instanceof ExecuteShellToolCall ? 'bash' : ($data['result']['tool_name'] ?? null));
-        $reference = new ToolPayloadReferenceDTO($kind, $message->runId(), $message->turnNo(), $message->stepId(), $message->attempt(), $message->idempotencyKey(), $message->toolCallId, $message instanceof ExecuteShellToolCall ? 0 : $message->orderIndex, \is_string($name) ? $name : null, hash('sha256', $json), \strlen($json));
-        $this->seal($reference, $json);
-
-        return $reference;
+        return $this->paths->withStorageWriteLock($this->root($message->runId()), fn () => $this->publishUnderStorageLock($message));
     }
 
     public function publishCorrelation(DeferredToolCompletionCorrelation $correlation): ToolPayloadReferenceDTO
     {
-        $data = $this->serializer->normalize($correlation);
-        $document = new ToolPayloadDataDTO('correlation', $data);
-        $this->validate($document);
-        $json = $this->serializer->serialize($document, 'json');
-        $reference = new ToolPayloadReferenceDTO('correlation', $correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->attempt, $correlation->idempotencyKey, $correlation->toolCallId, $correlation->orderIndex, $correlation->toolName, hash('sha256', $json), \strlen($json));
-        $this->seal($reference, $json);
-
-        return $reference;
+        return $this->paths->withStorageWriteLock($this->root($correlation->runId), fn () => $this->publishCorrelationUnderStorageLock($correlation));
     }
 
     public function read(ToolPayloadReferenceDTO $reference): ExecuteToolCall|ExecuteShellToolCall|ToolCallResult|DeferredToolCompletionCorrelation
@@ -121,31 +96,7 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
 
     public function retainProcessedResult(ToolPayloadReferenceDTO $invocation, ToolCallResult $result): ToolPayloadReferenceDTO
     {
-        $this->validate($invocation);
-        if ('call' !== $invocation->kind || null !== $result->pendingHumanInput || ($result->result['tool_name'] ?? null) !== $invocation->toolName) {
-            throw new ToolPayloadException('Processed terminal does not match its invocation.');
-        }
-        $this->assertIdentity($result, $invocation);
-        $anchor = $this->processedPath($invocation);
-        // This short publication lock is independent of owner admission. The
-        // candidate is bound to the full invocation, never another worker's turn.
-        $lock = $this->locks->createLock('processed-tool-'.hash('sha256', $anchor));
-        if (!$lock->acquire(true)) {
-            throw new ToolPayloadException('Processed terminal evidence cannot be locked.');
-        }
-        try {
-            $existing = $this->findProcessedResultReference($invocation);
-            if (null !== $existing) {
-                return $existing;
-            }
-            $reference = $this->publish($result);
-            $this->filesystem->dumpFile($anchor, $this->serializer->serialize($reference, 'json'));
-            $this->filesystem->chmod($anchor, 0600);
-
-            return $reference;
-        } finally {
-            $lock->release();
-        }
+        return $this->paths->withStorageWriteLock($this->root($invocation->runId), fn () => $this->retainProcessedResultUnderStorageLock($invocation, $result));
     }
 
     public function findProcessedResultReference(ToolPayloadReferenceDTO $invocation): ?ToolPayloadReferenceDTO
@@ -180,6 +131,70 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
     public function deleteAllForRun(string $runId): void
     {
         $this->filesystem->remove(\dirname($this->directory($runId, 'cleanup')));
+    }
+
+    private function publishUnderStorageLock(ExecuteToolCall|ExecuteShellToolCall|ToolCallResult $message): ToolPayloadReferenceDTO
+    {
+        $kind = match (true) {
+            $message instanceof ExecuteToolCall => 'call',
+            $message instanceof ExecuteShellToolCall => 'shell',
+            default => 'result',
+        };
+        // Preserve the configured snake-case representation. Private bus fields
+        // are explicit constructor inputs, not inferred getter properties.
+        $data = $message instanceof ToolCallResult
+            ? (new ToolExecutionEndPayloadCodec($this->serializer))->normalizeResult($message)
+            : $this->serializer->normalize($message);
+        $data += ['run_id' => $message->runId(), 'turn_no' => $message->turnNo(), 'step_id' => $message->stepId(), 'attempt' => $message->attempt(), 'idempotency_key' => $message->idempotencyKey()];
+        $document = new ToolPayloadDataDTO($kind, $data);
+        $this->validate($document);
+        $json = $this->serializer->serialize($document, 'json');
+        $name = $message instanceof ExecuteToolCall ? $message->toolName : ($message instanceof ExecuteShellToolCall ? 'bash' : ($data['result']['tool_name'] ?? null));
+        $reference = new ToolPayloadReferenceDTO($kind, $message->runId(), $message->turnNo(), $message->stepId(), $message->attempt(), $message->idempotencyKey(), $message->toolCallId, $message instanceof ExecuteShellToolCall ? 0 : $message->orderIndex, \is_string($name) ? $name : null, hash('sha256', $json), \strlen($json));
+        $this->seal($reference, $json);
+
+        return $reference;
+    }
+
+    private function publishCorrelationUnderStorageLock(DeferredToolCompletionCorrelation $correlation): ToolPayloadReferenceDTO
+    {
+        $data = $this->serializer->normalize($correlation);
+        $document = new ToolPayloadDataDTO('correlation', $data);
+        $this->validate($document);
+        $json = $this->serializer->serialize($document, 'json');
+        $reference = new ToolPayloadReferenceDTO('correlation', $correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->attempt, $correlation->idempotencyKey, $correlation->toolCallId, $correlation->orderIndex, $correlation->toolName, hash('sha256', $json), \strlen($json));
+        $this->seal($reference, $json);
+
+        return $reference;
+    }
+
+    private function retainProcessedResultUnderStorageLock(ToolPayloadReferenceDTO $invocation, ToolCallResult $result): ToolPayloadReferenceDTO
+    {
+        $this->validate($invocation);
+        if ('call' !== $invocation->kind || null !== $result->pendingHumanInput || ($result->result['tool_name'] ?? null) !== $invocation->toolName) {
+            throw new ToolPayloadException('Processed terminal does not match its invocation.');
+        }
+        $this->assertIdentity($result, $invocation);
+        $anchor = $this->processedPath($invocation);
+        // This short publication lock is independent of owner admission. The
+        // candidate is bound to the full invocation, never another worker's turn.
+        $lock = $this->locks->createLock('processed-tool-'.hash('sha256', $anchor));
+        if (!$lock->acquire(true)) {
+            throw new ToolPayloadException('Processed terminal evidence cannot be locked.');
+        }
+        try {
+            $existing = $this->findProcessedResultReference($invocation);
+            if (null !== $existing) {
+                return $existing;
+            }
+            $reference = $this->publishUnderStorageLock($result);
+            $this->filesystem->dumpFile($anchor, $this->serializer->serialize($reference, 'json'));
+            $this->filesystem->chmod($anchor, 0600);
+
+            return $reference;
+        } finally {
+            $lock->release();
+        }
     }
 
     private function processedPath(ToolPayloadReferenceDTO $invocation): string

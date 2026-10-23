@@ -22,6 +22,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeAcknowledgementHandler;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionHookSubscriber;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionReasonEnum;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
@@ -122,11 +123,31 @@ final class CodeModeInterruptionHookSubscriberTest extends IsolatedKernelTestCas
         $event = new ProcessedToolResultDTO(new ToolCallResult($f->call->runId(), 1, 'step', 1, $f->call->idempotencyKey(), 'cm', 0, ['tool_name' => 'code_mode', 'content' => []]), $f->call);
         $c->get(CodeModeProcessedResultSubscriber::class)($event);
         $this->assertTrue($event->handled);
+        $this->assertSame('pending', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id), 'Late work cannot retire the controller recovery send.');
+        $f->consumeCompletions();
         $this->assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
         $this->assertNull($c->get(ToolBatchStoreInterface::class)->loadSchedule($f->state->runId, 1, 'step'));
         $this->assertFileExists($c->get(CodeModeResultArtifactStore::class)->path($service->resultReference($row['raw_reference'])));
         $this->expectException(\RuntimeException::class);
         $service->ready($id);
+    }
+
+    public function testCancellationRetiresAnUnconsumedControllerRecoveryNotice(): void
+    {
+        [$f, $id] = $this->begin();
+        $c = self::getContainer();
+        $c->get(CodeModeExecutionService::class)->ready($id);
+        $f->commit($f->state, $c->get(CodeModeAcknowledgementHandler::class)->handle(new CodeModeOwnerDTO($f->state->runId, $id, 'cm', true), $f->state));
+        $listener = $c->get(CodeModeControllerSessionLifecycleListener::class);
+        $listener->starting(new ControllerSessionStartingEvent($f->state->runId));
+        $f->consumeCompletions();
+        $hook = $c->get(CodeModeInterruptionHookSubscriber::class);
+        $actions = $hook->prepareAfterTurnCommit(AfterTurnCommitHookContext::fromRunState($f->state->with(['status' => RunStatus::Cancelling]), [], 0), $f->state->lastSeq);
+        $this->assertSame([$id], $actions[0]->message->identities, 'An unconsumed recovery notice remains subject to explicit cancellation.');
+        $hook->interrupt($actions[0]->message);
+        $this->assertSame(CodeModeInterruptionReasonEnum::Cancelled, $c->get(CodeModeExecutionRepository::class)->completionInterruption('background-'.$id));
+        $listener->starting(new ControllerSessionStartingEvent($f->state->runId));
+        $this->assertSame(CodeModeInterruptionReasonEnum::Cancelled, $c->get(CodeModeExecutionRepository::class)->completionInterruption('background-'.$id));
     }
 
     public function testDeletionRollsBackNativeMetadataAndPreservesArtifacts(): void

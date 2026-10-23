@@ -10,4 +10,7 @@ namespace Ineersa\CodingAgent\Session;
 interface ToolBatchRunStoragePathsInterface
 {
     public function resolveToolBatchesDirectory(string $runId): string;
+
+    /** Serialize a short publication with permanent deletion of its owning session. */
+    public function withStorageWriteLock(string $directory, callable $write): mixed;
 }

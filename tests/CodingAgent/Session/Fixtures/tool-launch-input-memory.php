@@ -21,6 +21,11 @@ $paths = new class($argv[1]) implements ToolBatchRunStoragePathsInterface {
     {
         return $this->directory.'/'.$runId.'/runtime/tool-batches';
     }
+
+    public function withStorageWriteLock(string $directory, callable $write): mixed
+    {
+        return $write();
+    }
 };
 $store = new SessionToolLaunchInputStore($paths, new LockFactory(new FlockStore($argv[1])), AttributeSerializerValidatorTestFactory::serializer(), new Filesystem());
 $messages = [];

@@ -17,6 +17,8 @@ use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Trait that provides {@see TuiRuntimeContext} construction with sensible
@@ -74,8 +76,7 @@ trait TuiRuntimeContextBuilderTrait
         return new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $testCase->createStub(EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
     }
 }
 

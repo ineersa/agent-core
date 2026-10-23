@@ -37,6 +37,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Widget\SelectListWidget;
@@ -906,8 +908,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         return new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
     }
 
     private function invokeExportSelected(

@@ -28,6 +28,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 
 /**
@@ -59,8 +61,7 @@ final class ModelControlListenerTest extends TestCase
                 cwd: $this->projectDir,
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
     }
 
     protected function tearDown(): void

@@ -20,14 +20,17 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatch;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\ToolBatchSchedule;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
+use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionToolPayloadStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
 
@@ -42,6 +45,30 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         /** @var HatfieldSessionStore $store */
         $store = self::getContainer()->get(HatfieldSessionStore::class);
         $this->store = $store;
+    }
+
+    public function testPermanentDeletionSerializesWithAnActualInFlightWriter(): void
+    {
+        // Three independent kernels prove the SQL/filesystem race and a cached
+        // late writer. The real conflict marker is the barrier, not a sleep.
+        // Cold kernel/schema startup makes 15 seconds a safety cap only.
+        $directory = TestDirectoryIsolation::createProjectTempDir('session-storage-delete');
+        $process = new Process([\PHP_BINARY, \dirname(__DIR__).'/Support/session-storage-deletion-process.php', $directory, 'owner'], env: ['HATFIELD_SESSION_ID' => false]);
+        try {
+            $process->setTimeout(15);
+            $process->mustRun();
+            $lines = explode("\n", trim($process->getOutput()));
+            $evidence = json_decode($lines[array_key_last($lines)], true, flags: \JSON_THROW_ON_ERROR);
+            $this->assertTrue($evidence['blocked']);
+            $this->assertCount(3, $evidence['denied']);
+            $this->assertFalse($evidence['directory_exists']);
+            $this->assertFalse($evidence['session_exists']);
+        } finally {
+            if ($process->isRunning()) {
+                $process->stop(0);
+            }
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
     }
 
     public function testCreateSessionCreatesDirectoryAndMetadata(): void
@@ -163,7 +190,9 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $payloads = $container->get(SessionToolPayloadStore::class);
         $paths = $container->get(ToolBatchRunStoragePathsInterface::class);
         $files = [];
+        $scoped = [];
         foreach ([$owner, $child, $grandchild, $foreign] as $run) {
+            $scoped[$run] = $payloads->forRun($run);
             $call = new ExecuteToolCall($run, 1, 'tools', 1, 'key', 'call', 'echo', ['text' => $run], 0);
             $register = new RegisterToolBatchDTO($run, 1, 'tools', [$call], ['call' => 0], [], ['call' => true], 1);
             $apply = $batches->prepareChanges([$register], new VerifiedTransitionDTO('register', ['run_id' => $run, 'actions' => [$register]]));
@@ -203,6 +232,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
             $this->assertFileExists($file);
             $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM tool_batch WHERE run_id = ?', [(string) $run]));
             $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM tool_batch_call WHERE run_id = ?', [(string) $run]));
+            $scoped[$run]->publish(new ExecuteToolCall((string) $run, 1, 'tools', 1, 'rollback-write', 'rollback-write', 'echo', [], 0));
         }
         $this->store->deleteSession($owner);
         $this->assertFalse($this->store->exists($owner));
@@ -214,6 +244,13 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertTrue($this->store->exists($foreign));
         foreach ([$owner, $child, $grandchild] as $run) {
             $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM tool_batch_call WHERE run_id = ?', [$run]));
+            try {
+                $scoped[$run]->publish(new ExecuteToolCall($run, 1, 'tools', 1, 'late-write', 'late-write', 'echo', [], 0));
+                $this->fail('Cached owned scope must not recreate a deleted directory.');
+            } catch (ToolPayloadException $error) {
+                $this->assertStringContainsString('permanently deleted', $error->getMessage());
+            }
+            $this->assertDirectoryDoesNotExist(\dirname($files[$run]));
         }
         $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM tool_batch_call WHERE run_id = ?', [$foreign]));
     }

@@ -191,7 +191,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $ids = array_map(static fn (int $i): string => 'call-'.$i, range(0, 11));
         $this->register($store, $run, 1, 'tools', $ids);
         $this->assertSame(1, $paths->calls);
-        $this->assertSame(1, $this->parentCounts($sql));
+        $this->assertSame(13, $this->parentCounts($sql), 'One resolution plus twelve current storage-owner checks.');
         $actions = [];
         foreach ($ids as $i => $id) {
             $actions[] = new FinalizeToolBatchDTO($run, 1, 'tools', [], array_fill_keys(\array_slice($ids, $i + 1), true), [], 11 === $i, new ToolCallResult($run, 1, 'tools', 1, $id, $id, $i, 'result-'.$i));
@@ -200,7 +200,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $sql->records = [];
         $this->apply($store, $run, 'results', $actions);
         $this->assertSame(1, $paths->calls);
-        $this->assertSame(1, $this->parentCounts($sql));
+        $this->assertSame(13, $this->parentCounts($sql), 'Result publication also rechecks write authority.');
         foreach ([true, false] as $full) {
             $paths->calls = 0;
             $sql->records = [];

@@ -39,6 +39,8 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -261,8 +263,7 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->entityManager,
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $selectionService = new ModelSelectionService(

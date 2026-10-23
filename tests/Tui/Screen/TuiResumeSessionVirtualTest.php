@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Screen;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -12,6 +13,8 @@ use Ineersa\Tui\Tests\Support\ResumeCanonicalEventsFixture;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
@@ -35,8 +38,8 @@ final class TuiResumeSessionVirtualTest extends TestCase
     #[Test]
     public function testResumeShowsRestoringNoticeInsteadOfReconstructingTheArchive(): void
     {
-        $store = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $this->projectDir),
-            $this->createStub(EntityManagerInterface::class), new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $store = new HatfieldSessionStore(new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $this->projectDir),
+            $this->createStub(EntityManagerInterface::class), new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $initializer = new \Ineersa\Tui\Application\SessionInitializer($store, new \Ineersa\Tui\Transcript\TranscriptBlockFactory());
         $state = new TuiSessionState(self::SESSION_ID, true);
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);

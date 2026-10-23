@@ -20,6 +20,8 @@ use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 #[CoversClass(SessionPickerController::class)]
 final class SessionPickerControllerTest extends TestCase
@@ -54,8 +56,7 @@ final class SessionPickerControllerTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $controller = new SessionPickerController($this->tui(), $this->screen(), $sessionStore, $switch);
 
         $controller->applySelectEffect('42');

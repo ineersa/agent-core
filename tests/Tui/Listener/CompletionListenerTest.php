@@ -30,6 +30,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
@@ -799,8 +801,7 @@ final class CompletionListenerTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $isolatedContext = new TuiRuntimeContext(
             tui: $isolatedTui,
             client: $client,
@@ -985,7 +986,7 @@ final class CompletionListenerTest extends TestCase
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                dispatcher: new EventDispatcher(), );
+                dispatcher: new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
@@ -1048,7 +1049,7 @@ final class CompletionListenerTest extends TestCase
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                dispatcher: new EventDispatcher(), );
+                dispatcher: new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
@@ -1107,7 +1108,7 @@ final class CompletionListenerTest extends TestCase
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                dispatcher: new EventDispatcher(), );
+                dispatcher: new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),
@@ -1171,7 +1172,7 @@ final class CompletionListenerTest extends TestCase
             $sessionStore = new HatfieldSessionStore(
                 appConfig: $appConfig,
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                dispatcher: new EventDispatcher(), );
+                dispatcher: new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
             $context = new TuiRuntimeContext(
                 tui: $isolatedTui,
                 client: $this->createStub(AgentSessionClient::class),

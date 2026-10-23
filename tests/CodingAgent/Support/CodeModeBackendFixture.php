@@ -12,21 +12,27 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Container\ContainerInterface;
+use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
-final readonly class CodeModeBackendFixture
+final class CodeModeBackendFixture
 {
-    public RunState $state;
-    public ExecuteToolCall $call;
+    public readonly RunState $state;
+    public readonly ExecuteToolCall $call;
+    private int $completionCursor;
 
-    public function __construct(private ContainerInterface $container, string $script, string $toolName = 'code_mode')
+    public function __construct(private readonly ContainerInterface $container, string $script, string $toolName = 'code_mode', ?string $runId = null)
     {
-        $run = $container->get(HatfieldSessionStore::class)->createSession();
+        $this->completionCursor = \count($container->get('messenger.transport.run_control')->getSent());
+        $run = $runId ?? $container->get(HatfieldSessionStore::class)->createSession();
         $arguments = 'code_mode' === $toolName ? ['script' => $script] : ['agent' => 'scout', 'task' => $script];
         $this->call = new ExecuteToolCall($run, 1, 'step', 1, 'original-execution', 'cm', $toolName, $arguments, 0, mode: 'sequential', timeoutSeconds: 8);
         $assistant = new AgentMessage('assistant', [], metadata: ['tool_calls' => [['id' => 'cm', 'name' => $toolName, 'arguments' => $arguments, 'order_index' => 0]]]);
@@ -51,5 +57,25 @@ final readonly class CodeModeBackendFixture
         $this->container->get(RunOperationalProjectionRepository::class)->replace($next);
 
         return $next;
+    }
+
+    /** Consume actual sealed completion/admission envelopes, not advancement/LLM work. */
+    public function consumeCompletions(): void
+    {
+        $transport = $this->container->get('messenger.transport.run_control');
+        $bus = $this->container->get('agent.command.bus');
+        for ($round = 0; $round < 8; ++$round) {
+            $sent = $transport->getSent();
+            if ($this->completionCursor === \count($sent)) {
+                return;
+            }
+            for (; $this->completionCursor < \count($sent); ++$this->completionCursor) {
+                $envelope = $sent[$this->completionCursor];
+                if ($envelope->getMessage() instanceof ToolPayloadMessage || $envelope->getMessage() instanceof ToolCallResult || $envelope->getMessage() instanceof DeliverBackgroundCompletionDTO) {
+                    $bus->dispatch($envelope->with(new ReceivedStamp('run_control')));
+                }
+            }
+        }
+        throw new \RuntimeException('Completion fixture exceeded its bounded message drain.');
     }
 }

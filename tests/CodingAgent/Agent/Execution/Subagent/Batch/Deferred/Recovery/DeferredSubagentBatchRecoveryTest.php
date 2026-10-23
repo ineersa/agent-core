@@ -45,6 +45,8 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -68,7 +70,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         /** @var DeferredSubagentChildRepository $childRepo */
         $childRepo = self::getContainer()->get(DeferredSubagentChildRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $parent = 'parent-batch-gap-'.bin2hex(random_bytes(2));
+        $parent = self::getContainer()->get(HatfieldSessionStore::class)->createSession('parent-batch-gap-'.bin2hex(random_bytes(2)));
         $tool = 'tool-batch-gap';
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
@@ -204,8 +206,8 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         /** @var DeferredSubagentBatchRepository $batchRepo */
         $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $sessionId = 'parent-batch-worker-'.bin2hex(random_bytes(2));
-        $otherParent = 'parent-batch-other-'.bin2hex(random_bytes(2));
+        $sessionId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('parent-batch-worker-'.bin2hex(random_bytes(2)));
+        $otherParent = self::getContainer()->get(HatfieldSessionStore::class)->createSession('parent-batch-other-'.bin2hex(random_bytes(2)));
         $deadline = new \DateTimeImmutable('+300 seconds');
 
         $unfinishedTool = 'tool-unfinished';
@@ -389,8 +391,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: (string) getcwd()),
             entityManager: $this->createStub(EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $resolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
         $path = $resolver->eventsPath($parentRunId, $artifactId);
         if (!is_dir(\dirname($path))) {

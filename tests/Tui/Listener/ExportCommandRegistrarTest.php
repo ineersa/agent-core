@@ -18,6 +18,8 @@ use Ineersa\Tui\Tests\Support\TuiSessionServicesFactoryTrait;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 #[CoversClass(ExportCommandRegistrar::class)]
 final class ExportCommandRegistrarTest extends TestCase
@@ -94,8 +96,7 @@ final class ExportCommandRegistrarTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
 
         return new TuiRuntimeContext(
             tui: $this->createStub(\Symfony\Component\Tui\Tui::class),

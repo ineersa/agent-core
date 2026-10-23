@@ -20,6 +20,8 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 
 /**
@@ -67,8 +69,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
                 cwd: $this->tempDir.'/project',
             ),
             entityManager: $this->entityManager,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $this->sessionMetaStore = $hatfieldSessionStore;
 
         $entity = new HatfieldSession();

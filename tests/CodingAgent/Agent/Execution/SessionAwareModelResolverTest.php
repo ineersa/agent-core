@@ -31,6 +31,8 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -497,8 +499,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
                 cwd: $this->tempDir.'/project',
             ),
             entityManager: $this->entityManager,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $sessionMetaStore = $hatfieldSessionStore;
 
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);

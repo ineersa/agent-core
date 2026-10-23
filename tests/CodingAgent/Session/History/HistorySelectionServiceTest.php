@@ -32,6 +32,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Lock\Store\InMemoryStore;
 
 final class HistorySelectionServiceTest extends TestCase
@@ -45,7 +46,7 @@ final class HistorySelectionServiceTest extends TestCase
     {
         parent::setUp();
         $this->directory = TestDirectoryIsolation::createProjectTempDir('history-selection');
-        $sessionStore = new HatfieldSessionStore(new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->directory), $this->createStub(EntityManagerInterface::class), new EventDispatcher());
+        $sessionStore = new HatfieldSessionStore(new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->directory), $this->createStub(EntityManagerInterface::class), new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $this->store = HistoryEventStoreFactory::create($sessionStore, [
             RunEvent::forAppend('selection', 0, 'run_started', ['payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'First prompt']]]]]]),
             RunEvent::forAppend('selection', 100, 'turn_advanced', ['turn_no' => 100]),

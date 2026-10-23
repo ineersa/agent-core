@@ -35,6 +35,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\HttpClient\HttpClient;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Yaml\Yaml;
 
@@ -97,8 +99,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
                 cwd: $this->tempDir.'/project',
             ),
             entityManager: $this->entityManager,
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $this->sessionMetaStore = $hatfieldSessionStore;
     }
 

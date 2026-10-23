@@ -30,6 +30,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 
 class ModelCommandHandlerTest extends TestCase
@@ -65,8 +67,7 @@ class ModelCommandHandlerTest extends TestCase
                 cwd: $this->tempDir.'/project',
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $this->sessionMetaStore = $hatfieldSessionStore;
 
         $appConfig = $this->makeAppConfig($this->standardAiData());

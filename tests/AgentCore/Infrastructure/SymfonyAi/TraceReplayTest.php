@@ -36,6 +36,8 @@ use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\Provider;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 
 /**
@@ -175,8 +177,7 @@ final class TraceReplayTest extends PerMethodIsolatedKernelTestCase
         $this->sessionMetaStore = new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->isolatedCwd()),
             entityManager: $this->entityManager,
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
     }
 
     /** @return array<string, mixed> */

@@ -46,6 +46,8 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Uid\Uuid;
 
@@ -73,7 +75,7 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
         $em->persist($entity);
         $em->flush();
         $this->sessionId = (string) $entity->id;
-        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher());
+        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
     }
 
     protected function tearDown(): void
@@ -104,7 +106,7 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
         // Drop the ORM identity map and construct a new store/adapter, as a resumed worker does.
         $em = static::getContainer()->get('doctrine.orm.default_entity_manager');
         $em->clear();
-        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher());
+        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $this->invoke($messages, 'low');
         $this->assertSame($this->bodies[3], $this->bodies[4]);
         $before = $em->find(HatfieldSession::class, (int) $this->sessionId)->reasoningBaseline;
@@ -358,7 +360,7 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
 
     private function startCanonicalReasoningEpoch(string $effort = 'high', bool $withToolExchange = false): \Ineersa\CodingAgent\Session\SessionRunEventStore
     {
-        $store = new \Ineersa\CodingAgent\Session\SessionRunEventStore($this->sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
+        $store = new \Ineersa\CodingAgent\Session\SessionRunEventStore($this->sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new LockFactory(new FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
         $append = fn (int $turn, string $type, array $payload) => \Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder::append($store, \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($this->sessionId, $turn, $type, $payload));
         $append(0, 'run_started', ['payload' => ['messages' => [self::user('first')->toArray()]]]);
         $append(1, 'turn_advanced', ['turn_no' => 1, 'step_id' => 'first']);
@@ -401,7 +403,7 @@ final class ChatGPTReasoningTransitionRequestHookTest extends IsolatedKernelTest
     {
         $em = static::getContainer()->get('doctrine.orm.default_entity_manager');
         $em->clear();
-        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher());
+        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $container = static::getContainer();
         $source = new \Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore($store, $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory::class), $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class));
         $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($container->get('event_dispatcher'), new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState());

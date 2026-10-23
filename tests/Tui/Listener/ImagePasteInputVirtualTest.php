@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\ImagePaste\ClipboardImageReadResultDTO;
 use Ineersa\Tui\ImagePaste\PastedImageValidationService;
@@ -21,6 +22,8 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Event\TickEvent;
 
 #[CoversClass(ImagePasteInputListener::class)]
@@ -202,7 +205,7 @@ final class ImagePasteInputVirtualTest extends TestCase
             $state,
             $screen,
             $blockFactory,
-            new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
+            new HatfieldSessionStore(
                 new \Ineersa\CodingAgent\Config\AppConfig(
                     tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
                     logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
@@ -210,11 +213,10 @@ final class ImagePasteInputVirtualTest extends TestCase
                     cwd: $this->tempDir,
                 ),
                 $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                new \Symfony\Component\EventDispatcher\EventDispatcher(),
-            ),
+                new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore())),
             new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
                 new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
-                new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
+                new HatfieldSessionStore(
                     new \Ineersa\CodingAgent\Config\AppConfig(
                         tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
                         logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
@@ -222,8 +224,7 @@ final class ImagePasteInputVirtualTest extends TestCase
                         cwd: $this->tempDir,
                     ),
                     $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                    new \Symfony\Component\EventDispatcher\EventDispatcher(),
-                ),
+                    new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore())),
                 new \Ineersa\CodingAgent\Config\AppConfig(
                     tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
                     logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),

@@ -21,4 +21,9 @@ final class CountingToolBatchRunStoragePaths implements ToolBatchRunStoragePaths
 
         return $this->paths->resolveToolBatchesDirectory($runId);
     }
+
+    public function withStorageWriteLock(string $directory, callable $write): mixed
+    {
+        return $this->paths->withStorageWriteLock($directory, $write);
+    }
 }

@@ -930,8 +930,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
 
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);
@@ -1033,8 +1032,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);
         $eventStore = new SessionRunEventStore(
@@ -1061,8 +1059,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), storageLocks: new LockFactory(new FlockStore()));
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);
         $eventStore = new SessionRunEventStore(
