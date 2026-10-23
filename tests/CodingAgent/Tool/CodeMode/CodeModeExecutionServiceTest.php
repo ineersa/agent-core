@@ -40,6 +40,7 @@ final class CodeModeExecutionServiceTest extends TestCase
             $this->assertStringContainsString('OUT', $e['notice']);
             $this->assertStringContainsString('ERR', $e['notice']);
             $this->assertStringContainsString($e['raw_path'], $e['notice']);
+            $this->assertTrue($e['automatic_batch_cleanup']);
             $this->assertTrue($e['raw_exists_after_batch_delete']);
             $this->assertContains('agent_command_queued', $e['admission_events']);
             $this->assertSame(0, $e['duplicate_terminal_effects']);

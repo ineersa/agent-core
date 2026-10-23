@@ -39,6 +39,8 @@ use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as ToolboxResult;
 use Symfony\AI\Platform\Result\ToolCall as ToolboxCall;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Serializer\SerializerInterface;
 
@@ -187,19 +189,22 @@ try {
     $done = json_decode(file_get_contents($directory.'/worker-done'), true, flags: \JSON_THROW_ON_ERROR);
     $terminal = new CodeModeOwnerDTO($state->runId, $row['identity'], 'cm');
     $finished = $handler->handle($terminal, $state);
-    $state = $f->commit($state, $finished);
+    // Consume the actual run-control delivery, not a fixture-only settlement.
+    $c->get('agent.command.bus')->dispatch(new Envelope($terminal, [new ReceivedStamp('run_control')]));
+    $automaticCleanup = null === $batches->loadSchedule($state->runId, 1, 'step')
+        && null === $batches->loadCallReference($state->runId, 1, 'step', 'cm');
     $notice = $finished->postCommitEffects[0];
     $admission = $c->get(BackgroundCompletionRunHandler::class)->handle($notice, $state);
     $state = $f->commit($state, $admission);
     $row = $executions->invocation($state->runId, 'cm');
     $rawRef = $execution->resultReference($row['raw_reference']);
     $rawPath = $artifacts->path($rawRef);
-    $batches->delete($state->runId, 1, 'step');
     $raw = $artifacts->read($rawRef);
     echo json_encode([...$evidence, 'worker' => $done, 'notice' => $notice->text,
         'admission_events' => array_column($admission->events, 'type'),
         'duplicate_terminal_effects' => count($handler->handle($terminal, $state)->postCommitEffects),
         'duplicate_notice_events' => count($c->get(BackgroundCompletionRunHandler::class)->handle($notice, $state)->events),
+        'automatic_batch_cleanup' => $automaticCleanup,
         'raw' => $raw->result, 'raw_path' => $rawPath, 'raw_exists_after_batch_delete' => is_file($rawPath),
         'workspace_cleaned' => !is_dir(dirname($blocked['script']))], \JSON_THROW_ON_ERROR)."\n";
 } finally {
