@@ -81,7 +81,8 @@ final readonly class CodeModeHostBridge
             $failure = null;
             $diagnostics = [];
             $captureAttempted = false;
-            $capture = new CodeModeDiagnosticCapture($this->outputCap, $parentContext?->runId(), $workspace['dir']);
+            $capture = new CodeModeDiagnosticCapture($this->outputCap, $parentContext?->runId(), $workspace['dir'],
+                null === $executionId ? null : fn (string $path): string => $this->execution->retainDiagnostic($executionId, $path));
 
             try {
                 try {

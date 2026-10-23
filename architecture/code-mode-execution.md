@@ -146,6 +146,12 @@ session's `runtime/code-mode-results` directory. They retain the existing strict
 representation, identity, byte-length and SHA-256 checks. They are separate from
 the disposable batch transport files.
 
+Oversized diagnostic streams use the same bounded OutputCap capture and UTF-8
+validation, but persist directly into invocation-owned diagnostic files beside
+the native artifacts. Their paths include the raw stream's SHA-256 hash. Controller
+cleanup removes disposable OutputCap files without deleting these retained bytes.
+Successful and failed results keep the same diagnostic paths through explicit repair.
+
 Before workspace cleanup, the host seals the original structured value and
 stdout/stderr diagnostics, or a failed result with its diagnostic and failure
 metadata. Failure does not become a successful null result. If artifact
@@ -166,6 +172,10 @@ Each publication checks the owning session row while holding that lock. Generic
 payloads, processed-result bodies and their reference anchors, and native artifacts
 use the same boundary. Deletion holds it through the SQL transaction and filesystem
 cleanup. Rollback preserves write authority; committed deletion refuses late writes.
+Registration and controller recovery acquire storage admission before opening their
+metadata transaction and keep it through commit. Nested correlation and result
+publication reuse that admission. Ordinary deferred registration uses the same
+order, so deletion cannot hold storage while waiting for their SQLite writer.
 The boundary is independent of run-owner admission and never covers a host's
 physical execution or reserves worker-pool capacity.
 

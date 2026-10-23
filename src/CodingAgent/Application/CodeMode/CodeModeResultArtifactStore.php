@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Application\CodeMode;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\SessionToolPayloadStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Symfony\Component\Filesystem\Filesystem;
@@ -26,6 +27,34 @@ final readonly class CodeModeResultArtifactStore
     public function publish(ToolCallResult|ExecuteToolCall $result): ToolPayloadReferenceDTO
     {
         return $this->store($result->runId())->publish($result);
+    }
+
+    public function retainDiagnostic(string $runId, string $toolCallId, string $source): string
+    {
+        $root = \dirname($this->paths->resolveToolBatchesDirectory($runId)).'/code-mode-results';
+
+        return $this->paths->withStorageWriteLock($root, function () use ($root, $toolCallId, $source): string {
+            $hash = hash_file('sha256', $source);
+            if (false === $hash) {
+                throw new \RuntimeException('Code-mode diagnostic cannot be hashed.');
+            }
+            $path = $root.'/'.hash('sha256', $toolCallId).'/diagnostics/'.$hash.'.txt';
+            // Symfony copies through streams. Never hydrate an oversized diagnostic
+            // or leave the retained terminal pointing into disposable OutputCap data.
+            $this->filesystem->mkdir(\dirname($path), 0o700);
+            if (is_link($path)) {
+                throw new ToolPayloadException('Code-mode diagnostic cannot be a symbolic link.');
+            }
+            if (!is_file($path)) {
+                $this->filesystem->copy($source, $path);
+                $this->filesystem->chmod($path, 0o600);
+            }
+            if ($hash !== hash_file('sha256', $path)) {
+                throw new ToolPayloadException('Immutable code-mode diagnostic has changed.');
+            }
+
+            return $path;
+        });
     }
 
     public function read(ToolPayloadReferenceDTO $reference): ToolCallResult

@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
+use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Uid\Uuid;
@@ -38,6 +39,7 @@ final readonly class CodeModeExecutionService
         private ApplicationDbTransactionInterface $transactions,
         private DeferredToolInvocationFence $fence,
         private RunHistorySourceProviderInterface $histories,
+        private ToolBatchRunStoragePathsInterface $paths,
     ) {
     }
 
@@ -48,7 +50,9 @@ final readonly class CodeModeExecutionService
             return null;
         }
 
-        return $this->locks->synchronized($context->runId(), function () use ($context): string {
+        // Storage admission precedes SQLite reads and the registration transaction.
+        // Deletion takes the same order; nested correlation publication reuses it.
+        return $this->locks->synchronized($context->runId(), fn (): string => $this->paths->withStorageWriteLock($this->paths->resolveToolBatchesDirectory($context->runId()), function () use ($context): string {
             $call = $this->batches->loadCall($context->runId(), $context->turnNo(), $context->stepId(), $context->toolCallId());
             $reference = $this->batches->loadCallReference($context->runId(), $context->turnNo(), $context->stepId(), $context->toolCallId());
             $stored = null === $reference ? null : $this->payloads->read($reference);
@@ -85,12 +89,20 @@ final readonly class CodeModeExecutionService
             });
 
             return $identity;
-        });
+        }));
     }
 
     public function ready(string $identity): void
     {
         $this->executions->ready($identity);
+    }
+
+    public function retainDiagnostic(string $identity, string $source): string
+    {
+        $metadata = $this->deferred->findMetadataByDeferredId($identity)
+            ?? throw new \RuntimeException('Code-mode diagnostic has no retained owner.');
+
+        return $this->artifacts->retainDiagnostic($metadata->reference->runId, $metadata->reference->toolCallId, $source);
     }
 
     public function cancellationToken(string $identity, CancellationTokenInterface $parent): CancellationTokenInterface

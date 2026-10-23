@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
+use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
@@ -38,13 +39,17 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         private readonly ValidatorInterface $validator,
         private readonly DeferredToolInvocationFence $fence,
         private readonly DeferredAcceptedResultReaderInterface $acceptedResults,
+        private readonly ToolBatchRunStoragePathsInterface $paths,
     ) {
         parent::__construct($registry, DeferredToolCompletion::class);
     }
 
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
     {
-        return $this->locks->synchronized($correlation->runId, fn () => $this->registerLocked($correlation));
+        return $this->locks->synchronized($correlation->runId, fn () => $this->paths->withStorageWriteLock(
+            $this->paths->resolveToolBatchesDirectory($correlation->runId),
+            fn () => $this->registerLocked($correlation),
+        ));
     }
 
     public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation

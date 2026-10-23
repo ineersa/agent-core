@@ -49,6 +49,9 @@ use function Symfony\Component\String\u;
  */
 final class HatfieldSessionStore
 {
+    /** @var array<string, true> Storage admission spans nested metadata writes. */
+    private array $heldStorageLocks = [];
+
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly EntityManagerInterface $entityManager,
@@ -348,14 +351,20 @@ final class HatfieldSessionStore
     private function withSessionStorageLock(string $sessionId, callable $work): mixed
     {
         // Separate from run-owner admission: terminal evidence can still be sealed
-        // while that owner is unavailable. Hold only during writes or deletion.
+        // while that owner is unavailable. Acquire before opening a metadata
+        // transaction, and keep it through commit. Nested publication reuses it.
+        if (isset($this->heldStorageLocks[$sessionId])) {
+            return $work();
+        }
         $lock = $this->storageLocks->createLock('session-storage-'.hash('sha256', $this->getSessionDir($sessionId)));
         if (!$lock->acquire(true)) {
             throw new ToolPayloadException('Session storage cannot be locked.');
         }
+        $this->heldStorageLocks[$sessionId] = true;
         try {
             return $work();
         } finally {
+            unset($this->heldStorageLocks[$sessionId]);
             $lock->release();
         }
     }

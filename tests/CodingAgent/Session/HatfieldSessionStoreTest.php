@@ -27,6 +27,7 @@ use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\OutputCap;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -63,6 +64,40 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
             $this->assertCount(3, $evidence['denied']);
             $this->assertFalse($evidence['directory_exists']);
             $this->assertFalse($evidence['session_exists']);
+        } finally {
+            if ($process->isRunning()) {
+                $process->stop(0);
+            }
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public static function transactionalNativeOperations(): iterable
+    {
+        yield 'native registration' => ['registration'];
+        yield 'controller recovery' => ['recovery'];
+    }
+
+    #[DataProvider('transactionalNativeOperations')]
+    public function testPermanentDeletionUsesTheSameLockOrderAsNativeMetadata(string $operation): void
+    {
+        // Independent kernels hold a real SQLite writer at the production
+        // transaction boundary. The deleter must block on storage, not SQLite.
+        // Cold kernel/schema startup makes 15 seconds a safety cap only.
+        $directory = TestDirectoryIsolation::createProjectTempDir('code-mode-transaction-delete');
+        $process = new Process([\PHP_BINARY, \dirname(__DIR__).'/Support/code-mode-storage-transaction-process.php', $directory, 'owner', $operation], env: ['HATFIELD_SESSION_ID' => false]);
+        try {
+            $process->setTimeout(15);
+            $process->mustRun();
+            $lines = explode("\n", trim($process->getOutput()));
+            $evidence = json_decode($lines[array_key_last($lines)], true, flags: \JSON_THROW_ON_ERROR);
+            $this->assertTrue($evidence['blocked']);
+            $this->assertTrue($evidence['completed']);
+            $this->assertSame(['generic', 'native', 'diagnostic'], $evidence['denied']);
+            $this->assertFalse($evidence['directory_exists']);
+            $this->assertFalse($evidence['session_exists']);
+            $this->assertSame(0, $evidence['native_rows']);
+            $this->assertSame(0, $evidence['deferred_rows']);
         } finally {
             if ($process->isRunning()) {
                 $process->stop(0);

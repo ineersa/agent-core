@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
+use Ineersa\CodingAgent\Tool\OutputCap;
 
 final class CodeModeResultArtifactStoreTest extends IsolatedKernelTestCase
 {
@@ -46,6 +47,49 @@ final class CodeModeResultArtifactStoreTest extends IsolatedKernelTestCase
         $this->expectException(ToolPayloadException::class);
         $this->expectExceptionMessage('integrity');
         $store->read($reference);
+    }
+
+    public function testDiagnosticPromotionNeverOverwritesChangedRetainedBytes(): void
+    {
+        $c = self::getContainer();
+        $fixture = new CodeModeBackendFixture($c, 'return 42;');
+        $directory = TestDirectoryIsolation::createProjectTempDir('native-diagnostic');
+        try {
+            $source = $directory.'/stdout.log';
+            file_put_contents($source, 'original diagnostic');
+            $store = $c->get(CodeModeResultArtifactStore::class);
+            $path = $store->retainDiagnostic($fixture->state->runId, 'cm', $source);
+            $this->assertSame($path, $store->retainDiagnostic($fixture->state->runId, 'cm', $source));
+            file_put_contents($path, 'changed diagnostic');
+            $this->expectException(ToolPayloadException::class);
+            $this->expectExceptionMessage('Immutable code-mode diagnostic has changed.');
+            $store->retainDiagnostic($fixture->state->runId, 'cm', $source);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public function testFailedHostRetainsOversizedDiagnosticBytesOutsideDisposableOutputCapStorage(): void
+    {
+        $c = self::getContainer();
+        $script = 'for ($i=0; $i<160; ++$i) { fwrite(STDOUT, str_repeat("O",8192)); fwrite(STDERR, str_repeat("E",8192)); } throw new RuntimeException("large failure");';
+        $fixture = new CodeModeBackendFixture($c, $script);
+        try {
+            $this->execute($fixture, $script);
+            $this->fail('Script unexpectedly succeeded.');
+        } catch (ToolCallException $error) {
+            $this->assertStringContainsString('large failure', $error->getMessage());
+        }
+        $row = $c->get(CodeModeExecutionRepository::class)->invocation($fixture->state->runId, 'cm');
+        $reference = $c->get(CodeModeExecutionService::class)->resultReference($row['raw_reference']);
+        $result = $c->get(CodeModeResultArtifactStore::class)->read($reference);
+        $this->assertTrue($result->isError);
+        $this->assertSame(2, preg_match_all('/Saved full output: ([^\n]+)/', $result->error['message'], $matches));
+        $c->get(OutputCap::class)->cleanupRun($fixture->state->runId, 'test');
+        foreach ($matches[1] as $index => $path) {
+            $this->assertStringContainsString('/code-mode-results/', $path);
+            $this->assertSame(hash('sha256', str_repeat(0 === $index ? 'O' : 'E', 1310720)), hash_file('sha256', $path));
+        }
     }
 
     public function testFailedArtifactRegistrationKeepsOnlyCopyAndReportsOwnedEvidencePath(): void

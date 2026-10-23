@@ -17,6 +17,7 @@ final class CodeModeDiagnosticCapture
         private readonly OutputCap $outputCap,
         private readonly ?string $runId,
         string $workspace,
+        private readonly ?\Closure $retainOversized = null,
     ) {
         $this->stdoutPath = $workspace.'/stdout.log';
         $this->stderrPath = $workspace.'/stderr.log';
@@ -32,7 +33,10 @@ final class CodeModeDiagnosticCapture
                 throw new \RuntimeException('Failed to open code-mode diagnostic stream.');
             }
             try {
-                $captured = $this->outputCap->capture($this->validatedChunks($stream), $this->runId);
+                // Native evidence goes directly into retained ownership. Creating
+                // a disposable copy here could race controller cleanup or deletion.
+                $captured = $this->outputCap->capture($this->validatedChunks($stream), $this->runId,
+                    null === $this->retainOversized ? null : fn (): string => ($this->retainOversized)($path));
             } finally {
                 fclose($stream);
             }

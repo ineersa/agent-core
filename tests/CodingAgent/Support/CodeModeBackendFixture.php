@@ -33,7 +33,8 @@ final class CodeModeBackendFixture
     public readonly ExecuteToolCall $call;
     private int $completionCursor;
 
-    public function __construct(private readonly ContainerInterface $container, string $script, string $toolName = 'code_mode', ?string $runId = null)
+    /** @param array<string, mixed> $runMetadata */
+    public function __construct(private readonly ContainerInterface $container, string $script, string $toolName = 'code_mode', ?string $runId = null, array $runMetadata = ['model' => 'model', 'reasoning' => 'medium'])
     {
         $this->completionCursor = \count($container->get('messenger.transport.run_control')->getSent());
         $run = $runId ?? $container->get(HatfieldSessionStore::class)->createSession();
@@ -42,7 +43,7 @@ final class CodeModeBackendFixture
         $assistant = new AgentMessage('assistant', [], metadata: ['tool_calls' => [['id' => 'cm', 'name' => $toolName, 'arguments' => $arguments, 'order_index' => 0]]]);
         $this->state = RunStateBuilder::running($run)->withTurnNo(1)->withLastSeq(3)->withActiveStepId('step')->withPendingToolCalls(['cm' => false])->withMessages([$assistant])->build();
         $events = (new EventFactory())->eventsFromSpecs($run, 1, 1, [
-            ['type' => 'run_started', 'payload' => ['step_id' => 'step', 'payload' => ['metadata' => ['model' => 'model', 'reasoning' => 'medium']]]],
+            ['type' => 'run_started', 'payload' => ['step_id' => 'step', 'payload' => ['metadata' => $runMetadata]]],
             ['type' => 'turn_advanced', 'payload' => ['turn_no' => 1, 'step_id' => 'step']],
             ['type' => 'llm_step_completed', 'payload' => ['assistant_message' => ['role' => 'assistant', 'content' => [], 'tool_calls' => $assistant->metadata['tool_calls']]]],
         ]);

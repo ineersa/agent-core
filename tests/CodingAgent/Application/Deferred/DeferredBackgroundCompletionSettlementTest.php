@@ -52,6 +52,10 @@ use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
+use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
@@ -133,7 +137,7 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
     {
         $c = self::getContainer();
         $script = $host ? 'for ($i=0; $i<160; ++$i) { fwrite(STDOUT, str_repeat("O",8192)); fwrite(STDERR, str_repeat("E",8192)); } return ["answer"=>42,"nested"=>[false,null],"workspace"=>__DIR__];' : 'return 42;';
-        $fixture = new CodeModeBackendFixture($c, $script);
+        $fixture = new CodeModeBackendFixture($c, $script, runMetadata: ['model' => 'model', 'reasoning' => 'medium', ...($host ? ['session' => ['kind' => 'root']] : [])]);
         $run = $fixture->state->runId;
         $execution = $c->get(CodeModeExecutionService::class);
         $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
@@ -242,6 +246,20 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
         $this->assertNotNull($processed);
         $this->assertEquals($result, $payloads->read($processed));
         $this->completeRoot($run);
+        if ($host) {
+            // Exercise the production lifecycle listeners, including OutputCap
+            // cleanup, before explicit repair reads the retained terminal.
+            $disposable = $c->get(OutputCap::class)->capture([str_repeat('D', 1310720)], $run)['output_cap']['saved_path'];
+            $this->assertFileExists($disposable);
+            $c->get(EventDispatcherInterface::class)->dispatch(new ControllerSessionShutdownEvent($run));
+            $c->get(EventDispatcherInterface::class)->dispatch(new ControllerSessionStartingEvent($run));
+            $this->assertFileDoesNotExist($disposable);
+            foreach ($paths as $index => $path) {
+                $this->assertStringContainsString('/code-mode-results/', $path);
+                $this->assertSame(hash('sha256', str_repeat(0 === $index ? 'O' : 'E', 1310720)), hash_file('sha256', $path));
+            }
+        }
+        $acceptedBeforeRepair = $deferred->findAcceptedResultReferenceByDeferredId($id);
         $sent = $this->transport->getSent();
         $preview = $c->get(SessionRepairService::class)->repair($run, false, 'preview-processed');
         $this->assertStringContainsString('Retained deferred', $preview->message);
@@ -252,7 +270,7 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
         $refused = $c->get(SessionRepairService::class)->repair($run, true, 'refuse-processed');
         $this->assertSame(SessionRepairRefusalReasonEnum::ActiveStreaming, $refused->refusalReason);
         $this->assertEquals($sent, $this->transport->getSent());
-        $this->assertNull($deferred->findAcceptedResultReferenceByDeferredId($id));
+        $this->assertEquals($acceptedBeforeRepair, $deferred->findAcceptedResultReferenceByDeferredId($id));
         $this->assertEquals($processed, $payloads->findProcessedResultReference($invocation));
         $context->replaceCurrent($state);
 
@@ -287,7 +305,13 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
                 $this->assertSame(hash('sha256', str_repeat(0 === $index ? 'O' : 'E', 1310720)), hash_file('sha256', $path));
             }
             $this->assertCount(2, glob(\dirname($paths[0]).'/*.txt'));
-            $c->get(OutputCap::class)->cleanupRun($run, 'test');
+            $artifacts = $c->get(CodeModeResultArtifactStore::class);
+            $c->get(HatfieldSessionStore::class)->deleteSession($run);
+            foreach ($paths as $path) {
+                $this->assertFileDoesNotExist($path);
+            }
+            $this->expectException(ToolPayloadException::class);
+            $artifacts->retainDiagnostic($run, 'cm', $paths[0]);
         }
     }
 
