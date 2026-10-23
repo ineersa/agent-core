@@ -43,14 +43,7 @@ Base path: `sessions.path` setting (default under project `.hatfield/sessions/`)
 
 Table `hatfield_session` stores id, display name, timestamps, provider cache key, and related session metadata. Directory name is canonical; embedded IDs are validated on read.
 
-The nullable `reasoning_baseline` JSON column stores the provider-qualified model
-and fixed effort for Astra reasoning updates, plus the last emitted effort and
-history-bound transition markers keyed by surviving request segments. The selected
-`reasoning` remains independent. Resume, async compaction success, hook
-replacement-summary compaction, and history-tail discard on rewind/edit clear the
-baseline so discarded switches are not replayed; the next request establishes it
-from the current selection. Model changes also clear it. Worker recreation and
-socket reconnection do not clear it.
+The `reasoning` column stores the selected effort. ChatGPT sends that selection as request-level `reasoning.effort`, including after resume. No native reasoning transition ledger is stored.
 
 ### Naming
 

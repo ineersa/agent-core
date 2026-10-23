@@ -398,15 +398,11 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
     public function testAttachDoesNotStartModelTurnOrCreateTransportMetadata(): void
     {
         $run = $this->seed();
-        $sessions = self::getContainer()->get(HatfieldSessionStore::class);
-        $baseline = $sessions->findSession($run)->reasoningBaseline;
         $active = self::getContainer()->get(ActiveRunContextInterface::class);
         $state = $active->requireLoaded($run);
         $bus = self::getContainer()->get('agent.command.bus');
         $queued = $bus->dispatch(new AttachRun($run, [], 'attach-id'));
-        $this->assertSame($baseline, $sessions->findSession($run)->reasoningBaseline);
         $bus->dispatch($queued->with(new ReceivedStamp('run_control')));
-        $this->assertNull($sessions->findSession($run)->reasoningBaseline);
         $this->assertSame($state->turnNo, $active->requireLoaded($run)->turnNo);
         $this->assertGreaterThan($state->lastSeq, $active->requireLoaded($run)->lastSeq);
         $this->assertSame([], self::getContainer()->get('messenger.transport.llm')->getSent());
@@ -692,7 +688,6 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertCount(1, $sent);
         $this->assertInstanceOf(AdvanceRun::class, $sent[0]->getMessage());
         $this->assertSame(0, $this->afterTurnCount);
-        $this->assertNull($sessions->findSession($run)->reasoningBaseline);
         $this->assertMaintenanceDidNotScheduleCompaction($run);
     }
 
@@ -721,7 +716,6 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $this->assertSame(0, $state->turnNo);
         $this->assertCount(2, $transport->getSent(), 'Attach must not enqueue its cleanup behind the follow-up.');
         $this->assertSame([], $container->get('messenger.transport.llm')->getSent());
-        $this->assertNull($sessions->findSession($run)->reasoningBaseline);
         $cleanup = $events->allFor($run);
         $this->assertSame(['run_started', 'waiting_human', 'agent_command_applied', 'agent_end', 'context_refreshed'], array_column($cleanup, 'type'));
         $bus->dispatch($queued[1]->with(new ReceivedStamp('run_control')));

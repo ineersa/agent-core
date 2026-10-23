@@ -91,12 +91,8 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $container->get(HatfieldSessionStore::class)->updateMetadata($parent, ['reasoning' => 'high']);
         $parentResult = $adapter->invoke(new ModelInvocationRequest('', new ModelInvocationInput(runId: $parent, messages: $messages)));
         $this->assertNull($parentResult->error);
-        $this->assertSame('low', $frames[1]['reasoning']['effort']);
-        $this->assertCount(1, array_filter($frames[1]['input'], static fn (array $item): bool => 'configuration_update' === ($item['type'] ?? null)));
-        $baseline = $entity->reasoningBaseline;
-        // The snapshot may already carry transform metadata from its owner. A child must strip it.
-        $anchor = array_key_last($messages);
-        $messages[$anchor] = new AgentMessage('user', $messages[$anchor]->content, metadata: [\Ineersa\CodingAgent\Agent\Execution\ChatGPTReasoningTransitionMetadata::KEY => 'high']);
+        $this->assertSame('high', $frames[1]['reasoning']['effort']);
+        $this->assertCount(0, array_filter($frames[1]['input'], static fn (array $item): bool => 'configuration_update' === ($item['type'] ?? null)));
         $snapshot = new ToolLaunchContextDTO(kind: ToolLaunchContextDTO::KIND_FORK, producingRunId: $parent, producingTurnNo: 2, producingModel: 'openai-codex/gpt-5.5', forkMessages: $messages);
         $started = null;
         $runner = $this->createMock(AgentRunnerInterface::class);
@@ -135,13 +131,12 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $this->assertNotSame($parentKey, $body['prompt_cache_key']);
             $this->assertSame('low', $body['reasoning']['effort']);
             $this->assertSame([], array_values(array_filter($body['input'], static fn (array $item): bool => 'configuration_update' === ($item['type'] ?? null))));
-            $this->assertSame($baseline, $em->find(\Ineersa\CodingAgent\Entity\HatfieldSession::class, (int) $parent)->reasoningBaseline);
         }
         $parentAgain = $this->forkProviderAdapter($this->httpProvider($http))->invoke(new ModelInvocationRequest('', new ModelInvocationInput(runId: $parent, messages: $messages)));
         $this->assertNull($parentAgain->error);
         $this->assertSame($parentKey, $frames[4]['prompt_cache_key']);
-        $this->assertSame('low', $frames[4]['reasoning']['effort']);
-        $this->assertSame(['high'], array_values(array_map(static fn (array $item): string => $item['reasoning']['effort'], array_filter($frames[4]['input'], static fn (array $item): bool => 'configuration_update' === ($item['type'] ?? null)))));
+        $this->assertSame('high', $frames[4]['reasoning']['effort']);
+        $this->assertSame([], array_values(array_map(static fn (array $item): string => $item['reasoning']['effort'], array_filter($frames[4]['input'], static fn (array $item): bool => 'configuration_update' === ($item['type'] ?? null)))));
     }
 
     public function testDeferredForkKeepsProviderKeyThroughRequestsWorkerRecreationAndResume(): void
@@ -391,8 +386,8 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $container = self::getContainer();
         $catalog = new HatfieldModelCatalog(new AiConfig(defaultModel: 'openai-codex/gpt-5.5', providers: [
             'openai-codex' => new AiProviderConfig(id: 'openai-codex', type: 'chatgpt', enabled: true,
-                compatibility: \Ineersa\CodingAgent\Config\Ai\AiCompatibility::fromArray(['thinking_format' => 'chatgpt', 'supports_reasoning_configuration_updates' => true]),
-                models: ['gpt-5.5' => new AiModelDefinition(id: 'gpt-5.5', reasoning: true, thinkingLevelMap: ['low' => 'low', 'high' => 'high'], compatibility: \Ineersa\CodingAgent\Config\Ai\AiCompatibility::fromArray(['supports_reasoning_configuration_updates' => true]))]),
+                compatibility: \Ineersa\CodingAgent\Config\Ai\AiCompatibility::fromArray(['thinking_format' => 'chatgpt']),
+                models: ['gpt-5.5' => new AiModelDefinition(id: 'gpt-5.5', reasoning: true, thinkingLevelMap: ['low' => 'low', 'high' => 'high'], compatibility: null)]),
         ]));
         $config = new AppConfig(new TuiConfig(theme: 'default'), new LoggingConfig(), catalog: $catalog);
         $store = $container->get(HatfieldSessionStore::class);
@@ -404,9 +399,9 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         return new LlmPlatformAdapter(
             statusReader: new NullRunOperationalStatusReader(), messageConverter: new AgentMessageConverter(),
             toolDescriptionProcessor: new DynamicToolDescriptionProcessor(), platform: new Platform([$provider]),
-            transformContextHooks: [new \Ineersa\CodingAgent\Agent\Execution\ChatGPTReasoningTransitionTransformHook($selection, $catalog, $store, childMetadataReader: $metadataReader)], convertToLlmHooks: [], streamObserver: null, costCalculator: null,
+            transformContextHooks: [], convertToLlmHooks: [], streamObserver: null, costCalculator: null,
             logger: new NullLogger(), denormalizer: AttributeSerializerValidatorTestFactory::denormalizer(), modelResolver: $resolver,
-            providerRequestPreparer: new \Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer([new \Ineersa\CodingAgent\Agent\Execution\ChatGPTReasoningTransitionRequestHook($store)], new \Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper([new \Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper()])),
+            providerRequestPreparer: new \Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderRequestPreparer([], new \Ineersa\AgentCore\Infrastructure\SymfonyAi\ProviderCompatibilityRequestShaper([new \Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper()])),
         );
     }
 

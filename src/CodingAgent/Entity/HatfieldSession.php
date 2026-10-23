@@ -71,13 +71,6 @@ class HatfieldSession
     #[ORM\Column(type: 'string', nullable: true)]
     public ?string $reasoning = null;
 
-    /** Initial HTTP reasoning effort and durable, message-anchored configuration updates.
-     * Model changes or invalidated history roots/anchors start a new reasoning epoch.
-     *
-     * @var array<string, mixed>|null */
-    #[ORM\Column(name: 'reasoning_baseline', type: 'json', nullable: true)]
-    public ?array $reasoningBaseline = null;
-
     /** User-visible session display name, initialized from the first user message
      * and later renameable via /rename. Capped at 200 characters. */
     #[ORM\Column(type: 'string', length: 200, options: ['default' => ''])]
