@@ -23,9 +23,11 @@ use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
  *   cost = uncached / 1_000_000 * input_price
  *        + cache_read / 1_000_000 * cache_read_price
  *        + cache_write / 1_000_000 * cache_write_price
- *        + (output_tokens + thinking_tokens) / 1_000_000 * output_price
+ *        + output_tokens / 1_000_000 * output_price
  *
- * Thinking tokens are billed at the output rate.
+ * Supported OpenResponses and Generic Completions extractors already include
+ * reasoning inside output/completion totals and expose thinking_tokens only as
+ * a detail. Do not add thinking_tokens again.
  *
  * If the model has no pricing configured (null or all-zero AiCost),
  * returns 0.0 which yields $0.00 in the TUI footer.
@@ -54,7 +56,6 @@ final readonly class AiCostCalculator implements CostCalculatorInterface
 
         $inputTokens = max(0, (int) ($usage['input_tokens'] ?? 0));
         $outputTokens = max(0, (int) ($usage['output_tokens'] ?? 0));
-        $thinkingTokens = max(0, (int) ($usage['thinking_tokens'] ?? 0));
 
         $cacheReadTokens = \array_key_exists('cache_read_tokens', $usage)
             ? max(0, (int) $usage['cache_read_tokens'])
@@ -85,10 +86,8 @@ final readonly class AiCostCalculator implements CostCalculatorInterface
             $total += ($cacheWriteTokens / 1_000_000) * $cost->cacheWrite;
         }
 
-        // Output tokens: regular output + thinking (billed at output rate)
-        $billableOutputTokens = $outputTokens + $thinkingTokens;
-        if ($billableOutputTokens > 0 && $cost->output > 0.0) {
-            $total += ($billableOutputTokens / 1_000_000) * $cost->output;
+        if ($outputTokens > 0 && $cost->output > 0.0) {
+            $total += ($outputTokens / 1_000_000) * $cost->output;
         }
 
         return $total;

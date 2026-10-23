@@ -234,6 +234,13 @@ final class ProvidersUpdateCommand
                         if (!\array_key_exists($key, $meta)) {
                             continue;
                         }
+                        if ('cost' === $key) {
+                            $existingCost = \is_array($models[$modelId]['cost'] ?? null)
+                                ? $models[$modelId]['cost']
+                                : [];
+                            $incomingCost = \is_array($meta[$key]) ? $meta[$key] : [];
+                            $meta[$key] = array_merge($existingCost, $incomingCost);
+                        }
                         if (($models[$modelId][$key] ?? null) !== $meta[$key]) {
                             $models[$modelId][$key] = $meta[$key];
                             $changed = true;

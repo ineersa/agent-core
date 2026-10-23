@@ -57,7 +57,9 @@ final class AiCostCalculatorTest extends TestCase
 
     public function testCalculateCostWithThinkingTokens(): void
     {
-        // Thinking tokens billed at output rate.
+        // Removed wrong behavior: billing output_tokens + thinking_tokens.
+        // Supported extractors include reasoning inside output_tokens and expose
+        // thinking_tokens only as detail, so cost uses the inclusive output total.
         $cost = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
             'input_tokens' => 100_000,
             'output_tokens' => 50_000,
@@ -65,9 +67,21 @@ final class AiCostCalculatorTest extends TestCase
         ]);
 
         // input: 100k × $3/M = $0.30
-        // output + thinking: 80k × $15/M = $1.20
-        // total: $1.50
-        $this->assertEqualsWithDelta(1.50, $cost, 0.01);
+        // output (includes reasoning): 50k × $15/M = $0.75
+        // total: $1.05
+        $this->assertEqualsWithDelta(1.05, $cost, 0.01);
+
+        $absentThinking = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 100_000,
+            'output_tokens' => 50_000,
+        ]);
+        $zeroThinking = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 100_000,
+            'output_tokens' => 50_000,
+            'thinking_tokens' => 0,
+        ]);
+        $this->assertEqualsWithDelta(1.05, $absentThinking, 0.01);
+        $this->assertEqualsWithDelta(1.05, $zeroThinking, 0.01);
     }
 
     public function testCalculateCostPartitionsCacheReadAndWrite(): void
@@ -105,6 +119,52 @@ final class AiCostCalculatorTest extends TestCase
         // cache read (from cached_tokens): 200_000 × $3.75/M = $0.75
         // total: $3.15 (not $3.00 + $0.75 double-billing)
         $this->assertEqualsWithDelta(3.15, $cost, 0.01);
+    }
+
+    public function testCalculateCostTreatsAbsentAndZeroCacheWritesAsOrdinaryInput(): void
+    {
+        $absent = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 1_000_000,
+            'output_tokens' => 0,
+        ]);
+        $zero = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 1_000_000,
+            'output_tokens' => 0,
+            'cache_creation_tokens' => 0,
+        ]);
+
+        $this->assertEqualsWithDelta(3.0, $absent, 0.01);
+        $this->assertEqualsWithDelta(3.0, $zero, 0.01);
+    }
+
+    public function testCalculateCostPrefersCacheReadTokensOverCachedAlias(): void
+    {
+        $cost = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 1_000_000,
+            'output_tokens' => 0,
+            'cache_read_tokens' => 100_000,
+            'cached_tokens' => 900_000,
+            'cache_creation_tokens' => 50_000,
+        ]);
+
+        // uncached: 850_000 × $3/M = $2.55
+        // cache read: 100_000 × $3.75/M = $0.375
+        // cache write: 50_000 × $6/M = $0.30
+        $this->assertEqualsWithDelta(3.225, $cost, 0.001);
+    }
+
+    public function testCalculateCostClampsMalformedCacheCountersToInput(): void
+    {
+        $cost = $this->calculator->calculateCost('anthropic/claude-sonnet-4', [
+            'input_tokens' => 100_000,
+            'output_tokens' => 0,
+            'cache_read_tokens' => 150_000,
+            'cache_creation_tokens' => 80_000,
+        ]);
+
+        // Read clamps to 100_000; write clamps to remaining 0.
+        // cache read: 100_000 × $3.75/M = $0.375
+        $this->assertEqualsWithDelta(0.375, $cost, 0.001);
     }
 
     public function testCalculateCostNoPricingReturnsZero(): void
