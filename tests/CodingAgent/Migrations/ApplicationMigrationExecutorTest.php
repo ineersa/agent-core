@@ -209,6 +209,18 @@ final class ApplicationMigrationExecutorTest extends TestCase
         $busyTimeout = (int) $connection->executeQuery('PRAGMA busy_timeout')->fetchOne();
         $columns = $connection->createSchemaManager()->listTableColumns('hatfield_session');
         $this->assertArrayHasKey('provider_cache_key', $columns);
+        $this->assertArrayNotHasKey(
+            'reasoning_baseline',
+            $columns,
+            'Fresh startup schema must omit hatfield_session.reasoning_baseline',
+        );
+        $this->assertNotFalse(
+            $connection->fetchOne(
+                'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+                ['Version20261023000232'],
+            ),
+            'Version20261023000232 must be registered and applied by the default startup executor',
+        );
 
         $recordedProviderKey = $connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
@@ -551,6 +563,69 @@ SQL);
         $this->assertSame($keys, $keysAfterSecondPass);
     }
 
+    public function testDefaultStartupExecutorDropsLegacyReasoningBaselineWhilePreservingSessionIdentity(): void
+    {
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/legacy-reasoning-baseline.sqlite');
+        $now = '2026-10-22 00:00:00';
+        $providerCacheKey = UuidV7::v7()->toRfc4122();
+        $connection->executeStatement(<<<'SQL'
+CREATE TABLE hatfield_session (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    cwd VARCHAR(255) NOT NULL,
+    prompt VARCHAR(255) DEFAULT NULL,
+    parent_id VARCHAR(255) DEFAULT NULL,
+    root_id VARCHAR(255) DEFAULT NULL,
+    model VARCHAR(255) DEFAULT NULL,
+    model_provider VARCHAR(255) DEFAULT NULL,
+    model_name VARCHAR(255) DEFAULT NULL,
+    reasoning VARCHAR(255) DEFAULT NULL,
+    reasoning_baseline CLOB DEFAULT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    name VARCHAR(200) DEFAULT '' NOT NULL,
+    provider_cache_key VARCHAR(36) DEFAULT NULL
+)
+SQL);
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_hatfield_session_provider_cache_key ON hatfield_session (provider_cache_key)');
+        $connection->insert('hatfield_session', [
+            'id' => 96,
+            'cwd' => '/legacy/session',
+            'prompt' => 'keep-me',
+            'parent_id' => null,
+            'root_id' => null,
+            'model' => 'chatgpt/gpt-5',
+            'model_provider' => 'chatgpt',
+            'model_name' => 'gpt-5',
+            'reasoning' => 'high',
+            'reasoning_baseline' => '{"model":"chatgpt/gpt-5","effort":"medium"}',
+            'created_at' => $now,
+            'updated_at' => $now,
+            'name' => 'legacy-session',
+            'provider_cache_key' => $providerCacheKey,
+        ]);
+
+        $this->recordAppliedMigrationsThrough($connection, 'Version20261022235428');
+
+        (new ApplicationMigrationExecutor($connection, new NullLogger()))();
+
+        $columns = $connection->createSchemaManager()->listTableColumns('hatfield_session');
+        $this->assertArrayNotHasKey('reasoning_baseline', $columns);
+        $this->assertNotFalse(
+            $connection->fetchOne(
+                'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+                ['Version20261023000232'],
+            ),
+        );
+
+        $row = $connection->fetchAssociative('SELECT id, reasoning, provider_cache_key, model, name FROM hatfield_session');
+        $this->assertIsArray($row);
+        $this->assertSame(96, (int) $row['id']);
+        $this->assertSame('high', $row['reasoning']);
+        $this->assertSame($providerCacheKey, $row['provider_cache_key']);
+        $this->assertSame('chatgpt/gpt-5', $row['model']);
+        $this->assertSame('legacy-session', $row['name']);
+    }
+
     public function testBusyTimeoutBelowMinimumThrowsRuntimeException(): void
     {
         // PDO::ATTR_TIMEOUT=1 maps to busy_timeout=1000ms, which is below
@@ -597,6 +672,16 @@ SQL);
             'Version20260720120000',
             'Version20260723230000',
             'Version20260813031629',
+            'Version20260828223857',
+            'Version20260901015440',
+            'Version20260901163503',
+            'Version20260908010000',
+            'Version20261004192458',
+            'Version20261008200352',
+            'Version20261019185942',
+            'Version20261020210924',
+            'Version20261021034317',
+            'Version20261022235428',
         ];
 
         foreach ($ordered as $version) {
