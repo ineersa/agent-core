@@ -243,13 +243,16 @@ not persistent Hatfield settings. The UDP listener must be reachable from the sa
 
 When enabled, `SessionResourceSamplerSchedule` adds one job to the existing Symfony
 `default` schedule. The `scheduler_default` worker aggregates CPU percent, summed
-resident memory, and process count for the owning `HATFIELD_SESSION_ID` process
-tree. It includes the TUI, controller, consumers and descendant tools, but not the
-Castor, shell or tmux ancestors shared with other work. It sends:
+resident memory, unique-memory counters when available, and process count for the
+owning `HATFIELD_SESSION_ID` process tree. It includes the TUI, controller,
+consumers and descendant tools, but not the Castor, shell or tmux ancestors shared
+with other work. It sends:
 
 - `hatfield.session.cpu_percent`
 - `hatfield.session.rss_bytes`
 - `hatfield.session.process_count`
+- `hatfield.session.pss_bytes` when every live sampled PID has readable `smaps_rollup`
+- `hatfield.session.uss_bytes` when every live sampled PID has readable `smaps_rollup`
 
 Tags are `service:hatfield`, `env:<HATFIELD_TELEMETRY_ENV>`,
 `session_id:<raw owning session ID>`, and `session_key:<project hash>:<session ID>`.
@@ -259,7 +262,15 @@ project; the same session ID in different directories produces different keys.
 The colon separator is preserved in metric tags and log fields. Session tags
 create custom metric series per project and session. CPU comes from the second
 `top` refresh over roughly 0.2 seconds; it is not a minute average.
-RSS is summed resident bytes, not unique physical memory.
+RSS is summed resident bytes, not unique physical memory. PSS and USS come from
+bounded Linux `/proc/<pid>/smaps_rollup` reads over the same live sampled PIDs.
+The sample log keeps one `session.resource_sample.sent` event and adds
+`memory_counter_status` (`ok`, `partial`, or `unavailable`) plus readable,
+unreadable, and exited counts. Totals and DogStatsD gauges for PSS/USS are
+emitted only when status is `ok`. Partial or unavailable coverage omits those
+gauges and leaves the totals null rather than reporting zero. Non-Linux hosts
+and unreadable `/proc` entries are unsupported, not zero. Exited PIDs between
+`top` and `smaps_rollup` are counted without a per-PID warning.
 The minute cadence can miss short-lived tools and short peaks. Failures stay
 local: bounded logs without raw command output or environment contents. UDP sends
 are non-blocking and do not acknowledge Datadog ingestion.
@@ -301,7 +312,8 @@ Retained:
 - Process Check metrics: CPU, RSS, and process I/O for matched Hatfield processes.
 - Opt-in Castor session gauges: `hatfield.session.cpu_percent`,
   `hatfield.session.rss_bytes`, and `hatfield.session.process_count` when
-  `castor run:agent` enables the sampler.
+  `castor run:agent` enables the sampler, plus `hatfield.session.pss_bytes` and
+  `hatfield.session.uss_bytes` when unique-memory coverage is complete.
 
 Intentionally lost with the extension:
 

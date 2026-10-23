@@ -108,6 +108,12 @@ final class SessionResourceSamplerTaskTest extends TestCase
                 stream_socket_recvfrom($socket, 4096),
             );
             $this->assertSame('session.resource_sample.sent', $logger->records[0]['message']);
+            // Fake top PIDs exit before smaps_rollup; the real PHPUnit PID remains readable.
+            $this->assertSame('partial', $logger->records[0]['context']['memory_counter_status']);
+            $this->assertNull($logger->records[0]['context']['pss_bytes']);
+            $this->assertNull($logger->records[0]['context']['uss_bytes']);
+            $this->assertSame(1, $logger->records[0]['context']['memory_counter_readable']);
+            $this->assertSame(4, $logger->records[0]['context']['memory_counter_exited']);
             $processor = new LogContextProcessor(new TelemetrySessionKeyProvider($this->directory));
             $record = $processor(new LogRecord(new \DateTimeImmutable(), 'test', Level::Info, $logger->records[0]['message'], $logger->records[0]['context']));
             $this->assertSame($key, $record->extra['session_key']);
@@ -269,12 +275,15 @@ final class SessionResourceSamplerTaskTest extends TestCase
                 $write = $except = [];
                 $this->assertSame(1, stream_select($read, $write, $except, 2));
                 $key = hash('sha256', (string) realpath($cwd)).':wiring-owned';
+                $payload = stream_socket_recvfrom($socket, 4096);
                 $this->assertSame(
                     "hatfield.session.cpu_percent:10|g|#service:hatfield,env:dev,session_id:wiring-owned,session_key:$key\n"
                     ."hatfield.session.rss_bytes:1024000|g|#service:hatfield,env:dev,session_id:wiring-owned,session_key:$key\n"
                     ."hatfield.session.process_count:4|g|#service:hatfield,env:dev,session_id:wiring-owned,session_key:$key\n",
-                    stream_socket_recvfrom($socket, 4096),
+                    $payload,
                 );
+                $this->assertStringNotContainsString('hatfield.session.pss_bytes', $payload);
+                $this->assertStringNotContainsString('hatfield.session.uss_bytes', $payload);
                 $record = $container->get(LogContextProcessor::class)(new LogRecord(
                     new \DateTimeImmutable(), 'test', Level::Info, 'test', context: ['session_id' => 'wiring-owned'],
                 ));
@@ -325,6 +334,50 @@ final class SessionResourceSamplerTaskTest extends TestCase
                 }
             }
             TestDirectoryIsolation::removeDirectory($cwd);
+        }
+    }
+
+    public function testOwnedTreeUniqueMemoryUsesSmapsRollupWhenReadable(): void
+    {
+        $socket = stream_socket_server('udp://127.0.0.1:0', $errno, $error, \STREAM_SERVER_BIND);
+        $this->assertIsResource($socket);
+        try {
+            $address = stream_socket_get_name($socket, false);
+            $this->assertIsString($address);
+            $port = (int) substr($address, strrpos($address, ':') + 1);
+            $autoload = var_export(\dirname(__DIR__, 3).'/vendor/autoload.php', true);
+            $directory = var_export($this->directory, true);
+            $worker = 'require '.$autoload.'; $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();'
+                .' (new \Ineersa\CodingAgent\Logging\SessionResourceSamplerTask('
+                .'true, "native-memory", "dev", "127.0.0.1", '.$port.', $logger, '
+                .'new \Ineersa\CodingAgent\Logging\TelemetrySessionKeyProvider('.$directory.')))'
+                .'(new \Ineersa\CodingAgent\Logging\SessionResourceSampleMessage());'
+                .' file_put_contents('.$directory.'.\'/native-memory.json\', json_encode($logger->records, JSON_THROW_ON_ERROR));';
+            $controller = 'require '.$autoload.'; (new \Symfony\Component\Process\Process('
+                .'[PHP_BINARY, "-r", '.var_export($worker, true).'], '
+                .'env: ["HATFIELD_SESSION_ID" => false], timeout: 5))->mustRun();';
+            (new \Symfony\Component\Process\Process(
+                [\PHP_BINARY, '-r', $controller], env: ['HATFIELD_SESSION_ID' => false], timeout: 7,
+            ))->mustRun();
+            $read = [$socket];
+            $write = $except = [];
+            $this->assertSame(1, stream_select($read, $write, $except, 2));
+            $payload = stream_socket_recvfrom($socket, 8192);
+            $this->assertIsString($payload);
+            $records = json_decode((string) file_get_contents($this->directory.'/native-memory.json'), true, 512, \JSON_THROW_ON_ERROR);
+            $this->assertSame('session.resource_sample.sent', $records[0]['message']);
+            $this->assertSame('ok', $records[0]['context']['memory_counter_status']);
+            $this->assertIsInt($records[0]['context']['pss_bytes']);
+            $this->assertIsInt($records[0]['context']['uss_bytes']);
+            $this->assertGreaterThan(0, $records[0]['context']['pss_bytes']);
+            $this->assertGreaterThan(0, $records[0]['context']['uss_bytes']);
+            $this->assertSame(0, $records[0]['context']['memory_counter_unreadable']);
+            $this->assertSame(0, $records[0]['context']['memory_counter_exited']);
+            $this->assertMatchesRegularExpression('/hatfield.session.pss_bytes:[1-9][0-9]*\|g/', $payload);
+            $this->assertMatchesRegularExpression('/hatfield.session.uss_bytes:[1-9][0-9]*\|g/', $payload);
+            $this->assertCount(1, $records);
+        } finally {
+            fclose($socket);
         }
     }
 
