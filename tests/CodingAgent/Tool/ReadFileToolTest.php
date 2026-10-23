@@ -7,14 +7,21 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
+use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Domain\Tool\ToolResultText;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tests\Tool\Support\ToolValidationHarness;
 use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\OutputCap;
+use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
 use Ineersa\CodingAgent\Tool\ReadFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -42,7 +49,7 @@ final class ReadFileToolTest extends TestCase
         $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_read_test');
 
         // Output capping is handled centrally by tool-result processors.
-        $this->readFileTool = new ReadFileTool($this->toolRuntime);
+        $this->readFileTool = new ReadFileTool($this->toolRuntime, $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/output-cap')), $this->contextAccessor);
     }
 
     protected function tearDown(): void
@@ -470,6 +477,18 @@ final class ReadFileToolTest extends TestCase
         $this->assertStringContainsString('└───┘', $result);
     }
 
+    public function testSelectedChunkEdgesMatchFileIgnoreNewLines(): void
+    {
+        $path = $this->tmpDir.'/chunk-edges.txt';
+        foreach (["\r\n", "\r\r\n", "\r", "\u{1f600}\n", "e\u{0301}\n"] as $ending) {
+            foreach ([8190, 8191, 8192] as $prefixBytes) {
+                file_put_contents($path, str_repeat('a', $prefixBytes).$ending);
+                $expected = implode("\n", file($path, \FILE_IGNORE_NEW_LINES))."\n";
+                $this->assertSame($expected, ($this->readFileTool)(new ReadFileArgumentsDTO(path: $path)));
+            }
+        }
+    }
+
     public function testReadInvalidUtf8At8192BoundaryThrows(): void
     {
         // Create a file where 8191 ASCII bytes are followed by an invalid
@@ -621,7 +640,7 @@ final class ReadFileToolTest extends TestCase
             docCap: 10,
         );
         $cap = $this->outputCap($capConfig);
-        $readTool = new ReadFileTool($this->toolRuntime);
+        $readTool = new ReadFileTool($this->toolRuntime, $cap, $this->contextAccessor);
 
         $targetPath = $this->tmpDir.'/cap_me.txt';
         file_put_contents($targetPath, "hello world this is a longer line that should exceed the cap\n");
@@ -631,6 +650,86 @@ final class ReadFileToolTest extends TestCase
         // Tool returns raw output; capping is centralized.
         $this->assertStringContainsString('this is a longer line', $result);
         $this->assertStringNotContainsString('Output capped', $result);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function byteSafetyCases(): iterable
+    {
+        yield 'one large grapheme' => ['grapheme'];
+        yield 'one large ASCII line' => ['ascii'];
+        yield 'emoji split across capture boundary' => ['emoji'];
+        yield 'many selected lines' => ['lines'];
+    }
+
+    #[DataProvider('byteSafetyCases')]
+    public function testByteSafetyPreservesCompleteArtifactAndProcessorNotification(string $kind): void
+    {
+        $path = $this->tmpDir.'/giant.txt';
+        // One arbitrarily large grapheme previously bypassed the character cap.
+        // Also split CRLF and UTF-8 across the bounded reader's chunk edges.
+        $content = match ($kind) {
+            'grapheme' => 'a'.str_repeat("\u{0301}", 600000)."\r\n",
+            'ascii' => str_repeat('a', 1200000)."\r\n",
+            'emoji' => str_repeat('a', 1048575)."\u{1F600}\r\n",
+            'lines' => str_repeat(str_repeat('a', 1198)."\r\n", 1000),
+        };
+        $limit = 'lines' === $kind ? 1000 : 1;
+        file_put_contents($path, $content."not selected\n");
+        $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/output-cap'));
+        $tool = new ReadFileTool($this->toolRuntime, $cap, $this->contextAccessor);
+        $toolbox = ToolValidationHarness::toolbox($tool);
+        $raw = $this->contextAccessor->with($this->contextWithToken($this->createToken(false)), static fn () => $toolbox->execute(new ToolCall('read_call_1', 'read', ['path' => $path, 'offset' => 1, 'limit' => $limit]))->getResult());
+        $this->assertIsArray($raw);
+        $this->assertLessThan(1024, \strlen(json_encode($raw, \JSON_THROW_ON_ERROR)));
+        $processor = new OutputCapToolResultProcessor($cap, AttributeSerializerValidatorTestFactory::denormalizer());
+        $result = $processor->process(
+            new ToolResult('read_call_1', 'read', [['type' => 'text', 'text' => json_encode($raw, \JSON_THROW_ON_ERROR)]], ['raw_result' => $raw]),
+            new DomainToolCall('read_call_1', 'read', ['path' => $path], 0, 'read_test_run'),
+        );
+        $expected = str_replace("\r\n", "\n", $content)."\n--- 1 more lines (use read with offset=".($limit + 1)." limit=200 to continue) ---\n";
+        $saved = $result->details['output_cap']['saved_path'];
+        $this->assertSame($expected, file_get_contents($saved));
+        $this->assertSame(\strlen($expected), $result->details['output_cap']['byte_count']);
+        $this->assertNull($result->details['output_cap']['char_count']);
+        $this->assertArrayNotHasKey('raw_result', $result->details);
+        $this->assertSame('read completed', $result->content[0]['text']);
+        $notice = $result->details['model_notifications'][0];
+        $this->assertSame('tool_result_replace', $notice['delivery']);
+        $this->assertStringContainsString('byte safety limit', $notice['text']);
+        $this->assertStringContainsString('Saved full output: '.$saved, $notice['text']);
+        $this->assertStringNotContainsString(' chars ', $notice['text']);
+        $cap->cleanupRun('other-run', 'test');
+        $this->assertFileExists($saved);
+        $cap->cleanupRun('read_test_run', 'test');
+        $this->assertFileDoesNotExist($saved);
+    }
+
+    /** @return iterable<string, array{int, string}> */
+    public static function malformedSelectedOutputCases(): iterable
+    {
+        yield 'invalid byte after byte cap' => [1048576, "\xff\n"];
+        yield 'invalid sequence split across chunks' => [1056767, "\xe0\x80\x80\n"];
+        yield 'incomplete sequence at EOF' => [1048576, "\xf0\x9f"];
+    }
+
+    #[DataProvider('malformedSelectedOutputCases')]
+    public function testMalformedSelectedOutputDoesNotPublishArtifact(int $prefixBytes, string $suffix): void
+    {
+        $path = $this->tmpDir.'/malformed-large.txt';
+        // The target validator accepts the initial sample; selected bytes beyond
+        // both that sample and the byte cap must still receive full validation.
+        file_put_contents($path, str_repeat('A', $prefixBytes).$suffix);
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        try {
+            $this->expectException(MalformedToolResultException::class);
+            $this->expectExceptionMessage(ToolResultText::FAILURE_MESSAGE);
+            $this->contextAccessor->with(
+                $this->contextWithToken($this->createToken(false)),
+                static fn () => $toolbox->execute(new ToolCall('read-invalid', 'read', ['path' => $path])),
+            );
+        } finally {
+            $this->assertDirectoryDoesNotExist($this->tmpDir.'/output-cap');
+        }
     }
 
     public function testReadPassesThroughWhenUnderCap(): void
@@ -644,6 +743,24 @@ final class ReadFileToolTest extends TestCase
     }
 
     /* ── Cancellation tests ── */
+
+    public function testReadCancellationDuringSelectedLineDoesNotPublishPartialOutput(): void
+    {
+        $path = $this->tmpDir.'/cancel-during-read.txt';
+        file_put_contents($path, str_repeat('a', 1200000));
+        $checks = 0;
+        $token = $this->createStub(CancellationTokenInterface::class);
+        $token->method('isCancellationRequested')->willReturnCallback(static function () use (&$checks): bool {
+            return ++$checks >= 12;
+        });
+        try {
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('cancelled');
+            $this->contextAccessor->with($this->contextWithToken($token), fn () => ($this->readFileTool)(new ReadFileArgumentsDTO(path: $path)));
+        } finally {
+            $this->assertDirectoryDoesNotExist($this->tmpDir.'/output-cap');
+        }
+    }
 
     public function testReadCancelledBeforeExecutionThrows(): void
     {

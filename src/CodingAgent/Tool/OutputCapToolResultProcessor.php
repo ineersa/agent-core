@@ -46,7 +46,16 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         );
 
         $runId = $toolCall->runId ?? ($toolCall->context['run_id'] ?? null);
-        $capResult = $this->outputCap->capIfNeeded($text, \is_string($runId) ? $runId : null, $path);
+        $raw = \is_array($result->details) ? ($result->details['raw_result'] ?? null) : null;
+        $captured = 'read' === $toolCall->toolName && \is_array($raw) ? ($raw['output_cap'] ?? null) : null;
+        if (\is_array($captured) && \is_string($captured['saved_path'] ?? null) && \is_int($captured['byte_count'] ?? null)) {
+            $savedPath = $captured['saved_path'];
+            $bytes = $captured['byte_count'];
+            $notice = '[Output capped: '.$bytes.' bytes > '.OutputCap::STREAM_BYTE_LIMIT."-byte safety limit]\nSaved full output: ".$savedPath;
+            $capResult = new OutputCapResult($savedPath, null, null, null, $notice, $bytes);
+        } else {
+            $capResult = $this->outputCap->capIfNeeded($text, \is_string($runId) ? $runId : null, $path);
+        }
         if (null === $capResult) {
             return $result;
         }
@@ -79,6 +88,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
                 'cap' => $capResult->cap,
                 'char_count' => $capResult->charCount,
                 'token_estimate' => $capResult->tokenEstimate,
+                'byte_count' => $capResult->byteCount,
                 'saved_path' => $capResult->savedPath,
                 'path' => $path,
             ],
@@ -116,6 +126,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             'cap' => $capResult->cap,
             'char_count' => $capResult->charCount,
             'token_estimate' => $capResult->tokenEstimate,
+            'byte_count' => $capResult->byteCount,
             'saved_path' => $capResult->savedPath,
             'path' => $path,
         ];

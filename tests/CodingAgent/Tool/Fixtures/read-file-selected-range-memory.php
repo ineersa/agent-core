@@ -11,11 +11,16 @@ declare(strict_types=1);
  */
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\Tool\Support\ToolValidationHarness;
+use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ReadFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 require dirname(__DIR__, 4).'/vendor/autoload.php';
 
@@ -65,7 +70,9 @@ if (false === $archiveBytes) {
 }
 
 $before = memory_get_usage(true);
-$tool = new ReadFileTool(new ToolRuntime(new StackToolExecutionContextAccessor()));
+$accessor = new StackToolExecutionContextAccessor();
+$cap = new OutputCap(new OutputCapConfig(storageDir: $directory.'/output-cap'), new LockFactory(new FlockStore($directory)), new NullLogger());
+$tool = new ReadFileTool(new ToolRuntime($accessor), $cap, $accessor);
 $toolbox = ToolValidationHarness::toolbox($tool);
 $result = (string) $toolbox->execute(new ToolCall('read-memory', 'read', [
     'path' => $path,
