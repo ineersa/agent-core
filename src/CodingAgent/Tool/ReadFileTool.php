@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
@@ -21,9 +22,10 @@ use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
  * Target preconditions (safety blocks, existence, readability, MIME/binary/
  * UTF-8/extension inspection, offset-past-EOF) are enforced before execution
  * by the {@see ReadFileTarget} class-level DTO constraint via
- * ValidateToolCallArgumentsListener; this handler only resolves, reads,
- * slices, and appends the continuation hint. An open/read failure here is an
- * operational/race error, not a validation result.
+ * ValidateToolCallArgumentsListener. The handler also validates every selected
+ * byte before artifact publication, beyond the target validator's sample.
+ * It resolves, reads, slices, and appends the continuation hint. An open/read
+ * failure is an operational/race error, not a validation result.
  *
  * Features:
  * - Output is plain file text (no line-number prefix).
@@ -82,7 +84,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface
             // Pre-execution target validation moved to the ReadFileTarget
             // DTO constraint (ValidateToolCallArgumentsListener).
             return $this->outputCap->capture(
-                $this->readSelectedContent($resolvedPath, $offset, $limit),
+                $this->validatedChunks($this->readSelectedContent($resolvedPath, $offset, $limit)),
                 $this->contextAccessor->current()?->runId(),
             );
         });
@@ -106,6 +108,36 @@ final class ReadFileTool implements HatfieldToolProviderInterface
                 'Device paths (/dev/*) and /proc/*/fd/* paths are rejected for safety.',
             ],
         );
+    }
+
+    /**
+     * The artifact envelope hides its bytes from executor text validation.
+     * Validate before capture can publish it, retaining at most three bytes
+     * across chunk boundaries so split UTF-8 characters remain valid.
+     *
+     * @param iterable<string> $chunks
+     *
+     * @return \Generator<string>
+     */
+    private function validatedChunks(iterable $chunks): \Generator
+    {
+        $pending = '';
+        foreach ($chunks as $chunk) {
+            $text = $pending.$chunk;
+            $pending = '';
+            if (preg_match('/[\xC2-\xF4][\x80-\xBF]{0,2}$/D', $text, $match)) {
+                $pending = $match[0];
+                $text = substr($text, 0, -\strlen($pending));
+            }
+            if (!mb_check_encoding($text, 'UTF-8')) {
+                throw new MalformedToolResultException();
+            }
+            yield $text;
+        }
+        if (!mb_check_encoding($pending, 'UTF-8')) {
+            throw new MalformedToolResultException();
+        }
+        yield $pending;
     }
 
     /**

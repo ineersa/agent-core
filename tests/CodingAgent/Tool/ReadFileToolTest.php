@@ -7,8 +7,10 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -655,6 +657,7 @@ final class ReadFileToolTest extends TestCase
     {
         yield 'one large grapheme' => ['grapheme'];
         yield 'one large ASCII line' => ['ascii'];
+        yield 'emoji split across capture boundary' => ['emoji'];
         yield 'many selected lines' => ['lines'];
     }
 
@@ -667,6 +670,7 @@ final class ReadFileToolTest extends TestCase
         $content = match ($kind) {
             'grapheme' => 'a'.str_repeat("\u{0301}", 600000)."\r\n",
             'ascii' => str_repeat('a', 1200000)."\r\n",
+            'emoji' => str_repeat('a', 1048575)."\u{1F600}\r\n",
             'lines' => str_repeat(str_repeat('a', 1198)."\r\n", 1000),
         };
         $limit = 'lines' === $kind ? 1000 : 1;
@@ -698,6 +702,34 @@ final class ReadFileToolTest extends TestCase
         $this->assertFileExists($saved);
         $cap->cleanupRun('read_test_run', 'test');
         $this->assertFileDoesNotExist($saved);
+    }
+
+    /** @return iterable<string, array{int, string}> */
+    public static function malformedSelectedOutputCases(): iterable
+    {
+        yield 'invalid byte after byte cap' => [1048576, "\xff\n"];
+        yield 'invalid sequence split across chunks' => [1056767, "\xe0\x80\x80\n"];
+        yield 'incomplete sequence at EOF' => [1048576, "\xf0\x9f"];
+    }
+
+    #[DataProvider('malformedSelectedOutputCases')]
+    public function testMalformedSelectedOutputDoesNotPublishArtifact(int $prefixBytes, string $suffix): void
+    {
+        $path = $this->tmpDir.'/malformed-large.txt';
+        // The target validator accepts the initial sample; selected bytes beyond
+        // both that sample and the byte cap must still receive full validation.
+        file_put_contents($path, str_repeat('A', $prefixBytes).$suffix);
+        $toolbox = ToolValidationHarness::toolbox($this->readFileTool);
+        try {
+            $this->expectException(MalformedToolResultException::class);
+            $this->expectExceptionMessage(ToolResultText::FAILURE_MESSAGE);
+            $this->contextAccessor->with(
+                $this->contextWithToken($this->createToken(false)),
+                static fn () => $toolbox->execute(new ToolCall('read-invalid', 'read', ['path' => $path])),
+            );
+        } finally {
+            $this->assertDirectoryDoesNotExist($this->tmpDir.'/output-cap');
+        }
     }
 
     public function testReadPassesThroughWhenUnderCap(): void
