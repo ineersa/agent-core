@@ -120,6 +120,16 @@ final class ControllerE2eCacheEnvTest extends TestCase
  */
 final class ControllerE2eCacheEnvHarness extends ControllerE2eTestCase
 {
+    protected function setUp(): void
+    {
+        TestCase::setUp();
+    }
+
+    protected function tearDown(): void
+    {
+        TestCase::tearDown();
+    }
+
     /**
      * @return array<string, string>
      */
@@ -131,15 +141,5 @@ final class ControllerE2eCacheEnvHarness extends ControllerE2eTestCase
     protected function tempDirPrefix(): string
     {
         return 'unused-controller-e2e-cache-env';
-    }
-
-    protected function setUp(): void
-    {
-        TestCase::setUp();
-    }
-
-    protected function tearDown(): void
-    {
-        TestCase::tearDown();
     }
 }
