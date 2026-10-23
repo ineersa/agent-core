@@ -10,6 +10,8 @@ use Ineersa\AgentCore\Domain\Coordination\RegisterToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO;
 use Symfony\Component\Uid\Uuid;
 
 /** Apply producer-captured registration through the real store contract. */
@@ -45,7 +47,17 @@ final class TestToolBatchRegistration
 
     public static function registerDeferredInvocations(ToolBatchStoreInterface $store, DeferredToolCompletionCorrelation $correlation, DeferredToolCompletionCorrelation ...$siblings): void
     {
-        $calls = array_map(static fn (DeferredToolCompletionCorrelation $correlation): ExecuteToolCall => new ExecuteToolCall(
+        $calls = array_map(static fn (DeferredToolCompletionCorrelation $correlation): ExecuteToolCall => self::callFromCorrelation($correlation), [$correlation, ...$siblings]);
+        self::register(new ToolBatchCollector($store), $store, $correlation->runId, $correlation->turnNo, $correlation->stepId, $calls);
+    }
+
+    public static function callFromCorrelation(
+        DeferredToolCompletionCorrelation $correlation,
+        ?string $parentModel = null,
+        ?ToolLaunchInputReferenceDTO $launchContext = null,
+        ?ToolCallHumanInputAnswerDTO $humanInputAnswer = null,
+    ): ExecuteToolCall {
+        return new ExecuteToolCall(
             $correlation->runId, $correlation->turnNo, $correlation->stepId,
             $correlation->attempt, $correlation->idempotencyKey, $correlation->toolCallId,
             $correlation->toolName, $correlation->arguments, $correlation->orderIndex,
@@ -55,8 +67,10 @@ final class TestToolBatchRegistration
             maxParallelism: $correlation->maxParallelism,
             argSchema: $correlation->argSchema,
             toolsRef: $correlation->toolsRef,
-        ), [$correlation, ...$siblings]);
-        self::register(new ToolBatchCollector($store), $store, $correlation->runId, $correlation->turnNo, $correlation->stepId, $calls);
+            humanInputAnswer: $humanInputAnswer,
+            parentModel: $parentModel,
+            launchContext: $launchContext,
+        );
     }
 
     public static function apply(

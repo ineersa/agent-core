@@ -420,6 +420,11 @@ final class MarkCompletedFailsOnceRepository implements DeferredToolCompletionRe
         return $this->inner->findMetadataByDeferredId($deferredId);
     }
 
+    public function findInvocationReferenceByDeferredId(string $deferredId): ?\Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO
+    {
+        return $this->inner->findInvocationReferenceByDeferredId($deferredId);
+    }
+
     public function markCompleted(string $deferredId): void
     {
         if ($this->failuresRemaining > 0) {

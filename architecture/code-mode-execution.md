@@ -9,6 +9,12 @@ The deferred correlation and native row are inserted in one application database
 transaction under the run lock. The original call is sealed outside disposable
 batch storage, so later batch cleanup cannot erase its identity.
 
+Ordinary deferred registration retains that same full batch invocation
+reference. Shared `DeferredToolInvocationFence` compares the complete
+`ExecuteToolCall` envelope, including `parentModel`, `humanInputAnswer`, and
+`launchContext`. Code-mode entry reuses that fence before native ownership
+begins.
+
 `CodeModeHostBridge` keeps its PHP subprocess, socket and synchronous host stack.
 Readiness follows the IPC connection, before the host serves nested requests.
 Nested tools retain separate call identities and return their real values to the

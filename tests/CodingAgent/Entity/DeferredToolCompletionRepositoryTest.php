@@ -122,6 +122,7 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         $completion->toolCallId = 'call';
         $completion->toolName = 'subagent';
         $completion->bodyReferenceJson = $serializer->serialize($reference, 'json');
+        $completion->invocationReferenceJson = $serializer->serialize(new ToolPayloadReferenceDTO('call', $runId, 1, 'step', 1, 'key', 'call', 0, 'subagent', str_repeat('b', 64), 100), 'json');
         $header = new ToolBatchSchedule();
         $header->runId = $runId;
         $header->turnNo = 1;

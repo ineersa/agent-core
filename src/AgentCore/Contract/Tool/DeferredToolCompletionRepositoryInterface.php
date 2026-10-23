@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Contract\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 
 /**
  * Cross-process durable store for deferred tool executions.
@@ -27,6 +28,9 @@ interface DeferredToolCompletionRepositoryInterface
 
     /** Read and validate stored correlation identity without opening its body. */
     public function findMetadataByDeferredId(string $deferredId): ?DeferredToolCompletionMetadataDTO;
+
+    /** Retained full ExecuteToolCall reference for pending registrations only. */
+    public function findInvocationReferenceByDeferredId(string $deferredId): ?ToolPayloadReferenceDTO;
 
     /**
      * @return 'completed'|'pending'|null

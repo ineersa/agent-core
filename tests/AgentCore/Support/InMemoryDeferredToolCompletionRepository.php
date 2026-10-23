@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 
 final class InMemoryDeferredToolCompletionRepository implements DeferredToolCompletionRepositoryInterface
 {
-    /** @var array<string, array{correlation: DeferredToolCompletionCorrelation, status: string}> */
+    /** @var array<string, array{correlation: DeferredToolCompletionCorrelation, status: string, invocationReference: ?ToolPayloadReferenceDTO}> */
     private array $byDeferredId = [];
 
     /** @var array<string, string> runId|toolCallId => deferredId */
@@ -33,6 +33,11 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         $this->byDeferredId[$correlation->deferredId] = [
             'correlation' => $correlation,
             'status' => 'pending',
+            'invocationReference' => new ToolPayloadReferenceDTO(
+                'call', $correlation->runId, $correlation->turnNo, $correlation->stepId,
+                $correlation->attempt, $correlation->idempotencyKey, $correlation->toolCallId,
+                $correlation->orderIndex, $correlation->toolName, hash('sha256', serialize($correlation)), \strlen(serialize($correlation)),
+            ),
         ];
         $this->byRunToolCall[$key] = $correlation->deferredId;
 
@@ -83,6 +88,16 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         );
 
         return new DeferredToolCompletionMetadataDTO($deferredId, $reference, $row['status']);
+    }
+
+    public function findInvocationReferenceByDeferredId(string $deferredId): ?ToolPayloadReferenceDTO
+    {
+        $row = $this->byDeferredId[$deferredId] ?? null;
+        if (null === $row || 'pending' !== $row['status']) {
+            return null;
+        }
+
+        return $row['invocationReference'];
     }
 
     public function status(string $deferredId): ?string

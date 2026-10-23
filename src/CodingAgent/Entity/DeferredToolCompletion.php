@@ -47,6 +47,9 @@ class DeferredToolCompletion
     #[ORM\Column(name: 'body_reference_json', type: 'string', length: 16384)]
     public string $bodyReferenceJson = '';
 
+    #[ORM\Column(name: 'invocation_reference_json', type: 'string', length: 16384, nullable: true)]
+    public ?string $invocationReferenceJson = null;
+
     #[ORM\Column(name: 'order_index', type: 'integer')]
     public int $orderIndex = 0;
 

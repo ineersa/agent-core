@@ -6,11 +6,16 @@ namespace Ineersa\CodingAgent\Tests\Entity;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchInputReferenceDTO;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletion;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
@@ -162,6 +167,75 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
         $this->assertSame('bash', $loaded->toolName);
         $this->assertSame(15, $loaded->timeoutSeconds);
         $this->assertSame($runId, $loaded->runId);
+    }
+
+    #[Test]
+    public function registerPendingRetainsExactInvocationReferenceAndRejectsParentModelMismatch(): void
+    {
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('deferred full invocation fence');
+        $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
+        $correlation = new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440103',
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'turn-1-tools-1',
+            attempt: 1,
+            idempotencyKey: 'idemp-full',
+            toolCallId: 'call-full',
+            toolName: 'subagent',
+            arguments: ['task' => 'inspect'],
+            orderIndex: 0,
+        );
+        $launch = new ToolLaunchInputReferenceDTO(
+            'subagent', $runId, 1, 'turn-1-tools-1', 'call-full', 'parent-model', str_repeat('a', 64), 12,
+        );
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $runId,
+            1,
+            'turn-1-tools-1',
+            [TestToolBatchRegistration::callFromCorrelation($correlation, parentModel: 'parent-model', launchContext: $launch)],
+        );
+
+        $registered = $this->repository->registerPending($correlation);
+        $this->assertSame($correlation->deferredId, $registered->deferredId);
+        $reference = $this->repository->findInvocationReferenceByDeferredId($registered->deferredId);
+        $this->assertNotNull($reference);
+        $this->assertSame('call', $reference->kind);
+        $stored = self::getContainer()->get(ToolPayloadStoreInterface::class)->read($reference);
+        $this->assertInstanceOf(ExecuteToolCall::class, $stored);
+        $this->assertSame('parent-model', $stored->parentModel);
+        $this->assertNotNull($stored->launchContext);
+        $this->assertSame('parent-model', $stored->launchContext->producingModel);
+
+        $mismatch = new DeferredToolCompletionCorrelation(
+            deferredId: '550e8400-e29b-41d4-a716-446655440104',
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'turn-1-tools-2',
+            attempt: 1,
+            idempotencyKey: 'idemp-mismatch',
+            toolCallId: 'call-mismatch',
+            toolName: 'subagent',
+            arguments: ['task' => 'inspect'],
+            orderIndex: 0,
+        );
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $runId,
+            1,
+            'turn-1-tools-2',
+            [new ExecuteToolCall(
+                $mismatch->runId, $mismatch->turnNo, $mismatch->stepId, $mismatch->attempt, $mismatch->idempotencyKey,
+                $mismatch->toolCallId, $mismatch->toolName, ['task' => 'different'], $mismatch->orderIndex, parentModel: 'parent-model',
+            )],
+        );
+
+        $this->expectException(ToolPayloadException::class);
+        $this->expectExceptionMessage('Deferred registration no longer has an active invocation.');
+        $this->repository->registerPending($mismatch);
     }
 
     private function registerCorrelation(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation

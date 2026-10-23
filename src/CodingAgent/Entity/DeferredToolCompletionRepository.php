@@ -12,7 +12,9 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
@@ -33,6 +35,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         private readonly RunLockManager $locks,
         private readonly SerializerInterface $serializer,
         private readonly ValidatorInterface $validator,
+        private readonly DeferredToolInvocationFence $fence,
     ) {
         parent::__construct($registry, DeferredToolCompletion::class);
     }
@@ -89,7 +92,24 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             throw new ToolPayloadException('Deferred correlation reference does not match its index.');
         }
 
+        // Pending rows still require a retained invocation reference; completed
+        // markers keep only the bounded correlation identity.
+        if ('pending' === $entity->status) {
+            $this->pendingInvocationReference($entity);
+        }
+
         return new DeferredToolCompletionMetadataDTO($entity->deferredId, $reference, $entity->status);
+    }
+
+    public function findInvocationReferenceByDeferredId(string $deferredId): ?ToolPayloadReferenceDTO
+    {
+        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
+        if (!$entity instanceof DeferredToolCompletion || 'pending' !== $entity->status) {
+            return null;
+        }
+
+        return $this->pendingInvocationReference($entity)
+            ?? throw new ToolPayloadException('Pending deferred registration is missing its invocation reference.');
     }
 
     public function status(string $deferredId): ?string
@@ -148,9 +168,11 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             return $this->toCorrelation($existing);
         }
 
-        $call = $this->batches->loadCallReference($correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->toolCallId);
+        $call = $this->batches->loadCall($correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->toolCallId);
+        $callReference = $this->batches->loadCallReference($correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->toolCallId);
         $schedule = $this->batches->loadSchedule($correlation->runId, $correlation->turnNo, $correlation->stepId);
-        if (null === $call || $call->attempt !== $correlation->attempt || $call->idempotencyKey !== $correlation->idempotencyKey || null === $schedule || !isset($schedule->inFlight[$correlation->toolCallId]) || isset($schedule->completedIds[$correlation->toolCallId])) {
+        $storedCall = null === $callReference ? null : $this->payloads->read($callReference);
+        if (null === $call || null === $callReference || 'call' !== $callReference->kind || !$storedCall instanceof ExecuteToolCall || null === $schedule || !isset($schedule->inFlight[$correlation->toolCallId]) || isset($schedule->completedIds[$correlation->toolCallId]) || !$this->fence->matchesCorrelation($correlation, $call) || !$this->fence->sameInvocation($call, $storedCall)) {
             throw new ToolPayloadException('Deferred registration no longer has an active invocation.');
         }
         $reference = $this->payloads->publishCorrelation($correlation);
@@ -167,6 +189,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                 'tool_call_id' => $correlation->toolCallId,
                 'tool_name' => $correlation->toolName,
                 'body_reference_json' => $this->serializer->serialize($reference, 'json'),
+                'invocation_reference_json' => $this->serializer->serialize($callReference, 'json'),
                 'order_index' => $correlation->orderIndex,
                 'tool_idempotency_key' => $correlation->toolIdempotencyKey,
                 'mode' => $correlation->mode,
@@ -258,5 +281,27 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         }
 
         return $correlation;
+    }
+
+    private function pendingInvocationReference(DeferredToolCompletion $entity): ?ToolPayloadReferenceDTO
+    {
+        if ('pending' !== $entity->status) {
+            return null;
+        }
+        if (null === $entity->invocationReferenceJson || '' === $entity->invocationReferenceJson) {
+            throw new ToolPayloadException('Pending deferred registration is missing its invocation reference.');
+        }
+        $reference = $this->serializer->deserialize($entity->invocationReferenceJson, ToolPayloadReferenceDTO::class, 'json');
+        $errors = $this->validator->validate($reference);
+        if (0 !== \count($errors)) {
+            throw new ValidationFailedException($reference, $errors);
+        }
+        $identity = [$reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId, $reference->attempt, $reference->idempotencyKey, $reference->orderIndex, $reference->toolName];
+        $storedIdentity = [$entity->runId, $entity->turnNo, $entity->stepId, $entity->toolCallId, $entity->attempt, $entity->idempotencyKey, $entity->orderIndex, $entity->toolName];
+        if ('call' !== $reference->kind || $identity !== $storedIdentity) {
+            throw new ToolPayloadException('Deferred invocation reference does not match its index.');
+        }
+
+        return $reference;
     }
 }
