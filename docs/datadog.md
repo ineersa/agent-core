@@ -243,7 +243,7 @@ not persistent Hatfield settings. The UDP listener must be reachable from the sa
 
 When enabled, `SessionResourceSamplerSchedule` adds one job to the existing Symfony
 `default` schedule. The `scheduler_default` worker aggregates CPU percent, summed
-resident memory, unique-memory counters when available, and process count for the
+resident memory, proportional and private memory counters when available, and process count for the
 owning `HATFIELD_SESSION_ID` process tree. It includes the TUI, controller,
 consumers and descendant tools, but not the Castor, shell or tmux ancestors shared
 with other work. It sends:
@@ -262,15 +262,17 @@ project; the same session ID in different directories produces different keys.
 The colon separator is preserved in metric tags and log fields. Session tags
 create custom metric series per project and session. CPU comes from the second
 `top` refresh over roughly 0.2 seconds; it is not a minute average.
-RSS is summed resident bytes, not unique physical memory. PSS and USS come from
-bounded Linux `/proc/<pid>/smaps_rollup` reads over the same live sampled PIDs.
+RSS is summed resident bytes and can double-count shared pages. PSS comes from
+bounded Linux `/proc/<pid>/smaps_rollup` reads and proportions shared pages across
+users; USS sums only private pages. Do not treat PSS as private-only memory.
 The sample log keeps one `session.resource_sample.sent` event and adds
 `memory_counter_status` (`ok`, `partial`, or `unavailable`) plus readable,
 unreadable, and exited counts. Totals and DogStatsD gauges for PSS/USS are
 emitted only when status is `ok`. Partial or unavailable coverage omits those
-gauges and leaves the totals null rather than reporting zero. Non-Linux hosts
-and unreadable `/proc` entries are unsupported, not zero. Exited PIDs between
-`top` and `smaps_rollup` are counted without a per-PID warning.
+gauges and leaves the totals null rather than reporting zero. A sampled PID that
+still exists but lacks a readable `smaps_rollup` counts as unreadable or
+unsupported, not exited. Only PIDs that disappear from `/proc` count as exited.
+Neither case emits a per-PID warning or a false zero total.
 The minute cadence can miss short-lived tools and short peaks. Failures stay
 local: bounded logs without raw command output or environment contents. UDP sends
 are non-blocking and do not acknowledge Datadog ingestion.

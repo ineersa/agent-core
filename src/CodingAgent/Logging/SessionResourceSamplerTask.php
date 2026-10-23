@@ -30,6 +30,7 @@ final class SessionResourceSamplerTask
         private readonly int $dogstatsdPort,
         private readonly LoggerInterface $logger,
         private readonly TelemetrySessionKeyProvider $sessionKeys,
+        private readonly string $procRoot = '/proc',
     ) {
     }
 
@@ -197,21 +198,24 @@ final class SessionResourceSamplerTask
     {
         $pss = $uss = 0;
         $readable = $unreadable = $exited = 0;
+        $procRoot = rtrim($this->procRoot, '/');
 
         foreach ($pids as $pid) {
-            $path = '/proc/'.$pid.'/smaps_rollup';
-            if (!file_exists($path)) {
+            $path = $procRoot.'/'.$pid.'/smaps_rollup';
+            // Exit only when the process itself is gone. Missing or unreadable
+            // smaps_rollup on a live PID is unsupported/unreadable coverage.
+            if (!file_exists($procRoot.'/'.$pid)) {
                 ++$exited;
                 continue;
             }
-            if (!is_readable($path)) {
+            if (!file_exists($path) || !is_readable($path)) {
                 ++$unreadable;
                 continue;
             }
             $text = @file_get_contents($path);
             if (false === $text) {
-                // Race between existence and open: treat as exited, not unsupported.
-                ++$exited;
+                // Live PID with an unreadable or raced rollup stays unreadable.
+                ++$unreadable;
                 continue;
             }
             if (

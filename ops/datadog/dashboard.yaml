@@ -3,7 +3,7 @@
 
 dashboard_id: xza-j7r-e4s
 title: 'Hatfield sessions'
-description: 'Session-first resource diagnostics. Resource gauges are emitted by the opted-in once-per-minute scheduler sampler. CPU is a short interval sample, RSS is a process-tree sum that can double-count shared pages, PSS/USS are emitted only when every live sampled PID has readable smaps_rollup, and process count covers only live sampled tree members. Last-observed values are not proof that a process is still active. Qualified session gauges appear after the updated application is restarted and this dashboard is deployed; old unqualified history is excluded. Normal binary/PHAR launches remain off. The env tag is telemetry environment, not APP_ENV.'
+description: 'Session-first resource diagnostics. Resource gauges are emitted by the opted-in once-per-minute scheduler sampler. CPU is a short interval sample, RSS is a process-tree sum that can double-count shared pages, PSS proportions shared pages and USS counts private pages, both only when every live sampled PID has readable smaps_rollup, and process count covers only live sampled tree members. Last-observed values are not proof that a process is still active. Qualified session gauges appear after the updated application is restarted and this dashboard is deployed; old unqualified history is excluded. Normal binary/PHAR launches remain off. The env tag is telemetry environment, not APP_ENV.'
 tags:
   - 'ai:modified_with_ai'
 template_variables:
@@ -23,7 +23,7 @@ widgets:
   -
     definition:
       type: note
-      content: 'Collection: `castor run:agent` may opt in to a once-per-minute scheduler resource sample. Gauges: `hatfield.session.cpu_percent` (% short interval sample), `hatfield.session.rss_bytes` (bytes, summed process-tree RSS; shared pages may be double-counted), `hatfield.session.pss_bytes` / `hatfield.session.uss_bytes` (unique memory from smaps_rollup when coverage is complete), and `hatfield.session.process_count` (live sampled tree members). Tags: `service:hatfield`, `env:dev`, `session_id:<raw owning session ID>`, and `session_key:<sha256(canonical project cwd)>:<session ID>`. Selector defaults to all qualified sessions; unqualified history is excluded. Normal binary/PHAR launches remain off; `env:dev` is the telemetry environment, not `APP_ENV`. Missing short tools and peaks are accepted. Last-observed samples do not prove process liveness.'
+      content: 'Collection: `castor run:agent` may opt in to a once-per-minute scheduler resource sample. Gauges: `hatfield.session.cpu_percent` (% short interval sample), `hatfield.session.rss_bytes` (bytes, summed process-tree RSS; shared pages may be double-counted), `hatfield.session.pss_bytes` (proportional shared pages) / `hatfield.session.uss_bytes` (private pages) from smaps_rollup when coverage is complete, and `hatfield.session.process_count` (live sampled tree members). Tags: `service:hatfield`, `env:dev`, `session_id:<raw owning session ID>`, and `session_key:<sha256(canonical project cwd)>:<session ID>`. Selector defaults to all qualified sessions; unqualified history is excluded. Normal binary/PHAR launches remain off; `env:dev` is the telemetry environment, not `APP_ENV`. Missing short tools and peaks are accepted. Last-observed samples do not prove process liveness.'
       background_color: '#e6f1ff'
       font_size: '12'
       text_align: left
