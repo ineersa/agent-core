@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -154,7 +155,7 @@ try {
             $bus,
         );
         $dispatcher->addListener(ProcessedToolResultDTO::class, $subscriber);
-        $workerHandler = new ExecuteToolCallWorker($bus, new TestLogger(), $executor, $c->get(DeferredToolCompletionRepositoryInterface::class), $results, $c->get(RunOperationalStatusReaderInterface::class), eventDispatcher: $dispatcher);
+        $workerHandler = new ExecuteToolCallWorker($bus, new TestLogger(), $executor, $c->get(DeferredToolCompletionRepositoryInterface::class), $results, $c->get(RunOperationalStatusReaderInterface::class), eventDispatcher: $dispatcher, payloads: $c->get(ToolPayloadStoreInterface::class));
         $result = $workerHandler($call);
         file_put_contents($directory.'/worker-done', json_encode(['processors' => $counter->count, 'result' => $result?->result, 'error' => $result?->isError, 'publications' => count($bus->messages), 'published' => array_map(static fn ($message): string => $message::class, $bus->messages)], \JSON_THROW_ON_ERROR));
         // Persist the sealed deferred publication into the shared owner transport

@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -58,6 +59,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private \Ineersa\CodingAgent\Session\History\HistoryReplayFilter $historyReplayFilter,
         private DeferredSubagentBatchRepository $deferredBatches,
         private DeferredToolCompletionRepositoryInterface $deferredCompletions,
+        private ToolPayloadStoreInterface $payloads,
     ) {
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
@@ -175,7 +177,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         // Normally idle roots can still own acknowledged work. Redrive its
         // accepted terminal delivery without executing the original invocation.
         if (RunStatus::Completed === $replayed->status || (!$this->hasTerminalAgentEnd($sorted) && RunStatus::Cancelling !== $replayed->status)) {
-            $acceptedRedrive = $this->pendingAcceptedDeferredRedrive($runId, $apply, $leadingActions);
+            $acceptedRedrive = $this->retainedDeferredRedrive($runId, $apply, $leadingActions);
             if (null !== $acceptedRedrive) {
                 return $acceptedRedrive;
             }
@@ -847,20 +849,27 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     /**
      * @param list<object> $leadingActions
      */
-    private function pendingAcceptedDeferredRedrive(string $runId, bool $apply, array $leadingActions): RepairResult|SessionRepairPlan|null
+    private function retainedDeferredRedrive(string $runId, bool $apply, array $leadingActions): RepairResult|SessionRepairPlan|null
     {
-        $deferredIds = $this->deferredCompletions->listPendingAcceptedDeferredIdsForRun($runId);
+        $deferredIds = [];
+        foreach ($this->deferredCompletions->listPendingDeferredIdsForRun($runId) as $id) {
+            if (null !== $this->deferredCompletions->findAcceptedResultReferenceByDeferredId($id)) {
+                $deferredIds[] = $id;
+                continue;
+            }
+            $invocation = $this->deferredCompletions->findInvocationReferenceByDeferredId($id);
+            if (null !== $invocation && null !== $this->payloads->findProcessedResultReference($invocation)) {
+                $deferredIds[] = $id;
+            }
+        }
         if ([] === $deferredIds) {
             return null;
         }
         if (!$apply) {
-            return new RepairResult(false, false, 'Pending accepted deferred completion repair available. External effects may already have occurred.');
+            return new RepairResult(false, false, 'Retained deferred completion repair available. External effects may already have occurred.');
         }
         $effects = [];
         foreach ($deferredIds as $deferredId) {
-            if (null === $this->deferredCompletions->findAcceptedResultReferenceByDeferredId($deferredId)) {
-                throw new \RuntimeException('Pending accepted deferred completion lost its frozen result.');
-            }
             $effects[] = new RedriveDeferredToolCall($runId, $deferredId);
         }
         $stored = $this->activeRunContext->requireLoaded($runId);
@@ -870,7 +879,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             $stored,
             [],
             $leadingActions,
-            new RepairResult(false, false, 'Pending accepted deferred completion redrive requested. Delivery runs after owner-lock release. External effects may already have occurred.', activeOperationsRedriven: \count($effects)),
+            new RepairResult(false, false, 'Retained deferred completion redrive requested. Delivery runs after owner-lock release. External effects may already have occurred.', activeOperationsRedriven: \count($effects)),
             $effects,
         );
     }

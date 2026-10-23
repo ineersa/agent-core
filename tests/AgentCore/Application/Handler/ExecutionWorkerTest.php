@@ -21,6 +21,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeToolExecutor;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\AgentCore\Tests\Support\InMemoryToolPayloadStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 
@@ -138,7 +139,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteToolCallWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new TestLogger(), $toolExecutor, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
+        $worker = new ExecuteToolCallWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new TestLogger(), $toolExecutor, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), payloads: new InMemoryToolPayloadStore());
 
         $result = $worker(new ExecuteToolCall(
             runId: 'run-worker-2',
@@ -175,6 +176,7 @@ final class ExecutionWorkerTest extends TestCase
             new InMemoryDeferredToolCompletionRepository(),
             $store,
             new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            payloads: new InMemoryToolPayloadStore(),
         );
 
         $result = $worker(new ExecuteToolCall(
@@ -221,6 +223,7 @@ final class ExecutionWorkerTest extends TestCase
             new InMemoryDeferredToolCompletionRepository(),
             $store,
             new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            payloads: new InMemoryToolPayloadStore(),
         );
         $worker(new ExecuteToolCall(
             runId: 'run-deferred-1', turnNo: 1, stepId: 'step-1', attempt: 1,

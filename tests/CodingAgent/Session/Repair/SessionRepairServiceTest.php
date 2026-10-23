@@ -28,6 +28,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValid
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\AgentCore\Tests\Support\InMemoryToolPayloadStore;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -968,6 +969,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             ),
             deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
             deferredCompletions: new InMemoryDeferredToolCompletionRepository(),
+            payloads: new InMemoryToolPayloadStore(),
         );
     }
 

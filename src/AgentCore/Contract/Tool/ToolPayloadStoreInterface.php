@@ -28,6 +28,12 @@ interface ToolPayloadStoreInterface
 
     public function readCorrelation(ToolPayloadReferenceDTO $reference): DeferredToolCompletionCorrelation;
 
+    /** Retain the first processed terminal before owner acceptance, without an owner lock. */
+    public function retainProcessedResult(ToolPayloadReferenceDTO $invocation, ToolCallResult $result): ToolPayloadReferenceDTO;
+
+    /** Read only processed-reference metadata bound to the exact immutable call. */
+    public function findProcessedResultReference(ToolPayloadReferenceDTO $invocation): ?ToolPayloadReferenceDTO;
+
     public function deleteCall(string $runId, string $toolCallId): void;
 
     public function deleteAllForRun(string $runId): void;

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-/** Explicit repair of an already accepted terminal result, never fresh execution. */
+/** Explicit repair from retained terminal evidence, never fresh execution. */
 final readonly class RedriveDeferredToolCall extends AbstractAgentBusMessage
 {
     public function __construct(string $runId, public string $deferredId)

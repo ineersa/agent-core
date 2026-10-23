@@ -35,18 +35,31 @@ local metadata transaction. The deferred registration stays `pending` until true
 terminal settlement. Later calls use ordinary admission on available workers,
 including another code-mode invocation.
 
-The original worker applies terminal processors once. Its local
-`ProcessedToolResultDTO` includes both the original execution envelope and the
-processed result. CodingAgent validates both against the frozen invocation, then
-freezes the first accepted result on the shared deferred record and dispatches
+The original worker applies terminal processors once. Before subscriber dispatch
+or result sending, it retains the processed terminal through the shared
+`ToolPayloadStoreInterface`. A short Symfony publication lock protects the first
+result-reference anchor, bound to the complete immutable invocation digest.
+Repair discovery reads bounded reference metadata, not every pending result body.
+Storage is resolved before execution, independently of later owner admission. Pending
+execution redelivery reads that evidence before considering execution; completed
+deferred redelivery returns before recreating cleaned files. Human-input waits
+are not terminal evidence.
+
+The local `ProcessedToolResultDTO` includes both the original execution envelope
+and the processed result. CodingAgent validates both against the frozen invocation,
+then freezes the first accepted result on the shared deferred record and dispatches
 `CompleteDeferredToolCall`. That common path routes a still-waiting caller through
 the ordinary result handler, or an acknowledged completion through the existing
 background-completion mailbox with paths to retained processed and original
 structured results. Child terminal delivery uses the same path. Failed sends and
 acknowledged deliveries without durable mailbox admission retain the first
-accepted reference for explicit `/repair`. Repair captures a bounded
-`RedriveDeferredToolCall` through the existing owner transition. It reads the
-frozen result without repeating execution or terminal processing, even when
+accepted reference for explicit `/repair`. If publication fails before acceptance,
+repair finds the processed evidence through the pending registration's immutable
+call reference and repeats publication validation, not execution or processors.
+This evidence is not a second acceptance authority. The shared deferred record
+still owns first acceptance and routing. Repair captures a bounded
+`RedriveDeferredToolCall` through the existing owner transition. It reuses the
+retained result without repeating execution or terminal processing, even when
 the root completed normally. Preview and refused repair do not send or mutate.
 Detached producer and receiver admission validate the retained invocation after
 the parent turn advances.

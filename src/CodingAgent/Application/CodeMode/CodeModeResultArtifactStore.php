@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Session\SessionToolPayloadStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -18,7 +19,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 /** Immutable native results are outside disposable batch transport storage. */
 final readonly class CodeModeResultArtifactStore
 {
-    public function __construct(private ToolBatchRunStoragePathsInterface $paths, private SerializerInterface&NormalizerInterface&DenormalizerInterface $serializer, private ValidatorInterface $validator, private Filesystem $filesystem)
+    public function __construct(private ToolBatchRunStoragePathsInterface $paths, private SerializerInterface&NormalizerInterface&DenormalizerInterface $serializer, private ValidatorInterface $validator, private Filesystem $filesystem, private LockFactory $locks)
     {
     }
 
@@ -57,6 +58,6 @@ final readonly class CodeModeResultArtifactStore
 
     private function store(string $runId): SessionToolPayloadStore
     {
-        return new SessionToolPayloadStore($this->paths, $this->serializer, $this->validator, $this->filesystem, ['run_id' => $runId, 'path' => \dirname($this->paths->resolveToolBatchesDirectory($runId)).'/code-mode-results']);
+        return new SessionToolPayloadStore($this->paths, $this->serializer, $this->validator, $this->filesystem, $this->locks, ['run_id' => $runId, 'path' => \dirname($this->paths->resolveToolBatchesDirectory($runId)).'/code-mode-results']);
     }
 }

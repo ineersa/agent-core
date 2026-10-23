@@ -35,6 +35,7 @@ use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
@@ -183,7 +184,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('batch paths');
         $paths = new CountingToolBatchRunStoragePaths($container->get(ToolBatchRunStoragePathsInterface::class));
-        $payloads = new SessionToolPayloadStore($paths, $container->get('serializer'), $container->get(ValidatorInterface::class), new Filesystem());
+        $payloads = new SessionToolPayloadStore($paths, $container->get('serializer'), $container->get(ValidatorInterface::class), new Filesystem(), locks: self::getContainer()->get(LockFactory::class));
         $store = new DoctrineToolBatchStore($container->get(Connection::class), $payloads, $container->get('serializer'), $container->get(ValidatorInterface::class), $container->get(RunLockManager::class), new TestLogger());
         $sql = $container->get('test.sql_logger');
         $sql->records = [];

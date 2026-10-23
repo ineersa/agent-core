@@ -14,8 +14,10 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\RedriveDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence;
+use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -31,6 +33,7 @@ final readonly class CompleteDeferredToolCallHandler
         private LoggerInterface $logger,
         private ?DeferredAcknowledgedCompletionRouterInterface $acknowledgedRouter,
         private ?DeferredAcceptedResultReaderInterface $acceptedResults,
+        private EventDispatcherInterface $events,
     ) {
     }
 
@@ -140,9 +143,30 @@ final readonly class CompleteDeferredToolCallHandler
                 return;
             }
             $metadata = $this->deferredRepository->findMetadataByDeferredId($message->deferredId);
-            if (null === $metadata || $metadata->reference->runId !== $message->runId()
-                || null === $this->deferredRepository->findAcceptedResultReferenceByDeferredId($message->deferredId)) {
-                throw new \RuntimeException('Deferred repair requires an accepted result for the same run.');
+            if (null === $metadata || $metadata->reference->runId !== $message->runId()) {
+                throw new \RuntimeException('Deferred repair requires a retained result for the same run.');
+            }
+            if (null === $this->deferredRepository->findAcceptedResultReferenceByDeferredId($message->deferredId)) {
+                $reference = $this->deferredRepository->findInvocationReferenceByDeferredId($message->deferredId)
+                    ?? throw new \RuntimeException('Deferred repair lost its invocation reference.');
+                $processed = $this->payloads->findProcessedResultReference($reference)
+                    ?? throw new \RuntimeException('Deferred repair requires retained processed terminal evidence.');
+                $call = $this->payloads->read($reference);
+                if (!$call instanceof ExecuteToolCall) {
+                    throw new \RuntimeException('Deferred repair lost its immutable invocation.');
+                }
+                $result = $this->payloads->read($processed);
+                if (!$result instanceof ToolCallResult || null !== $result->pendingHumanInput || !$this->fence->matchesResult($result, $call)) {
+                    throw new \RuntimeException('Deferred repair requires matching processed terminal evidence.');
+                }
+                // Reuse native publication validation, not execution or result
+                // processors. Generic deferred producers use the same acceptance.
+                $publication = new ProcessedToolResultDTO($result, $call);
+                $this->events->dispatch($publication);
+                if ($publication->handled) {
+                    return;
+                }
+                $this->deferredRepository->acceptResult($message->deferredId, $processed);
             }
             // The accepted-reference check prevents repair from manufacturing a
             // terminal outcome. __invoke reads the first frozen result, not this body.

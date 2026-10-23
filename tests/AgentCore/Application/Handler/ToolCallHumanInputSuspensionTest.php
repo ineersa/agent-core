@@ -30,6 +30,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\AgentCore\Tests\Support\InMemoryToolPayloadStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchStore;
@@ -66,6 +67,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             new InMemoryDeferredToolCompletionRepository(),
             $store,
             new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            payloads: new InMemoryToolPayloadStore(),
         ))(new ExecuteToolCall('run-susp', 2, 'turn-2-tools-1', 1, 'idemp', 'call-susp', 'bash', ['command' => 'env'], 0));
 
         $this->assertInstanceOf(ToolCallResult::class, $envelope);

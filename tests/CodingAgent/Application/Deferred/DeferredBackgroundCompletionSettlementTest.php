@@ -6,7 +6,10 @@ namespace Ineersa\CodingAgent\Tests\Application\Deferred;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\Persistence\ManagerRegistry;
+use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
+use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
@@ -14,8 +17,12 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -27,9 +34,14 @@ use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
 use Ineersa\CodingAgent\Application\Deferred\DeferredCallerAcknowledgementService;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
@@ -41,18 +53,190 @@ use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
+use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Agent\Toolbox\ToolResult as ToolboxResult;
+use Symfony\AI\Platform\Result\ToolCall as ToolboxCall;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Uid\Uuid;
 
 final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolatedKernelTestCase
 {
     private InMemoryTransport $transport;
     private int $seen = 0;
+
+    public static function publicationFailures(): iterable
+    {
+        foreach (['subscriber', 'acceptance database'] as $failure) {
+            yield $failure.' success' => [$failure, false, true];
+            yield $failure.' error' => [$failure, true, true];
+        }
+        yield 'cold worker success' => ['subscriber', false, false];
+        yield 'cold worker error' => ['subscriber', true, false];
+    }
+
+    #[DataProvider('publicationFailures')]
+    public function testProcessedEvidenceSurvivesFailureBeforeAcceptance(string $failure, bool $error, bool $repair): void
+    {
+        $c = self::getContainer();
+        $fixture = new CodeModeBackendFixture($c, 'return 42;');
+        $run = $fixture->state->runId;
+        $execution = $c->get(CodeModeExecutionService::class);
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $payloads = $c->get(ToolPayloadStoreInterface::class);
+        $db = $c->get(Connection::class);
+        $id = null;
+        $runs = 0;
+        $invoke = function (ToolboxCall $call) use ($execution, $db, $failure, $run, &$runs, &$id): ToolboxResult {
+            ++$runs;
+            $id = $execution->begin();
+            $this->assertNotNull($id);
+            $execution->ready($id);
+            $this->dispatch(new CodeModeOwnerDTO($run, $id, 'cm', true));
+            $this->drain();
+            $value = ['answer' => 42, 'nested' => [false, null]];
+            $diagnostics = ['stdout' => 'OUT', 'stderr' => 'ERR'];
+            $execution->preserve($id, new CodeModeExecutionResult($value, $diagnostics), null);
+            if ('acceptance database' === $failure) {
+                $db->executeStatement("CREATE TRIGGER fail_terminal_acceptance BEFORE UPDATE OF accepted_result_reference_json ON tool_deferred_completion WHEN NEW.accepted_result_reference_json IS NOT NULL BEGIN SELECT RAISE(ABORT, 'terminal acceptance unavailable'); END");
+            }
+
+            return new ToolboxResult($call, ['code_mode_value' => $value, 'code_mode_diagnostics' => $diagnostics]);
+        };
+        $toolbox = new class($invoke) implements ToolboxInterface {
+            public function __construct(private \Closure $invoke)
+            {
+            }
+
+            public function getTools(): array
+            {
+                return [];
+            }
+
+            public function execute(ToolboxCall $call): ToolboxResult
+            {
+                return ($this->invoke)($call);
+            }
+        };
+        $processor = new class($error) implements ToolResultProcessorInterface {
+            public int $count = 0;
+
+            public function __construct(private bool $error)
+            {
+            }
+
+            public function process(ToolResult $result, ToolCall $call): ToolResult
+            {
+                ++$this->count;
+
+                return new ToolResult($result->toolCallId, $result->toolName, $result->content, $result->details, $this->error);
+            }
+        };
+        $results = new ToolExecutionResultStore();
+        $executor = new ToolExecutor('sequential', 2, $results, $toolbox, $c->get(StackToolExecutionContextAccessor::class), toolResultProcessors: [new CodeModeDiagnosticsToolResultProcessor(), $processor]);
+        $events = new EventDispatcher();
+        if ('subscriber' === $failure) {
+            $events->addListener(ProcessedToolResultDTO::class, static function (): never { throw new \RuntimeException('terminal subscriber unavailable'); }, 10);
+        }
+        $events->addListener(ProcessedToolResultDTO::class, $c->get(CodeModeProcessedResultSubscriber::class));
+        $logger = new TestLogger();
+        $worker = new ExecuteToolCallWorker($c->get('agent.command.bus'), $logger, $executor, $deferred, $results, $c->get(RunOperationalStatusReaderInterface::class), $payloads, eventDispatcher: $events);
+        try {
+            $result = $worker($fixture->call);
+        } finally {
+            if ('acceptance database' === $failure) {
+                $db->executeStatement('DROP TRIGGER IF EXISTS fail_terminal_acceptance');
+            }
+        }
+        $this->assertNotNull($result);
+        $this->assertNotNull($id);
+        $this->assertSame(1, $runs);
+        $this->assertSame(1, $processor->count);
+        $this->assertSame($error, $result->isError);
+        $this->assertSame(['answer' => 42, 'nested' => [false, null]], $result->result['details']['raw_result']);
+        $this->assertStringContainsString('OUT', $result->result['content'][0]['text']);
+        $this->assertStringContainsString('ERR', $result->result['content'][0]['text']);
+        $this->assertContains('runtime.result_send_failed', array_column($logger->records, 'message'));
+        $this->assertNull($deferred->findAcceptedResultReferenceByDeferredId($id));
+        $this->assertSame('pending', $deferred->status($id));
+        $invocation = $deferred->findInvocationReferenceByDeferredId($id);
+        $this->assertNotNull($invocation);
+        $processed = $payloads->findProcessedResultReference($invocation);
+        $this->assertNotNull($processed);
+        $this->assertEquals($result, $payloads->read($processed));
+        $this->completeRoot($run);
+        $sent = $this->transport->getSent();
+        $preview = $c->get(SessionRepairService::class)->repair($run, false, 'preview-processed');
+        $this->assertStringContainsString('Retained deferred', $preview->message);
+        $this->assertEquals($sent, $this->transport->getSent());
+        $context = $c->get(ActiveRunContextInterface::class);
+        $state = $context->requireLoaded($run);
+        $context->replaceCurrent($state->with(['isStreaming' => true]));
+        $refused = $c->get(SessionRepairService::class)->repair($run, true, 'refuse-processed');
+        $this->assertSame(SessionRepairRefusalReasonEnum::ActiveStreaming, $refused->refusalReason);
+        $this->assertEquals($sent, $this->transport->getSent());
+        $this->assertNull($deferred->findAcceptedResultReferenceByDeferredId($id));
+        $this->assertEquals($processed, $payloads->findProcessedResultReference($invocation));
+        $context->replaceCurrent($state);
+
+        // This worker has no remembered ToolResult or original result processors.
+        $neverExecute = $this->createMock(ToolExecutorInterface::class);
+        $neverExecute->expects($this->never())->method('execute');
+        $cold = new ExecuteToolCallWorker($c->get('agent.command.bus'), new TestLogger(), $neverExecute, $deferred, new ToolExecutionResultStore(), $c->get(RunOperationalStatusReaderInterface::class), $payloads, eventDispatcher: $c->get(EventDispatcherInterface::class));
+        if ($repair) {
+            $this->dispatch(new RepairSession($run, true, 'repair-processed'));
+        } else {
+            $this->assertEquals($result, $cold($fixture->call));
+        }
+        $this->drain();
+        $acceptedJson = $db->fetchOne('SELECT accepted_result_reference_json FROM tool_deferred_completion WHERE deferred_id = ?', [$id]);
+        $this->assertIsString($acceptedJson);
+        $accepted = $c->get(SerializerInterface::class)->deserialize($acceptedJson, ToolPayloadReferenceDTO::class, 'json');
+        $this->assertEquals($result, $c->get(CodeModeResultArtifactStore::class)->read($accepted));
+        $this->assertSame('completed', $deferred->status($id));
+        $this->assertNotNull($c->get(BackgroundCompletionReceiptRepository::class)->receipt('background-'.$id));
+        $this->assertNull($c->get(ToolBatchStoreInterface::class)->loadSchedule($run, 1, 'step'));
+        $this->assertNull($payloads->findProcessedResultReference($invocation));
+        $before = $this->transport->getSent();
+        $this->assertNull($cold($fixture->call));
+        $this->assertEquals($before, $this->transport->getSent());
+        $this->assertNull($payloads->findProcessedResultReference($invocation), 'Completed redelivery must not recreate cleaned processed evidence.');
+        $this->assertSame(1, $runs);
+        $this->assertSame(1, $processor->count);
+    }
+
+    public function testGenericDeferredRepairAcceptsTheRetainedReferenceWithoutNativeOwnership(): void
+    {
+        [$fixture, $id] = $this->acknowledged(native: false);
+        $c = self::getContainer();
+        $run = $fixture->state->runId;
+        $payloads = $c->get(ToolPayloadStoreInterface::class)->forRun($run);
+        $call = $fixture->call;
+        $result = new ToolCallResult($run, 1, 'step', 1, $call->idempotencyKey(), 'cm', 0, ['tool_name' => 'subagent', 'content' => [['type' => 'text', 'text' => 'processed generic terminal']], 'details' => ['raw_result' => ['answer' => 42]]]);
+        $retained = $payloads->retainProcessedResult($payloads->publish($call), $result);
+        $this->assertNull($c->get(DeferredToolCompletionRepositoryInterface::class)->findAcceptedResultReferenceByDeferredId($id));
+        $this->completeRoot($run);
+        $this->dispatch(new RepairSession($run, true, 'repair-generic-processed'));
+        $this->drain();
+        $json = $c->get(Connection::class)->fetchOne('SELECT accepted_result_reference_json FROM tool_deferred_completion WHERE deferred_id = ?', [$id]);
+        $this->assertIsString($json);
+        $accepted = $c->get(SerializerInterface::class)->deserialize($json, ToolPayloadReferenceDTO::class, 'json');
+        $this->assertEquals($retained, $accepted, 'Generic repair reuses the processed reference without a native storage namespace.');
+        $receipt = $c->get(BackgroundCompletionReceiptRepository::class)->receipt('background-child-result-'.$id);
+        $this->assertNotNull($receipt);
+        $this->assertSame('processed generic terminal', $receipt->text);
+        $this->assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
+        $this->assertSame([], $c->get('messenger.transport.tool')->getSent());
+    }
 
     public static function repairCases(): iterable
     {
@@ -99,7 +283,7 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
         $before = $this->transport->getSent();
         $preview = $c->get(SessionRepairService::class)->repair($run, false, 'preview');
         $this->assertNull($preview->refusalReason);
-        $this->assertStringContainsString('accepted deferred', $preview->message);
+        $this->assertStringContainsString('Retained deferred', $preview->message);
         $this->assertEquals($before, $this->transport->getSent());
         $this->assertEquals($first, $deferred->findAcceptedResultReferenceByDeferredId($id));
         $this->transport->failCompletion = false;

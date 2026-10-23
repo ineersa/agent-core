@@ -53,11 +53,11 @@ interface DeferredToolCompletionRepositoryInterface
     public function acceptResult(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO;
 
     /**
-     * Pending registrations for one run that already froze a terminal result.
+     * Pending registrations for one run, without loading correlation bodies.
      *
      * @return list<string>
      */
-    public function listPendingAcceptedDeferredIdsForRun(string $runId): array;
+    public function listPendingDeferredIdsForRun(string $runId): array;
 
     public function markCompleted(string $deferredId): void;
 }

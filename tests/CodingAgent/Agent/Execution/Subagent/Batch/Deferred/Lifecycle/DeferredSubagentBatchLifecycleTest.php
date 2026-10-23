@@ -66,6 +66,7 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[Group('db')]
 final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
@@ -303,7 +304,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             logger: new TestLogger(),
             finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create(
                 $childStore,
-                new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher()),
+                new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new EventDispatcher()),
             ),
         );
         $commit->commit(
@@ -905,10 +906,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             return new \Ineersa\AgentCore\Domain\Tool\ToolResult($tool, 'fork', [], ['raw_result' => $outcome]);
         });
         $notifications = 0;
-        $events = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $events = new EventDispatcher();
         $events->addListener(DeferredToolCompletionRegisteredEvent::class, static function () use (&$notifications): void { ++$notifications; });
         $workerBus = new TestMessageBus();
-        $worker = new \Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $deferred, new \Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $events, launchInputStore: $inputStore);
+        $worker = new \Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $deferred, new \Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $events, launchInputStore: $inputStore, payloads: self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class));
         $worker($original);
         $this->assertCount(0, $workerBus->messages, json_encode($workerBus->messages, \JSON_THROW_ON_ERROR));
         $this->assertSame('pending', $deferred->status($lifecycle));
@@ -935,7 +936,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame(2, $notifications, 'Pending redelivery re-emits registration without reading input.');
         $terminalBus = new TestMessageBus();
         $container = self::getContainer();
-        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $batchStore, $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class), $container->get(\Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence::class), new TestLogger(), null, null))($complete);
+        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $batchStore, $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class), $container->get(\Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence::class), new TestLogger(), null, null, events: new EventDispatcher()))($complete);
         $this->assertSame('completed', $deferred->status($lifecycle));
         $this->assertCount(1, $terminalBus->messages);
         $worker($original);
@@ -1016,6 +1017,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new TestLogger(),
             null,
             null,
+            events: new EventDispatcher(),
         );
         $completionHandler($complete);
         $this->assertCount(1, $resultBus->messages);
@@ -1224,7 +1226,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                         DeliverDeferredSubagentBatchLifecycleMessage::class => [$bus->dispatch(...)],
                     ])),
                 ]);
-                $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $coordinationBus, new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
+                $dispatcher = new \Ineersa\AgentCore\Application\Handler\StepDispatcher($coordinationBus, $coordinationBus, new TestLogger(), events: new EventDispatcher());
                 $commit = new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
                     activeRunContext: $active,
                     eventStore: $this->store,

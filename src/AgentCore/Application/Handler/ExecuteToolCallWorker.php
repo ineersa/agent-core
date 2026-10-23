@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -33,6 +34,7 @@ final readonly class ExecuteToolCallWorker
         private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
         private ToolExecutionResultStore $resultStore,
         private RunOperationalStatusReaderInterface $statusReader,
+        private ToolPayloadStoreInterface $payloads,
         private ?RunTracer $tracer = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
         private ?ToolLaunchInputStoreInterface $launchInputStore = null,
@@ -55,8 +57,26 @@ final readonly class ExecuteToolCallWorker
         ]);
 
         try {
-            $execute = function () use ($message): ?ToolCallResult {
-                $existing = $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId);
+            // Settled redelivery must not recreate files already removed by
+            // owner cleanup. Pending calls can still have unpublished evidence.
+            $existing = $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId);
+            if ('completed' === $existing) {
+                return null;
+            }
+            // Resolve storage before external effects. The scoped path remains
+            // usable if owner admission or its database fails after execution.
+            $payloads = $this->payloads->forRun($message->runId());
+            $invocation = $payloads->publish($message);
+            $processedReference = $payloads->findProcessedResultReference($invocation);
+            $execute = function () use ($message, $payloads, $existing, $processedReference): ?ToolCallResult {
+                if (null !== $processedReference) {
+                    $result = $payloads->read($processedReference);
+                    if (!$result instanceof ToolCallResult) {
+                        throw new \RuntimeException('Processed evidence is not a tool result.');
+                    }
+
+                    return $result;
+                }
                 if (null !== $existing) {
                     $this->execute($message);
 
@@ -89,6 +109,16 @@ final readonly class ExecuteToolCallWorker
             ], $execute, root: true);
             if (null === $result) {
                 return null;
+            }
+            // File-backed processed evidence precedes every fallible subscriber
+            // and send. Repair can recover it on a different worker.
+            if (null === $result->pendingHumanInput && null === $processedReference) {
+                $reference = $payloads->retainProcessedResult($invocation, $result);
+                $retained = $payloads->read($reference);
+                if (!$retained instanceof ToolCallResult) {
+                    throw new \RuntimeException('Processed evidence is not a tool result.');
+                }
+                $result = $retained;
             }
             try {
                 $publication = new ProcessedToolResultDTO($result, $message);

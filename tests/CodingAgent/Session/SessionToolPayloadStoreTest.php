@@ -21,6 +21,7 @@ use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Exception\NotEncodableValueException;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -31,12 +32,71 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
 {
+    public function testFirstProcessedTerminalSurvivesColdReadAndDuplicatePublication(): void
+    {
+        $c = self::getContainer();
+        $run = $c->get(HatfieldSessionStore::class)->createSession('processed evidence');
+        $store = $c->get(SessionToolPayloadStore::class)->forRun($run);
+        $call = new ExecuteToolCall($run, 1, 'tools', 1, 'key', 'call', 'echo', ['value' => 42], 0);
+        $invocation = $store->publish($call);
+        $first = new ToolCallResult($run, 1, 'tools', 1, 'key', 'call', 0,
+            ['tool_name' => 'echo', 'content' => [['type' => 'text', 'text' => str_repeat('first', 262144)]], 'details' => ['raw_result' => ['value' => 42], 'stdout' => 'OUT', 'stderr' => 'ERR']],
+            true, ['message' => 'original failure', 'retryable' => false]);
+        $replacement = new ToolCallResult($run, 1, 'tools', 1, 'key', 'call', 0, ['tool_name' => 'echo', 'content' => [['type' => 'text', 'text' => 'replacement']]]);
+        $processed = $store->retainProcessedResult($invocation, $first);
+        $root = \dirname($c->get(ToolBatchRunStoragePathsInterface::class)->resolveToolBatchesDirectory($run)).'/tool-payloads/'.hash('sha256', 'call');
+        $this->assertLessThan(1024, filesize($root.'/processed-'.$invocation->sha256.'.json'), 'Discovery reads reference metadata, not the large terminal body.');
+        $this->assertEquals($first, $store->read($processed));
+        $this->assertEquals($processed, $store->retainProcessedResult($invocation, $replacement));
+        $cold = new SessionToolPayloadStore($c->get(ToolBatchRunStoragePathsInterface::class), $c->get('serializer'), $c->get(ValidatorInterface::class), new Filesystem(), $c->get(LockFactory::class));
+        $this->assertEquals($processed, $cold->findProcessedResultReference($invocation));
+        $this->assertEquals($first, $cold->read($processed));
+        $store->deleteCall($run, 'call');
+        $this->assertNull($cold->findProcessedResultReference($invocation));
+    }
+
+    public function testProcessedAnchorIsBoundToEveryPartOfTheImmutableInvocation(): void
+    {
+        $c = self::getContainer();
+        $run = $c->get(HatfieldSessionStore::class)->createSession('processed invocation fence');
+        $store = $c->get(SessionToolPayloadStore::class)->forRun($run);
+        $arguments = ['runId' => $run, 'turnNo' => 1, 'stepId' => 'tools', 'attempt' => 1, 'idempotencyKey' => 'key', 'toolCallId' => 'call', 'toolName' => 'echo', 'args' => ['value' => 42], 'orderIndex' => 0, 'parentModel' => 'model'];
+        $call = new ExecuteToolCall(...$arguments);
+        $invocation = $store->publish($call);
+        $result = new ToolCallResult($run, 1, 'tools', 1, 'key', 'call', 0, ['tool_name' => 'echo', 'content' => []]);
+        $processed = $store->retainProcessedResult($invocation, $result);
+        foreach (['args' => ['value' => 43], 'parentModel' => 'other', 'timeoutSeconds' => 7, 'maxParallelism' => 3, 'toolsRef' => 'different-tools', 'argSchema' => ['type' => 'object'], 'attempt' => 2, 'idempotencyKey' => 'another-key'] as $field => $value) {
+            $other = $store->publish(new ExecuteToolCall(...[...$arguments, $field => $value]));
+            $this->assertNotSame($invocation->sha256, $other->sha256, $field);
+            $this->assertNull($store->findProcessedResultReference($other), $field.' must not reuse another invocation\'s processed result.');
+        }
+        $this->assertEquals($processed, $store->findProcessedResultReference($invocation));
+        $this->expectException(ToolPayloadException::class);
+        $store->findProcessedResultReference(new ToolPayloadReferenceDTO(...[...get_object_vars($invocation), 'toolName' => 'different']));
+    }
+
+    public function testProcessedPublicationRefusesMismatchedResultBeforeRetainingIt(): void
+    {
+        $c = self::getContainer();
+        $run = $c->get(HatfieldSessionStore::class)->createSession('processed result fence');
+        $store = $c->get(SessionToolPayloadStore::class);
+        $invocation = $store->publish(new ExecuteToolCall($run, 1, 'tools', 1, 'key', 'call', 'echo', [], 0));
+        $result = new ToolCallResult($run, 1, 'tools', 2, 'key', 'call', 0, ['tool_name' => 'echo', 'content' => []]);
+        try {
+            $store->retainProcessedResult($invocation, $result);
+            $this->fail('A different execution attempt must not become processed evidence.');
+        } catch (ToolPayloadException $error) {
+            $this->assertStringContainsString('identity', $error->getMessage());
+        }
+        $this->assertNull($store->findProcessedResultReference($invocation));
+    }
+
     public function testScopeReusesRealNumericParentResolutionWithoutCachingAcrossOperations(): void
     {
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('scoped bodies');
         $paths = new CountingToolBatchRunStoragePaths($container->get(ToolBatchRunStoragePathsInterface::class));
-        $store = new SessionToolPayloadStore($paths, $container->get('serializer'), $container->get(ValidatorInterface::class), new Filesystem());
+        $store = new SessionToolPayloadStore($paths, $container->get('serializer'), $container->get(ValidatorInterface::class), new Filesystem(), locks: self::getContainer()->get(LockFactory::class));
         $sql = $container->get('test.sql_logger');
         $sql->records = [];
         $scoped = $store->forRun($run);
@@ -194,7 +254,7 @@ final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
             }
         };
         $serializer = new Serializer([$normalizer], [new JsonEncoder()]);
-        $store = new SessionToolPayloadStore($container->get(ToolBatchRunStoragePathsInterface::class), $serializer, $container->get(ValidatorInterface::class), new Filesystem());
+        $store = new SessionToolPayloadStore($container->get(ToolBatchRunStoragePathsInterface::class), $serializer, $container->get(ValidatorInterface::class), new Filesystem(), locks: self::getContainer()->get(LockFactory::class));
         $result = new ToolCallResult($run, 3, 'tools', 2, 'private-key', 'call', 4, ['tool_name' => 'echo', 'content' => [['type' => 'text', 'text' => 'complete']]]);
         $reference = $store->publish($result);
         $this->assertSame(null === $failure ? 1 : 2, $normalizer->resultCalls);

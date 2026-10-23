@@ -143,11 +143,11 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         return $reference;
     }
 
-    public function listPendingAcceptedDeferredIdsForRun(string $runId): array
+    public function listPendingDeferredIdsForRun(string $runId): array
     {
         $ids = [];
         foreach ($this->byDeferredId as $deferredId => $row) {
-            if ($row['correlation']->runId === $runId && 'pending' === $row['status'] && null !== $row['acceptedResultReference']) {
+            if ($row['correlation']->runId === $runId && 'pending' === $row['status']) {
                 $ids[] = $deferredId;
             }
         }

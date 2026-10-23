@@ -17,7 +17,7 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 | `CompactRun` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler` (App layer; depends on compaction services) |
 | `CompactionStepResult` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CompactionStepResultHandler` |
 | `CompleteDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler` |
-| `RedriveDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler::redrive()` validates the accepted result before reusing terminal delivery |
+| `RedriveDeferredToolCall` | `agent.command.bus` (transport `run_control`) | `CompleteDeferredToolCallHandler::redrive()` validates retained processed or accepted evidence before reusing terminal publication and delivery |
 | `CommitSubagentProgress` | `agent.command.bus` (transport `run_control`) | `Ineersa\CodingAgent\Application\Pipeline\CommitSubagentProgressHandler` |
 | `RefreshRunContext` | Owner-local `RunMessageProcessor` call from attach, no bus route | `RefreshRunContextHandler` replaces generated messages and commits `context_refreshed` without advancing a turn |
 | `AcceptSubmissionDTO` | `agent.command.bus` (transport `run_control`) | App `SubmissionHandler` enters owner recovery; `SubmissionRunHandler` accepts a source receipt for a native deferred communication call |
@@ -36,7 +36,7 @@ CodingAgent's `agent_steer` and `notify_parent` tools enter this communication p
 
 Tool requests and outcomes cross the broker as bounded `ToolPayloadMessage` references. `ToolPayloadMiddleware` seals immutable JSON data before sending, then reconstructs local request/result values only after existing admission. Subagent and MCP routing inspect the small tool identity before sealing. Child launch bodies remain separate immutable files referenced by invocation data. LLM and compaction transport formats are unchanged.
 
-Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`) back onto `agent.command.bus` → `run_control`. Provider/request/stream retries for one LLM invocation are owned by `LlmRequestRetryExecutor` inside `LlmPlatformAdapter` (settings: `ai.http.max_retries`, default five). After that budget is exhausted the result is terminal (`retryable: false`). A failed result send is logged as intentional degradation and requires explicit repair. No generic worker claims or sealed result store remain. Failed `run_control` deliveries reset the default Doctrine connection and manager after Messenger decides retry eligibility but before permanent-failure terminalization, so redelivery and `agent_end` persistence never reuse failed transaction state. `WorkerFailedEventSubscriber` handles permanent owner failures under `RunLockManager` and commits the terminal transition through `RunCommit`, including normal sequence/state publication and post-commit cleanup hooks. A failed load, lock, append, or publication is logged without an alternate canonical writer.
+Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`) back onto `agent.command.bus` → `run_control`. Provider/request/stream retries for one LLM invocation are owned by `LlmRequestRetryExecutor` inside `LlmPlatformAdapter` (settings: `ai.http.max_retries`, default five). After that budget is exhausted the result is terminal (`retryable: false`). A failed result send is logged as intentional degradation and requires explicit repair. No generic worker claims remain. Shared payload storage retains processed tool terminals for explicit repair, not automatic resending. Failed `run_control` deliveries reset the default Doctrine connection and manager after Messenger decides retry eligibility but before permanent-failure terminalization, so redelivery and `agent_end` persistence never reuse failed transaction state. `WorkerFailedEventSubscriber` handles permanent owner failures under `RunLockManager` and commits the terminal transition through `RunCommit`, including normal sequence/state publication and post-commit cleanup hooks. A failed load, lock, append, or publication is logged without an alternate canonical writer.
 
 ## Dispatch ownership (producers)
 
@@ -60,7 +60,12 @@ status commit with mailbox metadata; the background-completion owner facade
 deletes settled batch files only after verified finalization. Duplicate admission
 retries guarded cleanup. `/repair` captures `RedriveDeferredToolCall` for pending
 accepted results, including normally completed roots, without repeating source
-execution or terminal processing. See `architecture/code-mode-execution.md`.
+execution or terminal processing. Before subscriber dispatch, the tool worker
+retains processed terminals in shared payload storage, bound to the full
+invocation digest. Pending redelivery and explicit repair reuse that evidence
+when owner acceptance failed; it does not grant acceptance or routing authority.
+Completed deferred redelivery returns before touching cleaned payload files.
+See `architecture/code-mode-execution.md`.
 
 - `StartRun` — `AgentRunner::start()`
 - `ApplyCommand` — `AgentRunner` steer/followUp/cancel/answerHuman via `applyCoreCommand()`

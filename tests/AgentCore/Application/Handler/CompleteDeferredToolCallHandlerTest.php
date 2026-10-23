@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Messenger\Envelope;
@@ -69,6 +70,7 @@ final class CompleteDeferredToolCallHandlerTest extends TestCase
             new TestLogger(),
             null,
             null,
+            events: new EventDispatcher(),
         );
         $handler(new CompleteDeferredToolCall('deferred', []));
         $this->assertSame(!$sendSucceeds, $pending);
@@ -109,6 +111,7 @@ final class CompleteDeferredToolCallHandlerTest extends TestCase
             new TestLogger(),
             $router,
             null,
+            events: new EventDispatcher(),
         );
         $handler(new CompleteDeferredToolCall('deferred', []));
         $this->assertTrue($pending);

@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\Fake\FakePlatform;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeToolExecutor;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\AgentCore\Tests\Support\InMemoryToolPayloadStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use PHPUnit\Framework\TestCase;
 
@@ -88,6 +89,7 @@ final class ExecutionFailureDrillTest extends TestCase
             deferredToolCompletionRepository: new InMemoryDeferredToolCompletionRepository(),
             resultStore: new ToolExecutionResultStore(),
             statusReader: new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            payloads: new InMemoryToolPayloadStore(),
         );
 
         $result = $worker($message);

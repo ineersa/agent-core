@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadDataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -29,6 +30,7 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
         private SerializerInterface&NormalizerInterface&DenormalizerInterface $serializer,
         private ValidatorInterface $validator,
         private Filesystem $filesystem,
+        private LockFactory $locks,
         private ?array $runRoot = null,
     ) {
     }
@@ -40,7 +42,7 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
             return $this;
         }
 
-        return new self($this->paths, $this->serializer, $this->validator, $this->filesystem, ['run_id' => $runId, 'path' => $root]);
+        return new self($this->paths, $this->serializer, $this->validator, $this->filesystem, $this->locks, ['run_id' => $runId, 'path' => $root]);
     }
 
     public function publish(ExecuteToolCall|ExecuteShellToolCall|ToolCallResult $message): ToolPayloadReferenceDTO
@@ -117,9 +119,72 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
         $this->filesystem->remove($this->directory($runId, $toolCallId));
     }
 
+    public function retainProcessedResult(ToolPayloadReferenceDTO $invocation, ToolCallResult $result): ToolPayloadReferenceDTO
+    {
+        $this->validate($invocation);
+        if ('call' !== $invocation->kind || null !== $result->pendingHumanInput || ($result->result['tool_name'] ?? null) !== $invocation->toolName) {
+            throw new ToolPayloadException('Processed terminal does not match its invocation.');
+        }
+        $this->assertIdentity($result, $invocation);
+        $anchor = $this->processedPath($invocation);
+        // This short publication lock is independent of owner admission. The
+        // candidate is bound to the full invocation, never another worker's turn.
+        $lock = $this->locks->createLock('processed-tool-'.hash('sha256', $anchor));
+        if (!$lock->acquire(true)) {
+            throw new ToolPayloadException('Processed terminal evidence cannot be locked.');
+        }
+        try {
+            $existing = $this->findProcessedResultReference($invocation);
+            if (null !== $existing) {
+                return $existing;
+            }
+            $reference = $this->publish($result);
+            $this->filesystem->dumpFile($anchor, $this->serializer->serialize($reference, 'json'));
+            $this->filesystem->chmod($anchor, 0600);
+
+            return $reference;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function findProcessedResultReference(ToolPayloadReferenceDTO $invocation): ?ToolPayloadReferenceDTO
+    {
+        $this->validate($invocation);
+        if ('call' !== $invocation->kind) {
+            throw new ToolPayloadException('Processed terminal requires a call reference.');
+        }
+        $path = $this->processedPath($invocation);
+        if (is_link($path)) {
+            throw new ToolPayloadException('Processed terminal cannot be a symbolic link.');
+        }
+        if (!is_file($path)) {
+            return null;
+        }
+        // Each reference string is at most 255 bytes. Even fully escaped JSON
+        // fits here; repair discovery never reads a potentially large result.
+        if (filesize($path) > 16_384) {
+            throw new ToolPayloadException('Processed terminal reference exceeds its metadata bounds.');
+        }
+        $json = $this->filesystem->readFile($path);
+        $reference = $this->serializer->deserialize($json, ToolPayloadReferenceDTO::class, 'json');
+        $this->validate($reference);
+        if ('result' !== $reference->kind || [$reference->runId, $reference->turnNo, $reference->stepId, $reference->attempt, $reference->idempotencyKey, $reference->toolCallId, $reference->orderIndex, $reference->toolName]
+            !== [$invocation->runId, $invocation->turnNo, $invocation->stepId, $invocation->attempt, $invocation->idempotencyKey, $invocation->toolCallId, $invocation->orderIndex, $invocation->toolName]) {
+            throw new ToolPayloadException('Processed terminal reference has a different invocation identity.');
+        }
+
+        return $reference;
+    }
+
     public function deleteAllForRun(string $runId): void
     {
         $this->filesystem->remove(\dirname($this->directory($runId, 'cleanup')));
+    }
+
+    private function processedPath(ToolPayloadReferenceDTO $invocation): string
+    {
+        return $this->directory($invocation->runId, $invocation->toolCallId).'/processed-'.$invocation->sha256.'.json';
     }
 
     private function readJson(ToolPayloadReferenceDTO $reference): string
