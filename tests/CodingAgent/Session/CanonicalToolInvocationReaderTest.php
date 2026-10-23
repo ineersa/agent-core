@@ -87,7 +87,7 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         $deferred = $this->createStub(DeferredToolCompletionRepositoryInterface::class);
         $locks = $container->get(RunLockManager::class);
         $commands = new TestMessageBus();
-        $middleware = new ToolPayloadMiddleware($payloads, $admission, $deferred, $locks, $container->get(ValidatorInterface::class), $commands, $this->logger, new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $this->logger));
+        $middleware = new ToolPayloadMiddleware($payloads, $admission, $deferred, $locks, $container->get(ValidatorInterface::class), $commands, $this->logger, new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $payloads, $container->get(\Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence::class), $this->logger, null, null));
         $receivedCalls = [];
         $handler = static function (ExecuteShellToolCall $message) use (&$receivedCalls): void {
             $receivedCalls[] = $message;
@@ -222,7 +222,7 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         $payloads->expects($this->never())->method('read');
         $commands = new TestMessageBus();
         $locks = self::getContainer()->get(RunLockManager::class);
-        $middleware = new ToolPayloadMiddleware($payloads, $this->admission($batches), $deferred, $locks, self::getContainer()->get(ValidatorInterface::class), $commands, $this->logger, new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $this->logger));
+        $middleware = new ToolPayloadMiddleware($payloads, $this->admission($batches), $deferred, $locks, self::getContainer()->get(ValidatorInterface::class), $commands, $this->logger, new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $payloads, self::getContainer()->get(\Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence::class), $this->logger, null, null));
         $bus = new MessageBus([$middleware]);
         $completion = new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'done']]);
         $this->assertInstanceOf(ToolPayloadMessage::class, $bus->dispatch($completion)->getMessage());
@@ -298,7 +298,7 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         $events->expects($this->never())->method('reverseFor');
         $events->method('latestSequenceFor')->willReturnCallback(fn (): int => $this->seq);
 
-        return new ToolPayloadAdmission($batches, new TestActiveRunContext(), $replay, $events, $this->logger, $this->reader);
+        return new ToolPayloadAdmission($batches, new TestActiveRunContext(), $replay, $events, $this->logger, $this->reader, $this->createStub(DeferredToolCompletionRepositoryInterface::class), $this->createStub(ToolPayloadStoreInterface::class), new \Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence(new \Symfony\Component\Serializer\Serializer()));
     }
 
     private function shell(string $key, bool $standalone, int $turn = 1): ExecuteShellToolCall

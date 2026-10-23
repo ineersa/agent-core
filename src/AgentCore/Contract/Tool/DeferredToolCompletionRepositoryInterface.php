@@ -32,6 +32,9 @@ interface DeferredToolCompletionRepositoryInterface
     /** Retained full ExecuteToolCall reference for pending registrations only. */
     public function findInvocationReferenceByDeferredId(string $deferredId): ?ToolPayloadReferenceDTO;
 
+    /** First accepted processed terminal reference for pending registrations. */
+    public function findAcceptedResultReferenceByDeferredId(string $deferredId): ?ToolPayloadReferenceDTO;
+
     /**
      * @return 'completed'|'pending'|null
      */
@@ -42,6 +45,12 @@ interface DeferredToolCompletionRepositoryInterface
 
     /** Record caller acknowledgement without settling the deferred registration. */
     public function markAcknowledged(string $deferredId): void;
+
+    /**
+     * Freeze the first accepted terminal result reference while the registration stays pending.
+     * Later calls return the original accepted reference without replacing it.
+     */
+    public function acceptResult(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO;
 
     public function markCompleted(string $deferredId): void;
 }

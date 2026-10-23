@@ -72,7 +72,7 @@ final readonly class CodeModeExecutionService
                 if (null === $retained || (array) $retained !== (array) $frozen) {
                     throw new \RuntimeException('Code-mode deferred registration did not retain the exact invocation reference.');
                 }
-                $this->executions->register($identity, $call->runId(), $call->toolCallId, $this->serializer->serialize($frozen, 'json'));
+                $this->executions->register($identity, $call->runId(), $call->toolCallId);
             });
 
             return $identity;
@@ -100,11 +100,6 @@ final readonly class CodeModeExecutionService
     public function resultReference(string $json): ToolPayloadReferenceDTO
     {
         return $this->serializer->deserialize($json, ToolPayloadReferenceDTO::class, 'json');
-    }
-
-    public function invocation(string $json): ExecuteToolCall
-    {
-        return $this->artifacts->invocation($this->resultReference($json));
     }
 
     public function matches(ToolCallResult $result, ExecuteToolCall $call): bool

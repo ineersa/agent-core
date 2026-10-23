@@ -46,12 +46,15 @@ worker posts the ordinary `ToolCallResult`. This event has no Messenger route.
 It never reruns terminal processors or selects scheduling policy.
 
 CodingAgent's retained code-mode owner and child backgrounding both use shared
-deferred caller acknowledgement. `DeferredCallerAcknowledgementService` validates
-the retained full invocation and unresolved caller, then
-`ToolCallResultHandler::acknowledge()` collects the original batch slot with
-`tool_call_acknowledged`, not an execution-end event. Shared `acknowledged_at`
-joins `LocalMetadataCoordinator`'s transaction while the deferred registration
-stays pending until true terminal settlement. See `architecture/code-mode-execution.md`.
+deferred caller acknowledgement and shared first-terminal acceptance.
+`DeferredCallerAcknowledgementService` validates the retained full invocation and
+unresolved caller, then `ToolCallResultHandler::acknowledge()` collects the
+original batch slot with `tool_call_acknowledged`, not an execution-end event.
+Shared `acknowledged_at` joins `LocalMetadataCoordinator`'s transaction while the
+deferred registration stays pending. `CompleteDeferredToolCallHandler` freezes the
+first accepted result reference and routes waiting callers ordinarily or
+acknowledged work through CodingAgent's background-completion mailbox. See
+`architecture/code-mode-execution.md`.
 
 - `StartRun` — `AgentRunner::start()`
 - `ApplyCommand` — `AgentRunner` steer/followUp/cancel/answerHuman via `applyCoreCommand()`

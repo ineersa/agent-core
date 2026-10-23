@@ -435,6 +435,16 @@ final class MarkCompletedFailsOnceRepository implements DeferredToolCompletionRe
         $this->inner->markAcknowledged($deferredId);
     }
 
+    public function findAcceptedResultReferenceByDeferredId(string $deferredId): ?\Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO
+    {
+        return $this->inner->findAcceptedResultReferenceByDeferredId($deferredId);
+    }
+
+    public function acceptResult(string $deferredId, \Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO $reference): \Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO
+    {
+        return $this->inner->acceptResult($deferredId, $reference);
+    }
+
     public function markCompleted(string $deferredId): void
     {
         if ($this->failuresRemaining > 0) {

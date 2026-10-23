@@ -309,10 +309,12 @@ final class ToolPayloadMiddlewareTest extends TestCase
         $events = $this->createStub(EventStoreInterface::class);
         $events->method('latestSequenceFor')->willReturn(7);
 
+        $fence = new \Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence(new \Symfony\Component\Serializer\Serializer());
+
         return new ToolPayloadMiddleware(
-            $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class))), $deferred, $locks,
+            $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class)), $deferred, $payloads, $fence), $deferred, $locks,
             Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(), $commands, $logger,
-            new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger),
+            new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $payloads, $fence, $logger, null, null),
         );
     }
 }

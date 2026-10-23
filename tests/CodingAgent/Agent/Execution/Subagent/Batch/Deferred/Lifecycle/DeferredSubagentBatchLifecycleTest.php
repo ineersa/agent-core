@@ -934,7 +934,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $worker($original);
         $this->assertSame(2, $notifications, 'Pending redelivery re-emits registration without reading input.');
         $terminalBus = new TestMessageBus();
-        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $batchStore, new TestLogger()))($complete);
+        $container = self::getContainer();
+        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $batchStore, $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class), $container->get(\Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence::class), new TestLogger(), null, null))($complete);
         $this->assertSame('completed', $deferred->status($lifecycle));
         $this->assertCount(1, $terminalBus->messages);
         $worker($original);
@@ -1004,12 +1005,17 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertFalse($complete->isError);
 
         $resultBus = new TestMessageBus();
+        $container = self::getContainer();
         $completionHandler = new CompleteDeferredToolCallHandler(
             $deferred,
             $resultBus,
-            self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            self::getContainer()->get(ToolBatchStoreInterface::class),
+            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            $container->get(ToolBatchStoreInterface::class),
+            $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
+            $container->get(\Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence::class),
             new TestLogger(),
+            null,
+            null,
         );
         $completionHandler($complete);
         $this->assertCount(1, $resultBus->messages);

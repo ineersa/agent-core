@@ -7,21 +7,26 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
+use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionRunHandler;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeAcknowledgementHandler;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
-use Ineersa\CodingAgent\Application\CodeMode\CodeModeOwnerHandler;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
@@ -39,10 +44,8 @@ use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as ToolboxResult;
 use Symfony\AI\Platform\Result\ToolCall as ToolboxCall;
 use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Process\Process;
-use Symfony\Component\Serializer\SerializerInterface;
 
 require dirname(__DIR__, 3).'/vendor/autoload.php';
 
@@ -142,11 +145,23 @@ try {
         $executor = new ToolExecutor('sequential', 2, $results, $toolbox, $contexts, toolResultProcessors: [new CodeModeDiagnosticsToolResultProcessor(), $counter]);
         $bus = new TestMessageBus();
         $dispatcher = new EventDispatcher();
-        $subscriber = new CodeModeProcessedResultSubscriber($executions, $artifacts, $c->get(RunLockManager::class), $c->get(SerializerInterface::class), $bus, $execution);
+        $subscriber = new CodeModeProcessedResultSubscriber(
+            $executions,
+            $artifacts,
+            $c->get(DeferredToolCompletionRepositoryInterface::class),
+            $execution,
+            $c->get(RunLockManager::class),
+            $bus,
+        );
         $dispatcher->addListener(ProcessedToolResultDTO::class, $subscriber);
         $workerHandler = new ExecuteToolCallWorker($bus, new TestLogger(), $executor, $c->get(DeferredToolCompletionRepositoryInterface::class), $results, $c->get(RunOperationalStatusReaderInterface::class), eventDispatcher: $dispatcher);
         $result = $workerHandler($call);
-        file_put_contents($directory.'/worker-done', json_encode(['processors' => $counter->count, 'result' => $result?->result, 'error' => $result?->isError, 'publications' => count($bus->messages)], \JSON_THROW_ON_ERROR));
+        file_put_contents($directory.'/worker-done', json_encode(['processors' => $counter->count, 'result' => $result?->result, 'error' => $result?->isError, 'publications' => count($bus->messages), 'published' => array_map(static fn ($message): string => $message::class, $bus->messages)], \JSON_THROW_ON_ERROR));
+        // Persist the sealed deferred publication into the shared owner transport
+        // after the host finishes, using the real command bus rather than TestMessageBus.
+        if ([] !== $bus->messages) {
+            file_put_contents($directory.'/worker-publications', serialize($bus->messages));
+        }
         exit(0);
     }
     ($c->get(StartupDatabaseMigrator::class))();
@@ -168,7 +183,7 @@ try {
     }
     $blocked = json_decode(file_get_contents($directory.'/blocked'), true, flags: \JSON_THROW_ON_ERROR);
     $row = $executions->invocation($f->state->runId, 'cm');
-    $handler = $c->get(CodeModeOwnerHandler::class);
+    $handler = $c->get(CodeModeAcknowledgementHandler::class);
     $message = new CodeModeOwnerDTO($f->state->runId, $row['identity'], 'cm', true);
     $ack = $handler->handle($message, $f->state);
     $state = $f->commit($f->state, $ack);
@@ -189,24 +204,119 @@ try {
         throw new RuntimeException('Host failed: '.$worker->getErrorOutput().$worker->getOutput());
     }
     $done = json_decode(file_get_contents($directory.'/worker-done'), true, flags: \JSON_THROW_ON_ERROR);
-    $terminal = new CodeModeOwnerDTO($state->runId, $row['identity'], 'cm');
-    $finished = $handler->handle($terminal, $state);
-    // Consume the actual run-control delivery, not a fixture-only settlement.
-    $c->get('agent.command.bus')->dispatch(new Envelope($terminal, [new ReceivedStamp('run_control')]));
-    $automaticCleanup = null === $batches->loadSchedule($state->runId, 1, 'step')
-        && null === $batches->loadCallReference($state->runId, 1, 'step', 'cm');
-    $notice = $finished->postCommitEffects[0];
-    $admission = $c->get(BackgroundCompletionRunHandler::class)->handle($notice, $state);
-    $state = $f->commit($state, $admission);
+    $commandBus = $c->get('agent.command.bus');
+    $transport = $c->get('messenger.transport.run_control');
+    $transport->reset();
+    // Worker publications used an isolated TestMessageBus. Replay the exact
+    // CompleteDeferredToolCall onto the owner bus so sealing and consumption run.
+    $publications = is_file($directory.'/worker-publications')
+        ? unserialize(file_get_contents($directory.'/worker-publications'), ['allowed_classes' => true])
+        : [];
+    if (!is_array($publications) || [] === $publications) {
+        throw new RuntimeException('Worker did not publish a deferred completion.');
+    }
+    foreach ($publications as $publication) {
+        if (!$publication instanceof CompleteDeferredToolCall) {
+            throw new RuntimeException('Worker published an unexpected message: '.$publication::class);
+        }
+        $commandBus->dispatch($publication);
+    }
+    $seen = 0;
+    $noticeIdentity = 'background-'.$row['identity'];
+    $accepted = null;
+    for ($i = 0; $i < 32; ++$i) {
+        $sent = $transport->getSent();
+        $accepted ??= $deferred->findAcceptedResultReferenceByDeferredId($row['identity']);
+        if ($seen >= count($sent)
+            && null !== $accepted
+            && null !== $c->get(BackgroundCompletionReceiptRepository::class)->receipt($noticeIdentity)
+            && 'completed' === $deferred->status($row['identity'])) {
+            break;
+        }
+        for (; $seen < count($sent); ++$seen) {
+            $envelope = $sent[$seen];
+            $payload = $envelope->getMessage();
+            if ($payload instanceof CompleteDeferredToolCall) {
+                throw new RuntimeException('Inline deferred bodies cannot be received.');
+            }
+            if ($payload instanceof ToolPayloadMessage
+                || $payload instanceof ToolCallResult
+                || $payload instanceof DeliverBackgroundCompletionDTO) {
+                $commandBus->dispatch($envelope->with(new ReceivedStamp('run_control')));
+            }
+        }
+        usleep(10_000);
+    }
+    // Nested ToolCallResult finalizes asynchronously. Redispatch completion so
+    // settle/delete can remove the retained settled batch after finalized=1.
+    foreach ($publications as $publication) {
+        $commandBus->dispatch($publication);
+    }
+    for ($i = 0; $i < 16; ++$i) {
+        $sent = $transport->getSent();
+        $progress = false;
+        foreach ($sent as $envelope) {
+            $payload = $envelope->getMessage();
+            if ($payload instanceof ToolPayloadMessage || $payload instanceof ToolCallResult || $payload instanceof DeliverBackgroundCompletionDTO) {
+                $commandBus->dispatch($envelope->with(new ReceivedStamp('run_control')));
+                $progress = true;
+            }
+        }
+        if (!$progress && null === $batches->loadSchedule($state->runId, 1, 'step')) {
+            break;
+        }
+        usleep(5_000);
+    }
+    $accepted ??= $deferred->findAcceptedResultReferenceByDeferredId($row['identity']);
+    if (null === $accepted) {
+        throw new RuntimeException('Shared terminal acceptance missing after host completion.');
+    }
+    $acceptedResult = $artifacts->read($accepted);
     $row = $executions->invocation($state->runId, 'cm');
     $rawRef = $execution->resultReference($row['raw_reference']);
     $rawPath = $artifacts->path($rawRef);
     $raw = $artifacts->read($rawRef);
-    echo json_encode([...$evidence, 'worker' => $done, 'notice' => $notice->text,
-        'admission_events' => array_column($admission->events, 'type'),
-        'duplicate_terminal_effects' => count($handler->handle($terminal, $state)->postCommitEffects),
-        'duplicate_notice_events' => count($c->get(BackgroundCompletionRunHandler::class)->handle($notice, $state)->events),
+    $automaticCleanup = null === $batches->loadSchedule($state->runId, 1, 'step')
+        && null === $batches->loadCallReference($state->runId, 1, 'step', 'cm');
+    $receipt = $c->get(BackgroundCompletionReceiptRepository::class)->receipt($noticeIdentity)
+        ?? throw new RuntimeException('Background-completion admission did not persist a receipt.');
+    $events = $c->get(PreparedTransitionEventStoreInterface::class)->allFor($state->runId);
+    $admissionEvents = array_values(array_filter(
+        array_column($events, 'type'),
+        static fn (string $type): bool => in_array($type, ['agent_command_queued', 'agent_command_applied', 'tool_execution_end'], true),
+    ));
+    $transport->reset();
+    $commandBus->dispatch(new DeliverBackgroundCompletionDTO($state->runId, $noticeIdentity, $receipt->text));
+    $duplicateNotice = 0;
+    foreach ($transport->getSent() as $envelope) {
+        if ($envelope->getMessage() instanceof DeliverBackgroundCompletionDTO) {
+            $before = count($c->get(PreparedTransitionEventStoreInterface::class)->allFor($state->runId));
+            $commandBus->dispatch($envelope->with(new ReceivedStamp('run_control')));
+            $after = count($c->get(PreparedTransitionEventStoreInterface::class)->allFor($state->runId));
+            $duplicateNotice += $after - $before;
+        }
+    }
+    $terminalBefore = count(array_filter($events, static fn ($event): bool => 'tool_execution_end' === $event->type));
+    foreach ($publications as $publication) {
+        $commandBus->dispatch($publication);
+    }
+    foreach ($transport->getSent() as $envelope) {
+        $payload = $envelope->getMessage();
+        if ($payload instanceof ToolPayloadMessage || $payload instanceof ToolCallResult) {
+            $commandBus->dispatch($envelope->with(new ReceivedStamp('run_control')));
+        }
+    }
+    $terminalAfter = count(array_filter(
+        $c->get(PreparedTransitionEventStoreInterface::class)->allFor($state->runId),
+        static fn ($event): bool => 'tool_execution_end' === $event->type,
+    ));
+    echo json_encode([...$evidence, 'worker' => $done, 'notice' => $receipt->text,
+        'admission_events' => $admissionEvents,
+        'duplicate_terminal_effects' => max(0, $terminalAfter - $terminalBefore),
+        'duplicate_notice_events' => $duplicateNotice,
         'automatic_batch_cleanup' => $automaticCleanup,
+        'accepted_result' => 'completed' === $deferred->status($row['identity']),
+        'deferred_status' => $deferred->status($row['identity']),
         'raw' => $raw->result, 'raw_path' => $rawPath, 'raw_exists_after_batch_delete' => is_file($rawPath),
         'workspace_cleaned' => !is_dir(dirname($blocked['script']))], \JSON_THROW_ON_ERROR)."\n";
 } finally {

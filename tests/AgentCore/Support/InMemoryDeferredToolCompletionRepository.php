@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 
 final class InMemoryDeferredToolCompletionRepository implements DeferredToolCompletionRepositoryInterface
 {
-    /** @var array<string, array{correlation: DeferredToolCompletionCorrelation, status: string, acknowledgedAt: ?\DateTimeImmutable, invocationReference: ?ToolPayloadReferenceDTO}> */
+    /** @var array<string, array{correlation: DeferredToolCompletionCorrelation, status: string, acknowledgedAt: ?\DateTimeImmutable, invocationReference: ?ToolPayloadReferenceDTO, acceptedResultReference: ?ToolPayloadReferenceDTO}> */
     private array $byDeferredId = [];
 
     /** @var array<string, string> runId|toolCallId => deferredId */
@@ -39,6 +39,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
                 $correlation->attempt, $correlation->idempotencyKey, $correlation->toolCallId,
                 $correlation->orderIndex, $correlation->toolName, hash('sha256', serialize($correlation)), \strlen(serialize($correlation)),
             ),
+            'acceptedResultReference' => null,
         ];
         $this->byRunToolCall[$key] = $correlation->deferredId;
 
@@ -101,6 +102,16 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         return $row['invocationReference'];
     }
 
+    public function findAcceptedResultReferenceByDeferredId(string $deferredId): ?ToolPayloadReferenceDTO
+    {
+        $row = $this->byDeferredId[$deferredId] ?? null;
+        if (null === $row || 'pending' !== $row['status']) {
+            return null;
+        }
+
+        return $row['acceptedResultReference'];
+    }
+
     public function status(string $deferredId): ?string
     {
         return $this->byDeferredId[$deferredId]['status'] ?? null;
@@ -117,6 +128,19 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
             return;
         }
         $this->byDeferredId[$deferredId]['acknowledgedAt'] = new \DateTimeImmutable();
+    }
+
+    public function acceptResult(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO
+    {
+        if (!isset($this->byDeferredId[$deferredId]) || 'pending' !== $this->byDeferredId[$deferredId]['status']) {
+            throw new \RuntimeException('Deferred registration cannot accept a terminal result.');
+        }
+        if (null !== $this->byDeferredId[$deferredId]['acceptedResultReference']) {
+            return $this->byDeferredId[$deferredId]['acceptedResultReference'];
+        }
+        $this->byDeferredId[$deferredId]['acceptedResultReference'] = $reference;
+
+        return $reference;
     }
 
     public function markCompleted(string $deferredId): void

@@ -39,6 +39,10 @@ final readonly class DeferredCallerAcknowledgementService
         if (null !== $this->deferred->acknowledgedAt($deferredId)) {
             return new HandlerResult();
         }
+        if (null !== $this->deferred->findAcceptedResultReferenceByDeferredId($deferredId)) {
+            // First terminal acceptance already owns settlement; ACK must not race it.
+            return new HandlerResult();
+        }
         $correlation = $this->deferred->findByDeferredId($deferredId);
         if (null === $correlation || $correlation->runId !== $state->runId) {
             return new HandlerResult();

@@ -121,6 +121,12 @@ services:
   Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface:
     alias: Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository
 
+  Ineersa\AgentCore\Contract\Tool\DeferredAcknowledgedCompletionRouterInterface:
+    alias: Ineersa\CodingAgent\Application\Deferred\DeferredAcknowledgedCompletionRouter
+
+  Ineersa\AgentCore\Contract\Tool\DeferredAcceptedResultReaderInterface:
+    alias: Ineersa\CodingAgent\Application\Deferred\DeferredAcceptedResultReader
+
   Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface:
     alias: Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository
 

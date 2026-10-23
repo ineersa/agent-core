@@ -22,18 +22,9 @@ final class CodeModeExecution
     #[ORM\Column(name: 'tool_call_id', length: 255)]
     public string $toolCallId;
 
-    #[ORM\Column(name: 'call_reference', type: Types::TEXT)]
-    public string $callReference;
-
     #[ORM\Column]
     public bool $ready = false;
 
-    #[ORM\Column]
-    public bool $settled = false;
-
     #[ORM\Column(name: 'raw_reference', type: Types::TEXT, nullable: true)]
     public ?string $rawReference = null;
-
-    #[ORM\Column(name: 'result_reference', type: Types::TEXT, nullable: true)]
-    public ?string $resultReference = null;
 }

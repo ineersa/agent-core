@@ -7,12 +7,15 @@ namespace Ineersa\CodingAgent\Tests\Session;
 use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -78,7 +81,7 @@ final class ToolPayloadAdmissionTest extends TestCase
         $events->method('latestSequenceFor')->willReturn(7);
         $registry = new TestActiveRunContext();
         $registry->loadRecovered($state);
-        $admission = new ToolPayloadAdmission($batches, $registry, $replay, $events, new TestLogger(), new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class)));
+        $admission = new ToolPayloadAdmission($batches, $registry, $replay, $events, new TestLogger(), new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class)), $this->createStub(DeferredToolCompletionRepositoryInterface::class), $this->createStub(ToolPayloadStoreInterface::class), new DeferredToolInvocationFence(new \Symfony\Component\Serializer\Serializer()));
 
         $this->assertTrue($admission->acceptsDeferred($reference, false));
     }
@@ -138,6 +141,6 @@ final class ToolPayloadAdmissionTest extends TestCase
         $registry = new TestActiveRunContext();
         $registry->loadRecovered($state);
 
-        return new ToolPayloadAdmission($this->createStub(ToolBatchStoreInterface::class), $registry, $replay, $events, new TestLogger(), new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class)));
+        return new ToolPayloadAdmission($this->createStub(ToolBatchStoreInterface::class), $registry, $replay, $events, new TestLogger(), new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class)), $this->createStub(DeferredToolCompletionRepositoryInterface::class), $this->createStub(ToolPayloadStoreInterface::class), new DeferredToolInvocationFence(new \Symfony\Component\Serializer\Serializer()));
     }
 }

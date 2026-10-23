@@ -37,12 +37,14 @@ including another code-mode invocation.
 
 The original worker applies terminal processors once. Its local
 `ProcessedToolResultDTO` includes both the original execution envelope and the
-processed result. CodingAgent validates both against the frozen invocation before
-accepting publication responsibility. The first terminal result reference wins.
-A foreground completion uses the ordinary result handler. An acknowledged
-completion uses the existing background-completion mailbox and includes paths to
-retained processed and original structured results. Repeated owner messages do
-not produce another caller result or another background completion.
+processed result. CodingAgent validates both against the frozen invocation, then
+freezes the first accepted result on the shared deferred record and dispatches
+`CompleteDeferredToolCall`. That common path routes a still-waiting caller through
+the ordinary result handler, or an acknowledged completion through the existing
+background-completion mailbox with paths to retained processed and original
+structured results. Child terminal delivery uses the same path. Failed sends keep
+the first accepted reference for explicit repair. Detached producer and receiver
+admission validate the retained invocation after the parent turn advances.
 
 ## Evidence and cleanup
 

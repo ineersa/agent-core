@@ -172,11 +172,12 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         $logger = new TestLogger();
         $events = $this->createStub(EventStoreInterface::class);
         $events->method('latestSequenceFor')->willReturn($state->lastSeq);
+        $fence = $container->get(\Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence::class);
 
         return new MessageBus([new ToolPayloadMiddleware(
-            $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, $container->get(CanonicalToolInvocationReader::class)), $repository, $locks,
+            $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, $container->get(CanonicalToolInvocationReader::class), $repository, $payloads, $fence), $repository, $locks,
             $container->get(ValidatorInterface::class), $commands, $logger,
-            new CompleteDeferredToolCallHandler($repository, $commands, $locks, $batches, $logger),
+            new CompleteDeferredToolCallHandler($repository, $commands, $locks, $batches, $payloads, $fence, $logger, null, null),
         )]);
     }
 }

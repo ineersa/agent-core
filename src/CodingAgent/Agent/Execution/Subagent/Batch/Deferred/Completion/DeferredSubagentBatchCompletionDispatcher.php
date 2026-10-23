@@ -13,7 +13,6 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcom
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DTO\DeferredSubagentCompletionSourceDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunArtifactFinalizer;
-use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
@@ -122,15 +121,6 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
             ]);
         }
 
-        if (null !== $this->deferredToolCompletionRepository->acknowledgedAt($lifecycleId)) {
-            $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
-                $parentRunId, 'background-child-result-'.$lifecycleId, $presentation,
-            ));
-            $this->markTerminalEnqueued($lifecycleId, $parentRunId, $parentToolCallId, $expectedProjectionVersion);
-
-            return;
-        }
-
         if ('completed' === $deferredStatus) {
             $this->markTerminalEnqueued($lifecycleId, $parentRunId, $parentToolCallId, $expectedProjectionVersion);
 
@@ -138,6 +128,8 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
         }
 
         try {
+            // Shared CompleteDeferredToolCall freezes the first accepted result and
+            // routes acknowledged work through background-completion admission.
             $this->commandBus->dispatch(new CompleteDeferredToolCall(
                 deferredId: $lifecycleId,
                 content: [['type' => 'text', 'text' => $presentation]],

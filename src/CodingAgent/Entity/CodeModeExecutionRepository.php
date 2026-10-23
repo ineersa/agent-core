@@ -23,28 +23,18 @@ final class CodeModeExecutionRepository extends ServiceEntityRepository
         return false === $row ? null : $row;
     }
 
-    public function register(string $identity, string $runId, string $toolCallId, string $reference): void
+    public function register(string $identity, string $runId, string $toolCallId): void
     {
-        $this->getEntityManager()->getConnection()->insert('code_mode_execution', ['identity' => $identity, 'run_id' => $runId, 'tool_call_id' => $toolCallId, 'call_reference' => $reference, 'ready' => 0, 'settled' => 0]);
+        $this->getEntityManager()->getConnection()->insert('code_mode_execution', ['identity' => $identity, 'run_id' => $runId, 'tool_call_id' => $toolCallId, 'ready' => 0]);
     }
 
     public function ready(string $identity): void
     {
-        $this->getEntityManager()->getConnection()->update('code_mode_execution', ['ready' => 1], ['identity' => $identity, 'settled' => 0]);
+        $this->getEntityManager()->getConnection()->update('code_mode_execution', ['ready' => 1], ['identity' => $identity]);
     }
 
     public function freezeRaw(string $identity, string $reference): void
     {
         $this->getEntityManager()->getConnection()->executeStatement('UPDATE code_mode_execution SET raw_reference = ? WHERE identity = ? AND raw_reference IS NULL', [$reference, $identity]);
-    }
-
-    public function freezeResult(string $identity, string $reference): void
-    {
-        $this->getEntityManager()->getConnection()->executeStatement('UPDATE code_mode_execution SET result_reference = ? WHERE identity = ? AND result_reference IS NULL', [$reference, $identity]);
-    }
-
-    public function settle(string $identity): void
-    {
-        $this->getEntityManager()->getConnection()->update('code_mode_execution', ['settled' => 1], ['identity' => $identity]);
     }
 }

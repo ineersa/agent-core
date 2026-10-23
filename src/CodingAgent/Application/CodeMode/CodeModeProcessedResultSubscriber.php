@@ -5,18 +5,25 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Application\CodeMode;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
-use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Messenger\MessageBusInterface;
-use Symfony\Component\Serializer\SerializerInterface;
 
+/** Native publication adapter: freeze first accepted result, then reuse CompleteDeferredToolCall. */
 #[AsEventListener]
 final readonly class CodeModeProcessedResultSubscriber
 {
-    public function __construct(private CodeModeExecutionRepository $executions, private CodeModeResultArtifactStore $artifacts, private RunLockManager $locks, private SerializerInterface $serializer, private MessageBusInterface $commandBus, private CodeModeExecutionService $execution)
-    {
+    public function __construct(
+        private CodeModeExecutionRepository $executions,
+        private CodeModeResultArtifactStore $artifacts,
+        private DeferredToolCompletionRepositoryInterface $deferred,
+        private CodeModeExecutionService $execution,
+        private RunLockManager $locks,
+        private MessageBusInterface $commandBus,
+    ) {
     }
 
     public function __invoke(ProcessedToolResultDTO $event): void
@@ -26,23 +33,33 @@ final readonly class CodeModeProcessedResultSubscriber
         if (null === $row) {
             return;
         }
-        $call = $this->execution->invocation($row['call_reference']);
+        $identity = $row['identity'];
+        $invocationReference = $this->deferred->findInvocationReferenceByDeferredId($identity)
+            ?? throw new \RuntimeException('Code-mode owner lost its deferred invocation reference.');
+        $call = $this->artifacts->invocation($invocationReference);
         if (!$this->execution->sameInvocation($call, $event->invocation) || !$this->execution->matches($result, $call)) {
             throw new \RuntimeException('Code-mode terminal result does not match its frozen invocation.');
         }
-        $this->locks->synchronized($result->runId(), function () use ($result, $row): void {
+        $this->locks->synchronized($result->runId(), function () use ($result, $identity): void {
             $current = $this->executions->invocation($result->runId(), $result->toolCallId);
-            if (null === $current || $current['identity'] !== $row['identity']) {
+            if (null === $current || $current['identity'] !== $identity) {
                 throw new \RuntimeException('Code-mode owner changed before terminal publication.');
             }
-            if (null !== $current['result_reference']) {
-                // First accepted terminal evidence is immutable across redelivery.
-                return;
+            if (!(bool) $current['ready']) {
+                throw new \RuntimeException('Code-mode terminal result arrived before host readiness.');
             }
-            $reference = $this->artifacts->publish($result);
-            $this->executions->freezeResult($row['identity'], $this->serializer->serialize($reference, 'json'));
+            // First accepted terminal evidence is immutable across redelivery.
+            $this->deferred->acceptResult($identity, $this->artifacts->publish($result));
         });
         $event->handled = true;
-        $this->commandBus->dispatch(new CodeModeOwnerDTO($result->runId(), $row['identity'], $result->toolCallId));
+        $content = $result->result['content'] ?? [];
+        $details = $result->result['details'] ?? null;
+        $this->commandBus->dispatch(new CompleteDeferredToolCall(
+            $identity,
+            \is_array($content) ? $content : [],
+            \is_array($details) ? $details : null,
+            $result->isError,
+            $result->error,
+        ));
     }
 }

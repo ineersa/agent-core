@@ -8,11 +8,14 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Session\DTO\PendingToolInvocationDTO;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
@@ -28,6 +31,9 @@ final readonly class ToolPayloadAdmission
         private EventStoreInterface $events,
         private LoggerInterface $logger,
         private CanonicalToolInvocationReader $invocations,
+        private DeferredToolCompletionRepositoryInterface $deferred,
+        private ToolPayloadStoreInterface $payloads,
+        private DeferredToolInvocationFence $fence,
     ) {
     }
 
@@ -100,9 +106,36 @@ final readonly class ToolPayloadAdmission
         return null !== $this->pendingShell($reference->runId, $reference->toolCallId, $reference->turnNo, $reference->stepId, $reference->attempt, $reference->idempotencyKey) && 'call' !== $reference->kind;
     }
 
-    /** Deferred destinations can retire while their correlation still retains a batch. */
-    public function acceptsDeferred(ToolPayloadReferenceDTO $reference, bool $owner): bool
+    /** Deferred destinations may advance after acknowledgement; retained invocation is authoritative. */
+    public function acceptsDeferred(ToolPayloadReferenceDTO $reference, bool $owner, ?string $deferredId = null): bool
     {
+        if (null !== $deferredId) {
+            $invocation = $this->deferred->findInvocationReferenceByDeferredId($deferredId);
+            if (null === $invocation) {
+                return false;
+            }
+            // Unacknowledged work still retires when its destination is gone.
+            // Only an acknowledged retained invocation may outlive parent advancement.
+            if (null !== $this->deferred->acknowledgedAt($deferredId)) {
+                $call = $this->payloads->read($invocation);
+                if (!$call instanceof ExecuteToolCall) {
+                    throw new ToolPayloadException('Deferred completion retained invocation is invalid.');
+                }
+                if ([$call->runId(), $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->orderIndex, $call->toolName]
+                    !== [$reference->runId, $reference->turnNo, $reference->stepId, $reference->attempt, $reference->idempotencyKey, $reference->toolCallId, $reference->orderIndex, $reference->toolName]) {
+                    return false;
+                }
+                $live = $this->batches->loadCall($reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId);
+                if (null !== $live && !$this->fence->sameInvocation($call, $live)) {
+                    return false;
+                }
+                if ($owner) {
+                    $this->registry->requireLoaded($reference->runId);
+                }
+
+                return true;
+            }
+        }
         $state = $owner ? $this->registry->requireLoaded($reference->runId)
             : $this->loadedState($reference->runId);
         if (null === $state) {

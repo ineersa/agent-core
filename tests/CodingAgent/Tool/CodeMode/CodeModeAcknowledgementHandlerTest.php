@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
 use Doctrine\DBAL\Connection;
-use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
@@ -16,24 +15,25 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeAcknowledgementHandler;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
-use Ineersa\CodingAgent\Application\CodeMode\CodeModeOwnerHandler;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
-use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\History\RunPresentationProjector;
 use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
-final class CodeModeOwnerHandlerTest extends IsolatedKernelTestCase
+final class CodeModeAcknowledgementHandlerTest extends IsolatedKernelTestCase
 {
     public function testAcknowledgementColdReplayPreservesCallerHistoryWithoutExecutionEnd(): void
     {
@@ -41,7 +41,7 @@ final class CodeModeOwnerHandlerTest extends IsolatedKernelTestCase
         $f = new CodeModeBackendFixture($c, 'return 42;');
         $id = $this->begin($f->call);
         $c->get(CodeModeExecutionService::class)->ready($id);
-        $handler = $c->get(CodeModeOwnerHandler::class);
+        $handler = $c->get(CodeModeAcknowledgementHandler::class);
         $message = new CodeModeOwnerDTO($f->state->runId, $id, 'cm', true);
         $ack = $handler->handle($message, $f->state);
         $f->commit($f->state, $ack);
@@ -75,21 +75,21 @@ final class CodeModeOwnerHandlerTest extends IsolatedKernelTestCase
         $bus = $this->publish($event);
         $this->assertTrue($event->handled);
         $this->assertCount(1, $bus->messages);
-        $handler = self::getContainer()->get(CodeModeOwnerHandler::class);
+        $this->assertInstanceOf(CompleteDeferredToolCall::class, $bus->messages[0]);
+        $handler = self::getContainer()->get(CodeModeAcknowledgementHandler::class);
         $this->assertSame([], $handler->handle(new CodeModeOwnerDTO($f->state->runId, $id, 'cm', true), $f->state)->events);
-        $terminal = $handler->handle($bus->messages[0], $f->state);
-        $this->assertSame(['tool_execution_end', 'tool_batch_committed'], array_column($terminal->events, 'type'));
-        $this->assertSame('42', $terminal->nextState->messages[1]->content[0]['text']);
-        $state = $f->commit($f->state, $terminal);
-        $this->assertSame([], $handler->handle($bus->messages[0], $state)->events);
+        $this->consumeDeferred($bus->messages[0]);
+        $events = self::getContainer()->get(PreparedTransitionEventStoreInterface::class)->allFor($f->state->runId);
+        $this->assertContains('tool_execution_end', array_column($events, 'type'));
         $this->assertSame('completed', self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
+        $this->assertNull(self::getContainer()->get(ToolBatchStoreInterface::class)->loadSchedule($f->state->runId, 1, 'step'));
     }
 
     public function testAcknowledgementRejectsCancelledStaleAndUnreadyOwners(): void
     {
         $f = new CodeModeBackendFixture(self::getContainer(), 'return 42;');
         $id = $this->begin($f->call);
-        $handler = self::getContainer()->get(CodeModeOwnerHandler::class);
+        $handler = self::getContainer()->get(CodeModeAcknowledgementHandler::class);
         $message = new CodeModeOwnerDTO($f->state->runId, $id, 'cm', true);
         $this->assertSame([], $handler->handle($message, $f->state)->events);
         self::getContainer()->get(CodeModeExecutionService::class)->ready($id);
@@ -107,6 +107,7 @@ final class CodeModeOwnerHandlerTest extends IsolatedKernelTestCase
     {
         $f = new CodeModeBackendFixture(self::getContainer(), 'return 42;');
         $id = $this->begin($f->call);
+        self::getContainer()->get(CodeModeExecutionService::class)->ready($id);
         foreach (['turn', 'step', 'attempt', 'idempotency', 'order', 'name', 'invocation'] as $field) {
             $call = $f->call;
             $result = new ToolCallResult($call->runId(), 'turn' === $field ? 2 : 1, 'step' === $field ? 'other' : 'step', 'attempt' === $field ? 2 : 1, 'idempotency' === $field ? 'wrong' : $call->idempotencyKey(), 'cm', 'order' === $field ? 1 : 0, ['tool_name' => 'name' === $field ? 'bash' : 'code_mode', 'content' => [['type' => 'text', 'text' => '42']]]);
@@ -120,15 +121,13 @@ final class CodeModeOwnerHandlerTest extends IsolatedKernelTestCase
             }
             $this->assertFalse($event->handled);
         }
-        $row = self::getContainer()->get(CodeModeExecutionRepository::class)->invocation($f->state->runId, 'cm');
-        $this->assertNull($row['result_reference']);
+        $this->assertNull(self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->findAcceptedResultReferenceByDeferredId($id));
         $this->assertSame(36, \strlen($id));
-        $this->assertFalse((bool) $row['settled']);
         $this->publish(new ProcessedToolResultDTO($this->terminalResult($f->call), $f->call));
-        $row = self::getContainer()->get(CodeModeExecutionRepository::class)->invocation($f->state->runId, 'cm');
-        $first = $row['result_reference'];
+        $first = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->findAcceptedResultReferenceByDeferredId($id);
+        $this->assertNotNull($first);
         $this->publish(new ProcessedToolResultDTO($this->terminalResult($f->call, 'late replacement'), $f->call));
-        $this->assertSame($first, self::getContainer()->get(CodeModeExecutionRepository::class)->invocation($f->state->runId, 'cm')['result_reference']);
+        $this->assertEquals($first, self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->findAcceptedResultReferenceByDeferredId($id));
     }
 
     public function testNativeRegistrationRollsBackItsDeferredRowOnOwnershipFailure(): void
@@ -157,7 +156,7 @@ final class CodeModeOwnerHandlerTest extends IsolatedKernelTestCase
         $f = new CodeModeBackendFixture($c, 'return 42;');
         $id = $this->begin($f->call);
         $c->get(CodeModeExecutionService::class)->ready($id);
-        $ack = $c->get(CodeModeOwnerHandler::class)->handle(new CodeModeOwnerDTO($f->state->runId, $id, 'cm', true), $f->state);
+        $ack = $c->get(CodeModeAcknowledgementHandler::class)->handle(new CodeModeOwnerDTO($f->state->runId, $id, 'cm', true), $f->state);
         $db = $c->get(Connection::class);
         $db->executeStatement("CREATE TRIGGER fail_deferred_ack BEFORE UPDATE OF acknowledged_at ON tool_deferred_completion BEGIN SELECT RAISE(ABORT, 'fixture acknowledgement failure'); END");
         try {
@@ -193,8 +192,48 @@ final class CodeModeOwnerHandlerTest extends IsolatedKernelTestCase
     {
         $c = self::getContainer();
         $bus = new TestMessageBus();
-        (new CodeModeProcessedResultSubscriber($c->get(CodeModeExecutionRepository::class), $c->get(CodeModeResultArtifactStore::class), $c->get(RunLockManager::class), $c->get(SerializerInterface::class), $bus, $c->get(CodeModeExecutionService::class)))($event);
+        (new CodeModeProcessedResultSubscriber(
+            $c->get(CodeModeExecutionRepository::class),
+            $c->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore::class),
+            $c->get(DeferredToolCompletionRepositoryInterface::class),
+            $c->get(CodeModeExecutionService::class),
+            $c->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            $bus,
+        ))($event);
 
         return $bus;
+    }
+
+    private function consumeDeferred(CompleteDeferredToolCall $message): void
+    {
+        $c = self::getContainer();
+        $transport = $c->get('messenger.transport.run_control');
+        $transport->reset();
+        $bus = $c->get('agent.command.bus');
+        $bus->dispatch($message);
+        $this->drainRunControl($bus, $transport);
+        // Async run_control finalizes the batch only after ToolCallResult
+        // consumption. A settle retry then removes the retained settled batch.
+        $bus->dispatch($message);
+        $this->drainRunControl($bus, $transport);
+    }
+
+    private function drainRunControl(object $bus, object $transport): void
+    {
+        $seen = 0;
+        for ($i = 0; $i < 16; ++$i) {
+            $sent = $transport->getSent();
+            if ($seen >= \count($sent)) {
+                break;
+            }
+            for (; $seen < \count($sent); ++$seen) {
+                $envelope = $sent[$seen];
+                $payload = $envelope->getMessage();
+                $this->assertFalse($payload instanceof CompleteDeferredToolCall, 'Inline deferred bodies cannot be received.');
+                if ($payload instanceof ToolPayloadMessage || $payload instanceof ToolCallResult) {
+                    $bus->dispatch($envelope->with(new ReceivedStamp('run_control')));
+                }
+            }
+        }
     }
 }

@@ -9,6 +9,7 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Contract\Tool\DeferredAcceptedResultReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
@@ -36,6 +37,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         private readonly SerializerInterface $serializer,
         private readonly ValidatorInterface $validator,
         private readonly DeferredToolInvocationFence $fence,
+        private readonly DeferredAcceptedResultReaderInterface $acceptedResults,
     ) {
         parent::__construct($registry, DeferredToolCompletion::class);
     }
@@ -112,6 +114,16 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             ?? throw new ToolPayloadException('Pending deferred registration is missing its invocation reference.');
     }
 
+    public function findAcceptedResultReferenceByDeferredId(string $deferredId): ?ToolPayloadReferenceDTO
+    {
+        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
+        if (!$entity instanceof DeferredToolCompletion || 'pending' !== $entity->status) {
+            return null;
+        }
+
+        return $this->pendingAcceptedResultReference($entity);
+    }
+
     public function status(string $deferredId): ?string
     {
         $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
@@ -153,6 +165,63 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         }
         $entity->acknowledgedAt = $now;
         $em->flush();
+    }
+
+    public function acceptResult(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO
+    {
+        return $this->locks->synchronized(
+            $reference->runId,
+            function () use ($deferredId, $reference): ToolPayloadReferenceDTO {
+                $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
+                if (!$entity instanceof DeferredToolCompletion || 'pending' !== $entity->status) {
+                    throw new ToolPayloadException('Deferred registration cannot accept a terminal result.');
+                }
+                $existing = $this->pendingAcceptedResultReference($entity);
+                if (null !== $existing) {
+                    return $existing;
+                }
+                $invocation = $this->pendingInvocationReference($entity)
+                    ?? throw new ToolPayloadException('Pending deferred registration is missing its invocation reference.');
+                $identity = [$reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId, $reference->attempt, $reference->idempotencyKey, $reference->orderIndex, $reference->toolName];
+                $storedIdentity = [$entity->runId, $entity->turnNo, $entity->stepId, $entity->toolCallId, $entity->attempt, $entity->idempotencyKey, $entity->orderIndex, $entity->toolName];
+                if ('result' !== $reference->kind || $identity !== $storedIdentity) {
+                    throw new ToolPayloadException('Accepted deferred result does not match its invocation.');
+                }
+                $result = $this->acceptedResults->read($deferredId, $reference);
+                $call = $this->payloads->read($invocation);
+                if (!$call instanceof ExecuteToolCall || !$this->fence->matchesResult($result, $call)) {
+                    throw new ToolPayloadException('Accepted deferred result does not match its frozen invocation.');
+                }
+                $errors = $this->validator->validate($reference);
+                if (0 !== \count($errors)) {
+                    throw new ValidationFailedException($reference, $errors);
+                }
+                $serialized = $this->serializer->serialize($reference, 'json');
+                $updated = $this->getEntityManager()->getConnection()->executeStatement(
+                    'UPDATE tool_deferred_completion SET accepted_result_reference_json = :accepted, updated_at = :now WHERE deferred_id = :deferred_id AND status = :pending AND accepted_result_reference_json IS NULL',
+                    [
+                        'accepted' => $serialized,
+                        'now' => Clock::get()->now()->format('Y-m-d H:i:s'),
+                        'deferred_id' => $deferredId,
+                        'pending' => 'pending',
+                    ],
+                );
+                $managed = $this->findOneBy(['deferredId' => $deferredId]);
+                if ($managed instanceof DeferredToolCompletion) {
+                    $this->getEntityManager()->detach($managed);
+                }
+                if ($updated > 0) {
+                    return $reference;
+                }
+                $fresh = $this->findFreshOneBy(['deferredId' => $deferredId]);
+                if (!$fresh instanceof DeferredToolCompletion || 'pending' !== $fresh->status) {
+                    throw new ToolPayloadException('Deferred registration cannot accept a terminal result.');
+                }
+
+                return $this->pendingAcceptedResultReference($fresh)
+                    ?? throw new ToolPayloadException('Deferred registration lost its accepted terminal result.');
+            },
+        );
     }
 
     public function markCompleted(string $deferredId): void
@@ -336,6 +405,25 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         $storedIdentity = [$entity->runId, $entity->turnNo, $entity->stepId, $entity->toolCallId, $entity->attempt, $entity->idempotencyKey, $entity->orderIndex, $entity->toolName];
         if ('call' !== $reference->kind || $identity !== $storedIdentity) {
             throw new ToolPayloadException('Deferred invocation reference does not match its index.');
+        }
+
+        return $reference;
+    }
+
+    private function pendingAcceptedResultReference(DeferredToolCompletion $entity): ?ToolPayloadReferenceDTO
+    {
+        if ('pending' !== $entity->status || null === $entity->acceptedResultReferenceJson || '' === $entity->acceptedResultReferenceJson) {
+            return null;
+        }
+        $reference = $this->serializer->deserialize($entity->acceptedResultReferenceJson, ToolPayloadReferenceDTO::class, 'json');
+        $errors = $this->validator->validate($reference);
+        if (0 !== \count($errors)) {
+            throw new ValidationFailedException($reference, $errors);
+        }
+        $identity = [$reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId, $reference->attempt, $reference->idempotencyKey, $reference->orderIndex, $reference->toolName];
+        $storedIdentity = [$entity->runId, $entity->turnNo, $entity->stepId, $entity->toolCallId, $entity->attempt, $entity->idempotencyKey, $entity->orderIndex, $entity->toolName];
+        if ('result' !== $reference->kind || $identity !== $storedIdentity) {
+            throw new ToolPayloadException('Accepted deferred result reference does not match its index.');
         }
 
         return $reference;
