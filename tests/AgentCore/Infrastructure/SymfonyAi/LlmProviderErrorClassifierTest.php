@@ -11,6 +11,7 @@ use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionLimitExceptio
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionPolicyException;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
+use Symfony\AI\Platform\Exception\MaxOutputTokensException;
 use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\Component\HttpClient\Exception\TimeoutException;
@@ -108,6 +109,13 @@ final class LlmProviderErrorClassifierTest extends TestCase
         ]);
         $this->assertTrue($bad['retryable']);
         $this->assertSame(LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST, $bad['error_category']);
+
+        $maxOutput = $this->classifier->classify([
+            'type' => MaxOutputTokensException::class,
+            'message' => 'output token limit cut a tool call',
+        ]);
+        $this->assertTrue($maxOutput['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_BAD_REQUEST, $maxOutput['error_category']);
 
         $auth = $this->classifier->classify([
             'type' => AuthenticationException::class,
