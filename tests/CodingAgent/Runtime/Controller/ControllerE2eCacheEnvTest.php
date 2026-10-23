@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\ControllerE2eTestCase;
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Path;
 
 /**
  * Env-mapping contract for controller E2E cache reuse.
@@ -26,6 +29,34 @@ final class ControllerE2eCacheEnvTest extends TestCase
             $this->assertSame(['HATFIELD_CACHE_DIR' => $qaCache], $env);
         } finally {
             $this->restore('HATFIELD_CACHE_DIR', $previous);
+        }
+    }
+
+    public function testResolvesRelativeQaCacheDirAgainstProjectRootNotChildCwd(): void
+    {
+        $previous = $this->snapshot('HATFIELD_CACHE_DIR');
+        $projectDir = ProjectDir::get();
+        $relative = '.hatfield/cache-qa-controller-e2e-relative';
+        $childCwd = TestDirectoryIsolation::createProjectTempDir('controller-e2e-cache-env-child-cwd');
+
+        try {
+            $this->put('HATFIELD_CACHE_DIR', $relative);
+            $originalCwd = getcwd();
+            $this->assertNotFalse($originalCwd);
+            try {
+                chdir($childCwd);
+                $env = $this->harness($projectDir)->exposeControllerSubprocessEnv();
+            } finally {
+                chdir($originalCwd);
+            }
+
+            $expected = Path::makeAbsolute($relative, $projectDir);
+            $this->assertSame(['HATFIELD_CACHE_DIR' => $expected], $env);
+            $this->assertStringStartsWith($projectDir.'/', $env['HATFIELD_CACHE_DIR']);
+            $this->assertStringNotContainsString($childCwd, $env['HATFIELD_CACHE_DIR']);
+        } finally {
+            $this->restore('HATFIELD_CACHE_DIR', $previous);
+            TestDirectoryIsolation::removeDirectory($childCwd);
         }
     }
 
@@ -55,9 +86,12 @@ final class ControllerE2eCacheEnvTest extends TestCase
         }
     }
 
-    private function harness(): ControllerE2eCacheEnvHarness
+    private function harness(?string $projectDir = null): ControllerE2eCacheEnvHarness
     {
-        return new ControllerE2eCacheEnvHarness('ControllerE2eCacheEnvHarness');
+        $harness = new ControllerE2eCacheEnvHarness('ControllerE2eCacheEnvHarness');
+        $harness->bindProjectDir($projectDir ?? ProjectDir::get());
+
+        return $harness;
     }
 
     /**
@@ -136,6 +170,11 @@ final class ControllerE2eCacheEnvHarness extends ControllerE2eTestCase
     public function exposeControllerSubprocessEnv(): array
     {
         return $this->controllerSubprocessEnv();
+    }
+
+    public function bindProjectDir(string $projectDir): void
+    {
+        $this->projectDir = $projectDir;
     }
 
     protected function tempDirPrefix(): string

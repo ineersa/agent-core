@@ -587,8 +587,8 @@ CREATE TABLE hatfield_session (
 SQL);
         $connection->executeStatement('CREATE UNIQUE INDEX uniq_hatfield_session_provider_cache_key ON hatfield_session (provider_cache_key)');
         $connection->insert('hatfield_session', [
-            'id' => 96,
-            'cwd' => '/legacy/session',
+            'id' => 95,
+            'cwd' => '/legacy/session-95',
             'prompt' => 'keep-me',
             'parent_id' => null,
             'root_id' => null,
@@ -599,9 +599,31 @@ SQL);
             'reasoning_baseline' => '{"model":"chatgpt/gpt-5","effort":"medium"}',
             'created_at' => $now,
             'updated_at' => $now,
-            'name' => 'legacy-session',
+            'name' => 'legacy-session-95',
             'provider_cache_key' => $providerCacheKey,
         ]);
+        $connection->insert('hatfield_session', [
+            'id' => 96,
+            'cwd' => '/legacy/session-96',
+            'prompt' => 'delete-me',
+            'parent_id' => null,
+            'root_id' => null,
+            'model' => 'chatgpt/gpt-5',
+            'model_provider' => 'chatgpt',
+            'model_name' => 'gpt-5',
+            'reasoning' => 'medium',
+            'reasoning_baseline' => '{"model":"chatgpt/gpt-5","effort":"low"}',
+            'created_at' => $now,
+            'updated_at' => $now,
+            'name' => 'legacy-session-96',
+            'provider_cache_key' => UuidV7::v7()->toRfc4122(),
+        ]);
+        $connection->delete('hatfield_session', ['id' => 96]);
+        $this->assertSame(
+            96,
+            (int) $connection->fetchOne('SELECT seq FROM sqlite_sequence WHERE name = ?', ['hatfield_session']),
+            'Pre-upgrade fixture must retain the deleted-id high-water mark',
+        );
 
         $this->recordAppliedMigrationsThrough($connection, 'Version20261022235428');
 
@@ -618,11 +640,43 @@ SQL);
 
         $row = $connection->fetchAssociative('SELECT id, reasoning, provider_cache_key, model, name FROM hatfield_session');
         $this->assertIsArray($row);
-        $this->assertSame(96, (int) $row['id']);
+        $this->assertSame(95, (int) $row['id']);
         $this->assertSame('high', $row['reasoning']);
         $this->assertSame($providerCacheKey, $row['provider_cache_key']);
         $this->assertSame('chatgpt/gpt-5', $row['model']);
-        $this->assertSame('legacy-session', $row['name']);
+        $this->assertSame('legacy-session-95', $row['name']);
+        $this->assertSame(
+            96,
+            (int) $connection->fetchOne('SELECT seq FROM sqlite_sequence WHERE name = ?', ['hatfield_session']),
+            'Upgrade must preserve the historical AUTOINCREMENT high-water mark after deleted ids',
+        );
+
+        $connection->insert('hatfield_session', [
+            'cwd' => '/post-upgrade',
+            'prompt' => null,
+            'parent_id' => null,
+            'root_id' => null,
+            'model' => 'chatgpt/gpt-5',
+            'model_provider' => 'chatgpt',
+            'model_name' => 'gpt-5',
+            'reasoning' => 'low',
+            'created_at' => $now,
+            'updated_at' => $now,
+            'name' => 'post-upgrade',
+            'provider_cache_key' => UuidV7::v7()->toRfc4122(),
+        ]);
+        $nextId = (int) $connection->fetchOne('SELECT id FROM hatfield_session WHERE name = ?', ['post-upgrade']);
+        $this->assertGreaterThan(96, $nextId);
+
+        $surviving = $connection->fetchAssociative(
+            'SELECT id, reasoning, provider_cache_key, model, name FROM hatfield_session WHERE id = ?',
+            [95],
+        );
+        $this->assertIsArray($surviving);
+        $this->assertSame('high', $surviving['reasoning']);
+        $this->assertSame($providerCacheKey, $surviving['provider_cache_key']);
+        $this->assertSame('chatgpt/gpt-5', $surviving['model']);
+        $this->assertSame('legacy-session-95', $surviving['name']);
     }
 
     public function testBusyTimeoutBelowMinimumThrowsRuntimeException(): void

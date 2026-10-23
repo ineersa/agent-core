@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Path;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -159,7 +160,14 @@ abstract class ControllerE2eTestCase extends TestCase
         // and the session-owned sqlite-queue paths.
         $qaCacheDir = getenv('HATFIELD_CACHE_DIR');
         if (false !== $qaCacheDir && '' !== trim($qaCacheDir)) {
-            $env['HATFIELD_CACHE_DIR'] = $qaCacheDir;
+            // Castor initialize_qa_check_run / qa_standalone_test_cache_dir emit
+            // project-relative roots (e.g. .hatfield/cache-<id>). Kernel resolves
+            // relative HATFIELD_CACHE_DIR against runtime cwd, and controller
+            // children use --cwd=<tempDir>, so forward an absolute path rooted at
+            // the checkout that already owns the prewarmed cache.
+            $env['HATFIELD_CACHE_DIR'] = Path::isAbsolute($qaCacheDir)
+                ? $qaCacheDir
+                : Path::makeAbsolute($qaCacheDir, $this->projectDir);
         }
 
         return $env;
