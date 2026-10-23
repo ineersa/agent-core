@@ -80,11 +80,13 @@ final class SessionResourceSamplerTaskTest extends TestCase
     {
         // Two sessions share a Castor ancestor (2). Include our TUI and descendants,
         // including tools without a session environment marker, but not the ancestor/sibling tree.
+        // Synthetic owned PIDs exceed Linux's maximum PID allocation range so
+        // partial smaps coverage cannot depend on unrelated live host processes.
         $self = (int) getmypid();
-        $this->command('ps', 'echo '.var_export("2 1\n20 2\n21 20\n$self 21\n22 21\n23 22\n30 2\n31 30\n", true).';');
+        $this->command('ps', 'echo '.var_export("2 1\n2147483620 2\n2147483621 2147483620\n$self 2147483621\n2147483622 2147483621\n2147483623 2147483622\n30 2\n31 30\n", true).';');
         $header = "top - 00:00:00 up 1 day\n\nPID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND\n";
         $first = $second = $header;
-        foreach ([20, 21, $self, 22, 23, 2, 30, 31] as $index => $pid) {
+        foreach ([2147483620, 2147483621, $self, 2147483622, 2147483623, 2, 30, 31] as $index => $pid) {
             $first .= "$pid user 20 0 0 900000 0 S 99 0 0:00 fixture\n";
             $second .= "$pid user 20 0 0 ".(($index + 1) * 100).' 0 S '.($index + 1)." 0 0:00 fixture\n";
         }
