@@ -8,7 +8,7 @@ Keep `openai-codex` as the bundled provider identifier so existing model referen
 
 The Composer package owns public-client OAuth, dynamic registration, PKCE, cryptographic ID-token verification, issued-client-ID reauthorization, installation identity, protected storage, locked refresh, and remote disconnect. Hatfield supplies its application name, storage path, Lock factory, and HTTP client. ChatGPT credentials use `~/.hatfield/chatgpt-auth.json`; old credentials in `~/.hatfield/auth.json` are neither converted nor consumed. Grok retains its own grant and uses the new package's provider-neutral OAuth helpers.
 
-The package reuses Symfony AI OpenResponses 0.14 for serialization, SSE conversion, reasoning signatures, and typed errors. Requests use `https://api.openai.com/v1/responses`, full history, `store: false`, and `stream: true`. Local tools use developer `additional_tools` items without renaming dispatch functions. Unsupported fields and internal host markers are omitted. Paired tool identities and encrypted reasoning survive round trips.
+The package reuses Symfony AI OpenResponses 0.15 for serialization, SSE conversion, reasoning signatures, and typed errors. Requests use `https://api.openai.com/v1/responses`, full history, `store: false`, and `stream: true`. Local tools use developer `additional_tools` items without renaming dispatch functions. Unsupported fields and internal host markers are omitted. Paired tool identities and encrypted reasoning survive round trips.
 
 There are no WebSockets, cached continuation, SSE fallback, or inline authentication replay. ChatGPT sends the selected reasoning level as request-level `reasoning.effort`. Effort changes can reduce prompt-cache reuse; native inline configuration updates are unsupported. ChatGPT generation uses a 300-second idle limit and no total deadline. Other providers retain their HTTP defaults. Completed tool calls remain dispatchable; interrupted argument streams do not become synthetic complete tools. `/usage` shows the ChatGPT usage-management link and session accounting, not a numerical subscription quota. z.ai quota presentation is unchanged. Permanent subscription limits are not retried.
 
@@ -17,11 +17,11 @@ There are no WebSockets, cached continuation, SSE fallback, or inline authentica
 Hatfield uses the public GitHub Composer repository:
 
 - Package: `ineersa/symfony-ai-openai-chatgpt-platform`.
-- Release: `0.2.0`, tagged `v0.2.0`.
+- Release: `0.2.1`, tagged `v0.2.1`.
 - Source: [ChatGPT platform repository](https://github.com/ineersa/symfony-ai-openai-chatgpt-platform).
 - Native-control removal: [pull request 5](https://github.com/ineersa/symfony-ai-openai-chatgpt-platform/pull/5).
 
-Composer locks the release to commit `a89e50f8af5d493811d93601c8f22420a55d27e2`. No local package mirror or absolute path repository is required.
+Composer locks the release to commit `896c598b354253103166049e99fed7590656b6a8`. No local package mirror or absolute path repository is required.
 
 ## Manual validation
 
