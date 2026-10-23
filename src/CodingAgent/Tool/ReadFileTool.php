@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
@@ -27,7 +28,7 @@ use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
  * Features:
  * - Output is plain file text (no line-number prefix).
  * - Offset and limit are 1-indexed (DTO-validated).
- * - Output passes through OutputCap for character-based capping.
+ * - Output passes through OutputCap for character capping and byte-safe capture.
  * - Large output is truncated at 2000 lines by default.
  * - Continuation hint appended when truncation occurs.
  * - Cancellation checkpoints wrap the read path.
@@ -43,11 +44,13 @@ final class ReadFileTool implements HatfieldToolProviderInterface
     /** Default maximum lines for an unrestricted read. */
     private const int DEFAULT_LINE_LIMIT = 2000;
 
-    /** Max bytes retained while discarding one unselected line. */
-    private const int SKIP_CHUNK_BYTES = 8192;
+    /** Max bytes retained from any selected or unselected line at once. */
+    private const int READ_CHUNK_BYTES = 8192;
 
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
+        private readonly OutputCap $outputCap,
+        private readonly StackToolExecutionContextAccessor $contextAccessor,
     ) {
     }
 
@@ -59,7 +62,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface
      * DTO constraint before this handler runs; failures surface as
      * deterministic fault-tolerant results.
      *
-     * @return string Plain file content, optionally capped or with continuation hints
+     * @return string|array{output_cap: array{saved_path: string, byte_count: int}} Plain content or a bounded artifact envelope
      *
      * @throws ToolCallException on operational file read failures
      * @throws \RuntimeException on cancellation or timeout (runtime concerns)
@@ -67,8 +70,8 @@ final class ReadFileTool implements HatfieldToolProviderInterface
     public function __invoke(
         #[MapToolArguments]
         ReadFileArgumentsDTO $arguments,
-    ): string {
-        return $this->toolRuntime->run(function () use ($arguments): string {
+    ): string|array {
+        return $this->toolRuntime->run(function () use ($arguments): string|array {
             $path = $arguments->path;
             $offset = $arguments->offset;
             $limit = $arguments->limit;
@@ -78,10 +81,10 @@ final class ReadFileTool implements HatfieldToolProviderInterface
 
             // Pre-execution target validation moved to the ReadFileTarget
             // DTO constraint (ValidateToolCallArgumentsListener).
-            [$content, $totalLines] = $this->readSelectedContent($resolvedPath, $offset, $limit);
-
-            // Check if the output was truncated and append continuation hint
-            return $this->appendContinuationHint($content, $offset, $limit, $totalLines);
+            return $this->outputCap->capture(
+                $this->readSelectedContent($resolvedPath, $offset, $limit),
+                $this->contextAccessor->current()?->runId(),
+            );
         });
     }
 
@@ -112,9 +115,9 @@ final class ReadFileTool implements HatfieldToolProviderInterface
      * are not retained. Selected lines keep file(..., FILE_IGNORE_NEW_LINES)
      * semantics, including multiple CR bytes before LF and a final CR without LF.
      *
-     * @return array{0: string, 1: int}
+     * @return \Generator<string>
      */
-    private function readSelectedContent(string $resolvedPath, ?int $offset, ?int $limit): array
+    private function readSelectedContent(string $resolvedPath, ?int $offset, ?int $limit): \Generator
     {
         $handle = @fopen($resolvedPath, 'rb');
         if (false === $handle) {
@@ -127,36 +130,46 @@ final class ReadFileTool implements HatfieldToolProviderInterface
 
             for ($skipped = 0; $skipped < $start; ++$skipped) {
                 if (!$this->advancePastLine($handle, $resolvedPath)) {
-                    return ['', $skipped];
+                    return;
                 }
             }
 
-            $selected = [];
-            while (\count($selected) < $effectiveLimit) {
-                $line = fgets($handle);
-                if (false === $line) {
-                    if (!feof($handle)) {
-                        throw new ToolCallException(\sprintf('Failed to read file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and disk health.');
+            $selected = 0;
+            while ($selected < $effectiveLimit && !feof($handle)) {
+                $consumed = false;
+                $pending = '';
+                while (false !== ($chunk = $this->readChunk($handle, $resolvedPath))) {
+                    $consumed = true;
+                    $lineEnded = str_ends_with($chunk, "\n");
+                    $chunk = $pending.$chunk;
+                    $pending = '';
+                    if ($lineEnded) {
+                        yield $this->stripFileIgnoreNewlines($chunk);
+                        break;
                     }
-
+                    // A CR at a chunk boundary might belong to the next LF.
+                    // Retain just that byte, never an entire line or grapheme.
+                    if (str_ends_with($chunk, "\r")) {
+                        $pending = "\r";
+                        $chunk = substr($chunk, 0, -1);
+                    }
+                    yield $chunk;
+                }
+                if (!$consumed) {
                     break;
                 }
-
-                $selected[] = $this->stripFileIgnoreNewlines($line);
+                yield $pending."\n";
+                ++$selected;
             }
 
-            $totalLines = $start + \count($selected);
+            $totalLines = $start + $selected;
             while ($this->advancePastLine($handle, $resolvedPath)) {
                 ++$totalLines;
             }
 
-            if ([] === $selected) {
-                return ['', $totalLines];
+            if ($selected > 0 && $totalLines > $start + $selected) {
+                yield \sprintf("\n--- %d more lines (use read with offset=%d limit=200 to continue) ---\n", $totalLines - $start - $selected, $start + $selected + 1);
             }
-
-            // Output capping is handled centrally by OutputCapToolResultProcessor
-            // after ToolExecutor converts the Symfony result to a domain ToolResult.
-            return [implode("\n", $selected)."\n", $totalLines];
         } finally {
             fclose($handle);
         }
@@ -175,12 +188,8 @@ final class ReadFileTool implements HatfieldToolProviderInterface
         $consumed = false;
 
         while (true) {
-            $chunk = fgets($handle, self::SKIP_CHUNK_BYTES + 1);
+            $chunk = $this->readChunk($handle, $resolvedPath);
             if (false === $chunk) {
-                if (!feof($handle)) {
-                    throw new ToolCallException(\sprintf('Failed to read file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and disk health.');
-                }
-
                 return $consumed;
             }
 
@@ -209,51 +218,14 @@ final class ReadFileTool implements HatfieldToolProviderInterface
         return $line;
     }
 
-    /**
-     * Append a continuation hint when the output was truncated.
-     *
-     * Checks the total line count of the file and adds a hint when there
-     * is more content available beyond what was returned.
-     *
-     * @return string The original content, optionally with a continuation hint appended
-     */
-    private function appendContinuationHint(string $content, ?int $offset, ?int $limit, int $totalLines): string
+    /** @param resource $handle */
+    private function readChunk($handle, string $resolvedPath): string|false
     {
-        // If the content is already empty, no hint needed
-        if ('' === $content) {
-            return $content;
+        $chunk = $this->toolRuntime->run(static fn () => fgets($handle, self::READ_CHUNK_BYTES + 1));
+        if (false === $chunk && !feof($handle)) {
+            throw new ToolCallException(\sprintf('Failed to read file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and disk health.');
         }
 
-        // Count lines in the returned output
-        $outputLines = substr_count($content, "\n");
-
-        // Account for trailing newline
-        if (!str_ends_with($content, "\n")) {
-            ++$outputLines;
-        }
-
-        if (0 === $outputLines) {
-            return $content;
-        }
-
-        // Determine the effective limit
-        $effectiveLimit = $limit ?? self::DEFAULT_LINE_LIMIT;
-
-        // If output lines are less than the limit, we didn't truncate
-        if ($outputLines < $effectiveLimit) {
-            return $content;
-        }
-
-        // Calculate the last line we returned
-        $lastReturnedLine = null !== $offset ? $offset + $outputLines - 1 : $outputLines;
-
-        if ($totalLines > $lastReturnedLine) {
-            $nextOffset = $lastReturnedLine + 1;
-            $hint = \sprintf("\n--- %d more lines (use read with offset=%d limit=200 to continue) ---\n", $totalLines - $lastReturnedLine, $nextOffset);
-
-            return $content.$hint;
-        }
-
-        return $content;
+        return $chunk;
     }
 }

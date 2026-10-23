@@ -18,6 +18,9 @@ use function Symfony\Component\String\u;
  */
 final class OutputCap
 {
+    /** Internal allocation guard, independent of the grapheme-based display caps. */
+    public const int STREAM_BYTE_LIMIT = 1048576;
+
     /** File extensions whose dense, document-like output receives the higher cap. */
     private const DOC_EXTENSIONS = ['md', 'txt', 'toon'];
 
@@ -131,8 +134,12 @@ final class OutputCap
         $offset = (\is_int($originalOffset) && $originalOffset > 0) ? $originalOffset : 1;
         $escapedGrepPath = escapeshellarg($originalPath);
 
+        $heading = null === $capResult->byteCount
+            ? "[Output capped: {$capResult->charCount} chars (~{$capResult->tokenEstimate} tokens) > {$capResult->cap}-char cap]"
+            : "[Output capped: {$capResult->byteCount} bytes > ".self::STREAM_BYTE_LIMIT.'-byte safety limit]';
+
         return <<<STRING
-[Output capped: {$capResult->charCount} chars (~{$capResult->tokenEstimate} tokens) > {$capResult->cap}-char cap]
+{$heading}
 Saved full output: {$capResult->savedPath}
 
 Next: use a focused follow-up, e.g.
@@ -152,22 +159,58 @@ STRING;
      */
     public function persist(string $text, string $runId): string
     {
-        $this->maybeCleanup();
-        $canonicalRoot = $this->ensureStorageDirectory();
-        $scopeName = $this->scopeName($runId);
-        $lock = $this->scopeLock($canonicalRoot, $scopeName);
-        $lock->acquire(true);
-
-        try {
-            $canonicalScope = $this->ensureScopeDirectory($canonicalRoot, $scopeName);
-            $filePath = $canonicalScope.'/'.bin2hex(random_bytes(16)).'.txt';
-            if (false === @file_put_contents($filePath, $text, \LOCK_EX)) {
+        return $this->persistUsing($runId, static function ($handle) use ($text): void {
+            if (\strlen($text) !== fwrite($handle, $text)) {
                 throw new \RuntimeException('Failed to write output cap file.');
             }
+        });
+    }
 
-            return $filePath;
+    /**
+     * Capture bounded producer chunks without materializing oversized output.
+     * Small output follows the ordinary character-cap processor unchanged.
+     * The compact envelope travels through the normal tool-result path; the
+     * artifact bytes never enter the executor, serializer or canonical history.
+     *
+     * @param iterable<string> $chunks
+     *
+     * @return string|array{output_cap: array{saved_path: string, byte_count: int}}
+     */
+    public function capture(iterable $chunks, ?string $runId): string|array
+    {
+        $stream = fopen('php://temp/maxmemory:'.self::STREAM_BYTE_LIMIT, 'w+b');
+        if (false === $stream) {
+            throw new \RuntimeException('Failed to open output capture stream.');
+        }
+        try {
+            $bytes = 0;
+            foreach ($chunks as $chunk) {
+                if (\strlen($chunk) !== fwrite($stream, $chunk)) {
+                    throw new \RuntimeException('Failed to capture tool output.');
+                }
+                $bytes += \strlen($chunk);
+            }
+            rewind($stream);
+            if ($bytes <= self::STREAM_BYTE_LIMIT) {
+                $text = stream_get_contents($stream);
+                if (false === $text) {
+                    throw new \RuntimeException('Failed to read captured tool output.');
+                }
+
+                return $text;
+            }
+            if (null === $runId || '' === trim($runId)) {
+                throw new \LogicException('OutputCap requires a run ID when persisting oversized output.');
+            }
+            $savedPath = $this->persistUsing($runId, static function ($handle) use ($stream, $bytes): void {
+                if ($bytes !== stream_copy_to_stream($stream, $handle)) {
+                    throw new \RuntimeException('Failed to persist captured tool output.');
+                }
+            });
+
+            return ['output_cap' => ['saved_path' => $savedPath, 'byte_count' => $bytes]];
         } finally {
-            $lock->release();
+            fclose($stream);
         }
     }
 
@@ -243,6 +286,34 @@ STRING;
             $this->logCleanupCompleted($phase, $files, $bytes);
         } catch (\Throwable $exception) {
             $this->logCleanupFailure($phase, $exception);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /** @param callable(resource): void $write */
+    private function persistUsing(string $runId, callable $write): string
+    {
+        $this->maybeCleanup();
+        $canonicalRoot = $this->ensureStorageDirectory();
+        $scopeName = $this->scopeName($runId);
+        $lock = $this->scopeLock($canonicalRoot, $scopeName);
+        $lock->acquire(true);
+
+        try {
+            $canonicalScope = $this->ensureScopeDirectory($canonicalRoot, $scopeName);
+            $filePath = $canonicalScope.'/'.bin2hex(random_bytes(16)).'.txt';
+            $handle = @fopen($filePath, 'xb');
+            if (false === $handle) {
+                throw new \RuntimeException('Failed to write output cap file.');
+            }
+            try {
+                $write($handle);
+            } finally {
+                fclose($handle);
+            }
+
+            return $filePath;
         } finally {
             $lock->release();
         }
