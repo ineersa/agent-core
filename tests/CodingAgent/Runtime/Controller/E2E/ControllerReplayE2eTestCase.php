@@ -76,15 +76,67 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     protected function tearDown(): void
     {
         $this->stopProcess();
-        // Keep failing fixtures when debugging controller-replay failures.
-        // Parent tearDown always removes tempDir; clear it first when keeping
-        // so the parent lifecycle cannot delete retained artifacts.
-        $keepTmp = false !== getenv('HATFIELD_KEEP_TMP') && '' !== getenv('HATFIELD_KEEP_TMP');
-        if (!$keepTmp && isset($this->tempDir) && '' !== $this->tempDir) {
-            TestDirectoryIsolation::removeDirectory($this->tempDir);
+        // Keep failing fixtures for startup diagnosis. Parent tearDown always
+        // removes tempDir; clear it first when retaining so that path cannot
+        // delete the preserved tree. Prefer the QA reports diagnostics root when
+        // present so castor check failures retain cache/DB/broker evidence without
+        // requiring an explicit HATFIELD_KEEP_TMP export.
+        if (isset($this->tempDir) && '' !== $this->tempDir) {
+            if ($this->shouldRetainControllerFixture()) {
+                // Move under QA diagnostics when possible; otherwise leave the live
+                // tree for HATFIELD_KEEP_TMP. Clearing tempDir prevents parent cleanup.
+                $this->retainFailedControllerFixture($this->tempDir);
+                $this->tempDir = '';
+            } else {
+                TestDirectoryIsolation::removeDirectory($this->tempDir);
+                $this->tempDir = '';
+            }
         }
-        $this->tempDir = '';
         parent::tearDown();
+    }
+
+    private function shouldRetainControllerFixture(): bool
+    {
+        if (!$this->status()->isFailure() && !$this->status()->isError()) {
+            return false;
+        }
+
+        if (false !== getenv('HATFIELD_KEEP_TMP') && '' !== getenv('HATFIELD_KEEP_TMP')) {
+            return true;
+        }
+
+        $reports = getenv('HATFIELD_QA_REPORTS_DIR');
+
+        return false !== $reports && '' !== trim((string) $reports);
+    }
+
+    private function retainFailedControllerFixture(string $tempDir): ?string
+    {
+        $reports = getenv('HATFIELD_QA_REPORTS_DIR');
+        if (false === $reports || '' === trim((string) $reports)) {
+            return $tempDir;
+        }
+
+        $reportsDir = str_starts_with((string) $reports, '/')
+            ? (string) $reports
+            : $this->projectDir.'/'.$reports;
+        $destination = $reportsDir.'/diagnostics/'.basename($tempDir);
+        if (is_dir($destination) || is_link($destination) || is_file($destination)) {
+            return $tempDir;
+        }
+
+        $parent = \dirname($destination);
+        if (!is_dir($parent) && !@mkdir($parent, 0o777, true) && !is_dir($parent)) {
+            return $tempDir;
+        }
+
+        // Best-effort rename keeps the live tree intact for inspection. Fall back
+        // to leaving tempDir in place when the move is refused.
+        if (!@rename($tempDir, $destination)) {
+            return $tempDir;
+        }
+
+        return $destination;
     }
 
     // Single-llm isolation for process-local FIFO fixtures is applied in
