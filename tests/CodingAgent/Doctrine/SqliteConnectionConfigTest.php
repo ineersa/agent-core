@@ -62,6 +62,9 @@ final class SqliteConnectionConfigTest extends IsolatedKernelTestCase
 
     public function testConnectionIsSqlite(): void
     {
+        $this->assertSame(1, (int) $this->connection->fetchOne('PRAGMA synchronous'));
+        $queueConfig = Yaml::parseFile(\dirname(__DIR__, 3).'/config/packages/sqlite_queue.yaml');
+        $this->assertSame('normal', $queueConfig['sqlite_queue']['synchronous']);
         // Sanity check: the Doctrine connection is SQLite (not another
         // driver), which ensures the connection is usable.
         $version = $this->connection->executeQuery('SELECT sqlite_version()')->fetchOne();

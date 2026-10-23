@@ -43,7 +43,17 @@ Base path: `sessions.path` setting (default under project `.hatfield/sessions/`)
 
 Table `hatfield_session` stores id, display name, timestamps, provider cache key, and related session metadata. Directory name is canonical; embedded IDs are validated on read.
 
-The `reasoning` column stores the selected effort. ChatGPT sends that selection as request-level `reasoning.effort`, including after resume. No native reasoning transition ledger is stored.
+SQLite application metadata, session queues, history indexes, and observational
+memory use WAL with `synchronous=NORMAL`. WAL preserves database consistency,
+but a machine crash or power failure can lose recent committed transactions.
+An application process crash does not have that durability trade-off. History
+indexes can be rebuilt from canonical events; application metadata and queue
+commits do not gain extra durability from that rebuild. This setting does not
+change canonical event-journal synchronization.
+
+The `reasoning` column stores the selected effort. ChatGPT sends that selection as
+request-level `reasoning.effort`, including after resume. No native reasoning
+transition ledger is stored.
 
 ### Naming
 

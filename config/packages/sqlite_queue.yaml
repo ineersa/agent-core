@@ -15,7 +15,7 @@ parameters:
     hatfield.sqlite_queue.max_payload: 1000000000
 
 sqlite_queue:
-    synchronous: full
+    synchronous: normal
     redeliver_timeout: 60
     max_payload: '%hatfield.sqlite_queue.max_payload%'
     max_connections: 64
