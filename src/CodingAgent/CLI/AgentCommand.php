@@ -28,7 +28,6 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * Unified agent command — interactive TUI by default, plus headless/controller modes.
@@ -54,11 +53,8 @@ HELP
 final class AgentCommand
 {
     public function __construct(
-        #[Autowire(lazy: true)]
         private InProcessAgentSessionClient $inProcessClient,
-        #[Autowire(lazy: true)]
         private JsonlProcessAgentSessionClient $processClient,
-        #[Autowire(lazy: true)]
         private InteractiveMode $interactiveMode,
         private HatfieldSessionStore $sessionStore,
         private ModelSelectionService $modelSelectionService,
@@ -68,7 +64,6 @@ final class AgentCommand
         private LoggerInterface $logger,
         private readonly ProjectGitignoreInitializer $projectGitignoreInitializer,
         private readonly ?StartupDatabaseMigrator $startupDatabaseMigrator = null,
-        #[Autowire(lazy: true)]
         private ?HeadlessController $controller = null,
         private readonly ?ToolRegistryInterface $toolRegistry = null,
     ) {

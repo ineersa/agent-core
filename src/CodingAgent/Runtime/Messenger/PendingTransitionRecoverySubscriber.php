@@ -23,13 +23,9 @@ final class PendingTransitionRecoverySubscriber
     private int $ownedRunIndex = 0;
 
     public function __construct(
-        #[Autowire(lazy: true)]
         private readonly PreparedTransitionEventStoreInterface $transitions,
-        #[Autowire(lazy: true)]
         private readonly PendingTransitionRecovery $recovery,
-        #[Autowire(lazy: true)]
         private readonly RunLockManager $locks,
-        #[Autowire(lazy: true)]
         private readonly OwnedRunIdsProvider $ownership,
         #[Autowire('%env(HATFIELD_SESSION_ID)%')]
         private readonly string $sessionId,
