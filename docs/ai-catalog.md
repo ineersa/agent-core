@@ -7,7 +7,7 @@ description: Bundled AI provider catalog, user copy, providers:update, and setti
 
 Hatfield ships a curated AI provider catalog: connection settings plus a small
 model list per known provider (`zai`, `deepseek`, `opencode-go`, `openai-codex`, `grok-cli`).
-The bundled file is frozen in the install (`version: 12` at this writing; the
+The bundled file is frozen in the install (`version: 16` at this writing; the
 integer bumps when the bundled catalog changes). Known providers ship **with
 definitions present and `enabled: false`**. Enabling a provider is a settings /
 setup step, not an automatic first-run action. Runtime never downloads
@@ -64,8 +64,11 @@ settings (`enabled`, `api_key`) and use `ai.favorite_models` for a lean picker.
 3. **Sync** fetches `https://models.dev/api.json` and refreshes allowlisted
    metadata on matching model ids. A model with `compatibility.pin_context_window: true`
    keeps its catalog `context_window` — models.dev reports the raw model window,
-   while curated caps encode real cost policy (GPT-6 models are pinned to the
-   272k cheap pricing tier). Every other metadata key still syncs. Unknown
+   while curated caps encode real cost policy (GPT-6 and GPT-5.6 models are
+   pinned to the 272k cheap pricing tier). Partial upstream `cost` maps refresh
+   only the fields they provide and keep existing `cache_read` / `cache_write`
+   values when those fields are absent. Explicit numeric zeros still apply.
+   Every other metadata key still syncs. Unknown
    upstream ids are listed as `available upstream (not added): …`.
 4. Atomic write (`0600`). Offline / HTTP / JSON failures soft-fail (exit 0) and
    leave the file untouched.
@@ -118,3 +121,34 @@ Favorites (`ai.favorite_models`) only quick-pick; they do not invent models.
 | `<project>/.hatfield/settings.yaml` | Project settings overlay |
 
 Related: [settings.md](settings.md), [settings-models.md](settings-models.md).
+
+## Cost estimates
+
+Catalog `cost` values are Standard short-context API rates in USD per 1M tokens.
+For GPT-6 and GPT-5.6 models, Hatfield pins `context_window` to 272000 so
+estimates stay on that flat tier. Only the documented default 30m cache-write
+rate is modeled. The 272k pin does not select or price 12h retention. ChatGPT
+subscription sessions still show API-priced estimates, not billed subscription
+charges.
+
+Input token classes are billed once as
+`ordinary = input_tokens - cache_read_tokens - cache_creation_tokens`, with
+`cache_read_tokens` preferred over the `cached_tokens` alias when both are
+present. Impossible counts are clamped to remaining input. Historical sessions
+cannot recover `cache_write_tokens` that were never persisted.
+
+Output cost uses inclusive `output_tokens`. Supported OpenResponses and Generic
+Completions extractors already include reasoning in that total and expose
+`thinking_tokens` only as detail, so Hatfield does not add thinking again.
+
+Audit limits (OpenAI docs and models.dev checked 2026-10-23):
+
+- Sources: [prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching),
+  [API pricing](https://developers.openai.com/api/docs/pricing),
+  [gpt-5.6-luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
+  [gpt-5.6-sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol),
+  [gpt-5.6-terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra).
+- Exact official rates for `gpt-5.3-codex-spark` were not verified; the catalog
+  keeps its prior values unchanged.
+- Long-context premiums above 272k are not modeled. 12h retention and
+  mixed-lifetime write pricing are outside the scope of these estimates.
