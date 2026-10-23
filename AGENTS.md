@@ -41,6 +41,8 @@
 - Before test work or runtime, TUI, Messenger, or database validation, load `.agents/skills/testing/SKILL.md` and read `tests/AGENTS.md`.
 - Apply that prerequisite to every agent and fork. Test-related fork handoffs must confirm both reads.
 - Never signal root-owned workers or processes tagged with `HATFIELD_SESSION_ID`.
+- **Never issue `tmux kill-session` or `tmux kill-server` from agent commands, delegated agents, or ad hoc cleanup scripts, even when a diagnostic suggests doing so.** Never derive destructive cleanup targets from pane lookups, command substitution, or session-name patterns. A missing or stale target can destroy the user's session and the running agent. Existing automated Castor/test-harness teardown remains permitted under its built-in ownership checks; this is not permission to invoke its destructive commands manually.
+- Exit test TUIs through their own application controls in the exact pane recorded at launch, after verifying that the pane still belongs to the test. If ownership or target identity is uncertain, leave the pane alone and report the uncertainty. Main must enforce these restrictions in every delegated tmux task.
 
 ## Task workflow
 
