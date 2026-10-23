@@ -24,7 +24,7 @@ final readonly class RunHistoryIndex
 {
     public const int PAGE_SIZE = 32;
     public const int PREVIEW_BYTES = 240;
-    private const int VERSION = 8;
+    private const int VERSION = 9;
 
     public function __construct(private LockFactory $locks, private LoggerInterface $logger)
     {
@@ -490,6 +490,7 @@ final readonly class RunHistoryIndex
         $db->executeStatement('PRAGMA cache_size = -1024');
         $db->executeStatement('PRAGMA temp_store = FILE');
         $db->executeStatement('PRAGMA journal_mode = WAL');
+        $db->executeStatement('PRAGMA synchronous = NORMAL');
     }
 
     private function createSchema(Connection $db): void
@@ -506,7 +507,7 @@ final readonly class RunHistoryIndex
             $db->executeStatement('CREATE INDEX IF NOT EXISTS event_turn_anchor ON event_location (turn_no, anchor)');
             $db->executeStatement('CREATE INDEX IF NOT EXISTS event_anchor ON event_location (anchor, seq)');
             $db->executeStatement('CREATE TABLE IF NOT EXISTS command_record (seq INTEGER PRIMARY KEY, type TEXT NOT NULL, source_anchor INTEGER NOT NULL, target_anchor INTEGER, suppressed INTEGER NOT NULL DEFAULT 0)');
-            $db->executeStatement('CREATE INDEX IF NOT EXISTS unresolved_commands ON command_record (target_anchor, suppressed, source_anchor)');
+            $db->executeStatement('CREATE INDEX IF NOT EXISTS unresolved_commands ON command_record (source_anchor, seq) WHERE target_anchor IS NULL AND suppressed = 0');
             $db->executeStatement('CREATE TABLE IF NOT EXISTS command_resolution (identity_hash TEXT PRIMARY KEY, sequence INTEGER NOT NULL)');
             $db->executeStatement('CREATE TABLE IF NOT EXISTS history_change (seq INTEGER PRIMARY KEY, kind TEXT NOT NULL, anchor INTEGER NOT NULL)');
             $db->executeStatement('CREATE TABLE IF NOT EXISTS context_checkpoint_location (seq INTEGER PRIMARY KEY, anchor INTEGER NOT NULL, offset INTEGER NOT NULL, length INTEGER NOT NULL)');
@@ -771,7 +772,7 @@ final readonly class RunHistoryIndex
             if ('history_select' === ($payload['reason'] ?? null) && $selected > 0) {
                 $completion = (int) $db->fetchOne('SELECT completion_seq FROM turn_anchor WHERE anchor = ?', [$selected]);
                 if ($completion > 0) {
-                    $db->executeStatement('UPDATE command_record SET suppressed = 1 WHERE target_anchor IS NULL AND source_anchor = ? AND seq > ? AND seq < ?', [$selected, $completion, $seq]);
+                    $db->executeStatement('UPDATE command_record SET suppressed = 1 WHERE target_anchor IS NULL AND suppressed = 0 AND source_anchor = ? AND seq > ? AND seq < ?', [$selected, $completion, $seq]);
                 }
             }
             $db->insert('history_change', ['seq' => $seq, 'kind' => $type, 'anchor' => $selected]);

@@ -11,7 +11,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 #[ORM\Table(name: 'deferred_subagent_child')]
 #[ORM\UniqueConstraint(name: 'uniq_deferred_subagent_child_run', columns: ['child_run_id'])]
 #[ORM\UniqueConstraint(name: 'uniq_deferred_subagent_child_batch_index', columns: ['batch_lifecycle_id', 'batch_index'])]
-#[ORM\Index(name: 'idx_deferred_subagent_child_batch', columns: ['batch_lifecycle_id'])]
 #[ORM\HasLifecycleCallbacks]
 class DeferredSubagentChild
 {
