@@ -55,7 +55,7 @@ final class LlmPlatformAdapterTest extends TestCase
 
         $this->assertSame('error', $result->stopReason);
         $this->assertNull($result->assistantMessage);
-        $this->assertSame([], $result->deltas);
+        $this->assertFalse($result->receivedStreamDeltas);
         $this->assertSame([], $result->usage);
         $this->assertIsArray($result->error);
         // Application budget owns retries; invoke() returns terminal after exhaustion.
@@ -129,6 +129,30 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame('aborted', $result->stopReason);
         $this->assertNull($result->error);
         $this->assertSame('partial', $result->assistantMessage?->asText());
+    }
+
+    public function testStreamFailureKeepsPartialContentWithoutRetainingDeltaObjects(): void
+    {
+        $reference = null;
+        $platform = $this->createStub(SymfonyPlatformInterface::class);
+        $platform->method('invoke')->willReturnCallback(static function () use (&$reference): DeferredResult {
+            return self::deferredStream(static function () use (&$reference): \Generator {
+                $delta = new TextDelta('partial');
+                $reference = \WeakReference::create($delta);
+                yield $delta;
+                unset($delta);
+                throw new TimeoutException('Synthetic stream timeout');
+            });
+        });
+        $result = $this->createAdapter($platform)->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(runId: 'synthetic-partial-error', messages: []),
+        ));
+        $this->assertSame('error', $result->stopReason);
+        $this->assertSame('partial', $result->assistantMessage?->asText());
+        $this->assertTrue($result->receivedStreamDeltas);
+        $this->assertInstanceOf(\WeakReference::class, $reference);
+        $this->assertNull($reference->get());
     }
 
     public function testIdleTimeoutDuringStreamIsRetryableTimeout(): void

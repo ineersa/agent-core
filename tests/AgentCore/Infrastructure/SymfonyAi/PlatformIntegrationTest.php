@@ -446,13 +446,15 @@ final class PlatformIntegrationTest extends TestCase
 
     public function testStreamingCancellationReturnsAbortedWithPartialOutput(): void
     {
+        $resumedAfterCancellation = false;
         $platform = $this->createSymfonyPlatform(
             modelClient: new FakeSymfonyModelClient(new FakeTokenUsage(promptTokens: 11, completionTokens: 4, totalTokens: 15)),
-            streamFactory: static fn (): iterable => [
-                new TextDelta('A'),
-                new TextDelta('B'),
-                new TextDelta('C'),
-            ],
+            streamFactory: static function () use (&$resumedAfterCancellation): \Generator {
+                yield new TextDelta('A');
+                yield new TextDelta('B');
+                $resumedAfterCancellation = true;
+                yield new TextDelta('C');
+            },
         );
 
         // Poll 1 = before-stream; poll 2 = first delta (keep Running, emit A);
@@ -483,6 +485,8 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame('aborted', $response->stopReason);
         $this->assertSame('A', $response->assistantMessage?->asText());
         $this->assertSame(15, $response->usage['total_tokens']);
+        $this->assertTrue($response->receivedStreamDeltas);
+        $this->assertFalse($resumedAfterCancellation, 'Partial reconstruction must not drain the cancelled provider stream.');
     }
 
     public function testStreamingCancellationAfterLastDeltaStillAborts(): void
@@ -583,7 +587,7 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertFalse($result->error['retryable'] ?? true);
         $this->assertTrue($result->error['retry_exhausted'] ?? false);
         $this->assertSame(1, $result->error['retry_attempt_index'] ?? null);
-        $this->assertSame([], $result->deltas);
+        $this->assertTrue($result->receivedStreamDeltas);
     }
 
     public function testEmptyStreamExhaustsApplicationBudget(): void
@@ -610,7 +614,7 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame('empty_response', $result->error['type'] ?? null);
         $this->assertFalse($result->error['retryable'] ?? true);
         $this->assertTrue($result->error['retry_exhausted'] ?? false);
-        $this->assertSame([], $result->deltas);
+        $this->assertFalse($result->receivedStreamDeltas);
         $this->assertNull($result->assistantMessage);
     }
 
@@ -644,13 +648,7 @@ final class PlatformIntegrationTest extends TestCase
             ),
         ));
 
-        $completions = array_values(array_filter(
-            $response->deltas,
-            static fn (mixed $delta): bool => $delta instanceof ThinkingComplete,
-        ));
-        $this->assertCount(2, $completions);
-        $this->assertSame("First reasoning summary.\n", $completions[0]->getThinking());
-        $this->assertSame("First reasoning summary.\nRefined independently.", $completions[1]->getThinking());
+        $this->assertTrue($response->receivedStreamDeltas);
         $expectedThinking = "First reasoning summary.\nFirst reasoning summary.\nRefined independently.";
         $this->assertSame(["First reasoning summary.\n", $expectedThinking], $observedCompletions);
 
