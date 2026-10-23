@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 
 final class InMemoryDeferredToolCompletionRepository implements DeferredToolCompletionRepositoryInterface
 {
-    /** @var array<string, array{correlation: DeferredToolCompletionCorrelation, status: string, invocationReference: ?ToolPayloadReferenceDTO}> */
+    /** @var array<string, array{correlation: DeferredToolCompletionCorrelation, status: string, acknowledgedAt: ?\DateTimeImmutable, invocationReference: ?ToolPayloadReferenceDTO}> */
     private array $byDeferredId = [];
 
     /** @var array<string, string> runId|toolCallId => deferredId */
@@ -33,6 +33,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         $this->byDeferredId[$correlation->deferredId] = [
             'correlation' => $correlation,
             'status' => 'pending',
+            'acknowledgedAt' => null,
             'invocationReference' => new ToolPayloadReferenceDTO(
                 'call', $correlation->runId, $correlation->turnNo, $correlation->stepId,
                 $correlation->attempt, $correlation->idempotencyKey, $correlation->toolCallId,
@@ -103,6 +104,19 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
     public function status(string $deferredId): ?string
     {
         return $this->byDeferredId[$deferredId]['status'] ?? null;
+    }
+
+    public function acknowledgedAt(string $deferredId): ?\DateTimeImmutable
+    {
+        return $this->byDeferredId[$deferredId]['acknowledgedAt'] ?? null;
+    }
+
+    public function markAcknowledged(string $deferredId): void
+    {
+        if (!isset($this->byDeferredId[$deferredId]) || 'pending' !== $this->byDeferredId[$deferredId]['status'] || null !== $this->byDeferredId[$deferredId]['acknowledgedAt']) {
+            return;
+        }
+        $this->byDeferredId[$deferredId]['acknowledgedAt'] = new \DateTimeImmutable();
     }
 
     public function markCompleted(string $deferredId): void

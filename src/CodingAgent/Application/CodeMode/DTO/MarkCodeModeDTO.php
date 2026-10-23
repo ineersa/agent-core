@@ -8,7 +8,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 final readonly class MarkCodeModeDTO
 {
-    public function __construct(#[Assert\NotBlank] public string $identity, public bool $detached)
+    public function __construct(#[Assert\NotBlank] public string $identity)
     {
     }
 }

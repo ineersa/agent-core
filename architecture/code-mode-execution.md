@@ -27,22 +27,22 @@ not free the occupied worker, create another consumer or release explicit locks.
 
 ## Caller resolution and terminal delivery
 
-The run-control owner validates the frozen call, current batch reference and
-pending caller before acknowledging it. `tool_call_acknowledged` settles that
-batch slot through the normal collector. It does not emit `tool_execution_end`.
-Its captured metadata action and batch finalization join the same local
-transaction after verified canonical append. Recovery applies those captured
-changes rather than recomputing scheduling. Later calls use ordinary admission on
-available workers, including another code-mode invocation.
+Shared deferred acknowledgement validates the retained full invocation, current
+batch reference and unresolved caller. `ToolCallResultHandler::acknowledge()`
+settles that batch slot with `tool_call_acknowledged`, not `tool_execution_end`.
+The shared `acknowledged_at` fact is captured with batch finalization in the same
+local metadata transaction. The deferred registration stays `pending` until true
+terminal settlement. Later calls use ordinary admission on available workers,
+including another code-mode invocation.
 
 The original worker applies terminal processors once. Its local
 `ProcessedToolResultDTO` includes both the original execution envelope and the
 processed result. CodingAgent validates both against the frozen invocation before
 accepting publication responsibility. The first terminal result reference wins.
-A foreground completion uses the ordinary result handler. A detached completion
-uses the existing background-completion mailbox and includes paths to retained
-processed and original structured results. Repeated owner messages do not produce
-another caller result or another background completion.
+A foreground completion uses the ordinary result handler. An acknowledged
+completion uses the existing background-completion mailbox and includes paths to
+retained processed and original structured results. Repeated owner messages do
+not produce another caller result or another background completion.
 
 ## Evidence and cleanup
 

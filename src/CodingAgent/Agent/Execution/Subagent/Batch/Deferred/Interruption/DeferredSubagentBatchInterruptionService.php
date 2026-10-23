@@ -141,7 +141,7 @@ final readonly class DeferredSubagentBatchInterruptionService
             return;
         }
 
-        if ('completed' === $deferredStatus && null === $projection->backgroundedAt) {
+        if ('completed' === $deferredStatus && null === $this->deferredToolCompletionRepository->acknowledgedAt($batchLifecycleId)) {
             $this->deliveryService->deliver($batchLifecycleId);
 
             return;

@@ -68,7 +68,7 @@ final readonly class DeferredSubagentBatchRunControlWorkerStartedSubscriber
                 continue;
             }
 
-            if (null === $batch->backgroundedAt && 'pending' !== $this->deferredToolCompletionRepository->status($batch->lifecycleId)) {
+            if (null === $this->deferredToolCompletionRepository->acknowledgedAt($batch->lifecycleId) && 'pending' !== $this->deferredToolCompletionRepository->status($batch->lifecycleId)) {
                 continue;
             }
 

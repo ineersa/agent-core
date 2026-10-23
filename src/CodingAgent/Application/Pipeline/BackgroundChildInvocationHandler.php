@@ -4,21 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
-use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage;
+use Ineersa\CodingAgent\Application\Deferred\DeferredCallerAcknowledgementService;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkChildBackgroundedDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 
 final readonly class BackgroundChildInvocationHandler implements RunMessageHandler
 {
-    public function __construct(private DeferredSubagentBatchRepository $batches, private DeferredToolCompletionRepositoryInterface $deferred, private ToolCallResultHandler $results)
-    {
+    public function __construct(
+        private DeferredSubagentBatchRepository $batches,
+        private DeferredCallerAcknowledgementService $acknowledgements,
+    ) {
     }
 
     public function supports(object $message): bool
@@ -53,10 +54,6 @@ final readonly class BackgroundChildInvocationHandler implements RunMessageHandl
             // A request from an older owner turn cannot detach current work.
             return new HandlerResult();
         }
-        $correlation = $this->deferred->findByDeferredId($batch->lifecycleId);
-        if (null === $correlation) {
-            throw new \LogicException('Eligible child background registration is missing.');
-        }
         if (1 !== \count($batch->children)) {
             throw new \LogicException('Child invocation requires exactly one reserved child.');
         }
@@ -67,15 +64,21 @@ final readonly class BackgroundChildInvocationHandler implements RunMessageHandl
             return new HandlerResult(postCommitActions: [new DeliverDeferredSubagentBatchLifecycleMessage($batch->lifecycleId)]);
         }
         $identity = \sprintf('%s (agent_id: %s, run_id: %s)', $child->agentName, $child->artifactId, $child->childRunId);
-        $ack = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => "Child invocation moved to background. The same child keeps running under its original deadline. Its handoff will arrive as a follow-up.\n".$identity]], ['backgrounded' => true], false, null);
-        $result = $this->results->handle($ack, $state);
+        $result = $this->acknowledgements->acknowledge(
+            $batch->lifecycleId,
+            $state,
+            [['type' => 'text', 'text' => "Child invocation moved to background. The same child keeps running under its original deadline. Its handoff will arrive as a follow-up.\n".$identity]],
+            ['backgrounded' => true],
+        );
+        if ([] === $result->events) {
+            return $result;
+        }
 
-        // Reuse the canonical result/batch transition and its recoverable actions.
-        // Record wait detachment before normal batch finalization and successors.
+        // Shared acknowledgement lands before activity projection so terminal
+        // routing can observe acknowledged_at when lifecycle delivery runs.
         return new HandlerResult($result->nextState, $result->events, $result->effects, $result->postCommitEffects, [
-            new MarkChildBackgroundedDTO($batch->lifecycleId, new \DateTimeImmutable()),
             ...$result->postCommitActions,
-            new DeliverDeferredSubagentBatchLifecycleMessage($batch->lifecycleId),
+            new DispatchLocalMetadataMessageDTO(new MarkChildBackgroundedDTO($batch->lifecycleId, new \DateTimeImmutable())),
         ]);
     }
 }

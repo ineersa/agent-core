@@ -25,7 +25,7 @@ final class CodeModeExecutionRepository extends ServiceEntityRepository
 
     public function register(string $identity, string $runId, string $toolCallId, string $reference): void
     {
-        $this->getEntityManager()->getConnection()->insert('code_mode_execution', ['identity' => $identity, 'run_id' => $runId, 'tool_call_id' => $toolCallId, 'call_reference' => $reference, 'ready' => 0, 'detached' => 0, 'settled' => 0]);
+        $this->getEntityManager()->getConnection()->insert('code_mode_execution', ['identity' => $identity, 'run_id' => $runId, 'tool_call_id' => $toolCallId, 'call_reference' => $reference, 'ready' => 0, 'settled' => 0]);
     }
 
     public function ready(string $identity): void
@@ -41,11 +41,6 @@ final class CodeModeExecutionRepository extends ServiceEntityRepository
     public function freezeResult(string $identity, string $reference): void
     {
         $this->getEntityManager()->getConnection()->executeStatement('UPDATE code_mode_execution SET result_reference = ? WHERE identity = ? AND result_reference IS NULL', [$reference, $identity]);
-    }
-
-    public function detach(string $identity): void
-    {
-        $this->getEntityManager()->getConnection()->update('code_mode_execution', ['detached' => 1], ['identity' => $identity, 'settled' => 0]);
     }
 
     public function settle(string $identity): void

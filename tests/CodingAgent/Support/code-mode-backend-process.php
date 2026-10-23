@@ -172,8 +172,10 @@ try {
     $message = new CodeModeOwnerDTO($f->state->runId, $row['identity'], 'cm', true);
     $ack = $handler->handle($message, $f->state);
     $state = $f->commit($f->state, $ack);
-    $ackRow = $executions->invocation($state->runId, 'cm');
-    $evidence = ['ack_events' => array_column($ack->events, 'type'), 'ack_detached' => (bool) $ackRow['detached'],
+    $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+    $evidence = ['ack_events' => array_column($ack->events, 'type'),
+        'ack_acknowledged' => null !== $deferred->acknowledgedAt($row['identity']),
+        'ack_status' => $deferred->status($row['identity']),
         'worker_alive_after_ack' => $worker->isRunning(), 'script_live_after_ack' => is_file($blocked['script']),
         'socket_live_after_ack' => file_exists(dirname($blocked['script']).'/s.sock'),
         'host_pid' => $blocked['host'], 'owner_pid' => getmypid(),

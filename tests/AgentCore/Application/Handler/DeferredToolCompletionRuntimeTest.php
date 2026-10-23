@@ -425,6 +425,16 @@ final class MarkCompletedFailsOnceRepository implements DeferredToolCompletionRe
         return $this->inner->findInvocationReferenceByDeferredId($deferredId);
     }
 
+    public function acknowledgedAt(string $deferredId): ?\DateTimeImmutable
+    {
+        return $this->inner->acknowledgedAt($deferredId);
+    }
+
+    public function markAcknowledged(string $deferredId): void
+    {
+        $this->inner->markAcknowledged($deferredId);
+    }
+
     public function markCompleted(string $deferredId): void
     {
         if ($this->failuresRemaining > 0) {

@@ -15,19 +15,18 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 #[AsMessageHandler(bus: 'agent.command.bus')]
 final readonly class CodeModeMetadataHandler implements CoordinationActionValidatorInterface
 {
-    public function __construct(private CodeModeExecutionRepository $executions, private DeferredToolCompletionRepositoryInterface $deferred, private ValidatorInterface $validator)
-    {
+    public function __construct(
+        private CodeModeExecutionRepository $executions,
+        private DeferredToolCompletionRepositoryInterface $deferred,
+        private ValidatorInterface $validator,
+    ) {
     }
 
     public function __invoke(MarkCodeModeDTO $message): void
     {
         $this->validate($message);
-        if ($message->detached) {
-            $this->executions->detach($message->identity);
-        } else {
-            $this->executions->settle($message->identity);
-            $this->deferred->markCompleted($message->identity);
-        }
+        $this->executions->settle($message->identity);
+        $this->deferred->markCompleted($message->identity);
     }
 
     public function supports(object $action): bool

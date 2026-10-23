@@ -29,9 +29,6 @@ final class CodeModeExecution
     public bool $ready = false;
 
     #[ORM\Column]
-    public bool $detached = false;
-
-    #[ORM\Column]
     public bool $settled = false;
 
     #[ORM\Column(name: 'raw_reference', type: Types::TEXT, nullable: true)]

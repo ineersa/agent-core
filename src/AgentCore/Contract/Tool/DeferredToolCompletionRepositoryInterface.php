@@ -37,5 +37,11 @@ interface DeferredToolCompletionRepositoryInterface
      */
     public function status(string $deferredId): ?string;
 
+    /** First successful caller acknowledgement timestamp for a still-pending registration. */
+    public function acknowledgedAt(string $deferredId): ?\DateTimeImmutable;
+
+    /** Record caller acknowledgement without settling the deferred registration. */
+    public function markAcknowledged(string $deferredId): void;
+
     public function markCompleted(string $deferredId): void;
 }

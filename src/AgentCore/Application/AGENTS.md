@@ -45,12 +45,13 @@ envelope. A native producer may accept publication responsibility; otherwise the
 worker posts the ordinary `ToolCallResult`. This event has no Messenger route.
 It never reruns terminal processors or selects scheduling policy.
 
-CodingAgent's retained code-mode owner routes `CodeModeOwnerDTO` through
-`agent.command.bus` to `run_control`. Its handler validates the frozen invocation
-before caller acknowledgement or terminal delivery. `ToolCallResultHandler::acknowledge()`
-collects the original batch slot with `tool_call_acknowledged`, not an execution-end
-event. Native metadata actions join `LocalMetadataCoordinator`'s transaction with
-the captured batch changes. See `architecture/code-mode-execution.md`.
+CodingAgent's retained code-mode owner and child backgrounding both use shared
+deferred caller acknowledgement. `DeferredCallerAcknowledgementService` validates
+the retained full invocation and unresolved caller, then
+`ToolCallResultHandler::acknowledge()` collects the original batch slot with
+`tool_call_acknowledged`, not an execution-end event. Shared `acknowledged_at`
+joins `LocalMetadataCoordinator`'s transaction while the deferred registration
+stays pending until true terminal settlement. See `architecture/code-mode-execution.md`.
 
 - `StartRun` — `AgentRunner::start()`
 - `ApplyCommand` — `AgentRunner` steer/followUp/cancel/answerHuman via `applyCoreCommand()`

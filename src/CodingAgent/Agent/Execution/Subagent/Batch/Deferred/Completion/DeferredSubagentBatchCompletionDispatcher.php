@@ -122,8 +122,7 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
             ]);
         }
 
-        $batch = $this->batchRepository->findByLifecycleId($lifecycleId);
-        if (null !== $batch?->backgroundedAt) {
+        if (null !== $this->deferredToolCompletionRepository->acknowledgedAt($lifecycleId)) {
             $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
                 $parentRunId, 'background-child-result-'.$lifecycleId, $presentation,
             ));

@@ -159,22 +159,23 @@ final class CodeModeOwnerHandlerTest extends IsolatedKernelTestCase
         $c->get(CodeModeExecutionService::class)->ready($id);
         $ack = $c->get(CodeModeOwnerHandler::class)->handle(new CodeModeOwnerDTO($f->state->runId, $id, 'cm', true), $f->state);
         $db = $c->get(Connection::class);
-        $db->executeStatement("CREATE TRIGGER fail_code_mode_detach BEFORE UPDATE OF detached ON code_mode_execution BEGIN SELECT RAISE(ABORT, 'fixture detachment failure'); END");
+        $db->executeStatement("CREATE TRIGGER fail_deferred_ack BEFORE UPDATE OF acknowledged_at ON tool_deferred_completion BEGIN SELECT RAISE(ABORT, 'fixture acknowledgement failure'); END");
         try {
             try {
                 $f->commit($f->state, $ack);
-                $this->fail('Detachment unexpectedly succeeded.');
+                $this->fail('Acknowledgement unexpectedly succeeded.');
             } catch (\Symfony\Component\Messenger\Exception\HandlerFailedException $error) {
-                $this->assertStringContainsString('fixture detachment failure', $error->getMessage());
+                $this->assertStringContainsString('fixture acknowledgement failure', $error->getMessage());
             }
-            $this->assertFalse((bool) $c->get(CodeModeExecutionRepository::class)->invocation($f->state->runId, 'cm')['detached']);
+            $this->assertNull($c->get(DeferredToolCompletionRepositoryInterface::class)->acknowledgedAt($id));
             $this->assertSame(['cm' => true], $c->get(ToolBatchStoreInterface::class)->loadSchedule($f->state->runId, 1, 'step')->inFlight);
             $this->assertNotNull($c->get(PreparedTransitionEventStoreInterface::class)->verifiedPendingTransition($f->state->runId));
         } finally {
-            $db->executeStatement('DROP TRIGGER fail_code_mode_detach');
+            $db->executeStatement('DROP TRIGGER fail_deferred_ack');
         }
         $c->get(PendingTransitionRecovery::class)->recover($f->state->runId);
-        $this->assertTrue((bool) $c->get(CodeModeExecutionRepository::class)->invocation($f->state->runId, 'cm')['detached']);
+        $this->assertNotNull($c->get(DeferredToolCompletionRepositoryInterface::class)->acknowledgedAt($id));
+        $this->assertSame('pending', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
         $this->assertSame([], $c->get(ToolBatchStoreInterface::class)->loadSchedule($f->state->runId, 1, 'step')->inFlight);
     }
 

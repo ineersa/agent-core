@@ -119,6 +119,42 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         return $entity instanceof DeferredToolCompletion ? $entity->status : null;
     }
 
+    public function acknowledgedAt(string $deferredId): ?\DateTimeImmutable
+    {
+        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
+
+        return $entity instanceof DeferredToolCompletion ? $entity->acknowledgedAt : null;
+    }
+
+    public function markAcknowledged(string $deferredId): void
+    {
+        $em = $this->getEntityManager();
+        $now = Clock::get()->now();
+        $updated = $em->getConnection()->executeStatement(
+            'UPDATE tool_deferred_completion SET acknowledged_at = :acknowledged_at, updated_at = :now WHERE deferred_id = :deferred_id AND status = :pending AND acknowledged_at IS NULL',
+            [
+                'acknowledged_at' => $now->format('Y-m-d H:i:s'),
+                'now' => $now->format('Y-m-d H:i:s'),
+                'deferred_id' => $deferredId,
+                'pending' => 'pending',
+            ],
+        );
+        if ($updated > 0) {
+            $managed = $this->findOneBy(['deferredId' => $deferredId]);
+            if ($managed instanceof DeferredToolCompletion) {
+                $em->detach($managed);
+            }
+
+            return;
+        }
+        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
+        if (!$entity instanceof DeferredToolCompletion || null !== $entity->acknowledgedAt || 'pending' !== $entity->status) {
+            return;
+        }
+        $entity->acknowledgedAt = $now;
+        $em->flush();
+    }
+
     public function markCompleted(string $deferredId): void
     {
         $em = $this->getEntityManager();

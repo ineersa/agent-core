@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
-use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkChildBackgroundedDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -17,8 +18,8 @@ final readonly class ChildBackgroundCoordinationHandler implements CoordinationA
 {
     public function __construct(
         private DeferredSubagentBatchRepository $batches,
-        private DeferredToolCompletionRepositoryInterface $deferred,
-        private ApplicationDbTransactionInterface $transactions,
+        private RunLockManager $locks,
+        private MessageBusInterface $commandBus,
         private ValidatorInterface $validator,
     ) {
     }
@@ -27,13 +28,17 @@ final readonly class ChildBackgroundCoordinationHandler implements CoordinationA
     public function __invoke(MarkChildBackgroundedDTO $action): void
     {
         $this->validate($action);
-        // This synchronous action runs before the finalizer's metadata transaction.
-        // Both local writes must commit together; replay remains idempotent.
-        $this->transactions->transactional(function () use ($action): void {
-            $this->batches->markBackgrounded($action->lifecycleId, $action->acceptedAt);
-            // Only the caller wait is completed. Native supervision remains in the
-            // existing deferred batch until its ordinary terminal delivery.
-            $this->deferred->markCompleted($action->lifecycleId);
+        $batch = $this->batches->findByLifecycleId($action->lifecycleId);
+        // Activity projection only. Shared deferred acknowledgement stays pending
+        // until true terminal settlement and is recorded earlier in this transaction.
+        $this->batches->markBackgrounded($action->lifecycleId, $action->acceptedAt);
+        if (null === $batch) {
+            return;
+        }
+        // Lifecycle delivery must observe committed acknowledgement and activity
+        // projection, so wait until the owner lock releases.
+        $this->locks->afterRelease($batch->parentRunId, function () use ($action): void {
+            $this->commandBus->dispatch(new DeliverDeferredSubagentBatchLifecycleMessage($action->lifecycleId));
         });
     }
 

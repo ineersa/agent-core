@@ -24,7 +24,8 @@ final class CodeModeExecutionServiceTest extends TestCase
             $e = json_decode($lines[array_key_last($lines)], true, flags: \JSON_THROW_ON_ERROR);
             $this->assertContains('tool_call_acknowledged', $e['ack_events']);
             $this->assertNotContains('tool_execution_end', $e['ack_events']);
-            $this->assertTrue($e['ack_detached']);
+            $this->assertTrue($e['ack_acknowledged']);
+            $this->assertSame('pending', $e['ack_status']);
             $this->assertTrue($e['worker_alive_after_ack']);
             $this->assertTrue($e['script_live_after_ack']);
             $this->assertTrue($e['socket_live_after_ack']);

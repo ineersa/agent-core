@@ -71,6 +71,9 @@ class DeferredToolCompletion
     #[ORM\Column(type: 'string', length: 32)]
     public string $status = 'pending';
 
+    #[ORM\Column(name: 'acknowledged_at', type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $acknowledgedAt = null;
+
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     public \DateTimeImmutable $createdAt;
 
