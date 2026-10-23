@@ -150,6 +150,5 @@ Audit limits (OpenAI docs and models.dev checked 2026-10-23):
   [gpt-5.6-terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra).
 - Exact official rates for `gpt-5.3-codex-spark` were not verified; the catalog
   keeps its prior values unchanged.
-- Long-context premiums above 272k and 12h write pricing are not modeled. Mapping
-  from request retention settings to the pricing table's 12h column remains
-  undocumented for these models and is not implemented.
+- Long-context premiums above 272k are not modeled. 12h retention and
+  mixed-lifetime write pricing are outside the scope of these estimates.
