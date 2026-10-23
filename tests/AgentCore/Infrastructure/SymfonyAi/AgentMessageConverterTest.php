@@ -54,9 +54,34 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
 
     public static function payloadCutoffs(): iterable
     {
-        // One user message has 579 estimated bytes besides its text payload.
-        yield 'at cap' => [16 * 1024 * 1024 - 579, true];
-        yield 'above cap' => [16 * 1024 * 1024 - 578, false];
+        // Source and converted text count twice, plus 803 estimated bytes.
+        yield 'at cutoff' => [8 * 1024 * 1024 - 402, true];
+        yield 'above cutoff' => [8 * 1024 * 1024 - 401, false];
+    }
+
+    #[DataProvider('expandedPayloads')]
+    public function testConvertedPayloadDisablesRetentionWithoutTruncatingOutput(bool $structured): void
+    {
+        $part = str_repeat($structured ? "\0" : 'x', ($structured ? 3 : 6) * 1024 * 1024);
+        $message = $structured
+            ? new AgentMessage('tool', [], toolCallId: 'call', toolName: 'fixture', details: ['payload' => $part])
+            : new AgentMessage('user', [['type' => 'text', 'text' => $part], ['type' => 'text', 'text' => $part]]);
+        $expected = $structured ? json_encode(['payload' => $part], \JSON_THROW_ON_ERROR) : $part."\n".$part;
+        $sourceReference = \WeakReference::create($message);
+        $bag = $this->converter->toMessageBagForTarget([$message], 'target');
+        $bagReference = \WeakReference::create($bag);
+        $content = $bag->getMessages()[0]->getContent()[0];
+        $this->assertInstanceOf(Text::class, $content);
+        $this->assertSame($expected, $content->getText());
+        unset($message, $bag);
+        $this->assertNull($sourceReference->get(), 'Converted payload must count alongside retained source payload.');
+        $this->assertNull($bagReference->get());
+    }
+
+    public static function expandedPayloads(): iterable
+    {
+        yield 'multipart join' => [false];
+        yield 'escaped tool details' => [true];
     }
 
     public function testDetailsAndMetadataCountTowardRetentionWithoutChangingOutput(): void

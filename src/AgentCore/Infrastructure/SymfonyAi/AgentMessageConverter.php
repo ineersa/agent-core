@@ -13,6 +13,7 @@ use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\MessageInterface;
+use Symfony\AI\Platform\Message\ToolCallMessage;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
@@ -198,7 +199,33 @@ final class AgentMessageConverter
         foreach ($messages as $message) {
             if (!$this->consumePayloadBudget($message->toArray(), $remaining, $nodes)) {
                 $this->clearActiveBag();
-                break;
+
+                return $bag;
+            }
+        }
+        // Conversion can allocate joined text or expanded JSON. Count both graphs,
+        // conservatively counting shared strings twice rather than missing copies.
+        foreach ($bag as $message) {
+            $content = $message->getContent();
+            $parts = \is_array($content) ? $content : [$content];
+            if ($message instanceof ToolCallMessage) {
+                $parts[] = $message->getToolCall();
+            }
+            foreach ($parts as $part) {
+                $payload = match (true) {
+                    $part instanceof Text => [$part->getText(), $part->getSignature()],
+                    $part instanceof Thinking => [$part->getContent(), $part->getSignature()],
+                    $part instanceof ToolCall => [$part->getId(), $part->getName(), $part->getArguments(), $part->getSignature()],
+                    // This converter creates file-backed images only. Count their
+                    // retained path/format without loading or encoding file bytes.
+                    $part instanceof Image && null !== $part->asPath() => [$part->asPath(), $part->getFormat()],
+                    default => $part,
+                };
+                if (!$this->consumePayloadBudget($payload, $remaining, $nodes)) {
+                    $this->clearActiveBag();
+
+                    return $bag;
+                }
             }
         }
 
