@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -107,7 +108,7 @@ final readonly class ExecuteLlmStepWorker
                     'run_id' => $message->runId(),
                     'turn_no' => $message->turnNo(),
                     'step_id' => $message->stepId(),
-                ], $invoke)
+                ], $invoke, level: LogLevel::INFO)
             ;
 
             // Adapter owns thinking-only / empty-stream recovery inside the shared
