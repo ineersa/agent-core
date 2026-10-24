@@ -195,10 +195,12 @@ final readonly class CompleteDeferredToolCallHandler
         $metadata = $this->deferredRepository->findMetadataByDeferredId($deferredId)
             ?? throw new \RuntimeException('Controller recovery lost its deferred registration.');
         $reference = $metadata->reference;
-        $pending = 'pending' === $this->deferredRepository->status($deferredId);
-        $parked = $this->deferredRepository->requiresContinuation($reference->runId, $reference->toolCallId);
-        $outstanding = null !== $this->acknowledgedRouter && $this->acknowledgedRouter->hasOutstandingAdmission($deferredId);
-        if (!$pending && !$parked && !$outstanding) {
+        if (null !== $this->acknowledgedRouter) {
+            if (!$this->acknowledgedRouter->hasOutstandingAdmission($deferredId)) {
+                return false;
+            }
+        } elseif ('pending' !== $this->deferredRepository->status($deferredId)
+            && !$this->deferredRepository->requiresContinuation($reference->runId, $reference->toolCallId)) {
             return false;
         }
         if ($abandoned) {
@@ -209,7 +211,8 @@ final readonly class CompleteDeferredToolCallHandler
             return true;
         }
         $this->deferredRepository->requireContinuation($deferredId, true);
-        if (null !== $this->deferredRepository->findAcceptedResultReferenceByDeferredId($deferredId) || $outstanding) {
+        if (null !== $this->deferredRepository->findAcceptedResultReferenceByDeferredId($deferredId)
+            || (null !== $this->acknowledgedRouter && $this->acknowledgedRouter->hasAdmittedUnconsumedReceipt($deferredId))) {
             return true;
         }
         $invocation = $this->deferredRepository->findInvocationReferenceByDeferredId($deferredId)

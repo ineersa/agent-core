@@ -115,6 +115,54 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
         $this->assertCount($llmBefore + 1, $c->get('messenger.transport.llm')->getSent(), 'Duplicate repair cannot continue twice.');
     }
 
+    public function testAcknowledgedHostWithoutReceiptParksUntilExplicitRepair(): void
+    {
+        // ACK before any completion receipt leaves an empty mailbox. Cold restart
+        // must park continuation and refuse delayed AdvanceRun until prepared repair.
+        $c = self::getContainer();
+        $f = new CodeModeBackendFixture($c, 'throw new RuntimeException("Do not rerun parked acknowledgement.");');
+        $llmBefore = \count($c->get('messenger.transport.llm')->getSent());
+        $run = $f->state->runId;
+        $id = $f->registerReadyHost();
+        $f->commit($f->state, $c->get(CodeModeAcknowledgementHandler::class)->handle(new CodeModeOwnerDTO($run, $id, 'cm', true), $f->state));
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $this->assertSame('pending', $deferred->status($id));
+        $this->assertNull($deferred->findAcceptedResultReferenceByDeferredId($id));
+        $this->assertSame([], $c->get(CommandStoreInterface::class)->pendingKeys($run));
+        $transport = $c->get('messenger.transport.run_control');
+        $before = $transport->getSent();
+        $listener = $c->get(CodeModeControllerSessionLifecycleListener::class);
+        $listener->starting(new ControllerSessionStartingEvent($run));
+        $listener->starting(new ControllerSessionStartingEvent($run));
+        $this->assertEquals($before, $transport->getSent(), 'Cold attachment never creates successor work for parked acknowledgements.');
+        $this->assertTrue($deferred->requiresContinuation($run, 'cm'));
+        $this->assertSame('pending', $deferred->status($id));
+        $this->assertSame([], $c->get(CommandStoreInterface::class)->pendingKeys($run));
+        $events = $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run);
+        $state = $f->state->with(['lastSeq' => $events[array_key_last($events)]->seq, 'pendingToolCalls' => ['cm' => true]]);
+        $c->get(ActiveRunContextInterface::class)->loadRecovered($state);
+        $c->get('agent.command.bus')->dispatch(new AdvanceRun($run, $state->turnNo, 'old-advance-empty', 1, 'old-advance-empty'), [new ReceivedStamp('run_control')]);
+        $this->assertCount($llmBefore, $c->get('messenger.transport.llm')->getSent(), 'Empty-mailbox AdvanceRun cannot borrow parked recovery.');
+        $preview = $c->get(SessionRepairService::class)->repair($run, false, 'preview-parked-ack');
+        $this->assertNull($preview->refusalReason);
+        $this->assertTrue($deferred->requiresContinuation($run, 'cm'), 'Preview does not authorize continuation.');
+        $repairOffset = \count($transport->getSent());
+        $c->get('agent.command.bus')->dispatch(new RepairSession($run, true, 'apply-parked-ack'), [new ReceivedStamp('run_control')]);
+        foreach (\array_slice($transport->getSent(), $repairOffset) as $envelope) {
+            if ($envelope->getMessage() instanceof RedriveDeferredToolCall) {
+                $c->get('agent.command.bus')->dispatch($envelope->with(new ReceivedStamp('run_control')));
+            }
+        }
+        $f->consumeCompletions();
+        $this->assertFalse($deferred->requiresContinuation($run, 'cm'));
+        $this->assertSame('completed', $deferred->status($id));
+        $this->assertSame([$id], $c->get(CommandStoreInterface::class)->pendingKeys($run), 'Prepared repair admits the retained completion into the empty mailbox.');
+        $afterRepair = $c->get(ActiveRunContextInterface::class)->requireLoaded($run);
+        $c->get('agent.command.bus')->dispatch(new AdvanceRun($run, $afterRepair->turnNo, 'repair-advance', 1, 'repair-advance'), [new ReceivedStamp('run_control')]);
+        $this->assertCount($llmBefore + 1, $c->get('messenger.transport.llm')->getSent(), 'Prepared repair authorizes model continuation after the empty-mailbox park.');
+        $this->assertSame([], $c->get('messenger.transport.tool')->getSent(), 'Repair never repeats execution or processors.');
+    }
+
     public function testFinalizedForegroundOutcomeIsNotReparkedOnControllerRestart(): void
     {
         // Unacknowledged settlement now joins verified tool-result finalization.

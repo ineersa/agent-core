@@ -26,18 +26,22 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionOriginEnum;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeAcknowledgementHandler;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionHookSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionReasonEnum;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Controller\CodeModeControllerSessionLifecycleListener;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
+use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -161,6 +165,58 @@ final class CodeModeInterruptionHookSubscriberTest extends IsolatedKernelTestCas
         $this->assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
         $this->assertEquals($historyBeforeCompletion, $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run), 'Delivery must not admit an abandoned result into replacement history or queue a mailbox command.');
         $this->assertSame([], array_filter($c->get(PreparedTransitionEventStoreInterface::class)->allFor($run), static fn (RunEvent $event): bool => 'tool_execution_end' === $event->type));
+    }
+
+    public function testNaturalBackgroundCompletionBehindSelectedHistoryDoesNotDiscardOrFence(): void
+    {
+        [$f, $id] = $this->begin();
+        $c = self::getContainer();
+        $run = $f->state->runId;
+        $c->get(CodeModeExecutionService::class)->ready($id);
+        $f->commit($f->state, $c->get(CodeModeAcknowledgementHandler::class)->handle(new CodeModeOwnerDTO($run, $id, 'cm', true), $f->state));
+        $events = $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run);
+        $tip = $f->state->with(['lastSeq' => $events[array_key_last($events)]->seq, 'status' => RunStatus::Completed, 'pendingToolCalls' => ['cm' => true], 'activeStepId' => null]);
+        $c->get(ActiveRunContextInterface::class)->loadRecovered($tip);
+        $c->get(RunOperationalProjectionRepository::class)->replace($tip);
+        $forward = RunEvent::forAppend($run, 1, 'turn_advanced', ['turn_no' => 2]);
+        $ahead = $c->get(RunCommit::class)->commit($tip, $tip->with(['turnNo' => 2, 'lastSeq' => $tip->lastSeq + 1]), [$forward], dispatchAfterTurnHooks: false);
+        $selected = $tip->with(['turnNo' => 0, 'activeStepId' => null, 'pendingToolCalls' => [], 'messages' => [], 'status' => RunStatus::Completed]);
+        $selected = $c->get(RunCommit::class)->commit(
+            $ahead,
+            $selected,
+            [RunEvent::forAppend($run, 0, 'history_position_set', ['position_turn_no' => 0, 'reason' => 'history_select'])],
+            dispatchAfterTurnHooks: false,
+        );
+        $c->get(ActiveRunContextInterface::class)->loadRecovered($selected);
+        $c->get(RunOperationalProjectionRepository::class)->replace($selected);
+        $this->assertTrue($c->get(SessionRunEventStore::class)->hasForwardTail($run, 0));
+        $historyBefore = $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run);
+        $result = new ToolCallResult($run, 1, 'step', 1, $f->call->idempotencyKey(), 'cm', 0,
+            ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => 'Natural retained-branch output']]]);
+        $payloads = $c->get(ToolPayloadStoreInterface::class);
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $invocation = $deferred->findInvocationReferenceByDeferredId($id) ?? throw new \RuntimeException('Missing invocation.');
+        $accepted = $payloads->retainProcessedResult($invocation, $result);
+        $deferred->acceptResult($id, $accepted);
+        $c->get(CompleteDeferredToolCallHandler::class)(new CompleteDeferredToolCall(
+            $id,
+            \is_array($result->result['content'] ?? null) ? $result->result['content'] : [],
+            \is_array($result->result['details'] ?? null) ? $result->result['details'] : null,
+            $result->isError,
+            $result->error,
+        ));
+        $f->consumeCompletions();
+        $history = $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run);
+        $this->assertSame([], array_filter($history, static fn (RunEvent $event): bool => 'history_tail_discarded' === $event->type));
+        $this->assertNull($c->get(CodeModeExecutionRepository::class)->invocation($run, 'cm')['interruption_reason']);
+        $this->assertTrue($c->get(CodeModeExecutionRepository::class)->isActive($id));
+        $this->assertTrue($c->get(SessionRunEventStore::class)->hasForwardTail($run, 0));
+        $this->assertNotEquals($historyBefore, $history, 'Natural completion still admits through the shared background owner.');
+        $this->assertNotEmpty(array_filter($history, static fn (RunEvent $event): bool => 'agent_command_queued' === $event->type));
+        $this->assertSame([], $c->get(ActiveRunContextInterface::class)->requireLoaded($run)->pendingHumanInputRequests);
+        $this->assertFalse($c->get(HistoryTailDiscardService::class)->isContextMutatingMessage(
+            new DeliverBackgroundCompletionDTO($run, $id, 'Natural retained-branch output', BackgroundCompletionOriginEnum::CodeMode, deferredId: $id, invocation: $invocation),
+        ));
     }
 
     public function testRestartFencesReadyAcknowledgementAndLateTerminalButRetainsRawEvidence(): void

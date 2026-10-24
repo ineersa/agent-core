@@ -6,14 +6,13 @@ namespace Ineersa\CodingAgent\Application\CodeMode;
 
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredAcknowledgedCompletionRouterInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\InterruptCodeModeDTO;
-use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -28,7 +27,7 @@ final readonly class CodeModeInterruptionHookSubscriber implements EssentialAfte
         private ValidatorInterface $validator,
         private DeferredToolCompletionRepositoryInterface $deferred,
         private RunHistorySourceProviderInterface $histories,
-        private BackgroundCompletionReceiptRepository $receipts,
+        private DeferredAcknowledgedCompletionRouterInterface $acknowledgedRouter,
     ) {
     }
 
@@ -85,20 +84,14 @@ final readonly class CodeModeInterruptionHookSubscriber implements EssentialAfte
             if (null === $row) {
                 continue;
             }
-            $pending = 'pending' === $metadata->status;
-            $receipt = $this->receipts->receipt($identity);
-            $admittedUnconsumed = null !== $receipt && \in_array($receipt->disposition, [
-                BackgroundCompletionDispositionEnum::Pending,
-                BackgroundCompletionDispositionEnum::Forwarding,
-            ], true);
-            $controllerParked = \in_array($row['interruption_reason'] ?? null, [
+            if (!$this->acknowledgedRouter->hasOutstandingAdmission($identity)) {
+                continue;
+            }
+            $controllerParked = \in_array($row['interruption_reason'], [
                 CodeModeInterruptionReasonEnum::ControllerRestarted->value,
                 CodeModeInterruptionReasonEnum::ControllerShutdown->value,
             ], true);
-            if (!$pending && !$admittedUnconsumed && !$controllerParked) {
-                continue;
-            }
-            if (null !== $row['interruption_reason'] && !$controllerParked && !$admittedUnconsumed) {
+            if (null !== $row['interruption_reason'] && !$controllerParked) {
                 continue;
             }
             $identities[] = $identity;

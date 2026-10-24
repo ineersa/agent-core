@@ -63,6 +63,23 @@ final readonly class DeferredAcknowledgedCompletionRouter implements DeferredAck
 
     public function hasOutstandingAdmission(string $deferredId): bool
     {
+        $metadata = $this->deferred->findMetadataByDeferredId($deferredId);
+        if (null === $metadata) {
+            return false;
+        }
+        if ('pending' === $metadata->status) {
+            return true;
+        }
+        $reference = $metadata->reference;
+        if ($this->deferred->requiresContinuation($reference->runId, $reference->toolCallId)) {
+            return true;
+        }
+
+        return $this->hasAdmittedUnconsumedReceipt($deferredId);
+    }
+
+    public function hasAdmittedUnconsumedReceipt(string $deferredId): bool
+    {
         $receipt = $this->receipts->receipt($deferredId);
 
         return null !== $receipt && \in_array($receipt->disposition, [
