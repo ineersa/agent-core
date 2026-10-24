@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Migrations;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Schema\Schema;
+use DoctrineMigrations\Version20261021034317;
 use DoctrineMigrations\Version20261022235428;
 use Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -628,13 +629,18 @@ SQL);
         );
 
         // This fixture records older migrations as applied. Retain their deferred
-        // schema so later feature migrations see the tables those versions own.
-        $baseline = new Version20261022235428($connection, new NullLogger());
-        $baseline->up(new Schema());
-        foreach ($baseline->getSql() as $query) {
-            $statement = $query->getStatement();
-            if (str_starts_with($statement, 'CREATE TABLE tool_deferred_completion ') || str_contains($statement, ' ON tool_deferred_completion ')) {
-                $connection->executeStatement($statement);
+        // and receipt schemas so later migrations see the tables those versions own.
+        foreach ([
+            'background_completion_receipt' => Version20261021034317::class,
+            'tool_deferred_completion' => Version20261022235428::class,
+        ] as $table => $migration) {
+            $baseline = new $migration($connection, new NullLogger());
+            $baseline->up(new Schema());
+            foreach ($baseline->getSql() as $query) {
+                $statement = $query->getStatement();
+                if (str_starts_with($statement, 'CREATE TABLE '.$table.' ') || str_contains($statement, ' ON '.$table.' ')) {
+                    $connection->executeStatement($statement);
+                }
             }
         }
         $this->recordAppliedMigrationsThrough($connection, 'Version20261022235428');
