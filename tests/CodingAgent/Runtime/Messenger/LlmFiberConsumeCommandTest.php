@@ -35,6 +35,18 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         $this->assertFalse($definition->hasOption('bus'));
         $this->assertFalse($definition->hasOption('concurrency'));
 
+        if (\Symfony\Component\Console\SignalRegistry\SignalRegistry::isSupported()) {
+            $signals = $command->getSubscribedSignals();
+            $this->assertContains(\SIGTERM, $signals);
+            $this->assertContains(\SIGINT, $signals);
+            $this->assertContains(\SIGQUIT, $signals);
+            $this->assertNotContains(
+                \SIGALRM,
+                $signals,
+                'Amp/UvDriver defers pcntl_alarm; Fiber llm keepalive must use Revolt EventLoop::repeat.',
+            );
+        }
+
         /** @var EventDispatcherInterface $dispatcher */
         $dispatcher = $container->get('event_dispatcher');
         $found = false;

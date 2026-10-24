@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
 use Psr\Container\ContainerInterface;
+use Revolt\EventLoop;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -28,7 +29,8 @@ use Symfony\Contracts\EventDispatcher\ListenerIntrospectionInterface;
  *
  * Stock messenger:consume --concurrency still uses Amp child processes. This
  * command keeps overlapping ExecuteLlmStep handlers in one PHP runtime, omits
- * ResetServicesListener so shared services survive overlap, and relies on
+ * ResetServicesListener so shared services survive overlap, renews sqlite-queue
+ * leases with a Revolt timer (not SIGALRM), and relies on
  * LlmFiberConsumeWaitSubscriber for sqlite-queue native idle WAIT.
  */
 #[AsCommand(
@@ -64,22 +66,17 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
      */
     public function getSubscribedSignals(): array
     {
+        // SIGALRM is intentionally omitted. Console pcntl_alarm only fires after
+        // Amp/Revolt resumes, so leases expire during Fiber HTTP. Keepalive uses
+        // EventLoop::repeat below instead.
         return SignalRegistry::isSupported()
-            ? [\SIGTERM, \SIGINT, \SIGQUIT, \SIGALRM]
+            ? [\SIGTERM, \SIGINT, \SIGQUIT]
             : [];
     }
 
     public function handleSignal(int $signal, int|false $previousExitCode = 0): int|false
     {
         if (null === $this->worker) {
-            return false;
-        }
-
-        if (\SIGALRM === $signal) {
-            $interval = $this->getApplication()?->getAlarmInterval() ?? self::KEEPALIVE_SECONDS;
-            $this->logger?->debug('Sending keepalive request.', ['transport_names' => $this->worker->getMetadata()->getTransportNames()]);
-            $this->worker->keepalive($interval);
-
             return false;
         }
 
@@ -107,10 +104,10 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
 
     protected function initialize(InputInterface $input, OutputInterface $output): void
     {
-        // Match messenger:consume: alarm interval is set only when --keepalive is present.
-        if ($input->hasParameterOption('--keepalive')) {
-            $this->getApplication()?->setAlarmInterval((int) ($input->getOption('keepalive') ?? self::KEEPALIVE_SECONDS));
-        }
+        // Do not arm Application::setAlarmInterval here. Under Amp/UvDriver,
+        // pcntl_alarm is deferred until the Fiber resumes, so SIGALRM cannot
+        // renew leases during provider HTTP. execute() schedules EventLoop::repeat.
+        unset($input, $output);
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -146,7 +143,36 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
             [],
         );
 
+        $keepaliveSeconds = null;
+        if ($input->hasParameterOption('--keepalive')) {
+            $keepaliveSeconds = (int) ($input->getOption('keepalive') ?? self::KEEPALIVE_SECONDS);
+            if ($keepaliveSeconds < 1) {
+                throw new \InvalidArgumentException('--keepalive must be a positive integer number of seconds.');
+            }
+        }
+
+        $keepaliveWatcher = null;
         try {
+            if (null !== $keepaliveSeconds) {
+                $this->logger?->info('Arming Revolt keepalive timer.', [
+                    'interval_seconds' => $keepaliveSeconds,
+                    'transport_names' => ['llm'],
+                ]);
+                // Revolt timer renews while Amp HTTP Fibers are suspended.
+                $keepaliveWatcher = EventLoop::repeat((float) $keepaliveSeconds, function () use ($keepaliveSeconds): void {
+                    if (null === $this->worker) {
+                        return;
+                    }
+                    // Distinct from Worker::keepalive's "Sending keepalive request." so tests
+                    // can prove the Revolt timer fired, not only the native Worker path.
+                    $this->logger?->debug('Renewing Fiber llm leases via Revolt timer.', [
+                        'transport_names' => $this->worker->getMetadata()->getTransportNames(),
+                    ]);
+                    $this->worker->keepalive($keepaliveSeconds);
+                });
+                EventLoop::unreference($keepaliveWatcher);
+            }
+
             // sleep=0: LlmFiberConsumeWaitSubscriber owns idle WAIT (Amp-safe).
             // fetch_size matches admission so the Worker can fill capacity quickly.
             $this->worker->run([
@@ -154,6 +180,9 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
                 'fetch_size' => self::CONCURRENCY,
             ]);
         } finally {
+            if (null !== $keepaliveWatcher) {
+                EventLoop::cancel($keepaliveWatcher);
+            }
             $this->worker = null;
             $strategy->shutdown();
         }
