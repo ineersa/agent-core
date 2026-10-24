@@ -14,6 +14,7 @@ declare(strict_types=1);
 use Amp\Cancellation;
 use Amp\Http\Client\HttpClientBuilder;
 use Amp\Http\Client\Request;
+use Ineersa\CodingAgent\Config\RuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeCommand;
 use Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber;
 use Ineersa\SqliteQueue\Client;
@@ -130,6 +131,7 @@ $command = new LlmFiberConsumeCommand(
     new RoutableMessageBus(new ServiceLocator(['default' => static fn () => $bus]), $bus),
     $receiverLocator,
     $eventDispatcher,
+    new RuntimeConfig(llmConcurrency: 2),
     $logger,
 );
 

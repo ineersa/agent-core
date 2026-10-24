@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
+use Ineersa\CodingAgent\Config\RuntimeConfig;
 use Psr\Container\ContainerInterface;
-use Revolt\EventLoop;
 use Psr\Log\LoggerInterface;
+use Revolt\EventLoop;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -39,8 +40,6 @@ use Symfony\Contracts\EventDispatcher\ListenerIntrospectionInterface;
 )]
 final class LlmFiberConsumeCommand extends Command implements SignalableCommandInterface
 {
-    public const int CONCURRENCY = 4;
-
     public const int KEEPALIVE_SECONDS = 5;
 
     public const string MEMORY_LIMIT = '256M';
@@ -56,6 +55,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         private readonly RoutableMessageBus $routableBus,
         private readonly ContainerInterface $receiverLocator,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly RuntimeConfig $runtimeConfig,
         private readonly ?LoggerInterface $logger = null,
     ) {
         parent::__construct();
@@ -118,7 +118,8 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
 
         /** @var ReceiverInterface $receiver */
         $receiver = $this->receiverLocator->get('llm');
-        $strategy = new FiberMessageExecutionStrategy($this->routableBus, self::CONCURRENCY);
+        $concurrency = $this->runtimeConfig->llmConcurrency;
+        $strategy = new FiberMessageExecutionStrategy($this->routableBus, $concurrency);
 
         $memoryLimit = (string) ($input->getOption('memory-limit') ?? self::MEMORY_LIMIT);
         $eventDispatcher = new ScopedEventDispatcher($this->eventDispatcher);
@@ -128,7 +129,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         ));
 
         $io = new SymfonyStyle($input, $output);
-        $io->success(\sprintf('Consuming messages from transport "llm" with Fiber concurrency %d.', self::CONCURRENCY));
+        $io->success(\sprintf('Consuming messages from transport "llm" with Fiber concurrency %d.', $concurrency));
         $io->comment('Per-message service reset is disabled for overlapping handlers.');
         $io->comment('Quit the worker with CONTROL-C.');
 
@@ -177,7 +178,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
             // fetch_size matches admission so the Worker can fill capacity quickly.
             $this->worker->run([
                 'sleep' => 0,
-                'fetch_size' => self::CONCURRENCY,
+                'fetch_size' => $concurrency,
             ]);
         } finally {
             if (null !== $keepaliveWatcher) {

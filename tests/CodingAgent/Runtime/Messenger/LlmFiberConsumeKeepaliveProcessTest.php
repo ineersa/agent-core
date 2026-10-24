@@ -105,7 +105,7 @@ final class LlmFiberConsumeKeepaliveProcessTest extends TestCase
                 $hitFile,
                 $resultFile,
                 $claimFile,
-            ], dirname(__DIR__, 4), array_merge(
+            ], \dirname(__DIR__, 4), array_merge(
                 array_filter(getenv() ?: [], static fn (mixed $v): bool => false !== $v),
                 [
                     'APP_ENV' => 'test',
@@ -223,7 +223,7 @@ final class LlmFiberConsumeKeepaliveProcessTest extends TestCase
 
     private function startShortLeaseBroker(SessionSqliteQueuePaths $paths): void
     {
-        $databaseDir = dirname($paths->databasePath);
+        $databaseDir = \dirname($paths->databasePath);
         if (!is_dir($databaseDir)) {
             mkdir($databaseDir, 0o700, true);
         }
@@ -234,7 +234,7 @@ final class LlmFiberConsumeKeepaliveProcessTest extends TestCase
 
         $process = new Process([
             \PHP_BINARY,
-            dirname(__DIR__, 4).'/bin/console',
+            \dirname(__DIR__, 4).'/bin/console',
             'sqlite-queue:broker',
             '--database='.$paths->databasePath,
             '--endpoint='.$paths->endpointPath,

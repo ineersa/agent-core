@@ -342,6 +342,19 @@ logging:
 prompts: []
 
 # ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
+#
+# Controller-owned runtime knobs that are not tool policy and not agent
+# discovery policy. Distinct from tools.execution.max_parallelism.
+runtime:
+    # Same-process Fiber admission limit for the single llm consumer
+    # (`hatfield:messenger:consume-llm`). Positive integer only. Default 10.
+    # Distinct from tools.execution.max_parallelism and the Amp HTTP host
+    # connection pool (maxHostConnections=6).
+    llm_concurrency: 10
+
+# ---------------------------------------------------------------------------
 # Agent definitions
 # ---------------------------------------------------------------------------
 #

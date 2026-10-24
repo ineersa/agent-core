@@ -215,9 +215,15 @@ services:
       $resources: '@Ineersa\CodingAgent\Config\AppResourceLocator'
       $denormalizer: '@Symfony\Component\Serializer\SerializerInterface'
       $cwd: '%app.cwd%'
+      $validator: '@validator'
 
   Ineersa\CodingAgent\Config\CompactionConfig:
     factory: ['Ineersa\CodingAgent\Config\CompactionConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  Ineersa\CodingAgent\Config\RuntimeConfig:
+    factory: ['Ineersa\CodingAgent\Config\RuntimeConfig', 'fromAppConfig']
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
@@ -591,6 +597,7 @@ services:
       $routableBus: '@messenger.routable_message_bus'
       $receiverLocator: '@Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeReceiverLocator'
       $eventDispatcher: '@event_dispatcher'
+      $runtimeConfig: '@Ineersa\CodingAgent\Config\RuntimeConfig'
       $logger: '@logger'
 
   Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber:

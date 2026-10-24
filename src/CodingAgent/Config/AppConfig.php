@@ -8,6 +8,8 @@ use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Resolved Hatfield application configuration.
@@ -29,6 +31,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *  - context_budget_reminders ContextBudgetReminderConfig (early_input_tokens, urgent_remaining_tokens, disable_for_main, disable_for_forks, disable_for_subagents)
  *  - agents     AgentsConfig (enabled, paths)
  *  - forks      ForksConfigDTO (model, thinking_level)
+ *  - runtime    RuntimeConfig (llm_concurrency)
  *
  * The raw array is kept for forward compatibility with config keys
  * that do not yet have a typed DTO. Production consumers must use
@@ -49,6 +52,7 @@ final class AppConfig
         public ContextBudgetReminderConfig $contextBudgetReminders = new ContextBudgetReminderConfig(),
         public ForksConfigDTO $forks = new ForksConfigDTO(),
         public AgentsConfig $agents = new AgentsConfig(),
+        public RuntimeConfig $runtime = new RuntimeConfig(),
         /** @var array<string, mixed> Raw merged data for forward compatibility */
         public array $raw = [],
         public ?HatfieldModelCatalog $catalog = null,
@@ -82,6 +86,7 @@ final class AppConfig
         AppResourceLocator $resources,
         DenormalizerInterface $denormalizer,
         string $cwd,
+        ValidatorInterface $validator,
     ): self {
         $data = $loader->load($resources->getDefaultsPath(), $cwd)->effective;
         [$ai, $catalog, $staleDefaultModel] = self::resolveAiDefaultModel($data);
@@ -125,11 +130,38 @@ final class AppConfig
             agents: \array_key_exists('agents', $data)
                 ? AgentsConfig::fromRaw($data['agents'])
                 : new AgentsConfig(),
+            runtime: self::denormalizeAndValidateRuntimeConfig($data, $denormalizer, $validator),
             raw: $data,
             catalog: $catalog,
             cwd: $cwd,
             staleDefaultModel: $staleDefaultModel,
         );
+    }
+
+    /**
+     * Denormalize runtime config and enforce Symfony Validator attributes
+     * (e.g. runtime.llm_concurrency must be a positive integer) via the
+     * container validator.
+     *
+     * @param array<string, mixed> $data
+     */
+    private static function denormalizeAndValidateRuntimeConfig(
+        array $data,
+        DenormalizerInterface $denormalizer,
+        ValidatorInterface $validator,
+    ): RuntimeConfig {
+        $runtime = $denormalizer->denormalize(
+            (array) ($data['runtime'] ?? []),
+            RuntimeConfig::class,
+        );
+
+        $violations = $validator->validate($runtime);
+
+        if (\count($violations) > 0) {
+            throw new ValidationFailedException($runtime, $violations);
+        }
+
+        return $runtime;
     }
 
     /**

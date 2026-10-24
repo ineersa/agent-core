@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
+use Ineersa\CodingAgent\Config\RuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeCommand;
 use Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -22,7 +23,10 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
 
         /** @var LlmFiberConsumeCommand $command */
         $command = $container->get(LlmFiberConsumeCommand::class);
-        $this->assertSame(4, LlmFiberConsumeCommand::CONCURRENCY);
+        /** @var RuntimeConfig $runtime */
+        $runtime = $container->get(RuntimeConfig::class);
+        $this->assertSame(10, $runtime->llmConcurrency);
+        $this->assertSame(RuntimeConfig::DEFAULT_LLM_CONCURRENCY, $runtime->llmConcurrency);
 
         $attribute = (new \ReflectionClass($command))->getAttributes(AsCommand::class)[0] ?? null;
         $this->assertNotNull($attribute);
