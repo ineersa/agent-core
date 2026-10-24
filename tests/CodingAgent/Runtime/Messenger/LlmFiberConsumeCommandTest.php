@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\AmpRetryClock;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\DTO\RuntimeConfigDTO;
 use Ineersa\CodingAgent\Runtime\Messenger\FiberMessageExecutionStrategy;
@@ -40,6 +42,10 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         $runtime = $appConfig->runtime;
         $this->assertSame(10, $runtime->llmConcurrency);
         $this->assertSame(RuntimeConfigDTO::DEFAULT_LLM_CONCURRENCY, $runtime->llmConcurrency);
+
+        $platform = $container->get(LlmPlatformAdapter::class);
+        $retryClock = (new \ReflectionProperty($platform, 'clock'))->getValue($platform);
+        $this->assertInstanceOf(AmpRetryClock::class, $retryClock, 'LLM retries must yield instead of using the global NativeClock.');
 
         $attribute = (new \ReflectionClass($command))->getAttributes(AsCommand::class)[0] ?? null;
         $this->assertNotNull($attribute);

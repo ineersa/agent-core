@@ -1125,6 +1125,12 @@ services:
       $hooks: !tagged_iterator agent_core.before_provider_request_hook
 
   # LlmPlatformAdapter hooks — ImageGatingConvertHook registers as a convert_to_llm hook.
+  # Only LLM retry backoff uses cooperative sleep; OAuth and other clock users
+  # keep their existing framework clock binding.
+  Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\AmpRetryClock:
+    arguments:
+      $clock: '@Symfony\Component\Clock\NativeClock'
+
   Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter:
     arguments:
       $transformContextHooks: !tagged_iterator agent_core.transform_context_hook
@@ -1133,6 +1139,7 @@ services:
       $modelResolver: '@Ineersa\AgentCore\Contract\Model\ModelResolverInterface'
       $retryObserver: '@Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface'
       $requestRetryPolicy: '@Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy'
+      $clock: '@Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\AmpRetryClock'
 
   Ineersa\AgentCore\Contract\Model\PlatformInterface:
     alias: Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter

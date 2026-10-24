@@ -7,17 +7,61 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Retry;
 use Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\AmpRetryClock;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
+use Revolt\EventLoop;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\Exception\TimeoutException;
 
+use function Amp\async;
+
 final class LlmRequestRetryExecutorTest extends TestCase
 {
+    public function testCooperativeBackoffLetsSiblingInvocationAndEventLoopCallbackProgress(): void
+    {
+        $time = new MockClock('2026-10-24T00:00:00Z');
+        $clock = new AmpRetryClock($time);
+        $events = [];
+        $executor = null;
+        $observer = $this->createStub(LlmRequestRetryObserverInterface::class);
+        $observer->method('onRequestRetry')->willReturnCallback(static function () use (&$events, &$executor, $time): void {
+            EventLoop::defer(static function () use (&$events, &$executor, $time): void {
+                $events[] = 'callback';
+                $executor->execute(static function () use (&$events): PlatformInvocationResult {
+                    $events[] = 'sibling';
+
+                    return new PlatformInvocationResult(assistantMessage: null);
+                }, static fn (): bool => false, 'sibling', 'step');
+                // Controlled clock advancement ends the backoff only after both
+                // the event-loop callback and sibling invocation have progressed.
+                $time->modify('+1 second');
+            });
+        });
+        $executor = new LlmRequestRetryExecutor(
+            policy: new LlmRequestRetryPolicy(maxRetries: 1, baseDelayMs: 100),
+            clock: $clock,
+            retryObserver: $observer,
+        );
+        $attempts = 0;
+        $result = async(static function () use ($executor, &$attempts, &$events): PlatformInvocationResult {
+            return $executor->execute(static function () use (&$attempts, &$events): PlatformInvocationResult {
+                $events[] = 'attempt-'.++$attempts;
+
+                return new PlatformInvocationResult(
+                    assistantMessage: null,
+                    error: 1 === $attempts ? ['retryable' => true] : null,
+                );
+            }, static fn (): bool => false, 'retrying', 'step');
+        })->await();
+        $this->assertNull($result->error);
+        $this->assertSame(['attempt-1', 'callback', 'sibling', 'attempt-2'], $events);
+    }
+
     public function testHttp400ThenSuccessWithinBudget(): void
     {
         $attempts = 0;
