@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemoryGuidedSettingsDTO;
 use Ineersa\CodingAgent\CLI\Extensions\DTO\SafeGuardGuidedSettingsDTO;
 use Ineersa\CodingAgent\CLI\Extensions\DTO\TaskWorkflowGuidedSettingsDTO;
 use Ineersa\CodingAgent\CLI\Extensions\Exception\ExtensionsSetupValidationException;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
@@ -58,6 +59,7 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
         private readonly ValidatorInterface $validator,
         SettingsLayerEnum $layer,
         private readonly string $cwd,
+        private readonly ?HatfieldModelCatalog $modelCatalog = null,
         ?PropertyAccessorInterface $propertyAccessor = null,
     ) {
         if (SettingsLayerEnum::Defaults === $layer) {
@@ -99,6 +101,7 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             $validator,
             $layer,
             $cwd,
+            $appConfig->catalog,
             $propertyAccessor,
         );
     }
@@ -195,7 +198,27 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
                 ],
                 $extension->guidedFields,
             ),
+            'catalogModelIds' => $this->catalogModelIds(),
         ];
+    }
+
+    /**
+     * Exact provider/model ids from the configured catalog for guided model pickers.
+     *
+     * @return list<string>
+     */
+    public function catalogModelIds(): array
+    {
+        if (null === $this->modelCatalog) {
+            return [];
+        }
+
+        $ids = [];
+        foreach ($this->modelCatalog->allModels() as $ref) {
+            $ids[] = $ref->toString();
+        }
+
+        return array_values(array_unique($ids));
     }
 
     public function needsInstallConfirmation(string $id): bool
@@ -516,6 +539,59 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             throw new \RuntimeException(\sprintf('Normalized guided settings for %s must be a mapping.', $extension->name));
         }
 
+        if ('observational-memory' === $extension->id) {
+            $normalized = $this->compactObservationalMemorySemantic($normalized);
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Drop unconfigured optional semantic blocks so exact-search stays a no-op write.
+     *
+     * @param array<string, mixed> $normalized
+     *
+     * @return array<string, mixed>
+     */
+    private function compactObservationalMemorySemantic(array $normalized): array
+    {
+        $semantic = $normalized['semantic'] ?? null;
+        if (!\is_array($semantic)) {
+            unset($normalized['semantic']);
+
+            return $normalized;
+        }
+
+        $embedding = \is_array($semantic['embedding_api'] ?? null) ? $semantic['embedding_api'] : [];
+        $reranker = \is_array($semantic['reranker_api'] ?? null) ? $semantic['reranker_api'] : [];
+        $embeddingConfigured = '' !== trim((string) ($embedding['base_url'] ?? ''))
+            || '' !== trim((string) ($embedding['model_id'] ?? ''));
+        $rerankerConfigured = '' !== trim((string) ($reranker['base_url'] ?? ''))
+            || '' !== trim((string) ($reranker['model_id'] ?? ''));
+
+        if (!$embeddingConfigured) {
+            unset($normalized['semantic']);
+
+            return $normalized;
+        }
+
+        if (\array_key_exists('query_prefix', $embedding) && '' === (string) $embedding['query_prefix']) {
+            // Keep explicit empty prefix only when embeddings are configured; still writable.
+            $embedding['query_prefix'] = '';
+        }
+        $semantic['embedding_api'] = $embedding;
+
+        if (!$rerankerConfigured) {
+            unset($semantic['reranker_api']);
+        } else {
+            if (!\array_key_exists('min_score', $reranker) || null === $reranker['min_score'] || '' === $reranker['min_score']) {
+                unset($reranker['min_score']);
+            }
+            $semantic['reranker_api'] = $reranker;
+        }
+
+        $normalized['semantic'] = $semantic;
+
         return $normalized;
     }
 
@@ -546,7 +622,9 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             'csv_list', 'absolute_path_list' => $this->coerceList($raw),
             'path_string', 'model_id' => \is_string($raw) ? trim($raw) : (null === $raw ? '' : (string) $raw),
             'positive_int' => $this->strictPositiveInt($raw, $label),
+            'nonnegative_int' => $this->strictNonnegativeInt($raw, $label),
             'open_unit_ratio' => $this->strictFloat($raw, $label),
+            'optional_finite_float' => $this->strictOptionalFiniteFloat($raw, $label),
             default => $raw,
         };
     }
@@ -557,7 +635,11 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             'bool' => (bool) $value,
             'csv_list', 'absolute_path_list' => $this->coerceList($value),
             'positive_int' => is_numeric($value) ? (int) $value : $value,
+            'nonnegative_int' => is_numeric($value) ? (int) $value : $value,
             'open_unit_ratio' => is_numeric($value) ? (float) $value : $value,
+            'optional_finite_float' => null === $value || '' === $value
+                ? ''
+                : (is_numeric($value) ? (float) $value : $value),
             'path_string', 'model_id' => \is_string($value) ? $value : (null === $value ? '' : (string) $value),
             default => $value,
         };
@@ -612,6 +694,46 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
         }
 
         throw ExtensionsSetupValidationException::forMessage(\sprintf('%s must be a positive integer.', $label));
+    }
+
+    private function strictNonnegativeInt(mixed $value, string $label): int
+    {
+        if (\is_int($value)) {
+            if ($value < 0) {
+                throw ExtensionsSetupValidationException::forMessage(\sprintf('%s must be a nonnegative integer.', $label));
+            }
+
+            return $value;
+        }
+        if (\is_string($value) && preg_match('/^\d+$/', trim($value))) {
+            return (int) trim($value);
+        }
+
+        throw ExtensionsSetupValidationException::forMessage(\sprintf('%s must be a nonnegative integer.', $label));
+    }
+
+    private function strictOptionalFiniteFloat(mixed $value, string $label): int|float|null
+    {
+        if (null === $value || '' === $value) {
+            return null;
+        }
+        if (\is_int($value) || \is_float($value)) {
+            if (!is_finite((float) $value)) {
+                throw ExtensionsSetupValidationException::forMessage(\sprintf('%s must be a finite number.', $label));
+            }
+
+            return $value;
+        }
+        if (\is_string($value) && is_numeric(trim($value))) {
+            $float = (float) trim($value);
+            if (!is_finite($float)) {
+                throw ExtensionsSetupValidationException::forMessage(\sprintf('%s must be a finite number.', $label));
+            }
+
+            return $float;
+        }
+
+        throw ExtensionsSetupValidationException::forMessage(\sprintf('%s must be a finite number or blank.', $label));
     }
 
     private function strictFloat(mixed $value, string $label): float
@@ -776,6 +898,13 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
                 : null;
 
             if ($this->guidedValuesEqual($field->type, $current, $next)) {
+                continue;
+            }
+
+            // Unconfigured optional leaves that still match the catalog default must
+            // not pin null/empty over inherited or absent values.
+            if ((null === $next || '' === $next || ([] === $next && \in_array($field->type, ['csv_list', 'absolute_path_list'], true)))
+                && $this->guidedValuesEqual($field->type, $current, $field->default)) {
                 continue;
             }
 

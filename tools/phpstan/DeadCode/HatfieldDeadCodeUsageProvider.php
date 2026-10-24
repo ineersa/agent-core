@@ -13,6 +13,9 @@ use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemoryGuidedSettingsDTO;
 use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemoryObserverDTO;
 use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemoryPoolsDTO;
 use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemoryReflectorDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemorySemanticDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemorySemanticEmbeddingDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemorySemanticRerankerDTO;
 use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemoryStorageDTO;
 use Ineersa\CodingAgent\CLI\Extensions\DTO\SafeGuardGuidedSettingsDTO;
 use Ineersa\CodingAgent\CLI\Extensions\DTO\TaskWorkflowGuidedSettingsDTO;
@@ -64,6 +67,9 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         ObservationalMemoryObserverDTO::class,
         ObservationalMemoryPoolsDTO::class,
         ObservationalMemoryReflectorDTO::class,
+        ObservationalMemorySemanticDTO::class,
+        ObservationalMemorySemanticEmbeddingDTO::class,
+        ObservationalMemorySemanticRerankerDTO::class,
         ObservationalMemoryStorageDTO::class,
         SafeGuardGuidedSettingsDTO::class,
         TaskWorkflowGuidedSettingsDTO::class,

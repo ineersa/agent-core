@@ -26,8 +26,10 @@ final readonly class ProvidedExtensionGuidedFieldDTO
             'absolute_path_list',
             'path_string',
             'positive_int',
+            'nonnegative_int',
             'open_unit_ratio',
             'model_id',
+            'optional_finite_float',
         ])]
         public string $type,
         #[Assert\NotBlank]

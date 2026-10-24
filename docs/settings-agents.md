@@ -105,7 +105,8 @@ a marketplace or upgrade/uninstall tool.
   set is installed in each root.
 - **Configure:** guided fields use the native settings list (SafeGuard policy
   controls, Task Workflow `task_root`, File Rewind enable/retention/timeout, OM
-  model + core storage/observer/reflector/pool values). List fields edit as YAML
+  shared generation model picker, core storage/observer/reflector/pool values, and
+  optional semantic embedding/reranker search settings). List fields edit as YAML
   sequences so commas inside an entry stay intact. Parent enable/disable and
   forks/agents membership are toggles on the same form — there is no separate
   quick enable/disable path. Configure opens the form even when the package is
@@ -121,6 +122,11 @@ a marketplace or upgrade/uninstall tool.
   the class in parent `extensions.enabled`.
 - **Prefill:** project scope uses defaults < user < project. User scope uses
   defaults < user and does not copy project-only overrides.
+- **OM search:** Leave embedding base URL and model blank to keep exact search.
+  Configuring both turns on hybrid retrieval; a reranker also needs embeddings.
+  Shared generation model uses the configured AI catalog list. Embedding and
+  reranker model ids stay free text for those endpoints. Internal renderer and
+  schema-version keys stay YAML-only.
 - **Activation:** Save writes only membership lists and guided leaves that differ
   from the scoped effective/prefill values. No-op Save leaves absent settings
   files absent and existing files unchanged. Restart Hatfield so registration

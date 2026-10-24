@@ -116,3 +116,75 @@ packages:
             label: Observations pool max tokens
             description: Max tokens retained in the observations pool.
             default: 30000
+          - id: om.semantic_embedding_base_url
+            path: semantic.embedding_api.base_url
+            type: path_string
+            label: Embedding base URL
+            description: Optional OpenAI-compatible embedding base URL. Leave blank with the embedding model blank to keep exact search.
+            default: ''
+          - id: om.semantic_embedding_model_id
+            path: semantic.embedding_api.model_id
+            type: path_string
+            label: Embedding model id
+            description: Embedding endpoint model id. Required with the embedding base URL; leave both blank to keep exact search.
+            default: ''
+          - id: om.semantic_embedding_query_prefix
+            path: semantic.embedding_api.query_prefix
+            type: path_string
+            label: Embedding query prefix
+            description: Optional query-only prefix joined with one space. Applies only when embeddings are configured.
+            default: ''
+          - id: om.semantic_embedding_chunk_bytes
+            path: semantic.embedding_api.chunk_bytes
+            type: positive_int
+            label: Embedding chunk bytes
+            description: Maximum UTF-8-safe document chunk size in bytes (at least 4). Used only when embeddings are configured.
+            default: 1200
+          - id: om.semantic_embedding_overlap_bytes
+            path: semantic.embedding_api.overlap_bytes
+            type: nonnegative_int
+            label: Embedding overlap bytes
+            description: Chunk overlap in bytes; must be smaller than chunk bytes. Used only when embeddings are configured.
+            default: 192
+          - id: om.semantic_embedding_max_lines
+            path: semantic.embedding_api.max_lines
+            type: positive_int
+            label: Embedding max lines
+            description: Maximum lines per document chunk. Used only when embeddings are configured.
+            default: 80
+          - id: om.semantic_embedding_batch_size
+            path: semantic.embedding_api.batch_size
+            type: positive_int
+            label: Embedding batch size
+            description: Inputs per embedding request. Used only when embeddings are configured.
+            default: 4
+          - id: om.semantic_reranker_base_url
+            path: semantic.reranker_api.base_url
+            type: path_string
+            label: Reranker base URL
+            description: Optional /rerank base URL. Requires embeddings; leave blank with the reranker model blank to skip reranking.
+            default: ''
+          - id: om.semantic_reranker_model_id
+            path: semantic.reranker_api.model_id
+            type: path_string
+            label: Reranker model id
+            description: Reranker endpoint model id. Required with the reranker base URL; leave both blank to skip reranking.
+            default: ''
+          - id: om.semantic_reranker_batch_size
+            path: semantic.reranker_api.batch_size
+            type: positive_int
+            label: Reranker batch size
+            description: Maximum documents per rerank request. Used only when a reranker is configured.
+            default: 8
+          - id: om.semantic_reranker_document_characters
+            path: semantic.reranker_api.document_characters
+            type: positive_int
+            label: Reranker document characters
+            description: Maximum Unicode characters per reranked chunk. Used only when a reranker is configured.
+            default: 768
+          - id: om.semantic_reranker_min_score
+            path: semantic.reranker_api.min_score
+            type: optional_finite_float
+            label: Reranker min score
+            description: Optional finite inclusive raw reranker score floor. Leave blank for no score filter.
+            default: ''

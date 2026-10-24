@@ -600,6 +600,131 @@ YAML);
         $this->assertTrue($reloaded['settings']['auto_deny_in_noninteractive']);
     }
 
+    #[Test]
+    public function omSemanticSearchPersistsConfiguredBlocksAndStaysOffByDefault(): void
+    {
+        $installer = new ExtensionPackageInstaller(new SettingsPathResolver($this->projectDir, $this->homeDir));
+        $installer->ensureInstalled(
+            SettingsLayerEnum::Project,
+            $this->projectDir,
+            'ineersa/hatfield-ext-observational-memory',
+            '0.0.42',
+        );
+
+        $flow = $this->flow(project: true);
+        $this->assertSame(
+            ['local/Qwen/Qwen3', 'local/flash'],
+            $flow->catalogModelIds(),
+        );
+
+        $state = $flow->formStateFor('observational-memory');
+        $state['parentEnabled'] = true;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $state['settings']['model'] = 'local/flash';
+        $flow->save($state);
+
+        $parsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+        $this->assertSame('local/flash', $parsed['extensions']['settings']['observational_memory']['model']);
+        $this->assertArrayNotHasKey('semantic', $parsed['extensions']['settings']['observational_memory']);
+
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('observational-memory');
+        $state['settings']['semantic']['embedding_api']['base_url'] = 'http://127.0.0.1:8080/v1';
+        $state['settings']['semantic']['embedding_api']['model_id'] = 'text-embedding-3-small';
+        $state['settings']['semantic']['embedding_api']['query_prefix'] = 'query:';
+        $state['settings']['semantic']['reranker_api']['base_url'] = 'http://127.0.0.1:8081';
+        $state['settings']['semantic']['reranker_api']['model_id'] = 'bge-reranker';
+        $state['settings']['semantic']['reranker_api']['min_score'] = -0.25;
+        $flow->save($state);
+
+        $parsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+        $semantic = $parsed['extensions']['settings']['observational_memory']['semantic'];
+        $this->assertSame('http://127.0.0.1:8080/v1', $semantic['embedding_api']['base_url']);
+        $this->assertSame('text-embedding-3-small', $semantic['embedding_api']['model_id']);
+        $this->assertSame('query:', $semantic['embedding_api']['query_prefix']);
+        $this->assertArrayNotHasKey('chunk_bytes', $semantic['embedding_api']);
+        $this->assertArrayNotHasKey('overlap_bytes', $semantic['embedding_api']);
+        $this->assertSame('http://127.0.0.1:8081', $semantic['reranker_api']['base_url']);
+        $this->assertSame('bge-reranker', $semantic['reranker_api']['model_id']);
+        $this->assertSame(-0.25, $semantic['reranker_api']['min_score']);
+        $this->assertArrayNotHasKey('batch_size', $semantic['reranker_api']);
+
+        $reloaded = $this->flow(project: true)->formStateFor('observational-memory');
+        $this->assertSame(1200, $reloaded['settings']['semantic']['embedding_api']['chunk_bytes']);
+        $this->assertSame(192, $reloaded['settings']['semantic']['embedding_api']['overlap_bytes']);
+        $this->assertSame(8, $reloaded['settings']['semantic']['reranker_api']['batch_size']);
+    }
+
+    #[Test]
+    public function omSemanticInvalidValuesRefuseBeforeWrites(): void
+    {
+        $installer = new ExtensionPackageInstaller(new SettingsPathResolver($this->projectDir, $this->homeDir));
+        $installer->ensureInstalled(
+            SettingsLayerEnum::Project,
+            $this->projectDir,
+            'ineersa/hatfield-ext-observational-memory',
+            '0.0.42',
+        );
+
+        $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('observational-memory');
+        $state['parentEnabled'] = true;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $state['settings']['model'] = 'local/flash';
+        $flow->save($state);
+        $before = (string) file_get_contents($settingsPath);
+
+        $cases = [
+            [
+                'mutate' => static function (array &$settings): void {
+                    $settings['semantic']['embedding_api']['base_url'] = 'http://127.0.0.1:8080';
+                },
+                'needle' => 'both base_url and model_id',
+            ],
+            [
+                'mutate' => static function (array &$settings): void {
+                    $settings['semantic']['reranker_api']['base_url'] = 'http://127.0.0.1:8081';
+                    $settings['semantic']['reranker_api']['model_id'] = 'bge-reranker';
+                },
+                'needle' => 'requires semantic.embedding_api',
+            ],
+            [
+                'mutate' => static function (array &$settings): void {
+                    $settings['semantic']['embedding_api']['base_url'] = 'http://user@127.0.0.1:8080';
+                    $settings['semantic']['embedding_api']['model_id'] = 'emb';
+                },
+                'needle' => 'without credentials, query, or fragment',
+            ],
+            [
+                'mutate' => static function (array &$settings): void {
+                    $settings['semantic']['embedding_api']['base_url'] = 'http://127.0.0.1:8080';
+                    $settings['semantic']['embedding_api']['model_id'] = 'emb';
+                    $settings['semantic']['embedding_api']['chunk_bytes'] = 8;
+                    $settings['semantic']['embedding_api']['overlap_bytes'] = 8;
+                },
+                'needle' => 'smaller than chunk_bytes',
+            ],
+        ];
+
+        foreach ($cases as $case) {
+            $flow = $this->flow(project: true);
+            $state = $flow->formStateFor('observational-memory');
+            $case['mutate']($state['settings']);
+            try {
+                $flow->save($state);
+                $this->fail('Expected semantic validation refusal for '.$case['needle']);
+            } catch (ExtensionsSetupValidationException $e) {
+                $this->assertStringContainsString($case['needle'], $e->getMessage());
+            }
+            $this->assertSame($before, (string) file_get_contents($settingsPath));
+        }
+    }
+
     private function flow(bool $project): ExtensionsSetupFlow
     {
         return ExtensionsSetupTestSupport::createFlow(

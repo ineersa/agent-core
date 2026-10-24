@@ -71,10 +71,18 @@ interface ExtensionsSetupFlowInterface
      *         label: string,
      *         description: string,
      *         default: mixed
-     *     }>
+     *     }>,
+     *     catalogModelIds: list<string>
      * }
      */
     public function formStateFor(string $id): array;
+
+    /**
+     * Exact provider/model ids from the configured catalog for guided model pickers.
+     *
+     * @return list<string>
+     */
+    public function catalogModelIds(): array;
 
     /**
      * Explicit Composer confirmation is required when the selected scope cannot

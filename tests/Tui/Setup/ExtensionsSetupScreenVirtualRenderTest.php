@@ -547,6 +547,137 @@ YAML);
     }
 
     #[Test]
+    public function keyboardOmModelPickerAndSemanticSettingsPersistYaml(): void
+    {
+        $installer = new ExtensionPackageInstaller(new SettingsPathResolver($this->projectDir, $this->homeDir));
+        $installer->ensureInstalled(
+            SettingsLayerEnum::Project,
+            $this->projectDir,
+            'ineersa/hatfield-ext-observational-memory',
+            '0.0.42',
+        );
+
+        $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
+        $this->assertFileDoesNotExist($settingsPath);
+
+        [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));
+        for ($i = 0; $i < 3; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+        $tui->handleInput("\r"); // Observational Memory
+        $tui->handleInput("\r"); // Configure
+        $this->assertSame('settings', $this->phase($screen));
+
+        $this->assertSame('no', $this->settingsWidget($screen)->getValue('parentEnabled'));
+        $this->assertSame('no', $this->settingsWidget($screen)->getValue('forksAlwaysOn'));
+        $this->assertSame('no', $this->settingsWidget($screen)->getValue('agentsAlwaysOn'));
+        $tui->handleInput("\r"); // enable parent; leave child membership off
+
+        $this->selectSettingsItem($screen, $tui, 'om.model');
+        $tui->handleInput("\r"); // open model list
+        $submenu = $this->activeSubmenu($screen);
+        $this->assertInstanceOf(\Symfony\Component\Tui\Widget\SelectListWidget::class, $submenu);
+        $tui->requestRender(force: true);
+        $tui->processRender();
+        $rendered = $this->plain($terminal);
+        $this->assertStringContainsString('local/Qwen/Qwen3', $rendered);
+        $this->assertStringContainsString('local/flash', $rendered);
+        $tui->handleInput("\x1b"); // cancel keeps current blank
+        $this->assertNull($this->activeSubmenu($screen));
+        $this->assertSame('', $this->settingsWidget($screen)->getValue('om.model'));
+
+        $tui->handleInput("\r");
+        $tui->handleInput("\x1b[B"); // local/flash
+        $tui->handleInput("\r");
+        $this->assertNull($this->activeSubmenu($screen));
+        $this->assertSame('local/flash', $this->settingsWidget($screen)->getValue('om.model'));
+
+        $this->selectSettingsItem($screen, $tui, 'om.semantic_embedding_base_url');
+        $tui->handleInput("\r");
+        $tui->handleInput('http://127.0.0.1:8080/v1');
+        $tui->handleInput("\r");
+        $this->selectSettingsItem($screen, $tui, 'om.semantic_embedding_model_id');
+        $tui->handleInput("\r");
+        $tui->handleInput('text-embedding-3-small');
+        $tui->handleInput("\r");
+        $this->selectSettingsItem($screen, $tui, 'om.semantic_reranker_base_url');
+        $tui->handleInput("\r");
+        $tui->handleInput('http://127.0.0.1:8081');
+        $tui->handleInput("\r");
+        $this->selectSettingsItem($screen, $tui, 'om.semantic_reranker_model_id');
+        $tui->handleInput("\r");
+        $tui->handleInput('bge-reranker');
+        $tui->handleInput("\r");
+        $this->selectSettingsItem($screen, $tui, 'om.semantic_reranker_min_score');
+        $tui->handleInput("\r");
+        $tui->handleInput('-0.5');
+        $tui->handleInput("\r");
+
+        $this->selectSettingsItem($screen, $tui, 'save');
+        $tui->handleInput("\r");
+        $this->assertSame('', $this->errorText($screen), 'unexpected settings error after OM Save');
+        $this->assertSame('picker', $this->phase($screen));
+
+        $parsed = Yaml::parseFile($settingsPath);
+        $this->assertContains('Ineersa\\HatfieldExt\\ObservationalMemory\\ObservationalMemoryExtension', $parsed['extensions']['enabled']);
+        $om = $parsed['extensions']['settings']['observational_memory'];
+        $this->assertSame('local/flash', $om['model']);
+        $this->assertSame('http://127.0.0.1:8080/v1', $om['semantic']['embedding_api']['base_url']);
+        $this->assertSame('text-embedding-3-small', $om['semantic']['embedding_api']['model_id']);
+        $this->assertSame('http://127.0.0.1:8081', $om['semantic']['reranker_api']['base_url']);
+        $this->assertSame('bge-reranker', $om['semantic']['reranker_api']['model_id']);
+        $this->assertSame(-0.5, $om['semantic']['reranker_api']['min_score']);
+    }
+
+    #[Test]
+    public function keyboardOmInvalidSemanticEditRefusesSaveUntilCorrected(): void
+    {
+        $installer = new ExtensionPackageInstaller(new SettingsPathResolver($this->projectDir, $this->homeDir));
+        $installer->ensureInstalled(
+            SettingsLayerEnum::Project,
+            $this->projectDir,
+            'ineersa/hatfield-ext-observational-memory',
+            '0.0.42',
+        );
+        $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
+
+        [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));
+        for ($i = 0; $i < 3; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+        $tui->handleInput("\r");
+        $tui->handleInput("\r");
+        $this->assertSame('no', $this->settingsWidget($screen)->getValue('parentEnabled'));
+        $tui->handleInput("\r"); // enable parent; leave child membership off
+
+        $this->selectSettingsItem($screen, $tui, 'om.model');
+        $tui->handleInput("\r");
+        $tui->handleInput("\r"); // first catalog model
+        $this->selectSettingsItem($screen, $tui, 'om.semantic_embedding_base_url');
+        $tui->handleInput("\r");
+        $tui->handleInput('http://127.0.0.1:8080/v1');
+        $tui->handleInput("\r");
+
+        $this->selectSettingsItem($screen, $tui, 'save');
+        $tui->handleInput("\r");
+        $this->assertSame('settings', $this->phase($screen));
+        $this->assertStringContainsString('both base_url and model_id', $this->errorText($screen));
+        $this->assertFileDoesNotExist($settingsPath);
+
+        $this->selectSettingsItem($screen, $tui, 'om.semantic_embedding_model_id');
+        $tui->handleInput("\r");
+        $tui->handleInput('text-embedding-3-small');
+        $tui->handleInput("\r");
+        $this->selectSettingsItem($screen, $tui, 'save');
+        $tui->handleInput("\r");
+        $this->assertSame('', $this->errorText($screen), 'unexpected settings error after corrected OM Save');
+        $this->assertSame('picker', $this->phase($screen));
+        $parsed = Yaml::parseFile($settingsPath);
+        $this->assertSame('text-embedding-3-small', $parsed['extensions']['settings']['observational_memory']['semantic']['embedding_api']['model_id']);
+        $this->assertArrayNotHasKey('reranker_api', $parsed['extensions']['settings']['observational_memory']['semantic']);
+    }
+
+    #[Test]
     public function ctrlDFromPickerAndSummaryStopsRunningTui(): void
     {
         [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));

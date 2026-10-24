@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Support;
 
 use Ineersa\CodingAgent\CLI\Extensions\ExtensionsSetupFlow;
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
+use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
@@ -153,6 +157,78 @@ packages:
             label: Observations pool max tokens
             description: Pool max.
             default: 30000
+          - id: om.semantic_embedding_base_url
+            path: semantic.embedding_api.base_url
+            type: path_string
+            label: Embedding base URL
+            description: Optional embedding base URL.
+            default: ''
+          - id: om.semantic_embedding_model_id
+            path: semantic.embedding_api.model_id
+            type: path_string
+            label: Embedding model id
+            description: Optional embedding model id.
+            default: ''
+          - id: om.semantic_embedding_query_prefix
+            path: semantic.embedding_api.query_prefix
+            type: path_string
+            label: Embedding query prefix
+            description: Optional query prefix.
+            default: ''
+          - id: om.semantic_embedding_chunk_bytes
+            path: semantic.embedding_api.chunk_bytes
+            type: positive_int
+            label: Embedding chunk bytes
+            description: Chunk bytes.
+            default: 1200
+          - id: om.semantic_embedding_overlap_bytes
+            path: semantic.embedding_api.overlap_bytes
+            type: nonnegative_int
+            label: Embedding overlap bytes
+            description: Overlap bytes.
+            default: 192
+          - id: om.semantic_embedding_max_lines
+            path: semantic.embedding_api.max_lines
+            type: positive_int
+            label: Embedding max lines
+            description: Max lines.
+            default: 80
+          - id: om.semantic_embedding_batch_size
+            path: semantic.embedding_api.batch_size
+            type: positive_int
+            label: Embedding batch size
+            description: Batch size.
+            default: 4
+          - id: om.semantic_reranker_base_url
+            path: semantic.reranker_api.base_url
+            type: path_string
+            label: Reranker base URL
+            description: Optional reranker base URL.
+            default: ''
+          - id: om.semantic_reranker_model_id
+            path: semantic.reranker_api.model_id
+            type: path_string
+            label: Reranker model id
+            description: Optional reranker model id.
+            default: ''
+          - id: om.semantic_reranker_batch_size
+            path: semantic.reranker_api.batch_size
+            type: positive_int
+            label: Reranker batch size
+            description: Batch size.
+            default: 8
+          - id: om.semantic_reranker_document_characters
+            path: semantic.reranker_api.document_characters
+            type: positive_int
+            label: Reranker document characters
+            description: Document characters.
+            default: 768
+          - id: om.semantic_reranker_min_score
+            path: semantic.reranker_api.min_score
+            type: optional_finite_float
+            label: Reranker min score
+            description: Optional min score.
+            default: ''
 YAML;
     }
 
@@ -223,6 +299,7 @@ YAML;
         string $homeDir,
         string $catalogPath,
         bool $project = true,
+        ?HatfieldModelCatalog $modelCatalog = null,
     ): ExtensionsSetupFlow {
         $pathResolver = new SettingsPathResolver($projectDir, $homeDir);
         $serializer = self::createSerializer();
@@ -239,6 +316,7 @@ YAML;
             self::createValidator(),
             $project ? SettingsLayerEnum::Project : SettingsLayerEnum::User,
             $projectDir,
+            $modelCatalog ?? self::createModelCatalog(),
         );
     }
 
@@ -248,9 +326,11 @@ YAML;
         string $homeDir,
         string $catalogPath,
         bool $project = true,
+        ?HatfieldModelCatalog $modelCatalog = null,
     ): ExtensionsSetupFlow {
         $pathResolver = new SettingsPathResolver($projectDir, $homeDir);
         $serializer = self::createSerializer();
+        $modelCatalog ??= self::createModelCatalog();
 
         return ExtensionsSetupFlow::for(
             self::createCatalog($catalogPath, $serializer),
@@ -265,10 +345,41 @@ YAML;
             new AppConfig(
                 tui: new TuiConfig(theme: 'cyberpunk'),
                 logging: new LoggingConfig(logDir: $tmpDir.'/logs'),
+                ai: $modelCatalog->config(),
                 cwd: $projectDir,
+                catalog: $modelCatalog,
             ),
             project: $project,
         );
+    }
+
+    /**
+     * Small configured catalog for guided model-picker proofs.
+     */
+    public static function createModelCatalog(
+        string $providerId = 'local',
+        array $modelIds = ['Qwen/Qwen3', 'flash'],
+    ): HatfieldModelCatalog {
+        $models = [];
+        foreach ($modelIds as $modelId) {
+            if (!\is_string($modelId) || '' === $modelId) {
+                continue;
+            }
+            $models[$modelId] = new AiModelDefinition(id: $modelId, name: $modelId, contextWindow: 8192, maxTokens: 1024, input: ['text'], toolCalling: true);
+        }
+
+        $provider = new AiProviderConfig(
+            id: $providerId,
+            type: 'generic',
+            enabled: true,
+            baseUrl: 'http://127.0.0.1:8080',
+            models: $models,
+        );
+
+        return new HatfieldModelCatalog(new AiConfig(
+            defaultModel: $providerId.'/'.array_key_first($models),
+            providers: [$providerId => $provider],
+        ));
     }
 
     public static function createTheme(): TuiTheme

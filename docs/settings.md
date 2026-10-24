@@ -200,7 +200,9 @@ See [background-processes.md](background-processes.md).
 
 Guided install/enablement for curated Hatfield-provided extensions:
 `hatfield extensions:setup` (project settings preselected; change scope in the
-wizard, or pass `--user` as the initial selection). See
+wizard, or pass `--user` as the initial selection). Observational Memory setup
+includes the shared generation-model picker and optional semantic search
+settings; renderer/schema-version keys stay in YAML. See
 [settings-agents.md](settings-agents.md).
 
 ## Validation tip

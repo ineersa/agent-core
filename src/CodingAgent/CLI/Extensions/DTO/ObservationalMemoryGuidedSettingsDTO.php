@@ -30,6 +30,8 @@ final readonly class ObservationalMemoryGuidedSettingsDTO
         public ObservationalMemoryReflectorDTO $reflector = new ObservationalMemoryReflectorDTO(),
         #[Assert\Valid]
         public ObservationalMemoryPoolsDTO $pools = new ObservationalMemoryPoolsDTO(),
+        #[Assert\Valid]
+        public ObservationalMemorySemanticDTO $semantic = new ObservationalMemorySemanticDTO(),
     ) {
     }
 }

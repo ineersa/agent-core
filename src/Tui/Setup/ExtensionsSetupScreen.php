@@ -553,8 +553,19 @@ final class ExtensionsSetupScreen
                 'csv_list', 'absolute_path_list' => \is_array($raw)
                     ? $this->flow->formatListField($raw)
                     : (null === $raw ? '' : (string) $raw),
+                'optional_finite_float' => null === $raw || '' === $raw ? '' : (string) $raw,
                 default => null === $raw ? '' : (string) $raw,
             };
+            if ('model_id' === $type) {
+                $items[] = new SettingItem(
+                    $id,
+                    $label,
+                    $display,
+                    $description,
+                    submenu: $this->modelPickerSubmenu(...),
+                );
+                continue;
+            }
             $items[] = new SettingItem(
                 $id,
                 $label,
@@ -635,7 +646,7 @@ final class ExtensionsSetupScreen
             } else {
                 $stored = match ($type) {
                     'bool' => 'yes' === $value,
-                    'positive_int', 'open_unit_ratio', 'path_string', 'model_id' => $value,
+                    'positive_int', 'nonnegative_int', 'open_unit_ratio', 'optional_finite_float', 'path_string', 'model_id' => $value,
                     default => $value,
                 };
             }
@@ -743,6 +754,65 @@ final class ExtensionsSetupScreen
     private function yesNo(bool $value): string
     {
         return $value ? 'yes' : 'no';
+    }
+
+    /**
+     * Native SelectListWidget picker for configured generation models.
+     *
+     * SettingsListWidget closes the submenu on SelectEvent/CancelEvent, so this
+     * factory only builds the option list and preserves the current selection.
+     * Esc/Cancel keeps the previous value. Embedding/reranker model ids stay
+     * free-text fields because they belong to separate endpoints.
+     */
+    private function modelPickerSubmenu(string $current, callable $onDone): SelectListWidget
+    {
+        unset($onDone); // SettingsListWidget wires SelectEvent/CancelEvent itself.
+
+        $options = [];
+        foreach ($this->modelPickerValues($current) as $id) {
+            $options[] = [
+                'value' => $id,
+                'label' => $id,
+            ];
+        }
+        if ([] === $options) {
+            $options[] = [
+                'value' => $current,
+                'label' => '' === $current ? '(no configured models)' : $current,
+            ];
+        }
+
+        $widget = new SelectListWidget($options, maxVisible: 12);
+        $selected = array_search($current, array_column($options, 'value'), true);
+        if (false !== $selected) {
+            $widget->setSelectedIndex((int) $selected);
+        }
+
+        return $widget;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function modelPickerValues(string $current): array
+    {
+        $ids = [];
+        $fromState = $this->formState['catalogModelIds'] ?? null;
+        if (\is_array($fromState)) {
+            foreach ($fromState as $id) {
+                if (\is_string($id) && '' !== $id) {
+                    $ids[] = $id;
+                }
+            }
+        }
+        foreach ($this->flow->catalogModelIds() as $id) {
+            $ids[] = $id;
+        }
+        if ('' !== $current) {
+            $ids[] = $current;
+        }
+
+        return array_values(array_unique($ids));
     }
 
     /**
