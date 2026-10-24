@@ -159,8 +159,8 @@ across services. Publish them only when you need one of those.
 - Span metrics filter `message:agent_loop.trace.finish` and the canonical span name
   (`tool.call`, `llm.call`). Without the finish filter, each `agent_loop.trace.start`
   record doubles the count. Without the span-name filter, worker and orchestrator
-  finish records (`turn.execution.*`, `turn.orchestrator.*`) more than double it
-  again.
+  finish records (`turn.execution.*`, `turn.orchestrator.*`) would more than double
+  it again when those spans are visible (they default to DEBUG).
 - Tool failures are warning records, not span statuses. `tool.call` spans finish
   `status:ok` even when a tool fails, because the worker converts the exception into a
   model-visible tool result. Symfony AI Toolbox emits
@@ -178,9 +178,14 @@ across services. Publish them only when you need one of those.
   distinct `run_id` plus `turn_no` pairs, and 1,431
   `command.application.turn_start_boundary` finishes, so the boundary span is not
   the turn counter.
-- Span records and request events are INFO, so they need `logging.level: info`. The
-  project `.hatfield/settings.yaml` sets this; the shipped default is `warning`.
-  Failure metrics keep working at `warning` level.
+- Canonical metric spans (`tool.call`, `llm.call`) and request events
+  (`llm.request.completed`, `llm.request.failed`, `llm.request.retrying`) stay at
+  INFO, so they need `logging.level: info`. Routine worker, orchestrator, commit,
+  and latency-probe spans default to DEBUG. Messenger, HTTP client, and Lock
+  INFO records are demoted to DEBUG by
+  `FrameworkChannelLevelProcessor`; their warnings and errors stay unchanged.
+  The project `.hatfield/settings.yaml` sets `logging.level: info`; the shipped
+  default is `warning`. Failure metrics keep working at `warning` level.
 - Durations are numeric: `@context.duration_ms` works as a measure (verified against
   indexed logs on 2026-09-11).
 

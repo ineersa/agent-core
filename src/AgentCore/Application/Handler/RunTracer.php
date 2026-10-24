@@ -13,6 +13,11 @@ use Psr\Log\LogLevel;
  * Wraps operations in named spans that emit start/finish log records
  * with timing, nesting, and status. These records are the tracing
  * surface: structured logs consumed by log-derived metrics.
+ *
+ * Default level is DEBUG so routine nesting, worker wrappers, and latency
+ * probes stay off the INFO path. Call sites that feed Datadog metrics must
+ * pass {@see LogLevel::INFO} explicitly for the canonical `tool.call` and
+ * `llm.call` finishes.
  */
 final class RunTracer
 {
@@ -36,7 +41,7 @@ final class RunTracer
      *
      * @return TResult
      */
-    public function inSpan(string $name, array $attributes, callable $operation, bool $root = false, string $level = LogLevel::INFO): mixed
+    public function inSpan(string $name, array $attributes, callable $operation, bool $root = false, string $level = LogLevel::DEBUG): mixed
     {
         $spanId = \sprintf('span-%d', ++$this->sequence);
         $parentSpanId = $root || [] === $this->spanStack ? null : $this->spanStack[array_key_last($this->spanStack)];
