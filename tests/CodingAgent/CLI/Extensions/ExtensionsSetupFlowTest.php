@@ -864,6 +864,136 @@ YAML);
         $masked = $this->flow(project: true)->formStateFor('observational-memory');
         $this->assertSame('', $masked['settings']['semantic']['embedding_api']['base_url']);
         $this->assertSame('', $masked['settings']['semantic']['embedding_api']['model_id']);
+
+        // Re-enable from the null mask: leaf writes must replace semantic:null with
+        // a mapping, keep user/inherited/internal values, and leave unrelated keys.
+        file_put_contents($projectSettings, Yaml::dump([
+            'extensions' => [
+                'enabled' => [
+                    'Ineersa\\HatfieldExt\\ObservationalMemory\\ObservationalMemoryExtension',
+                ],
+                'settings' => [
+                    'observational_memory' => [
+                        'model' => 'local/flash',
+                        'semantic' => null,
+                        'observer' => [
+                            'renderer_version' => 'project-renderer',
+                            'schema_version' => 'project-observer',
+                        ],
+                        'unrelated_keep' => 'project-value',
+                    ],
+                    'unrelated_extension' => [
+                        'keep' => true,
+                    ],
+                ],
+            ],
+        ], 8, 4));
+        $userSettings = Yaml::parseFile($this->homeDir.'/.hatfield/settings.yaml');
+        $userSettings['extensions']['settings']['observational_memory']['observer']['renderer_version'] = 'user-renderer';
+        $userSettings['extensions']['settings']['observational_memory']['reflector']['schema_version'] = 'user-reflector';
+        file_put_contents($this->homeDir.'/.hatfield/settings.yaml', Yaml::dump($userSettings, 8, 4));
+
+        $projectFlow = $this->flow(project: true);
+        $state = $projectFlow->formStateFor('observational-memory');
+        $state['parentEnabled'] = true;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $state['settings']['model'] = 'local/flash';
+        $state['settings']['semantic']['embedding_api']['base_url'] = 'http://127.0.0.1:9090/v1';
+        $state['settings']['semantic']['embedding_api']['model_id'] = 'project-embed';
+        $state['settings']['semantic']['embedding_api']['query_prefix'] = 'project:';
+        $projectFlow->save($state);
+
+        $projectParsed = Yaml::parseFile($projectSettings);
+        $semantic = $projectParsed['extensions']['settings']['observational_memory']['semantic'];
+        $this->assertIsArray($semantic);
+        $this->assertSame('http://127.0.0.1:9090/v1', $semantic['embedding_api']['base_url']);
+        $this->assertSame('project-embed', $semantic['embedding_api']['model_id']);
+        $this->assertSame('project:', $semantic['embedding_api']['query_prefix']);
+        // User still has a reranker, so project must keep an explicit null mask.
+        $this->assertNull($semantic['reranker_api']);
+        $this->assertSame(
+            'project-renderer',
+            $projectParsed['extensions']['settings']['observational_memory']['observer']['renderer_version'],
+        );
+        $this->assertSame(
+            'project-observer',
+            $projectParsed['extensions']['settings']['observational_memory']['observer']['schema_version'],
+        );
+        $this->assertSame(
+            'project-value',
+            $projectParsed['extensions']['settings']['observational_memory']['unrelated_keep'],
+        );
+        $this->assertTrue($projectParsed['extensions']['settings']['unrelated_extension']['keep']);
+        $this->assertNotNull(SemanticSettings::fromArray($semantic));
+
+        $reloaded = $this->flow(project: true)->formStateFor('observational-memory');
+        $this->assertSame('http://127.0.0.1:9090/v1', $reloaded['settings']['semantic']['embedding_api']['base_url']);
+        $this->assertSame('project-embed', $reloaded['settings']['semantic']['embedding_api']['model_id']);
+        $this->assertSame('project:', $reloaded['settings']['semantic']['embedding_api']['query_prefix']);
+        $this->assertSame('', $reloaded['settings']['semantic']['reranker_api']['base_url']);
+        $this->assertSame('', $reloaded['settings']['semantic']['reranker_api']['model_id']);
+
+        $userParsed = Yaml::parseFile($this->homeDir.'/.hatfield/settings.yaml');
+        $this->assertSame(
+            'user-renderer',
+            $userParsed['extensions']['settings']['observational_memory']['observer']['renderer_version'],
+        );
+        $this->assertSame(
+            'user-reflector',
+            $userParsed['extensions']['settings']['observational_memory']['reflector']['schema_version'],
+        );
+        $this->assertSame(
+            'http://127.0.0.1:8080/v1',
+            $userParsed['extensions']['settings']['observational_memory']['semantic']['embedding_api']['base_url'],
+        );
+
+        // Mask and restore only the reranker under an active project semantic block.
+        $projectParsed['extensions']['settings']['observational_memory']['semantic']['reranker_api'] = null;
+        file_put_contents($projectSettings, Yaml::dump($projectParsed, 8, 4));
+        $maskedReranker = $this->flow(project: true)->formStateFor('observational-memory');
+        $this->assertSame('', $maskedReranker['settings']['semantic']['reranker_api']['base_url']);
+        $this->assertSame('', $maskedReranker['settings']['semantic']['reranker_api']['model_id']);
+
+        $projectFlow = $this->flow(project: true);
+        $state = $projectFlow->formStateFor('observational-memory');
+        $state['parentEnabled'] = true;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $state['settings']['model'] = 'local/flash';
+        $state['settings']['semantic']['reranker_api']['base_url'] = 'http://127.0.0.1:9091';
+        $state['settings']['semantic']['reranker_api']['model_id'] = 'project-reranker';
+        $state['settings']['semantic']['reranker_api']['min_score'] = 0.15;
+        $projectFlow->save($state);
+
+        $projectParsed = Yaml::parseFile($projectSettings);
+        $semantic = $projectParsed['extensions']['settings']['observational_memory']['semantic'];
+        $this->assertSame('http://127.0.0.1:9090/v1', $semantic['embedding_api']['base_url']);
+        $this->assertSame('project-embed', $semantic['embedding_api']['model_id']);
+        $this->assertSame('http://127.0.0.1:9091', $semantic['reranker_api']['base_url']);
+        $this->assertSame('project-reranker', $semantic['reranker_api']['model_id']);
+        $this->assertSame(0.15, $semantic['reranker_api']['min_score']);
+        $this->assertSame(
+            'project-renderer',
+            $projectParsed['extensions']['settings']['observational_memory']['observer']['renderer_version'],
+        );
+        $this->assertSame(
+            'project-value',
+            $projectParsed['extensions']['settings']['observational_memory']['unrelated_keep'],
+        );
+        $this->assertTrue($projectParsed['extensions']['settings']['unrelated_extension']['keep']);
+        $this->assertNotNull(SemanticSettings::fromArray($semantic));
+
+        $reloaded = $this->flow(project: true)->formStateFor('observational-memory');
+        $this->assertSame('http://127.0.0.1:9091', $reloaded['settings']['semantic']['reranker_api']['base_url']);
+        $this->assertSame('project-reranker', $reloaded['settings']['semantic']['reranker_api']['model_id']);
+        $this->assertSame(0.15, $reloaded['settings']['semantic']['reranker_api']['min_score']);
+        $this->assertSame(
+            'bge-reranker',
+            Yaml::parseFile($this->homeDir.'/.hatfield/settings.yaml')['extensions']['settings']['observational_memory']['semantic']['reranker_api']['model_id'],
+        );
     }
 
     private function flow(bool $project): ExtensionsSetupFlow

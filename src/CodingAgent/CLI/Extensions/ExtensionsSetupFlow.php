@@ -606,31 +606,12 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
     /**
      * Persist OM guided leaves without writing null into required semantic maps.
      *
-     * Clearing optional semantic search or a local min_score override uses
-     * SettingsOverrideWriter::remove so published SemanticSettings keeps valid
-     * shapes (semantic/reranker absent, min_score key absent).
-     *
-     * @param array<string, mixed> $guided
-     * @param array<string, mixed> $existingSection
-     */
-    /**
-     * Persist OM guided leaves without writing null into required semantic maps.
-     *
      * Clearing optional semantic search uses remove when no lower layer supplies
      * the block, or an explicit null overlay when a lower layer would otherwise
-     * keep search enabled. Blank min_score only removes the target-layer key
-     * (published parser rejects null); a remaining lower-layer floor is reported.
-     *
-     * @param array<string, mixed> $guided
-     * @param array<string, mixed> $existingSection
-     */
-    /**
-     * Persist OM guided leaves without writing null into required semantic maps.
-     *
-     * Clearing optional semantic search uses remove when no lower layer supplies
-     * the block, or an explicit null overlay when a lower layer would otherwise
-     * keep search enabled. Blank min_score only removes the target-layer key
-     * (published parser rejects null); a remaining lower-layer floor is reported.
+     * keep search enabled. Re-enabling first replaces those null overlays with
+     * mappings so leaf writes are not rejected by SettingsOverrideWriter.
+     * Blank min_score only removes the target-layer key (published parser
+     * rejects null); a remaining lower-layer floor is reported.
      *
      * @param array<string, mixed> $guided
      * @param array<string, mixed> $existingSection
@@ -668,6 +649,26 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             $lowerReranker = \is_array($lowerSemantic['reranker_api'] ?? null)
                 ? $lowerSemantic['reranker_api']
                 : null;
+
+            // Null overlays mask inherited search. Replace them with empty maps
+            // before leaf writes so SettingsOverrideWriter can create children.
+            if (\array_key_exists('semantic', $existingSection) && null === $existingSection['semantic']) {
+                $this->settingsWriter->set($this->layer, $this->cwd, $prefix.'.semantic', []);
+                $existingSection['semantic'] = [];
+                $existingSemantic = [];
+                $wrote = true;
+            }
+            if (
+                $desiredRerankerPresent
+                && \is_array($existingSemantic)
+                && \array_key_exists('reranker_api', $existingSemantic)
+                && null === $existingSemantic['reranker_api']
+            ) {
+                $this->settingsWriter->set($this->layer, $this->cwd, $prefix.'.semantic.reranker_api', []);
+                $existingSemantic['reranker_api'] = [];
+                $existingReranker = [];
+                $wrote = true;
+            }
 
             foreach ($extension->guidedFields as $field) {
                 if (!str_starts_with($field->path, 'semantic.')) {
@@ -791,11 +792,6 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
         return \is_array($semantic) ? $semantic : null;
     }
 
-    /**
-     * @param array<string, mixed> $settings
-     *
-     * @return array<string, mixed>
-     */
     /**
      * @param array<string, mixed> $settings
      *
