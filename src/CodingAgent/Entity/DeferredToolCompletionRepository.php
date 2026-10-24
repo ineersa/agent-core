@@ -153,7 +153,9 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
     /** @return list<string> */
     public function continuationRunIds(string $ownerRunId): array
     {
-        return $this->getEntityManager()->getConnection()->fetchFirstColumn("SELECT DISTINCT d.run_id FROM tool_deferred_completion d LEFT JOIN run_operational_state s ON s.run_id = d.run_id LEFT JOIN background_completion_receipt r ON r.deferred_id = d.deferred_id WHERE (d.continuation_required = 1 OR (d.status = 'pending' AND d.interruption_reason = 'controller_lost')) AND (d.run_id = ? OR s.owner_session_id = ? OR r.destination_run_id = ? OR r.root_run_id = ?)", array_fill(0, 4, $ownerRunId));
+        // Pending rows may own a processed reference sealed before SQL acceptance.
+        // Repair checks that bounded reference before loading any terminal body.
+        return $this->getEntityManager()->getConnection()->fetchFirstColumn("SELECT DISTINCT d.run_id FROM tool_deferred_completion d LEFT JOIN run_operational_state s ON s.run_id = d.run_id LEFT JOIN background_completion_receipt r ON r.deferred_id = d.deferred_id WHERE (d.continuation_required = 1 OR d.status = 'pending' OR r.disposition = 'pending') AND (d.run_id = ? OR s.owner_session_id = ? OR r.destination_run_id = ? OR r.root_run_id = ?)", array_fill(0, 4, $ownerRunId));
     }
 
     public function status(string $deferredId): ?string

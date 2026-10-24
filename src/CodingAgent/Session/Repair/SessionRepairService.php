@@ -31,6 +31,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkCodeModeBackgroundedDTO;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RepairResult;
@@ -63,6 +64,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private DeferredSubagentBatchRepository $deferredBatches,
         private DeferredToolCompletionRepository $deferred,
         private ToolPayloadStoreInterface $payloads,
+        private BackgroundCompletionReceiptRepository $receipts,
     ) {
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
@@ -392,6 +394,11 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         }
         if ([] === $missingIds) {
             return $this->noRepairResult('No repairable corruption detected.');
+        }
+        foreach ($missingIds as $toolCallId) {
+            if (!$this->hasDurableToolEnd($sorted, $toolCallId) && $this->isDeferredChildCall($storedState, $toolCallId)) {
+                return $this->noRepairResult('Deferred tool still has no terminal evidence; its execution was not retried.');
+            }
         }
 
         if (!$apply) {
@@ -921,6 +928,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $actions = $leadingActions;
         $effects = [];
         $parked = false;
+        $mailboxContinuation = false;
         foreach ($this->deferred->continuationRunIds($runId) as $sourceRun) {
             $sourceParked = false;
             $ids = $this->deferred->codeModeIdentities($sourceRun);
@@ -930,12 +938,21 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             $sourceEvents = $sourceRun === $runId ? $events : $this->canonicalHistory($sourceRun);
             foreach ($ids as $id) {
                 $metadata = $this->deferred->findMetadataByDeferredId($id);
-                if (null === $metadata || (!$metadata->continuationRequired && !('pending' === $metadata->status && 'controller_lost' === $metadata->interruptionReason))) {
+                if (null === $metadata) {
                     continue;
                 }
+                $requiresContinuation = $metadata->continuationRequired || ('pending' === $metadata->status && 'controller_lost' === $metadata->interruptionReason);
+                $admitted = !\in_array($metadata->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true)
+                    && 0 < $this->receipts->count(['deferredId' => $id, 'destinationRunId' => $runId, 'disposition' => 'pending']);
+                if (!$requiresContinuation && !$admitted && !('pending' === $metadata->status && null === $metadata->interruptionReason && null !== $metadata->acceptedResultReference)) {
+                    continue;
+                }
+                $mailboxContinuation = $mailboxContinuation || $admitted;
                 $parked = true;
-                $sourceParked = true;
-                $actions[] = new DispatchLocalMetadataMessageDTO(new MarkCodeModeBackgroundedDTO($id, new \DateTimeImmutable(), continuationRequired: false));
+                $sourceParked = $sourceParked || $requiresContinuation;
+                if ($requiresContinuation) {
+                    $actions[] = new DispatchLocalMetadataMessageDTO(new MarkCodeModeBackgroundedDTO($id, new \DateTimeImmutable(), continuationRequired: false));
+                }
                 if ($sourceEvents instanceof RepairResult) {
                     return $sourceEvents;
                 }
@@ -996,15 +1013,19 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             return null;
         }
         if (!$apply) {
-            return new RepairResult(false, false, 'Interrupted deferred work requires explicit continuation.');
+            return new RepairResult(false, false, 'Retained deferred work can be redelivered without re-executing tools.');
         }
-        if ($this->deferred->runRequiresContinuation($runId) && !array_any($effects, static fn (object $effect): bool => $effect instanceof AdvanceRun && $effect->runId() === $runId)) {
+        $idleMailbox = $mailboxContinuation && null === $state->currentOperation
+            && \in_array($state->status, [RunStatus::Running, RunStatus::Completed, RunStatus::Failed], true)
+            && !\in_array(false, $state->pendingToolCalls, true) && [] === $state->pendingShellToolCalls && [] === $state->pendingHumanInputRequests;
+        if (($this->deferred->runRequiresContinuation($runId) || $idleMailbox) && !array_any($effects, static fn (object $effect): bool => $effect instanceof AdvanceRun && $effect->runId() === $runId)) {
             $effects[] = new AdvanceRun($runId, $state->turnNo, $state->activeStepId ?? 'deferred-repair', 1, hash('sha256', $runId.'|deferred-repair|'.$state->lastSeq));
         }
 
         $resumeEvents = [];
         $next = $state;
-        if (\in_array($state->status, [RunStatus::Completed, RunStatus::Failed], true) && !\in_array(false, $state->pendingToolCalls, true)) {
+        $resumesOwner = array_any($effects, static fn (object $effect): bool => $effect instanceof AdvanceRun && $effect->runId() === $runId);
+        if ($resumesOwner && \in_array($state->status, [RunStatus::Completed, RunStatus::Failed], true) && !\in_array(false, $state->pendingToolCalls, true)) {
             // Explicit repair may resume an already-consumed receipt. There is
             // no new user message and the old physical-host fence stays set.
             $resumeEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => ['kind' => 'continue', 'reason' => 'deferred_continuation']]]);
@@ -1035,7 +1056,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
     private function isDeferredChildCall(RunState $state, string $toolCallId): bool
     {
-        return $this->deferredBatches->hasLaunchedPendingParentToolCall($state->runId, $state->turnNo, $toolCallId);
+        return $this->deferredBatches->hasLaunchedPendingParentToolCall($state->runId, $state->turnNo, $toolCallId)
+            || null !== $this->deferred->findOneBy(['runId' => $state->runId, 'turnNo' => $state->turnNo, 'stepId' => $state->activeStepId, 'toolCallId' => $toolCallId, 'status' => 'pending']);
     }
 
     /**

@@ -204,7 +204,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         /** @var DeferredSubagentBatchRepository $batchRepo */
         $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $sessionId = 'parent-batch-worker-'.bin2hex(random_bytes(2));
+        $sessionId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('batch worker recovery');
         $otherParent = 'parent-batch-other-'.bin2hex(random_bytes(2));
         $deadline = new \DateTimeImmutable('+300 seconds');
 

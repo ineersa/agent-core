@@ -10,7 +10,9 @@ use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -21,6 +23,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
@@ -30,9 +33,12 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionReceiptDTO;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -71,14 +77,19 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('deferredRepairs')]
-    public function testFailedParentRepairsRetainedDeferredResultWithoutExecutingTools(bool $retained, bool $completed, bool $valid): void
+    public function testDeferredRepairReusesProcessedEvidenceWithoutExecutingTools(bool $retained, bool $completed, bool $valid, ?RunStatus $liveStatus = null, bool $accepted = false, bool $backgrounded = false): void
     {
+        $live = null !== $liveStatus;
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('retained repair');
         $call = new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), $run, 1, 'step', 2, 'exact-key', 'host', 'code_mode', ['script' => 'return 1;'], 0);
         \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::registerDeferredInvocation($container->get(ToolBatchStoreInterface::class), $call);
         $deferred = $container->get(\Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository::class);
         $deferred->registerPending($call);
+        if ($backgrounded) {
+            $deferred->markReady($call->deferredId);
+            $deferred->markBackgrounded($call->deferredId, new \DateTimeImmutable());
+        }
         $terminal = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromDeferredCorrelationAndCompletion($call, [['type' => 'text', 'text' => 'FIRST']], [], false);
         if ($retained) {
             $payloads = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class);
@@ -94,24 +105,37 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             $this->assertEquals($reference, $deferred->findMetadataByDeferredId($call->deferredId)->acceptedResultReference, 'First immutable reference survives failed SQL admission.');
             $changed = new ToolCallResult($run, 1, 'step', 2, 'exact-key', 'host', 0, ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => 'SECOND']]]);
             $this->assertEquals($reference, $payloads->publishFirstResult($changed, $invocation));
+            if ($accepted) {
+                $deferred->acceptResultReference($call->deferredId, $reference);
+            }
         }
         if ($completed) {
             $deferred->markCompleted($call->deferredId);
+            if ($live) {
+                // Seed the durable admission cut, with its AdvanceRun send lost.
+                $identity = 'receipt-'.$call->deferredId;
+                $container->get(BackgroundCompletionReceiptRepository::class)->record(new BackgroundCompletionReceiptDTO($identity, $run, $run, $run, $run, 'FIRST', 'FIRST', BackgroundCompletionDispositionEnum::Pending, $call->deferredId, $invocation));
+                $container->get(CommandStoreInterface::class)->enqueue(new PendingCommand($run, 'append_message', $identity, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'FIRST']]]]));
+            }
         }
-        $deferred->interrupt($call->deferredId, 'controller_lost');
-        $deferred->requireContinuation($call->deferredId, true);
+        if (!$live) {
+            $deferred->interrupt($call->deferredId, 'controller_lost');
+            $deferred->requireContinuation($call->deferredId, true);
+        }
         $specs = [
             ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['messages' => []]],
             ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => 'step']],
             ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => ['step_id' => $valid ? 'step' : 'foreign', 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'host', 'name' => 'code_mode', 'arguments' => $call->arguments, 'order_index' => 0]]]]],
-            ['type' => RunEventTypeEnum::AgentEnd->value, 'payload' => ['reason' => 'failed']],
         ];
-        if ($completed) {
+        if ($completed || $backgrounded) {
             $specs[] = ['type' => RunEventTypeEnum::ToolCallAcknowledged->value, 'payload' => $container->get(ToolExecutionEndPayloadCodec::class)->toEventPayload($terminal)];
+        }
+        if (!$live || ($completed && !$backgrounded) || true === $liveStatus?->isTerminal()) {
+            $specs[] = ['type' => RunEventTypeEnum::AgentEnd->value, 'payload' => ['reason' => $live && RunStatus::Failed !== $liveStatus ? 'completed' : 'failed']];
         }
         $this->persistRunEvents($run, (new EventFactory())->eventsFromSpecs($run, 1, 1, $specs));
         $store = new TestActiveRunContext();
-        $store->loadRecovered(new RunState($run, RunStatus::Failed, version: 1, turnNo: 1, lastSeq: \count($specs), activeStepId: 'step', pendingToolCalls: $completed ? [] : ['host' => false]));
+        $store->loadRecovered(new RunState($run, $completed && $live && !$backgrounded ? RunStatus::Completed : ($liveStatus ?? RunStatus::Failed), version: 1, turnNo: 1, lastSeq: \count($specs), activeStepId: 'step', pendingToolCalls: $completed || $backgrounded ? [] : ['host' => false], currentOperation: $backgrounded && RunStatus::Running === $liveStatus ? new CurrentOperationDTO(2, 'unrelated', 1, 'other-key') : null));
         $bus = new TestMessageBus();
         $service = $this->createService($store, commandBus: $bus);
         $dry = $service->repair($run, false, \Symfony\Component\Uid\Uuid::v7()->toRfc4122());
@@ -127,6 +151,25 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         }
         $this->assertNull($applied->refusalReason);
         $results = array_values(array_filter($bus->messages, static fn (object $message): bool => $message instanceof ToolCallResult));
+        if ($live) {
+            $this->assertCount($retained && !$completed ? 1 : 0, $results);
+            $advances = array_values(array_filter($bus->messages, static fn (object $message): bool => $message instanceof AdvanceRun));
+            $this->assertCount($completed && !$backgrounded ? 1 : 0, $advances);
+            $this->assertSame([...$results, ...$advances], $bus->messages, 'Repair only redrives processed evidence or an idle admitted mailbox, never the host, processors or an unrelated LLM operation.');
+            if ($retained && !$completed) {
+                $this->assertEquals($terminal, $results[0]);
+            }
+            if (!$completed) {
+                $this->assertSame($liveStatus, $store->requireLoaded($run)->status, 'Ordinary result redelivery leaves continuation to result/mailbox admission.');
+            }
+            $metadata = $deferred->findMetadataByDeferredId($call->deferredId);
+            $this->assertNull($metadata->interruptionReason);
+            $this->assertFalse($metadata->continuationRequired);
+            $this->assertSame($completed ? 'completed' : 'pending', $metadata->status);
+            $this->assertCount($backgrounded || $completed ? 1 : 0, array_filter($this->readEvents($run), static fn (array $event): bool => RunEventTypeEnum::ToolCallAcknowledged->value === $event['type']));
+
+            return;
+        }
         if ($completed) {
             $this->assertSame([], $results);
             $this->assertSame(RunStatus::Running, $store->requireLoaded($run)->status);
@@ -154,6 +197,13 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
 
     public static function deferredRepairs(): iterable
     {
+        yield 'live host without terminal evidence is not rerun or failed' => [false, false, true, RunStatus::Running];
+        yield 'parent failure does not invent a terminal for a live host' => [false, false, true, RunStatus::Failed];
+        yield 'live controller repairs first reference after SQL rollback' => [true, false, true, RunStatus::Running];
+        yield 'live controller repairs accepted result while another LLM operation runs' => [true, false, true, RunStatus::Running, true, true];
+        yield 'live controller redrives background result without prematurely reviving completed owner' => [true, false, true, RunStatus::Completed, true, true];
+        yield 'admitted receipt with lost advance explicitly resumes idle owner' => [true, true, true, RunStatus::Running];
+        yield 'admitted receipt never duplicates unrelated LLM operation' => [true, true, true, RunStatus::Running, false, true];
         yield 'first processed result after parent failure' => [true, false, true];
         yield 'lost host without terminal evidence' => [false, false, true];
         yield 'completed caller stays completed' => [true, true, true];
@@ -1067,6 +1117,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
             deferred: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository::class),
             payloads: self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
+            receipts: self::getContainer()->get(BackgroundCompletionReceiptRepository::class),
         );
     }
 
