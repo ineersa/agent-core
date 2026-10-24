@@ -14,8 +14,6 @@ use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\SerializerInterface;
-use Symfony\Component\Validator\Validation;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Tests AppConfig hydration via the production fromContainer() factory
@@ -437,15 +435,7 @@ class AppConfigTest extends TestCase
             $this->resources,
             $this->createSerializer(),
             $this->tmpDir,
-            $this->createValidator(),
         );
-    }
-
-    private function createValidator(): ValidatorInterface
-    {
-        return Validation::createValidatorBuilder()
-            ->enableAttributeMapping()
-            ->getValidator();
     }
 
     private function createSerializer(): SerializerInterface

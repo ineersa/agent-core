@@ -167,11 +167,6 @@ final class HeadlessControllerSessionOwnerLockProcessTest extends ControllerRepl
         return 'controller-session-owner-lock';
     }
 
-    protected function isolatedLlmWorkerCount(): int
-    {
-        return 1;
-    }
-
     protected function extraSettingsYaml(): string
     {
         return <<<'YAML'

@@ -13,7 +13,8 @@ use Symfony\Component\Process\Process;
 /**
  * Manages messenger:consume child processes for the controller.
  *
- * Launches Symfony Process-based consumers for a given transport,
+ * Launches Symfony Process-based consumers for a given transport (llm uses
+ * hatfield:messenger:consume-llm; other transports use messenger:consume),
  * supervises their health via isRunning(), restarts crashed consumers
  * with exponential backoff, and gracefully stops them on shutdown.
  *
@@ -125,13 +126,24 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
             $env = \is_array($currentEnv) ? $currentEnv : $_ENV;
             $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = '1';
 
-            $command = [
-                ...$appCommand,
-                'messenger:consume',
-                $transportName,
-                '--no-interaction',
-                '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
-            ];
+            if ('llm' === $transportName) {
+                // Same-process Fiber capacity replaces the multi-process llm pool.
+                // Stock messenger:consume --concurrency still spawns Amp children.
+                $command = [
+                    ...$appCommand,
+                    'hatfield:messenger:consume-llm',
+                    '--no-interaction',
+                    '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
+                ];
+            } else {
+                $command = [
+                    ...$appCommand,
+                    'messenger:consume',
+                    $transportName,
+                    '--no-interaction',
+                    '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
+                ];
+            }
             if (\in_array($transportName, self::BROKER_KEEPALIVE_TRANSPORTS, true)) {
                 // Omit --sleep so sqlite-queue native WAIT notifications wake idle workers.
                 $command[] = '--keepalive='.self::CONSUMER_KEEPALIVE_SECONDS;

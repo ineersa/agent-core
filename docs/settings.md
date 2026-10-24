@@ -126,7 +126,6 @@ a successful late result into a timeout failure.
 |---|---|---|
 | `tools.execution.default_mode` | `sequential` or `parallel` | `sequential` |
 | `tools.execution.max_parallelism` | Concurrent tool workers | `4` |
-| `runtime.llm_worker_count` | LLM worker processes | `4` |
 
 ### Output cap
 

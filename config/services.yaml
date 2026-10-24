@@ -215,7 +215,6 @@ services:
       $resources: '@Ineersa\CodingAgent\Config\AppResourceLocator'
       $denormalizer: '@Symfony\Component\Serializer\SerializerInterface'
       $cwd: '%app.cwd%'
-      $validator: '@validator'
 
   Ineersa\CodingAgent\Config\CompactionConfig:
     factory: ['Ineersa\CodingAgent\Config\CompactionConfig', 'fromAppConfig']
@@ -578,6 +577,28 @@ services:
     arguments:
       $inner: '@Ineersa\CodingAgent\Runtime\Messenger\SerializedBrokerSendersLocator.inner'
 
+  # Same-process llm Fiber consumer. Uses the sqlite-queue consume locator so
+  # native WAIT stays intact; stock messenger:consume --concurrency remains
+  # child-process ParallelExecutionStrategy and is not used for llm.
+  Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeReceiverLocator:
+    class: Ineersa\SqliteQueue\Messenger\ConsumeReceiverLocator
+    arguments:
+      - '@messenger.receiver_locator'
+      - '@Ineersa\SqliteQueue\Messenger\NativeConsumeWaitSubscriber'
+
+  Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeCommand:
+    arguments:
+      $routableBus: '@messenger.routable_message_bus'
+      $receiverLocator: '@Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeReceiverLocator'
+      $eventDispatcher: '@event_dispatcher'
+      $logger: '@logger'
+
+  Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber:
+    arguments:
+      $receiverLocator: '@messenger.receiver_locator'
+    tags:
+      - { name: kernel.event_subscriber }
+
   # ─── Controller event loop ───
 
   # Command handlers (ControllerCommandEvent listeners) receive the
@@ -623,7 +644,6 @@ services:
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
       $dispatcher: '@event_dispatcher'
-      $runtimeConfig: '@Ineersa\CodingAgent\Config\RuntimeConfig'
       # Canonical project CWD for single-owner session lock key (not process getcwd()).
       $runtimeCwd: '%app.cwd%'
       # Project-scoped factory only — not the global default LockFactory.
@@ -634,11 +654,6 @@ services:
   Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor:
     arguments:
       $maxPayload: '%hatfield.sqlite_queue.max_payload%'
-
-  Ineersa\CodingAgent\Config\RuntimeConfig:
-    factory: ['Ineersa\CodingAgent\Config\RuntimeConfig', 'fromAppConfig']
-    arguments:
-      - '@Ineersa\CodingAgent\Config\AppConfig'
 
   Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller:
     arguments:
