@@ -415,6 +415,81 @@ YAML;
     }
 
     #[Test]
+    public function omModelAllowsNestedProviderModelIdsAndRejectsAliases(): void
+    {
+        $installer = new ExtensionPackageInstaller(new SettingsPathResolver($this->projectDir, $this->homeDir));
+        $installer->ensureInstalled(
+            SettingsLayerEnum::Project,
+            $this->projectDir,
+            'ineersa/hatfield-ext-observational-memory',
+            '0.0.42',
+        );
+
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('observational-memory');
+        $state['parentEnabled'] = true;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $state['settings']['model'] = 'local/Qwen/Qwen3';
+
+        $flow->save($state);
+        $parsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+        $this->assertSame('local/Qwen/Qwen3', $parsed['extensions']['settings']['observational_memory']['model']);
+
+        // Unrelated edit of an already-enabled OM config must keep the nested model.
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('observational-memory');
+        $this->assertSame('local/Qwen/Qwen3', $state['settings']['model']);
+        $state['settings']['observer']['context_window_ratio'] = 0.55;
+        $flow->save($state);
+        $parsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+        $this->assertSame('local/Qwen/Qwen3', $parsed['extensions']['settings']['observational_memory']['model']);
+        $this->assertSame(0.55, $parsed['extensions']['settings']['observational_memory']['observer']['context_window_ratio']);
+
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('observational-memory');
+        $state['settings']['model'] = '@favorite';
+        try {
+            $flow->save($state);
+            $this->fail('Expected alias rejection');
+        } catch (ExtensionsSetupValidationException $e) {
+            $this->assertStringContainsString('exact provider/model', $e->getMessage());
+        }
+        $parsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+        $this->assertSame('local/Qwen/Qwen3', $parsed['extensions']['settings']['observational_memory']['model']);
+    }
+
+    #[Test]
+    public function safeGuardListFieldsAcceptYamlSequencesAndRejectDelimiterText(): void
+    {
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('safe-guard');
+        $state['parentEnabled'] = false;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $state['settings']['allow_command_patterns'] = ['echo hello, world'];
+        $flow->save($state);
+
+        $parsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+        $this->assertSame(
+            ['echo hello, world'],
+            $parsed['extensions']['settings']['safe_guard']['allow_command_patterns'],
+        );
+
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('safe-guard');
+        $state['settings']['allow_command_patterns'] = 'echo hello, world';
+        try {
+            $flow->save($state);
+            $this->fail('Expected YAML sequence refusal');
+        } catch (ExtensionsSetupValidationException $e) {
+            $this->assertStringContainsString('YAML sequence', $e->getMessage());
+        }
+    }
+
+    #[Test]
     public function untouchedSafeGuardSaveWritesNothingForFreshProjectAndUser(): void
     {
         $projectSettings = $this->projectDir.'/.hatfield/settings.yaml';

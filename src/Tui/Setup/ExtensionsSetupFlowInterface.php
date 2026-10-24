@@ -106,4 +106,21 @@ interface ExtensionsSetupFlowInterface
      * @throws \RuntimeException         when persistence fails
      */
     public function save(array $formState): void;
+
+    /**
+     * Encode a guided list field for the settings text editor.
+     *
+     * @param list<mixed>|array<mixed> $values
+     */
+    public function formatListField(array $values): string;
+
+    /**
+     * Decode a guided list editor value. Unchanged display text preserves
+     * {@see $original}; edited text must be a YAML sequence.
+     *
+     * @param list<mixed>|array<mixed> $original
+     *
+     * @return list<string>
+     */
+    public function parseListField(string $value, array $original): array;
 }

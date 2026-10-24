@@ -18,25 +18,25 @@ packages:
             path: allow_write_outside_cwd
             type: absolute_path_list
             label: Allow write outside CWD
-            description: Comma-separated absolute paths where outside-CWD writes are allowed.
+            description: 'YAML sequence of absolute paths where outside-CWD writes are allowed (example: [/tmp/extra, /var/data]).'
             default: []
           - id: sg.allow_command_patterns
             path: allow_command_patterns
             type: csv_list
             label: Allow command patterns
-            description: Comma-separated command substrings that bypass destructive checks.
+            description: "YAML sequence of command substrings that bypass destructive checks (example: ['echo hello, world'])."
             default: []
           - id: sg.protected_read_patterns
             path: protected_read_patterns
             type: csv_list
             label: Extra protected reads
-            description: Additive on top of built-in secret-path defaults.
+            description: 'YAML sequence of extra protected-read patterns on top of built-in secret-path defaults.'
             default: []
           - id: sg.dangerous_command_patterns
             path: dangerous_command_patterns
             type: csv_list
             label: Extra dangerous commands
-            description: Comma-separated extra dangerous command substrings.
+            description: 'YAML sequence of extra dangerous command substrings.'
             default: []
     - id: task-workflow
       name: Task Workflow
@@ -90,7 +90,7 @@ packages:
             path: model
             type: model_id
             label: Shared model
-            description: 'Exact provider/model id shared by Observer/Reflector/Dropper (example: llama_cpp/flash).'
+            description: 'Exact provider/model id shared by Observer/Reflector/Dropper (example: llama_cpp/flash or local/Qwen/Qwen3).'
             default: ''
           - id: om.database
             path: storage.database

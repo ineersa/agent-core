@@ -152,7 +152,12 @@ final class ExtensionsSetupScreen
             ? $this->settingsWidget->getKeybindings()
             : $this->listWidget->getKeybindings();
         if ($bindings->matches($data, 'quit_setup')) {
-            $this->finishSuccess();
+            // Ctrl+D must stop the running TUI from any phase, including summary.
+            // Enter/Esc still route through finishSuccess for the summary exit path.
+            $this->exitCode = 0;
+            if ($this->tui->isRunning()) {
+                $this->tui->stop();
+            }
 
             return true;
         }
@@ -545,7 +550,7 @@ final class ExtensionsSetupScreen
             }
 
             $display = match ($type) {
-                'csv_list', 'absolute_path_list' => $this->csv(\is_array($raw) ? $raw : []),
+                'csv_list', 'absolute_path_list' => $this->flow->formatListField(\is_array($raw) ? $raw : []),
                 default => null === $raw ? '' : (string) $raw,
             };
             $items[] = new SettingItem(
@@ -611,9 +616,13 @@ final class ExtensionsSetupScreen
             if ('' === $path) {
                 return;
             }
+            $current = $this->valueAtPath($settings, $path);
             $stored = match ($type) {
                 'bool' => 'yes' === $value,
-                'csv_list', 'absolute_path_list' => $value,
+                'csv_list', 'absolute_path_list' => $this->flow->parseListField(
+                    $value,
+                    \is_array($current) ? $current : [],
+                ),
                 'positive_int', 'open_unit_ratio', 'path_string', 'model_id' => $value,
                 default => $value,
             };
@@ -721,21 +730,6 @@ final class ExtensionsSetupScreen
     private function yesNo(bool $value): string
     {
         return $value ? 'yes' : 'no';
-    }
-
-    /**
-     * @param list<mixed>|array<mixed> $values
-     */
-    private function csv(array $values): string
-    {
-        $parts = [];
-        foreach ($values as $value) {
-            if (\is_string($value) && '' !== trim($value)) {
-                $parts[] = trim($value);
-            }
-        }
-
-        return implode(', ', $parts);
     }
 
     /**

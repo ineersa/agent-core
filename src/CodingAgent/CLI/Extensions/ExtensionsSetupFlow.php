@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\DTO\ProvidedExtensionDTO;
 use Ineersa\CodingAgent\Config\DTO\ProvidedExtensionGuidedFieldDTO;
+use Ineersa\CodingAgent\Config\GuidedListTextCodec;
 use Ineersa\CodingAgent\Config\ProvidedExtensionsCatalog;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
@@ -329,6 +330,20 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
         }
     }
 
+    public function formatListField(array $values): string
+    {
+        return GuidedListTextCodec::format($values);
+    }
+
+    public function parseListField(string $value, array $original): array
+    {
+        try {
+            return GuidedListTextCodec::parseEdited($value, $original);
+        } catch (\InvalidArgumentException $e) {
+            throw ExtensionsSetupValidationException::forMessage($e->getMessage(), $e);
+        }
+    }
+
     private function resolve(): SettingsResolutionDTO
     {
         return $this->configLoader->load($this->resourceLocator->getDefaultsPath(), $this->cwd);
@@ -528,7 +543,7 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
     {
         return match ($type) {
             'bool' => $this->strictBool($raw, $label),
-            'csv_list', 'absolute_path_list' => $this->parseList($raw),
+            'csv_list', 'absolute_path_list' => $this->coerceList($raw),
             'path_string', 'model_id' => \is_string($raw) ? trim($raw) : (null === $raw ? '' : (string) $raw),
             'positive_int' => $this->strictPositiveInt($raw, $label),
             'open_unit_ratio' => $this->strictFloat($raw, $label),
@@ -540,7 +555,7 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
     {
         return match ($type) {
             'bool' => (bool) $value,
-            'csv_list', 'absolute_path_list' => $this->parseList($value),
+            'csv_list', 'absolute_path_list' => $this->coerceList($value),
             'positive_int' => is_numeric($value) ? (int) $value : $value,
             'open_unit_ratio' => is_numeric($value) ? (float) $value : $value,
             'path_string', 'model_id' => \is_string($value) ? $value : (null === $value ? '' : (string) $value),
@@ -551,41 +566,13 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
     /**
      * @return list<string>
      */
-    private function parseList(mixed $value): array
+    private function coerceList(mixed $value): array
     {
-        if (\is_array($value)) {
-            $out = [];
-            foreach ($value as $item) {
-                if (\is_string($item) && '' !== trim($item)) {
-                    $out[] = trim($item);
-                }
-            }
-
-            return $out;
+        try {
+            return GuidedListTextCodec::parse($value);
+        } catch (\InvalidArgumentException $e) {
+            throw ExtensionsSetupValidationException::forMessage($e->getMessage(), $e);
         }
-
-        $raw = trim((string) $value);
-        if ('' === $raw) {
-            return [];
-        }
-
-        // Split only on ", " so unedited comma-containing entries stay intact
-        // when the settings list round-trips through implode(', ', ...).
-        if (str_contains($raw, ', ')) {
-            $parts = explode(', ', $raw);
-        } else {
-            $parts = [$raw];
-        }
-
-        $out = [];
-        foreach ($parts as $part) {
-            $part = trim($part);
-            if ('' !== $part) {
-                $out[] = $part;
-            }
-        }
-
-        return array_values(array_unique($out, \SORT_STRING));
     }
 
     private function strictBool(mixed $value, string $label): bool

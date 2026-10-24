@@ -69,6 +69,12 @@ packages:
             label: Allow write outside CWD
             description: Absolute paths.
             default: []
+          - id: sg.allow_command_patterns
+            path: allow_command_patterns
+            type: csv_list
+            label: Allow command patterns
+            description: YAML sequence of command substrings.
+            default: []
     - id: task-workflow
       name: Task Workflow
       builtin: false

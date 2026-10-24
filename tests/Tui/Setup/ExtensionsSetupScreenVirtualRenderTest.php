@@ -211,15 +211,17 @@ YAML);
             $this->activeSubmenu($screen),
         );
         // Clear "/keep/me" then type the edited absolute-path list.
-        for ($i = 0; $i < 8; ++$i) {
+        $current = $this->settingsWidget($screen)->getValue('sg.allow_write_outside_cwd');
+        for ($i = 0; $i < \strlen((string) $current); ++$i) {
             $tui->handleInput("\x7f");
         }
-        $tui->handleInput('/keep/me, /tmp/extra');
+        $tui->handleInput('[/keep/me, /tmp/extra]');
         $tui->handleInput("\r");
         $this->assertNull($this->activeSubmenu($screen));
-        $this->assertSame('/keep/me, /tmp/extra', $this->settingsWidget($screen)->getValue('sg.allow_write_outside_cwd'));
+        $this->assertSame('[/keep/me, /tmp/extra]', $this->settingsWidget($screen)->getValue('sg.allow_write_outside_cwd'));
 
-        // Cursor is on allow_write; one down reaches Save.
+        // Cursor is on allow_write; skip allow_command_patterns to Save.
+        $tui->handleInput("\x1b[B");
         $tui->handleInput("\x1b[B");
         $this->assertSame('↵', $this->settingsWidget($screen)->getValue('save'));
         $tui->handleInput("\r");
@@ -373,6 +375,134 @@ YAML);
         $this->assertStringNotContainsString('extensions:', (string) file_get_contents($settingsPath));
     }
 
+    #[Test]
+    public function keyboardUnchangedCommaContainingListPersistsOriginalEntry(): void
+    {
+        $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
+        file_put_contents($settingsPath, <<<'YAML'
+extensions:
+    enabled: []
+    settings:
+        safe_guard:
+            allow_command_patterns:
+                - 'echo hello, world'
+YAML);
+
+        [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));
+        $tui->handleInput("\r"); // SafeGuard
+        $tui->handleInput("\r"); // Configure
+        $this->assertSame('settings', $this->phase($screen));
+
+        // Clear default child membership while parent stays disabled.
+        $this->assertSame('no', $this->settingsWidget($screen)->getValue('parentEnabled'));
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r"); // forksAlwaysOn -> no
+        $tui->handleInput("\x1b[B"); // forksEnabled
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r"); // agentsAlwaysOn -> no
+
+        // Skip parent/child toggles + auto-deny to allow_command_patterns.
+        // Now on agentsAlwaysOn; move through auto-deny + allow_write to allow_command_patterns.
+        for ($i = 0; $i < 3; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+        $this->assertSame(
+            '[\'echo hello, world\']',
+            $this->settingsWidget($screen)->getValue('sg.allow_command_patterns'),
+        );
+        $tui->handleInput("\r"); // open editor
+        $tui->handleInput("\r"); // Enter without edits
+        $this->assertNull($this->activeSubmenu($screen));
+        $this->assertSame(
+            '[\'echo hello, world\']',
+            $this->settingsWidget($screen)->getValue('sg.allow_command_patterns'),
+        );
+
+        // Save without changing parent enablement or membership.
+        $this->selectSettingsItem($screen, $tui, 'save');
+        $tui->handleInput("\r");
+        $this->assertSame('', $this->errorText($screen), 'unexpected settings error after Save');
+        $this->assertSame('picker', $this->phase($screen));
+
+        $parsed = Yaml::parseFile($settingsPath);
+        $this->assertSame(
+            ['echo hello, world'],
+            $parsed['extensions']['settings']['safe_guard']['allow_command_patterns'],
+        );
+    }
+
+    #[Test]
+    public function keyboardEditedListRoundTripsCommasQuotesAndBackslashes(): void
+    {
+        $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
+        file_put_contents($settingsPath, <<<'YAML'
+extensions:
+    enabled: []
+    settings:
+        safe_guard:
+            allow_command_patterns:
+                - keep-me
+YAML);
+
+        [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));
+        $tui->handleInput("\r"); // SafeGuard
+        $tui->handleInput("\r"); // Configure
+
+        $this->assertSame('no', $this->settingsWidget($screen)->getValue('parentEnabled'));
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r"); // forksAlwaysOn -> no
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r"); // agentsAlwaysOn -> no
+        for ($i = 0; $i < 3; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+        $tui->handleInput("\r");
+        $current = $this->settingsWidget($screen)->getValue('sg.allow_command_patterns');
+        for ($i = 0; $i < \strlen((string) $current); ++$i) {
+            $tui->handleInput("\x7f");
+        }
+        $tui->handleInput('[\'echo hello, world\', \'say "hi"\', path\\with\\slash]');
+        $tui->handleInput("\r");
+        $this->assertNull($this->activeSubmenu($screen));
+
+        $this->selectSettingsItem($screen, $tui, 'save');
+        $tui->handleInput("\r"); // Save
+        $this->assertSame('', $this->errorText($screen), 'unexpected settings error after Save');
+        $this->assertSame('picker', $this->phase($screen));
+
+        $parsed = Yaml::parseFile($settingsPath);
+        $this->assertSame(
+            ['echo hello, world', 'say "hi"', 'path\\with\\slash'],
+            $parsed['extensions']['settings']['safe_guard']['allow_command_patterns'],
+        );
+    }
+
+    #[Test]
+    public function ctrlDFromPickerAndSummaryStopsRunningTui(): void
+    {
+        [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));
+        $this->assertTrue($tui->isRunning());
+        $this->assertSame('picker', $this->phase($screen));
+
+        $tui->handleInput("\x04");
+        $this->assertFalse($tui->isRunning());
+        $this->assertSame(0, $this->exitCode($screen));
+
+        // Fresh mount: Done → summary → Ctrl+D must stop, not rebuild summary.
+        [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));
+        for ($i = 0; $i < 5; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+        $tui->handleInput("\r"); // Done
+        $this->assertSame('summary', $this->phase($screen));
+        $this->assertTrue($tui->isRunning());
+        $tui->handleInput("\x04");
+        $this->assertFalse($tui->isRunning());
+        $this->assertSame('summary', $this->phase($screen));
+        $this->assertSame(0, $this->exitCode($screen));
+    }
+
     /**
      * @return array{0: ExtensionsSetupScreen, 1: VirtualTerminal, 2: Tui}
      */
@@ -436,5 +566,32 @@ YAML);
         $widget = $this->settingsWidget($screen);
 
         return (new \ReflectionProperty(SettingsListWidget::class, 'activeSubmenu'))->getValue($widget);
+    }
+
+    private function exitCode(ExtensionsSetupScreen $screen): int
+    {
+        return (new \ReflectionProperty(ExtensionsSetupScreen::class, 'exitCode'))->getValue($screen);
+    }
+
+    private function selectSettingsItem(ExtensionsSetupScreen $screen, Tui $tui, string $id): void
+    {
+        $widget = $this->settingsWidget($screen);
+        $items = (new \ReflectionProperty(SettingsListWidget::class, 'items'))->getValue($widget);
+        $selected = (new \ReflectionProperty(SettingsListWidget::class, 'selectedIndex'));
+        $target = null;
+        foreach ($items as $index => $item) {
+            if ($item->getId() === $id) {
+                $target = $index;
+                break;
+            }
+        }
+        $this->assertNotNull($target, \sprintf('Missing settings item "%s".', $id));
+        while ($selected->getValue($widget) > $target) {
+            $tui->handleInput("\x1b[A");
+        }
+        while ($selected->getValue($widget) < $target) {
+            $tui->handleInput("\x1b[B");
+        }
+        $this->assertSame($target, $selected->getValue($widget));
     }
 }

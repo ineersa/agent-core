@@ -24,6 +24,8 @@ use Symfony\Component\Process\Process;
  *  - Never writes extensions.enabled or extensions.settings.
  *  - Preserves existing extension Composer repositories and unrelated require entries.
  *  - Forces config.prepend-autoloader=false so extension deps cannot shadow host libraries.
+ *  - Pins config.autoloader-suffix per settings layer so project and user roots can both
+ *    load when they install the same package set (identical content-hash class names collide).
  *  - Reuses an already-installed package without Composer update/upgrade.
  */
 final class ExtensionPackageInstaller
@@ -32,6 +34,8 @@ final class ExtensionPackageInstaller
     private const INSTALLED_JSON = 'vendor/composer/installed.json';
     private const VENDOR_AUTOLOAD = 'vendor/autoload.php';
     private const DEFAULT_TIMEOUT_SECONDS = 300.0;
+    private const AUTOLOADER_SUFFIX_PROJECT = 'HatfieldExtProject';
+    private const AUTOLOADER_SUFFIX_USER = 'HatfieldExtUser';
 
     public function __construct(
         private readonly SettingsPathResolver $pathResolver,
@@ -80,12 +84,12 @@ final class ExtensionPackageInstaller
         }
 
         $root = $this->rootFor($layer, $cwd);
-        $this->ensureRoot($root);
+        $this->ensureRoot($root, $layer);
         // Fail closed on malformed existing manifests before invoking Composer.
         $this->readManifest($root);
 
         if ($this->packagePresentInRoot($root, $package)) {
-            $this->ensureSafeAutoload($root);
+            $this->ensureSafeAutoload($root, $layer);
 
             return new ExtensionPackageInstallResultDTO(
                 root: $root,
@@ -95,14 +99,14 @@ final class ExtensionPackageInstaller
 
         // Fix unsafe prepend before require so a failed/cancelled install cannot
         // leave generated autoload configured to shadow host libraries.
-        $this->ensureSafeComposerConfig($root);
+        $this->ensureSafeComposerConfig($root, $layer);
         $this->runComposer(['require', $package.':'.$version, '--no-interaction', '--no-ansi', '--working-dir='.$root], $root, $package);
 
         if (!$this->packagePresentInRoot($root, $package)) {
             throw new ExtensionPackageInstallException(\sprintf('Composer finished without installing "%s" into %s.', $package, $root));
         }
 
-        $this->ensureSafeAutoload($root);
+        $this->ensureSafeAutoload($root, $layer);
 
         return new ExtensionPackageInstallResultDTO(
             root: $root,
@@ -127,7 +131,7 @@ final class ExtensionPackageInstaller
         return $package;
     }
 
-    private function ensureRoot(string $root): void
+    private function ensureRoot(string $root, SettingsLayerEnum $layer): void
     {
         try {
             $this->filesystem->mkdir($root);
@@ -137,16 +141,16 @@ final class ExtensionPackageInstaller
 
         $manifestPath = $root.'/'.self::COMPOSER_JSON;
         if (!is_file($manifestPath)) {
-            $this->writeManifest($manifestPath, $this->defaultManifest());
+            $this->writeManifest($manifestPath, $this->defaultManifest($layer));
         }
     }
 
     /**
-     * Ensure prepend-autoloader=false and regenerate vendor autoload when needed.
+     * Ensure host-safe Composer autoload config and regenerate vendor autoload when needed.
      */
-    private function ensureSafeAutoload(string $root): void
+    private function ensureSafeAutoload(string $root, SettingsLayerEnum $layer): void
     {
-        $changed = $this->ensureSafeComposerConfig($root);
+        $changed = $this->ensureSafeComposerConfig($root, $layer);
         if ($changed || !is_file($root.'/'.self::VENDOR_AUTOLOAD)) {
             $this->runComposer(['dump-autoload', '--no-interaction', '--no-ansi', '--working-dir='.$root], $root);
         }
@@ -157,7 +161,7 @@ final class ExtensionPackageInstaller
      *
      * @return bool true when composer.json changed
      */
-    private function ensureSafeComposerConfig(string $root): bool
+    private function ensureSafeComposerConfig(string $root, SettingsLayerEnum $layer): bool
     {
         $manifestPath = $root.'/'.self::COMPOSER_JSON;
         if (!is_file($manifestPath)) {
@@ -175,12 +179,26 @@ final class ExtensionPackageInstaller
             $config['sort-packages'] = true;
             $changed = true;
         }
+        $suffix = $this->autoloaderSuffixFor($layer);
+        if (($config['autoloader-suffix'] ?? null) !== $suffix) {
+            $config['autoloader-suffix'] = $suffix;
+            $changed = true;
+        }
         if ($changed) {
             $manifest['config'] = $config;
             $this->writeManifest($manifestPath, $manifest);
         }
 
         return $changed;
+    }
+
+    private function autoloaderSuffixFor(SettingsLayerEnum $layer): string
+    {
+        return match ($layer) {
+            SettingsLayerEnum::Project => self::AUTOLOADER_SUFFIX_PROJECT,
+            SettingsLayerEnum::User => self::AUTOLOADER_SUFFIX_USER,
+            SettingsLayerEnum::Defaults => throw new \InvalidArgumentException('Built-in defaults are not an extension package install target.'),
+        };
     }
 
     private function packagePresentInRoot(string $root, string $package): bool
@@ -223,7 +241,7 @@ final class ExtensionPackageInstaller
     /**
      * @return array<string, mixed>
      */
-    private function defaultManifest(): array
+    private function defaultManifest(SettingsLayerEnum $layer): array
     {
         return [
             'name' => 'ineersa/hatfield-extensions',
@@ -236,6 +254,7 @@ final class ExtensionPackageInstaller
             'config' => [
                 'sort-packages' => true,
                 'prepend-autoloader' => false,
+                'autoloader-suffix' => $this->autoloaderSuffixFor($layer),
             ],
             'minimum-stability' => 'stable',
             'prefer-stable' => true,

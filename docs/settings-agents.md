@@ -100,10 +100,13 @@ a marketplace or upgrade/uninstall tool.
 - **Install:** built-in SafeGuard skips Composer. Installable packages confirm
   before `composer require` into the selected `.hatfield/extensions` root. Failed
   or cancelled installs do not write enablement/settings. The wizard does not
-  claim package files roll back.
+  claim package files roll back. Project and user roots pin distinct Composer
+  `autoloader-suffix` values so both loaders can register when the same package
+  set is installed in each root.
 - **Configure:** guided fields use the native settings list (SafeGuard policy
   controls, Task Workflow `task_root`, File Rewind enable/retention/timeout, OM
-  model + core storage/observer/reflector/pool values). Parent enable/disable and
+  model + core storage/observer/reflector/pool values). List fields edit as YAML
+  sequences so commas inside an entry stay intact. Parent enable/disable and
   forks/agents membership are toggles on the same form — there is no separate
   quick enable/disable path. Configure opens the form even when the package is
   missing; Composer install stays on its own action. Unoffered advanced keys stay

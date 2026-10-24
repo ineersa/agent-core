@@ -16,7 +16,9 @@ final readonly class ObservationalMemoryGuidedSettingsDTO
             message: 'observational_memory.model must be an exact provider/model id (example: llama_cpp/flash).',
         )]
         #[Assert\Regex(
-            pattern: '#^(?!@)[^/]+/[^/]+$#',
+            // Match AiModelReference::parse first-slash split so local/Qwen/Qwen3 stays valid
+            // while aliases such as @favorite remain rejected.
+            pattern: '#^(?!@)[^/]+/.+$#',
             message: 'observational_memory.model must be an exact provider/model id (example: llama_cpp/flash).',
         )]
         public string $model = '',

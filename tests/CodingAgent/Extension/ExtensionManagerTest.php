@@ -8,9 +8,11 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
+use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
@@ -752,6 +754,83 @@ PHP
 
         $this->assertCount(1, $bridge->getRegistrations());
         $this->assertSame('user_only_tool', $bridge->getRegistrations()[0]->name);
+    }
+
+    /**
+     * Real Composer dual-root proof through ExtensionManager.
+     *
+     * Unique external contract: only real Composer generates colliding
+     * content-hash ComposerAutoloaderInit names for identical package sets.
+     * Timeout is a safety cap around two local path installs + manager load.
+     */
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testRealComposerProjectAndUserAutoloadBothLoadThroughManager(): void
+    {
+        require \dirname(__DIR__, 3).'/vendor/autoload.php';
+        $this->assertFileExists('/usr/local/bin/composer');
+
+        $packagesDir = $this->extensionsDir.'/packages/demo';
+        if (!is_dir($packagesDir.'/src') && !mkdir($packagesDir.'/src', 0755, true) && !is_dir($packagesDir.'/src')) {
+            $this->fail('Failed to create offline package fixture directory.');
+        }
+        file_put_contents($packagesDir.'/composer.json', json_encode([
+            'name' => 'ineersa/hatfield-ext-file-rewind',
+            'version' => '0.0.42',
+            'autoload' => [
+                'psr-4' => [
+                    'HatfieldExtDual\\' => 'src/',
+                ],
+            ],
+        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
+        file_put_contents($packagesDir.'/src/Marker.php', "<?php\n\nnamespace HatfieldExtDual;\n\nfinal class Marker {}\n");
+
+        $installer = new ExtensionPackageInstaller($this->pathResolver());
+        foreach ([SettingsLayerEnum::Project, SettingsLayerEnum::User] as $layer) {
+            $root = $installer->rootFor($layer, $this->extensionsDir);
+            if (!is_dir($root) && !mkdir($root, 0755, true) && !is_dir($root)) {
+                $this->fail(\sprintf('Failed to create extensions root "%s".', $root));
+            }
+            $from = explode('/', rtrim($root, '/'));
+            $to = explode('/', rtrim($packagesDir, '/'));
+            while ([] !== $from && [] !== $to && $from[0] === $to[0]) {
+                array_shift($from);
+                array_shift($to);
+            }
+            $relative = str_repeat('../', \count($from)).implode('/', $to);
+            file_put_contents($root.'/composer.json', json_encode([
+                'name' => 'ineersa/hatfield-extensions',
+                'require' => ['php' => '>=8.3'],
+                'repositories' => [[
+                    'type' => 'path',
+                    'url' => $relative,
+                    'options' => ['symlink' => false],
+                ]],
+                'config' => [
+                    'prepend-autoloader' => false,
+                    'sort-packages' => true,
+                ],
+            ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
+            $installer->ensureInstalled($layer, $this->extensionsDir, 'ineersa/hatfield-ext-file-rewind', '0.0.42');
+        }
+
+        $projectReal = (string) file_get_contents($this->extensionsDir.'/.hatfield/extensions/vendor/composer/autoload_real.php');
+        $userReal = (string) file_get_contents($this->homeDir.'/.hatfield/extensions/vendor/composer/autoload_real.php');
+        $this->assertStringContainsString('ComposerAutoloaderInitHatfieldExtProject', $projectReal);
+        $this->assertStringContainsString('ComposerAutoloaderInitHatfieldExtUser', $userReal);
+
+        $manager = new ExtensionManager(
+            $this->createAppConfig($this->extensionsDir, ['NoSuch\\MissingExtension']),
+            new InMemoryExtensionApiBridge(),
+            new TestLogger(),
+            new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            $this->pathResolver(),
+        );
+        $manager->loadExtensions();
+
+        $this->assertTrue(class_exists(\HatfieldExtDual\Marker::class, true));
+        $this->assertTrue(class_exists('ComposerAutoloaderInitHatfieldExtProject', false));
+        $this->assertTrue(class_exists('ComposerAutoloaderInitHatfieldExtUser', false));
     }
 
     #[RunInSeparateProcess]

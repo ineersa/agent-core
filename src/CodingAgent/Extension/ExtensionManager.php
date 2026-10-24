@@ -25,7 +25,9 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  *  2. Require extension Composer autoloaders when present:
  *     project `<cwd>/.hatfield/extensions/vendor/autoload.php`, then user
  *     `~/.hatfield/extensions/vendor/autoload.php`. Project registers first so
- *     project packages win collisions; both keep prepend-autoloader=false so
+ *     project packages win collisions. Installer-pinned autoloader-suffix values
+ *     keep project/user ComposerAutoloaderInit class names distinct when both
+ *     roots share the same package set. Both keep prepend-autoloader=false so
  *     host libraries remain highest priority. Identical resolved paths load once.
  *  3. For each enabled class name, verify the class exists, instantiate it,
  *     inject logger when LoggerAwareInterface, confirm HatfieldExtensionInterface,
@@ -137,8 +139,10 @@ final class ExtensionManager
     /**
      * Require project then user extension Composer autoloaders when present.
      *
-     * Missing autoload files are ignored. When project and user resolve to the
-     * same path (for example HOME under cwd in tests), require_once loads once.
+     * Missing autoload files are ignored. Distinct installer-pinned
+     * autoloader-suffix values let both roots load when they install the same
+     * packages. When project and user resolve to the same path (for example
+     * HOME under cwd in tests), require_once loads once.
      */
     private function requireExtensionAutoload(): void
     {

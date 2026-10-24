@@ -110,6 +110,7 @@ final class ExtensionPackageInstallerTest extends TestCase
         $this->assertSame('0.0.42', $manifest['require']['ineersa/hatfield-ext-file-rewind']);
         $this->assertSame([['type' => 'path', 'url' => 'existing-extension']], $manifest['repositories']);
         $this->assertFalse($manifest['config']['prepend-autoloader']);
+        $this->assertSame('HatfieldExtProject', $manifest['config']['autoloader-suffix']);
         $this->assertFileExists($root.'/vendor/autoload.php');
         $this->assertFileExists($root.'/vendor/composer/installed.json');
 
@@ -137,6 +138,7 @@ final class ExtensionPackageInstallerTest extends TestCase
         /** @var array<string, mixed> $manifest */
         $manifest = json_decode((string) file_get_contents($userRoot.'/composer.json'), true, 512, \JSON_THROW_ON_ERROR);
         $this->assertFalse($manifest['config']['prepend-autoloader']);
+        $this->assertSame('HatfieldExtUser', $manifest['config']['autoloader-suffix']);
     }
 
     public function testAlreadyInstalledIsReusableWithoutComposerRequire(): void
@@ -243,6 +245,7 @@ final class ExtensionPackageInstallerTest extends TestCase
         $autoload = (string) file_get_contents($root.'/vendor/autoload.php');
         $this->assertStringContainsString('dump-autoload', $autoload);
         $this->assertStringNotContainsString('stale', $autoload);
+        $this->assertSame('HatfieldExtProject', $manifest['config']['autoloader-suffix']);
         // Package set unchanged (no require).
         $this->assertSame(
             [
@@ -338,6 +341,7 @@ final class ExtensionPackageInstallerTest extends TestCase
         $manifest = json_decode((string) file_get_contents($root.'/composer.json'), true, 512, \JSON_THROW_ON_ERROR);
         $this->assertFalse($manifest['config']['prepend-autoloader']);
         $this->assertArrayNotHasKey('ineersa/hatfield-ext-file-rewind', $manifest['require'] ?? []);
+        $this->assertSame('HatfieldExtProject', $manifest['config']['autoloader-suffix']);
     }
 
     public function testComposer1ListInstalledJsonIsNotTreatedAsInstalled(): void
@@ -397,6 +401,128 @@ final class ExtensionPackageInstallerTest extends TestCase
             'ineersa/hatfield-ext-file-rewind',
             '0.0.42',
         );
+    }
+
+    /**
+     * Real Composer proof: identical package sets in project and user roots must
+     * generate distinct ComposerAutoloaderInit suffixes so ExtensionManager can
+     * require both loaders. Uses /usr/local/bin/composer with an offline path
+     * repository — no Packagist.
+     *
+     * Unique external contract: only real Composer emits content-hash-based
+     * ComposerAutoloaderInit class names; the offline fake cannot prove the
+     * collision. Timeout is a safety cap around two local path installs.
+     */
+    public function testRealComposerPinsDistinctAutoloaderSuffixesForProjectAndUserRoots(): void
+    {
+        $composer = '/usr/local/bin/composer';
+        $this->assertFileExists($composer);
+
+        $packagesDir = $this->tmpDir.'/packages/demo';
+        TestDirectoryIsolation::ensureDirectory($packagesDir.'/src');
+        file_put_contents($packagesDir.'/composer.json', json_encode([
+            'name' => 'ineersa/hatfield-ext-file-rewind',
+            'version' => '0.0.42',
+            'autoload' => [
+                'psr-4' => [
+                    'HatfieldExtProbe\\' => 'src/',
+                ],
+            ],
+        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
+        file_put_contents($packagesDir.'/src/Probe.php', "<?php\n\nnamespace HatfieldExtProbe;\n\nfinal class Probe {}\n");
+
+        // Point PATH at real Composer so ExecutableFinder resolves it.
+        putenv('PATH=/usr/local/bin:'.$this->originalPath);
+        $_ENV['PATH'] = '/usr/local/bin:'.$this->originalPath;
+        $_SERVER['PATH'] = '/usr/local/bin:'.$this->originalPath;
+
+        $installer = $this->installer();
+        foreach ([SettingsLayerEnum::Project, SettingsLayerEnum::User] as $layer) {
+            $root = $installer->rootFor($layer, $this->projectDir);
+            TestDirectoryIsolation::ensureDirectory($root);
+            $relativePackage = $this->relativePath($root, $packagesDir);
+            file_put_contents($root.'/composer.json', json_encode([
+                'name' => 'ineersa/hatfield-extensions',
+                'require' => [
+                    'php' => '>=8.3',
+                ],
+                'repositories' => [
+                    [
+                        'type' => 'path',
+                        'url' => $relativePackage,
+                        'options' => ['symlink' => false],
+                    ],
+                ],
+                'config' => [
+                    'prepend-autoloader' => false,
+                    'sort-packages' => true,
+                ],
+            ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
+
+            $result = $installer->ensureInstalled($layer, $this->projectDir, 'ineersa/hatfield-ext-file-rewind', '0.0.42');
+            $this->assertFalse($result->alreadyInstalled);
+            $this->assertTrue($installer->isInstalled($layer, $this->projectDir, 'ineersa/hatfield-ext-file-rewind'));
+        }
+
+        $projectRoot = $this->projectDir.'/.hatfield/extensions';
+        $userRoot = $this->homeDir.'/.hatfield/extensions';
+        /** @var array<string, mixed> $projectManifest */
+        $projectManifest = json_decode((string) file_get_contents($projectRoot.'/composer.json'), true, 512, \JSON_THROW_ON_ERROR);
+        /** @var array<string, mixed> $userManifest */
+        $userManifest = json_decode((string) file_get_contents($userRoot.'/composer.json'), true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertSame('HatfieldExtProject', $projectManifest['config']['autoloader-suffix']);
+        $this->assertSame('HatfieldExtUser', $userManifest['config']['autoloader-suffix']);
+        $this->assertFalse($projectManifest['config']['prepend-autoloader']);
+        $this->assertFalse($userManifest['config']['prepend-autoloader']);
+
+        $projectReal = (string) file_get_contents($projectRoot.'/vendor/composer/autoload_real.php');
+        $userReal = (string) file_get_contents($userRoot.'/vendor/composer/autoload_real.php');
+        $this->assertStringContainsString('class ComposerAutoloaderInitHatfieldExtProject', $projectReal);
+        $this->assertStringContainsString('class ComposerAutoloaderInitHatfieldExtUser', $userReal);
+
+        // Reuse path must regenerate affected existing loaders without require/update.
+        $beforeInstalled = (string) file_get_contents($projectRoot.'/vendor/composer/installed.json');
+        $reuse = $installer->ensureInstalled(
+            SettingsLayerEnum::Project,
+            $this->projectDir,
+            'ineersa/hatfield-ext-file-rewind',
+            '0.0.42',
+        );
+        $this->assertTrue($reuse->alreadyInstalled);
+        $this->assertSame($beforeInstalled, (string) file_get_contents($projectRoot.'/vendor/composer/installed.json'));
+        $this->assertStringContainsString(
+            'class ComposerAutoloaderInitHatfieldExtProject',
+            (string) file_get_contents($projectRoot.'/vendor/composer/autoload_real.php'),
+        );
+
+        // Loading both generated autoloaders must succeed (the original collision).
+        $autoloadProbe = $this->tmpDir.'/autoload-probe.php';
+        file_put_contents($autoloadProbe, <<<PHP
+<?php
+require {$this->export($projectRoot.'/vendor/autoload.php')};
+require {$this->export($userRoot.'/vendor/autoload.php')};
+echo class_exists(HatfieldExtProbe\\Probe::class) ? "ok\\n" : "missing\\n";
+PHP);
+        $process = new \Symfony\Component\Process\Process([\PHP_BINARY, $autoloadProbe]);
+        $process->mustRun();
+        $this->assertSame("ok\n", $process->getOutput());
+    }
+
+    private function relativePath(string $from, string $to): string
+    {
+        $fromParts = explode('/', rtrim($from, '/'));
+        $toParts = explode('/', rtrim($to, '/'));
+        while ([] !== $fromParts && [] !== $toParts && $fromParts[0] === $toParts[0]) {
+            array_shift($fromParts);
+            array_shift($toParts);
+        }
+
+        return str_repeat('../', \count($fromParts)).implode('/', $toParts);
+    }
+
+    private function export(string $value): string
+    {
+        return var_export($value, true);
     }
 
     private function installer(): ExtensionPackageInstaller
