@@ -159,11 +159,13 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             },
         );
 
+        $appConfig = clone self::getContainer()->get(AppConfig::class);
+        $appConfig->runtime = new RuntimeConfigDTO(llmConcurrency: $concurrency);
         $command = new LlmFiberConsumeCommand(
             new RoutableMessageBus($buses, $bus),
             $receivers,
             $dispatcher,
-            new RuntimeConfigDTO(llmConcurrency: $concurrency),
+            $appConfig,
         );
 
         $output = new BufferedOutput();

@@ -33,8 +33,6 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
     /** @var array<int, DeferredCancellation> */
     private array $cancellations = [];
 
-    private int $peakInFlight = 0;
-
     public function __construct(
         private readonly MessageBusInterface $bus,
         private readonly int $concurrencyLimit = 4,
@@ -73,7 +71,6 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
             return [$id, $handledEnvelope, $transportName, $acked, $error];
         });
 
-        $this->peakInFlight = max($this->peakInFlight, \count($this->pending));
         $this->drainReady($onHandled);
     }
 
@@ -141,11 +138,6 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
         }
         $this->cancellations = [];
         $this->pending = [];
-    }
-
-    public function peakInFlight(): int
-    {
-        return $this->peakInFlight;
     }
 
     /**

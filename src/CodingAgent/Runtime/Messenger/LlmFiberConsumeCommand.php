@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
-use Ineersa\CodingAgent\Config\DTO\RuntimeConfigDTO;
+use Ineersa\CodingAgent\Config\AppConfig;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
@@ -55,10 +55,15 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         private readonly RoutableMessageBus $routableBus,
         private readonly ContainerInterface $receiverLocator,
         private readonly EventDispatcherInterface $eventDispatcher,
-        private readonly RuntimeConfigDTO $runtimeConfig,
+        private readonly AppConfig $appConfig,
         private readonly ?LoggerInterface $logger = null,
     ) {
         parent::__construct();
+        // Supervisor keeps these explicit in argv; configure them here so their
+        // registration does not depend on the framework's protected hook.
+        $this
+            ->addOption('memory-limit', 'm', InputOption::VALUE_REQUIRED, 'The memory limit the worker can consume', self::MEMORY_LIMIT)
+            ->addOption('keepalive', null, InputOption::VALUE_OPTIONAL, 'Keepalive interval in seconds', self::KEEPALIVE_SECONDS);
     }
 
     /**
@@ -94,14 +99,6 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         return false;
     }
 
-    protected function configure(): void
-    {
-        // Supervisor always passes these; keep the options so argv stays explicit.
-        $this
-            ->addOption('memory-limit', 'm', InputOption::VALUE_REQUIRED, 'The memory limit the worker can consume', self::MEMORY_LIMIT)
-            ->addOption('keepalive', null, InputOption::VALUE_OPTIONAL, 'Keepalive interval in seconds', self::KEEPALIVE_SECONDS);
-    }
-
     protected function initialize(InputInterface $input, OutputInterface $output): void
     {
         // Do not arm Application::setAlarmInterval here. Under Amp/UvDriver,
@@ -118,7 +115,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
 
         /** @var ReceiverInterface $receiver */
         $receiver = $this->receiverLocator->get('llm');
-        $concurrency = $this->runtimeConfig->llmConcurrency;
+        $concurrency = $this->appConfig->runtime->llmConcurrency;
         $strategy = new FiberMessageExecutionStrategy($this->routableBus, $concurrency);
 
         $memoryLimit = (string) ($input->getOption('memory-limit') ?? self::MEMORY_LIMIT);

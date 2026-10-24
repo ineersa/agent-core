@@ -596,7 +596,7 @@ services:
       $routableBus: '@messenger.routable_message_bus'
       $receiverLocator: '@Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeReceiverLocator'
       $eventDispatcher: '@event_dispatcher'
-      $runtimeConfig: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").runtime'
+      $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
       $logger: '@logger'
 
   Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber:
