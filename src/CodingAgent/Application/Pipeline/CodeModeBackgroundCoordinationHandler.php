@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkCodeModeBackgroundedDTO;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
@@ -18,6 +20,7 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
         private DeferredToolCompletionRepositoryInterface $deferred,
         private ApplicationDbTransactionInterface $transactions,
         private ValidatorInterface $validator,
+        private RunMessageProcessor $processor,
     ) {
     }
 
@@ -30,6 +33,16 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
             // ordinary accepted terminal is settled through shared completion.
             $this->deferred->markBackgrounded($action->deferredId, $action->acceptedAt);
         });
+    }
+
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function detach(BackgroundCodeModeInvocationDTO $message): void
+    {
+        $violations = $this->validator->validate($message);
+        if (0 !== \count($violations)) {
+            throw new ValidationFailedException($message, $violations);
+        }
+        $this->processor->process('background_code_mode', $message);
     }
 
     public function supports(object $action): bool

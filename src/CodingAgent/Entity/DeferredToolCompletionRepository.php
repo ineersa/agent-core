@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
@@ -35,6 +36,16 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         private readonly ValidatorInterface $validator,
     ) {
         parent::__construct($registry, DeferredToolCompletion::class);
+    }
+
+    /** @param list<string> $runIds
+     * @return list<array<string, mixed>> */
+    public function pendingCodeMode(array $runIds): array
+    {
+        return $this->getEntityManager()->getConnection()->fetchAllAssociative(
+            "SELECT deferred_id, run_id, tool_call_id, ready_at, backgrounded_at, created_at FROM tool_deferred_completion WHERE run_id IN (?) AND tool_name = 'code_mode' AND status = 'pending' AND (backgrounded_at IS NOT NULL OR accepted_result_reference_json IS NULL) ORDER BY created_at LIMIT 100",
+            [$runIds], [ArrayParameterType::STRING],
+        );
     }
 
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation

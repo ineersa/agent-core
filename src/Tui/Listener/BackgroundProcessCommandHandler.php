@@ -106,6 +106,11 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
             }
             if (null === $this->pending) {
                 $selected = (int) $event->getItem()['value'];
+                if (!$snapshot[$selected]->stoppable) {
+                    $header->setText('This invocation is read-only; Esc closes.');
+
+                    return;
+                }
                 $this->pending = $snapshot[$selected];
                 $header->setText('Cancel this background work?');
                 $list->setItems([['value' => 'no', 'label' => 'No'], ['value' => 'yes', 'label' => 'Yes']]);

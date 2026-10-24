@@ -211,11 +211,13 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
     private function publishProcessedResult(ToolCallResult $message): array
     {
         return $this->locks->synchronized($message->runId(), function () use ($message): array {
-            if ('completed' === $this->deferred->statusForRunAndToolCall($message->runId(), $message->toolCallId)
-                || !$this->admission->canPublish($message)) {
+            if ('completed' === $this->deferred->statusForRunAndToolCall($message->runId(), $message->toolCallId)) {
                 return [null, null];
             }
             $metadata = $this->findEarlyDeferredRegistration($message);
+            if (null === $metadata?->backgroundedAt && !$this->admission->canPublish($message)) {
+                return [null, null];
+            }
             if (null === $metadata) {
                 return [null, $this->payloads->publish($message)];
             }

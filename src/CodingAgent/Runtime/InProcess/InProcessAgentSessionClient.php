@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ChildInvocationBackgroundService;
+use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
@@ -213,6 +214,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             'shell_command' => $this->handleShellCommandSend($runId, $command),
             'background_bash' => $this->backgroundRequests->request($runId, $command->payload),
             'background_child' => $this->childBackground->request($runId, $command->payload),
+            'background_code_mode' => $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($runId, $command->payload['deferred_id'] ?? '', $command->payload['tool_call_id'] ?? '')),
             'select_history_turn' => $this->handleInProcessSelectHistoryTurn($runId, $command),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };

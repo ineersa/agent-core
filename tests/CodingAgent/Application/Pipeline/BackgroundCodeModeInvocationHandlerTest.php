@@ -62,6 +62,9 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $state = new RunState($runId, RunStatus::Running, turnNo: 1, pendingToolCalls: ['call' => false], activeStepId: 'step');
         $request = new BackgroundCodeModeInvocationDTO($runId, $id, 'call');
         $handler = $container->get(BackgroundCodeModeInvocationHandler::class);
+        $this->assertSame([], $handler->handle(new BackgroundCodeModeInvocationDTO($runId, $id, 'foreign-call'), $state)->events);
+        $this->assertSame([], $handler->handle($request, new RunState('foreign', RunStatus::Running, turnNo: 1, pendingToolCalls: ['call' => false], activeStepId: 'step'))->events);
+        $this->assertSame([], $handler->handle($request, new RunState($runId, RunStatus::Running, turnNo: 2, pendingToolCalls: ['call' => false], activeStepId: 'step'))->events);
         if (!$ready) {
             $this->assertSame([], $handler->handle($request, $state)->events);
         }

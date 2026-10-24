@@ -443,12 +443,13 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'shell_command' => 'shell_command',
             'background_bash' => 'background_bash',
             'background_child' => 'background_child',
+            'background_code_mode' => 'background_code_mode',
             'select_history_turn' => 'select_history_turn',
             default => throw new \InvalidArgumentException(\sprintf('Unknown command type: "%s"', $command->type)),
         };
 
         $payload = match ($type) {
-            'background_bash', 'background_child' => $command->payload,
+            'background_bash', 'background_child', 'background_code_mode' => $command->payload,
             'shell_command' => ['text' => $command->text],
             'select_history_turn' => array_filter([
                 'turn_no' => $command->payload['turn_no'] ?? null,

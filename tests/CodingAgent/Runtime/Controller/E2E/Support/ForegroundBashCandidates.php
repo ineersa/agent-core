@@ -15,7 +15,9 @@ $kernel = new Ineersa\CodingAgent\Kernel('test', true);
 $kernel->boot();
 try {
     $client = $kernel->getContainer()->get('test.service_container')->get(Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient::class);
-    if (isset($argv[3], $argv[4])) {
+    if ('code_mode' === ($argv[3] ?? null)) {
+        echo json_encode($client->backgroundWork($argv[2]), \JSON_THROW_ON_ERROR)."\n";
+    } elseif (isset($argv[3], $argv[4])) {
         file_put_contents($argv[4], (string) getmypid());
         $container = $kernel->getContainer()->get('test.service_container');
         $process = $container->get(BackgroundProcessManager::class)->findByRecordId((int) $argv[3], $argv[2]);

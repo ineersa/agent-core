@@ -115,7 +115,11 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         }
 
         $text = $state->runId === $receipt->sourceRunId ? $receipt->text : $receipt->forwardedText;
-        $payload = $this->normalizer->normalize(new AgentMessage('user', [['type' => 'text', 'text' => $text]]), context: [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
+        if (null !== $receipt->deferredId) {
+            $text = \sprintf("Background code_mode result (run_id: %s, tool_call_id: %s, invocation: %s).\n\n%s", $receipt->sourceRunId, $receipt->invocation?->toolCallId, $receipt->deferredId, $text);
+        }
+        $metadata = null === $receipt->deferredId ? [] : ['background_completion' => ['identity' => $receipt->identity, 'run_id' => $receipt->sourceRunId, 'tool_call_id' => $receipt->invocation?->toolCallId, 'invocation_id' => $receipt->deferredId]];
+        $payload = $this->normalizer->normalize(new AgentMessage('user', [['type' => 'text', 'text' => $text]], metadata: $metadata), context: [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
         $result = $this->commands->handle(new ApplyCommand(
             $state->runId, $state->turnNo, $receipt->identity, 1, $receipt->identity,
             CoreCommandKind::AppendMessage, [
@@ -138,6 +142,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
             [...$event->payload, 'background_completion' => [
                 'identity' => $receipt->identity,
                 'source_run_id' => $receipt->sourceRunId,
+                'deferred_id' => $receipt->deferredId,
                 'accepted_destination_run_id' => $receipt->acceptedDestinationRunId,
                 'destination_run_id' => $receipt->destinationRunId,
             ]], $event->createdAt,
