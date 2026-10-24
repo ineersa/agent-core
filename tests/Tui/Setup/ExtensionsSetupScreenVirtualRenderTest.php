@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
 use Ineersa\CodingAgent\Tests\Support\ExtensionsSetupTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticSettings;
 use Ineersa\Tui\Setup\ExtensionsSetupFlowInterface;
 use Ineersa\Tui\Setup\ExtensionsSetupScreen;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -627,6 +628,89 @@ YAML);
         $this->assertSame('http://127.0.0.1:8081', $om['semantic']['reranker_api']['base_url']);
         $this->assertSame('bge-reranker', $om['semantic']['reranker_api']['model_id']);
         $this->assertSame(-0.5, $om['semantic']['reranker_api']['min_score']);
+    }
+
+    #[Test]
+    public function keyboardOmSemanticResetTurnsSearchOffWithoutInvalidNullMaps(): void
+    {
+        $installer = new ExtensionPackageInstaller(new SettingsPathResolver($this->projectDir, $this->homeDir));
+        $installer->ensureInstalled(
+            SettingsLayerEnum::Project,
+            $this->projectDir,
+            'ineersa/hatfield-ext-observational-memory',
+            '0.0.42',
+        );
+        $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
+        file_put_contents($settingsPath, <<<'YAML'
+extensions:
+    enabled:
+        - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
+    settings:
+        observational_memory:
+            model: local/flash
+            semantic:
+                embedding_api:
+                    base_url: http://127.0.0.1:8080/v1
+                    model_id: text-embedding-3-small
+                reranker_api:
+                    base_url: http://127.0.0.1:8081
+                    model_id: bge-reranker
+                    min_score: -0.5
+YAML);
+
+        [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));
+        for ($i = 0; $i < 3; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+        $tui->handleInput("\r");
+        $tui->handleInput("\r");
+        $this->assertSame('yes', $this->settingsWidget($screen)->getValue('parentEnabled'));
+
+        $this->selectSettingsItem($screen, $tui, 'om.semantic_reranker_min_score');
+        $tui->handleInput("\r");
+        $current = (string) $this->settingsWidget($screen)->getValue('om.semantic_reranker_min_score');
+        for ($i = 0; $i < \strlen($current); ++$i) {
+            $tui->handleInput("\x7f");
+        }
+        $tui->handleInput("\r");
+        $this->selectSettingsItem($screen, $tui, 'om.semantic_reranker_base_url');
+        $tui->handleInput("\r");
+        $current = (string) $this->settingsWidget($screen)->getValue('om.semantic_reranker_base_url');
+        for ($i = 0; $i < \strlen($current); ++$i) {
+            $tui->handleInput("\x7f");
+        }
+        $tui->handleInput("\r");
+        $this->selectSettingsItem($screen, $tui, 'om.semantic_reranker_model_id');
+        $tui->handleInput("\r");
+        $current = (string) $this->settingsWidget($screen)->getValue('om.semantic_reranker_model_id');
+        for ($i = 0; $i < \strlen($current); ++$i) {
+            $tui->handleInput("\x7f");
+        }
+        $tui->handleInput("\r");
+        $this->selectSettingsItem($screen, $tui, 'om.semantic_embedding_base_url');
+        $tui->handleInput("\r");
+        $current = (string) $this->settingsWidget($screen)->getValue('om.semantic_embedding_base_url');
+        for ($i = 0; $i < \strlen($current); ++$i) {
+            $tui->handleInput("\x7f");
+        }
+        $tui->handleInput("\r");
+        $this->selectSettingsItem($screen, $tui, 'om.semantic_embedding_model_id');
+        $tui->handleInput("\r");
+        $current = (string) $this->settingsWidget($screen)->getValue('om.semantic_embedding_model_id');
+        for ($i = 0; $i < \strlen($current); ++$i) {
+            $tui->handleInput("\x7f");
+        }
+        $tui->handleInput("\r");
+
+        $this->selectSettingsItem($screen, $tui, 'save');
+        $tui->handleInput("\r");
+        $this->assertSame('', $this->errorText($screen), 'unexpected settings error after OM semantic reset Save');
+        $this->assertSame('picker', $this->phase($screen));
+
+        $parsed = Yaml::parseFile($settingsPath);
+        $this->assertArrayNotHasKey('semantic', $parsed['extensions']['settings']['observational_memory']);
+        $this->assertSame('local/flash', $parsed['extensions']['settings']['observational_memory']['model']);
+        $this->assertNull(SemanticSettings::fromArray(null));
     }
 
     #[Test]

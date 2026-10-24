@@ -312,9 +312,9 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             if (!$extension->builtin && !$this->isInstallAvailable($extension)) {
                 throw ExtensionsSetupValidationException::forMessage(\sprintf('%s is not installed for this scope yet. Confirm Composer installation before enabling or saving configuration.', $extension->name));
             }
-            $guided = $this->normalizeGuidedSettings($extension, $form->settings);
+            $guided = $this->normalizeGuidedSettings($extension, $form->settings, $resolution);
         } elseif ($this->guidedSettingsWereEdited($extension, $form->settings, $resolution)) {
-            $guided = $this->normalizeGuidedSettings($extension, $form->settings);
+            $guided = $this->normalizeGuidedSettings($extension, $form->settings, $resolution);
         }
 
         $writes = [
@@ -325,17 +325,21 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
         ];
 
         if (null !== $guided) {
-            $delta = $this->sparseGuidedDelta($extension, $guided, $resolution);
-            if ([] !== $delta) {
-                $merged = $this->configLoader->overlayConfig($existingSection, $delta);
-                if ($merged !== $existingSection) {
-                    $this->settingsWriter->set(
-                        $this->layer,
-                        $this->cwd,
-                        'extensions.settings.'.$extension->settingsKey,
-                        $merged,
-                    );
-                    $writes[] = true;
+            if ('observational-memory' === $extension->id) {
+                $writes[] = $this->writeObservationalMemoryGuidedSettings($extension, $guided, $existingSection, $resolution);
+            } else {
+                $delta = $this->sparseGuidedDelta($extension, $guided, $resolution);
+                if ([] !== $delta) {
+                    $merged = $this->configLoader->overlayConfig($existingSection, $delta);
+                    if ($merged !== $existingSection) {
+                        $this->settingsWriter->set(
+                            $this->layer,
+                            $this->cwd,
+                            'extensions.settings.'.$extension->settingsKey,
+                            $merged,
+                        );
+                        $writes[] = true;
+                    }
                 }
             }
         }
@@ -506,9 +510,13 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
      *
      * @return array<string, mixed>
      */
-    private function normalizeGuidedSettings(ProvidedExtensionDTO $extension, array $settings): array
-    {
-        $prepared = $this->prepareSettingsForDenormalization($extension, $settings);
+    private function normalizeGuidedSettings(
+        ProvidedExtensionDTO $extension,
+        array $settings,
+        SettingsResolutionDTO $resolution,
+    ): array {
+        $prepared = $this->prepareSettingsForDenormalization($extension, $settings, $resolution);
+
         $dtoClass = match ($extension->id) {
             'safe-guard' => SafeGuardGuidedSettingsDTO::class,
             'task-workflow' => TaskWorkflowGuidedSettingsDTO::class,
@@ -549,6 +557,10 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
     /**
      * Drop unconfigured optional semantic blocks so exact-search stays a no-op write.
      *
+     * Blank embedding URL+model removes the whole semantic mapping. Blank
+     * reranker URL+model removes only reranker_api. Blank min_score omits the
+     * key so the published parser does not see an explicit null floor.
+     *
      * @param array<string, mixed> $normalized
      *
      * @return array<string, mixed>
@@ -575,10 +587,6 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             return $normalized;
         }
 
-        if (\array_key_exists('query_prefix', $embedding) && '' === (string) $embedding['query_prefix']) {
-            // Keep explicit empty prefix only when embeddings are configured; still writable.
-            $embedding['query_prefix'] = '';
-        }
         $semantic['embedding_api'] = $embedding;
 
         if (!$rerankerConfigured) {
@@ -596,12 +604,208 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
     }
 
     /**
+     * Persist OM guided leaves without writing null into required semantic maps.
+     *
+     * Clearing optional semantic search or a local min_score override uses
+     * SettingsOverrideWriter::remove so published SemanticSettings keeps valid
+     * shapes (semantic/reranker absent, min_score key absent).
+     *
+     * @param array<string, mixed> $guided
+     * @param array<string, mixed> $existingSection
+     */
+    /**
+     * Persist OM guided leaves without writing null into required semantic maps.
+     *
+     * Clearing optional semantic search uses remove when no lower layer supplies
+     * the block, or an explicit null overlay when a lower layer would otherwise
+     * keep search enabled. Blank min_score only removes the target-layer key
+     * (published parser rejects null); a remaining lower-layer floor is reported.
+     *
+     * @param array<string, mixed> $guided
+     * @param array<string, mixed> $existingSection
+     */
+    /**
+     * Persist OM guided leaves without writing null into required semantic maps.
+     *
+     * Clearing optional semantic search uses remove when no lower layer supplies
+     * the block, or an explicit null overlay when a lower layer would otherwise
+     * keep search enabled. Blank min_score only removes the target-layer key
+     * (published parser rejects null); a remaining lower-layer floor is reported.
+     *
+     * @param array<string, mixed> $guided
+     * @param array<string, mixed> $existingSection
+     */
+    private function writeObservationalMemoryGuidedSettings(
+        ProvidedExtensionDTO $extension,
+        array $guided,
+        array $existingSection,
+        SettingsResolutionDTO $resolution,
+    ): bool {
+        $prefix = 'extensions.settings.'.$extension->settingsKey;
+        $wrote = false;
+        $effective = $this->guidedSettingsPrefill($extension, $resolution);
+        $lowerSemantic = $this->lowerLayerOmSemantic($resolution, $extension->settingsKey);
+        $existingSemantic = \is_array($existingSection['semantic'] ?? null) ? $existingSection['semantic'] : null;
+        $desiredSemanticPresent = \array_key_exists('semantic', $guided) && \is_array($guided['semantic']);
+
+        if (!$desiredSemanticPresent) {
+            if (null !== $lowerSemantic) {
+                if (!\array_key_exists('semantic', $existingSection) || null !== $existingSection['semantic']) {
+                    $this->settingsWriter->set($this->layer, $this->cwd, $prefix.'.semantic', null);
+                    $wrote = true;
+                }
+            } elseif (null !== $existingSemantic || \array_key_exists('semantic', $existingSection)) {
+                $wrote = $this->settingsWriter->remove($this->layer, $this->cwd, $prefix.'.semantic');
+            }
+        } else {
+            /** @var array<string, mixed> $desiredSemantic */
+            $desiredSemantic = $guided['semantic'];
+            $desiredRerankerPresent = \array_key_exists('reranker_api', $desiredSemantic)
+                && \is_array($desiredSemantic['reranker_api']);
+            $existingReranker = \is_array($existingSemantic['reranker_api'] ?? null)
+                ? $existingSemantic['reranker_api']
+                : null;
+            $lowerReranker = \is_array($lowerSemantic['reranker_api'] ?? null)
+                ? $lowerSemantic['reranker_api']
+                : null;
+
+            foreach ($extension->guidedFields as $field) {
+                if (!str_starts_with($field->path, 'semantic.')) {
+                    continue;
+                }
+                if (str_starts_with($field->path, 'semantic.reranker_api.') && !$desiredRerankerPresent) {
+                    continue;
+                }
+                if ('semantic.reranker_api.min_score' === $field->path) {
+                    continue;
+                }
+
+                $path = $this->propertyPath($field->path);
+                $next = $this->propertyAccessor->isReadable($guided, $path)
+                    ? $this->propertyAccessor->getValue($guided, $path)
+                    : null;
+                $current = $this->propertyAccessor->isReadable($effective, $path)
+                    ? $this->propertyAccessor->getValue($effective, $path)
+                    : null;
+                if ($this->guidedValuesEqual($field->type, $current, $next)) {
+                    continue;
+                }
+                if ((null === $next || '' === $next)
+                    && $this->guidedValuesEqual($field->type, $current, $field->default)) {
+                    continue;
+                }
+
+                $this->settingsWriter->set(
+                    $this->layer,
+                    $this->cwd,
+                    $prefix.'.'.$field->path,
+                    $next,
+                );
+                $wrote = true;
+            }
+
+            if (!$desiredRerankerPresent) {
+                if (null !== $lowerReranker) {
+                    if (!\is_array($existingSemantic) || !\array_key_exists('reranker_api', $existingSemantic) || null !== $existingSemantic['reranker_api']) {
+                        $this->settingsWriter->set($this->layer, $this->cwd, $prefix.'.semantic.reranker_api', null);
+                        $wrote = true;
+                    }
+                } elseif (null !== $existingReranker || (\is_array($existingSemantic) && \array_key_exists('reranker_api', $existingSemantic))) {
+                    $wrote = $this->settingsWriter->remove($this->layer, $this->cwd, $prefix.'.semantic.reranker_api') || $wrote;
+                }
+            } else {
+                $desiredHasMinScore = \array_key_exists('min_score', $desiredSemantic['reranker_api']);
+                $effectiveMin = $this->propertyAccessor->isReadable($effective, $this->propertyPath('semantic.reranker_api.min_score'))
+                    ? $this->propertyAccessor->getValue($effective, $this->propertyPath('semantic.reranker_api.min_score'))
+                    : null;
+                if ($desiredHasMinScore) {
+                    $nextMin = $desiredSemantic['reranker_api']['min_score'];
+                    if (!$this->guidedValuesEqual('optional_finite_float', $effectiveMin, $nextMin)) {
+                        $this->settingsWriter->set(
+                            $this->layer,
+                            $this->cwd,
+                            $prefix.'.semantic.reranker_api.min_score',
+                            $nextMin,
+                        );
+                        $wrote = true;
+                    }
+                } else {
+                    if (\is_array($existingReranker) && \array_key_exists('min_score', $existingReranker)) {
+                        $wrote = $this->settingsWriter->remove(
+                            $this->layer,
+                            $this->cwd,
+                            $prefix.'.semantic.reranker_api.min_score',
+                        ) || $wrote;
+                    }
+                    $lowerMin = \is_array($lowerReranker) && \array_key_exists('min_score', $lowerReranker)
+                        ? $lowerReranker['min_score']
+                        : null;
+                    if (null !== $lowerMin && '' !== $lowerMin) {
+                        $this->summary[] = \sprintf(
+                            'Cleared observational_memory.semantic.reranker_api.min_score in %s; inherited floor %s from the lower settings layer still applies.',
+                            $this->scopeLabel(),
+                            (string) $lowerMin,
+                        );
+                    }
+                }
+            }
+        }
+
+        $nonSemanticGuided = $guided;
+        unset($nonSemanticGuided['semantic']);
+        $delta = $this->sparseGuidedDelta($extension, $nonSemanticGuided, $resolution);
+        unset($delta['semantic']);
+        if ([] !== $delta) {
+            $freshResolution = $this->resolve();
+            $freshLayer = $this->layerRaw($freshResolution);
+            $settingsBag = \is_array($freshLayer['extensions']['settings'] ?? null)
+                ? $freshLayer['extensions']['settings']
+                : [];
+            $currentSection = \is_array($settingsBag[$extension->settingsKey] ?? null)
+                ? $settingsBag[$extension->settingsKey]
+                : [];
+            $merged = $this->configLoader->overlayConfig($currentSection, $delta);
+            if ($merged !== $currentSection) {
+                $this->settingsWriter->set($this->layer, $this->cwd, $prefix, $merged);
+                $wrote = true;
+            }
+        }
+
+        return $wrote;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function lowerLayerOmSemantic(SettingsResolutionDTO $resolution, string $settingsKey): ?array
+    {
+        $lower = SettingsLayerEnum::Project === $this->layer
+            ? $resolution->userRaw
+            : $resolution->defaultsRaw;
+        $section = $lower['extensions']['settings'][$settingsKey] ?? null;
+        if (!\is_array($section)) {
+            return null;
+        }
+        $semantic = $section['semantic'] ?? null;
+
+        return \is_array($semantic) ? $semantic : null;
+    }
+
+    /**
      * @param array<string, mixed> $settings
      *
      * @return array<string, mixed>
      */
-    private function prepareSettingsForDenormalization(ProvidedExtensionDTO $extension, array $settings): array
-    {
+    /**
+     * @param array<string, mixed> $settings
+     *
+     * @return array<string, mixed>
+     */
+    private function prepareSettingsForDenormalization(
+        ProvidedExtensionDTO $extension,
+        array $settings,
+        SettingsResolutionDTO $resolution,
+    ): array {
         $prepared = $settings;
         foreach ($extension->guidedFields as $field) {
             $path = $this->propertyPath($field->path);
@@ -610,6 +814,61 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             }
             $raw = $this->propertyAccessor->getValue($prepared, $path);
             $this->propertyAccessor->setValue($prepared, $path, $this->coerceIncoming($field->type, $raw, $field->path));
+        }
+
+        if ('observational-memory' === $extension->id) {
+            $prepared = $this->prepareObservationalMemorySemanticForDenormalization(
+                $prepared,
+                $this->guidedSettingsPrefill($extension, $resolution),
+            );
+        }
+
+        return $prepared;
+    }
+
+    /**
+     * Blank embedding URL+model means exact search. When the effective/prefill
+     * embedding was configured, drop leftover reranker leaves before validation
+     * so turning search off does not require clearing every optional field.
+     * Fresh reranker-only input still fails validation.
+     *
+     * @param array<string, mixed> $prepared
+     * @param array<string, mixed> $effective
+     *
+     * @return array<string, mixed>
+     */
+    private function prepareObservationalMemorySemanticForDenormalization(array $prepared, array $effective): array
+    {
+        $semantic = $prepared['semantic'] ?? null;
+        if (!\is_array($semantic)) {
+            unset($prepared['semantic']);
+
+            return $prepared;
+        }
+
+        $embedding = \is_array($semantic['embedding_api'] ?? null) ? $semantic['embedding_api'] : [];
+        $embeddingConfigured = '' !== trim((string) ($embedding['base_url'] ?? ''))
+            || '' !== trim((string) ($embedding['model_id'] ?? ''));
+        $effectiveEmbedding = \is_array($effective['semantic']['embedding_api'] ?? null)
+            ? $effective['semantic']['embedding_api']
+            : [];
+        $effectiveEmbeddingConfigured = '' !== trim((string) ($effectiveEmbedding['base_url'] ?? ''))
+            || '' !== trim((string) ($effectiveEmbedding['model_id'] ?? ''));
+
+        if (!$embeddingConfigured) {
+            if ($effectiveEmbeddingConfigured) {
+                unset($prepared['semantic']);
+            }
+
+            return $prepared;
+        }
+
+        $reranker = \is_array($semantic['reranker_api'] ?? null) ? $semantic['reranker_api'] : [];
+        $rerankerConfigured = '' !== trim((string) ($reranker['base_url'] ?? ''))
+            || '' !== trim((string) ($reranker['model_id'] ?? ''));
+        if (!$rerankerConfigured) {
+            unset($semantic['reranker_api']);
+            $prepared['semantic'] = $semantic;
         }
 
         return $prepared;

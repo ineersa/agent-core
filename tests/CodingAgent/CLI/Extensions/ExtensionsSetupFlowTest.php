@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
 use Ineersa\CodingAgent\Tests\Support\ExtensionsSetupTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticSettings;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -723,6 +724,146 @@ YAML);
             }
             $this->assertSame($before, (string) file_get_contents($settingsPath));
         }
+    }
+
+    #[Test]
+    public function omSemanticResetClearsBlocksWithoutNullLeafMaps(): void
+    {
+        $installer = new ExtensionPackageInstaller(new SettingsPathResolver($this->projectDir, $this->homeDir));
+        $installer->ensureInstalled(
+            SettingsLayerEnum::Project,
+            $this->projectDir,
+            'ineersa/hatfield-ext-observational-memory',
+            '0.0.42',
+        );
+
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('observational-memory');
+        $state['parentEnabled'] = true;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $state['settings']['model'] = 'local/flash';
+        $state['settings']['semantic']['embedding_api']['base_url'] = 'http://127.0.0.1:8080/v1';
+        $state['settings']['semantic']['embedding_api']['model_id'] = 'text-embedding-3-small';
+        $state['settings']['semantic']['reranker_api']['base_url'] = 'http://127.0.0.1:8081';
+        $state['settings']['semantic']['reranker_api']['model_id'] = 'bge-reranker';
+        $state['settings']['semantic']['reranker_api']['min_score'] = -0.25;
+        $flow->save($state);
+
+        $parsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+        $this->assertNotNull(SemanticSettings::fromArray($parsed['extensions']['settings']['observational_memory']['semantic']));
+
+        // Clear min_score only: key must disappear, embeddings/reranker remain valid.
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('observational-memory');
+        $state['settings']['semantic']['reranker_api']['min_score'] = '';
+        $flow->save($state);
+        $parsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+        $semantic = $parsed['extensions']['settings']['observational_memory']['semantic'];
+        $this->assertArrayNotHasKey('min_score', $semantic['reranker_api']);
+        $this->assertNotNull(SemanticSettings::fromArray($semantic));
+
+        // Disable reranker only.
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('observational-memory');
+        $state['settings']['semantic']['reranker_api']['base_url'] = '';
+        $state['settings']['semantic']['reranker_api']['model_id'] = '';
+        $flow->save($state);
+        $parsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+        $semantic = $parsed['extensions']['settings']['observational_memory']['semantic'];
+        $this->assertArrayNotHasKey('reranker_api', $semantic);
+        $this->assertNotNull(SemanticSettings::fromArray($semantic));
+
+        // Disable semantic search entirely.
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('observational-memory');
+        $state['settings']['semantic']['embedding_api']['base_url'] = '';
+        $state['settings']['semantic']['embedding_api']['model_id'] = '';
+        $flow->save($state);
+        $parsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+        $this->assertArrayNotHasKey('semantic', $parsed['extensions']['settings']['observational_memory']);
+        $this->assertNull(SemanticSettings::fromArray(null));
+    }
+
+    #[Test]
+    public function omSemanticResetMasksInheritedBlocksAndReportsInheritedMinScore(): void
+    {
+        $installer = new ExtensionPackageInstaller(new SettingsPathResolver($this->projectDir, $this->homeDir));
+        $installer->ensureInstalled(
+            SettingsLayerEnum::User,
+            $this->homeDir,
+            'ineersa/hatfield-ext-observational-memory',
+            '0.0.42',
+        );
+        $installer->ensureInstalled(
+            SettingsLayerEnum::Project,
+            $this->projectDir,
+            'ineersa/hatfield-ext-observational-memory',
+            '0.0.42',
+        );
+
+        $userFlow = $this->flow(project: false);
+        $state = $userFlow->formStateFor('observational-memory');
+        $state['parentEnabled'] = true;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $state['settings']['model'] = 'local/flash';
+        $state['settings']['semantic']['embedding_api']['base_url'] = 'http://127.0.0.1:8080/v1';
+        $state['settings']['semantic']['embedding_api']['model_id'] = 'text-embedding-3-small';
+        $state['settings']['semantic']['reranker_api']['base_url'] = 'http://127.0.0.1:8081';
+        $state['settings']['semantic']['reranker_api']['model_id'] = 'bge-reranker';
+        $state['settings']['semantic']['reranker_api']['min_score'] = -0.25;
+        $userFlow->save($state);
+
+        $projectFlow = $this->flow(project: true);
+        $state = $projectFlow->formStateFor('observational-memory');
+        $this->assertSame(-0.25, $state['settings']['semantic']['reranker_api']['min_score']);
+        $state['parentEnabled'] = true;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $state['settings']['model'] = 'local/flash';
+        $state['settings']['semantic']['reranker_api']['min_score'] = '';
+        $projectFlow->save($state);
+        $projectSettings = $this->projectDir.'/.hatfield/settings.yaml';
+        // No local min_score override existed, so clearing it writes nothing and
+        // must not invent a null floor. The inherited user value remains effective.
+        $this->assertFileDoesNotExist($projectSettings);
+        $this->assertTrue(
+            [] !== array_filter(
+                $projectFlow->summaryLines(),
+                static fn (string $line): bool => str_contains($line, 'inherited floor'),
+            ),
+        );
+        $effective = $this->flow(project: true)->formStateFor('observational-memory');
+        $this->assertSame(-0.25, $effective['settings']['semantic']['reranker_api']['min_score']);
+        $this->assertNotNull(SemanticSettings::fromArray(
+            Yaml::parseFile($this->homeDir.'/.hatfield/settings.yaml')['extensions']['settings']['observational_memory']['semantic'],
+        ));
+
+        $projectFlow = $this->flow(project: true);
+        $state = $projectFlow->formStateFor('observational-memory');
+        $state['parentEnabled'] = true;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $state['settings']['model'] = 'local/flash';
+        $state['settings']['semantic']['embedding_api']['base_url'] = '';
+        $state['settings']['semantic']['embedding_api']['model_id'] = '';
+        $projectFlow->save($state);
+        $projectParsed = Yaml::parseFile($projectSettings);
+        $this->assertNull($projectParsed['extensions']['settings']['observational_memory']['semantic']);
+        $this->assertNull(SemanticSettings::fromArray(null));
+        // User layer remains configured and valid.
+        $this->assertNotNull(SemanticSettings::fromArray(
+            Yaml::parseFile($this->homeDir.'/.hatfield/settings.yaml')['extensions']['settings']['observational_memory']['semantic'],
+        ));
+        // Project null mask disables effective semantic search for this scope.
+        $masked = $this->flow(project: true)->formStateFor('observational-memory');
+        $this->assertSame('', $masked['settings']['semantic']['embedding_api']['base_url']);
+        $this->assertSame('', $masked['settings']['semantic']['embedding_api']['model_id']);
     }
 
     private function flow(bool $project): ExtensionsSetupFlow

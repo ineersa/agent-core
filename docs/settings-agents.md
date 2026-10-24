@@ -124,9 +124,11 @@ a marketplace or upgrade/uninstall tool.
   defaults < user and does not copy project-only overrides.
 - **OM search:** Leave embedding base URL and model blank to keep exact search.
   Configuring both turns on hybrid retrieval; a reranker also needs embeddings.
-  Shared generation model uses the configured AI catalog list. Embedding and
-  reranker model ids stay free text for those endpoints. Internal renderer and
-  schema-version keys stay YAML-only.
+  Clearing those fields removes the local optional blocks. Blank reranker min
+  score removes the local override only; an inherited lower-layer floor still
+  applies and is reported. Shared generation model uses the configured AI
+  catalog list. Embedding and reranker model ids stay free text for those
+  endpoints. Internal renderer and schema-version keys stay YAML-only.
 - **Activation:** Save writes only membership lists and guided leaves that differ
   from the scoped effective/prefill values. No-op Save leaves absent settings
   files absent and existing files unchanged. Restart Hatfield so registration

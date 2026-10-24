@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI\Extensions\DTO;
 
-use Ineersa\CodingAgent\CLI\Extensions\Validation\FiniteNumber;
 use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -50,8 +49,10 @@ final readonly class ObservationalMemorySemanticRerankerDTO
         #[Assert\Positive]
         public int $documentCharacters = 768,
         #[SerializedName('min_score')]
-        #[Assert\Type(type: ['float', 'int', 'null'])]
-        #[FiniteNumber(message: 'semantic.reranker_api.min_score must be a finite number.')]
+        #[Assert\Type(
+            type: 'finite-number',
+            message: 'semantic.reranker_api.min_score must be a finite number.',
+        )]
         public int|float|null $minScore = null,
     ) {
     }
