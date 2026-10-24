@@ -52,6 +52,7 @@ final class CodeModeTool implements HatfieldToolProviderInterface
         return [
             'code_mode_value' => $result instanceof CodeModeExecutionResult ? $result->result : $result,
             'code_mode_diagnostics' => $result instanceof CodeModeExecutionResult ? $result->diagnostics : [],
+            'code_mode_raw_path' => $result instanceof CodeModeExecutionResult ? $result->rawPath : null,
         ];
     }
 

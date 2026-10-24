@@ -20,6 +20,7 @@ final readonly class CodeModeExecutionResult
     public function __construct(
         public mixed $result,
         public array $diagnostics = [],
+        public ?string $rawPath = null,
     ) {
     }
 }

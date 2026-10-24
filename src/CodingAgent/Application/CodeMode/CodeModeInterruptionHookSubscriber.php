@@ -11,7 +11,9 @@ use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\InterruptCodeModeDTO;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -21,8 +23,13 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 /** Capture exact invocation identities before committing cancellation or branch discard. */
 final readonly class CodeModeInterruptionHookSubscriber implements EssentialAfterTurnHookInterface, CoordinationActionValidatorInterface
 {
-    public function __construct(private CodeModeExecutionRepository $executions, private ValidatorInterface $validator, private DeferredToolCompletionRepositoryInterface $deferred, private RunHistorySourceProviderInterface $histories)
-    {
+    public function __construct(
+        private CodeModeExecutionRepository $executions,
+        private ValidatorInterface $validator,
+        private DeferredToolCompletionRepositoryInterface $deferred,
+        private RunHistorySourceProviderInterface $histories,
+        private BackgroundCompletionReceiptRepository $receipts,
+    ) {
     }
 
     public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
@@ -68,7 +75,34 @@ final readonly class CodeModeInterruptionHookSubscriber implements EssentialAfte
 
     private function action(string $runId, CodeModeInterruptionReasonEnum $reason): ?DispatchLocalMetadataMessageDTO
     {
-        $identities = $this->executions->activeIdentities($runId);
+        $identities = [];
+        foreach ($this->executions->identitiesForRun($runId) as $identity) {
+            $metadata = $this->deferred->findMetadataByDeferredId($identity);
+            if (null === $metadata) {
+                continue;
+            }
+            $row = $this->executions->invocation($runId, $metadata->reference->toolCallId);
+            if (null === $row) {
+                continue;
+            }
+            $pending = 'pending' === $metadata->status;
+            $receipt = $this->receipts->receipt($identity);
+            $admittedUnconsumed = null !== $receipt && \in_array($receipt->disposition, [
+                BackgroundCompletionDispositionEnum::Pending,
+                BackgroundCompletionDispositionEnum::Forwarding,
+            ], true);
+            $controllerParked = \in_array($row['interruption_reason'] ?? null, [
+                CodeModeInterruptionReasonEnum::ControllerRestarted->value,
+                CodeModeInterruptionReasonEnum::ControllerShutdown->value,
+            ], true);
+            if (!$pending && !$admittedUnconsumed && !$controllerParked) {
+                continue;
+            }
+            if (null !== $row['interruption_reason'] && !$controllerParked && !$admittedUnconsumed) {
+                continue;
+            }
+            $identities[] = $identity;
+        }
         if (CodeModeInterruptionReasonEnum::HistoryDiscarded === $reason && [] !== $identities) {
             // Discard is prepared behind the selected tip. Reuse immutable anchor
             // ancestry, not displayed turn-number comparisons or archive bodies.

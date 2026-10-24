@@ -106,12 +106,13 @@ final readonly class CodeModeExecutionService
         return new CodeModeCancellationToken($this->executions, $identity, $parent);
     }
 
-    public function preserve(string $identity, mixed $value, ?\Throwable $failure): void
+    /** @return string|null Absolute retained raw artifact path when sealing succeeds. */
+    public function preserve(string $identity, mixed $value, ?\Throwable $failure): ?string
     {
         if (null === $this->deferred->findMetadataByDeferredId($identity)) {
             // Permanent deletion removed ownership. The old host may clean its
             // workspace, but must not reconstruct retained session artifacts.
-            return;
+            return null;
         }
         $correlation = $this->deferred->findByDeferredId($identity);
         if (null === $correlation) {
@@ -122,6 +123,8 @@ final readonly class CodeModeExecutionService
         $result = new ToolCallResult($correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->attempt, $correlation->idempotencyKey, $correlation->toolCallId, $correlation->orderIndex, ['tool_name' => 'code_mode', 'content' => null === $failure ? [] : [['type' => 'text', 'text' => $failure->getMessage()]], 'details' => $raw], null !== $failure, $error);
         $reference = $this->artifacts->publishRaw($result->finalized());
         $this->executions->freezeRaw($identity, $this->serializer->serialize($reference, 'json'));
+
+        return $this->artifacts->path($reference);
     }
 
     public function resultReference(string $json): ToolPayloadReferenceDTO

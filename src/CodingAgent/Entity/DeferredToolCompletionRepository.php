@@ -185,6 +185,14 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         return (bool) $this->getEntityManager()->getConnection()->fetchOne('SELECT continuation_required FROM tool_deferred_completion WHERE run_id = ? AND tool_call_id = ?', [$runId, $toolCallId]);
     }
 
+    public function runRequiresContinuation(string $runId): bool
+    {
+        return (bool) $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT 1 FROM tool_deferred_completion WHERE run_id = ? AND continuation_required = 1 LIMIT 1',
+            [$runId],
+        );
+    }
+
     public function acceptResult(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO
     {
         return $this->locks->synchronized(

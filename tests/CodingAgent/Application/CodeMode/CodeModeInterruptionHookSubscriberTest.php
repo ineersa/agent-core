@@ -202,9 +202,9 @@ final class CodeModeInterruptionHookSubscriberTest extends IsolatedKernelTestCas
         $actions = $hook->prepareAfterTurnCommit(AfterTurnCommitHookContext::fromRunState($f->state->with(['status' => RunStatus::Cancelling]), [], 0), $f->state->lastSeq);
         $this->assertSame([$id], $actions[0]->message->identities, 'An unconsumed recovery notice remains subject to explicit cancellation.');
         $hook->interrupt($actions[0]->message);
-        $this->assertSame(CodeModeInterruptionReasonEnum::Cancelled, $c->get(CodeModeExecutionRepository::class)->completionInterruption('background-'.$id));
+        $this->assertSame(CodeModeInterruptionReasonEnum::Cancelled, $c->get(CodeModeExecutionRepository::class)->interruption($f->state->runId, 'cm'));
         $listener->starting(new ControllerSessionStartingEvent($f->state->runId));
-        $this->assertSame(CodeModeInterruptionReasonEnum::Cancelled, $c->get(CodeModeExecutionRepository::class)->completionInterruption('background-'.$id));
+        $this->assertSame(CodeModeInterruptionReasonEnum::Cancelled, $c->get(CodeModeExecutionRepository::class)->interruption($f->state->runId, 'cm'));
     }
 
     public function testDeletionRollsBackNativeMetadataAndPreservesArtifacts(): void

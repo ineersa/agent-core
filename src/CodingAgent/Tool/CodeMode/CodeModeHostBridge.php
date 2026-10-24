@@ -101,29 +101,25 @@ final readonly class CodeModeHostBridge
                 }
                 $captureAttempted = true;
                 $diagnostics = $capture->prepare(self::SCRIPT_WRAPPER_PREFIX_LINES);
-
-                return $value = $this->packExecutionResult($result, $diagnostics);
+                $value = $this->packExecutionResult($result, $diagnostics);
             } catch (\Throwable $exception) {
                 $failure = $exception;
                 if (null === $process || $exception instanceof MalformedToolResultException) {
-                    throw $exception;
-                }
-
-                // Capture once after writer settlement, including failure paths.
-                // Process buffers are empty because both streams go to files.
-                if (!$captureAttempted) {
+                    // Fall through to preserve/cleanup, then rethrow.
+                } elseif (!$captureAttempted) {
+                    // Capture once after writer settlement, including failure paths.
+                    // Process buffers are empty because both streams go to files.
                     try {
                         $diagnostics = $capture->prepare(self::SCRIPT_WRAPPER_PREFIX_LINES);
                     } catch (\Throwable $captureFailure) {
                         $failure = $captureFailure;
-                        throw $captureFailure;
                     }
+                    if ([] !== $diagnostics && $failure === $exception) {
+                        $failure = new ToolCallException(CodeModeDiagnostics::appendToMessage($exception->getMessage(), $diagnostics), retryable: $exception instanceof ToolCallException && $exception->retryable(), hint: $exception instanceof ToolCallException ? $exception->hint() : null, previous: $exception);
+                    }
+                } elseif ([] !== $diagnostics) {
+                    $failure = new ToolCallException(CodeModeDiagnostics::appendToMessage($exception->getMessage(), $diagnostics), retryable: $exception instanceof ToolCallException && $exception->retryable(), hint: $exception instanceof ToolCallException ? $exception->hint() : null, previous: $exception);
                 }
-                if ([] === $diagnostics) {
-                    throw $exception;
-                }
-
-                throw $failure = new ToolCallException(CodeModeDiagnostics::appendToMessage($exception->getMessage(), $diagnostics), retryable: $exception instanceof ToolCallException && $exception->retryable(), hint: $exception instanceof ToolCallException ? $exception->hint() : null, previous: $exception);
             } finally {
                 $this->closeResource($connection);
                 $this->closeResource($server);
@@ -136,13 +132,25 @@ final readonly class CodeModeHostBridge
                         'failure' => null === $failure ? null : ['type' => $failure::class, 'message' => $failure->getMessage(), 'retryable' => $failure instanceof ToolCallException && $failure->retryable(), 'hint' => $failure instanceof ToolCallException ? $failure->hint() : null],
                     ], \JSON_THROW_ON_ERROR));
                     try {
-                        $this->execution->preserve($executionId, $value, $failure);
+                        $rawPath = $this->execution->preserve($executionId, $value, $failure);
                     } catch (\Throwable $preservationFailure) {
+                        // Keep the workspace as the only local copy. Do not clean
+                        // it up before the caller can read the reported evidence path.
                         throw new ToolCallException('Code-mode terminal artifact could not be sealed.', retryable: false, hint: 'Terminal evidence remains at '.$workspace['dir'].'/terminal.json', previous: $preservationFailure);
+                    }
+                    if (null !== $rawPath && null === $failure) {
+                        $value = $value instanceof CodeModeExecutionResult
+                            ? new CodeModeExecutionResult($value->result, $value->diagnostics, $rawPath)
+                            : new CodeModeExecutionResult($value, [], $rawPath);
                     }
                 }
                 $this->cleanupWorkspace($workspace);
             }
+            if (null !== $failure) {
+                throw $failure;
+            }
+
+            return $value;
         });
     }
 

@@ -31,7 +31,13 @@ final readonly class BackgroundCompletionHandler
             $this->processor->process('background_completion', $message);
             // Receipt/status metadata has committed and canonical finalization
             // succeeded. Duplicate admission also retries guarded file cleanup.
-            $this->deferredSettlement->cleanup($message->identity);
+            $this->deferredSettlement->cleanup(
+                $message->identity,
+                $message->deferredId,
+                $message->origin,
+                $message->sourceToolCallId,
+                $message->sourceRunId ?? $message->runId(),
+            );
         });
     }
 }

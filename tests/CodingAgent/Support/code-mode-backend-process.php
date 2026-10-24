@@ -247,7 +247,7 @@ try {
         $commandBus->dispatch($publication);
     }
     $seen = 0;
-    $noticeIdentity = 'background-'.$row['identity'];
+    $noticeIdentity = $row['identity'];
     $accepted = null;
     for ($i = 0; $i < 32; ++$i) {
         $sent = $transport->getSent();
@@ -311,7 +311,18 @@ try {
         static fn (string $type): bool => in_array($type, ['agent_command_queued', 'agent_command_applied', 'tool_execution_end'], true),
     ));
     $transport->reset();
-    $commandBus->dispatch(new DeliverBackgroundCompletionDTO($state->runId, $noticeIdentity, $receipt->text));
+    $commandBus->dispatch(new DeliverBackgroundCompletionDTO(
+        $state->runId,
+        $noticeIdentity,
+        $receipt->text,
+        $receipt->origin,
+        deferredId: $receipt->deferredId,
+        sourceToolCallId: $receipt->sourceToolCallId,
+        sourceTurnNo: $receipt->sourceTurnNo,
+        sourceStepId: $receipt->sourceStepId,
+        sourceAttempt: $receipt->sourceAttempt,
+        sourceIdempotencyKey: $receipt->sourceIdempotencyKey,
+    ));
     $duplicateNotice = 0;
     foreach ($transport->getSent() as $envelope) {
         if ($envelope->getMessage() instanceof DeliverBackgroundCompletionDTO) {

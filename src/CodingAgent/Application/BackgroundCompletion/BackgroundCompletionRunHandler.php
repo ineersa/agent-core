@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
@@ -24,6 +25,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionProvenanceDTO;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionReceiptDTO;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\RecordBackgroundCompletionDTO;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionReasonEnum;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
@@ -45,6 +47,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         private BackgroundCompletionConsumptionPolicy $consumption,
         private EventFactory $events,
         private CodeModeExecutionRepository $codeModeExecutions,
+        private DeferredToolCompletionRepositoryInterface $deferred,
     ) {
     }
 
@@ -62,7 +65,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         if (\count($errors) > 0) {
             throw new ValidationFailedException($message, $errors);
         }
-        if (null !== $this->codeModeExecutions->completionInterruption($message->identity)) {
+        if ($this->deliveryBlocked($message)) {
             return new HandlerResult();
         }
         $receipt = $this->receipts->receipt($message->identity);
@@ -91,6 +94,8 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 $receipt->identity, $receipt->sourceRunId, $receipt->acceptedDestinationRunId,
                 $receipt->destinationRunId, $receipt->rootRunId, $receipt->text,
                 $receipt->forwardedText, BackgroundCompletionDispositionEnum::Pending,
+                $receipt->origin, $receipt->deferredId, $receipt->sourceToolCallId,
+                $receipt->sourceTurnNo, $receipt->sourceStepId, $receipt->sourceAttempt, $receipt->sourceIdempotencyKey,
             );
         } else {
             if (null !== $message->sourceRunId && $message->sourceRunId !== $state->runId) {
@@ -113,6 +118,8 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 $message->identity, $state->runId, $destination, $destination,
                 $rootRunId, $message->text, $forwardedText,
                 $forward ? BackgroundCompletionDispositionEnum::Forwarding : BackgroundCompletionDispositionEnum::Pending,
+                $message->origin, $message->deferredId, $message->sourceToolCallId,
+                $message->sourceTurnNo, $message->sourceStepId, $message->sourceAttempt, $message->sourceIdempotencyKey,
             );
             if ($forward) {
                 // The durable obligation precedes the best-effort send. Native
@@ -130,7 +137,17 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
             $state->runId, $state->turnNo, $receipt->identity, 1, $receipt->identity,
             CoreCommandKind::AppendMessage, [
                 'message' => $payload,
-                'provenance' => new BackgroundCompletionProvenanceDTO($receipt->identity, $receipt->sourceRunId),
+                'provenance' => new BackgroundCompletionProvenanceDTO(
+                    $receipt->identity,
+                    $receipt->sourceRunId,
+                    $receipt->origin,
+                    $receipt->deferredId,
+                    $receipt->sourceToolCallId,
+                    $receipt->sourceTurnNo,
+                    $receipt->sourceStepId,
+                    $receipt->sourceAttempt,
+                    $receipt->sourceIdempotencyKey,
+                ),
             ],
         ), $state);
         if (!array_any($result->postCommitActions, static fn (object $action): bool => $action instanceof EnqueueCommandDTO)) {
@@ -146,6 +163,13 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 'source_run_id' => $receipt->sourceRunId,
                 'accepted_destination_run_id' => $receipt->acceptedDestinationRunId,
                 'destination_run_id' => $receipt->destinationRunId,
+                'origin' => $receipt->origin->value,
+                'deferred_id' => $receipt->deferredId,
+                'source_tool_call_id' => $receipt->sourceToolCallId,
+                'source_turn_no' => $receipt->sourceTurnNo,
+                'source_step_id' => $receipt->sourceStepId,
+                'source_attempt' => $receipt->sourceAttempt,
+                'source_idempotency_key' => $receipt->sourceIdempotencyKey,
             ]], $event->createdAt,
         ), $result->events);
 
@@ -153,6 +177,30 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
             new DispatchLocalMetadataMessageDTO(new RecordBackgroundCompletionDTO($receipt)),
             ...$result->postCommitActions,
         ]);
+    }
+
+    private function deliveryBlocked(DeliverBackgroundCompletionDTO $message): bool
+    {
+        if (null === $message->deferredId) {
+            return false;
+        }
+        if ($message->explicitContinuation) {
+            return false;
+        }
+        if ($this->deferred->requiresContinuation($message->runId(), $message->sourceToolCallId ?? $message->deferredId)) {
+            return true;
+        }
+        if (BackgroundCompletionOriginEnum::CodeMode !== $message->origin || null === $message->sourceToolCallId) {
+            return false;
+        }
+        $reason = $this->codeModeExecutions->interruption($message->runId(), $message->sourceToolCallId);
+
+        // Controller loss parks through shared continuation_required. Sticky
+        // cancellation and history discard remain the only native refusals.
+        return null !== $reason && !\in_array($reason, [
+            CodeModeInterruptionReasonEnum::ControllerRestarted,
+            CodeModeInterruptionReasonEnum::ControllerShutdown,
+        ], true);
     }
 
     private function retireTerminalPending(BackgroundCompletionReceiptDTO $receipt, RunState $state): HandlerResult
@@ -192,6 +240,19 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
 
     private function forward(BackgroundCompletionReceiptDTO $receipt, bool $explicitContinuation = false): DeliverBackgroundCompletionDTO
     {
-        return new DeliverBackgroundCompletionDTO($receipt->destinationRunId, $receipt->identity, $receipt->forwardedText, $receipt->sourceRunId, $explicitContinuation);
+        return new DeliverBackgroundCompletionDTO(
+            $receipt->destinationRunId,
+            $receipt->identity,
+            $receipt->forwardedText,
+            $receipt->origin,
+            $receipt->sourceRunId,
+            $receipt->deferredId,
+            $receipt->sourceToolCallId,
+            $receipt->sourceTurnNo,
+            $receipt->sourceStepId,
+            $receipt->sourceAttempt,
+            $receipt->sourceIdempotencyKey,
+            $explicitContinuation,
+        );
     }
 }

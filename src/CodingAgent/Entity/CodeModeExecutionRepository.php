@@ -24,6 +24,14 @@ final class CodeModeExecutionRepository extends ServiceEntityRepository
         return false === $row ? null : $row;
     }
 
+    /** @return array<string, mixed>|null */
+    public function byIdentity(string $identity): ?array
+    {
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative('SELECT * FROM code_mode_execution WHERE identity = ?', [$identity]);
+
+        return false === $row ? null : $row;
+    }
+
     public function register(string $identity, string $runId, string $toolCallId): void
     {
         $this->getEntityManager()->getConnection()->insert('code_mode_execution', ['identity' => $identity, 'run_id' => $runId, 'tool_call_id' => $toolCallId, 'ready' => 0]);
@@ -101,55 +109,27 @@ final class CodeModeExecutionRepository extends ServiceEntityRepository
         $this->getEntityManager()->getConnection()->executeStatement('UPDATE code_mode_execution SET interruption_reason = ? WHERE identity = ? AND '.$eligible, $parameters);
     }
 
-    /** @return array{run_id: string, tool_call_id: string}|null */
-    public function completionOwner(string $identity): ?array
+    public function interruption(string $runId, string $toolCallId): ?CodeModeInterruptionReasonEnum
     {
-        if (!str_starts_with($identity, 'background-')) {
-            return null;
-        }
-        $row = $this->getEntityManager()->getConnection()->fetchAssociative('SELECT run_id, tool_call_id FROM code_mode_execution WHERE identity = ?', [substr($identity, \strlen('background-'))]);
+        $reason = $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT interruption_reason FROM code_mode_execution WHERE run_id = ? AND tool_call_id = ?',
+            [$runId, $toolCallId],
+        );
 
-        return false === $row ? null : $row;
+        return \is_string($reason) && '' !== $reason ? CodeModeInterruptionReasonEnum::from($reason) : null;
     }
 
-    public function completionInterruption(string $identity): ?CodeModeInterruptionReasonEnum
+    /** @return list<string> Native host identities for one run, without delivery-policy joins. */
+    public function identitiesForRun(string $runId): array
     {
-        if (!str_starts_with($identity, 'background-')) {
-            return null;
-        }
-        $reason = $this->getEntityManager()->getConnection()->fetchOne('SELECT n.interruption_reason FROM code_mode_execution n JOIN tool_deferred_completion d ON d.deferred_id = n.identity WHERE n.identity = ? AND NOT (n.interruption_reason IN (?, ?) AND d.accepted_result_reference_json IS NOT NULL AND d.continuation_required = 0)', [substr($identity, \strlen('background-')), CodeModeInterruptionReasonEnum::ControllerRestarted->value, CodeModeInterruptionReasonEnum::ControllerShutdown->value]);
-
-        return \is_string($reason) ? CodeModeInterruptionReasonEnum::from($reason) : null;
-    }
-
-    /** @return list<string> */
-    public function activeIdentities(string $runId): array
-    {
-        $sql = "SELECT n.identity FROM code_mode_execution n JOIN tool_deferred_completion d ON d.deferred_id = n.identity WHERE n.run_id = ? AND (n.interruption_reason IS NULL OR n.interruption_reason IN (?, ?)) AND (d.status = 'pending' OR EXISTS (SELECT 1 FROM background_completion_receipt r WHERE r.identity = 'background-' || n.identity AND r.disposition IN ('pending', 'forwarding')))";
-
-        return $this->getEntityManager()->getConnection()->fetchFirstColumn($sql, [$runId, CodeModeInterruptionReasonEnum::ControllerRestarted->value, CodeModeInterruptionReasonEnum::ControllerShutdown->value]);
+        return $this->getEntityManager()->getConnection()->fetchFirstColumn(
+            'SELECT identity FROM code_mode_execution WHERE run_id = ? ORDER BY identity',
+            [$runId],
+        );
     }
 
     public function freezeRaw(string $identity, string $reference): void
     {
         $this->getEntityManager()->getConnection()->executeStatement('UPDATE code_mode_execution SET raw_reference = ? WHERE identity = ? AND raw_reference IS NULL', [$reference, $identity]);
-    }
-
-    /** @return list<string> Includes settled rows whose guarded batch cleanup needs retry. */
-    public function abandonedControllerRecoveryIdentities(string $runId): array
-    {
-        return $this->getEntityManager()->getConnection()->fetchFirstColumn(
-            "SELECT n.identity FROM code_mode_execution n JOIN tool_deferred_completion d ON d.deferred_id = n.identity WHERE n.run_id = ? AND n.interruption_reason IN (?, ?) AND (d.status = 'pending' OR EXISTS (SELECT 1 FROM tool_batch_call c WHERE c.run_id = d.run_id AND c.turn_no = d.turn_no AND c.step_id = d.step_id AND c.tool_call_id = d.tool_call_id))",
-            [$runId, CodeModeInterruptionReasonEnum::Cancelled->value, CodeModeInterruptionReasonEnum::HistoryDiscarded->value],
-        );
-    }
-
-    /** @return list<string> Includes interrupted rows whose recovery send previously failed. */
-    public function pendingControllerRecoveryIdentities(string $runId): array
-    {
-        return $this->getEntityManager()->getConnection()->fetchFirstColumn(
-            "SELECT n.identity FROM code_mode_execution n JOIN tool_deferred_completion d ON d.deferred_id = n.identity WHERE n.run_id = ? AND (d.status = 'pending' OR (d.acknowledged_at IS NULL AND EXISTS (SELECT 1 FROM tool_batch_call c WHERE c.run_id = d.run_id AND c.turn_no = d.turn_no AND c.step_id = d.step_id AND c.tool_call_id = d.tool_call_id) AND NOT EXISTS (SELECT 1 FROM tool_batch_result r WHERE r.run_id = d.run_id AND r.turn_no = d.turn_no AND r.step_id = d.step_id AND r.tool_call_id = d.tool_call_id))) AND (n.interruption_reason IS NULL OR n.interruption_reason IN (?, ?))",
-            [$runId, CodeModeInterruptionReasonEnum::ControllerRestarted->value, CodeModeInterruptionReasonEnum::ControllerShutdown->value],
-        );
     }
 }

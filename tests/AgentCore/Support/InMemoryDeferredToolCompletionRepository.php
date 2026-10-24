@@ -188,4 +188,15 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
     {
         return $this->continuationRequired[$this->byRunToolCall[$runId.'|'.$toolCallId] ?? ''] ?? false;
     }
+
+    public function runRequiresContinuation(string $runId): bool
+    {
+        foreach ($this->byDeferredId as $deferredId => $row) {
+            if ($row['correlation']->runId === $runId && ($this->continuationRequired[$deferredId] ?? false)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

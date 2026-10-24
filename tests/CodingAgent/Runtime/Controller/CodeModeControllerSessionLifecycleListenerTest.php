@@ -101,7 +101,7 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
         $f->consumeCompletions();
         $this->assertFalse($deferred->requiresContinuation($run, 'cm'));
         $this->assertTrue($c->get(CodeModeExecutionService::class)->cancellationToken($id, new NullCancellationToken())->isCancellationRequested(), 'Repair never reauthorizes the old host.');
-        $this->assertSame(['background-'.$id], $c->get(CommandStoreInterface::class)->pendingKeys($run), 'Repair reuses the admitted mailbox row.');
+        $this->assertSame([$id], $c->get(CommandStoreInterface::class)->pendingKeys($run), 'Repair reuses the admitted mailbox row.');
         $this->assertSame([], $c->get('messenger.transport.tool')->getSent(), 'Repair never repeats execution or processors.');
         foreach (\array_slice($transport->getSent(), $repairOffset) as $envelope) {
             if ($envelope->getMessage() instanceof AdvanceRun) {

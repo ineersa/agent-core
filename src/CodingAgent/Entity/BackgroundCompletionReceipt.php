@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Entity;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionOriginEnum;
 
 /** Retained admission and forwarding evidence, independent of the pending mailbox. */
 #[ORM\Entity(repositoryClass: BackgroundCompletionReceiptRepository::class)]
@@ -38,4 +39,25 @@ final class BackgroundCompletionReceipt
 
     #[ORM\Column(length: 32, enumType: BackgroundCompletionDispositionEnum::class)]
     public BackgroundCompletionDispositionEnum $disposition;
+
+    #[ORM\Column(length: 32, enumType: BackgroundCompletionOriginEnum::class)]
+    public BackgroundCompletionOriginEnum $origin;
+
+    #[ORM\Column(name: 'deferred_id', length: 36, nullable: true)]
+    public ?string $deferredId = null;
+
+    #[ORM\Column(name: 'source_tool_call_id', length: 255, nullable: true)]
+    public ?string $sourceToolCallId = null;
+
+    #[ORM\Column(name: 'source_turn_no', nullable: true)]
+    public ?int $sourceTurnNo = null;
+
+    #[ORM\Column(name: 'source_step_id', length: 255, nullable: true)]
+    public ?string $sourceStepId = null;
+
+    #[ORM\Column(name: 'source_attempt', nullable: true)]
+    public ?int $sourceAttempt = null;
+
+    #[ORM\Column(name: 'source_idempotency_key', length: 255, nullable: true)]
+    public ?string $sourceIdempotencyKey = null;
 }

@@ -528,11 +528,12 @@ final class RuntimeEventTranslator
             ];
             $metadata = \is_array($messagePayload) ? ($messagePayload['metadata'] ?? null) : null;
             $completion = $p['consumption_metadata']['background_completion'] ?? null;
-            if ('append_message' === $kind && \is_array($completion) && \is_array($completion['code_mode'] ?? null)) {
-                // Owner-captured native provenance is not a new human request.
-                // Bash and child completion protocol behavior stays unchanged.
+            if ('append_message' === $kind && \is_array($completion)) {
+                // Captured background-completion provenance is never human input.
                 $notification = new ModelNotificationDTO(
-                    id: $completion['identity'], source: 'code_mode', kind: 'completion',
+                    id: $completion['identity'],
+                    source: \is_string($completion['origin'] ?? null) ? $completion['origin'] : 'background_completion',
+                    kind: 'completion',
                     severity: 'info', delivery: 'message', text: $text,
                     metadata: ['background_completion' => $completion],
                 );

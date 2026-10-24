@@ -34,7 +34,7 @@ final readonly class BackgroundCompletionMetadataHandler implements Coordination
         $this->validate($action);
         $this->receipts->record($action->receipt);
         if (BackgroundCompletionDispositionEnum::Forwarding !== $action->receipt->disposition) {
-            $this->deferredSettlement->recordAdmission($action->receipt->identity, $action->receipt->sourceRunId);
+            $this->deferredSettlement->recordAdmission($action->receipt->identity, $action->receipt->sourceRunId, $action->receipt->deferredId);
         }
     }
 

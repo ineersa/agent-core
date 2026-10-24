@@ -176,7 +176,9 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
         // Normally idle roots can still own acknowledged work. Redrive its
         // accepted terminal delivery without executing the original invocation.
-        if (RunStatus::Completed === $replayed->status || (!$this->hasTerminalAgentEnd($sorted) && RunStatus::Cancelling !== $replayed->status)) {
+        // Parent Failed/Cancelled terminals still retain deferred obligations.
+        // Cancelling remains a separate stale-cancellation repair path.
+        if (RunStatus::Cancelling !== $replayed->status) {
             $acceptedRedrive = $this->retainedDeferredRedrive($runId, $apply, $leadingActions);
             if (null !== $acceptedRedrive) {
                 return $acceptedRedrive;

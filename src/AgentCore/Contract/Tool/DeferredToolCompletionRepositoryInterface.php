@@ -68,4 +68,7 @@ interface DeferredToolCompletionRepositoryInterface
     public function requireContinuation(string $deferredId, bool $required): void;
 
     public function requiresContinuation(string $runId, string $toolCallId): bool;
+
+    /** True when any deferred registration for the run still requires explicit continuation. */
+    public function runRequiresContinuation(string $runId): bool;
 }

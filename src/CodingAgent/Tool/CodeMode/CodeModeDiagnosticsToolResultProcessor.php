@@ -48,16 +48,18 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
             // Host already prepared diagnostics; do not re-run prepare here.
             $diagnostics = $rawResult['code_mode_diagnostics'];
             $hasDiagnostics = [] !== $diagnostics;
+            $rawPath = \is_string($rawResult['code_mode_raw_path'] ?? null) ? $rawResult['code_mode_raw_path'] : null;
         } else {
             $value = $rawResult;
             $diagnostics = [];
             $hasDiagnostics = false;
+            $rawPath = null;
         }
 
         // Rewrite visible text for diagnostics and for null/bool returns.
         // Without this, ToolExecutor leaves false as "" and true as "1".
         $visibleReturn = $this->normalizeVisibleResult($value);
-        if (!$hasDiagnostics) {
+        if (!$hasDiagnostics && null === $rawPath) {
             $details['raw_result'] = $value;
 
             return new ToolResult(
@@ -72,10 +74,15 @@ final readonly class CodeModeDiagnosticsToolResultProcessor implements ToolResul
             );
         }
 
-        $diagnosticBlock = CodeModeDiagnostics::renderBlock($diagnostics);
-        $visibleText = '' === $visibleReturn
-            ? $diagnosticBlock
-            : $visibleReturn."\n\n".$diagnosticBlock;
+        $visibleText = $visibleReturn;
+        if ($hasDiagnostics) {
+            $diagnosticBlock = CodeModeDiagnostics::renderBlock($diagnostics);
+            $visibleText = '' === $visibleText ? $diagnosticBlock : $visibleText."\n\n".$diagnosticBlock;
+        }
+        if (null !== $rawPath) {
+            $pointer = 'Original structured value and diagnostics: '.$rawPath;
+            $visibleText = '' === $visibleText ? $pointer : $visibleText."\n".$pointer;
+        }
 
         $details['raw_result'] = $value;
 

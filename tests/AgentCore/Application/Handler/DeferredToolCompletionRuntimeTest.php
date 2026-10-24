@@ -476,4 +476,9 @@ final class MarkCompletedFailsOnceRepository implements DeferredToolCompletionRe
     {
         return $this->inner->requiresContinuation($runId, $toolCallId);
     }
+
+    public function runRequiresContinuation(string $runId): bool
+    {
+        return $this->inner->runRequiresContinuation($runId);
+    }
 }

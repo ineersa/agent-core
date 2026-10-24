@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionOriginEnum;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
@@ -155,7 +156,14 @@ final class BackgroundProcessCompletionPoller
                 $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
                     $receipt->destinationRunId, $receipt->identity,
                     $receipt->destinationRunId === $receipt->sourceRunId ? $receipt->text : $receipt->forwardedText,
+                    $receipt->origin,
                     $receipt->sourceRunId,
+                    $receipt->deferredId,
+                    $receipt->sourceToolCallId,
+                    $receipt->sourceTurnNo,
+                    $receipt->sourceStepId,
+                    $receipt->sourceAttempt,
+                    $receipt->sourceIdempotencyKey,
                 ));
             }
         } catch (\Throwable $exception) {
@@ -322,7 +330,10 @@ final class BackgroundProcessCompletionPoller
         // Recipient selection happens under the consuming owner's lock. A child
         // that finishes before delivery must not be revived by its Bash result.
         $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
-            $sessionId, 'background-process-'.$process->id, $notification,
+            $sessionId,
+            'background-process-'.$process->id,
+            $notification,
+            BackgroundCompletionOriginEnum::BackgroundProcess,
         ));
 
         // Only mark notified after successful send.

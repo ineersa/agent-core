@@ -8,6 +8,7 @@ use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionOriginEnum;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionReceiptDTO;
 
 /** @extends ServiceEntityRepository<BackgroundCompletionReceipt> */
@@ -73,6 +74,13 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
             'text' => $receipt->text,
             'forwarded_text' => $receipt->forwardedText,
             'disposition' => $receipt->disposition->value,
+            'origin' => $receipt->origin->value,
+            'deferred_id' => $receipt->deferredId,
+            'source_tool_call_id' => $receipt->sourceToolCallId,
+            'source_turn_no' => $receipt->sourceTurnNo,
+            'source_step_id' => $receipt->sourceStepId,
+            'source_attempt' => $receipt->sourceAttempt,
+            'source_idempotency_key' => $receipt->sourceIdempotencyKey,
         ]);
     }
 
@@ -94,6 +102,13 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
             (string) $row['accepted_destination_run_id'], (string) $row['destination_run_id'],
             (string) $row['root_run_id'], (string) $row['text'], (string) $row['forwarded_text'],
             BackgroundCompletionDispositionEnum::from((string) $row['disposition']),
+            BackgroundCompletionOriginEnum::from((string) $row['origin']),
+            isset($row['deferred_id']) && '' !== $row['deferred_id'] ? (string) $row['deferred_id'] : null,
+            isset($row['source_tool_call_id']) && '' !== $row['source_tool_call_id'] ? (string) $row['source_tool_call_id'] : null,
+            isset($row['source_turn_no']) && '' !== $row['source_turn_no'] ? (int) $row['source_turn_no'] : null,
+            isset($row['source_step_id']) && '' !== $row['source_step_id'] ? (string) $row['source_step_id'] : null,
+            isset($row['source_attempt']) && '' !== $row['source_attempt'] ? (int) $row['source_attempt'] : null,
+            isset($row['source_idempotency_key']) && '' !== $row['source_idempotency_key'] ? (string) $row['source_idempotency_key'] : null,
         );
     }
 }

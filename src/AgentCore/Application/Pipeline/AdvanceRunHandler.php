@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -23,6 +24,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         private EventFactory $eventFactory,
         private ?RunTracer $tracer = null,
         private ?PreLlmCompactionGuardInterface $preLlmCompactionGuard = null,
+        private ?DeferredToolCompletionRepositoryInterface $deferredCompletions = null,
     ) {
     }
 
@@ -133,7 +135,8 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         // Only applied messages or an applied explicit continue authorize revival.
         // Rejections and other boundary bookkeeping must not restart terminal work.
         // Compaction remains maintenance and does not authorize a model turn.
-        if ($mailboxResult->continuationBlocked || \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
+        $continuationParked = null !== $this->deferredCompletions && $this->deferredCompletions->runRequiresContinuation($runId);
+        if ($mailboxResult->continuationBlocked || $continuationParked || \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
             $hasContinuation = false;
             foreach ($boundaryEventSpecs as $spec) {
                 if (RunEventTypeEnum::AgentCommandApplied->value === $spec['type']
@@ -143,7 +146,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 }
             }
 
-            if ($hasContinuation) {
+            if ($hasContinuation && !$continuationParked) {
                 $preparedState = $preparedState->with([
                     'status' => RunStatus::Running,
                     'errorMessage' => null,

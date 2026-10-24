@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Application\Deferred;
 
 use Ineersa\AgentCore\Contract\Tool\DeferredAcknowledgedCompletionRouterInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
-use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionOriginEnum;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
-use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /** Route acknowledged deferred terminals through existing background-completion admission. */
@@ -17,28 +16,49 @@ final readonly class DeferredAcknowledgedCompletionRouter implements DeferredAck
 {
     public function __construct(
         private MessageBusInterface $commandBus,
-        private CodeModeExecutionRepository $codeModeExecutions,
-        private CodeModeExecutionService $codeModeExecution,
-        private CodeModeResultArtifactStore $codeModeArtifacts,
+        private DeferredToolCompletionRepositoryInterface $deferred,
     ) {
     }
 
     public function deliver(string $deferredId, ToolCallResult $result, bool $explicitContinuation = false): void
     {
+        $metadata = $this->deferred->findMetadataByDeferredId($deferredId)
+            ?? throw new \RuntimeException('Acknowledged deferred completion lost its registration metadata.');
+        $reference = $metadata->reference;
+        if ($reference->runId !== $result->runId()
+            || $reference->toolCallId !== $result->toolCallId
+            || $reference->turnNo !== $result->turnNo()
+            || $reference->stepId !== $result->stepId()
+            || $reference->attempt !== $result->attempt()
+            || $reference->idempotencyKey !== $result->idempotencyKey()) {
+            throw new \RuntimeException('Acknowledged deferred completion does not match its frozen invocation.');
+        }
+        $origin = 'code_mode' === $reference->toolName
+            ? BackgroundCompletionOriginEnum::CodeMode
+            : BackgroundCompletionOriginEnum::DeferredChild;
         $text = implode("\n", array_column($result->result['content'] ?? [], 'text'));
-        $row = $this->codeModeExecutions->invocation($result->runId(), $result->toolCallId);
-        if (null !== $row && $row['identity'] === $deferredId) {
-            $text = \sprintf("Code-mode result (run: %s, tool call: %s, invocation: %s):\n%s", $result->runId(), $result->toolCallId, $deferredId, $text);
-            if (null !== $row['raw_reference'] && '' !== $row['raw_reference']) {
-                $text .= "\nOriginal structured value and diagnostics: ".$this->codeModeArtifacts->path(
-                    $this->codeModeExecution->resultReference($row['raw_reference']),
-                );
-            }
-            $identity = 'background-'.$deferredId;
-        } else {
-            $identity = 'background-child-result-'.$deferredId;
+        if (BackgroundCompletionOriginEnum::CodeMode === $origin) {
+            $text = \sprintf(
+                "Code-mode result (run: %s, tool call: %s, invocation: %s):\n%s",
+                $reference->runId,
+                $reference->toolCallId,
+                $deferredId,
+                $text,
+            );
         }
 
-        $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO($result->runId(), $identity, $text, explicitContinuation: $explicitContinuation));
+        $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
+            $result->runId(),
+            $deferredId,
+            $text,
+            $origin,
+            deferredId: $deferredId,
+            sourceToolCallId: $reference->toolCallId,
+            sourceTurnNo: $reference->turnNo,
+            sourceStepId: $reference->stepId,
+            sourceAttempt: $reference->attempt,
+            sourceIdempotencyKey: $reference->idempotencyKey,
+            explicitContinuation: $explicitContinuation,
+        ));
     }
 }
