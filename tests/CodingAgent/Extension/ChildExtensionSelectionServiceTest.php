@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\ChildExtensionsConfigDTO;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\ForksConfigDTO;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
@@ -212,6 +213,7 @@ final class ChildExtensionSelectionServiceTest extends TestCase
             },
             new NullLogger(),
             new EventDispatcher(),
+            new SettingsPathResolver('/tmp', '/tmp/home'),
         );
 
         return new ChildExtensionSelectionService($appConfig, $manager);

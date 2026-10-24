@@ -570,6 +570,7 @@ parameters:
 
     TuiSetup:
       - TuiTerminal
+      - TuiTheme
       - SymfonyTui
 
     TuiCompactHeader:
@@ -663,6 +664,8 @@ parameters:
       - SymfonyTui
       - SymfonyConsole
       - SymfonyYaml
+      - SymfonySerializer
+      - SymfonyValidator
 
     AppAuth:
       - SymfonyConsole

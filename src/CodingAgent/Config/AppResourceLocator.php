@@ -43,6 +43,14 @@ final readonly class AppResourceLocator
     }
 
     /**
+     * Absolute path to the curated Hatfield-provided extensions catalog YAML.
+     */
+    public function getProvidedExtensionsCatalogPath(): string
+    {
+        return $this->appRoot.'/config/hatfield-provided-extensions.yaml';
+    }
+
+    /**
      * Absolute path to the built-in themes directory.
      */
     public function getBuiltinThemesPath(): string
