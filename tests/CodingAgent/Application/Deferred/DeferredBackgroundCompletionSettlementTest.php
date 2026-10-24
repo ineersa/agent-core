@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
+use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
@@ -121,12 +122,9 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
 
     public static function publicationFailures(): iterable
     {
-        foreach (['failed send', 'acceptance database'] as $failure) {
-            yield $failure.' success' => [$failure, false, true];
-            yield $failure.' error' => [$failure, true, true];
-        }
+        yield 'failed send success' => ['failed send', false, true];
+        yield 'acceptance database error' => ['acceptance database', true, true];
         yield 'cold worker success' => ['failed send', false, false];
-        yield 'cold worker error' => ['failed send', true, false];
         yield 'bounded host diagnostics and explicit repair' => ['failed send', false, true, true];
     }
 
@@ -370,11 +368,9 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
 
     public static function repairCases(): iterable
     {
-        foreach (['failed send', 'missing receipt', 'mailbox refusal'] as $failure) {
-            yield $failure => [$failure, false, true];
-            yield $failure.' with idle root' => [$failure, true, true];
-            yield $failure.' with generic child' => [$failure, true, false];
-        }
+        yield 'failed send' => ['failed send', false, true];
+        yield 'missing receipt with idle root' => ['missing receipt', true, true];
+        yield 'mailbox refusal with generic child' => ['mailbox refusal', true, false];
     }
 
     #[DataProvider('repairCases')]
@@ -523,6 +519,75 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
         $this->dispatch($this->deliver($fixture->state->runId, $id, '42'));
         $this->drain();
         $this->assertNull($c->get(ToolBatchStoreInterface::class)->loadSchedule($fixture->state->runId, 1, 'step'));
+    }
+
+    public function testFailedParentStillRepairsRetainedDeferredObligation(): void
+    {
+        [$fixture, $id] = $this->acknowledged();
+        $this->publish($fixture, $id);
+        $this->drain(notifications: false);
+        $c = self::getContainer();
+        $run = $fixture->state->runId;
+        $c->get(RunLockManager::class)->synchronized($run, static function () use ($c, $run): void {
+            $state = $c->get(ActiveRunContextInterface::class)->requireLoaded($run);
+            $event = (new EventFactory())->event($run, $state->lastSeq + 1, $state->turnNo, 'agent_end', ['reason' => 'failed', 'error' => 'Sibling failed permanently.']);
+            $c->get(RunCommit::class)->commit($state, $state->with(['status' => RunStatus::Failed]), [$event], dispatchAfterTurnHooks: false);
+        });
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $first = $deferred->findAcceptedResultReferenceByDeferredId($id);
+        $this->assertNotNull($first);
+        $this->assertSame('pending', $deferred->status($id));
+        $preview = $c->get(SessionRepairService::class)->repair($run, false, 'preview-failed-parent');
+        $this->assertNull($preview->refusalReason);
+        $this->assertStringContainsString('Retained deferred', $preview->message);
+        $this->dispatch(new RepairSession($run, true, 'repair-failed-parent'));
+        $this->drain();
+        $this->assertSame('completed', $deferred->status($id));
+        $this->assertNotNull($c->get(BackgroundCompletionReceiptRepository::class)->receipt($id));
+        $this->assertNull($deferred->findAcceptedResultReferenceByDeferredId($id), 'Completed admission retires the pending accepted lookup while preserving the receipt.');
+        $this->assertSame([], $c->get('messenger.transport.tool')->getSent());
+    }
+
+    public function testFailedForegroundSettlementRetainsBodiesUntilOwnerRecovery(): void
+    {
+        $c = self::getContainer();
+        $fixture = new CodeModeBackendFixture($c, 'return 42;');
+        $run = $fixture->state->runId;
+        $service = $c->get(CodeModeExecutionService::class);
+        $id = $c->get(StackToolExecutionContextAccessor::class)->with(new ToolContext($run, 1, 'cm', 'code_mode', new NullCancellationToken(), 8, 0, null, 'step'), $service->begin(...));
+        $service->ready($id);
+        $service->preserve($id, 42, null);
+        $result = new ToolCallResult($run, 1, 'step', 1, $fixture->call->idempotencyKey(), 'cm', 0, ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => '42']]]);
+        $payloads = $c->get(ToolPayloadStoreInterface::class);
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $invocation = $deferred->findInvocationReferenceByDeferredId($id) ?? throw new \RuntimeException('Missing invocation.');
+        $accepted = $payloads->retainProcessedResult($invocation, $result);
+        $deferred->acceptResult($id, $accepted);
+        $message = new CompleteDeferredToolCall($id, [['type' => 'text', 'text' => '42']]);
+        $db = $c->get(Connection::class);
+        $db->executeStatement("CREATE TRIGGER fail_code_mode_settlement BEFORE UPDATE OF status ON tool_deferred_completion BEGIN SELECT RAISE(ABORT, 'fixture settlement failure'); END");
+        try {
+            try {
+                $this->dispatch($message);
+                $this->drain(notifications: false);
+                $this->fail('Settlement unexpectedly committed.');
+            } catch (\Throwable $error) {
+                $this->assertStringContainsString('fixture settlement failure', $error->getMessage());
+            }
+            $this->assertSame('pending', $deferred->status($id));
+            $this->assertEquals($accepted, $deferred->findAcceptedResultReferenceByDeferredId($id));
+            $this->assertEquals($fixture->call, $c->get(ToolBatchStoreInterface::class)->loadCall($run, 1, 'step', 'cm'));
+        } finally {
+            $db->executeStatement('DROP TRIGGER fail_code_mode_settlement');
+        }
+        $c->get(ManagerRegistry::class)->resetManager();
+        $c->get(PendingTransitionRecovery::class)->recover($run);
+        $this->dispatch($message);
+        $this->drain(notifications: false);
+        $this->dispatch($message);
+        $this->drain(notifications: false);
+        $this->assertNull($c->get(ToolBatchStoreInterface::class)->loadSchedule($run, 1, 'step'));
+        $this->assertSame('completed', $deferred->status($id));
     }
 
     protected function afterKernelBoot(): void

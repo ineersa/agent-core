@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Application\CodeMode;
 
+use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
@@ -16,7 +17,7 @@ final class CodeModeCancellationTokenTest extends TestCase
         // nested handler missed the transient parent status. The lock is the
         // barrier. The process timeout is a teardown safety cap, not a delay.
         $directory = TestDirectoryIsolation::createProjectTempDir('code-mode-cancel');
-        $process = new Process([\PHP_BINARY, \dirname(__DIR__, 2).'/Support/code-mode-backend-process.php', $directory, 'owner', 'cancel']);
+        $process = new Process([\PHP_BINARY, \dirname(__DIR__, 2).'/Support/code-mode-cancel-process.php', $directory, 'owner']);
         $process->setTimeout(15);
         try {
             $process->mustRun();
@@ -28,7 +29,7 @@ final class CodeModeCancellationTokenTest extends TestCase
             $this->assertSame(1, $evidence['worker']['processors']);
             $this->assertSame(1, $evidence['worker']['publications']);
             $this->assertSame(
-                [\Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall::class],
+                [CompleteDeferredToolCall::class],
                 $evidence['worker']['published'] ?? [],
             );
             $this->assertTrue($evidence['worker']['error']);

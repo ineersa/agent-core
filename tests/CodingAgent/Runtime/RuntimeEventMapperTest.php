@@ -67,6 +67,48 @@ final class RuntimeEventMapperTest extends TestCase
         }
     }
 
+    public function testBackgroundCompletionAppendNeverBecomesHumanInput(): void
+    {
+        $completion = [
+            'identity' => 'background-cm',
+            'source_run_id' => 'source-run',
+            'accepted_destination_run_id' => 'source-run',
+            'destination_run_id' => 'source-run',
+            'origin' => 'code_mode',
+            'deferred_id' => 'background-cm',
+            'invocation' => [
+                'run_id' => 'source-run',
+                'tool_call_id' => 'cm',
+                'turn_no' => 1,
+                'step_id' => 'step',
+                'attempt' => 1,
+                'idempotency_key' => 'original-execution',
+            ],
+        ];
+        $queued = $this->runEvent('agent_command_queued', [
+            'kind' => 'append_message',
+            'idempotency_key' => $completion['identity'],
+            'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Code-mode result']]],
+        ]);
+        $queuedRuntime = $this->mapper->toRuntimeEvent($queued);
+        $this->assertNotNull($queuedRuntime);
+        $this->assertSame(RuntimeEventTypeEnum::UserMessageQueued->value, $queuedRuntime->type);
+        $applied = $this->runEvent('agent_command_applied', [
+            'kind' => 'append_message',
+            'idempotency_key' => $completion['identity'],
+            'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Code-mode result']]],
+            'consumption_metadata' => ['background_completion' => $completion],
+        ]);
+        $runtime = $this->mapper->toRuntimeEvent($applied);
+        $this->assertNotNull($runtime);
+        $this->assertSame(RuntimeEventTypeEnum::ModelNotification->value, $runtime->type);
+        $this->assertNotSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $runtime->type);
+        $this->assertSame($completion['identity'], $runtime->payload['id']);
+        $this->assertSame('code_mode', $runtime->payload['source']);
+        $this->assertSame('Code-mode result', $runtime->payload['text']);
+        $this->assertSame($completion, $runtime->payload['metadata']['background_completion']);
+    }
+
     public function testToolTimingUsesCanonicalEventTimestamps(): void
     {
         $start = new \DateTimeImmutable('2026-09-08T12:00:00.125000+00:00');

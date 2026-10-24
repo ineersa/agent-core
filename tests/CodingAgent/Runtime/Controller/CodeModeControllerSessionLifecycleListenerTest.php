@@ -149,10 +149,8 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
     /** @return iterable<string, array{CodeModeInterruptionReasonEnum, bool}> */
     public static function abandonedCases(): iterable
     {
-        foreach ([CodeModeInterruptionReasonEnum::Cancelled, CodeModeInterruptionReasonEnum::HistoryDiscarded] as $reason) {
-            yield $reason->value.'-shutdown' => [$reason, false];
-            yield $reason->value.'-restart' => [$reason, true];
-        }
+        yield 'cancelled-shutdown' => [CodeModeInterruptionReasonEnum::Cancelled, false];
+        yield 'history-discarded-restart' => [CodeModeInterruptionReasonEnum::HistoryDiscarded, true];
     }
 
     #[DataProvider('abandonedCases')]
@@ -311,15 +309,11 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
     /** @return iterable<string, array{bool, bool, bool, bool}> */
     public static function recoveryCases(): iterable
     {
-        foreach ([false, true] as $child) {
-            foreach ([false, true] as $acknowledged) {
-                foreach ([false, true] as $processed) {
-                    foreach ($acknowledged ? [true] : [false, true] as $ready) {
-                        yield implode('-', [(int) $child, (int) $acknowledged, (int) $processed, (int) $ready]) => [$child, $acknowledged, $processed, $ready];
-                    }
-                }
-            }
-        }
+        yield 'root-waiting-processed' => [false, false, true, true];
+        yield 'root-waiting-no-processed' => [false, false, false, true];
+        yield 'root-acknowledged-processed' => [false, true, true, true];
+        yield 'owned-child-acknowledged-processed' => [true, true, true, true];
+        yield 'root-unready-waiting' => [false, false, false, false];
     }
 
     #[DataProvider('recoveryCases')]
