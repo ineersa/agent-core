@@ -147,6 +147,17 @@ services:
       $httpClient: '@Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService.http_client'
       $logger: '@Psr\Log\LoggerInterface'
 
+  # Cooperative Amp transport for LLM provider HTTP. Curl remains the default
+  # HttpClient::create() choice on this host and does not overlap inside fibers.
+  # Cancellation wrapping stays in SymfonyAiProviderFactory::getHttpClient().
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\llm.http_client:
+    class: Symfony\Component\HttpClient\AmpHttpClient
+
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory:
+    arguments:
+      $builders: !tagged_iterator hatfield.symfony_ai.provider_builder
+      $httpClient: '@Ineersa\CodingAgent\Infrastructure\SymfonyAi\llm.http_client'
+
   # ─── Hatfield config services ───
 
   Ineersa\CodingAgent\Config\AppResourceLocator:
@@ -191,10 +202,6 @@ services:
     arguments:
       $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
 
-
-  Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory:
-    arguments:
-      $builders: !tagged_iterator hatfield.symfony_ai.provider_builder
 
   # AppConfig is a value object, not an autowireable service.
   # The container uses the fromContainer() factory to construct it.
