@@ -31,8 +31,6 @@ interface ExtensionsSetupFlowInterface
 
     public function scopeLabel(): string;
 
-    public function settingsPath(): string;
-
     public function isProjectScope(): bool;
 
     /**

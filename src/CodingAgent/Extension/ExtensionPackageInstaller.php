@@ -88,10 +88,7 @@ final class ExtensionPackageInstaller
             $this->ensureSafeAutoload($root);
 
             return new ExtensionPackageInstallResultDTO(
-                layer: $layer,
                 root: $root,
-                package: $package,
-                version: $version,
                 alreadyInstalled: true,
             );
         }
@@ -108,10 +105,7 @@ final class ExtensionPackageInstaller
         $this->ensureSafeAutoload($root);
 
         return new ExtensionPackageInstallResultDTO(
-            layer: $layer,
             root: $root,
-            package: $package,
-            version: $version,
             alreadyInstalled: false,
         );
     }

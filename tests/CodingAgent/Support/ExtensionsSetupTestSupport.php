@@ -46,7 +46,6 @@ final class ExtensionsSetupTestSupport
     public const string SAFE_GUARD = 'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension';
     public const string FILE_REWIND = 'Ineersa\\HatfieldExt\\FileRewind\\FileRewindExtension';
     public const string TASK_WORKFLOW = 'Ineersa\\HatfieldExt\\TaskWorkflow\\TaskWorkflowExtension';
-    public const string OM = 'Ineersa\\HatfieldExt\\ObservationalMemory\\ObservationalMemoryExtension';
 
     public static function catalogYaml(): string
     {

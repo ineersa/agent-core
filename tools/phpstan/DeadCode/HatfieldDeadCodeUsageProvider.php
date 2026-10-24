@@ -8,6 +8,14 @@ use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\FileRewindGuidedSettingsDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemoryGuidedSettingsDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemoryObserverDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemoryPoolsDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemoryReflectorDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemoryStorageDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\SafeGuardGuidedSettingsDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\TaskWorkflowGuidedSettingsDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedSessionMetadataDTO;
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedToolsScopeDTO;
@@ -51,6 +59,14 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         RunStartedSessionMetadataDTO::class,
         RunStartedToolsScopeDTO::class,
         SubagentProgressSnapshotDTO::class,
+        FileRewindGuidedSettingsDTO::class,
+        ObservationalMemoryGuidedSettingsDTO::class,
+        ObservationalMemoryObserverDTO::class,
+        ObservationalMemoryPoolsDTO::class,
+        ObservationalMemoryReflectorDTO::class,
+        ObservationalMemoryStorageDTO::class,
+        SafeGuardGuidedSettingsDTO::class,
+        TaskWorkflowGuidedSettingsDTO::class,
     ];
 
     protected function shouldMarkMethodAsUsed(\ReflectionMethod $method): ?VirtualUsageData

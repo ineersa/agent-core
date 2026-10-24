@@ -10,12 +10,15 @@ use Symfony\Component\Validator\Exception\ValidationFailedException;
 
 /**
  * Typed refusal for extensions:setup form validation failures.
+ *
+ * Constraint violations stay on the ValidationFailedException cause, matching
+ * other CodingAgent typed validation refusals.
  */
 final class ExtensionsSetupValidationException extends \InvalidArgumentException
 {
     public function __construct(
         string $message,
-        public readonly ConstraintViolationListInterface $violations,
+        ConstraintViolationListInterface $violations,
         ?\Throwable $previous = null,
     ) {
         parent::__construct($message, 0, $previous ?? new ValidationFailedException(null, $violations));
