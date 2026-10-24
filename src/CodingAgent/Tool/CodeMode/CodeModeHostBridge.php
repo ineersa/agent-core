@@ -39,8 +39,8 @@ use Symfony\Component\Uid\UuidV7;
  *
  * The script loads only the minimal bootstrap (no application autoloader). Nested
  * tool calls reuse the existing toolbox rewrite/validation/handler path under a
- * nested ToolContext. The outer ToolRuntime cancellation token is polled while
- * waiting on the child and nested tool work.
+ * nested ToolContext. Host and nested work share an invocation-sticky token;
+ * parent continuation cannot clear a captured stop, cancellation, or discard.
  */
 final readonly class CodeModeHostBridge
 {
@@ -74,6 +74,9 @@ final readonly class CodeModeHostBridge
             $timeoutSeconds = $this->resolveScriptWallSeconds($timeoutSeconds, $parentContext?->timeoutSeconds());
             $memoryLimit = $this->formatMemoryLimit($memoryLimitMb);
             $deferredId = $this->registerOuterDeferred($parentContext);
+            if (null !== $deferredId) {
+                $cancelToken = new CodeModeCancellationToken($cancelToken, $this->deferred, $deferredId);
+            }
 
             $workspace = $this->createWorkspace();
             $process = null;

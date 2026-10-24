@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Process\Process;
 
@@ -20,7 +21,14 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
         }
     }
 
-    public function testBlockedNestedCallAcknowledgesAndFreeWorkerProgressesBeforeOneLateNotification(): void
+    public static function settlements(): iterable
+    {
+        yield 'natural return' => [false];
+        yield 'targeted stop' => [true];
+    }
+
+    #[DataProvider('settlements')]
+    public function testBlockedNestedCallAcknowledgesAndFreeWorkerProgressesBeforeOneLateNotification(bool $stop): void
     {
         $this->assertTrue(posix_mkfifo($this->tempDir.'/release', 0600));
         $release = fopen($this->tempDir.'/release', 'r+b');
@@ -56,6 +64,22 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             $work = json_decode(trim($this->query($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR)['work'];
             $this->assertCount(1, $work);
             $this->assertSame('code_mode', $work[0]['kind']);
+            if ($stop) {
+                $this->writeCommand(['v' => 1, 'id' => 'stop', 'type' => 'stop_code_mode', 'runId' => $this->runId,
+                    'payload' => ['deferred_id' => $candidate['lifecycleId'], 'tool_call_id' => $candidate['toolCallId']]]);
+                $deadline = microtime(true) + 3;
+                do {
+                    $this->assertTrue($this->isRunning());
+                    $remaining = json_decode(trim($this->query($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR)['work'];
+                    if ([] !== $remaining) {
+                        usleep(10000);
+                    }
+                } while ([] !== $remaining && microtime(true) < $deadline);
+                $this->assertSame([], $remaining, 'Nested Bash observes the same invocation cancellation token and releases its host.');
+                $this->assertCount(3, $this->requests(), 'Stopping the invocation never resumes the parent.');
+
+                return;
+            }
             fwrite($release, "finish\n");
             fflush($release);
             $late = $this->collectEventsUntil('run.completed', 5);

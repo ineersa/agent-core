@@ -214,7 +214,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             'shell_command' => $this->handleShellCommandSend($runId, $command),
             'background_bash' => $this->backgroundRequests->request($runId, $command->payload),
             'background_child' => $this->childBackground->request($runId, $command->payload),
-            'background_code_mode' => $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($runId, $command->payload['deferred_id'] ?? '', $command->payload['tool_call_id'] ?? '')),
+            'background_code_mode', 'stop_code_mode' => $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($runId, $command->payload['deferred_id'] ?? '', $command->payload['tool_call_id'] ?? '', 'stop_code_mode' === $command->type)),
             'select_history_turn' => $this->handleInProcessSelectHistoryTurn($runId, $command),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };

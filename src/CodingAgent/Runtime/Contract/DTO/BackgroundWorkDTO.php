@@ -19,6 +19,7 @@ final readonly class BackgroundWorkDTO
         public ?int $processId = null,
         public ?ImmutableDateTime $startedAt = null,
         public bool $stoppable = true,
+        public ?string $toolCallId = null,
     ) {
     }
 }

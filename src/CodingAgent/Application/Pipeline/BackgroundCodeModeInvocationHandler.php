@@ -34,15 +34,24 @@ final readonly class BackgroundCodeModeInvocationHandler implements RunMessageHa
         if (!$message instanceof BackgroundCodeModeInvocationDTO) {
             throw new \InvalidArgumentException('Unsupported code-mode background message.');
         }
+        $metadata = $this->deferred->findMetadataByDeferredId($message->deferredId);
+        if ($message->stop) {
+            return null !== $metadata && 'pending' === $metadata->status && null !== $metadata->backgroundedAt
+                && null === $metadata->interruptionReason && null === $metadata->acceptedResultReference
+                && $metadata->reference->runId === $state->runId && $metadata->reference->toolCallId === $message->toolCallId
+                && 'code_mode' === $metadata->reference->toolName
+                ? new HandlerResult(postCommitActions: [new DispatchLocalMetadataMessageDTO(new MarkCodeModeBackgroundedDTO($message->deferredId, new \DateTimeImmutable(), 'stopped'))])
+                : new HandlerResult();
+        }
         if (false !== ($state->pendingToolCalls[$message->toolCallId] ?? null)) {
             return new HandlerResult();
         }
-        $metadata = $this->deferred->findMetadataByDeferredId($message->deferredId);
         if (null === $metadata
             || 'pending' !== $metadata->status
             || null === $metadata->readyAt
             || null !== $metadata->backgroundedAt
             || null !== $metadata->acceptedResultReference
+            || null !== $metadata->interruptionReason
             || $metadata->reference->runId !== $state->runId
             || $metadata->reference->toolCallId !== $message->toolCallId
             || $metadata->reference->turnNo !== $state->turnNo

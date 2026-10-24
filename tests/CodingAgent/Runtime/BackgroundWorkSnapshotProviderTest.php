@@ -46,7 +46,7 @@ final class BackgroundWorkSnapshotProviderTest extends IsolatedKernelTestCase
         $visible = array_column($snapshot->work, 'id');
         $this->assertEqualsCanonicalizing([$ids[$root], $ids[$child]], $visible);
         $this->assertNotContains($ids[$foreign], $visible);
-        $this->assertSame([false, false], array_column($snapshot->work, 'stoppable'));
+        $this->assertSame([true, true], array_column($snapshot->work, 'stoppable'));
         $repository->markCompleted($ids[$child]);
         $this->assertSame([$ids[$root]], array_column($provider->snapshot($root)->work, 'id'));
     }

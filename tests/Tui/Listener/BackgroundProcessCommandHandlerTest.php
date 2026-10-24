@@ -7,7 +7,9 @@ namespace Ineersa\Tui\Tests\Listener;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -249,6 +251,21 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         }
     }
 
+    public function testConfirmedCodeModeStopTargetsOnlyCapturedInvocation(): void
+    {
+        $snapshot = new BackgroundWorkSnapshotDTO([], [new BackgroundWorkDTO('invocation', 'code_mode', 'retained host', 'running', false, ['owner'], toolCallId: 'host')]);
+        $sent = [];
+        $this->mount(JsonlProcessAgentSessionClient::class, $snapshot, static function (string $run, UserCommand $command) use (&$sent): void { $sent[] = [$run, $command]; });
+        $this->open();
+        $this->assertSame([], $sent);
+        $this->confirm();
+        $this->assertCount(1, $sent);
+        $this->assertSame('owner', $sent[0][0]);
+        $this->assertSame('stop_code_mode', $sent[0][1]->type);
+        $this->assertSame(['deferred_id' => 'invocation', 'tool_call_id' => 'host'], $sent[0][1]->payload);
+        $this->assertFalse($this->harness->screen()->hasInputOverlay());
+    }
+
     private function start(string $runId = 'visible', bool $accepted = true, bool $resistant = false): StartResult
     {
         $command = ($resistant ? "trap '' TERM; : > ".escapeshellarg($this->directory.'/ready').'; ' : '')
@@ -261,20 +278,21 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         return $process;
     }
 
-    private function mount(string $clientClass): void
+    private function mount(string $clientClass, ?BackgroundWorkSnapshotDTO $snapshot = null, ?\Closure $send = null): void
     {
         $this->native = self::getContainer()->get($clientClass);
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->never())->method('start');
-        $client->expects($this->never())->method('send');
-        $client->method('backgroundWork')->willReturnCallback(function (string $runId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO {
+        $client->expects(null === $send ? $this->never() : $this->once())->method('send')->willReturnCallback($send ?? static fn () => null);
+        $client->expects($this->never())->method('cancel');
+        $client->method('backgroundWork')->willReturnCallback(function (string $runId, ?int $observedProcessId = null) use ($snapshot): BackgroundWorkSnapshotDTO {
             // Count opening snapshots separately from exact-record stop revalidation
             // and UI-only settlement; those must not refresh an open picker.
             if (null === $observedProcessId) {
                 ++$this->reads;
             }
 
-            return $this->native->backgroundWork($runId, $observedProcessId);
+            return $snapshot ?? $this->native->backgroundWork($runId, $observedProcessId);
         });
         $client->method('stopBackgroundProcess')->willReturnCallback(function (string $runId, int $id): bool {
             $this->assertFalse($this->harness->screen()->hasInputOverlay(), 'Close before the native stop action.');

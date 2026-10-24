@@ -66,8 +66,8 @@ final readonly class BackgroundWorkSnapshotProvider
             $call = (string) $row['tool_call_id'];
             $label = "code_mode $call | run:$runId | invocation:$id";
             if (null !== $row['backgrounded_at']) {
-                $work[] = new BackgroundWorkDTO($id, 'code_mode', $label, 'running', false, [$runId], startedAt: new ImmutableDateTime((string) $row['created_at']), stoppable: false);
-            } elseif ($runId === $rootRunId && null !== $row['ready_at']) {
+                $work[] = new BackgroundWorkDTO($id, 'code_mode', $label, null === $row['interruption_reason'] ? 'running' : 'stopping', false, [$runId], startedAt: new ImmutableDateTime((string) $row['created_at']), toolCallId: $call);
+            } elseif ($runId === $rootRunId && null !== $row['ready_at'] && null === $row['interruption_reason']) {
                 $candidates[] = new ChildBackgroundCandidateDTO($id, $call, $label);
             }
         }

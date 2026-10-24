@@ -14,6 +14,7 @@ final readonly class DeferredToolCompletionMetadataDTO
         public ?\DateTimeImmutable $readyAt = null,
         public ?\DateTimeImmutable $backgroundedAt = null,
         public ?ToolPayloadReferenceDTO $acceptedResultReference = null,
+        public ?string $interruptionReason = null,
     ) {
     }
 }

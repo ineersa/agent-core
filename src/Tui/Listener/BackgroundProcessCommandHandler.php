@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkDTO;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
@@ -143,7 +144,9 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
                 $this->requested = $target;
                 $this->requestedRoot = $runId;
                 if (!$target->terminal) {
-                    if (null !== $target->processId) {
+                    if ('code_mode' === $target->kind) {
+                        $context->client->send($target->runIds[0], new UserCommand('stop_code_mode', payload: ['deferred_id' => $target->id, 'tool_call_id' => $target->toolCallId]));
+                    } elseif (null !== $target->processId) {
                         $context->client->stopBackgroundProcess($target->runIds[0], $target->processId);
                     } else {
                         foreach ($target->runIds as $childRunId) {

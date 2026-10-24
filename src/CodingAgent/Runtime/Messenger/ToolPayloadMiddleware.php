@@ -215,6 +215,11 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
                 return [null, null];
             }
             $metadata = $this->findEarlyDeferredRegistration($message);
+            if (null !== $metadata?->interruptionReason && (null !== $metadata->backgroundedAt || 'history_discarded' === $metadata->interruptionReason)) {
+                $this->deferred->markCompleted($metadata->deferredId);
+
+                return [null, null];
+            }
             if (null === $metadata?->backgroundedAt && !$this->admission->canPublish($message)) {
                 return [null, null];
             }

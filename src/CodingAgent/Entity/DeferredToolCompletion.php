@@ -75,6 +75,9 @@ class DeferredToolCompletion
     #[ORM\Column(name: 'backgrounded_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $backgroundedAt = null;
 
+    #[ORM\Column(name: 'interruption_reason', type: 'string', length: 32, nullable: true)]
+    public ?string $interruptionReason = null;
+
     #[ORM\Column(name: 'accepted_result_reference_json', type: 'string', length: 16384, nullable: true)]
     public ?string $acceptedResultReferenceJson = null;
 

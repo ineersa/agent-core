@@ -43,7 +43,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
     public function pendingCodeMode(array $runIds): array
     {
         return $this->getEntityManager()->getConnection()->fetchAllAssociative(
-            "SELECT deferred_id, run_id, tool_call_id, ready_at, backgrounded_at, created_at FROM tool_deferred_completion WHERE run_id IN (?) AND tool_name = 'code_mode' AND status = 'pending' AND (backgrounded_at IS NOT NULL OR accepted_result_reference_json IS NULL) ORDER BY created_at LIMIT 100",
+            "SELECT deferred_id, run_id, tool_call_id, ready_at, backgrounded_at, interruption_reason, created_at FROM tool_deferred_completion WHERE run_id IN (?) AND tool_name = 'code_mode' AND status = 'pending' AND (backgrounded_at IS NOT NULL OR accepted_result_reference_json IS NULL) ORDER BY created_at LIMIT 100",
             [$runIds], [ArrayParameterType::STRING],
         );
     }
@@ -113,7 +113,20 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             }
         }
 
-        return new DeferredToolCompletionMetadataDTO($entity->deferredId, $reference, $entity->status, $entity->readyAt, $entity->backgroundedAt, $accepted);
+        return new DeferredToolCompletionMetadataDTO($entity->deferredId, $reference, $entity->status, $entity->readyAt, $entity->backgroundedAt, $accepted, $entity->interruptionReason);
+    }
+
+    /** @return list<string> */
+    public function codeModeIdentities(string $runId): array
+    {
+        return $this->getEntityManager()->getConnection()->fetchFirstColumn("SELECT deferred_id FROM tool_deferred_completion WHERE run_id = ? AND tool_name = 'code_mode'", [$runId]);
+    }
+
+    public function interrupt(string $deferredId, string $reason): void
+    {
+        $entity = $this->require($deferredId);
+        $entity->interruptionReason ??= $reason;
+        $this->getEntityManager()->flush();
     }
 
     public function status(string $deferredId): ?string

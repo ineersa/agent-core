@@ -63,7 +63,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         if (null !== $receipt) {
             if (BackgroundCompletionDispositionEnum::Pending === $receipt->disposition
                 && $receipt->destinationRunId === $state->runId
-                && null !== $state->parentRunId && $state->status->isTerminal()) {
+                && ($this->consumption->interrupted($receipt->deferredId) || (null !== $state->parentRunId && $state->status->isTerminal()))) {
                 return $this->retireTerminalPending($receipt, $state);
             }
             // A consumed child admission remains consumed even if the original
@@ -95,15 +95,19 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 "Background completion from child owner %s (agent_id: %s, run_id: %s). The child was not resumed.\n\n%s",
                 $owner->agentName, $owner->artifactId, $state->runId, $message->text,
             );
-            $forward = null !== $state->parentRunId && ($state->status->isTerminal() || RunStatus::Cancelling === $state->status);
+            $interrupted = $this->consumption->interrupted($message->deferredId);
+            $forward = !$interrupted && null !== $state->parentRunId && ($state->status->isTerminal() || RunStatus::Cancelling === $state->status);
             $destination = $forward ? $rootRunId : $state->runId;
             $receipt = new BackgroundCompletionReceiptDTO(
                 $message->identity, $state->runId, $destination, $destination,
                 $rootRunId, $message->text, $forwardedText,
-                $forward ? BackgroundCompletionDispositionEnum::Forwarding : BackgroundCompletionDispositionEnum::Pending,
+                $interrupted ? BackgroundCompletionDispositionEnum::Consumed : ($forward ? BackgroundCompletionDispositionEnum::Forwarding : BackgroundCompletionDispositionEnum::Pending),
                 $message->deferredId,
                 $message->invocation,
             );
+            if ($interrupted) {
+                return new HandlerResult(postCommitActions: [new DispatchLocalMetadataMessageDTO(new RecordBackgroundCompletionDTO($receipt))]);
+            }
             if ($forward) {
                 // The durable obligation precedes the best-effort send. Native
                 // completion polling retries it until root mailbox admission.

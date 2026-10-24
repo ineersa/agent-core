@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Application\BackgroundCompletion;
 
 use Ineersa\AgentCore\Contract\CommandConsumptionPolicyInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Command\DTO\CommandConsumptionDecisionDTO;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -16,8 +17,13 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final readonly class BackgroundCompletionConsumptionPolicy implements CommandConsumptionPolicyInterface
 {
-    public function __construct(private BackgroundCompletionReceiptRepository $receipts, private ValidatorInterface $validator)
+    public function __construct(private BackgroundCompletionReceiptRepository $receipts, private ValidatorInterface $validator, private DeferredToolCompletionRepositoryInterface $deferred)
     {
+    }
+
+    public function interrupted(?string $id): bool
+    {
+        return null !== $id && null !== $this->deferred->findMetadataByDeferredId($id)?->interruptionReason;
     }
 
     public function prepare(RunState $state, PendingCommand $command): ?CommandConsumptionDecisionDTO
@@ -38,10 +44,11 @@ final readonly class BackgroundCompletionConsumptionPolicy implements CommandCon
         if ($receipt->destinationRunId !== $state->runId || BackgroundCompletionDispositionEnum::Pending !== $receipt->disposition) {
             return new CommandConsumptionDecisionDTO('Background completion already consumed or transferred.');
         }
-        $forward = null !== $state->parentRunId && ($state->status->isTerminal() || RunStatus::Cancelling === $state->status);
+        $interrupted = $this->interrupted($receipt->deferredId);
+        $forward = !$interrupted && null !== $state->parentRunId && ($state->status->isTerminal() || RunStatus::Cancelling === $state->status);
 
         return new CommandConsumptionDecisionDTO(
-            $forward ? 'Background completion transferred to its root owner without resuming this child.' : null,
+            $interrupted ? 'Interrupted invocation completion retired.' : ($forward ? 'Background completion transferred to its root owner without resuming this child.' : null),
             ['background_completion' => [
                 'identity' => $receipt->identity,
                 'source_run_id' => $receipt->sourceRunId,

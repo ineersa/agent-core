@@ -7,20 +7,25 @@ namespace Ineersa\CodingAgent\Application\Pipeline;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
+use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkCodeModeBackgroundedDTO;
+use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
-final readonly class CodeModeBackgroundCoordinationHandler implements CoordinationActionValidatorInterface
+final readonly class CodeModeBackgroundCoordinationHandler implements CoordinationActionValidatorInterface, EssentialAfterTurnHookInterface
 {
     public function __construct(
-        private DeferredToolCompletionRepositoryInterface $deferred,
+        private DeferredToolCompletionRepository $deferred,
         private ApplicationDbTransactionInterface $transactions,
         private ValidatorInterface $validator,
-        private RunMessageProcessor $processor,
+        #[Autowire(lazy: true)] private RunMessageProcessor $processor,
     ) {
     }
 
@@ -29,6 +34,11 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
     {
         $this->validate($action);
         $this->transactions->transactional(function () use ($action): void {
+            if (null !== $action->interruptionReason) {
+                $this->deferred->interrupt($action->deferredId, $action->interruptionReason);
+
+                return;
+            }
             // Detach only the caller wait. The host remains pending until its
             // ordinary accepted terminal is settled through shared completion.
             $this->deferred->markBackgrounded($action->deferredId, $action->acceptedAt);
@@ -48,6 +58,17 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
     public function supports(object $action): bool
     {
         return $action instanceof MarkCodeModeBackgroundedDTO;
+    }
+
+    public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
+    {
+        $reason = \in_array(RunEventTypeEnum::HistoryTailDiscarded->value, array_column($context->events, 'type'), true)
+            ? 'history_discarded' : (\in_array($context->status, ['cancelling', 'cancelled'], true) ? 'cancelled' : null);
+        if (null === $reason) {
+            return [];
+        }
+
+        return array_map(static fn (string $id): object => new DispatchLocalMetadataMessageDTO(new MarkCodeModeBackgroundedDTO($id, new \DateTimeImmutable(), $reason)), $this->deferred->codeModeIdentities($context->runId));
     }
 
     public function validate(object $action): void

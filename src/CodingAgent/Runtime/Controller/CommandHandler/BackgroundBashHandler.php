@@ -24,8 +24,8 @@ final readonly class BackgroundBashHandler
     public function __invoke(ControllerCommandEvent $event): void
     {
         $command = $event->command;
-        if ('background_code_mode' === $command->type) {
-            $this->commandBus->dispatch($this->serializer->denormalize(['run_id' => $command->runId, 'deferred_id' => $command->payload['deferred_id'] ?? '', 'tool_call_id' => $command->payload['tool_call_id'] ?? ''], BackgroundCodeModeInvocationDTO::class));
+        if (\in_array($command->type, ['background_code_mode', 'stop_code_mode'], true)) {
+            $this->commandBus->dispatch($this->serializer->denormalize(['run_id' => $command->runId, 'deferred_id' => $command->payload['deferred_id'] ?? '', 'tool_call_id' => $command->payload['tool_call_id'] ?? '', 'stop' => 'stop_code_mode' === $command->type], BackgroundCodeModeInvocationDTO::class));
 
             return;
         }
