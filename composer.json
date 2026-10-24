@@ -3,6 +3,11 @@
     "type": "project",
     "license": "MIT",
     "description": "Monorepo for the agent-core ecosystem, consolidated into a single modular monolith.",
+    "suggest": {
+        "ineersa/hatfield-ext-file-rewind": "File Rewind",
+        "ineersa/hatfield-ext-task-workflow": "Task Workflow",
+        "ineersa/hatfield-ext-observational-memory": "Observational Memory"
+    },
     "repositories": [
         {
             "type": "vcs",
@@ -116,7 +121,6 @@
             "Ineersa\\AgentCore\\Tests\\": "tests/AgentCore/",
             "Ineersa\\Tui\\Tests\\": "tests/Tui/",
             "Ineersa\\Platform\\Tests\\": "tests/Platform/",
-            "Ineersa\\Tests\\Support\\": "tests/Support/",
             "Ineersa\\HatfieldExt\\TaskWorkflow\\Tests\\": ".hatfield/extensions/task-workflow/tests/",
             "Ineersa\\HatfieldExt\\FileRewind\\Tests\\": ".hatfield/extensions/file-rewind/tests/",
             "Ineersa\\HatfieldExt\\ObservationalMemory\\Tests\\": ".hatfield/extensions/observational-memory/tests/",

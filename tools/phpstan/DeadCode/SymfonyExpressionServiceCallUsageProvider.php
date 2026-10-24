@@ -35,7 +35,6 @@ final class SymfonyExpressionServiceCallUsageProvider extends ReflectionBasedMem
     private const array GRAPH = [
         AppResourceLocator::class => [
             'getAiCatalogPath' => null,
-            'getProvidedExtensionsCatalogPath' => null,
         ],
         SettingsPathResolver::class => [
             'getHomeDir' => null,

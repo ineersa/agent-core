@@ -47,7 +47,7 @@ final class ObservationalMemoryConfiguration implements ConfigurationInterface
                         ->integerNode('batch_size')->info('Embedding batch size.')->min(1)->defaultValue(SemanticSettings::DEFAULT_EMBEDDING_BATCH_SIZE)->end()
                     ->end()->end()
                     ->arrayNode('reranker_api')->info('Optional reranker; clear this block to disable it.')->ignoreExtraKeys(false)->normalizeKeys(false)
-                        ->beforeNormalization()->ifTrue(static fn (mixed $value): bool => null === $value || [] === $value)->thenUnset()->end()
+                        ->beforeNormalization()->ifNull()->thenUnset()->end()
                         ->children()
                             ->stringNode('base_url')->info('Reranker HTTP(S) endpoint, without credentials, query, or fragment.')->isRequired()->cannotBeEmpty()->end()
                             ->stringNode('model_id')->info('Reranker model ID served by this endpoint.')->isRequired()->cannotBeEmpty()->end()

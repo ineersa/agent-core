@@ -78,62 +78,11 @@ Behavioral detail (discoverable vs on-demand-only, `/skill:<name>`, frontmatter)
 Extensions load from project `.hatfield/extensions/vendor/autoload.php` when present.
 They register **once at session start** — enablement changes require a new session.
 
-Hatfield also loads `~/.hatfield/extensions/vendor/autoload.php` when present.
-Project registers before user so project packages win class collisions. Both roots
-must keep `config.prepend-autoloader: false`; otherwise extension Composer
-packages can shadow host libraries such as `symfony/tui`. Host libraries remain
-highest priority. Identical project and user paths load once.
+Keep `.hatfield/extensions/composer.json` with `config.prepend-autoloader: false`.
+Otherwise the extensions autoloader can shadow host packages such as `symfony/tui`.
 
 Built-in SafeGuard class may appear in defaults/`always_on` without a Composer package.
 Project packages (task-workflow, file-rewind, observational-memory) document their own settings keys in **package-local README files** shipped with each extension repository/package. Those keys are **not** core `hatfield_docs` catalog entries.
-
-### Guided setup (`extensions:setup`)
-
-`hatfield extensions:setup` installs and configures the curated Hatfield-provided
-set only (SafeGuard, Task Workflow, File Rewind, Observational Memory). It is not
-a marketplace or upgrade/uninstall tool.
-
-- **Scope:** project `.hatfield/settings.yaml` is preselected. Change settings
-  scope inside the wizard for `~/.hatfield/settings.yaml`. `--user` only sets the
-  initial selection. Project setup may reuse an already-installed user package;
-  user setup never relies on the current project's package root.
-- **Install:** built-in SafeGuard skips Composer. Installable packages confirm
-  before `composer require` into the selected `.hatfield/extensions` root. Failed
-  or cancelled installs do not write enablement/settings. The wizard does not
-  claim package files roll back. Project and user roots pin distinct Composer
-  `autoloader-suffix` values so both loaders can register when the same package
-  set is installed in each root.
-- **Configure:** guided fields use the native settings list (SafeGuard policy
-  controls, Task Workflow `task_root`, File Rewind enable/retention/timeout, OM
-  shared generation model picker, core storage/observer/reflector/pool values, and
-  optional semantic embedding/reranker search settings). List fields edit as YAML
-  sequences so commas inside an entry stay intact. Parent enable/disable and
-  forks/agents membership are toggles on the same form — there is no separate
-  quick enable/disable path. Configure opens the form even when the package is
-  missing; Composer install stays on its own action. Unoffered advanced keys stay
-  in YAML and are preserved on Save. Disable without child membership does not
-  force install. Valid guided edits still persist while disabled; untouched
-  invalid or missing guided values do not block disable-only. Enablement requires
-  a successful install and valid guided configuration.
-- **Child membership:** optional toggles for `forks.extensions.always_on`,
-  `forks.extensions.enabled`, and `agents.extensions.always_on`. There is no
-  `agents.extensions.enabled` key and no bulk frontmatter editor — per-agent
-  optional extensions remain on the agent definition. Child membership requires
-  the class in parent `extensions.enabled`.
-- **Prefill:** project scope uses defaults < user < project. User scope uses
-  defaults < user and does not copy project-only overrides.
-- **OM search:** Leave embedding base URL and model blank to keep exact search.
-  Configuring both turns on hybrid retrieval; a reranker also needs embeddings.
-  Clearing those fields removes the local optional blocks. Blank reranker min
-  score removes the local override only; an inherited lower-layer floor still
-  applies and is reported. Shared generation model uses the configured AI
-  catalog list. Embedding and reranker model ids stay free text for those
-  endpoints. Internal renderer and schema-version keys stay YAML-only.
-- **Activation:** Save writes only membership lists and guided leaves that differ
-  from the scoped effective/prefill values. No-op Save leaves absent settings
-  files absent and existing files unchanged. Restart Hatfield so registration
-  picks up enablement/settings changes. Project settings still override user
-  settings at runtime.
 
 Example:
 

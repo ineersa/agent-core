@@ -105,9 +105,33 @@ final class ExtensionManager
             return [];
         }
 
-        $this->requireExtensionAutoload();
+        $this->loadAutoloaders();
 
         return $this->loadEach($enabled);
+    }
+
+    /**
+     * Require project then user extension Composer autoloaders when present.
+     *
+     * Missing autoload files are ignored. Distinct installer-pinned
+     * autoloader-suffix values let both roots load when they install the same
+     * packages. When project and user resolve to the same path (for example
+     * HOME under cwd in tests), require_once loads once.
+     */
+    public function loadAutoloaders(): void
+    {
+        foreach ($this->extensionAutoloadPaths() as $autoloadPath) {
+            if (!is_file($autoloadPath)) {
+                continue;
+            }
+
+            // Registers via spl_autoload_register(). Keep extensions Composer
+            // config.prepend-autoloader=false so this does not shadow the host
+            // app's Symfony packages (for example symfony/tui) after load.
+            // require_once avoids double-loading during test isolation and when
+            // project/user roots coincide.
+            require_once $autoloadPath;
+        }
     }
 
     /**
@@ -134,30 +158,6 @@ final class ExtensionManager
     {
         /* @var list<class-string> */
         return array_values(array_filter($this->config->extensions->enabled, \is_string(...)));
-    }
-
-    /**
-     * Require project then user extension Composer autoloaders when present.
-     *
-     * Missing autoload files are ignored. Distinct installer-pinned
-     * autoloader-suffix values let both roots load when they install the same
-     * packages. When project and user resolve to the same path (for example
-     * HOME under cwd in tests), require_once loads once.
-     */
-    private function requireExtensionAutoload(): void
-    {
-        foreach ($this->extensionAutoloadPaths() as $autoloadPath) {
-            if (!is_file($autoloadPath)) {
-                continue;
-            }
-
-            // Registers via spl_autoload_register(). Keep extensions Composer
-            // config.prepend-autoloader=false so this does not shadow the host
-            // app's Symfony packages (for example symfony/tui) after load.
-            // require_once avoids double-loading during test isolation and when
-            // project/user roots coincide.
-            require_once $autoloadPath;
-        }
     }
 
     /**

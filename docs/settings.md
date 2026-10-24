@@ -192,18 +192,12 @@ See [background-processes.md](background-processes.md).
 
 ## `.hatfield/` policy
 
+Run `hatfield extensions:setup` to install and configure Hatfield extensions. The native settings form defaults to project scope; choose user scope in the wizard or pass `--user`. Installation alone does not enable an extension: use Configure and Save. Extension packages provide their own Symfony Config definitions; Ctrl+D exits without saving pending edits.
+
 - Settings and extension enablement are project/user config.
 - Sessions, tmp, cache, logs are runtime and should stay untracked.
 - Extensions load from `.hatfield/extensions` Composer autoload when enabled.
-- User installs may also load from `~/.hatfield/extensions` when present; project wins collisions and host libraries stay highest priority.
 - Built-in docs for the model are selected with `builtin: true` under approved roots; repository-only docs stay unmarked.
-
-Guided install/enablement for curated Hatfield-provided extensions:
-`hatfield extensions:setup` (project settings preselected; change scope in the
-wizard, or pass `--user` as the initial selection). Observational Memory setup
-includes the shared generation-model picker and optional semantic search
-settings; renderer/schema-version keys stay in YAML. See
-[settings-agents.md](settings-agents.md).
 
 ## Validation tip
 

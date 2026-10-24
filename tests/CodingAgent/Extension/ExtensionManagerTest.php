@@ -8,11 +8,9 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
-use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
@@ -23,26 +21,21 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
-use Ineersa\Tests\Support\OfflineComposerExtensionFixture;
 use Monolog\Level;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\Filesystem\Path;
 
 final class ExtensionManagerTest extends TestCase
 {
     private string $extensionsDir;
-    private string $homeDir;
     private string $autoloadPath;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->extensionsDir = TestDirectoryIsolation::createOsTempDir('hatfield-ext-test');
-        $this->homeDir = TestDirectoryIsolation::createOsTempDir('hatfield-ext-home');
         mkdir($this->extensionsDir.'/.hatfield/extensions/vendor', 0755, true);
         $this->autoloadPath = $this->extensionsDir.'/.hatfield/extensions/vendor/autoload.php';
     }
@@ -51,7 +44,6 @@ final class ExtensionManagerTest extends TestCase
     {
         parent::tearDown();
         TestDirectoryIsolation::removeDirectory($this->extensionsDir);
-        TestDirectoryIsolation::removeDirectory($this->homeDir);
     }
 
     // ── Tests: InMemoryExtensionApiBridge ──
@@ -142,7 +134,7 @@ final class ExtensionManagerTest extends TestCase
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), $this->pathResolver());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -198,7 +190,7 @@ PHP;
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), $this->pathResolver());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(1, $bridge->getRegistrations());
@@ -214,7 +206,7 @@ PHP;
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new TestLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), $this->pathResolver());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -251,7 +243,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new TestLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), $this->pathResolver());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -352,7 +344,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new TestLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), $this->pathResolver());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         // Both good extensions should have registered their tools
@@ -381,7 +373,7 @@ PHP
             extensions: ['Ineersa\\Hatfield\\ExtensionApi\\ExtensionApiInterface']
         );
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), $this->pathResolver());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -445,7 +437,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher(), $this->pathResolver());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         // Verify tool registration
@@ -514,9 +506,9 @@ PHP
         );
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
-        $dispatcher = new EventDispatcher();
+        $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, $dispatcher, $this->pathResolver());
+        $manager = new ExtensionManager($config, $bridge, $logger, $dispatcher, new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         // Autoload the generated fixture class before asserting on its static state.
@@ -569,8 +561,8 @@ PHP;
                 $this->createAppConfig($this->extensionsDir, ['HatfieldExtTest\\'.$class, $valid::class]),
                 new InMemoryExtensionApiBridge(),
                 $logger,
-                new EventDispatcher(),
-                $this->pathResolver(),
+                new \Symfony\Component\EventDispatcher\EventDispatcher(),
+                new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'),
             );
             $diagnostics = $manager->loadExtensions();
             $this->assertCount(1, $diagnostics);
@@ -630,8 +622,8 @@ PHP);
             $config,
             new InMemoryExtensionApiBridge(),
             new TestLogger(),
-            new EventDispatcher(),
-            $this->pathResolver(),
+            new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'),
         );
         $manager->loadExtensions();
 
@@ -681,8 +673,8 @@ PHP);
             $config,
             new InMemoryExtensionApiBridge(),
             new TestLogger(),
-            new EventDispatcher(),
-            $this->pathResolver(),
+            new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'),
         );
         $manager->loadExtensions();
 
@@ -690,274 +682,6 @@ PHP);
         $this->assertSame($fakeTuiRoot.'/Render/Renderer.php', $rendererClass->getFileName());
         $this->assertFalse(method_exists(\Symfony\Component\Tui\Render\Renderer::class, 'renderFrame'));
         $this->assertTrue(method_exists(\Symfony\Component\Tui\Render\Renderer::class, 'render'));
-    }
-
-    #[RunInSeparateProcess]
-    #[PreserveGlobalState(false)]
-    public function testUserAutoloadLoadsWhenProjectAutoloadAbsent(): void
-    {
-        require \dirname(__DIR__, 3).'/vendor/autoload.php';
-
-        $userVendor = $this->homeDir.'/.hatfield/extensions/vendor';
-        mkdir($userVendor, 0755, true);
-        $userAutoload = $userVendor.'/autoload.php';
-
-        $autoloadCode = <<<'PHP'
-<?php
-spl_autoload_register(function (string $class): void {
-    if ('HatfieldExtTest\\UserOnlyExtension' === $class) {
-        require __DIR__.'/UserOnlyExtension.php';
-    }
-});
-PHP;
-        file_put_contents($userAutoload, $autoloadCode);
-        file_put_contents(
-            $userVendor.'/UserOnlyExtension.php',
-            <<<'PHP'
-<?php
-
-namespace HatfieldExtTest;
-
-use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
-use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
-
-final class UserOnlyExtension implements HatfieldExtensionInterface
-{
-    public function register(ExtensionApiInterface $api): void
-    {
-        $api->registerTool(new ToolRegistrationDTO(
-            name: 'user_only_tool',
-            description: 'Loaded from user root',
-            parametersJsonSchema: [],
-            handler: new NoOpExtensionToolHandler(),
-        ));
-    }
-}
-PHP
-        );
-
-        // Project autoload intentionally absent.
-        @unlink($this->autoloadPath);
-
-        $bridge = new InMemoryExtensionApiBridge();
-        $config = $this->createAppConfig(
-            cwd: $this->extensionsDir,
-            extensions: ['HatfieldExtTest\\UserOnlyExtension'],
-        );
-        $manager = new ExtensionManager(
-            $config,
-            $bridge,
-            new TestLogger(),
-            new EventDispatcher(),
-            $this->pathResolver(),
-        );
-        $manager->loadExtensions();
-
-        $this->assertCount(1, $bridge->getRegistrations());
-        $this->assertSame('user_only_tool', $bridge->getRegistrations()[0]->name);
-    }
-
-    /**
-     * Real Composer dual-root proof through ExtensionManager.
-     *
-     * Unique external contract: only real Composer generates colliding
-     * content-hash ComposerAutoloaderInit names for identical package sets.
-     * Timeout is a safety cap around two local path installs + manager load.
-     */
-    #[RunInSeparateProcess]
-    #[PreserveGlobalState(false)]
-    public function testRealComposerProjectAndUserAutoloadBothLoadThroughManager(): void
-    {
-        require \dirname(__DIR__, 3).'/vendor/autoload.php';
-        $workspace = Path::join($this->extensionsDir, 'real-composer');
-        $fixture = OfflineComposerExtensionFixture::begin(
-            $workspace,
-            static function (string $dir): void {
-                if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-                    throw new \RuntimeException(\sprintf('Failed to create "%s".', $dir));
-                }
-            },
-            psr4Namespace: 'HatfieldExtDual\\',
-            classBasename: 'Marker',
-        );
-
-        try {
-            $installer = new ExtensionPackageInstaller($this->pathResolver());
-            foreach ([SettingsLayerEnum::Project, SettingsLayerEnum::User] as $layer) {
-                $root = $installer->rootFor($layer, $this->extensionsDir);
-                if (!is_dir($root) && !mkdir($root, 0755, true) && !is_dir($root)) {
-                    $this->fail(\sprintf('Failed to create extensions root "%s".', $root));
-                }
-                OfflineComposerExtensionFixture::writeOfflineManifest($root, $fixture['packageDir']);
-                $collision = OfflineComposerExtensionFixture::installWithoutSuffix(
-                    $fixture['composer'],
-                    $root,
-                    'ineersa/hatfield-ext-file-rewind',
-                    '0.0.42',
-                );
-                $this->assertStringNotContainsString('HatfieldExtProject', OfflineComposerExtensionFixture::initClassName($collision));
-                $this->assertStringNotContainsString('HatfieldExtUser', OfflineComposerExtensionFixture::initClassName($collision));
-
-                $beforeInstalled = (string) file_get_contents(Path::join($root, 'vendor/composer/installed.json'));
-                $result = $installer->ensureInstalled($layer, $this->extensionsDir, 'ineersa/hatfield-ext-file-rewind', '0.0.42');
-                $this->assertTrue($result->alreadyInstalled);
-                $this->assertSame(
-                    $beforeInstalled,
-                    (string) file_get_contents(Path::join($root, 'vendor/composer/installed.json')),
-                );
-            }
-
-            $projectReal = (string) file_get_contents($this->extensionsDir.'/.hatfield/extensions/vendor/composer/autoload_real.php');
-            $userReal = (string) file_get_contents($this->homeDir.'/.hatfield/extensions/vendor/composer/autoload_real.php');
-            $this->assertStringContainsString('ComposerAutoloaderInitHatfieldExtProject', $projectReal);
-            $this->assertStringContainsString('ComposerAutoloaderInitHatfieldExtUser', $userReal);
-
-            $manager = new ExtensionManager(
-                $this->createAppConfig($this->extensionsDir, ['NoSuch\\MissingExtension']),
-                new InMemoryExtensionApiBridge(),
-                new TestLogger(),
-                new EventDispatcher(),
-                $this->pathResolver(),
-            );
-            $manager->loadExtensions();
-
-            $this->assertTrue(class_exists(\HatfieldExtDual\Marker::class, true));
-            $this->assertTrue(class_exists('ComposerAutoloaderInitHatfieldExtProject', false));
-            $this->assertTrue(class_exists('ComposerAutoloaderInitHatfieldExtUser', false));
-        } finally {
-            OfflineComposerExtensionFixture::restoreEnv($fixture['previousEnv']);
-        }
-    }
-
-    #[RunInSeparateProcess]
-    #[PreserveGlobalState(false)]
-    public function testProjectAutoloadWinsOverUserForSameClass(): void
-    {
-        require \dirname(__DIR__, 3).'/vendor/autoload.php';
-
-        $userVendor = $this->homeDir.'/.hatfield/extensions/vendor';
-        mkdir($userVendor, 0755, true);
-
-        file_put_contents($this->autoloadPath, <<<'PHP'
-<?php
-spl_autoload_register(function (string $class): void {
-    if ('HatfieldExtTest\\SharedExtension' === $class) {
-        require __DIR__.'/SharedExtension.php';
-    }
-});
-PHP);
-        file_put_contents(
-            \dirname($this->autoloadPath).'/SharedExtension.php',
-            <<<'PHP'
-<?php
-
-namespace HatfieldExtTest;
-
-use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
-use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
-
-final class SharedExtension implements HatfieldExtensionInterface
-{
-    public function register(ExtensionApiInterface $api): void
-    {
-        $api->registerTool(new ToolRegistrationDTO(
-            name: 'project_shared_tool',
-            description: 'Loaded from project root',
-            parametersJsonSchema: [],
-            handler: new NoOpExtensionToolHandler(),
-        ));
-    }
-}
-PHP
-        );
-
-        file_put_contents($userVendor.'/autoload.php', <<<'PHP'
-<?php
-spl_autoload_register(function (string $class): void {
-    if ('HatfieldExtTest\\SharedExtension' === $class) {
-        require __DIR__.'/SharedExtension.php';
-    }
-});
-PHP);
-        file_put_contents(
-            $userVendor.'/SharedExtension.php',
-            <<<'PHP'
-<?php
-
-namespace HatfieldExtTest;
-
-use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
-use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
-
-final class SharedExtension implements HatfieldExtensionInterface
-{
-    public function register(ExtensionApiInterface $api): void
-    {
-        $api->registerTool(new ToolRegistrationDTO(
-            name: 'user_shared_tool',
-            description: 'Loaded from user root',
-            parametersJsonSchema: [],
-            handler: new NoOpExtensionToolHandler(),
-        ));
-    }
-}
-PHP
-        );
-
-        $bridge = new InMemoryExtensionApiBridge();
-        $config = $this->createAppConfig(
-            cwd: $this->extensionsDir,
-            extensions: ['HatfieldExtTest\\SharedExtension'],
-        );
-        $manager = new ExtensionManager(
-            $config,
-            $bridge,
-            new TestLogger(),
-            new EventDispatcher(),
-            $this->pathResolver(),
-        );
-        $manager->loadExtensions();
-
-        $this->assertCount(1, $bridge->getRegistrations());
-        $this->assertSame('project_shared_tool', $bridge->getRegistrations()[0]->name);
-    }
-
-    #[RunInSeparateProcess]
-    #[PreserveGlobalState(false)]
-    public function testIdenticalProjectAndUserAutoloadPathsLoadOnce(): void
-    {
-        require \dirname(__DIR__, 3).'/vendor/autoload.php';
-
-        $sharedHome = $this->extensionsDir;
-        $marker = $this->extensionsDir.'/.hatfield/extensions/vendor/autoload-load-count.txt';
-        file_put_contents($this->autoloadPath, <<<PHP
-<?php
-\$marker = {$this->export($marker)};
-\$count = is_file(\$marker) ? (int) file_get_contents(\$marker) : 0;
-file_put_contents(\$marker, (string) (\$count + 1));
-spl_autoload_register(static function (string \$class): void {});
-PHP);
-
-        $config = $this->createAppConfig(
-            cwd: $this->extensionsDir,
-            extensions: ['NoSuch\\NonExistentExtension'],
-        );
-        $manager = new ExtensionManager(
-            $config,
-            new InMemoryExtensionApiBridge(),
-            new TestLogger(),
-            new EventDispatcher(),
-            new SettingsPathResolver($this->extensionsDir, $sharedHome),
-        );
-        $manager->loadExtensions();
-
-        $this->assertSame('1', trim((string) file_get_contents($marker)));
     }
 
     // ── Helpers ──
@@ -998,16 +722,6 @@ PHP);
                 return $this->label;
             }
         };
-    }
-
-    private function pathResolver(): SettingsPathResolver
-    {
-        return new SettingsPathResolver($this->extensionsDir, $this->homeDir);
-    }
-
-    private function export(string $value): string
-    {
-        return var_export($value, true);
     }
 
     /**

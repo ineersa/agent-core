@@ -571,7 +571,10 @@ parameters:
     TuiSetup:
       - TuiTerminal
       - TuiTheme
+      - AppCli
+      - AppConfig
       - SymfonyTui
+      - SymfonyYaml
 
     TuiCompactHeader:
       - AppRuntimeContract
@@ -664,8 +667,6 @@ parameters:
       - SymfonyTui
       - SymfonyConsole
       - SymfonyYaml
-      - SymfonySerializer
-      - SymfonyValidator
 
     AppAuth:
       - SymfonyConsole
@@ -704,6 +705,7 @@ parameters:
       - AppAuth
       - AppAgent
       - AppExtension
+      - AppExtensionBuiltin
       - AppExtensionApi
       - AppTool
       - AppRuntimeContract
@@ -729,6 +731,7 @@ parameters:
       - SymfonyLock
       - SymfonyFinder
       - SymfonyScheduler
+      - SymfonyYaml
 
     AppRuntimeProjectionPipeline:
       - AppRuntimeProjection
