@@ -649,6 +649,12 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertSame(BackgroundProcessStatusEnum::Stopped, $record->status);
         $this->assertTrue($record->stoppedByUser);
         $this->assertNotNull($record->completionNotifiedAt);
+        // Refresh sends SIGKILL without waiting for the target to exit.
+        // Observe actual exit rather than assuming signal delivery is synchronous.
+        $deadline = hrtime(true) + 2_000_000_000;
+        while ($lifecycle->isAlive($process->pid) && hrtime(true) < $deadline) {
+            usleep(10_000);
+        }
         $this->assertFalse($lifecycle->isAlive($process->pid));
     }
 
