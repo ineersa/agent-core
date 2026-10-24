@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI\Extensions\DTO;
 
-use Ineersa\CodingAgent\CLI\Extensions\Validation\AbsolutePathList;
 use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -29,8 +28,14 @@ final readonly class SafeGuardGuidedSettingsDTO
         #[Assert\All([new Assert\Type('string'), new Assert\NotBlank()])]
         public array $allowCommandPatterns = [],
         #[SerializedName('allow_write_outside_cwd')]
-        #[AbsolutePathList]
-        #[Assert\All([new Assert\Type('string'), new Assert\NotBlank()])]
+        #[Assert\All([
+            new Assert\Type('string'),
+            new Assert\NotBlank(),
+            new Assert\Regex(
+                pattern: '#^/#',
+                message: 'allow_write_outside_cwd entries must be absolute paths; got "{{ value }}".',
+            ),
+        ])]
         public array $allowWriteOutsideCwd = [],
         #[SerializedName('protected_read_patterns')]
         #[Assert\All([new Assert\Type('string'), new Assert\NotBlank()])]

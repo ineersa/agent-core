@@ -95,13 +95,14 @@ interface ExtensionsSetupFlowInterface
     /**
      * Validate + persist guided settings, parent enablement, and child membership.
      *
-     * Disable (parent off, no child membership) does not force install or rewrite
-     * guided settings. Enablement requires a successful install and valid guided
-     * configuration for non-built-in packages.
+     * Disable (parent off, no child membership) does not force install. Valid
+     * guided edits still persist while disabled; untouched invalid/missing
+     * guided values do not block disable-only. Enablement requires a successful
+     * install and valid guided configuration for non-built-in packages.
      *
      * @param array<string, mixed> $formState
      *
-     * @throws \InvalidArgumentException when validation fails
+     * @throws \InvalidArgumentException when validation fails (typed ExtensionsSetupValidationException from the AppCli flow)
      * @throws \RuntimeException         when persistence fails
      */
     public function save(array $formState): void;

@@ -202,6 +202,7 @@ final class ExtensionsSetupScreen
     {
         match ($value) {
             'configure' => $this->beginConfigure(),
+            'install' => $this->beginInstall(),
             'back' => $this->showPicker(),
             default => null,
         };
@@ -269,20 +270,32 @@ final class ExtensionsSetupScreen
         }
 
         $this->formState = $this->flow->formStateFor($this->activeId);
-        if ($this->flow->needsInstallConfirmation($this->activeId)) {
-            $this->pendingConfirm = 'install';
-            $row = $this->rowFor($this->activeId);
-            $package = (string) ($row['package'] ?? '');
-            $version = (string) ($row['version'] ?? '');
-            $this->showConfirm(
-                \sprintf('Install %s:%s into this scope with Composer?', $package, $version),
-                'Composer writes under the selected .hatfield/extensions root. Cancel leaves settings unchanged; already-started package files are not rolled back.',
-            );
+        $this->showSettings();
+    }
+
+    private function beginInstall(): void
+    {
+        if (null === $this->activeId) {
+            $this->showPicker();
 
             return;
         }
 
-        $this->showSettings();
+        $this->formState = $this->flow->formStateFor($this->activeId);
+        if (!$this->flow->needsInstallConfirmation($this->activeId)) {
+            $this->showSettings();
+
+            return;
+        }
+
+        $this->pendingConfirm = 'install';
+        $row = $this->rowFor($this->activeId);
+        $package = (string) ($row['package'] ?? '');
+        $version = (string) ($row['version'] ?? '');
+        $this->showConfirm(
+            \sprintf('Install %s:%s into this scope with Composer?', $package, $version),
+            'Composer writes under the selected .hatfield/extensions root. Cancel leaves settings unchanged; already-started package files are not rolled back.',
+        );
     }
 
     private function showPicker(): void
@@ -379,6 +392,12 @@ final class ExtensionsSetupScreen
             ['value' => 'configure', 'label' => 'Configure / save settings'],
             ['value' => 'back', 'label' => 'Back'],
         ];
+        if (true === ($row['needsInstall'] ?? false)) {
+            array_splice($options, 1, 0, [[
+                'value' => 'install',
+                'label' => 'Install package with Composer',
+            ]]);
+        }
 
         $this->panelWidget->remove($this->listWidget);
         $this->panelWidget->remove($this->settingsWidget);
@@ -696,7 +715,7 @@ final class ExtensionsSetupScreen
             }
         }
 
-        return ['id' => $id, 'name' => $id, 'status' => '', 'parentEnabled' => false, 'package' => null, 'version' => null];
+        return ['id' => $id, 'name' => $id, 'status' => '', 'parentEnabled' => false, 'package' => null, 'version' => null, 'needsInstall' => false];
     }
 
     private function yesNo(bool $value): string

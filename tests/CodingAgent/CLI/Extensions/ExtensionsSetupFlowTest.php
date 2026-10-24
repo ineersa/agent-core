@@ -229,7 +229,7 @@ YAML);
         $state['forksEnabled'] = false;
         $state['agentsAlwaysOn'] = false;
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ExtensionsSetupValidationException::class);
         $this->expectExceptionMessage('Child selections require the extension to be enabled for the parent');
         $flow->save($state);
     }
@@ -273,6 +273,96 @@ YAML);
     }
 
     #[Test]
+    public function disabledSafeGuardGuidedEditPersistsWithoutEnabling(): void
+    {
+        $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
+        file_put_contents($settingsPath, <<<'YAML'
+extensions:
+    enabled:
+        - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+    settings:
+        safe_guard:
+            allow_write_outside_cwd:
+                - /keep/me
+YAML);
+
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('safe-guard');
+        $state['parentEnabled'] = false;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $state['settings']['allow_write_outside_cwd'] = ['/keep/me', '/tmp/extra'];
+        $flow->save($state);
+
+        $parsed = Yaml::parseFile($settingsPath);
+        $this->assertNotContains(ExtensionsSetupTestSupport::SAFE_GUARD, $parsed['extensions']['enabled']);
+        $this->assertSame(['/keep/me', '/tmp/extra'], $parsed['extensions']['settings']['safe_guard']['allow_write_outside_cwd']);
+    }
+
+    #[Test]
+    public function missingPackageDisableRunsNoComposerAndLeavesSettingsUntouchedWhenUnedited(): void
+    {
+        $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
+        file_put_contents($settingsPath, <<<'YAML'
+extensions:
+    enabled:
+        - Ineersa\HatfieldExt\FileRewind\FileRewindExtension
+    settings:
+        file_rewind:
+            enabled: true
+            max_retained_turns: 42
+YAML);
+
+        $before = (string) file_get_contents($settingsPath);
+        $flow = $this->flow(project: true);
+        $this->assertTrue($flow->needsInstallConfirmation('file-rewind'));
+        $state = $flow->formStateFor('file-rewind');
+        $state['parentEnabled'] = false;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $flow->save($state);
+
+        $this->assertDirectoryDoesNotExist($this->projectDir.'/.hatfield/extensions');
+        $this->assertFileDoesNotExist($this->projectDir.'/.hatfield/extensions/composer.json');
+        $parsed = Yaml::parseFile($settingsPath);
+        $this->assertNotContains(ExtensionsSetupTestSupport::FILE_REWIND, $parsed['extensions']['enabled'] ?? []);
+        $this->assertSame(42, $parsed['extensions']['settings']['file_rewind']['max_retained_turns']);
+        $this->assertNotSame($before, (string) file_get_contents($settingsPath));
+    }
+
+    #[Test]
+    public function invalidSettingsShapeRefusesBeforeAnyWrite(): void
+    {
+        $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
+        $before = <<<'YAML'
+extensions:
+    enabled:
+        - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+    settings:
+        - broken
+YAML;
+        file_put_contents($settingsPath, $before);
+
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('safe-guard');
+        $state['parentEnabled'] = true;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+
+        try {
+            $flow->save($state);
+            $this->fail('Expected shape refusal');
+        } catch (ExtensionsSetupValidationException $e) {
+            $this->assertStringContainsString('extensions.settings must be a mapping', $e->getMessage());
+        }
+
+        $this->assertSame($before, (string) file_get_contents($settingsPath));
+    }
+
+    #[Test]
     public function omRatioOneIsRejectedWithoutClamping(): void
     {
         $installer = new ExtensionPackageInstaller(new SettingsPathResolver($this->projectDir, $this->homeDir));
@@ -295,7 +385,7 @@ YAML);
         try {
             $flow->save($state);
             $this->fail('Expected validation refusal');
-        } catch (ExtensionsSetupValidationException|\InvalidArgumentException $e) {
+        } catch (ExtensionsSetupValidationException $e) {
             $this->assertStringContainsString('0 < ratio < 1', $e->getMessage());
         }
         $this->assertFileDoesNotExist($this->projectDir.'/.hatfield/settings.yaml');

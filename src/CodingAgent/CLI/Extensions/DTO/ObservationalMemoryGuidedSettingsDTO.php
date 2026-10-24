@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI\Extensions\DTO;
 
-use Ineersa\CodingAgent\CLI\Extensions\Validation\ExactProviderModelId;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -13,7 +12,13 @@ use Symfony\Component\Validator\Constraints as Assert;
 final readonly class ObservationalMemoryGuidedSettingsDTO
 {
     public function __construct(
-        #[ExactProviderModelId]
+        #[Assert\NotBlank(
+            message: 'observational_memory.model must be an exact provider/model id (example: llama_cpp/flash).',
+        )]
+        #[Assert\Regex(
+            pattern: '#^(?!@)[^/]+/[^/]+$#',
+            message: 'observational_memory.model must be an exact provider/model id (example: llama_cpp/flash).',
+        )]
         public string $model = '',
         #[Assert\Valid]
         public ObservationalMemoryStorageDTO $storage = new ObservationalMemoryStorageDTO(),

@@ -168,6 +168,105 @@ YAML);
     }
 
     #[Test]
+    public function keyboardDisabledSafeGuardListEditPersistsWithoutComposer(): void
+    {
+        $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
+        file_put_contents($settingsPath, <<<'YAML'
+extensions:
+    enabled:
+        - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+    settings:
+        safe_guard:
+            allow_write_outside_cwd:
+                - /keep/me
+YAML);
+
+        [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));
+
+        $tui->handleInput("\r"); // SafeGuard
+        $this->assertSame('action', $this->phase($screen));
+        $this->assertStringNotContainsString('Install package with Composer', $this->plain($terminal));
+        $tui->handleInput("\r"); // Configure / save settings
+        $this->assertSame('settings', $this->phase($screen));
+
+        // Parent enablement is yes; toggle to no.
+        $tui->handleInput("\r");
+        $this->assertSame('no', $this->settingsWidget($screen)->getValue('parentEnabled'));
+
+        // Clear default forks/agents always-on membership while disabled.
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r"); // forksAlwaysOn -> no
+        $this->assertSame('no', $this->settingsWidget($screen)->getValue('forksAlwaysOn'));
+        $tui->handleInput("\x1b[B"); // forksEnabled stays no
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r"); // agentsAlwaysOn -> no
+        $this->assertSame('no', $this->settingsWidget($screen)->getValue('agentsAlwaysOn'));
+
+        // Move past auto-deny to Allow write outside CWD.
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r");
+        $this->assertInstanceOf(
+            \Ineersa\Tui\Setup\SettingsTextInputWidget::class,
+            $this->activeSubmenu($screen),
+        );
+        // Clear "/keep/me" then type the edited absolute-path list.
+        for ($i = 0; $i < 8; ++$i) {
+            $tui->handleInput("\x7f");
+        }
+        $tui->handleInput('/keep/me, /tmp/extra');
+        $tui->handleInput("\r");
+        $this->assertNull($this->activeSubmenu($screen));
+        $this->assertSame('/keep/me, /tmp/extra', $this->settingsWidget($screen)->getValue('sg.allow_write_outside_cwd'));
+
+        // Cursor is on allow_write; one down reaches Save.
+        $tui->handleInput("\x1b[B");
+        $this->assertSame('↵', $this->settingsWidget($screen)->getValue('save'));
+        $tui->handleInput("\r");
+        $this->assertSame('picker', $this->phase($screen));
+
+        $parsed = Yaml::parseFile($settingsPath);
+        $this->assertNotContains(ExtensionsSetupTestSupport::SAFE_GUARD, $parsed['extensions']['enabled']);
+        $this->assertSame(['/keep/me', '/tmp/extra'], $parsed['extensions']['settings']['safe_guard']['allow_write_outside_cwd']);
+        $this->assertDirectoryDoesNotExist($this->projectDir.'/.hatfield/extensions');
+    }
+
+    #[Test]
+    public function keyboardConfigureWithoutInstallOpensSettingsForMissingPackage(): void
+    {
+        [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));
+
+        // File Rewind is missing and needs Composer.
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r");
+        $this->assertSame('action', $this->phase($screen));
+        $plain = $this->plain($terminal);
+        $this->assertStringContainsString('Configure / save settings', $plain);
+        $this->assertStringContainsString('Install package with Composer', $plain);
+
+        $tui->handleInput("\r"); // Configure without install
+        $this->assertSame('settings', $this->phase($screen));
+        $this->assertStringContainsString('File Rewind settings', $this->plain($terminal));
+        $this->assertDirectoryDoesNotExist($this->projectDir.'/.hatfield/extensions');
+
+        // Parent defaults to no when not enabled; Save without Composer must not install.
+        $this->assertSame('no', $this->settingsWidget($screen)->getValue('parentEnabled'));
+        for ($i = 0; $i < 7; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+        $this->assertSame('↵', $this->settingsWidget($screen)->getValue('save'));
+        $tui->handleInput("\r");
+        $this->assertSame('picker', $this->phase($screen));
+        $this->assertDirectoryDoesNotExist($this->projectDir.'/.hatfield/extensions');
+        if (is_file($this->projectDir.'/.hatfield/settings.yaml')) {
+            $parsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+            $this->assertNotContains(ExtensionsSetupTestSupport::FILE_REWIND, $parsed['extensions']['enabled'] ?? []);
+            $this->assertArrayNotHasKey('file_rewind', $parsed['extensions']['settings'] ?? []);
+        }
+    }
+
+    #[Test]
     public function keyboardConfigureInstallAndSavePersistsYamlThroughRealFlow(): void
     {
         $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
@@ -181,7 +280,8 @@ YAML);
         $tui->handleInput("\r");
         $this->assertSame('action', $this->phase($screen));
 
-        $tui->handleInput("\r"); // Configure
+        $tui->handleInput("\x1b[B"); // Install package with Composer
+        $tui->handleInput("\r");
         $this->assertSame('confirm', $this->phase($screen));
         $this->assertStringContainsString('Install ineersa/hatfield-ext-file-rewind:0.0.42', $this->plain($terminal));
 
@@ -262,6 +362,7 @@ YAML);
         $tui->handleInput("\x1b[B");
         $tui->handleInput("\x1b[B");
         $tui->handleInput("\r");
+        $tui->handleInput("\x1b[B"); // Install package with Composer
         $tui->handleInput("\r");
         $this->assertSame('confirm', $this->phase($screen));
         $tui->handleInput("\r"); // Yes → install fails

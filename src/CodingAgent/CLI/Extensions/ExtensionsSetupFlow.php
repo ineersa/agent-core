@@ -240,7 +240,7 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
         $class = $extension->extensionClass;
 
         if (($form->forksAlwaysOn || $form->forksEnabled || $form->agentsAlwaysOn) && !$form->parentEnabled) {
-            throw new \InvalidArgumentException('Child selections require the extension to be enabled for the parent (extensions.enabled). Enable it, or clear forks/agents membership first.');
+            throw ExtensionsSetupValidationException::forMessage('Child selections require the extension to be enabled for the parent (extensions.enabled). Enable it, or clear forks/agents membership first.');
         }
 
         $resolution = $this->resolve();
@@ -267,31 +267,34 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             ? $this->ensureClassInList($agentsAlways, $class)
             : $this->removeClassFromList($agentsAlways, $class);
 
-        // Disable-only path (parent off, children cleared): update membership lists
-        // without forcing install or rewriting guided settings. Enablement requires
-        // install availability and validated guided configuration.
+        // Disable keeps membership updates install-free. Valid guided edits still
+        // persist while disabled; untouched invalid/missing guided values stay out
+        // of the way for disable-only. Enablement still requires install + valid config.
         $guided = null;
+        $settingsBag = \is_array($layerRaw['extensions']['settings'] ?? null)
+            ? $layerRaw['extensions']['settings']
+            : [];
+        if ([] !== $settingsBag && array_is_list($settingsBag)) {
+            throw ExtensionsSetupValidationException::forMessage('extensions.settings must be a mapping.');
+        }
+        $existingSection = \is_array($settingsBag[$extension->settingsKey] ?? null)
+            ? $settingsBag[$extension->settingsKey]
+            : [];
+        if ([] !== $existingSection && array_is_list($existingSection)) {
+            throw ExtensionsSetupValidationException::forMessage(\sprintf('extensions.settings.%s must be a mapping.', $extension->settingsKey));
+        }
+
         if ($form->parentEnabled) {
             if (!$extension->builtin && !$this->isInstallAvailable($extension)) {
-                throw new \InvalidArgumentException(\sprintf('%s is not installed for this scope yet. Confirm Composer installation before enabling or saving configuration.', $extension->name));
+                throw ExtensionsSetupValidationException::forMessage(\sprintf('%s is not installed for this scope yet. Confirm Composer installation before enabling or saving configuration.', $extension->name));
             }
+            $guided = $this->normalizeGuidedSettings($extension, $form->settings);
+        } elseif ($this->guidedSettingsWereEdited($extension, $form->settings, $resolution)) {
             $guided = $this->normalizeGuidedSettings($extension, $form->settings);
         }
 
         $this->settingsWriter->set($this->layer, $this->cwd, 'extensions.enabled', $enabled);
         if (null !== $guided) {
-            $settingsBag = \is_array($layerRaw['extensions']['settings'] ?? null)
-                ? $layerRaw['extensions']['settings']
-                : [];
-            if ([] !== $settingsBag && array_is_list($settingsBag)) {
-                throw new \InvalidArgumentException('extensions.settings must be a mapping.');
-            }
-            $existingSection = \is_array($settingsBag[$extension->settingsKey] ?? null)
-                ? $settingsBag[$extension->settingsKey]
-                : [];
-            if ([] !== $existingSection && array_is_list($existingSection)) {
-                throw new \InvalidArgumentException(\sprintf('extensions.settings.%s must be a mapping.', $extension->settingsKey));
-            }
             $merged = $this->configLoader->overlayConfig($existingSection, $guided);
             $this->settingsWriter->set($this->layer, $this->cwd, 'extensions.settings.'.$extension->settingsKey, $merged);
         }
@@ -408,6 +411,42 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
     }
 
     /**
+     * True when the form's guided values differ from the prefill that would be
+     * shown for this extension (including catalog defaults for empty fields).
+     *
+     * @param array<string, mixed> $settings
+     */
+    private function guidedSettingsWereEdited(ProvidedExtensionDTO $extension, array $settings, SettingsResolutionDTO $resolution): bool
+    {
+        $baseline = $this->guidedSettingsPrefill($extension, $resolution);
+
+        return $this->canonicalizeGuidedSettings($extension, $settings)
+            !== $this->canonicalizeGuidedSettings($extension, $baseline);
+    }
+
+    /**
+     * @param array<string, mixed> $settings
+     *
+     * @return array<string, mixed>
+     */
+    private function canonicalizeGuidedSettings(ProvidedExtensionDTO $extension, array $settings): array
+    {
+        $canonical = [];
+        foreach ($extension->guidedFields as $field) {
+            $path = $this->propertyPath($field->path);
+            $value = $this->propertyAccessor->isReadable($settings, $path)
+                ? $this->propertyAccessor->getValue($settings, $path)
+                : null;
+            if (null === $value || '' === $value || ([] === $value && \in_array($field->type, ['csv_list', 'absolute_path_list'], true))) {
+                $value = $field->default;
+            }
+            $this->propertyAccessor->setValue($canonical, $path, $this->displayValue($field->type, $value));
+        }
+
+        return $canonical;
+    }
+
+    /**
      * @param array<string, mixed> $settings
      *
      * @return array<string, mixed>
@@ -420,13 +459,13 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             'task-workflow' => TaskWorkflowGuidedSettingsDTO::class,
             'file-rewind' => FileRewindGuidedSettingsDTO::class,
             'observational-memory' => ObservationalMemoryGuidedSettingsDTO::class,
-            default => throw new \InvalidArgumentException(\sprintf('No guided settings DTO for "%s".', $extension->id)),
+            default => throw ExtensionsSetupValidationException::forMessage(\sprintf('No guided settings DTO for "%s".', $extension->id)),
         };
 
         try {
             $dto = $this->denormalizer->denormalize($prepared, $dtoClass);
         } catch (SerializerExceptionInterface $e) {
-            throw new \InvalidArgumentException(\sprintf('Invalid guided settings for %s: %s', $extension->name, $e->getMessage()), 0, $e);
+            throw ExtensionsSetupValidationException::forMessage(\sprintf('Invalid guided settings for %s: %s', $extension->name, $e->getMessage()), $e);
         }
 
         $violations = $this->validator->validate($dto);
@@ -547,14 +586,14 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             }
         }
 
-        throw new \InvalidArgumentException(\sprintf('%s must be yes/no.', $label));
+        throw ExtensionsSetupValidationException::forMessage(\sprintf('%s must be yes/no.', $label));
     }
 
     private function strictPositiveInt(mixed $value, string $label): int
     {
         if (\is_int($value)) {
             if ($value < 1) {
-                throw new \InvalidArgumentException(\sprintf('%s must be a positive integer.', $label));
+                throw ExtensionsSetupValidationException::forMessage(\sprintf('%s must be a positive integer.', $label));
             }
 
             return $value;
@@ -562,13 +601,13 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
         if (\is_string($value) && preg_match('/^\d+$/', trim($value))) {
             $int = (int) trim($value);
             if ($int < 1) {
-                throw new \InvalidArgumentException(\sprintf('%s must be a positive integer.', $label));
+                throw ExtensionsSetupValidationException::forMessage(\sprintf('%s must be a positive integer.', $label));
             }
 
             return $int;
         }
 
-        throw new \InvalidArgumentException(\sprintf('%s must be a positive integer.', $label));
+        throw ExtensionsSetupValidationException::forMessage(\sprintf('%s must be a positive integer.', $label));
     }
 
     private function strictFloat(mixed $value, string $label): float
@@ -580,7 +619,7 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             return (float) trim($value);
         }
 
-        throw new \InvalidArgumentException(\sprintf('%s must be numeric.', $label));
+        throw ExtensionsSetupValidationException::forMessage(\sprintf('%s must be numeric.', $label));
     }
 
     /**
@@ -600,7 +639,7 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
         try {
             $form = $this->denormalizer->denormalize($payload, ExtensionsSetupFormDTO::class);
         } catch (SerializerExceptionInterface $e) {
-            throw new \InvalidArgumentException('Invalid extensions:setup form payload: '.$e->getMessage(), 0, $e);
+            throw ExtensionsSetupValidationException::forMessage('Invalid extensions:setup form payload: '.$e->getMessage(), $e);
         }
 
         $violations = $this->validator->validate($form);

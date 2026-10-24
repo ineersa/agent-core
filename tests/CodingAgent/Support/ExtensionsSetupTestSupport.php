@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Support;
 
 use Ineersa\CodingAgent\CLI\Extensions\ExtensionsSetupFlow;
-use Ineersa\CodingAgent\CLI\Extensions\Validation\AbsolutePathListValidator;
-use Ineersa\CodingAgent\CLI\Extensions\Validation\ExactProviderModelIdValidator;
-use Ineersa\CodingAgent\CLI\Extensions\Validation\OpenUnitRatioValidator;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
@@ -36,7 +33,6 @@ use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Serializer\SerializerInterface;
-use Symfony\Component\Validator\ConstraintValidatorFactory;
 use Symfony\Component\Validator\Validation;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -204,11 +200,6 @@ YAML;
     {
         return Validation::createValidatorBuilder()
             ->enableAttributeMapping()
-            ->setConstraintValidatorFactory(new ConstraintValidatorFactory([
-                AbsolutePathListValidator::class => new AbsolutePathListValidator(),
-                ExactProviderModelIdValidator::class => new ExactProviderModelIdValidator(),
-                OpenUnitRatioValidator::class => new OpenUnitRatioValidator(),
-            ]))
             ->getValidator();
     }
 

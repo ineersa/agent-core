@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI\Extensions\Exception;
 
+use Symfony\Component\Validator\ConstraintViolationList;
 use Symfony\Component\Validator\ConstraintViolationListInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 
@@ -18,6 +19,11 @@ final class ExtensionsSetupValidationException extends \InvalidArgumentException
         ?\Throwable $previous = null,
     ) {
         parent::__construct($message, 0, $previous ?? new ValidationFailedException(null, $violations));
+    }
+
+    public static function forMessage(string $message, ?\Throwable $previous = null): self
+    {
+        return new self($message, new ConstraintViolationList(), $previous);
     }
 
     public static function fromViolations(ConstraintViolationListInterface $violations): self

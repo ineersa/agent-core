@@ -105,10 +105,12 @@ a marketplace or upgrade/uninstall tool.
   controls, Task Workflow `task_root`, File Rewind enable/retention/timeout, OM
   model + core storage/observer/reflector/pool values). Parent enable/disable and
   forks/agents membership are toggles on the same form — there is no separate
-  quick enable/disable path. Unoffered advanced keys stay in YAML and are
-  preserved on Save. Disable without child membership does not force install or
-  rewrite guided settings; enablement requires a successful install and valid
-  guided configuration.
+  quick enable/disable path. Configure opens the form even when the package is
+  missing; Composer install stays on its own action. Unoffered advanced keys stay
+  in YAML and are preserved on Save. Disable without child membership does not
+  force install. Valid guided edits still persist while disabled; untouched
+  invalid or missing guided values do not block disable-only. Enablement requires
+  a successful install and valid guided configuration.
 - **Child membership:** optional toggles for `forks.extensions.always_on`,
   `forks.extensions.enabled`, and `agents.extensions.always_on`. There is no
   `agents.extensions.enabled` key and no bulk frontmatter editor — per-agent
