@@ -119,6 +119,11 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             $this->assertSame([], $results);
             $this->assertSame(RunStatus::Running, $store->requireLoaded($run)->status);
             $this->assertSame('completed', $deferred->status($call->deferredId));
+            $events = $this->readEvents($run);
+            $last = $events[array_key_last($events)];
+            $this->assertSame('continue', $last['payload']['kind']);
+            $runtime = $container->get(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator::class)->translate(new RunEvent($run, $last['seq'], 1, $last['type'], $last['payload']));
+            $this->assertNotSame('user.message_submitted', $runtime?->type);
 
             return;
         }

@@ -282,10 +282,10 @@ final readonly class RunStateReducer
             return $state->with($changes);
         }
 
-        // steer / follow_up / append_message: append message to prompt context.
+        // Message commands append prompt context; explicit continue has no message.
         // These lifecycle advances abandon any outstanding human-input queue so a
         // later response cannot target a superseded question behind a new wait.
-        if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
+        if (\in_array($kind, ['steer', 'follow_up', 'append_message', 'continue'], true)) {
             $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
             if (null !== $messagePayload) {
                 $msg = AgentMessage::fromPayload($messagePayload);

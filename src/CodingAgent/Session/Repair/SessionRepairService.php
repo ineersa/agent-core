@@ -1007,7 +1007,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         if (\in_array($state->status, [RunStatus::Completed, RunStatus::Failed], true) && !\in_array(false, $state->pendingToolCalls, true)) {
             // Explicit repair may resume an already-consumed receipt. There is
             // no new user message and the old physical-host fence stays set.
-            $resumeEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => ['kind' => 'append_message', 'reason' => 'deferred_continuation']]]);
+            $resumeEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => ['kind' => 'continue', 'reason' => 'deferred_continuation']]]);
             $next = $this->runStateReducer->replay($state, $resumeEvents)->with(['version' => $state->version + 1]);
         }
 
