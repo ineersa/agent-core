@@ -38,6 +38,7 @@
 
 - Run all QA, tests, lint, analysis, formatting, and docs validation through Castor in the exact checkout.
 - Use raw `vendor/bin/*` only to isolate a Castor failure.
+- Rewrite timing-dependent or flaky tests to use deterministic synchronization, or delete them. Never repair them with sleeps, timing-based polling, retries, or increased timeouts. Missing coverage is preferable to flaky coverage; record the coverage lost when deleting a test.
 - Before test work or runtime, TUI, Messenger, or database validation, load `.agents/skills/testing/SKILL.md` and read `tests/AGENTS.md`.
 - Apply that prerequisite to every agent and fork. Test-related fork handoffs must confirm both reads.
 - Never signal root-owned workers or processes tagged with `HATFIELD_SESSION_ID`.
