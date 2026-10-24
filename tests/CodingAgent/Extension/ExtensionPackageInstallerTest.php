@@ -296,6 +296,82 @@ final class ExtensionPackageInstallerTest extends TestCase
         }
     }
 
+    public function testFailedRequireStillLeavesPrependAutoloaderDisabled(): void
+    {
+        $root = $this->projectDir.'/.hatfield/extensions';
+        TestDirectoryIsolation::ensureDirectory($root);
+        file_put_contents($root.'/composer.json', json_encode([
+            'name' => 'ineersa/hatfield-extensions',
+            'require' => [
+                'php' => '>=8.3',
+            ],
+            'config' => [
+                'prepend-autoloader' => true,
+            ],
+        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
+
+        $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
+        TestDirectoryIsolation::ensureDirectory(\dirname($settingsPath));
+        file_put_contents($settingsPath, "tui:\n    theme: cyberpunk\n");
+        $before = (string) file_get_contents($settingsPath);
+
+        $failMarker = $this->tmpDir.'/fail-composer-prepend';
+        file_put_contents($failMarker, '1');
+        putenv('FAKE_COMPOSER_FAIL_MARKER='.$failMarker);
+        $_ENV['FAKE_COMPOSER_FAIL_MARKER'] = $failMarker;
+        $_SERVER['FAKE_COMPOSER_FAIL_MARKER'] = $failMarker;
+
+        try {
+            $this->installer()->ensureInstalled(
+                SettingsLayerEnum::Project,
+                $this->projectDir,
+                'ineersa/hatfield-ext-file-rewind',
+                '0.0.42',
+            );
+            $this->fail('Expected ExtensionPackageInstallException');
+        } catch (ExtensionPackageInstallException $e) {
+            $this->assertStringContainsString('Composer require failed', $e->getMessage());
+        }
+
+        $this->assertSame($before, file_get_contents($settingsPath));
+        /** @var array<string, mixed> $manifest */
+        $manifest = json_decode((string) file_get_contents($root.'/composer.json'), true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertFalse($manifest['config']['prepend-autoloader']);
+        $this->assertArrayNotHasKey('ineersa/hatfield-ext-file-rewind', $manifest['require'] ?? []);
+    }
+
+    public function testComposer1ListInstalledJsonIsNotTreatedAsInstalled(): void
+    {
+        $root = $this->projectDir.'/.hatfield/extensions';
+        TestDirectoryIsolation::ensureDirectory($root.'/vendor/composer');
+        file_put_contents($root.'/composer.json', json_encode([
+            'name' => 'ineersa/hatfield-extensions',
+            'require' => [
+                'php' => '>=8.3',
+                'ineersa/hatfield-ext-task-workflow' => '0.0.42',
+            ],
+            'config' => [
+                'prepend-autoloader' => false,
+            ],
+        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
+        file_put_contents($root.'/vendor/autoload.php', "<?php\n");
+        // Composer 1 emitted a bare package list; Hatfield requires packages[].
+        file_put_contents($root.'/vendor/composer/installed.json', json_encode([
+            [
+                'name' => 'ineersa/hatfield-ext-task-workflow',
+                'version' => '0.0.42',
+            ],
+        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
+
+        $this->assertFalse(
+            $this->installer()->isInstalled(
+                SettingsLayerEnum::Project,
+                $this->projectDir,
+                'ineersa/hatfield-ext-task-workflow',
+            ),
+        );
+    }
+
     public function testMalformedManifestPropagatesTypedError(): void
     {
         $root = $this->projectDir.'/.hatfield/extensions';

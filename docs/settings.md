@@ -198,6 +198,10 @@ See [background-processes.md](background-processes.md).
 - User installs may also load from `~/.hatfield/extensions` when present; project wins collisions and host libraries stay highest priority.
 - Built-in docs for the model are selected with `builtin: true` under approved roots; repository-only docs stay unmarked.
 
+Guided install/enablement for curated Hatfield-provided extensions:
+`hatfield extensions:setup` (project settings by default; `--user` for
+`~/.hatfield/settings.yaml`). See [settings-agents.md](settings-agents.md).
+
 ## Validation tip
 
 After editing docs or packaging selection:

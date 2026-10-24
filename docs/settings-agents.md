@@ -87,6 +87,34 @@ highest priority. Identical project and user paths load once.
 Built-in SafeGuard class may appear in defaults/`always_on` without a Composer package.
 Project packages (task-workflow, file-rewind, observational-memory) document their own settings keys in **package-local README files** shipped with each extension repository/package. Those keys are **not** core `hatfield_docs` catalog entries.
 
+### Guided setup (`extensions:setup`)
+
+`hatfield extensions:setup` installs and configures the curated Hatfield-provided
+set only (SafeGuard, Task Workflow, File Rewind, Observational Memory). It is not
+a marketplace or upgrade/uninstall tool.
+
+- **Scope:** project `.hatfield/settings.yaml` by default; pass `--user` for
+  `~/.hatfield/settings.yaml`. Project setup may reuse an already-installed user
+  package; user setup never relies on the current project's package root.
+- **Install:** built-in SafeGuard skips Composer. Installable packages confirm
+  before `composer require` into the selected `.hatfield/extensions` root. Failed
+  or cancelled installs do not write enablement/settings. The wizard does not
+  claim package files roll back.
+- **Configure:** guided fields use the native settings list (SafeGuard policy
+  controls, Task Workflow `task_root`, File Rewind enable/retention/timeout, OM
+  model + core storage/observer/reflector/pool values). Unoffered advanced keys
+  stay in YAML and are preserved on Save.
+- **Child membership:** optional toggles for `forks.extensions.always_on`,
+  `forks.extensions.enabled`, and `agents.extensions.always_on`. There is no
+  `agents.extensions.enabled` key and no bulk frontmatter editor — per-agent
+  optional extensions remain on the agent definition. Child membership requires
+  the class in parent `extensions.enabled`.
+- **Prefill:** project scope uses defaults < user < project. User scope uses
+  defaults < user and does not copy project-only overrides.
+- **Activation:** Save writes the selected settings layer immediately; restart
+  Hatfield so registration picks up enablement/settings changes. Project settings
+  still override user settings at runtime.
+
 Example:
 
 ```yaml

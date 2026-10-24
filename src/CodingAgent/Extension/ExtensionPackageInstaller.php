@@ -85,7 +85,7 @@ final class ExtensionPackageInstaller
         $this->readManifest($root);
 
         if ($this->packagePresentInRoot($root, $package)) {
-            $this->enforceSafeAutoload($root);
+            $this->ensureSafeAutoload($root);
 
             return new ExtensionPackageInstallResultDTO(
                 layer: $layer,
@@ -96,13 +96,16 @@ final class ExtensionPackageInstaller
             );
         }
 
+        // Fix unsafe prepend before require so a failed/cancelled install cannot
+        // leave generated autoload configured to shadow host libraries.
+        $this->ensureSafeComposerConfig($root);
         $this->runComposer(['require', $package.':'.$version, '--no-interaction', '--no-ansi', '--working-dir='.$root], $root, $package);
 
         if (!$this->packagePresentInRoot($root, $package)) {
             throw new ExtensionPackageInstallException(\sprintf('Composer finished without installing "%s" into %s.', $package, $root));
         }
 
-        $this->enforceSafeAutoload($root);
+        $this->ensureSafeAutoload($root);
 
         return new ExtensionPackageInstallResultDTO(
             layer: $layer,
@@ -145,18 +148,26 @@ final class ExtensionPackageInstaller
     }
 
     /**
-     * Correct prepend-autoloader=false and regenerate vendor autoload when needed.
+     * Ensure prepend-autoloader=false and regenerate vendor autoload when needed.
      */
-    private function enforceSafeAutoload(string $root): void
+    private function ensureSafeAutoload(string $root): void
     {
-        $this->ensurePrependAutoloaderDisabled($root, dumpAutoload: true);
+        $changed = $this->ensureSafeComposerConfig($root);
+        if ($changed || !is_file($root.'/'.self::VENDOR_AUTOLOAD)) {
+            $this->runComposer(['dump-autoload', '--no-interaction', '--no-ansi', '--working-dir='.$root], $root);
+        }
     }
 
-    private function ensurePrependAutoloaderDisabled(string $root, bool $dumpAutoload): void
+    /**
+     * Write host-safe Composer config without regenerating autoload.
+     *
+     * @return bool true when composer.json changed
+     */
+    private function ensureSafeComposerConfig(string $root): bool
     {
         $manifestPath = $root.'/'.self::COMPOSER_JSON;
         if (!is_file($manifestPath)) {
-            return;
+            return false;
         }
 
         $manifest = $this->readManifest($root);
@@ -175,9 +186,7 @@ final class ExtensionPackageInstaller
             $this->writeManifest($manifestPath, $manifest);
         }
 
-        if ($dumpAutoload && ($changed || !is_file($root.'/'.self::VENDOR_AUTOLOAD))) {
-            $this->runComposer(['dump-autoload', '--no-interaction', '--no-ansi', '--working-dir='.$root], $root);
-        }
+        return $changed;
     }
 
     private function packagePresentInRoot(string $root, string $package): bool
@@ -202,12 +211,11 @@ final class ExtensionPackageInstaller
             throw new ExtensionPackageInstallException(\sprintf('Invalid Composer installed.json at %s: %s', $installedPath, $e->getMessage()), 0, $e);
         }
 
-        $packages = [];
-        if (\is_array($decoded) && \array_key_exists('packages', $decoded) && \is_array($decoded['packages'])) {
-            $packages = $decoded['packages'];
-        } elseif (\is_array($decoded) && array_is_list($decoded)) {
-            $packages = $decoded;
+        if (!\is_array($decoded) || !\array_key_exists('packages', $decoded) || !\is_array($decoded['packages'])) {
+            return false;
         }
+
+        $packages = $decoded['packages'];
 
         foreach ($packages as $entry) {
             if (\is_array($entry) && ($entry['name'] ?? null) === $package) {
