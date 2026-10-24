@@ -550,7 +550,9 @@ final class ExtensionsSetupScreen
             }
 
             $display = match ($type) {
-                'csv_list', 'absolute_path_list' => $this->flow->formatListField(\is_array($raw) ? $raw : []),
+                'csv_list', 'absolute_path_list' => \is_array($raw)
+                    ? $this->flow->formatListField($raw)
+                    : (null === $raw ? '' : (string) $raw),
                 default => null === $raw ? '' : (string) $raw,
             };
             $items[] = new SettingItem(
@@ -617,15 +619,26 @@ final class ExtensionsSetupScreen
                 return;
             }
             $current = $this->valueAtPath($settings, $path);
-            $stored = match ($type) {
-                'bool' => 'yes' === $value,
-                'csv_list', 'absolute_path_list' => $this->flow->parseListField(
-                    $value,
-                    \is_array($current) ? $current : [],
-                ),
-                'positive_int', 'open_unit_ratio', 'path_string', 'model_id' => $value,
-                default => $value,
-            };
+            if (\in_array($type, ['csv_list', 'absolute_path_list'], true)) {
+                try {
+                    $stored = $this->flow->parseListField(
+                        $value,
+                        \is_array($current) ? $current : [],
+                    );
+                } catch (\Throwable $e) {
+                    // Keep the raw edited text so Save revalidates through form coercion
+                    // instead of silently writing the previous valid list.
+                    $this->setAtPath($settings, $path, $value);
+                    $this->formState['settings'] = $settings;
+                    throw $e;
+                }
+            } else {
+                $stored = match ($type) {
+                    'bool' => 'yes' === $value,
+                    'positive_int', 'open_unit_ratio', 'path_string', 'model_id' => $value,
+                    default => $value,
+                };
+            }
             $this->setAtPath($settings, $path, $stored);
             $this->formState['settings'] = $settings;
 

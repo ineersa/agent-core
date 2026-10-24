@@ -10,8 +10,9 @@ use Symfony\Component\Yaml\Yaml;
 /**
  * Lossless YAML-sequence encoding for guided list fields in extensions:setup.
  *
- * Keeps commas, quotes, and backslashes inside list entries intact. Rejects
- * ambiguous delimiter text instead of guessing.
+ * Keeps commas, quotes, backslashes, and significant spaces inside list entries
+ * intact. Rejects ambiguous delimiter text and non-string entries instead of
+ * guessing or silently coercing shapes.
  */
 final class GuidedListTextCodec
 {
@@ -20,14 +21,12 @@ final class GuidedListTextCodec
      */
     public static function format(array $values): string
     {
-        $parts = [];
-        foreach ($values as $value) {
-            if (\is_string($value) && '' !== trim($value)) {
-                $parts[] = trim($value);
-            }
-        }
-
-        return trim(Yaml::dump($parts, 0, 4, Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE | Yaml::DUMP_EXCEPTION_ON_INVALID_TYPE));
+        return trim(Yaml::dump(
+            self::stringList($values),
+            0,
+            4,
+            Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE | Yaml::DUMP_EXCEPTION_ON_INVALID_TYPE,
+        ));
     }
 
     /**
@@ -36,18 +35,11 @@ final class GuidedListTextCodec
     public static function parse(mixed $value): array
     {
         if (\is_array($value)) {
-            $out = [];
-            foreach ($value as $item) {
-                if (\is_string($item) && '' !== trim($item)) {
-                    $out[] = trim($item);
-                }
-            }
-
-            return $out;
+            return self::stringList($value);
         }
 
-        $raw = trim((string) $value);
-        if ('' === $raw) {
+        $raw = (string) $value;
+        if ('' === trim($raw)) {
             return [];
         }
 
@@ -61,18 +53,7 @@ final class GuidedListTextCodec
             throw new \InvalidArgumentException('List fields must be a YAML sequence (example: [\'echo hello, world\', /tmp/extra]).');
         }
 
-        $out = [];
-        foreach ($parsed as $item) {
-            if (!\is_string($item)) {
-                throw new \InvalidArgumentException('List fields must contain only string entries.');
-            }
-            $item = trim($item);
-            if ('' !== $item) {
-                $out[] = $item;
-            }
-        }
-
-        return $out;
+        return self::stringList($parsed);
     }
 
     /**
@@ -84,11 +65,33 @@ final class GuidedListTextCodec
      */
     public static function parseEdited(string $value, array $original): array
     {
-        $normalizedOriginal = self::parse($original);
-        if ($value === self::format($normalizedOriginal)) {
-            return $normalizedOriginal;
+        $originalList = self::stringList($original);
+        if ($value === self::format($originalList)) {
+            return $originalList;
         }
 
         return self::parse($value);
+    }
+
+    /**
+     * @param list<mixed>|array<mixed> $values
+     *
+     * @return list<string>
+     */
+    private static function stringList(array $values): array
+    {
+        if (!array_is_list($values)) {
+            throw new \InvalidArgumentException('List fields must be a YAML sequence (example: [\'echo hello, world\', /tmp/extra]).');
+        }
+
+        $out = [];
+        foreach ($values as $item) {
+            if (!\is_string($item)) {
+                throw new \InvalidArgumentException('List fields must contain only string entries.');
+            }
+            $out[] = $item;
+        }
+
+        return $out;
     }
 }

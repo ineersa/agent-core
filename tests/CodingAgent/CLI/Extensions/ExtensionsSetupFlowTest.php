@@ -469,12 +469,12 @@ YAML;
         $state['forksAlwaysOn'] = false;
         $state['forksEnabled'] = false;
         $state['agentsAlwaysOn'] = false;
-        $state['settings']['allow_command_patterns'] = ['echo hello, world'];
+        $state['settings']['allow_command_patterns'] = ['echo hello, world', '  keep spaces  '];
         $flow->save($state);
 
         $parsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
         $this->assertSame(
-            ['echo hello, world'],
+            ['echo hello, world', '  keep spaces  '],
             $parsed['extensions']['settings']['safe_guard']['allow_command_patterns'],
         );
 
@@ -487,6 +487,19 @@ YAML;
         } catch (ExtensionsSetupValidationException $e) {
             $this->assertStringContainsString('YAML sequence', $e->getMessage());
         }
+
+        $this->assertSame(
+            ['echo hello, world', '  keep spaces  '],
+            Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml')['extensions']['settings']['safe_guard']['allow_command_patterns'],
+        );
+
+        $this->assertSame(
+            ['echo hello, world', '  keep spaces  '],
+            $flow->parseListField(
+                $flow->formatListField(['echo hello, world', '  keep spaces  ']),
+                ['echo hello, world', '  keep spaces  '],
+            ),
+        );
     }
 
     #[Test]

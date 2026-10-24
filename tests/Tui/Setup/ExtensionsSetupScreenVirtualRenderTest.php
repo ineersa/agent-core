@@ -386,6 +386,7 @@ extensions:
         safe_guard:
             allow_command_patterns:
                 - 'echo hello, world'
+                - '  keep spaces  '
 YAML);
 
         [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));
@@ -407,14 +408,14 @@ YAML);
             $tui->handleInput("\x1b[B");
         }
         $this->assertSame(
-            '[\'echo hello, world\']',
+            '[\'echo hello, world\', \'  keep spaces  \']',
             $this->settingsWidget($screen)->getValue('sg.allow_command_patterns'),
         );
         $tui->handleInput("\r"); // open editor
         $tui->handleInput("\r"); // Enter without edits
         $this->assertNull($this->activeSubmenu($screen));
         $this->assertSame(
-            '[\'echo hello, world\']',
+            '[\'echo hello, world\', \'  keep spaces  \']',
             $this->settingsWidget($screen)->getValue('sg.allow_command_patterns'),
         );
 
@@ -426,7 +427,7 @@ YAML);
 
         $parsed = Yaml::parseFile($settingsPath);
         $this->assertSame(
-            ['echo hello, world'],
+            ['echo hello, world', '  keep spaces  '],
             $parsed['extensions']['settings']['safe_guard']['allow_command_patterns'],
         );
     }
@@ -462,7 +463,7 @@ YAML);
         for ($i = 0; $i < \strlen((string) $current); ++$i) {
             $tui->handleInput("\x7f");
         }
-        $tui->handleInput('[\'echo hello, world\', \'say "hi"\', path\\with\\slash]');
+        $tui->handleInput('[\'echo hello, world\', \'  spaced pattern  \', \'say "hi"\', path\\with\\slash]');
         $tui->handleInput("\r");
         $this->assertNull($this->activeSubmenu($screen));
 
@@ -473,7 +474,74 @@ YAML);
 
         $parsed = Yaml::parseFile($settingsPath);
         $this->assertSame(
-            ['echo hello, world', 'say "hi"', 'path\\with\\slash'],
+            ['echo hello, world', '  spaced pattern  ', 'say "hi"', 'path\\with\\slash'],
+            $parsed['extensions']['settings']['safe_guard']['allow_command_patterns'],
+        );
+    }
+
+    #[Test]
+    public function keyboardInvalidListEditRefusesSaveUntilCorrected(): void
+    {
+        $settingsPath = $this->projectDir.'/.hatfield/settings.yaml';
+        file_put_contents($settingsPath, <<<'YAML'
+extensions:
+    enabled: []
+    settings:
+        safe_guard:
+            allow_command_patterns:
+                - 'echo hello, world'
+YAML);
+        $before = (string) file_get_contents($settingsPath);
+
+        [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));
+        $tui->handleInput("\r"); // SafeGuard
+        $tui->handleInput("\r"); // Configure
+
+        $this->assertSame('no', $this->settingsWidget($screen)->getValue('parentEnabled'));
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r"); // forksAlwaysOn -> no
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r"); // agentsAlwaysOn -> no
+        for ($i = 0; $i < 3; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+
+        $tui->handleInput("\r");
+        $current = $this->settingsWidget($screen)->getValue('sg.allow_command_patterns');
+        for ($i = 0; $i < \strlen((string) $current); ++$i) {
+            $tui->handleInput("\x7f");
+        }
+        $tui->handleInput('echo hello, world');
+        $tui->handleInput("\r");
+        $this->assertNull($this->activeSubmenu($screen));
+        $this->assertStringContainsString('YAML sequence', $this->errorText($screen));
+        $this->assertSame('echo hello, world', $this->settingsWidget($screen)->getValue('sg.allow_command_patterns'));
+
+        $this->selectSettingsItem($screen, $tui, 'save');
+        $tui->handleInput("\r");
+        $this->assertSame('settings', $this->phase($screen));
+        $this->assertStringContainsString('YAML sequence', $this->errorText($screen));
+        $this->assertSame($before, file_get_contents($settingsPath));
+
+        $this->selectSettingsItem($screen, $tui, 'sg.allow_command_patterns');
+        $tui->handleInput("\r");
+        $current = $this->settingsWidget($screen)->getValue('sg.allow_command_patterns');
+        for ($i = 0; $i < \strlen((string) $current); ++$i) {
+            $tui->handleInput("\x7f");
+        }
+        $tui->handleInput('[\'echo hello, world\', \'  keep spaces  \']');
+        $tui->handleInput("\r");
+        $this->assertNull($this->activeSubmenu($screen));
+
+        $this->selectSettingsItem($screen, $tui, 'save');
+        $tui->handleInput("\r");
+        $this->assertSame('', $this->errorText($screen), 'unexpected settings error after corrected Save');
+        $this->assertSame('picker', $this->phase($screen));
+
+        $parsed = Yaml::parseFile($settingsPath);
+        $this->assertSame(
+            ['echo hello, world', '  keep spaces  '],
             $parsed['extensions']['settings']['safe_guard']['allow_command_patterns'],
         );
     }
