@@ -10,7 +10,7 @@ sequenceDiagram
     participant Console
     participant Loader as ExtensionLoaderSubscriber
     participant Manager as ExtensionManager
-    participant Autoload as Project extensions Composer autoload
+    participant Autoload as Project then user extensions Composer autoload
     participant Extension as Enabled extension class
     participant API as Host ExtensionApi implementation
     participant Registry as Tools, hooks, commands, TUI registrations

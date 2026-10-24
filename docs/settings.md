@@ -195,6 +195,7 @@ See [background-processes.md](background-processes.md).
 - Settings and extension enablement are project/user config.
 - Sessions, tmp, cache, logs are runtime and should stay untracked.
 - Extensions load from `.hatfield/extensions` Composer autoload when enabled.
+- User installs may also load from `~/.hatfield/extensions` when present; project wins collisions and host libraries stay highest priority.
 - Built-in docs for the model are selected with `builtin: true` under approved roots; repository-only docs stay unmarked.
 
 ## Validation tip

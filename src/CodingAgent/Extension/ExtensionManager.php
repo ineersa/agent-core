@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedExtensionItemDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
@@ -21,8 +22,11 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  *  1. Read the list of enabled extension class names from merged Hatfield
  *     settings (extensions.enabled), which follows the standard precedence:
  *     built-in defaults < home settings < project settings.
- *  2. Require the project-local extension Composer autoloader when the
- *     extensions directory exists: `<cwd>/.hatfield/extensions/vendor/autoload.php`.
+ *  2. Require extension Composer autoloaders when present:
+ *     project `<cwd>/.hatfield/extensions/vendor/autoload.php`, then user
+ *     `~/.hatfield/extensions/vendor/autoload.php`. Project registers first so
+ *     project packages win collisions; both keep prepend-autoloader=false so
+ *     host libraries remain highest priority. Identical resolved paths load once.
  *  3. For each enabled class name, verify the class exists, instantiate it,
  *     inject logger when LoggerAwareInterface, confirm HatfieldExtensionInterface,
  *     call register($api), and if EventSubscriberInterface register on the host
@@ -48,6 +52,7 @@ final class ExtensionManager
         private readonly ExtensionApiInterface $extensionApi,
         private readonly LoggerInterface $logger,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly SettingsPathResolver $pathResolver,
     ) {
     }
 
@@ -130,25 +135,57 @@ final class ExtensionManager
     }
 
     /**
-     * Require the project-local extension Composer autoloader if present.
+     * Require project then user extension Composer autoloaders when present.
      *
-     * This loads extension packages installed via Composer in the
-     * project-local .hatfield/extensions/ environment. It is safe to call
-     * when the autoload file does not exist — it is simply a no-op.
+     * Missing autoload files are ignored. When project and user resolve to the
+     * same path (for example HOME under cwd in tests), require_once loads once.
      */
     private function requireExtensionAutoload(): void
     {
-        $autoloadPath = $this->config->cwd.'/.hatfield/extensions/vendor/autoload.php';
+        foreach ($this->extensionAutoloadPaths() as $autoloadPath) {
+            if (!is_file($autoloadPath)) {
+                continue;
+            }
 
-        if (!is_file($autoloadPath)) {
-            return;
+            // Registers via spl_autoload_register(). Keep extensions Composer
+            // config.prepend-autoloader=false so this does not shadow the host
+            // app's Symfony packages (for example symfony/tui) after load.
+            // require_once avoids double-loading during test isolation and when
+            // project/user roots coincide.
+            require_once $autoloadPath;
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function extensionAutoloadPaths(): array
+    {
+        $paths = [];
+        $seen = [];
+
+        $project = rtrim($this->config->cwd, '/').'/.hatfield/extensions/vendor/autoload.php';
+        $resolvedProject = $this->resolveExistingPath($project) ?? $project;
+        $paths[] = $resolvedProject;
+        $seen[$resolvedProject] = true;
+
+        $homeDir = $this->pathResolver->getHomeDir();
+        if ('' !== $homeDir) {
+            $user = rtrim($homeDir, '/').'/.hatfield/extensions/vendor/autoload.php';
+            $resolvedUser = $this->resolveExistingPath($user) ?? $user;
+            if (!isset($seen[$resolvedUser])) {
+                $paths[] = $resolvedUser;
+            }
         }
 
-        // Registers via spl_autoload_register(). Keep extensions Composer
-        // config.prepend-autoloader=false so this does not shadow the host
-        // app's Symfony packages (for example symfony/tui) after load.
-        // require_once avoids double-loading during test isolation.
-        require_once $autoloadPath;
+        return $paths;
+    }
+
+    private function resolveExistingPath(string $path): ?string
+    {
+        $resolved = realpath($path);
+
+        return false === $resolved ? null : $resolved;
     }
 
     /**

@@ -1,0 +1,76 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\CodingAgent\Tests\Config;
+
+use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Ineersa\CodingAgent\Config\ProvidedExtensionsCatalog;
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\TestCase;
+
+final class ProvidedExtensionsCatalogTest extends TestCase
+{
+    private string $tmpDir = '';
+
+    protected function tearDown(): void
+    {
+        if ('' !== $this->tmpDir) {
+            TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        }
+        parent::tearDown();
+    }
+
+    public function testBundledCatalogListsBuiltinAndPinnedInstallablePackages(): void
+    {
+        $catalog = new ProvidedExtensionsCatalog(
+            (new AppResourceLocator(ProjectDir::get()))->getProvidedExtensionsCatalogPath(),
+        );
+
+        $all = $catalog->all();
+        $this->assertCount(4, $all);
+
+        $byId = [];
+        foreach ($all as $package) {
+            $byId[$package->id] = $package;
+        }
+
+        $this->assertTrue($byId['safe-guard']->builtin);
+        $this->assertNull($byId['safe-guard']->package);
+        $this->assertSame(
+            'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
+            $byId['safe-guard']->extensionClass,
+        );
+
+        $this->assertFalse($byId['task-workflow']->builtin);
+        $this->assertSame('ineersa/hatfield-ext-task-workflow', $byId['task-workflow']->package);
+        $this->assertSame('0.0.42', $byId['task-workflow']->version);
+
+        $this->assertSame('ineersa/hatfield-ext-file-rewind', $byId['file-rewind']->package);
+        $this->assertSame('0.0.42', $byId['file-rewind']->version);
+        $this->assertSame('ineersa/hatfield-ext-observational-memory', $byId['observational-memory']->package);
+        $this->assertSame('0.0.42', $byId['observational-memory']->version);
+
+        $installable = $catalog->installable();
+        $this->assertCount(3, $installable);
+        foreach ($installable as $package) {
+            $this->assertFalse($package->builtin);
+            $this->assertNotNull($package->package);
+            $this->assertNotNull($package->version);
+        }
+    }
+
+    public function testInvalidCatalogFailsClosed(): void
+    {
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('provided-ext-catalog');
+        $path = $this->tmpDir.'/bad.yaml';
+        file_put_contents($path, "packages:\n  - id: broken\n");
+
+        $catalog = new ProvidedExtensionsCatalog($path);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('expected non-empty string');
+        $catalog->all();
+    }
+}

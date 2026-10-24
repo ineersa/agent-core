@@ -1,0 +1,25 @@
+# Curated Hatfield-provided extensions offered by extensions:setup.
+# Keep package versions pinned; do not invent newer releases here.
+packages:
+    - id: safe-guard
+      name: SafeGuard
+      builtin: true
+      extension_class: Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+    - id: task-workflow
+      name: Task Workflow
+      builtin: false
+      package: ineersa/hatfield-ext-task-workflow
+      version: 0.0.42
+      extension_class: Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
+    - id: file-rewind
+      name: File Rewind
+      builtin: false
+      package: ineersa/hatfield-ext-file-rewind
+      version: 0.0.42
+      extension_class: Ineersa\HatfieldExt\FileRewind\FileRewindExtension
+    - id: observational-memory
+      name: Observational Memory
+      builtin: false
+      package: ineersa/hatfield-ext-observational-memory
+      version: 0.0.42
+      extension_class: Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension

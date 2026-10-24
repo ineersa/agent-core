@@ -444,6 +444,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             extensionApi: $this->createStub(ExtensionApiInterface::class),
             logger: new NullLogger(),
             eventDispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            pathResolver: new SettingsPathResolver('/tmp', '/tmp/home'),
         );
     }
 
@@ -462,6 +463,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             extensionApi: $this->createStub(ExtensionApiInterface::class),
             logger: new NullLogger(),
             eventDispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            pathResolver: new SettingsPathResolver('/tmp', '/tmp/home'),
         );
     }
 }
