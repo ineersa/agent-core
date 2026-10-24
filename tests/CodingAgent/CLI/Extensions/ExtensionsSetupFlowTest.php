@@ -414,6 +414,104 @@ YAML;
         $this->assertNotEmpty($flow->formStateFor('file-rewind')['guidedFields']);
     }
 
+    #[Test]
+    public function untouchedSafeGuardSaveWritesNothingForFreshProjectAndUser(): void
+    {
+        $projectSettings = $this->projectDir.'/.hatfield/settings.yaml';
+        $userSettings = $this->homeDir.'/.hatfield/settings.yaml';
+        $this->assertFileDoesNotExist($projectSettings);
+        $this->assertFileDoesNotExist($userSettings);
+
+        $projectFlow = $this->flow(project: true);
+        $projectFlow->save($projectFlow->formStateFor('safe-guard'));
+        $this->assertFalse($projectFlow->wroteSomething());
+        $this->assertSame([], $projectFlow->summaryLines());
+        $this->assertFileDoesNotExist($projectSettings);
+
+        $userFlow = $this->flow(project: false);
+        $userFlow->save($userFlow->formStateFor('safe-guard'));
+        $this->assertFalse($userFlow->wroteSomething());
+        $this->assertSame([], $userFlow->summaryLines());
+        $this->assertFileDoesNotExist($userSettings);
+    }
+
+    #[Test]
+    public function unrelatedDisableDoesNotPinInheritedUserForkListsOrUnchangedConfig(): void
+    {
+        $userSettings = $this->homeDir.'/.hatfield/settings.yaml';
+        file_put_contents($userSettings, <<<'YAML'
+forks:
+    extensions:
+        always_on:
+            - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+            - Acme\UserOnly\KeepMeExtension
+        enabled:
+            - Acme\UserOnly\OptionalExtension
+agents:
+    extensions:
+        always_on:
+            - Acme\UserOnly\AgentExtension
+YAML);
+        $beforeUser = (string) file_get_contents($userSettings);
+        $projectSettings = $this->projectDir.'/.hatfield/settings.yaml';
+        $this->assertFileDoesNotExist($projectSettings);
+
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('file-rewind');
+        $this->assertTrue($flow->needsInstallConfirmation('file-rewind'));
+        $state['parentEnabled'] = false;
+        $state['forksAlwaysOn'] = false;
+        $state['forksEnabled'] = false;
+        $state['agentsAlwaysOn'] = false;
+        $flow->save($state);
+
+        $this->assertFalse($flow->wroteSomething());
+        $this->assertSame([], $flow->summaryLines());
+        $this->assertFileDoesNotExist($projectSettings);
+        $this->assertSame($beforeUser, (string) file_get_contents($userSettings));
+        $this->assertDirectoryDoesNotExist($this->projectDir.'/.hatfield/extensions');
+    }
+
+    #[Test]
+    public function editedGuidedLeafWritesOnlyChangedOverrideAndKeepsInheritedFieldsLive(): void
+    {
+        $userSettings = $this->homeDir.'/.hatfield/settings.yaml';
+        file_put_contents($userSettings, <<<'YAML'
+extensions:
+    settings:
+        safe_guard:
+            allow_write_outside_cwd:
+                - /user/allowed
+            auto_deny_in_noninteractive: false
+YAML);
+
+        $flow = $this->flow(project: true);
+        $state = $flow->formStateFor('safe-guard');
+        $this->assertSame(['/user/allowed'], $state['settings']['allow_write_outside_cwd']);
+        $this->assertFalse($state['settings']['auto_deny_in_noninteractive']);
+        $state['settings']['allow_write_outside_cwd'] = ['/project/override'];
+        $flow->save($state);
+
+        $this->assertTrue($flow->wroteSomething());
+        $projectParsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+        $this->assertSame(['/project/override'], $projectParsed['extensions']['settings']['safe_guard']['allow_write_outside_cwd']);
+        $this->assertArrayNotHasKey('auto_deny_in_noninteractive', $projectParsed['extensions']['settings']['safe_guard']);
+        $this->assertArrayNotHasKey('extensions', $projectParsed['forks'] ?? []);
+        $this->assertArrayNotHasKey('extensions', $projectParsed['agents'] ?? []);
+
+        file_put_contents($userSettings, <<<'YAML'
+extensions:
+    settings:
+        safe_guard:
+            allow_write_outside_cwd:
+                - /user/allowed
+            auto_deny_in_noninteractive: true
+YAML);
+        $reloaded = $this->flow(project: true)->formStateFor('safe-guard');
+        $this->assertSame(['/project/override'], $reloaded['settings']['allow_write_outside_cwd']);
+        $this->assertTrue($reloaded['settings']['auto_deny_in_noninteractive']);
+    }
+
     private function flow(bool $project): ExtensionsSetupFlow
     {
         return ExtensionsSetupTestSupport::createFlow(

@@ -293,23 +293,40 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             $guided = $this->normalizeGuidedSettings($extension, $form->settings);
         }
 
-        $this->settingsWriter->set($this->layer, $this->cwd, 'extensions.enabled', $enabled);
+        $writes = [
+            $this->writeListIfChanged('extensions.enabled', $this->listAt($source, ['extensions', 'enabled']), $enabled),
+            $this->writeListIfChanged('forks.extensions.always_on', $this->listAt($source, ['forks', 'extensions', 'always_on']), $forksAlways),
+            $this->writeListIfChanged('forks.extensions.enabled', $this->listAt($source, ['forks', 'extensions', 'enabled']), $forksOptional),
+            $this->writeListIfChanged('agents.extensions.always_on', $this->listAt($source, ['agents', 'extensions', 'always_on']), $agentsAlways),
+        ];
+
         if (null !== $guided) {
-            $merged = $this->configLoader->overlayConfig($existingSection, $guided);
-            $this->settingsWriter->set($this->layer, $this->cwd, 'extensions.settings.'.$extension->settingsKey, $merged);
+            $delta = $this->sparseGuidedDelta($extension, $guided, $resolution);
+            if ([] !== $delta) {
+                $merged = $this->configLoader->overlayConfig($existingSection, $delta);
+                if ($merged !== $existingSection) {
+                    $this->settingsWriter->set(
+                        $this->layer,
+                        $this->cwd,
+                        'extensions.settings.'.$extension->settingsKey,
+                        $merged,
+                    );
+                    $writes[] = true;
+                }
+            }
         }
 
-        $this->settingsWriter->set($this->layer, $this->cwd, 'forks.extensions.always_on', $forksAlways);
-        $this->settingsWriter->set($this->layer, $this->cwd, 'forks.extensions.enabled', $forksOptional);
-        $this->settingsWriter->set($this->layer, $this->cwd, 'agents.extensions.always_on', $agentsAlways);
+        $wrote = \in_array(true, $writes, true);
 
-        $this->wroteSomething = true;
-        $this->summary[] = \sprintf(
-            'Saved %s to %s (%s). Restart Hatfield so registration picks up the change. Optional per-agent frontmatter extensions remain separate from agents.extensions.always_on.',
-            $extension->name,
-            $this->settingsPath(),
-            $form->parentEnabled ? 'enabled' : 'disabled',
-        );
+        if ($wrote) {
+            $this->wroteSomething = true;
+            $this->summary[] = \sprintf(
+                'Saved %s to %s (%s). Restart Hatfield so registration picks up the change. Optional per-agent frontmatter extensions remain separate from agents.extensions.always_on.',
+                $extension->name,
+                $this->settingsPath(),
+                $form->parentEnabled ? 'enabled' : 'disabled',
+            );
+        }
     }
 
     private function resolve(): SettingsResolutionDTO
@@ -729,5 +746,60 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             $classes,
             static fn (string $item): bool => $item !== $class,
         ));
+    }
+
+    /**
+     * Write a membership list only when it differs from the scoped effective value.
+     *
+     * @param list<string> $before
+     * @param list<string> $after
+     */
+    private function writeListIfChanged(string $dottedPath, array $before, array $after): bool
+    {
+        if ($before === $after) {
+            return false;
+        }
+
+        $this->settingsWriter->set($this->layer, $this->cwd, $dottedPath, $after);
+
+        return true;
+    }
+
+    /**
+     * Keep only guided leaves that differ from the scoped effective/prefill value.
+     * Catalog defaults and inherited fields that were not edited stay out of the
+     * layer override so lower layers continue to supply them.
+     *
+     * @param array<string, mixed> $guided
+     *
+     * @return array<string, mixed>
+     */
+    private function sparseGuidedDelta(ProvidedExtensionDTO $extension, array $guided, SettingsResolutionDTO $resolution): array
+    {
+        $effective = $this->guidedSettingsPrefill($extension, $resolution);
+        $delta = [];
+
+        foreach ($extension->guidedFields as $field) {
+            $path = $this->propertyPath($field->path);
+            $next = $this->propertyAccessor->isReadable($guided, $path)
+                ? $this->propertyAccessor->getValue($guided, $path)
+                : null;
+            $current = $this->propertyAccessor->isReadable($effective, $path)
+                ? $this->propertyAccessor->getValue($effective, $path)
+                : null;
+
+            if ($this->guidedValuesEqual($field->type, $current, $next)) {
+                continue;
+            }
+
+            $this->propertyAccessor->setValue($delta, $path, $next);
+        }
+
+        return $delta;
+    }
+
+    private function guidedValuesEqual(string $type, mixed $left, mixed $right): bool
+    {
+        return $this->displayValue($type, $left) === $this->displayValue($type, $right);
     }
 }

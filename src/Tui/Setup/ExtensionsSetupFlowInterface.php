@@ -97,8 +97,10 @@ interface ExtensionsSetupFlowInterface
      *
      * Disable (parent off, no child membership) does not force install. Valid
      * guided edits still persist while disabled; untouched invalid/missing
-     * guided values do not block disable-only. Enablement requires a successful
-     * install and valid guided configuration for non-built-in packages.
+     * guided values do not block disable-only. Writes stay sparse: unchanged
+     * membership lists and guided leaves are not pinned into the selected
+     * layer. Enablement requires a successful install and valid guided
+     * configuration for non-built-in packages.
      *
      * @param array<string, mixed> $formState
      *

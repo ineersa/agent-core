@@ -40,17 +40,6 @@ final class ProvidedExtensionsCatalog
         return $this->packages ??= $this->load();
     }
 
-    /**
-     * @return list<ProvidedExtensionDTO>
-     */
-    public function installable(): array
-    {
-        return array_values(array_filter(
-            $this->all(),
-            static fn (ProvidedExtensionDTO $package): bool => !$package->builtin,
-        ));
-    }
-
     public function get(string $id): ?ProvidedExtensionDTO
     {
         foreach ($this->all() as $package) {

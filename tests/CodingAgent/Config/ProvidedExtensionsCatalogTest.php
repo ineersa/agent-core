@@ -62,13 +62,11 @@ final class ProvidedExtensionsCatalogTest extends TestCase
         $this->assertSame('observational_memory', $byId['observational-memory']->settingsKey);
         $this->assertSame('open_unit_ratio', $byId['observational-memory']->guidedFields[2]->type);
 
-        $installable = $catalog->installable();
-        $this->assertCount(3, $installable);
-        foreach ($installable as $package) {
-            $this->assertFalse($package->builtin);
-            $this->assertNotNull($package->package);
-            $this->assertNotNull($package->version);
-            $this->assertNotSame('', $package->settingsKey);
+        foreach (['task-workflow', 'file-rewind', 'observational-memory'] as $id) {
+            $this->assertFalse($byId[$id]->builtin);
+            $this->assertNotNull($byId[$id]->package);
+            $this->assertNotNull($byId[$id]->version);
+            $this->assertNotSame('', $byId[$id]->settingsKey);
         }
     }
 

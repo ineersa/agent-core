@@ -118,9 +118,11 @@ a marketplace or upgrade/uninstall tool.
   the class in parent `extensions.enabled`.
 - **Prefill:** project scope uses defaults < user < project. User scope uses
   defaults < user and does not copy project-only overrides.
-- **Activation:** Save writes the selected settings layer immediately; restart
-  Hatfield so registration picks up enablement/settings changes. Project settings
-  still override user settings at runtime.
+- **Activation:** Save writes only membership lists and guided leaves that differ
+  from the scoped effective/prefill values. No-op Save leaves absent settings
+  files absent and existing files unchanged. Restart Hatfield so registration
+  picks up enablement/settings changes. Project settings still override user
+  settings at runtime.
 
 Example:
 

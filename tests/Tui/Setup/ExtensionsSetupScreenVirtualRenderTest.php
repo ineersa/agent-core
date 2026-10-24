@@ -159,7 +159,7 @@ YAML);
         $this->assertContains(ExtensionsSetupTestSupport::FILE_REWIND, $userParsed['extensions']['enabled']);
         $this->assertSame(55, $userParsed['extensions']['settings']['file_rewind']['max_retained_turns']);
         $this->assertSame(12, $userParsed['extensions']['settings']['file_rewind']['git_timeout_seconds']);
-        $this->assertTrue($userParsed['extensions']['settings']['file_rewind']['enabled']);
+        $this->assertArrayNotHasKey('enabled', $userParsed['extensions']['settings']['file_rewind']);
 
         $projectParsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
         $this->assertSame(77, $projectParsed['extensions']['settings']['file_rewind']['max_retained_turns']);
@@ -312,7 +312,7 @@ YAML);
         $this->assertSame('cyberpunk', $parsed['tui']['theme']);
         $this->assertTrue($parsed['extensions']['settings']['unrelated_extension']['keep']);
         $this->assertContains(ExtensionsSetupTestSupport::FILE_REWIND, $parsed['extensions']['enabled']);
-        $this->assertTrue($parsed['extensions']['settings']['file_rewind']['enabled']);
+        $this->assertArrayNotHasKey('enabled', $parsed['extensions']['settings']['file_rewind']);
         $this->assertSame(88, $parsed['extensions']['settings']['file_rewind']['max_retained_turns']);
     }
 
