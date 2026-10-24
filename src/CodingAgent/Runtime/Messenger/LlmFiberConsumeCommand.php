@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
-use Ineersa\CodingAgent\Config\RuntimeConfig;
+use Ineersa\CodingAgent\Config\DTO\RuntimeConfigDTO;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
@@ -55,7 +55,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         private readonly RoutableMessageBus $routableBus,
         private readonly ContainerInterface $receiverLocator,
         private readonly EventDispatcherInterface $eventDispatcher,
-        private readonly RuntimeConfig $runtimeConfig,
+        private readonly RuntimeConfigDTO $runtimeConfig,
         private readonly ?LoggerInterface $logger = null,
     ) {
         parent::__construct();

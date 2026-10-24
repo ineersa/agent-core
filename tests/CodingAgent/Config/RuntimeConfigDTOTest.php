@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Config;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
-use Ineersa\CodingAgent\Config\RuntimeConfig;
+use Ineersa\CodingAgent\Config\DTO\RuntimeConfigDTO;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -26,8 +26,8 @@ use Symfony\Component\Yaml\Yaml;
  * Thesis: runtime.llm_concurrency is a typed positive-integer setting
  * (default 10), distinct from tools.execution.max_parallelism.
  */
-#[CoversClass(RuntimeConfig::class)]
-final class RuntimeConfigLlmConcurrencyTest extends TestCase
+#[CoversClass(RuntimeConfigDTO::class)]
+final class RuntimeConfigDTOTest extends TestCase
 {
     private string $tmpDir;
     private string $homeDir;
@@ -71,7 +71,7 @@ final class RuntimeConfigLlmConcurrencyTest extends TestCase
 
         $config = $this->buildConfig();
 
-        $this->assertSame(RuntimeConfig::DEFAULT_LLM_CONCURRENCY, $config->runtime->llmConcurrency);
+        $this->assertSame(RuntimeConfigDTO::DEFAULT_LLM_CONCURRENCY, $config->runtime->llmConcurrency);
         $this->assertSame(10, $config->runtime->llmConcurrency);
         $this->assertSame(4, $config->tools->execution->maxParallelism);
     }

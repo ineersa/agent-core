@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Config;
+namespace Ineersa\CodingAgent\Config\DTO;
 
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -15,7 +15,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  * declared with Symfony Validator attributes and enforced by AppConfig after
  * denormalization.
  */
-final readonly class RuntimeConfig
+final readonly class RuntimeConfigDTO
 {
     public const int DEFAULT_LLM_CONCURRENCY = 10;
 
@@ -29,13 +29,5 @@ final readonly class RuntimeConfig
         )]
         public int $llmConcurrency = self::DEFAULT_LLM_CONCURRENCY,
     ) {
-    }
-
-    /**
-     * DI factory — extract runtime settings from AppConfig.
-     */
-    public static function fromAppConfig(AppConfig $appConfig): self
-    {
-        return $appConfig->runtime;
     }
 }

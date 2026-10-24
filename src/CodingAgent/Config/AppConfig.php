@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Config;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Config\DTO\RuntimeConfigDTO;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -31,7 +32,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  *  - context_budget_reminders ContextBudgetReminderConfig (early_input_tokens, urgent_remaining_tokens, disable_for_main, disable_for_forks, disable_for_subagents)
  *  - agents     AgentsConfig (enabled, paths)
  *  - forks      ForksConfigDTO (model, thinking_level)
- *  - runtime    RuntimeConfig (llm_concurrency)
+ *  - runtime    RuntimeConfigDTO (llm_concurrency)
  *
  * The raw array is kept for forward compatibility with config keys
  * that do not yet have a typed DTO. Production consumers must use
@@ -52,7 +53,7 @@ final class AppConfig
         public ContextBudgetReminderConfig $contextBudgetReminders = new ContextBudgetReminderConfig(),
         public ForksConfigDTO $forks = new ForksConfigDTO(),
         public AgentsConfig $agents = new AgentsConfig(),
-        public RuntimeConfig $runtime = new RuntimeConfig(),
+        public RuntimeConfigDTO $runtime = new RuntimeConfigDTO(),
         /** @var array<string, mixed> Raw merged data for forward compatibility */
         public array $raw = [],
         public ?HatfieldModelCatalog $catalog = null,
@@ -149,10 +150,10 @@ final class AppConfig
         array $data,
         DenormalizerInterface $denormalizer,
         ValidatorInterface $validator,
-    ): RuntimeConfig {
+    ): RuntimeConfigDTO {
         $runtime = $denormalizer->denormalize(
             (array) ($data['runtime'] ?? []),
-            RuntimeConfig::class,
+            RuntimeConfigDTO::class,
         );
 
         $violations = $validator->validate($runtime);

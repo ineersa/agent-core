@@ -222,11 +222,6 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
-  Ineersa\CodingAgent\Config\RuntimeConfig:
-    factory: ['Ineersa\CodingAgent\Config\RuntimeConfig', 'fromAppConfig']
-    arguments:
-      - '@Ineersa\CodingAgent\Config\AppConfig'
-
   Ineersa\CodingAgent\Config\ForksConfigDTO:
     factory: ['Ineersa\CodingAgent\Config\ForksConfigDTO', 'fromAppConfig']
     arguments:
@@ -597,7 +592,7 @@ services:
       $routableBus: '@messenger.routable_message_bus'
       $receiverLocator: '@Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeReceiverLocator'
       $eventDispatcher: '@event_dispatcher'
-      $runtimeConfig: '@Ineersa\CodingAgent\Config\RuntimeConfig'
+      $runtimeConfig: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").runtime'
       $logger: '@logger'
 
   Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber:
