@@ -457,6 +457,39 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertTrue($renderer->supports($block));
     }
 
+    public function testBackgroundedAcknowledgementRendersFrozenCardLabel(): void
+    {
+        $progress = [
+            'status' => 'running',
+            'agent_name' => 'scout',
+            'artifact_id' => 'agent_bg',
+            'task_summary' => 'backgrounded child',
+            'turn_no' => 1,
+            'agent_run_id' => 'child-run-bg',
+            'model' => 'test/model',
+            'reasoning' => 'medium',
+        ];
+        $ack = "Child invocation moved to background. The same child keeps running.\nscout (agent_id: agent_bg, run_id: child-run-bg)";
+        $block = new TranscriptBlock(
+            id: 'tool_result_ack_bg',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'run1',
+            seq: 1,
+            text: $ack,
+            meta: [
+                'tool_name' => 'subagent',
+                'backgrounded' => true,
+                'result' => $ack,
+                'subagent_progress' => $this->snapshot($progress),
+            ],
+            streaming: false,
+        );
+
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', implode("\n", $this->renderBlockLines($block))) ?? '';
+        $this->assertStringContainsString(', backgrounded', $plain);
+        $this->assertStringNotContainsString('Running…', $plain);
+    }
+
     public function testChildTranscriptCardContextUsageContract(): void
     {
         $base = [

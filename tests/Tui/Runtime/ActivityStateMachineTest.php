@@ -40,6 +40,7 @@ final class ActivityStateMachineTest extends TestCase
             RuntimeEventTypeEnum::ToolExecutionOutputDelta,
             RuntimeEventTypeEnum::ToolExecutionCompleted,
             RuntimeEventTypeEnum::ToolExecutionFailed,
+            RuntimeEventTypeEnum::ToolCallAcknowledged,
             RuntimeEventTypeEnum::UserMessageSubmitted,
             RuntimeEventTypeEnum::HumanInputAnswered,
             RuntimeEventTypeEnum::ApprovalApproved,

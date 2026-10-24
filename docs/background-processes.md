@@ -54,6 +54,7 @@ original tool call. Independent child calls can run concurrently.
 Use `agent_retrieve` for existing artifact details and handoff history.
 The transcript card is marked backgrounded once,
 then remains frozen. Open `/agents-live` for current child status, inspection or steering.
+Canonical `tool_call_acknowledged` maps to runtime `tool_call.acknowledged`, which freezes that card without claiming native tool completion. Late handoffs arrive as separate `model.notification` events.
 
 A child can also background its own Bash tool. If a completion reaches an active owner,
 it uses that owner's existing follow-up mailbox. If the owner has finished or is cancelling,

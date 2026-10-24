@@ -57,6 +57,10 @@ local metadata transaction. The deferred registration stays `pending` until
 terminal settlement or explicit abandonment retirement. Later calls use ordinary
 admission on available workers, including another code-mode invocation.
 
+Runtime translation emits `tool_call.acknowledged` for that event. Projection
+marks the original transcript card backgrounded and stops streaming it. Late
+results remain separate `model.notification` events and do not reopen the card.
+
 Failed-batch repair preserves an acknowledgement for its exact run, turn and step.
 Replay retains that caller result until batch commit, even if a sibling fails
 permanently first. Repair supplies only missing sibling results; it does not

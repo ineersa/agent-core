@@ -190,6 +190,7 @@ final class RuntimeEventPerRunCompactBuffer
             RuntimeEventTypeEnum::ToolExecutionCompleted->value,
             RuntimeEventTypeEnum::ToolExecutionFailed->value,
             RuntimeEventTypeEnum::ToolExecutionCancelled->value,
+            RuntimeEventTypeEnum::ToolCallAcknowledged->value,
             RuntimeEventTypeEnum::TurnCompleted->value,
         ], true);
     }
@@ -237,6 +238,7 @@ final class RuntimeEventPerRunCompactBuffer
             RuntimeEventTypeEnum::ToolExecutionCompleted->value,
             RuntimeEventTypeEnum::ToolExecutionFailed->value,
             RuntimeEventTypeEnum::ToolExecutionCancelled->value => $this->matchesToolExecutionOutputCorrelation($candidate, $checkpoint),
+            RuntimeEventTypeEnum::ToolCallAcknowledged->value => $this->matchesToolExecutionOutputCorrelation($candidate, $checkpoint),
             default => false,
         };
     }

@@ -3,6 +3,7 @@
 - Use `RuntimeEventTypeEnum` for every event type; keep mapping in the existing mapper and translator.
 - Keep runtime JSONL events separate from canonical `RunEvent` storage.
 - Preserve required identity keys and enum wire values unless the task explicitly changes them. Update callers and tests together, not with dual-format shims.
+- Map canonical `tool_call_acknowledged` to runtime `tool_call.acknowledged`. That freezes the original tool card as backgrounded without claiming native `tool_execution.completed`.
 - Keep local TUI questions out of persisted HITL events and transcript blocks.
 - Treat `subagent_progress` as structured metadata, not appended tool text.
 - Preserve explicit top-level tool duration; otherwise derive it from canonical start/end timestamps, including queue time.

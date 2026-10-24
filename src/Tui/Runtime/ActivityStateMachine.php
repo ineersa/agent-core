@@ -111,6 +111,7 @@ final class ActivityStateMachine
             RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
             RuntimeEventTypeEnum::ToolExecutionCompleted->value,
             RuntimeEventTypeEnum::ToolExecutionFailed->value,
+            RuntimeEventTypeEnum::ToolCallAcknowledged->value,
             RuntimeEventTypeEnum::UserMessageSubmitted->value,
             RuntimeEventTypeEnum::HumanInputAnswered->value,
             RuntimeEventTypeEnum::ApprovalApproved->value,

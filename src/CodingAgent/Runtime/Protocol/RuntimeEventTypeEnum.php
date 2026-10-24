@@ -56,6 +56,8 @@ enum RuntimeEventTypeEnum: string
     case ToolExecutionCompleted = 'tool_execution.completed';
     case ToolExecutionFailed = 'tool_execution.failed';
     case ToolExecutionCancelled = 'tool_execution.cancelled';
+    /** Caller acknowledgement for a backgrounded deferred tool; not native completion. */
+    case ToolCallAcknowledged = 'tool_call.acknowledged';
 
     // ── Progress / status ────────────────────────────────────────────────
 

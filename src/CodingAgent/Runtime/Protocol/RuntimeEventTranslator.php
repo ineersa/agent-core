@@ -62,8 +62,8 @@ final class RuntimeEventTranslator
             RunEventTypeEnum::ToolExecutionStart->value => $this->onToolExecutionStarted(...),
             RunEventTypeEnum::ToolExecutionUpdate->value => $this->onToolExecutionUpdate(...),
             RunEventTypeEnum::ToolExecutionEnd->value => $this->onToolExecutionEnded(...),
-            // Caller ACK is not native execution completion. No terminal UI event.
-            RunEventTypeEnum::ToolCallAcknowledged->value => $this->drop(...),
+            // Caller ACK freezes the original card without claiming native completion.
+            RunEventTypeEnum::ToolCallAcknowledged->value => $this->onToolCallAcknowledged(...),
             // Model notification
             RunEventTypeEnum::ModelNotification->value => $this->onModelNotification(...),
             // HITL
@@ -364,6 +364,32 @@ final class RuntimeEventTranslator
 
         return new RuntimeEvent(
             type: $type,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: $payload,
+        );
+    }
+
+    private function onToolCallAcknowledged(RunEvent $runEvent): RuntimeEvent
+    {
+        $typedResult = $this->toolExecutionEndPayloadCodec->fromEventPayload($runEvent->payload);
+        $payload = [
+            'ended_at' => $runEvent->createdAt->format('Y-m-d\TH:i:s.uP'),
+            'tool_call_id' => $typedResult->toolCallId,
+            'is_error' => false,
+            'order_index' => $typedResult->orderIndex,
+            'backgrounded' => true,
+        ];
+        $resultText = $this->toolResultText($typedResult);
+        if ('' !== $resultText) {
+            $payload['result'] = $resultText;
+        }
+        if (isset($runEvent->payload['duration_ms']) && \is_int($runEvent->payload['duration_ms'])) {
+            $payload['duration_ms'] = $runEvent->payload['duration_ms'];
+        }
+
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolCallAcknowledged->value,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
             payload: $payload,

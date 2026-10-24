@@ -37,6 +37,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             RuntimeEventTypeEnum::ToolExecutionCompleted->value => 'onToolExecutionCompleted',
             RuntimeEventTypeEnum::ToolExecutionFailed->value => 'onToolExecutionFailed',
             RuntimeEventTypeEnum::ToolExecutionCancelled->value => 'onToolExecutionCancelled',
+            RuntimeEventTypeEnum::ToolCallAcknowledged->value => 'onToolCallAcknowledged',
             // Orphan cleanup: remove ToolCall blocks whose tool_call_id
             // was never executed (common in parallel LLM responses where
             // the LLM emits multiple non-empty tool calls but the runtime
@@ -382,6 +383,52 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
         $text = $timedOut ? 'Timed out' : 'Cancelled';
 
         $state->upsertToolResultBlock($blockId, $event->runId(), $text, $meta, false);
+    }
+
+    public function onToolCallAcknowledged(TranscriptProjectionEvent $event): void
+    {
+        $p = $event->payload();
+        $state = $event->state;
+        $toolCallId = (string) ($p['tool_call_id'] ?? '');
+        $blockId = 'tool_result_'.$toolCallId;
+        $existing = $state->getBlock($blockId);
+        if (true === ($existing?->meta['backgrounded'] ?? false)) {
+            return;
+        }
+
+        $result = (string) ($p['result'] ?? '');
+        if ('' === $result) {
+            $toolName = (string) ($existing?->meta['tool_name'] ?? $p['tool_name'] ?? '');
+            $result = '' !== $toolName
+                ? $toolName.' moved to background'
+                : 'Moved to background';
+        }
+
+        $meta = [
+            'tool_call_id' => $toolCallId,
+            'is_error' => false,
+            'backgrounded' => true,
+            ...$this->terminalTimingMeta($p, $existing),
+        ];
+        $meta['result'] = $result;
+        if (null !== $existing) {
+            if (isset($existing->meta['tool_name'])) {
+                $meta['tool_name'] = $existing->meta['tool_name'];
+            }
+            $priorProgress = $existing->meta['subagent_progress'] ?? null;
+            if ($priorProgress instanceof SubagentProgressSnapshotDTO) {
+                $meta['subagent_progress'] = $priorProgress;
+            }
+        }
+
+        $displayText = $result;
+        $progress = $meta['subagent_progress'] ?? null;
+        if ($progress instanceof SubagentProgressSnapshotDTO) {
+            $widgetText = $this->subagentProgressFormatter->format($progress);
+            $displayText = $widgetText."\n\n".$result;
+        }
+
+        $state->upsertToolResultBlock($blockId, $event->runId(), $displayText, $meta, false);
     }
 
     // ── Orphan cleanup ───────────────────────────────────────────────────────

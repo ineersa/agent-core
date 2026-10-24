@@ -1038,6 +1038,85 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertTrue($block->streaming);
     }
 
+    #[DataProvider('backgroundAcknowledgementTools')]
+    public function testToolCallAcknowledgedFreezesBackgroundedCard(string $toolName, string $ackText): void
+    {
+        $toolCallId = 'ack_'.$toolName;
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => $toolCallId,
+            'tool_name' => $toolName,
+            'started_at' => '2026-10-24T12:00:00.000000+00:00',
+        ]);
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => $toolCallId,
+            'delta' => 'progress before ack',
+        ]);
+
+        $this->accept('tool_call.acknowledged', [
+            'tool_call_id' => $toolCallId,
+            'result' => $ackText,
+            'backgrounded' => true,
+            'ended_at' => '2026-10-24T12:00:05.000000+00:00',
+        ]);
+
+        $block = $this->projector->blocks()[0];
+        $this->assertFalse($block->streaming);
+        $this->assertTrue($block->meta['backgrounded']);
+        $this->assertSame($ackText, $block->text);
+        $this->assertSame($ackText, $block->meta['result'] ?? null);
+        $this->assertStringNotContainsString('Running…', $block->text);
+
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => $toolCallId,
+            'delta' => 'must not reopen',
+        ]);
+        $this->accept('tool_execution.completed', [
+            'tool_call_id' => $toolCallId,
+            'result' => 'native completion must not replace acknowledgement',
+        ]);
+        $this->accept('model.notification', [
+            'id' => 'late-'.$toolCallId,
+            'source' => 'background_completion',
+            'kind' => 'tool_result',
+            'severity' => 'info',
+            'delivery' => 'message',
+            'text' => 'late attributed follow-up',
+            'tool_call_id' => $toolCallId,
+            'tool_name' => $toolName,
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertSame($ackText, $blocks[0]->text);
+        $this->assertTrue($blocks[0]->meta['backgrounded']);
+        $this->assertFalse($blocks[0]->streaming);
+        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
+        $this->assertStringContainsString('late attributed follow-up', $blocks[1]->text);
+
+        $this->projector->reset();
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => $toolCallId,
+            'tool_name' => $toolName,
+        ]);
+        $this->accept('tool_call.acknowledged', [
+            'tool_call_id' => $toolCallId,
+            'result' => $ackText,
+            'backgrounded' => true,
+        ]);
+        $replayed = $this->projector->blocks()[0];
+        $this->assertTrue($replayed->meta['backgrounded']);
+        $this->assertFalse($replayed->streaming);
+        $this->assertSame($ackText, $replayed->text);
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function backgroundAcknowledgementTools(): iterable
+    {
+        yield 'code_mode' => ['code_mode', 'Code-mode invocation moved to background. Follow-up arrives later.'];
+        yield 'subagent' => ['subagent', "Child invocation moved to background. The same child keeps running.\nscout (agent_id: agent_a, run_id: run_a)"];
+        yield 'fork' => ['fork', "Child invocation moved to background. The same child keeps running.\nfork (agent_id: agent_b, run_id: run_b)"];
+        yield 'agent_resume' => ['agent_resume', "Child invocation moved to background. The same child keeps running.\nresume (agent_id: agent_c, run_id: run_c)"];
+    }
+
     public function testToolExecutionStartedWithArgumentsSynthesizesToolCallOnce(): void
     {
         // Thesis: direct !shell never streams tool_call.*; tool_execution.started

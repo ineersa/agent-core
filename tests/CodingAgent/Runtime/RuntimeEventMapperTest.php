@@ -8,9 +8,17 @@ use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\CodingAgent\Runtime\Projection\SubagentProgressDisplayFormatter;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ModelNotificationProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -448,6 +456,82 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertNotNull($result);
         $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
         $this->assertSame('read completed', $result->payload['result']);
+    }
+
+    public function testNormalizesToolCallAcknowledgedWithoutClaimingNativeCompletion(): void
+    {
+        $event = $this->runEvent('tool_call_acknowledged', $this->toolEndPayload(
+            'call-code',
+            false,
+            'Code-mode invocation moved to background. The original host and worker remain occupied under the original budget. Its result will arrive as a follow-up.',
+        ));
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        $this->assertNotNull($result);
+        $this->assertSame(RuntimeEventTypeEnum::ToolCallAcknowledged->value, $result->type);
+        $this->assertNotSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $result->type);
+        $this->assertTrue($result->payload['backgrounded']);
+        $this->assertFalse($result->payload['is_error']);
+        $this->assertSame('call-code', $result->payload['tool_call_id']);
+        $this->assertStringContainsString('moved to background', $result->payload['result']);
+    }
+
+    public function testAcknowledgedRuntimeEventProjectsThroughTranscriptWithoutNativeCompletion(): void
+    {
+        $dispatcher = new EventDispatcher();
+        $state = new TranscriptProjectionState();
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber(
+            new SubagentProgressDisplayFormatter(),
+            SubagentProgressSerializerTestSupport::denormalizer(),
+        ));
+        $dispatcher->addSubscriber(new ModelNotificationProjectionSubscriber(
+            AttributeSerializerValidatorTestFactory::denormalizer(),
+        ));
+        $projector = new TranscriptProjector($dispatcher, $state);
+
+        $projector->accept(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionStarted->value,
+            runId: $this->runId,
+            seq: 1,
+            payload: ['tool_call_id' => 'call-fork', 'tool_name' => 'fork', 'started_at' => '2026-10-24T12:00:00.000000+00:00'],
+        ));
+        $ack = $this->mapper->toRuntimeEvent($this->runEvent('tool_call_acknowledged', $this->toolEndPayload(
+            'call-fork',
+            false,
+            "Child invocation moved to background. The same child keeps running.\nfork (agent_id: agent_f, run_id: run_f)",
+        ), 2));
+        $this->assertNotNull($ack);
+        $projector->accept($ack);
+        $projector->accept(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: $this->runId,
+            seq: 3,
+            payload: ['tool_call_id' => 'call-fork', 'delta' => 'must not reopen'],
+        ));
+        $projector->accept(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ModelNotification->value,
+            runId: $this->runId,
+            seq: 4,
+            payload: [
+                'id' => 'late-call-fork',
+                'source' => 'background_completion',
+                'kind' => 'tool_result',
+                'severity' => 'info',
+                'delivery' => 'message',
+                'text' => 'late attributed follow-up',
+                'tool_call_id' => 'call-fork',
+                'tool_name' => 'fork',
+            ],
+        ));
+
+        $blocks = $projector->blocks();
+        $this->assertCount(2, $blocks);
+        $this->assertTrue($blocks[0]->meta['backgrounded']);
+        $this->assertFalse($blocks[0]->streaming);
+        $this->assertStringContainsString('moved to background', $blocks[0]->text);
+        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[1]->kind);
+        $this->assertSame('late attributed follow-up', $blocks[1]->text);
     }
 
     // ── HITL normalization ───────────────────────────────────────────────────
