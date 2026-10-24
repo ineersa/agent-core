@@ -24,6 +24,8 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 
 CodingAgent's `agent_steer` and `notify_parent` tools enter this communication path through normal native deferred registration. App `CompleteSubmissionDTO` gives the captured reply a run identity for effect dispatch, then App `SubmissionCompletionHandler` delegates to the native `CompleteDeferredToolCallHandler`. Source receipts live in canonical `tool_execution_update` events; recipient admission decisions live in canonical command events. The disposable history index provides identity lookups after mailbox consumption. CodingAgent revalidates the exact child activity at admission and application. Generic consumption decisions may defer a row without settling it or authorizing continuation. See `architecture/agent-communication.md`.
 
+Code-mode caller acknowledgements use `tool_call_acknowledged`; ordinary terminal results still use `tool_execution_end`. Replay shares their caller-result reduction, not their physical execution meaning.
+
 ## Async workers (`agent.execution.bus`)
 
 | Message | Transport (messenger.yaml) | Worker |

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Application\BackgroundCompletion;
 
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\DTO\FinalizeCommandMetadataDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
@@ -18,8 +19,12 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final readonly class BackgroundCompletionMetadataHandler implements CoordinationActionValidatorInterface
 {
-    public function __construct(private BackgroundCompletionReceiptRepository $receipts, private ValidatorInterface $validator, private DenormalizerInterface $denormalizer)
-    {
+    public function __construct(
+        private BackgroundCompletionReceiptRepository $receipts,
+        private DeferredToolCompletionRepositoryInterface $deferred,
+        private ValidatorInterface $validator,
+        private DenormalizerInterface $denormalizer,
+    ) {
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]
@@ -28,6 +33,10 @@ final readonly class BackgroundCompletionMetadataHandler implements Coordination
         $this->assertCaptured($action, $pending);
         $this->validate($action);
         $this->receipts->record($action->receipt);
+        if (null !== $action->receipt->deferredId && BackgroundCompletionDispositionEnum::Forwarding !== $action->receipt->disposition) {
+            // Durable mailbox admission owns deferred settlement for backgrounded hosts.
+            $this->deferred->markCompleted($action->receipt->deferredId);
+        }
     }
 
     #[AsMessageHandler(bus: 'agent.command.bus')]

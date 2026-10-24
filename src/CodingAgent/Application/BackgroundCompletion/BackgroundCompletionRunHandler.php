@@ -78,6 +78,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 $receipt->identity, $receipt->sourceRunId, $receipt->acceptedDestinationRunId,
                 $receipt->destinationRunId, $receipt->rootRunId, $receipt->text,
                 $receipt->forwardedText, BackgroundCompletionDispositionEnum::Pending,
+                $receipt->deferredId, $receipt->invocation,
             );
         } else {
             if (null !== $message->sourceRunId && $message->sourceRunId !== $state->runId) {
@@ -100,6 +101,8 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 $message->identity, $state->runId, $destination, $destination,
                 $rootRunId, $message->text, $forwardedText,
                 $forward ? BackgroundCompletionDispositionEnum::Forwarding : BackgroundCompletionDispositionEnum::Pending,
+                $message->deferredId,
+                $message->invocation,
             );
             if ($forward) {
                 // The durable obligation precedes the best-effort send. Native
@@ -117,7 +120,11 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
             $state->runId, $state->turnNo, $receipt->identity, 1, $receipt->identity,
             CoreCommandKind::AppendMessage, [
                 'message' => $payload,
-                'provenance' => new BackgroundCompletionProvenanceDTO($receipt->identity, $receipt->sourceRunId),
+                'provenance' => new BackgroundCompletionProvenanceDTO(
+                    $receipt->identity,
+                    $receipt->sourceRunId,
+                    $receipt->deferredId,
+                ),
             ],
         ), $state);
         if (!array_any($result->postCommitActions, static fn (object $action): bool => $action instanceof EnqueueCommandDTO)) {
@@ -176,6 +183,13 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
 
     private function forward(BackgroundCompletionReceiptDTO $receipt): DeliverBackgroundCompletionDTO
     {
-        return new DeliverBackgroundCompletionDTO($receipt->destinationRunId, $receipt->identity, $receipt->forwardedText, $receipt->sourceRunId);
+        return new DeliverBackgroundCompletionDTO(
+            $receipt->destinationRunId,
+            $receipt->identity,
+            $receipt->forwardedText,
+            $receipt->sourceRunId,
+            $receipt->deferredId,
+            $receipt->invocation,
+        );
     }
 }

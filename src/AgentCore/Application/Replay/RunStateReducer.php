@@ -97,6 +97,7 @@ final readonly class RunStateReducer
             RunEventTypeEnum::LlmStepFailed->value => $this->applyLlmStepFailed($payload, $state),
             RunEventTypeEnum::LlmStepAborted->value => $state->with(['currentOperation' => null]),
             RunEventTypeEnum::ToolExecutionStart->value => $this->applyToolExecutionStart($payload, $pendingToolCalls, $state),
+            RunEventTypeEnum::ToolCallAcknowledged->value,
             RunEventTypeEnum::ToolExecutionEnd->value => $this->applyToolExecutionEnd($payload, $pendingToolCalls, $state, $completedToolResultsByCallId),
             RunEventTypeEnum::ToolBatchCommitted->value => $this->applyToolBatchCommitted($state, $pendingToolCalls, $messages, $completedToolResultsByCallId),
             RunEventTypeEnum::WaitingHuman->value => $this->applyWaitingHuman($event->payload, $state),

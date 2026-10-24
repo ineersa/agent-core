@@ -61,6 +61,7 @@ final class RuntimeEventTranslator
             // Tool execution
             RunEventTypeEnum::ToolExecutionStart->value => $this->onToolExecutionStarted(...),
             RunEventTypeEnum::ToolExecutionUpdate->value => $this->onToolExecutionUpdate(...),
+            RunEventTypeEnum::ToolCallAcknowledged->value => $this->onToolExecutionEnded(...),
             RunEventTypeEnum::ToolExecutionEnd->value => $this->onToolExecutionEnded(...),
             // Model notification
             RunEventTypeEnum::ModelNotification->value => $this->onModelNotification(...),
@@ -355,6 +356,7 @@ final class RuntimeEventTranslator
         $isUserCancelled = $isError && 'cancelled' === ($typedResult->error['type'] ?? null);
 
         $type = match (true) {
+            $runEvent->type === RunEventTypeEnum::ToolCallAcknowledged->value => RuntimeEventTypeEnum::ToolCallAcknowledged->value,
             $isUserCancelled => RuntimeEventTypeEnum::ToolExecutionCancelled->value,
             $isError => RuntimeEventTypeEnum::ToolExecutionFailed->value,
             default => RuntimeEventTypeEnum::ToolExecutionCompleted->value,

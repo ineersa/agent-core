@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 
 final class InMemoryDeferredToolCompletionRepository implements DeferredToolCompletionRepositoryInterface
 {
-    /** @var array<string, array{correlation: DeferredToolCompletionCorrelation, status: string}> */
+    /** @var array<string, array{correlation: DeferredToolCompletionCorrelation, status: string, readyAt: ?\DateTimeImmutable, backgroundedAt: ?\DateTimeImmutable, accepted: ?ToolPayloadReferenceDTO}> */
     private array $byDeferredId = [];
 
     /** @var array<string, string> runId|toolCallId => deferredId */
@@ -33,6 +33,9 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         $this->byDeferredId[$correlation->deferredId] = [
             'correlation' => $correlation,
             'status' => 'pending',
+            'readyAt' => null,
+            'backgroundedAt' => null,
+            'accepted' => null,
         ];
         $this->byRunToolCall[$key] = $correlation->deferredId;
 
@@ -82,7 +85,7 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
             $correlation->orderIndex, $correlation->toolName, hash('sha256', $body), \strlen($body),
         );
 
-        return new DeferredToolCompletionMetadataDTO($deferredId, $reference, $row['status']);
+        return new DeferredToolCompletionMetadataDTO($deferredId, $reference, $row['status'], $row['readyAt'], $row['backgroundedAt'], $row['accepted']);
     }
 
     public function status(string $deferredId): ?string
@@ -95,5 +98,53 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         if (isset($this->byDeferredId[$deferredId])) {
             $this->byDeferredId[$deferredId]['status'] = 'completed';
         }
+    }
+
+    public function markReady(string $deferredId): void
+    {
+        $row = $this->byDeferredId[$deferredId] ?? null;
+        if (null === $row) {
+            throw new \RuntimeException('Unknown deferred id.');
+        }
+        if (null !== $row['readyAt']) {
+            return;
+        }
+        if ('pending' !== $row['status']) {
+            throw new \RuntimeException('Deferred completion is no longer pending for readiness.');
+        }
+        $this->byDeferredId[$deferredId]['readyAt'] = new \DateTimeImmutable();
+    }
+
+    public function markBackgrounded(string $deferredId, \DateTimeImmutable $acceptedAt): void
+    {
+        $row = $this->byDeferredId[$deferredId] ?? null;
+        if (null === $row) {
+            throw new \RuntimeException('Unknown deferred id.');
+        }
+        if (null !== $row['backgroundedAt']) {
+            return;
+        }
+        if ('pending' !== $row['status'] || null === $row['readyAt'] || null !== $row['accepted']) {
+            throw new \RuntimeException('Deferred completion is not ready for backgrounding.');
+        }
+        $this->byDeferredId[$deferredId]['backgroundedAt'] = $acceptedAt;
+    }
+
+    public function acceptResultReference(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO
+    {
+        $row = $this->byDeferredId[$deferredId] ?? null;
+        if (null === $row) {
+            throw new \RuntimeException('Unknown deferred id.');
+        }
+        if (null !== $row['accepted']) {
+            if ([$row['accepted']->sha256, $row['accepted']->bytes] !== [$reference->sha256, $reference->bytes]) {
+                throw new \RuntimeException('Deferred completion already accepted a different result.');
+            }
+
+            return $row['accepted'];
+        }
+        $this->byDeferredId[$deferredId]['accepted'] = $reference;
+
+        return $reference;
     }
 }

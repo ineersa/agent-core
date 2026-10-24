@@ -89,7 +89,20 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             throw new ToolPayloadException('Deferred correlation reference does not match its index.');
         }
 
-        return new DeferredToolCompletionMetadataDTO($entity->deferredId, $reference, $entity->status);
+        $accepted = null;
+        if (null !== $entity->acceptedResultReferenceJson) {
+            $accepted = $this->serializer->deserialize($entity->acceptedResultReferenceJson, ToolPayloadReferenceDTO::class, 'json');
+            $errors = $this->validator->validate($accepted);
+            if (0 !== \count($errors)) {
+                throw new ValidationFailedException($accepted, $errors);
+            }
+            if ('result' !== $accepted->kind || [$accepted->runId, $accepted->turnNo, $accepted->stepId, $accepted->toolCallId, $accepted->attempt, $accepted->idempotencyKey, $accepted->orderIndex]
+                !== [$entity->runId, $entity->turnNo, $entity->stepId, $entity->toolCallId, $entity->attempt, $entity->idempotencyKey, $entity->orderIndex]) {
+                throw new ToolPayloadException('Deferred accepted result reference does not match its index.');
+            }
+        }
+
+        return new DeferredToolCompletionMetadataDTO($entity->deferredId, $reference, $entity->status, $entity->readyAt, $entity->backgroundedAt, $accepted);
     }
 
     public function status(string $deferredId): ?string
@@ -135,6 +148,86 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
         $entity->status = 'completed';
         $em->flush();
+    }
+
+    public function markReady(string $deferredId): void
+    {
+        $entity = $this->require($deferredId);
+        $this->locks->synchronized($entity->runId, function () use ($deferredId): void {
+            $fresh = $this->require($deferredId);
+            if (null !== $fresh->readyAt) {
+                return;
+            }
+            if ('pending' !== $fresh->status) {
+                throw new ToolPayloadException('Deferred completion is no longer pending for readiness.');
+            }
+            $fresh->readyAt = Clock::get()->now();
+            $this->getEntityManager()->flush();
+        });
+    }
+
+    public function markBackgrounded(string $deferredId, \DateTimeImmutable $acceptedAt): void
+    {
+        $entity = $this->require($deferredId);
+        $this->locks->synchronized($entity->runId, function () use ($deferredId, $acceptedAt): void {
+            $fresh = $this->require($deferredId);
+            if (null !== $fresh->backgroundedAt) {
+                return;
+            }
+            if ('pending' !== $fresh->status || null === $fresh->readyAt || null !== $fresh->acceptedResultReferenceJson) {
+                throw new ToolPayloadException('Deferred completion is not ready for backgrounding.');
+            }
+            $fresh->backgroundedAt = $acceptedAt;
+            $this->getEntityManager()->flush();
+        });
+    }
+
+    public function acceptResultReference(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO
+    {
+        $this->validateReference($reference);
+        if ('result' !== $reference->kind) {
+            throw new ToolPayloadException('Deferred accepted result must be a result reference.');
+        }
+        $entity = $this->require($deferredId);
+
+        return $this->locks->synchronized($entity->runId, function () use ($deferredId, $reference): ToolPayloadReferenceDTO {
+            $fresh = $this->require($deferredId);
+            if ([$reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId, $reference->attempt, $reference->idempotencyKey, $reference->orderIndex]
+                !== [$fresh->runId, $fresh->turnNo, $fresh->stepId, $fresh->toolCallId, $fresh->attempt, $fresh->idempotencyKey, $fresh->orderIndex]) {
+                throw new ToolPayloadException('Deferred accepted result reference does not match its index.');
+            }
+            if (null !== $fresh->acceptedResultReferenceJson) {
+                $existing = $this->serializer->deserialize($fresh->acceptedResultReferenceJson, ToolPayloadReferenceDTO::class, 'json');
+                $this->validateReference($existing);
+                if ([$existing->sha256, $existing->bytes] !== [$reference->sha256, $reference->bytes]) {
+                    throw new ToolPayloadException('Deferred completion already accepted a different result.');
+                }
+
+                return $existing;
+            }
+            $fresh->acceptedResultReferenceJson = $this->serializer->serialize($reference, 'json');
+            $this->getEntityManager()->flush();
+
+            return $reference;
+        });
+    }
+
+    private function require(string $deferredId): DeferredToolCompletion
+    {
+        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
+        if (!$entity instanceof DeferredToolCompletion) {
+            throw new ToolPayloadException('Deferred completion has no registered correlation.');
+        }
+
+        return $entity;
+    }
+
+    private function validateReference(ToolPayloadReferenceDTO $reference): void
+    {
+        $errors = $this->validator->validate($reference);
+        if (0 !== \count($errors)) {
+            throw new ValidationFailedException($reference, $errors);
+        }
     }
 
     private function registerLocked(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation

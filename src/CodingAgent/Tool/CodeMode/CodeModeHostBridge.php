@@ -8,8 +8,12 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
@@ -28,6 +32,7 @@ use Symfony\Component\Process\Exception\ProcessStartFailedException;
 use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeException;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
+use Symfony\Component\Uid\UuidV7;
 
 /**
  * Owns one PHP script subprocess and bridges tool() calls to RegistryBackedToolbox.
@@ -51,6 +56,8 @@ final readonly class CodeModeHostBridge
         private ContainerInterface $toolboxLocator,
         private RuntimeProcessConfig $runtimeProcessConfig,
         private OutputCap $outputCap,
+        private DeferredToolCompletionRepositoryInterface $deferred,
+        private ToolBatchStoreInterface $batches,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -66,6 +73,7 @@ final readonly class CodeModeHostBridge
             $cancelToken = $parentContext?->cancellationToken() ?? new NullCancellationToken();
             $timeoutSeconds = $this->resolveScriptWallSeconds($timeoutSeconds, $parentContext?->timeoutSeconds());
             $memoryLimit = $this->formatMemoryLimit($memoryLimitMb);
+            $deferredId = $this->registerOuterDeferred($parentContext);
 
             $workspace = $this->createWorkspace();
             $process = null;
@@ -78,11 +86,16 @@ final readonly class CodeModeHostBridge
                 $server = $this->createSocketServer($workspace['socket']);
                 $process = $this->startProcess($workspace, $cancelToken, $memoryLimit, $capture);
                 $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
+                if (null !== $deferredId) {
+                    $this->deferred->markReady($deferredId);
+                }
 
                 $result = $this->serve($connection, $process, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
                 // Settle the owned writer before reading or persisting its files.
                 $this->stopProcess($process);
 
+                // Ordinary ToolExecutor processors own the terminal once. This
+                // host only registers readiness for later caller detachment.
                 return $this->packExecutionResult($result, $capture);
             } catch (ToolCallException $exception) {
                 if ($exception instanceof MalformedToolResultException || null === $process) {
@@ -97,6 +110,38 @@ final readonly class CodeModeHostBridge
                 $this->cleanupWorkspace($workspace);
             }
         });
+    }
+
+    private function registerOuterDeferred(?ToolContext $parentContext): ?string
+    {
+        if (null === $parentContext || '' === $parentContext->runId() || null === $parentContext->stepId() || 'code_mode' !== $parentContext->toolName()) {
+            return null;
+        }
+        $call = $this->batches->loadCall($parentContext->runId(), $parentContext->turnNo(), $parentContext->stepId(), $parentContext->toolCallId());
+        if (!$call instanceof ExecuteToolCall) {
+            return null;
+        }
+        $deferredId = UuidV7::v7()->toRfc4122();
+        $registered = $this->deferred->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: $deferredId,
+            runId: $call->runId(),
+            turnNo: $call->turnNo(),
+            stepId: $call->stepId(),
+            attempt: $call->attempt(),
+            idempotencyKey: $call->idempotencyKey(),
+            toolCallId: $call->toolCallId,
+            toolName: $call->toolName,
+            arguments: $call->args,
+            orderIndex: $call->orderIndex,
+            toolIdempotencyKey: $call->toolIdempotencyKey,
+            mode: $call->mode,
+            timeoutSeconds: $call->timeoutSeconds,
+            maxParallelism: $call->maxParallelism,
+            argSchema: $call->argSchema,
+            toolsRef: $call->toolsRef,
+        ));
+
+        return $registered->deferredId;
     }
 
     /**

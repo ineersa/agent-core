@@ -69,6 +69,15 @@ class DeferredToolCompletion
     #[ORM\Column(type: 'string', length: 32)]
     public string $status = 'pending';
 
+    #[ORM\Column(name: 'ready_at', type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $readyAt = null;
+
+    #[ORM\Column(name: 'backgrounded_at', type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $backgroundedAt = null;
+
+    #[ORM\Column(name: 'accepted_result_reference_json', type: 'string', length: 16384, nullable: true)]
+    public ?string $acceptedResultReferenceJson = null;
+
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     public \DateTimeImmutable $createdAt;
 

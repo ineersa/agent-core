@@ -1,6 +1,7 @@
 # Runtime protocol
 
 - Use `RuntimeEventTypeEnum` for every event type; keep mapping in the existing mapper and translator.
+- `tool_call.acknowledged` freezes the original card as backgrounded through the existing result projection; it is not physical completion.
 - Keep runtime JSONL events separate from canonical `RunEvent` storage.
 - Preserve required identity keys and enum wire values unless the task explicitly changes them. Update callers and tests together, not with dual-format shims.
 - Keep local TUI questions out of persisted HITL events and transcript blocks.

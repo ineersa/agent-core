@@ -12,8 +12,8 @@ use Symfony\Component\Validator\Constraints as Assert;
  */
 final class CodeModeArgumentsDTO
 {
-    public const int DEFAULT_TIMEOUT_SECONDS = 60;
-    public const int MAX_TIMEOUT_SECONDS = 300;
+    public const int DEFAULT_TIMEOUT_SECONDS = 1800;
+    public const int MAX_TIMEOUT_SECONDS = 3600;
     public const int DEFAULT_MEMORY_LIMIT_MB = 256;
     public const int MAX_MEMORY_LIMIT_MB = 1024;
 

@@ -54,6 +54,7 @@ enum RuntimeEventTypeEnum: string
     case ToolExecutionStarted = 'tool_execution.started';
     case ToolExecutionOutputDelta = 'tool_execution.output_delta';
     case ToolExecutionCompleted = 'tool_execution.completed';
+    case ToolCallAcknowledged = 'tool_call.acknowledged';
     case ToolExecutionFailed = 'tool_execution.failed';
     case ToolExecutionCancelled = 'tool_execution.cancelled';
 

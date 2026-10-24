@@ -7,14 +7,21 @@ namespace Ineersa\CodingAgent\Entity;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionReceiptDTO;
+use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /** @extends ServiceEntityRepository<BackgroundCompletionReceipt> */
 final class BackgroundCompletionReceiptRepository extends ServiceEntityRepository
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private SerializerInterface $serializer,
+        private ValidatorInterface $validator,
+    ) {
         parent::__construct($registry, BackgroundCompletionReceipt::class);
     }
 
@@ -73,6 +80,8 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
             'text' => $receipt->text,
             'forwarded_text' => $receipt->forwardedText,
             'disposition' => $receipt->disposition->value,
+            'deferred_id' => $receipt->deferredId,
+            'invocation_reference_json' => null === $receipt->invocation ? null : $this->serializer->serialize($receipt->invocation, 'json'),
         ]);
     }
 
@@ -89,11 +98,22 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
     /** @param array<string, mixed> $row */
     private function snapshot(array $row): BackgroundCompletionReceiptDTO
     {
+        $invocation = null;
+        if (null !== ($row['invocation_reference_json'] ?? null) && '' !== $row['invocation_reference_json']) {
+            $invocation = $this->serializer->deserialize((string) $row['invocation_reference_json'], ToolPayloadReferenceDTO::class, 'json');
+            $errors = $this->validator->validate($invocation);
+            if (0 !== \count($errors)) {
+                throw new ValidationFailedException($invocation, $errors);
+            }
+        }
+
         return new BackgroundCompletionReceiptDTO(
             (string) $row['identity'], (string) $row['source_run_id'],
             (string) $row['accepted_destination_run_id'], (string) $row['destination_run_id'],
             (string) $row['root_run_id'], (string) $row['text'], (string) $row['forwarded_text'],
             BackgroundCompletionDispositionEnum::from((string) $row['disposition']),
+            isset($row['deferred_id']) && '' !== $row['deferred_id'] ? (string) $row['deferred_id'] : null,
+            $invocation,
         );
     }
 }

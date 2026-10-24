@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
@@ -429,5 +430,20 @@ final class MarkCompletedFailsOnceRepository implements DeferredToolCompletionRe
         }
 
         $this->inner->markCompleted($deferredId);
+    }
+
+    public function markReady(string $deferredId): void
+    {
+        $this->inner->markReady($deferredId);
+    }
+
+    public function markBackgrounded(string $deferredId, \DateTimeImmutable $acceptedAt): void
+    {
+        $this->inner->markBackgrounded($deferredId, $acceptedAt);
+    }
+
+    public function acceptResultReference(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO
+    {
+        return $this->inner->acceptResultReference($deferredId, $reference);
     }
 }

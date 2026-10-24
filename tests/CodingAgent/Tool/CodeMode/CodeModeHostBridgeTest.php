@@ -341,6 +341,8 @@ PHP);
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
             self::getContainer()->get(OutputCap::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
         );
 
         $result = $accessor->with(
@@ -420,6 +422,8 @@ PHP);
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
             self::getContainer()->get(OutputCap::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
         );
 
         $result = $this->runScript($bridge, "return tool('code_mode', ['script' => 'return 1;']);");
@@ -636,6 +640,8 @@ PHP);
             },
             new RuntimeProcessConfig($locator, $this->tmpDir),
             self::getContainer()->get(OutputCap::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
         );
 
         $result = $this->runScript($bridge, 'return "path-php-ok";');
@@ -781,6 +787,8 @@ PHP);
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
             $outputCap ?? self::getContainer()->get(OutputCap::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
         );
     }
 

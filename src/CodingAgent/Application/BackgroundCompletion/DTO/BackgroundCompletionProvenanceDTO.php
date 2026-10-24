@@ -11,6 +11,7 @@ final readonly class BackgroundCompletionProvenanceDTO
     public function __construct(
         #[Assert\NotBlank] public string $identity,
         #[Assert\NotBlank] public string $sourceRunId,
+        #[Assert\NotBlank(allowNull: true)] public ?string $deferredId = null,
     ) {
     }
 }

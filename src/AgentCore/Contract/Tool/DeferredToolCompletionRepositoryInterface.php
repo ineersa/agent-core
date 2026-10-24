@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Contract\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 
 /**
  * Cross-process durable store for deferred tool executions.
@@ -34,4 +35,13 @@ interface DeferredToolCompletionRepositoryInterface
     public function status(string $deferredId): ?string;
 
     public function markCompleted(string $deferredId): void;
+
+    /** Live host IPC is ready for caller acknowledgement. */
+    public function markReady(string $deferredId): void;
+
+    /** Caller wait detached; host may still be running. */
+    public function markBackgrounded(string $deferredId, \DateTimeImmutable $acceptedAt): void;
+
+    /** First immutable processed result wins; later publications are no-ops when equal. */
+    public function acceptResultReference(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO;
 }
