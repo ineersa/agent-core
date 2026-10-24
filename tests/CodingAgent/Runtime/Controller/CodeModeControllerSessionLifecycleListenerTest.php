@@ -14,22 +14,29 @@ use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\RedriveDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeAcknowledgementHandler;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionReasonEnum;
+use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
+use Ineersa\CodingAgent\Application\CodeMode\DTO\StopCodeModeDTO;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
+use Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider;
 use Ineersa\CodingAgent\Runtime\Controller\CodeModeControllerSessionLifecycleListener;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
@@ -115,13 +122,76 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
         $this->assertCount($llmBefore + 1, $c->get('messenger.transport.llm')->getSent(), 'Duplicate repair cannot continue twice.');
     }
 
-    public function testColdProcessRecoversWaitingRootAndAcknowledgedOwnedChild(): void
+    /** @return iterable<string, array{CodeModeInterruptionReasonEnum, bool}> */
+    public static function abandonedCases(): iterable
+    {
+        foreach ([CodeModeInterruptionReasonEnum::Cancelled, CodeModeInterruptionReasonEnum::HistoryDiscarded] as $reason) {
+            yield $reason->value.'-shutdown' => [$reason, false];
+            yield $reason->value.'-restart' => [$reason, true];
+        }
+    }
+
+    #[DataProvider('abandonedCases')]
+    public function testControllerLossRetiresAbandonedHostWithoutTerminalEvidence(CodeModeInterruptionReasonEnum $reason, bool $restart): void
+    {
+        $c = self::getContainer();
+        $f = new CodeModeBackendFixture($c, 'throw new RuntimeException("Never rerun abandoned execution.");');
+        $run = $f->state->runId;
+        $id = $f->registerReadyHost();
+        $f->commit($f->state, $c->get(CodeModeAcknowledgementHandler::class)->handle(new CodeModeOwnerDTO($run, $id, 'cm', true), $f->state));
+        $executions = $c->get(CodeModeExecutionRepository::class);
+        if (CodeModeInterruptionReasonEnum::Cancelled === $reason) {
+            $c->get('agent.command.bus')->dispatch(new StopCodeModeDTO($run, $id, 'cm'), [new ReceivedStamp('run_control')]);
+        } else {
+            $executions->interrupt($id, $reason);
+        }
+        $this->assertSame('stopping', $c->get(BackgroundWorkSnapshotProvider::class)->snapshot($run)->work[0]->status);
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $this->assertSame('pending', $deferred->status($id));
+        $this->assertNull($executions->invocation($run, 'cm')['raw_reference']);
+        $sent = \count($c->get('messenger.transport.run_control')->getSent());
+        $llm = \count($c->get('messenger.transport.llm')->getSent());
+        $listener = $c->get(CodeModeControllerSessionLifecycleListener::class);
+        if ($restart) {
+            $listener->starting(new ControllerSessionStartingEvent($run));
+        } else {
+            $listener->shutdown(new ControllerSessionShutdownEvent($run));
+        }
+        $listener->starting(new ControllerSessionStartingEvent($run));
+        $c->get(CompleteDeferredToolCallHandler::class)->redrive(new RedriveDeferredToolCall($run, $id));
+        $this->assertSame('completed', $deferred->status($id));
+        $this->assertFalse($deferred->requiresContinuation($run, 'cm'));
+        $this->assertNull($deferred->findAcceptedResultReferenceByDeferredId($id), 'Abandonment must not fabricate a successful or failed result.');
+        $this->assertSame($reason->value, $executions->invocation($run, 'cm')['interruption_reason']);
+        $this->assertNull($executions->invocation($run, 'cm')['raw_reference']);
+        $this->assertSame([], $c->get(BackgroundWorkSnapshotProvider::class)->snapshot($run)->work);
+        $observed = $c->get(BackgroundWorkSnapshotProvider::class)->snapshot($run, observedCodeModeIdentity: $id)->work[0];
+        $this->assertTrue($observed->terminal);
+        $this->assertSame('interrupted', $observed->status);
+        $this->assertNull($c->get(ToolBatchStoreInterface::class)->loadSchedule($run, 1, 'step'));
+        $late = new ProcessedToolResultDTO(new ToolCallResult($run, 1, 'step', 1, $f->call->idempotencyKey(), 'cm', 0, ['content' => []]), $f->call);
+        $c->get(CodeModeProcessedResultSubscriber::class)($late);
+        $this->assertTrue($late->handled, 'A late return must not read invocation files removed by cleanup.');
+        $this->assertCount($sent, $c->get('messenger.transport.run_control')->getSent());
+        $this->assertCount($llm, $c->get('messenger.transport.llm')->getSent());
+        $this->assertSame([], array_filter($c->get(PreparedTransitionEventStoreInterface::class)->allFor($run), static fn (RunEvent $event): bool => 'tool_execution_end' === $event->type));
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function coldRecoveryCases(): iterable
+    {
+        yield 'active invocations need explicit continuation' => [false];
+        yield 'abandoned invocations retire without continuation' => [true];
+    }
+
+    #[DataProvider('coldRecoveryCases')]
+    public function testColdProcessRecoversWaitingRootAndAcknowledgedOwnedChild(bool $abandoned): void
     {
         // A second kernel in another process must recover committed evidence,
         // not live fixture objects. Cold schema/kernel boot uses a 15-second
         // safety cap; no product delay or time window synchronizes the test.
         $directory = TestDirectoryIsolation::createProjectTempDir('code-mode-cold-recovery');
-        $process = new Process([\PHP_BINARY, \dirname(__DIR__, 2).'/Support/code-mode-controller-recovery-process.php', $directory, 'setup'], env: ['HATFIELD_SESSION_ID' => false]);
+        $process = new Process([\PHP_BINARY, \dirname(__DIR__, 2).'/Support/code-mode-controller-recovery-process.php', $directory, $abandoned ? 'setup-abandoned' : 'setup'], env: ['HATFIELD_SESSION_ID' => false]);
         try {
             $process->setTimeout(15);
             $process->mustRun();
@@ -130,6 +200,19 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
             $this->assertCount(2, $evidence);
             foreach ($evidence as $row) {
                 $this->assertSame('completed', $row['status']);
+                if ($abandoned) {
+                    $this->assertSame(0, $row['ends']);
+                    $this->assertSame(1, $row['acks']);
+                    $this->assertNull($row['accepted']);
+                    $this->assertNull($row['raw']);
+                    $this->assertSame($row['root'] ? 'cancelled' : 'history_discarded', $row['reason']);
+                    $this->assertNull($row['batch']);
+                    $this->assertSame([], $row['work']);
+                    $this->assertSame(0, $row['sent']);
+                    $this->assertSame(0, $row['llm']);
+
+                    continue;
+                }
                 $this->assertSame($row['root'] ? 1 : 0, $row['ends']);
                 $this->assertSame($row['root'] ? 0 : 1, $row['acks']);
                 $this->assertSame('controller_interrupted', $row['error']);
@@ -141,6 +224,38 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
             }
             TestDirectoryIsolation::removeDirectory($directory);
         }
+    }
+
+    public function testFailedAbandonedRetirementPreservesPendingMetadataAndBatchForRetry(): void
+    {
+        $c = self::getContainer();
+        $f = new CodeModeBackendFixture($c, 'throw new RuntimeException("Never rerun.");');
+        $run = $f->state->runId;
+        $id = $f->registerReadyHost();
+        $f->commit($f->state, $c->get(CodeModeAcknowledgementHandler::class)->handle(new CodeModeOwnerDTO($run, $id, 'cm', true), $f->state));
+        $c->get(CodeModeExecutionRepository::class)->interrupt($id, CodeModeInterruptionReasonEnum::HistoryDiscarded);
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $deferred->requireContinuation($id, true);
+        $reference = $deferred->findInvocationReferenceByDeferredId($id);
+        $connection = $c->get(Connection::class);
+        $connection->executeStatement("CREATE TEMP TRIGGER code_mode_abandon_abort BEFORE UPDATE OF status ON tool_deferred_completion BEGIN SELECT RAISE(ABORT, 'abandoned retirement rollback'); END");
+        $listener = $c->get(CodeModeControllerSessionLifecycleListener::class);
+        try {
+            $listener->starting(new ControllerSessionStartingEvent($run));
+            $this->fail('Retirement metadata must roll back.');
+        } catch (DriverException $error) {
+            $this->assertStringContainsString('abandoned retirement rollback', $error->getMessage());
+        } finally {
+            $connection->executeStatement('DROP TRIGGER code_mode_abandon_abort');
+        }
+        $this->assertSame('pending', $deferred->status($id));
+        $this->assertTrue($deferred->requiresContinuation($run, 'cm'));
+        $this->assertNotNull($c->get(ToolBatchStoreInterface::class)->loadSchedule($run, 1, 'step'));
+        $this->assertEquals($f->call, $c->get(ToolPayloadStoreInterface::class)->read($reference), 'Immutable cleanup cannot precede metadata commit.');
+        $listener->starting(new ControllerSessionStartingEvent($run));
+        $this->assertSame('completed', $deferred->status($id));
+        $this->assertFalse($deferred->requiresContinuation($run, 'cm'));
+        $this->assertNull($c->get(ToolBatchStoreInterface::class)->loadSchedule($run, 1, 'step'));
     }
 
     public function testFailedRecoveryTransactionCannotLeaveAnAcceptanceOrFenceBehind(): void

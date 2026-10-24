@@ -36,6 +36,13 @@ final readonly class CodeModeProcessedResultSubscriber
             return;
         }
         $identity = $row['identity'];
+        if ('completed' === $this->deferred->status($identity)) {
+            // Controller loss may retire an abandoned host before its blocked
+            // worker returns. Its immutable invocation files can already be gone.
+            $event->handled = true;
+
+            return;
+        }
         $invocationReference = $this->deferred->findInvocationReferenceByDeferredId($identity)
             ?? throw new \RuntimeException('Code-mode owner lost its deferred invocation reference.');
         $call = $this->artifacts->invocation($invocationReference);

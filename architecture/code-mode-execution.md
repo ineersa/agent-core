@@ -41,7 +41,8 @@ by a pending UI action, rather than loading finished host history. `/bg` confirm
 and revalidates a selection before sending `stop_code_mode`. The owner captures
 one `InterruptCodeModeDTO` through the existing prepared metadata transaction.
 This fences the selected invocation without cancelling its run or another host.
-The UI reports `stopping` until native raw or processed terminal evidence exists.
+The UI reports `stopping` until native terminal evidence exists or definitive
+controller ownership loss retires the abandoned invocation.
 
 Late code-mode result consumption captures the original run and tool-call
 provenance. Runtime translation emits `model.notification`, not human activity.
@@ -52,9 +53,14 @@ Shared deferred acknowledgement validates the retained full invocation, current
 batch reference and unresolved caller. `ToolCallResultHandler::acknowledge()`
 settles that batch slot with `tool_call_acknowledged`, not `tool_execution_end`.
 The shared `acknowledged_at` fact is captured with batch finalization in the same
-local metadata transaction. The deferred registration stays `pending` until true
-terminal settlement. Later calls use ordinary admission on available workers,
-including another code-mode invocation.
+local metadata transaction. The deferred registration stays `pending` until
+terminal settlement or explicit abandonment retirement. Later calls use ordinary
+admission on available workers, including another code-mode invocation.
+
+Failed-batch repair preserves an acknowledgement for its exact run, turn and step.
+Replay retains that caller result until batch commit, even if a sibling fails
+permanently first. Repair supplies only missing sibling results; it does not
+replace the acknowledgement or rerun either execution.
 
 The original worker applies terminal processors once. Before subscriber dispatch
 or result sending, it retains the processed terminal through the shared
@@ -104,6 +110,9 @@ unsettled invocations and unconsumed notices in that run. History discard fences
 only invocations from turns after its retained boundary. Selecting an older
 history entry alone does not interrupt a host. Captured identities cannot cancel
 an invocation registered after the transition was prepared.
+The actual discard commit prepares these essential actions before replacement
+command handling, even though maintenance disables optional after-turn observers.
+Auto-compaction does not schedule work from the discard commit.
 
 The host and nested `ToolContext` share an invocation cancellation token. Its
 durable interruption reason remains after the parent returns to `Running` or
@@ -138,6 +147,12 @@ and mailbox consumption also check the native fence. A late worker cannot replac
 the recovery result or retire its pending delivery. Explicit cancellation or
 history discard can supersede a controller-loss fence while its recovery notice
 remains unconsumed; controller startup cannot weaken that abandonment.
+
+If controller ownership is lost before an abandoned host returns, recovery retires
+its deferred marker without creating a terminal result or completion notice. The
+cancelled or history-discarded reason remains unchanged. Metadata commits before
+guarded batch cleanup; duplicate controller events retry cleanup without reviving
+the host. Later repair and late worker output cannot reopen that invocation.
 
 ## Evidence and cleanup
 

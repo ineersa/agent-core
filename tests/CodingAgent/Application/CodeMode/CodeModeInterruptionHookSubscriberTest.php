@@ -6,8 +6,11 @@ namespace Ineersa\CodingAgent\Tests\Application\CodeMode;
 
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
+use Ineersa\AgentCore\Application\Pipeline\RunCommit;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
@@ -15,6 +18,7 @@ use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\RedriveDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
@@ -107,6 +111,40 @@ final class CodeModeInterruptionHookSubscriberTest extends IsolatedKernelTestCas
         $this->assertSame([$id], $actions[0]->message->identities);
         $f->commit($selected, new HandlerResult(events: [$discard], postCommitActions: $actions));
         $this->assertSame('history_discarded', self::getContainer()->get(CodeModeExecutionRepository::class)->invocation($f->state->runId, 'cm')['interruption_reason']);
+    }
+
+    public function testFollowUpBehindSelectedHistoryFencesTheOldBackgroundHostAtDiscardCommit(): void
+    {
+        [$f, $id] = $this->begin();
+        $c = self::getContainer();
+        $run = $f->state->runId;
+        $c->get(CodeModeExecutionService::class)->ready($id);
+        $f->commit($f->state, $c->get(CodeModeAcknowledgementHandler::class)->handle(new CodeModeOwnerDTO($run, $id, 'cm', true), $f->state));
+        $events = $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run);
+        $tip = $f->state->with(['lastSeq' => $events[array_key_last($events)]->seq]);
+        $active = $c->get(ActiveRunContextInterface::class);
+        $active->loadRecovered($tip);
+        $selected = $tip->with(['turnNo' => 0, 'activeStepId' => null, 'pendingToolCalls' => [], 'messages' => [], 'status' => RunStatus::Completed]);
+        $c->get(RunCommit::class)->commit($tip, $selected, [RunEvent::forAppend($run, 0, 'history_position_set', ['position_turn_no' => 0, 'reason' => 'history_select'])], dispatchAfterTurnHooks: false);
+        $this->assertTrue($c->get(CodeModeExecutionRepository::class)->isActive($id), 'Navigation alone preserves the host.');
+        $llmBefore = \count($c->get('messenger.transport.llm')->getSent());
+        $c->get(RunMessageProcessor::class)->process('test-follow-up', new ApplyCommand($run, 0, 'replacement', 1, 'replacement-input', 'follow_up', [
+            'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Replacement branch']]],
+        ]));
+        $events = $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run);
+        $discard = array_values(array_filter($events, static fn (RunEvent $event): bool => 'history_tail_discarded' === $event->type));
+        $this->assertCount(1, $discard);
+        $this->assertSame(0, $discard[0]->payload['after_turn_no']);
+        $this->assertSame('history_discarded', $c->get(CodeModeExecutionRepository::class)->invocation($run, 'cm')['interruption_reason']);
+        $this->assertCount($llmBefore, $c->get('messenger.transport.llm')->getSent(), 'Discard must not start automatic model work.');
+        $sent = \count($c->get('messenger.transport.run_control')->getSent());
+        $event = new ProcessedToolResultDTO(new ToolCallResult($run, 1, 'step', 1, $f->call->idempotencyKey(), 'cm', 0,
+            ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => 'Abandoned branch output']]]), $f->call);
+        $c->get(CodeModeProcessedResultSubscriber::class)($event);
+        $this->assertTrue($event->handled);
+        $this->assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
+        $this->assertCount($sent, $c->get('messenger.transport.run_control')->getSent(), 'The abandoned result cannot enter the replacement mailbox.');
+        $this->assertSame([], array_filter($c->get(PreparedTransitionEventStoreInterface::class)->allFor($run), static fn (RunEvent $event): bool => 'tool_execution_end' === $event->type));
     }
 
     public function testRestartFencesReadyAcknowledgementAndLateTerminalButRetainsRawEvidence(): void

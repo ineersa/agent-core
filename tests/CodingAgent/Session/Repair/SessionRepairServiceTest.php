@@ -184,6 +184,83 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $this->assertSame($lineCountAfterFirst, \count($this->readRawLines($runId)));
     }
 
+    public function testFailedParallelBatchRepairPreservesDurableCallerAcknowledgement(): void
+    {
+        $run = 'failed-parallel-ack';
+        $step = 'parallel-tools';
+        $ack = new ToolCallResult($run, 7, $step, 1, 'native-invocation', 'background', 0,
+            ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => 'Original background acknowledgement']]]);
+        $codec = new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer());
+        $events = (new EventFactory())->eventsFromSpecs($run, 7, 1, [
+            ['type' => 'run_started', 'payload' => ['messages' => []]],
+            ['type' => 'turn_advanced', 'payload' => ['turn_no' => 7, 'step_id' => $step]],
+            ['type' => 'llm_step_completed', 'payload' => ['step_id' => $step, 'assistant_message' => [
+                'role' => 'assistant', 'content' => null, 'tool_calls' => [
+                    ['id' => 'background', 'name' => 'code_mode', 'arguments' => ['script' => 'return 42;'], 'order_index' => 0],
+                    ['id' => 'missing', 'name' => 'read', 'arguments' => ['path' => 'missing'], 'order_index' => 1],
+                ],
+            ]]],
+            ['type' => 'tool_call_acknowledged', 'payload' => $codec->toEventPayload($ack)],
+            ['type' => 'agent_end', 'payload' => ['reason' => 'failed', 'error' => 'Sibling delivery failed permanently.', 'message_type' => ToolCallResult::class]],
+        ]);
+        $this->persistRunEvents($run, $events);
+        $state = new TestActiveRunContext();
+        $state->loadRecovered(new RunState(runId: $run, status: RunStatus::Failed, turnNo: 7, lastSeq: 5, activeStepId: $step, model: 'test-model'));
+        $bus = new TestMessageBus();
+        $service = $this->createService($state, dispatcherBus: $bus);
+        $result = $service->repair($run, true, 'repair-ack');
+        $this->assertTrue($result->staleCancellationRepaired);
+        $repaired = $this->readEvents($run);
+        $this->assertSame(1, $this->countEvents($repaired, 'tool_call_acknowledged', 'background'));
+        $this->assertSame(0, $this->countEvents($repaired, 'tool_execution_end', 'background'));
+        $this->assertSame(1, $this->countEvents($repaired, 'tool_execution_end', 'missing'));
+        $this->assertSame(1, $this->countEvents($repaired, 'tool_batch_committed'));
+        $messages = $this->replayMessages($run);
+        $this->assertCount(3, $messages);
+        $this->assertSame('background', $messages[1]->toolCallId);
+        $this->assertFalse($messages[1]->isError);
+        $this->assertSame($ack->result['content'], $messages[1]->content);
+        $this->assertSame('missing', $messages[2]->toolCallId);
+        $this->assertTrue($messages[2]->isError);
+        $this->assertSame([], $bus->messages, 'Repair must not execute either tool again.');
+        $this->assertReplayStatus($run, RunStatus::Failed);
+        $count = \count($repaired);
+        $this->assertFalse($service->repair($run, true, 'repair-ack-duplicate')->staleCancellationRepaired);
+        $this->assertCount($count, $this->readEvents($run));
+    }
+
+    public function testEarlierBatchAcknowledgementCannotResolveAReusedCallIdentity(): void
+    {
+        $run = 'reused-ack-call';
+        $factory = new EventFactory();
+        $call = ['id' => 'reused', 'name' => 'code_mode', 'arguments' => ['script' => 'return 42;'], 'order_index' => 0];
+        $codec = new ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer());
+        $prior = new ToolCallResult($run, 6, 'prior-step', 1, 'prior-invocation', 'reused', 0, ['content' => [['type' => 'text', 'text' => 'Prior ACK']]]);
+        $events = $factory->eventsFromSpecs($run, 6, 1, [
+            ['type' => 'run_started', 'payload' => ['messages' => []]],
+            ['type' => 'turn_advanced', 'payload' => ['turn_no' => 6, 'step_id' => 'prior-step']],
+            ['type' => 'llm_step_completed', 'payload' => ['step_id' => 'prior-step', 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [$call]]]],
+            ['type' => 'tool_call_acknowledged', 'payload' => $codec->toEventPayload($prior)],
+            ['type' => 'tool_batch_committed', 'payload' => ['turn_no' => 6, 'step_id' => 'prior-step', 'count' => 1]],
+        ]);
+        $events = [...$events, ...$factory->eventsFromSpecs($run, 7, 6, [
+            ['type' => 'turn_advanced', 'payload' => ['turn_no' => 7, 'step_id' => 'current-step']],
+            ['type' => 'llm_step_completed', 'payload' => ['step_id' => 'current-step', 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [$call]]]],
+            ['type' => 'agent_end', 'payload' => ['reason' => 'failed', 'error' => 'Current call failed permanently.']],
+        ])];
+        $this->persistRunEvents($run, $events);
+        $active = new TestActiveRunContext();
+        $active->loadRecovered(new RunState(runId: $run, status: RunStatus::Failed, turnNo: 7, lastSeq: 8, activeStepId: 'current-step', model: 'test-model'));
+
+        $this->assertTrue($this->createService($active)->repair($run, true, 'repair-reused')->staleCancellationRepaired);
+        $this->assertSame(1, $this->countEvents($this->readEvents($run), 'tool_execution_end', 'reused'));
+        $messages = $this->replayMessages($run);
+        $this->assertCount(4, $messages);
+        $this->assertFalse($messages[1]->isError);
+        $this->assertTrue($messages[3]->isError);
+        $this->assertSame('reused', $messages[3]->toolCallId);
+    }
+
     public function testCurrentLlmRepairPreservesInvocationIdentityOnNormalBus(): void
     {
         $runId = 'repair-llm';
@@ -999,7 +1076,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             if (($row['type'] ?? null) !== $type) {
                 continue;
             }
-            if (null !== $toolCallId && ($row['payload']['tool_call_id'] ?? null) !== $toolCallId) {
+            if (null !== $toolCallId && ($row['payload']['tool_call_id'] ?? $row['payload']['tool_result']['tool_call_id'] ?? null) !== $toolCallId) {
                 continue;
             }
             if (null !== $role && ($row['payload']['message_role'] ?? null) !== $role) {

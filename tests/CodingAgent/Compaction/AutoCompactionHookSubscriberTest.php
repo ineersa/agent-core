@@ -98,6 +98,17 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     //  Test: auto compaction triggers at or above the provider usage threshold
     // ─────────────────────────────────────────────────────────────────
 
+    public function testDiscardCommitCannotScheduleCompactionBeforeReplacementCommand(): void
+    {
+        $this->modelResolver->expects($this->never())->method('resolveActiveModel');
+        $this->compactionService->expects($this->never())->method('prepare');
+        $this->eventStore->expects($this->never())->method('reverseFor');
+        $state = $this->createRunState();
+        $context = AfterTurnCommitHookContext::fromRunState($state, [RunEvent::forAppend($state->runId, $state->turnNo, 'history_tail_discarded', ['after_turn_no' => $state->turnNo])], 0);
+
+        $this->assertSame([], $this->subscriber->prepareAfterTurnCommit($context, 10));
+    }
+
     #[DataProvider('eligibleProviderUsage')]
     public function testDispatchesAutoCompactWhenProviderUsageReachesThreshold(int $inputTokens): void
     {

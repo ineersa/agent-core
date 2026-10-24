@@ -251,7 +251,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $resolvedCount = 0;
         $toolInfo = $this->toolCallInfoFromEvents($sorted);
         foreach ($unresolvedIds as $toolCallId) {
-            if ($this->hasDurableToolEnd($sorted, $toolCallId)) {
+            if ($this->hasDurableCallerResult($sorted, $toolCallId, $replayed)) {
                 continue;
             }
 
@@ -418,7 +418,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         });
 
         foreach ($missingIds as $toolCallId) {
-            if ($this->hasDurableToolEnd($sorted, $toolCallId)) {
+            if ($this->hasDurableCallerResult($sorted, $toolCallId, $replayed)) {
                 continue;
             }
 
@@ -759,14 +759,19 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     /**
      * @param list<RunEvent> $events
      */
-    private function hasDurableToolEnd(array $events, string $toolCallId): bool
+    private function hasDurableCallerResult(array $events, string $toolCallId, RunState $state): bool
     {
         $events = $this->historyReplayFilter->filter($events);
         foreach ($events as $event) {
-            if (RunEventTypeEnum::ToolExecutionEnd->value !== $event->type) {
+            if (!\in_array($event->type, [RunEventTypeEnum::ToolExecutionEnd->value, RunEventTypeEnum::ToolCallAcknowledged->value], true)) {
                 continue;
             }
-            if ($this->toolExecutionEndPayloadCodec->fromEventPayload($event->payload)->toolCallId === $toolCallId) {
+            // ACK resolves the caller, not the execution. Replay stages that exact
+            // result until batch commit; repair must not replace it with a failure.
+            $result = $this->toolExecutionEndPayloadCodec->fromEventPayload($event->payload);
+            if ($result->toolCallId === $toolCallId && $result->runId() === $state->runId
+                && $result->turnNo() === $state->turnNo
+                && (null === $state->activeStepId || $result->stepId() === $state->activeStepId)) {
                 return true;
             }
         }

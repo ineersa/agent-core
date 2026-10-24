@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
+use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
+use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
@@ -168,11 +171,20 @@ final class RunMessageProcessorTest extends TestCase
         });
         $bus = new TestMessageBus();
         $dispatcher = new StepDispatcher($bus, $bus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $essential = $this->createMock(EssentialAfterTurnHookInterface::class);
+        $essential->expects($this->once())->method('prepareAfterTurnCommit')->willReturnCallback(function ($context): array {
+            $this->assertSame('history_tail_discarded', $context->events[0]->type);
+
+            return [];
+        });
+        $observer = $this->createMock(HookSubscriberInterface::class);
+        $observer->expects($this->never())->method('handleAfterTurnCommit');
         $commit = new RunCommit(
             activeRunContext: $active,
             eventStore: $store,
             logger: new NullLogger(),
             finalizer: TestTransitionFinalizerFactory::create($store, $dispatcher),
+            hookDispatcher: new HookDispatcher([$essential, $observer]),
         );
         $processor = new RunMessageProcessor($active, new RunLockManager(new LockFactory(new InMemoryStore())), $commit, [$handler], new \Ineersa\AgentCore\Tests\Support\InMemoryCommandStore(), $discard);
         if ($failAppend) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
+use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
@@ -30,6 +31,7 @@ final readonly class CodeModeControllerSessionLifecycleListener
         private CodeModeResultArtifactStore $artifacts,
         private ApplicationDbTransactionInterface $transactions,
         private ToolBatchRunStoragePathsInterface $paths,
+        private CompleteDeferredToolCallHandler $completions,
     ) {
     }
 
@@ -51,10 +53,23 @@ final readonly class CodeModeControllerSessionLifecycleListener
     {
         foreach ($this->ownership->forOwner($owner) as $runId) {
             $this->locks->synchronized($runId, function () use ($runId, $reason): void {
-                if ([] === $this->executions->pendingControllerRecoveryIdentities($runId) && [] === $this->executions->activeIdentities($runId)) {
+                $abandoned = $this->executions->abandonedControllerRecoveryIdentities($runId);
+                if ([] === $abandoned && [] === $this->executions->pendingControllerRecoveryIdentities($runId) && [] === $this->executions->activeIdentities($runId)) {
                     return;
                 }
-                $this->paths->withStorageWriteLock($this->paths->resolveToolBatchesDirectory($runId), function () use ($runId, $reason): void {
+                $cleanup = [];
+                $this->paths->withStorageWriteLock($this->paths->resolveToolBatchesDirectory($runId), function () use ($runId, $reason, $abandoned, &$cleanup): void {
+                    foreach ($abandoned as $identity) {
+                        $metadata = $this->deferred->findMetadataByDeferredId($identity)
+                            ?? throw new \RuntimeException('Abandoned controller recovery lost its invocation metadata.');
+                        // The old controller can no longer produce a terminal. Retire
+                        // abandonment without fabricating output or weakening its fence.
+                        $this->transactions->transactional(function () use ($identity): void {
+                            $this->deferred->requireContinuation($identity, false);
+                            $this->deferred->markCompleted($identity);
+                        });
+                        $cleanup[$identity] = $metadata->reference;
+                    }
                     foreach ($this->executions->pendingControllerRecoveryIdentities($runId) as $identity) {
                         $this->transactions->transactional(function () use ($identity, $reason): void {
                             $this->deferred->requireContinuation($identity, true);
@@ -92,6 +107,11 @@ final readonly class CodeModeControllerSessionLifecycleListener
                         });
                     }
                 });
+                // Immutable cleanup follows metadata commit and releases the storage
+                // lock first. A duplicate controller event retries guarded deletion.
+                foreach ($cleanup as $identity => $reference) {
+                    $this->completions->settle($identity, $reference->runId, $reference->turnNo, $reference->stepId);
+                }
             });
         }
     }

@@ -55,6 +55,11 @@ final class AutoCompactionHookSubscriber implements EssentialAfterTurnHookInterf
 
     public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
     {
+        // A discard prepares required lifecycle fences before its replacement
+        // command. It must not schedule model maintenance ahead of that command.
+        if ($this->containsEventType($context, RunEventTypeEnum::HistoryTailDiscarded->value)) {
+            return [];
+        }
         // A failed execution cannot be revived by automatic model work.
         // Other after-turn subscribers still receive the failure for cleanup.
         if (\Ineersa\AgentCore\Domain\Run\RunStatus::Failed === $context->runState->status) {
