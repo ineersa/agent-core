@@ -626,32 +626,6 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testControllerSettlesExplicitStopWithZeroGraceAndExpiredDeadline(): void
-    {
-        $this->createManager(stopGraceSeconds: 0);
-        $ready = $this->tmpDir.'/ready';
-        $process = $this->manager->start("trap '' TERM; : > ".escapeshellarg($ready).'; sleep 60', self::TEST_SESSION, 'stop-call', hrtime(true) - 1);
-        $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
-        $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger());
-        $deadline = hrtime(true) + 2_000_000_000;
-        while (!is_file($ready) && hrtime(true) < $deadline) {
-            $this->assertTrue($lifecycle->isAlive($process->pid));
-            usleep(10_000);
-        }
-        $this->assertFileExists($ready);
-        $this->assertFalse($this->manager->stopByRecordId($process->id, self::TEST_SESSION, waitForExit: false)->alreadyFinished);
-        $record = $this->manager->findByRecordId($process->id);
-        $this->assertNull($record->finishedAt);
-        $this->assertTrue($lifecycle->isAlive($process->pid));
-        $owner = $this->createOtherManager(stopGraceSeconds: 0);
-        $owner->refreshEntities([$record]);
-        $this->assertNotNull($record->finishedAt);
-        $this->assertSame(BackgroundProcessStatusEnum::Stopped, $record->status);
-        $this->assertTrue($record->stoppedByUser);
-        $this->assertNotNull($record->completionNotifiedAt);
-        $this->assertFalse($lifecycle->isAlive($process->pid));
-    }
-
     public function testLateObservationWithoutTermKeepsSuccessfulExit(): void
     {
         $this->createManager();

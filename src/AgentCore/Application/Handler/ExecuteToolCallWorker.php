@@ -21,6 +21,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -224,7 +225,7 @@ final readonly class ExecuteToolCallWorker
                     'step_id' => $message->stepId(),
                     'tool_call_id' => $message->toolCallId,
                     'tool_name' => $message->toolName,
-                ], $executeTool);
+                ], $executeTool, level: LogLevel::INFO);
 
             if ($this->isDeferredOutcome($toolResult)) {
                 $this->registerDeferredExecution($message, $toolResult);

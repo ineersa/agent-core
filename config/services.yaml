@@ -334,6 +334,10 @@ services:
     tags:
       - { name: monolog.processor }
 
+  Ineersa\CodingAgent\Logging\FrameworkChannelLevelProcessor:
+    tags:
+      - { name: monolog.processor }
+
   # Opt-in once-per-minute session CPU/RSS/process-count sample over DogStatsD.
   # Schedule registration stays on SessionResourceSamplerSchedule so
   # AddScheduleMessengerPass can decorate that provider without replacing the
