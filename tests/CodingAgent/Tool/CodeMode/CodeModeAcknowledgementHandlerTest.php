@@ -29,6 +29,7 @@ use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\History\RunPresentationProjector;
 use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -55,7 +56,12 @@ final class CodeModeAcknowledgementHandlerTest extends IsolatedKernelTestCase
         $this->assertSame($ack->nextState->activeStepId, $cold->activeStepId);
         $this->assertSame([], $handler->handle($message, $cold)->events);
         $this->assertNotContains('tool_execution_end', array_column($events, 'type'));
-        $this->assertNull($c->get(RuntimeEventTranslator::class)->translate($ack->events[0]));
+        $runtimeAck = $c->get(RuntimeEventTranslator::class)->translate($ack->events[0]);
+        $this->assertNotNull($runtimeAck);
+        $this->assertSame(RuntimeEventTypeEnum::ToolCallAcknowledged->value, $runtimeAck->type);
+        $this->assertNotSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $runtimeAck->type);
+        $this->assertTrue($runtimeAck->payload['backgrounded']);
+        $this->assertStringContainsString('original host and worker remain occupied', $runtimeAck->payload['result']);
         $presentation = new RunPresentationProjector(new ReplayAssistantMessageFactory(), $c->get(ToolExecutionEndPayloadCodec::class), 100, 1000);
         foreach ($events as $event) {
             $presentation->observe($event);
