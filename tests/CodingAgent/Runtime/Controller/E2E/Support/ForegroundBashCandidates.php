@@ -16,7 +16,9 @@ $kernel->boot();
 try {
     $client = $kernel->getContainer()->get('test.service_container')->get(Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient::class);
     if ('code_mode' === ($argv[3] ?? null)) {
-        echo json_encode($client->backgroundWork($argv[2]), \JSON_THROW_ON_ERROR)."\n";
+        $snapshot = (array) $client->backgroundWork($argv[2]);
+        $snapshot['inFlight'] = $kernel->getContainer()->get('test.service_container')->get(Doctrine\DBAL\Connection::class)->fetchFirstColumn('SELECT in_flight_json FROM tool_batch WHERE run_id = ?', [$argv[2]]);
+        echo json_encode($snapshot, \JSON_THROW_ON_ERROR)."\n";
     } elseif (isset($argv[3], $argv[4])) {
         file_put_contents($argv[4], (string) getmypid());
         $container = $kernel->getContainer()->get('test.service_container');

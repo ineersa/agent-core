@@ -99,17 +99,26 @@ and `ask_human` before the handler runs. Those tools need native deferred owners
 flow that this bridge cannot complete. Script return values and nested tool results must be JSON-compatible scalars
 or arrays. Closures, resources, objects, non-finite floats, invalid UTF-8, and
 cyclic graphs fail instead of becoming empty or substituted data. Each script
-accepts optional `timeout_seconds` (default 60, max 300) and `memory_limit_mb`
+accepts optional `timeout_seconds` (default 1800, max 3600) and `memory_limit_mb`
 (default 256, max 1024). The remaining parent tool budget wins when smaller.
 Nested tool calls receive the remaining script budget as cooperative ToolContext
 metadata. The host can enforce that budget only while it is polling the script; a
 nested handler that blocks synchronously can still overrun until it returns.
 
+The user can press Ctrl+B to background a ready top-level script, including its
+blocked nested call. No script argument requests backgrounding. The same host
+continues under its original deadline; nested calls remain synchronous. Each host
+occupies one tool consumer, so a saturated pool queues other tool calls until
+capacity returns. `/bg` lists root-owned scripts and offers exact-invocation
+cooperative stop. Late results are attributed agent notifications. Controller
+loss parks unresolved delivery for explicit `/repair`, without rerunning the
+script or restoring its stack. See [background processes](background-processes.md).
+
 ## Background work
 
-There is no `bg_start` tool or model-selected background flag. A long-running `bash`
-call can offer backgrounding, and the user chooses. Accepted jobs can then be
-inspected or stopped through `bg_status`. See [background processes](background-processes.md).
+There is no `bg_start` tool or model-selected background flag. The user chooses
+backgrounding with Ctrl+B and inspects or stops root-owned work through `/bg`.
+`bg_status` inspects or stops Bash jobs only. See [background processes](background-processes.md).
 
 ## Child agents
 

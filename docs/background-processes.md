@@ -7,14 +7,35 @@ description: Background process tracking, logs, stop behavior, and related setti
 
 Long-running shell work can detach into tracked background processes so the conversation loop stays responsive.
 
-Press **Ctrl+B** while a `bash`, `subagent`, `fork` or `agent_resume` tool runs to move it to background.
+Press **Ctrl+B** while a `bash`, `code_mode`, `subagent`, `fork` or `agent_resume` tool runs to move it to background.
 If several eligible invocations are running in the visible session, choose one in the
 picker. Enter or Ctrl+B confirms; Escape cancels. In child live view, the shortcut
-targets that child's Bash tool rather than its parent's invocation.
+targets eligible work in that child's run rather than its parent's invocation.
 Questions, modal dialogs and completion overlays retain their keyboard handling.
 Without an eligible invocation, Ctrl+B keeps its editor cursor-left behavior.
 There is no model-facing background parameter or `bg_start` tool.
-After backgrounding, open `/bg` to inspect or stop jobs yourself, or ask the agent to use `bg_status`.
+After backgrounding, open `/bg` to inspect or stop work. `bg_status` covers Bash jobs only.
+
+## Code-mode scripts
+
+Ctrl+B backgrounds a ready, top-level `code_mode` invocation as a whole, including
+any blocked nested `tool()` call. The same PHP process, socket, workspace and script
+stack continue; nested tools stay synchronous. The original call receives one
+acknowledgment, and its card freezes as backgrounded. The eventual result arrives
+as an attributed agent notification, not human input or a second original-call result.
+Structured values, errors and saved diagnostics remain available through completion.
+
+The default deadline is 1,800 seconds, with a 3,600-second maximum. Detachment does
+not extend it. Each host still occupies one tool consumer. Multiple hosts can run
+when consumers are available; when all are occupied, ordinary tool calls queue,
+including model-issued inspection tools. There is no reserved control worker.
+
+Use `/bg` to inspect root-owned scripts, including scripts owned by child agents.
+Confirmed stop targets that exact invocation cooperatively, without cancelling
+its parent or other scripts. It remains `stopping` until terminal state is observed.
+Controller restart or shutdown fences old hosts and parks unresolved delivery.
+Use explicit `/repair` to recover retained outcomes without rerunning the script
+or clearing its old interruption fence. Recovery does not preserve a lost PHP stack.
 
 ## Child invocations
 
@@ -34,8 +55,8 @@ handoff. The parent can explicitly use `agent_resume` if more child work is need
 
 ## Background work picker: `/bg`
 
-Run `/bg` from the main view. It lists detached child invocations and accepted unfinished
-Bash jobs owned by the root session, including its children. Entries identify the owning
+Run `/bg` from the main view. It lists detached child invocations, code-mode scripts and
+accepted unfinished Bash jobs owned by the root session, including its children. Entries identify the owning
 agent and run. Bash entries also show command, PID and elapsed seconds; jobs in termination
 grace appear as `stopping`. `bg_status` remains a Bash-only tool scoped to its current run.
 Select work and press Enter to open a Yes/No cancellation confirmation, defaulting to No.

@@ -12,6 +12,13 @@ use Symfony\Component\Process\Process;
 final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTestCase
 {
     private string $databasePath;
+    private bool $capacity = false;
+
+    protected function setUp(): void
+    {
+        $this->capacity = 'testTwoRetainedHostsSaturateTheExistingPoolUntilOneReturns' === $this->name();
+        parent::setUp();
+    }
 
     protected function tearDown(): void
     {
@@ -94,9 +101,80 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             $this->assertCount(1, array_filter($this->requests()[3], static fn (array $m): bool => 'tool' === ($m['role'] ?? '') && 'host' === ($m['tool_call_id'] ?? '')));
             $canonical = array_map(static fn (string $line): array => json_decode($line, true, 512, \JSON_THROW_ON_ERROR), file($this->tempDir.'/.hatfield/sessions/'.$this->runId.'/events.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES));
             $this->assertCount(1, array_filter($canonical, static fn (array $e): bool => 'tool_call_acknowledged' === $e['type']));
-            $this->assertCount(0, array_filter($canonical, static fn (array $e): bool => 'tool_execution_end' === $e['type'] && 'host' === ($e['payload']['tool_call_id'] ?? '')));
+            $this->assertCount(0, array_filter($canonical, static fn (array $e): bool => 'tool_execution_end' === $e['type'] && 'host' === ($e['payload']['tool_result']['tool_call_id'] ?? '')));
         } finally {
             fclose($release);
+        }
+    }
+
+    // Only real broker consumers can prove occupancy and queued dispatch. FIFO
+    // release is the rendezvous; bounded waits are failure caps, not scheduling.
+    public function testTwoRetainedHostsSaturateTheExistingPoolUntilOneReturns(): void
+    {
+        $releases = [];
+        try {
+            foreach (['one', 'two'] as $id) {
+                $this->assertTrue(posix_mkfifo($this->tempDir.'/release-'.$id, 0600));
+                $releases[$id] = fopen($this->tempDir.'/release-'.$id, 'r+b');
+                $this->assertIsResource($releases[$id]);
+            }
+            $this->sessionId = trim($this->query()->getOutput());
+            file_put_contents($this->tempDir.'/free.txt', 'CAPACITY_RETURNED');
+            $this->spawnController();
+            $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+            $this->writeCommand(['v' => 1, 'id' => 'start', 'type' => 'start_run', 'payload' => ['prompt' => 'Run two retained hosts, then read free.txt.']]);
+            $identities = [];
+            foreach (['one', 'two'] as $id) {
+                $started = $this->collectEventsUntil(null, 5, static fn (array $e): bool => 'tool_execution.started' === ($e['type'] ?? '') && $id === ($e['payload']['tool_call_id'] ?? ''));
+                if ('one' === $id) {
+                    $this->runId = $this->indexByType($started)['run.started'][0]['runId'];
+                }
+                $this->waitForFile($id.'.ready');
+                $identities[$id] = json_decode(file_get_contents($this->tempDir.'/'.$id.'.before'), true, 32, \JSON_THROW_ON_ERROR);
+                $this->assertFileExists($identities[$id]['socket']);
+                $snapshot = json_decode(trim($this->query($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
+                $candidate = array_values(array_filter($snapshot['codeMode'], static fn (array $c): bool => $id === $c['toolCallId']))[0];
+                $this->writeCommand(['v' => 1, 'id' => 'detach-'.$id, 'type' => 'background_code_mode', 'runId' => $this->runId,
+                    'payload' => ['deferred_id' => $candidate['lifecycleId'], 'tool_call_id' => $id]]);
+                $ack = $this->collectEventsUntil('tool_call.acknowledged', 5);
+                $this->assertSame($id, $this->indexByType($ack)['tool_call.acknowledged'][0]['payload']['tool_call_id']);
+            }
+            foreach (['pid', 'socket', 'workspace'] as $field) {
+                $this->assertNotSame($identities['one'][$field], $identities['two'][$field]);
+            }
+            $this->collectEventsUntil(null, 5, static fn (array $e): bool => 'tool_execution.started' === ($e['type'] ?? '') && 'free' === ($e['payload']['tool_call_id'] ?? ''));
+            $snapshot = json_decode(trim($this->query($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
+            $this->assertCount(2, $snapshot['work']);
+            $this->assertContains('["free"]', $snapshot['inFlight'], 'Ordinary work has been dispatched while both real consumers are occupied.');
+            $this->assertCount(3, $this->requests(), 'The dispatched read has not returned to the model.');
+            fwrite($releases['one'], "finish\n");
+            fflush($releases['one']);
+            $progress = $this->collectEventsUntil(null, 5, static fn (array $e): bool => 'tool_execution.completed' === ($e['type'] ?? '') && 'free' === ($e['payload']['tool_call_id'] ?? ''));
+            $this->assertCount(1, $this->indexByType($progress)['tool_execution.completed']);
+            $this->assertFileExists($identities['two']['socket'], 'The other host is still retained when ordinary work progresses.');
+            $this->assertFileDoesNotExist($this->tempDir.'/two.after');
+            $first = isset($this->indexByType($progress)['model.notification']) ? $progress : $this->waitForNotice();
+            $this->assertCount(1, $this->indexByType($first)['model.notification']);
+            $this->assertSame('one', $this->indexByType($first)['model.notification'][0]['payload']['metadata']['background_completion']['tool_call_id']);
+            fwrite($releases['two'], "finish\n");
+            fflush($releases['two']);
+            $second = $this->waitForNotice();
+            $this->assertCount(1, $this->indexByType($second)['model.notification']);
+            $this->assertSame('two', $this->indexByType($second)['model.notification'][0]['payload']['metadata']['background_completion']['tool_call_id']);
+            foreach (['one', 'two'] as $id) {
+                $after = json_decode(file_get_contents($this->tempDir.'/'.$id.'.after'), true, 32, \JSON_THROW_ON_ERROR);
+                $this->assertSame($identities[$id], $after['identity'], 'PID, socket, workspace and script-local state survive detachment.');
+                $this->assertStringContainsString('NESTED_'.$id, $after['nested']);
+            }
+            $canonical = array_map(static fn (string $line): array => json_decode($line, true, 512, \JSON_THROW_ON_ERROR), file($this->tempDir.'/.hatfield/sessions/'.$this->runId.'/events.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES));
+            foreach (['one', 'two'] as $id) {
+                $this->assertCount(1, array_filter($canonical, static fn (array $e): bool => 'tool_call_acknowledged' === $e['type'] && $id === ($e['payload']['tool_result']['tool_call_id'] ?? '')));
+                $this->assertCount(0, array_filter($canonical, static fn (array $e): bool => 'tool_execution_end' === $e['type'] && $id === ($e['payload']['tool_result']['tool_call_id'] ?? '')));
+            }
+        } finally {
+            foreach ($releases as $release) {
+                fclose($release);
+            }
         }
     }
 
@@ -110,8 +188,19 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
         $this->databasePath = 'app_test-code-mode-'.$this->sessionId.'.sqlite';
         $command = ': > '.escapeshellarg($this->tempDir.'/ready').'; IFS= read -r release < '.escapeshellarg($this->tempDir.'/release');
         $script = 'tool("bash", '.var_export(['command' => $command], true).'); return "BG_CODE_DONE";';
+        $calls = [['host', 'code_mode', ['script' => $script]], ['free', 'read', ['path' => 'free.txt']], null, null];
+        if ($this->capacity) {
+            $calls = [];
+            foreach (['one', 'two'] as $id) {
+                $prefix = var_export($this->tempDir.'/'.$id, true);
+                $command = ': > '.escapeshellarg($this->tempDir.'/'.$id.'.ready').'; IFS= read -r release < '.escapeshellarg($this->tempDir.'/release-'.$id).'; printf '.escapeshellarg('NESTED_'.$id);
+                $script = '$identity = ["pid" => getmypid(), "workspace" => __DIR__, "socket" => __DIR__."/s.sock", "local" => '.var_export($id, true).']; file_put_contents('.$prefix.'.".before", json_encode($identity)); $nested = tool("bash", '.var_export(['command' => $command], true).'); file_put_contents('.$prefix.'.".after", json_encode(["identity" => ["pid" => getmypid(), "workspace" => __DIR__, "socket" => __DIR__."/s.sock", "local" => $identity["local"]], "nested" => $nested])); return $identity["local"];';
+                $calls[] = [$id, 'code_mode', ['script' => $script]];
+            }
+            array_push($calls, ['free', 'read', ['path' => 'free.txt']], null, null, null);
+        }
         $fixtures = [];
-        foreach ([['host', 'code_mode', ['script' => $script]], ['free', 'read', ['path' => 'free.txt']], null, null] as $call) {
+        foreach ($calls as $call) {
             $fixture = ['model' => 'llama_cpp_test/test', 'provider_id' => 'llama_cpp_test', 'reasoning' => 'off', 'stop_reason' => null === $call ? 'stop' : 'tool_call', 'replay_request_capture' => $this->tempDir.'/requests.jsonl'];
             $fixture['deltas'] = null === $call ? [['type' => 'text', 'content' => 'Done.']] : [
                 ['type' => 'tool_call_start', 'id' => $call[0], 'name' => $call[1]],
@@ -132,6 +221,30 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
     protected function extraSettingsYaml(): string
     {
         return "tools:\n  execution:\n    max_parallelism: 2\n  code_mode:\n    enabled: true\n";
+    }
+
+    private function waitForNotice(): array
+    {
+        $deadline = microtime(true) + 5;
+        do {
+            $events = $this->collectEventsUntil('model.notification', max(0.01, $deadline - microtime(true)));
+            if (isset($this->indexByType($events)['model.notification'])) {
+                return $events;
+            }
+        } while ($this->isRunning() && microtime(true) < $deadline);
+        $this->fail($this->collectDiagnostics($events));
+    }
+
+    private function waitForFile(string $name): void
+    {
+        $deadline = microtime(true) + 3;
+        while (!is_file($this->tempDir.'/'.$name) && microtime(true) < $deadline) {
+            $this->assertTrue($this->isRunning());
+            usleep(10000);
+        }
+        if (!is_file($this->tempDir.'/'.$name)) {
+            $this->fail($this->collectDiagnostics($this->readEvents()));
+        }
     }
 
     private function query(?string $runId = null): Process
