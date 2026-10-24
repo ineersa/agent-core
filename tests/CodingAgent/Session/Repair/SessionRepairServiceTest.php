@@ -70,6 +70,79 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         parent::tearDown();
     }
 
+    #[\PHPUnit\Framework\Attributes\DataProvider('deferredRepairs')]
+    public function testFailedParentRepairsRetainedDeferredResultWithoutExecutingTools(bool $retained, bool $completed, bool $valid): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('retained repair');
+        $call = new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), $run, 1, 'step', 2, 'exact-key', 'host', 'code_mode', ['script' => 'return 1;'], 0);
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::registerDeferredInvocation($container->get(ToolBatchStoreInterface::class), $call);
+        $deferred = $container->get(\Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository::class);
+        $deferred->registerPending($call);
+        $terminal = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromDeferredCorrelationAndCompletion($call, [['type' => 'text', 'text' => 'FIRST']], [], false);
+        if ($retained) {
+            $deferred->acceptResultReference($call->deferredId, $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class)->publish($terminal));
+        }
+        if ($completed) {
+            $deferred->markCompleted($call->deferredId);
+        }
+        $deferred->interrupt($call->deferredId, 'controller_lost');
+        $deferred->requireContinuation($call->deferredId, true);
+        $specs = [
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['messages' => []]],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => 'step']],
+            ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => ['step_id' => $valid ? 'step' : 'foreign', 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'host', 'name' => 'code_mode', 'arguments' => $call->arguments, 'order_index' => 0]]]]],
+            ['type' => RunEventTypeEnum::AgentEnd->value, 'payload' => ['reason' => 'failed']],
+        ];
+        if ($completed) {
+            $specs[] = ['type' => RunEventTypeEnum::ToolCallAcknowledged->value, 'payload' => $container->get(ToolExecutionEndPayloadCodec::class)->toEventPayload($terminal)];
+        }
+        $this->persistRunEvents($run, (new EventFactory())->eventsFromSpecs($run, 1, 1, $specs));
+        $store = new TestActiveRunContext();
+        $store->loadRecovered(new RunState($run, RunStatus::Failed, version: 1, turnNo: 1, lastSeq: \count($specs), activeStepId: 'step', pendingToolCalls: $completed ? [] : ['host' => false]));
+        $bus = new TestMessageBus();
+        $service = $this->createService($store, commandBus: $bus);
+        $dry = $service->repair($run, false, \Symfony\Component\Uid\Uuid::v7()->toRfc4122());
+        $this->assertSame($valid ? null : SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $dry->refusalReason);
+        $this->assertSame([], $bus->messages);
+        $applied = $service->repair($run, true, \Symfony\Component\Uid\Uuid::v7()->toRfc4122());
+        if (!$valid) {
+            $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $applied->refusalReason);
+            $this->assertSame([], $bus->messages);
+            $this->assertTrue($deferred->runRequiresContinuation($run));
+
+            return;
+        }
+        $this->assertNull($applied->refusalReason);
+        $results = array_values(array_filter($bus->messages, static fn (object $message): bool => $message instanceof ToolCallResult));
+        if ($completed) {
+            $this->assertSame([], $results);
+            $this->assertSame(RunStatus::Running, $store->requireLoaded($run)->status);
+            $this->assertSame('completed', $deferred->status($call->deferredId));
+
+            return;
+        }
+        $this->assertCount(1, $results);
+        if ($retained) {
+            $this->assertEquals($terminal, $results[0]);
+        } else {
+            $this->assertTrue($results[0]->isError);
+            $this->assertFalse($results[0]->error['retryable']);
+        }
+        $this->assertSame(2, $results[0]->attempt());
+        $this->assertSame('exact-key', $results[0]->idempotencyKey());
+        $this->assertSame('pending', $deferred->status($call->deferredId), 'Transport dispatch is not durable result admission.');
+        $this->assertSame('controller_lost', $deferred->findMetadataByDeferredId($call->deferredId)->interruptionReason);
+    }
+
+    public static function deferredRepairs(): iterable
+    {
+        yield 'first processed result after parent failure' => [true, false, true];
+        yield 'lost host without terminal evidence' => [false, false, true];
+        yield 'completed caller stays completed' => [true, true, true];
+        yield 'canonical invocation mismatch refuses authorization' => [true, false, false];
+    }
+
     public function testNoRepairNeededWhenSessionIsCleanlyTerminal(): void
     {
         $runId = '1';
@@ -973,9 +1046,11 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
                 eventStore: $eventStore,
                 logger: new NullLogger(),
                 finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $dispatcherBus, new TestLogger(), events: $dispatcherEvents), locks: $locks),
-                actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
+                actionValidator: self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
             ),
             deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
+            deferred: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository::class),
+            payloads: self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
         );
     }
 

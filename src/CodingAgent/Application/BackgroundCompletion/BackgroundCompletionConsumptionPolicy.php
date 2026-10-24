@@ -23,7 +23,12 @@ final readonly class BackgroundCompletionConsumptionPolicy implements CommandCon
 
     public function interrupted(?string $id): bool
     {
-        return null !== $id && null !== $this->deferred->findMetadataByDeferredId($id)?->interruptionReason;
+        return null !== $id && \in_array($this->deferred->findMetadataByDeferredId($id)?->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true);
+    }
+
+    public function parked(?string $id): bool
+    {
+        return null !== $id && true === $this->deferred->findMetadataByDeferredId($id)?->continuationRequired;
     }
 
     public function prepare(RunState $state, PendingCommand $command): ?CommandConsumptionDecisionDTO
@@ -45,6 +50,9 @@ final readonly class BackgroundCompletionConsumptionPolicy implements CommandCon
             return new CommandConsumptionDecisionDTO('Background completion already consumed or transferred.');
         }
         $interrupted = $this->interrupted($receipt->deferredId);
+        if (!$interrupted && $this->parked($receipt->deferredId)) {
+            return new CommandConsumptionDecisionDTO(defer: true);
+        }
         $forward = !$interrupted && null !== $state->parentRunId && ($state->status->isTerminal() || RunStatus::Cancelling === $state->status);
 
         return new CommandConsumptionDecisionDTO(

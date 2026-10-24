@@ -13,8 +13,9 @@ final readonly class MarkCodeModeBackgroundedDTO
         #[Assert\Uuid]
         public string $deferredId,
         public \DateTimeImmutable $acceptedAt,
-        #[Assert\Choice(choices: ['stopped', 'cancelled', 'history_discarded'])]
+        #[Assert\Choice(choices: ['stopped', 'cancelled', 'history_discarded', 'controller_lost'])]
         public ?string $interruptionReason = null,
+        public ?bool $continuationRequired = null,
     ) {
     }
 }

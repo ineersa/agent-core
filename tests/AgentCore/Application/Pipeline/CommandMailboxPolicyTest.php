@@ -463,7 +463,7 @@ final class CommandMailboxPolicyTest extends TestCase
                     messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                     maxPendingCommands: $maxPendingCommands,
                 ),
-                new AdvanceRunHandler(
+                new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
                     commandMailboxPolicy: $commandMailboxPolicy,
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                 ),

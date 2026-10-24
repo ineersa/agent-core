@@ -632,7 +632,7 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
         $this->assertStringStartsWith('post-cancel-advance-', $commandBus->messages[0]->stepId());
 
-        $advanceHandler = new AdvanceRunHandler(
+        $advanceHandler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );

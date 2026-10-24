@@ -406,6 +406,11 @@ final class MarkCompletedFailsOnceRepository implements DeferredToolCompletionRe
         return $this->inner->findByDeferredId($deferredId);
     }
 
+    public function runRequiresContinuation(string $runId): bool
+    {
+        return $this->inner->runRequiresContinuation($runId);
+    }
+
     public function status(string $deferredId): ?string
     {
         return $this->inner->status($deferredId);

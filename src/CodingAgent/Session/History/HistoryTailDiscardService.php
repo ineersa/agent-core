@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Session\History;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\History\HistoryTailDiscardInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
@@ -44,6 +45,7 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
         private ActiveRunContextInterface $contexts,
         private BackgroundCompletionReceiptRepository $receipts,
         private CommandStoreInterface $commands,
+        private DeferredToolCompletionRepositoryInterface $deferred,
     ) {
     }
 
@@ -69,6 +71,9 @@ final readonly class HistoryTailDiscardService implements HistoryTailDiscardInte
             return null === $state->parentRunId || (!$state->status->isTerminal() && RunStatus::Cancelling !== $state->status);
         }
         if ($message instanceof AdvanceRun) {
+            if ($this->deferred->runRequiresContinuation($message->runId())) {
+                return false;
+            }
             $pending = $this->commands->pending($message->runId());
             if ([] !== $pending && array_all($pending, static fn ($command): bool => ($command->payload['provenance'] ?? null) instanceof BackgroundCompletionProvenanceDTO)) {
                 return false;

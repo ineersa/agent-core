@@ -113,7 +113,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             }
         }
 
-        return new DeferredToolCompletionMetadataDTO($entity->deferredId, $reference, $entity->status, $entity->readyAt, $entity->backgroundedAt, $accepted, $entity->interruptionReason);
+        return new DeferredToolCompletionMetadataDTO($entity->deferredId, $reference, $entity->status, $entity->readyAt, $entity->backgroundedAt, $accepted, $entity->interruptionReason, $entity->continuationRequired);
     }
 
     /** @return list<string> */
@@ -127,6 +127,31 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         $entity = $this->require($deferredId);
         $entity->interruptionReason ??= $reason;
         $this->getEntityManager()->flush();
+    }
+
+    /** @return list<string> */
+    public function controllerLossIdentities(string $runId): array
+    {
+        // A completed source can still own a mailbox receipt or an unconsumed
+        // successor in its original turn. Historical completed turns cannot.
+        return $this->getEntityManager()->getConnection()->fetchFirstColumn("SELECT DISTINCT d.deferred_id FROM tool_deferred_completion d LEFT JOIN background_completion_receipt r ON r.deferred_id = d.deferred_id LEFT JOIN run_operational_state s ON s.run_id = d.run_id WHERE d.run_id = ? AND d.tool_name = 'code_mode' AND (d.status = 'pending' OR d.continuation_required = 1 OR r.disposition IN ('pending', 'forwarding') OR (s.status = 'running' AND s.turn_no = d.turn_no AND s.active_step_id = d.step_id))", [$runId]);
+    }
+
+    public function runRequiresContinuation(string $runId): bool
+    {
+        return false !== $this->getEntityManager()->getConnection()->fetchOne('SELECT 1 FROM tool_deferred_completion d LEFT JOIN background_completion_receipt r ON r.deferred_id = d.deferred_id WHERE d.continuation_required = 1 AND (d.run_id = ? OR r.destination_run_id = ?) LIMIT 1', [$runId, $runId]);
+    }
+
+    public function requireContinuation(string $id, bool $required): void
+    {
+        $this->require($id)->continuationRequired = $required;
+        $this->getEntityManager()->flush();
+    }
+
+    /** @return list<string> */
+    public function continuationRunIds(string $ownerRunId): array
+    {
+        return $this->getEntityManager()->getConnection()->fetchFirstColumn("SELECT DISTINCT d.run_id FROM tool_deferred_completion d LEFT JOIN run_operational_state s ON s.run_id = d.run_id LEFT JOIN background_completion_receipt r ON r.deferred_id = d.deferred_id WHERE (d.continuation_required = 1 OR (d.status = 'pending' AND d.interruption_reason = 'controller_lost')) AND (d.run_id = ? OR s.owner_session_id = ? OR r.destination_run_id = ? OR r.root_run_id = ?)", array_fill(0, 4, $ownerRunId));
     }
 
     public function status(string $deferredId): ?string

@@ -60,6 +60,9 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
             throw new ValidationFailedException($message, $errors);
         }
         $receipt = $this->receipts->receipt($message->identity);
+        if ($this->consumption->parked($message->deferredId) && !$this->consumption->interrupted($message->deferredId)) {
+            return new HandlerResult();
+        }
         if (null !== $receipt) {
             if (BackgroundCompletionDispositionEnum::Pending === $receipt->disposition
                 && $receipt->destinationRunId === $state->runId

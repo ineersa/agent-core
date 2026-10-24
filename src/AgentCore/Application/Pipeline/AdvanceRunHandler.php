@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\AdvanceRunCoordinationFactory;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -19,6 +20,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 final readonly class AdvanceRunHandler implements RunMessageHandler
 {
     public function __construct(
+        private DeferredToolCompletionRepositoryInterface $deferred,
         private CommandMailboxPolicy $commandMailboxPolicy,
         private EventFactory $eventFactory,
         private ?RunTracer $tracer = null,
@@ -43,6 +45,9 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         }
 
         $runId = $message->runId();
+        if ($this->deferred->runRequiresContinuation($runId)) {
+            return new HandlerResult();
+        }
 
         // AdvanceRun consumes the exact current turn. A prior committed
         // transition must stop before it drains commands queued afterward.

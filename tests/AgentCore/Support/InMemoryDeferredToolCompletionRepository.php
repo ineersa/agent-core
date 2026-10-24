@@ -88,6 +88,11 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         return new DeferredToolCompletionMetadataDTO($deferredId, $reference, $row['status'], $row['readyAt'], $row['backgroundedAt'], $row['accepted']);
     }
 
+    public function runRequiresContinuation(string $runId): bool
+    {
+        return false;
+    }
+
     public function status(string $deferredId): ?string
     {
         return $this->byDeferredId[$deferredId]['status'] ?? null;

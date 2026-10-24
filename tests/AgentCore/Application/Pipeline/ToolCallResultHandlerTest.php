@@ -125,7 +125,7 @@ final class ToolCallResultHandlerTest extends TestCase
             payload: ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'follow up']]]],
             options: new CommandCancellationOptions(safe: false),
         ));
-        $advance = new AdvanceRunHandler(
+        $advance = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: new CommandMailboxPolicy($commandStore, new CommandRouter([])),
             eventFactory: new EventFactory(),
         );

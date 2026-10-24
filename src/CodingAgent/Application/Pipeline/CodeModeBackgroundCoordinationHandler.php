@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
@@ -11,10 +12,14 @@ use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkCodeModeBackgroundedDTO;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -26,6 +31,8 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
         private ApplicationDbTransactionInterface $transactions,
         private ValidatorInterface $validator,
         #[Autowire(lazy: true)] private RunMessageProcessor $processor,
+        private OwnedRunIdsProvider $owners,
+        private RunLockManager $locks,
     ) {
     }
 
@@ -34,6 +41,21 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
     {
         $this->validate($action);
         $this->transactions->transactional(function () use ($action): void {
+            if (null !== $action->continuationRequired) {
+                $metadata = $this->deferred->findMetadataByDeferredId($action->deferredId);
+                if ($action->continuationRequired && \in_array($metadata?->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true)) {
+                    $this->deferred->markCompleted($action->deferredId);
+                    $this->deferred->requireContinuation($action->deferredId, false);
+
+                    return;
+                }
+                if (null !== $action->interruptionReason) {
+                    $this->deferred->interrupt($action->deferredId, $action->interruptionReason);
+                }
+                $this->deferred->requireContinuation($action->deferredId, $action->continuationRequired);
+
+                return;
+            }
             if (null !== $action->interruptionReason) {
                 $this->deferred->interrupt($action->deferredId, $action->interruptionReason);
 
@@ -60,6 +82,20 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
         return $action instanceof MarkCodeModeBackgroundedDTO;
     }
 
+    #[AsEventListener]
+    public function controllerStarting(ControllerSessionStartingEvent $event): void
+    {
+        $this->park($event->sessionId);
+    }
+
+    #[AsEventListener]
+    public function controllerStopping(ControllerSessionShutdownEvent $event): void
+    {
+        if (!$event->permanentDeletion) {
+            $this->park($event->sessionId);
+        }
+    }
+
     public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
     {
         $reason = \in_array(RunEventTypeEnum::HistoryTailDiscarded->value, array_column($context->events, 'type'), true)
@@ -79,6 +115,17 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
         $violations = $this->validator->validate($action);
         if (0 !== \count($violations)) {
             throw new ValidationFailedException($action, $violations);
+        }
+    }
+
+    private function park(string $root): void
+    {
+        foreach ($this->owners->forOwner($root) as $run) {
+            $this->locks->synchronized($run, function () use ($run): void {
+                foreach ($this->deferred->controllerLossIdentities($run) as $id) {
+                    $this(new MarkCodeModeBackgroundedDTO($id, new \DateTimeImmutable(), 'controller_lost', true));
+                }
+            });
         }
     }
 }

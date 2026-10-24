@@ -65,6 +65,9 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
             }
             $this->validate($message);
             $body = $this->locks->synchronized($message->runId(), function () use ($message, $received): ExecuteToolCall|ExecuteShellToolCall|ToolCallResult|CompleteDeferredToolCall|null {
+                if ('result' === $message->reference->kind && 'code_mode' === $message->reference->toolName && $this->deferred->runRequiresContinuation($message->runId())) {
+                    return null;
+                }
                 if (null !== $message->deferredId) {
                     $metadata = $this->deferredMetadata($message->deferredId);
                     $this->assertDeferredReference($metadata, $message->reference);
@@ -215,12 +218,12 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
                 return [null, null];
             }
             $metadata = $this->findEarlyDeferredRegistration($message);
-            if (null !== $metadata?->interruptionReason && (null !== $metadata->backgroundedAt || 'history_discarded' === $metadata->interruptionReason)) {
+            if (\in_array($metadata?->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true) && (null !== $metadata->backgroundedAt || 'history_discarded' === $metadata->interruptionReason)) {
                 $this->deferred->markCompleted($metadata->deferredId);
 
                 return [null, null];
             }
-            if (null === $metadata?->backgroundedAt && !$this->admission->canPublish($message)) {
+            if (null === $metadata?->backgroundedAt && 'controller_lost' !== $metadata?->interruptionReason && !$this->admission->canPublish($message)) {
                 return [null, null];
             }
             if (null === $metadata) {
@@ -229,6 +232,9 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
             $reference = null === $metadata->acceptedResultReference
                 ? $this->deferred->acceptResultReference($metadata->deferredId, $this->payloads->publish($message))
                 : $metadata->acceptedResultReference;
+            if ($metadata->continuationRequired) {
+                return [null, null];
+            }
             if (null !== $metadata->backgroundedAt) {
                 $accepted = $this->payloads->read($reference);
                 if (!$accepted instanceof ToolCallResult) {

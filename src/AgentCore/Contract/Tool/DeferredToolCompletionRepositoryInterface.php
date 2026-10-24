@@ -36,6 +36,9 @@ interface DeferredToolCompletionRepositoryInterface
 
     public function markCompleted(string $deferredId): void;
 
+    /** Old successor tokens require an explicit owner continuation after loss. */
+    public function runRequiresContinuation(string $runId): bool;
+
     /** Live host IPC is ready for caller acknowledgement. */
     public function markReady(string $deferredId): void;
 

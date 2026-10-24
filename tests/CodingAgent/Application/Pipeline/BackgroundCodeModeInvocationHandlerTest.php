@@ -55,6 +55,77 @@ use Symfony\Component\Uid\Uuid;
 
 final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCase
 {
+    #[DataProvider('controllerLossCases')]
+    public function testControllerLossParksOnlyOutstandingWork(string $phase): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('controller loss');
+        $root = $run;
+        if ('owned-child' === $phase) {
+            $run = Uuid::v7()->toRfc4122();
+            $entry = $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class)->create($root, 'owned-child', $run, 'scout', \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum::Subagent);
+            $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class)->register($entry);
+        }
+        $call = new DeferredToolCompletionCorrelation(Uuid::v7()->toRfc4122(), $run, 1, 'step', 1, 'key', 'call', 'code_mode', [], 0);
+        TestToolBatchRegistration::registerDeferredInvocation($container->get(ToolBatchStoreInterface::class), $call);
+        $repository = $container->get(DeferredToolCompletionRepository::class);
+        $repository->registerPending($call);
+        $repository->markReady($call->deferredId);
+        $state = new RunState($run, RunStatus::Running, turnNo: 1, pendingToolCalls: ['call' => false], activeStepId: 'step');
+        if (\in_array($phase, ['ack', 'receipt'], true)) {
+            $ack = $container->get(BackgroundCodeModeInvocationHandler::class)->handle(new BackgroundCodeModeInvocationDTO($run, $call->deferredId, 'call'), $state);
+            $this->admit($run, $ack->postCommitActions);
+            $state = $ack->nextState;
+        }
+        if ('receipt' === $phase) {
+            $metadata = $repository->findMetadataByDeferredId($call->deferredId);
+            $delivery = new DeliverBackgroundCompletionDTO($run, $call->deferredId, 'retained', $run, $call->deferredId, $metadata->reference);
+            $this->admit($run, $container->get(BackgroundCompletionRunHandler::class)->handle($delivery, $state)->postCommitActions);
+        } elseif (\in_array($phase, ['cancelled', 'history_discarded'], true)) {
+            $repository->interrupt($call->deferredId, $phase);
+        } elseif (\in_array($phase, ['historical', 'successor'], true)) {
+            $repository->markCompleted($call->deferredId);
+            $container->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace($state->with(['turnNo' => 'historical' === $phase ? 2 : 1, 'pendingToolCalls' => []]));
+        }
+        self::ensureKernelShutdown();
+        self::bootKernel(['environment' => 'test', 'debug' => false]);
+        $container = self::getContainer();
+        $repository = $container->get(DeferredToolCompletionRepository::class);
+        $coordinator = $container->get(CodeModeBackgroundCoordinationHandler::class);
+        $coordinator->controllerStarting(new \Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent($root));
+        $this->assertSame([], $container->get('messenger.transport.run_control')->getSent(), 'Passive cold startup sends no completion or successor.');
+        $metadata = $repository->findMetadataByDeferredId($call->deferredId);
+        $outstanding = !\in_array($phase, ['cancelled', 'history_discarded', 'historical'], true);
+        $this->assertSame($outstanding, $metadata->continuationRequired);
+        $this->assertSame($outstanding, $repository->runRequiresContinuation($run));
+        $this->assertSame(\in_array($phase, ['cancelled', 'history_discarded'], true) ? $phase : ($outstanding ? 'controller_lost' : null), $metadata->interruptionReason);
+        $this->assertSame(\in_array($phase, ['cancelled', 'history_discarded', 'historical', 'receipt', 'successor'], true) ? 'completed' : 'pending', $metadata->status);
+        if (!$outstanding) {
+            return;
+        }
+        $advance = $container->get(\Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler::class)->handle(new AdvanceRun($run, 1, 'step', 1, 'old-successor'), $state->with(['pendingToolCalls' => []]));
+        $this->assertSame([], $advance->events, 'An old successor cannot wake even with an empty mailbox.');
+        $this->assertSame([], $advance->postCommitEffects);
+        // Authorization participates in the same metadata transaction; rollback
+        // must retain both the wake fence and the sticky physical-host fence.
+        $em = $container->get(\Doctrine\ORM\EntityManagerInterface::class);
+        $connection = $em->getConnection();
+        $connection->beginTransaction();
+        $this->admit($run, [new DispatchLocalMetadataMessageDTO(new \Ineersa\CodingAgent\Application\Message\DTO\MarkCodeModeBackgroundedDTO($call->deferredId, new \DateTimeImmutable(), continuationRequired: false))]);
+        $this->assertFalse($repository->runRequiresContinuation($run));
+        $connection->rollBack();
+        $em->clear();
+        $this->assertTrue($repository->runRequiresContinuation($run));
+        $this->assertSame('controller_lost', $repository->findMetadataByDeferredId($call->deferredId)->interruptionReason);
+    }
+
+    public static function controllerLossCases(): iterable
+    {
+        foreach (['waiting', 'ack', 'receipt', 'cancelled', 'history_discarded', 'historical', 'successor', 'owned-child'] as $phase) {
+            yield $phase => [$phase];
+        }
+    }
+
     #[DataProvider('interruptions')]
     public function testCapturedInterruptionRemainsInvocationStickyAfterParentProgress(string $reason): void
     {
