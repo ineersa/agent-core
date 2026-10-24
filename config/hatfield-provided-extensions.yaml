@@ -1,25 +1,118 @@
 # Curated Hatfield-provided extensions offered by extensions:setup.
 # Keep package versions pinned; do not invent newer releases here.
+# guided_fields drive the native settings list (label/default/type only).
 packages:
     - id: safe-guard
       name: SafeGuard
       builtin: true
       extension_class: Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+      settings_key: safe_guard
+      guided_fields:
+          - id: sg.auto_deny_in_noninteractive
+            path: auto_deny_in_noninteractive
+            type: bool
+            label: Auto-deny noninteractive
+            description: Block instead of RequireApproval when no approval channel is present.
+            default: true
+          - id: sg.allow_write_outside_cwd
+            path: allow_write_outside_cwd
+            type: absolute_path_list
+            label: Allow write outside CWD
+            description: Comma-separated absolute paths where outside-CWD writes are allowed.
+            default: []
+          - id: sg.allow_command_patterns
+            path: allow_command_patterns
+            type: csv_list
+            label: Allow command patterns
+            description: Comma-separated command substrings that bypass destructive checks.
+            default: []
+          - id: sg.protected_read_patterns
+            path: protected_read_patterns
+            type: csv_list
+            label: Extra protected reads
+            description: Additive on top of built-in secret-path defaults.
+            default: []
+          - id: sg.dangerous_command_patterns
+            path: dangerous_command_patterns
+            type: csv_list
+            label: Extra dangerous commands
+            description: Comma-separated extra dangerous command substrings.
+            default: []
     - id: task-workflow
       name: Task Workflow
       builtin: false
       package: ineersa/hatfield-ext-task-workflow
       version: 0.0.42
       extension_class: Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
+      settings_key: task_workflow
+      guided_fields:
+          - id: tw.task_root
+            path: task_root
+            type: path_string
+            label: Task board root
+            description: Absolute or project-relative path to the external task board. Leave blank to use sibling discovery / env.
+            default: ''
     - id: file-rewind
       name: File Rewind
       builtin: false
       package: ineersa/hatfield-ext-file-rewind
       version: 0.0.42
       extension_class: Ineersa\HatfieldExt\FileRewind\FileRewindExtension
+      settings_key: file_rewind
+      guided_fields:
+          - id: fr.enabled
+            path: enabled
+            type: bool
+            label: File Rewind active
+            description: extensions.settings.file_rewind.enabled (class must still be in extensions.enabled).
+            default: true
+          - id: fr.max_retained_turns
+            path: max_retained_turns
+            type: positive_int
+            label: Max retained turns
+            description: Newest-N checkpoint rows retained in the project ledger.
+            default: 100
+          - id: fr.git_timeout_seconds
+            path: git_timeout_seconds
+            type: positive_int
+            label: Git timeout seconds
+            description: Timeout for hidden-git snapshot operations.
+            default: 30
     - id: observational-memory
       name: Observational Memory
       builtin: false
       package: ineersa/hatfield-ext-observational-memory
       version: 0.0.42
       extension_class: Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
+      settings_key: observational_memory
+      guided_fields:
+          - id: om.model
+            path: model
+            type: model_id
+            label: Shared model
+            description: 'Exact provider/model id shared by Observer/Reflector/Dropper (example: llama_cpp/flash).'
+            default: ''
+          - id: om.database
+            path: storage.database
+            type: path_string
+            label: Database path
+            description: SQLite path for observational memory storage.
+            default: .hatfield/extensions-data/observational-memory/om.sqlite
+          - id: om.context_window_ratio
+            path: observer.context_window_ratio
+            type: open_unit_ratio
+            label: Observer context ratio
+            description: Fraction of the model context window used by Observer (exclusive 0..1).
+            default: 0.65
+          - id: om.reflect_after_observation_tokens
+            path: reflector.reflect_after_observation_tokens
+            type: positive_int
+            label: Reflect after tokens
+            description: Observation-token threshold before Reflector runs.
+            default: 40000
+          - id: om.observations_max_tokens
+            path: pools.observations_max_tokens
+            type: positive_int
+            label: Observations pool max tokens
+            description: Max tokens retained in the observations pool.
+            default: 30000

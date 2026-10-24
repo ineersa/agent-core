@@ -12,17 +12,23 @@ use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
 use Ineersa\Tui\Setup\ExtensionsSetupScreen;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemeRegistry;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Boots the standalone extensions:setup TUI ({@see ExtensionsSetupScreen}).
  *
  * No console-wizard fallback — requires an interactive terminal.
- * Default target is project settings; pass --user for ~/.hatfield.
+ * Default target is project settings; pass --user as the initial selection
+ * (the wizard can still switch scopes interactively).
  */
 #[AsCommand(name: 'extensions:setup', description: 'Interactive setup for Hatfield-provided extensions')]
 final class ExtensionsSetupCommand
@@ -35,12 +41,16 @@ final class ExtensionsSetupCommand
         private readonly SettingsOverrideWriter $settingsWriter,
         private readonly SettingsPathResolver $pathResolver,
         private readonly AppConfig $appConfig,
+        private readonly DenormalizerInterface $denormalizer,
+        private readonly NormalizerInterface $normalizer,
+        private readonly ValidatorInterface $validator,
+        private readonly ThemeRegistry $themeRegistry,
     ) {
     }
 
     public function __invoke(
         SymfonyStyle $io,
-        #[Option(description: 'Write to ~/.hatfield/settings.yaml instead of project .hatfield/settings.yaml')]
+        #[Option(description: 'Start with ~/.hatfield/settings.yaml selected (wizard can still switch scopes)')]
         bool $user = false,
         ?InputInterface $input = null,
     ): int {
@@ -71,10 +81,14 @@ final class ExtensionsSetupCommand
             $this->resourceLocator,
             $this->settingsWriter,
             $this->pathResolver,
+            $this->denormalizer,
+            $this->normalizer,
+            $this->validator,
             $this->appConfig,
             project: !$user,
         );
-        $screen = new ExtensionsSetupScreen($flow);
+        $theme = new DefaultTheme($this->themeRegistry->getOrThrow($this->appConfig->tui->theme));
+        $screen = new ExtensionsSetupScreen($flow, $theme);
 
         return $screen->run();
     }

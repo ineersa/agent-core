@@ -93,17 +93,22 @@ Project packages (task-workflow, file-rewind, observational-memory) document the
 set only (SafeGuard, Task Workflow, File Rewind, Observational Memory). It is not
 a marketplace or upgrade/uninstall tool.
 
-- **Scope:** project `.hatfield/settings.yaml` by default; pass `--user` for
-  `~/.hatfield/settings.yaml`. Project setup may reuse an already-installed user
-  package; user setup never relies on the current project's package root.
+- **Scope:** project `.hatfield/settings.yaml` is preselected. Change settings
+  scope inside the wizard for `~/.hatfield/settings.yaml`. `--user` only sets the
+  initial selection. Project setup may reuse an already-installed user package;
+  user setup never relies on the current project's package root.
 - **Install:** built-in SafeGuard skips Composer. Installable packages confirm
   before `composer require` into the selected `.hatfield/extensions` root. Failed
   or cancelled installs do not write enablement/settings. The wizard does not
   claim package files roll back.
 - **Configure:** guided fields use the native settings list (SafeGuard policy
   controls, Task Workflow `task_root`, File Rewind enable/retention/timeout, OM
-  model + core storage/observer/reflector/pool values). Unoffered advanced keys
-  stay in YAML and are preserved on Save.
+  model + core storage/observer/reflector/pool values). Parent enable/disable and
+  forks/agents membership are toggles on the same form — there is no separate
+  quick enable/disable path. Unoffered advanced keys stay in YAML and are
+  preserved on Save. Disable without child membership does not force install or
+  rewrite guided settings; enablement requires a successful install and valid
+  guided configuration.
 - **Child membership:** optional toggles for `forks.extensions.always_on`,
   `forks.extensions.enabled`, and `agents.extensions.always_on`. There is no
   `agents.extensions.enabled` key and no bulk frontmatter editor — per-agent

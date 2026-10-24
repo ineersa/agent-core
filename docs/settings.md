@@ -199,8 +199,9 @@ See [background-processes.md](background-processes.md).
 - Built-in docs for the model are selected with `builtin: true` under approved roots; repository-only docs stay unmarked.
 
 Guided install/enablement for curated Hatfield-provided extensions:
-`hatfield extensions:setup` (project settings by default; `--user` for
-`~/.hatfield/settings.yaml`). See [settings-agents.md](settings-agents.md).
+`hatfield extensions:setup` (project settings preselected; change scope in the
+wizard, or pass `--user` as the initial selection). See
+[settings-agents.md](settings-agents.md).
 
 ## Validation tip
 

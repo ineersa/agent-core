@@ -570,6 +570,7 @@ parameters:
 
     TuiSetup:
       - TuiTerminal
+      - TuiTheme
       - SymfonyTui
 
     TuiCompactHeader:

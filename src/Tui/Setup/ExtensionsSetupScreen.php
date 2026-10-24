@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Setup;
 
+use Ineersa\Tui\Theme\ThemeColorEnum;
+use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Event\SettingChangeEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Style\Border;
-use Symfony\Component\Tui\Style\Color;
 use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Terminal\Terminal;
@@ -34,6 +35,7 @@ final class ExtensionsSetupScreen
     private const PHASE_ACTION = 'action';
     private const PHASE_CONFIRM = 'confirm';
     private const PHASE_SETTINGS = 'settings';
+    private const PHASE_SCOPE = 'scope';
     private const PHASE_SUMMARY = 'summary';
 
     private Tui $tui;
@@ -57,9 +59,9 @@ final class ExtensionsSetupScreen
 
     public function __construct(
         private readonly ExtensionsSetupFlowInterface $flow,
+        private readonly TuiTheme $theme,
     ) {
-        $this->titleWidget = new TextWidget('Hatfield Extensions Setup');
-        $this->titleWidget->setStyle(new Style(bold: true, color: Color::named('cyan')));
+        $this->titleWidget = new TextWidget($this->theme->color(ThemeColorEnum::Header, 'Hatfield Extensions Setup'));
 
         $this->panelWidget = new ContainerWidget();
         $this->panelWidget->setStyle(new Style(
@@ -122,6 +124,8 @@ final class ExtensionsSetupScreen
                 $this->finishSuccess();
             } elseif (self::PHASE_CONFIRM === $this->phase) {
                 $this->showActionMenu();
+            } elseif (self::PHASE_SCOPE === $this->phase) {
+                $this->showPicker();
             } else {
                 $this->showPicker();
             }
@@ -170,6 +174,7 @@ final class ExtensionsSetupScreen
             self::PHASE_PICKER => $this->handlePickerSelect($value),
             self::PHASE_ACTION => $this->handleActionSelect($value),
             self::PHASE_CONFIRM => $this->handleConfirmSelect($value),
+            self::PHASE_SCOPE => $this->handleScopeSelect($value),
             default => null,
         };
         $this->refreshError();
@@ -179,6 +184,11 @@ final class ExtensionsSetupScreen
     {
         if ('done' === $value) {
             $this->finishSuccess();
+
+            return;
+        }
+        if ('scope' === $value) {
+            $this->showScopeMenu();
 
             return;
         }
@@ -192,11 +202,28 @@ final class ExtensionsSetupScreen
     {
         match ($value) {
             'configure' => $this->beginConfigure(),
-            'enable' => $this->runEnable(),
-            'disable' => $this->runDisable(),
             'back' => $this->showPicker(),
             default => null,
         };
+    }
+
+    private function handleScopeSelect(string $value): void
+    {
+        if ('back' === $value) {
+            $this->showPicker();
+
+            return;
+        }
+        if ('project' === $value) {
+            $this->flow->setProjectScope(true);
+            $this->showPicker();
+
+            return;
+        }
+        if ('user' === $value) {
+            $this->flow->setProjectScope(false);
+            $this->showPicker();
+        }
     }
 
     private function handleConfirmSelect(string $value): void
@@ -258,28 +285,6 @@ final class ExtensionsSetupScreen
         $this->showSettings();
     }
 
-    private function runEnable(): void
-    {
-        try {
-            $this->flow->enable((string) $this->activeId);
-            $this->showPicker();
-        } catch (\Throwable $e) {
-            $this->error = $e->getMessage();
-            $this->refreshError();
-        }
-    }
-
-    private function runDisable(): void
-    {
-        try {
-            $this->flow->disable((string) $this->activeId);
-            $this->showPicker();
-        } catch (\Throwable $e) {
-            $this->error = $e->getMessage();
-            $this->refreshError();
-        }
-    }
-
     private function showPicker(): void
     {
         $this->phase = self::PHASE_PICKER;
@@ -289,7 +294,7 @@ final class ExtensionsSetupScreen
         $this->error = null;
         $this->applyChrome();
         $this->stepWidget->setText('Select an extension');
-        $this->hintWidget->setText('Scope: '.$this->flow->scopeLabel().'. Project is default; run with --user for home settings. Changes apply on the next Hatfield session.');
+        $this->hintWidget->setText('Scope: '.$this->flow->scopeLabel().'. Project is preselected; choose Change settings scope for ~/.hatfield. Changes apply on the next Hatfield session.');
 
         $options = [];
         foreach ($this->flow->extensionRows() as $row) {
@@ -298,11 +303,53 @@ final class ExtensionsSetupScreen
                 'label' => \sprintf('%s — %s', $row['name'], $row['status']),
             ];
         }
+        $options[] = [
+            'value' => 'scope',
+            'label' => 'Change settings scope (current: '.($this->flow->isProjectScope() ? 'project' : 'user').')',
+        ];
         $options[] = ['value' => 'done', 'label' => 'Done'];
 
         $this->panelWidget->remove($this->listWidget);
         $this->panelWidget->remove($this->settingsWidget);
         $this->listWidget = new SelectListWidget($options, maxVisible: 12);
+        $this->applyQuitSetupBindings($this->listWidget);
+        $this->wireListListeners();
+        $this->refreshError();
+        $this->refreshFooter();
+        $this->applyPhaseLayout();
+        $this->tui->setFocus($this->listWidget);
+        $this->tui->requestRender(force: true);
+        $this->tui->processRender();
+    }
+
+    private function showScopeMenu(): void
+    {
+        $this->phase = self::PHASE_SCOPE;
+        $this->applyChrome();
+        $this->stepWidget->setText('Settings scope');
+        $this->hintWidget->setText('Project writes <cwd>/.hatfield/settings.yaml. User writes ~/.hatfield/settings.yaml and excludes project-only overrides from prefills.');
+
+        $options = [
+            [
+                'value' => 'project',
+                'label' => $this->flow->isProjectScope()
+                    ? 'Project (.hatfield/settings.yaml) — selected'
+                    : 'Project (.hatfield/settings.yaml)',
+            ],
+            [
+                'value' => 'user',
+                'label' => !$this->flow->isProjectScope()
+                    ? 'User (~/.hatfield/settings.yaml) — selected'
+                    : 'User (~/.hatfield/settings.yaml)',
+            ],
+            ['value' => 'back', 'label' => 'Back'],
+        ];
+        $this->panelWidget->remove($this->listWidget);
+        $this->panelWidget->remove($this->settingsWidget);
+        $this->listWidget = new SelectListWidget($options, maxVisible: 8);
+        if (!$this->flow->isProjectScope()) {
+            $this->listWidget->setSelectedIndex(1);
+        }
         $this->applyQuitSetupBindings($this->listWidget);
         $this->wireListListeners();
         $this->refreshError();
@@ -326,17 +373,12 @@ final class ExtensionsSetupScreen
         $row = $this->rowFor($this->activeId);
         $this->applyChrome();
         $this->stepWidget->setText((string) ($row['name'] ?? $this->activeId));
-        $this->hintWidget->setText((string) ($row['status'] ?? ''));
+        $this->hintWidget->setText((string) ($row['status'] ?? '').' Enable/disable and child membership are edited in Configure / save settings.');
 
         $options = [
             ['value' => 'configure', 'label' => 'Configure / save settings'],
+            ['value' => 'back', 'label' => 'Back'],
         ];
-        if (true === ($row['parentEnabled'] ?? false)) {
-            $options[] = ['value' => 'disable', 'label' => 'Disable for parent'];
-        } else {
-            $options[] = ['value' => 'enable', 'label' => 'Enable for parent'];
-        }
-        $options[] = ['value' => 'back', 'label' => 'Back'];
 
         $this->panelWidget->remove($this->listWidget);
         $this->panelWidget->remove($this->settingsWidget);
@@ -382,7 +424,7 @@ final class ExtensionsSetupScreen
         $this->applyChrome();
         $name = (string) ($this->formState['name'] ?? 'Extension');
         $this->stepWidget->setText($name.' settings');
-        $this->hintWidget->setText('Edit guided fields with the settings list. Save writes enablement + settings for this scope only. Esc cancels without writing.');
+        $this->hintWidget->setText('Edit guided fields with the settings list. Parent enablement and forks/agents membership are toggles here. Save writes this scope only. Esc cancels without writing.');
 
         $this->panelWidget->remove($this->listWidget);
         $this->panelWidget->remove($this->settingsWidget);
@@ -402,8 +444,6 @@ final class ExtensionsSetupScreen
      */
     private function settingItems(): array
     {
-        $id = (string) ($this->formState['id'] ?? '');
-        $settings = \is_array($this->formState['settings'] ?? null) ? $this->formState['settings'] : [];
         $items = [];
 
         $items[] = new SettingItem(
@@ -435,7 +475,7 @@ final class ExtensionsSetupScreen
             values: ['yes', 'no'],
         );
 
-        foreach ($this->guidedSettingItems($id, $settings) as $item) {
+        foreach ($this->guidedSettingItems() as $item) {
             $items[] = $item;
         }
 
@@ -451,121 +491,54 @@ final class ExtensionsSetupScreen
     }
 
     /**
-     * @param array<string, mixed> $settings
-     *
      * @return list<SettingItem>
      */
-    private function guidedSettingItems(string $id, array $settings): array
+    private function guidedSettingItems(): array
     {
-        return match ($id) {
-            'safe-guard' => [
-                new SettingItem(
-                    'sg.auto_deny_in_noninteractive',
-                    'Auto-deny noninteractive',
-                    $this->yesNo((bool) ($settings['auto_deny_in_noninteractive'] ?? true)),
-                    'Block instead of RequireApproval when no approval channel is present.',
+        $settings = \is_array($this->formState['settings'] ?? null) ? $this->formState['settings'] : [];
+        $fields = \is_array($this->formState['guidedFields'] ?? null) ? $this->formState['guidedFields'] : [];
+        $items = [];
+        foreach ($fields as $field) {
+            if (!\is_array($field)) {
+                continue;
+            }
+            $id = (string) ($field['id'] ?? '');
+            $type = (string) ($field['type'] ?? '');
+            $label = (string) ($field['label'] ?? $id);
+            $description = (string) ($field['description'] ?? '');
+            $path = (string) ($field['path'] ?? '');
+            if ('' === $id || '' === $path) {
+                continue;
+            }
+            $raw = $this->valueAtPath($settings, $path);
+            if (null === $raw) {
+                $raw = $field['default'] ?? null;
+            }
+            if ('bool' === $type) {
+                $items[] = new SettingItem(
+                    $id,
+                    $label,
+                    $this->yesNo((bool) $raw),
+                    $description,
                     values: ['yes', 'no'],
-                ),
-                new SettingItem(
-                    'sg.allow_write_outside_cwd',
-                    'Allow write outside CWD',
-                    $this->csv((array) ($settings['allow_write_outside_cwd'] ?? [])),
-                    'Comma-separated absolute paths where outside-CWD writes are allowed.',
-                    submenu: $this->textSubmenu(...),
-                ),
-                new SettingItem(
-                    'sg.allow_command_patterns',
-                    'Allow command patterns',
-                    $this->csv((array) ($settings['allow_command_patterns'] ?? [])),
-                    'Comma-separated command substrings that bypass destructive checks.',
-                    submenu: $this->textSubmenu(...),
-                ),
-                new SettingItem(
-                    'sg.protected_read_patterns',
-                    'Extra protected reads',
-                    $this->csv((array) ($settings['protected_read_patterns'] ?? [])),
-                    'Additive on top of built-in secret-path defaults.',
-                    submenu: $this->textSubmenu(...),
-                ),
-                new SettingItem(
-                    'sg.dangerous_command_patterns',
-                    'Extra dangerous commands',
-                    $this->csv((array) ($settings['dangerous_command_patterns'] ?? [])),
-                    'Comma-separated extra dangerous command substrings.',
-                    submenu: $this->textSubmenu(...),
-                ),
-            ],
-            'task-workflow' => [
-                new SettingItem(
-                    'tw.task_root',
-                    'Task board root',
-                    (string) ($settings['task_root'] ?? ''),
-                    'Absolute or project-relative path to the external task board. Leave blank to use sibling discovery / env.',
-                    submenu: $this->textSubmenu(...),
-                ),
-            ],
-            'file-rewind' => [
-                new SettingItem(
-                    'fr.enabled',
-                    'File Rewind active',
-                    $this->yesNo((bool) ($settings['enabled'] ?? true)),
-                    'extensions.settings.file_rewind.enabled (class must still be in extensions.enabled).',
-                    values: ['yes', 'no'],
-                ),
-                new SettingItem(
-                    'fr.max_retained_turns',
-                    'Max retained turns',
-                    (string) ($settings['max_retained_turns'] ?? 100),
-                    'Newest-N checkpoint rows retained in the project ledger.',
-                    submenu: $this->textSubmenu(...),
-                ),
-                new SettingItem(
-                    'fr.git_timeout_seconds',
-                    'Git timeout seconds',
-                    (string) ($settings['git_timeout_seconds'] ?? 30),
-                    'Timeout for hidden-git snapshot operations.',
-                    submenu: $this->textSubmenu(...),
-                ),
-            ],
-            'observational-memory' => [
-                new SettingItem(
-                    'om.model',
-                    'Shared model',
-                    (string) ($settings['model'] ?? ''),
-                    'Exact provider/model id shared by Observer/Reflector/Dropper (example: llama_cpp/flash).',
-                    submenu: $this->textSubmenu(...),
-                ),
-                new SettingItem(
-                    'om.database',
-                    'Database path',
-                    (string) (\is_array($settings['storage'] ?? null) ? ($settings['storage']['database'] ?? '') : ''),
-                    'SQLite path for observational memory storage.',
-                    submenu: $this->textSubmenu(...),
-                ),
-                new SettingItem(
-                    'om.context_window_ratio',
-                    'Observer context ratio',
-                    (string) (\is_array($settings['observer'] ?? null) ? ($settings['observer']['context_window_ratio'] ?? 0.65) : 0.65),
-                    'Fraction of the model context window used by Observer.',
-                    submenu: $this->textSubmenu(...),
-                ),
-                new SettingItem(
-                    'om.reflect_after_observation_tokens',
-                    'Reflect after tokens',
-                    (string) (\is_array($settings['reflector'] ?? null) ? ($settings['reflector']['reflect_after_observation_tokens'] ?? 40000) : 40000),
-                    'Observation-token threshold before Reflector runs.',
-                    submenu: $this->textSubmenu(...),
-                ),
-                new SettingItem(
-                    'om.observations_max_tokens',
-                    'Observations pool max tokens',
-                    (string) (\is_array($settings['pools'] ?? null) ? ($settings['pools']['observations_max_tokens'] ?? 30000) : 30000),
-                    'Max tokens retained in the observations pool.',
-                    submenu: $this->textSubmenu(...),
-                ),
-            ],
-            default => [],
-        };
+                );
+                continue;
+            }
+
+            $display = match ($type) {
+                'csv_list', 'absolute_path_list' => $this->csv(\is_array($raw) ? $raw : []),
+                default => null === $raw ? '' : (string) $raw,
+            };
+            $items[] = new SettingItem(
+                $id,
+                $label,
+                $display,
+                $description,
+                submenu: $this->textSubmenu(...),
+            );
+        }
+
+        return $items;
     }
 
     private function textSubmenu(string $current): SettingsTextInputWidget
@@ -595,13 +568,8 @@ final class ExtensionsSetupScreen
             $this->error = $e->getMessage();
         }
 
-        if (self::PHASE_SETTINGS === $this->phase) {
-            $this->settingsWidget = new SettingsListWidget($this->settingItems(), maxVisible: 16);
-            $this->applyQuitSetupBindings($this->settingsWidget);
-            $this->wireSettingsListeners();
-            $this->applyPhaseLayout();
-            $this->tui->setFocus($this->settingsWidget);
-        }
+        // Keep the existing SettingsListWidget so cursor/submenu focus survive edits.
+        // The vendor widget already updated the changed item's display value.
         $this->refreshError();
         $this->tui->requestRender(force: true);
         $this->tui->processRender();
@@ -614,38 +582,27 @@ final class ExtensionsSetupScreen
         }
         /** @var array<string, mixed> $settings */
         $settings = $this->formState['settings'];
+        $fields = \is_array($this->formState['guidedFields'] ?? null) ? $this->formState['guidedFields'] : [];
+        foreach ($fields as $field) {
+            if (!\is_array($field) || ($field['id'] ?? null) !== $id) {
+                continue;
+            }
+            $path = (string) ($field['path'] ?? '');
+            $type = (string) ($field['type'] ?? '');
+            if ('' === $path) {
+                return;
+            }
+            $stored = match ($type) {
+                'bool' => 'yes' === $value,
+                'csv_list', 'absolute_path_list' => $value,
+                'positive_int', 'open_unit_ratio', 'path_string', 'model_id' => $value,
+                default => $value,
+            };
+            $this->setAtPath($settings, $path, $stored);
+            $this->formState['settings'] = $settings;
 
-        match ($id) {
-            'sg.auto_deny_in_noninteractive' => $settings['auto_deny_in_noninteractive'] = 'yes' === $value,
-            'sg.allow_write_outside_cwd' => $settings['allow_write_outside_cwd'] = $value,
-            'sg.allow_command_patterns' => $settings['allow_command_patterns'] = $value,
-            'sg.protected_read_patterns' => $settings['protected_read_patterns'] = $value,
-            'sg.dangerous_command_patterns' => $settings['dangerous_command_patterns'] = $value,
-            'tw.task_root' => $settings['task_root'] = $value,
-            'fr.enabled' => $settings['enabled'] = 'yes' === $value,
-            'fr.max_retained_turns' => $settings['max_retained_turns'] = $value,
-            'fr.git_timeout_seconds' => $settings['git_timeout_seconds'] = $value,
-            'om.model' => $settings['model'] = $value,
-            'om.database' => $settings['storage'] = $this->assocMerge(
-                \is_array($settings['storage'] ?? null) ? $settings['storage'] : [],
-                ['database' => $value],
-            ),
-            'om.context_window_ratio' => $settings['observer'] = $this->assocMerge(
-                \is_array($settings['observer'] ?? null) ? $settings['observer'] : [],
-                ['context_window_ratio' => $value],
-            ),
-            'om.reflect_after_observation_tokens' => $settings['reflector'] = $this->assocMerge(
-                \is_array($settings['reflector'] ?? null) ? $settings['reflector'] : [],
-                ['reflect_after_observation_tokens' => $value],
-            ),
-            'om.observations_max_tokens' => $settings['pools'] = $this->assocMerge(
-                \is_array($settings['pools'] ?? null) ? $settings['pools'] : [],
-                ['observations_max_tokens' => $value],
-            ),
-            default => null,
-        };
-
-        $this->formState['settings'] = $settings;
+            return;
+        }
     }
 
     private function finishSuccess(): void
@@ -689,7 +646,7 @@ final class ExtensionsSetupScreen
 
     private function applyChrome(): void
     {
-        $this->titleWidget->setText('Hatfield Extensions Setup');
+        $this->titleWidget->setText($this->theme->color(ThemeColorEnum::Header, 'Hatfield Extensions Setup'));
     }
 
     private function applyPhaseLayout(): void
@@ -705,20 +662,27 @@ final class ExtensionsSetupScreen
 
     private function refreshError(): void
     {
-        $this->errorWidget->setText(null === $this->error ? '' : $this->error);
-        $style = new Style(color: Color::named(null === $this->error ? 'default' : 'red'));
-        $this->errorWidget->setStyle($style);
+        if (null === $this->error) {
+            $this->errorWidget->setText('');
+            $this->errorWidget->setStyle(new Style());
+
+            return;
+        }
+
+        $this->errorWidget->setText($this->theme->error($this->error));
+        $this->errorWidget->setStyle(new Style());
     }
 
     private function refreshFooter(): void
     {
-        $text = match ($this->phase) {
+        $plain = match ($this->phase) {
             self::PHASE_PICKER => '↑/↓ select · Enter confirm · Esc exit · Ctrl+D quit',
             self::PHASE_SETTINGS => '↑/↓ select · Enter edit/toggle · Esc cancel · Ctrl+D quit',
+            self::PHASE_SCOPE => '↑/↓ select · Enter confirm · Esc back · Ctrl+D quit',
             self::PHASE_SUMMARY => 'Esc exit · Ctrl+D quit',
             default => '↑/↓ select · Enter confirm · Esc back · Ctrl+D quit',
         };
-        $this->footerWidget->setText($text);
+        $this->footerWidget->setText($this->theme->muted($plain));
     }
 
     /**
@@ -732,7 +696,7 @@ final class ExtensionsSetupScreen
             }
         }
 
-        return ['id' => $id, 'name' => $id, 'status' => '', 'parentEnabled' => false];
+        return ['id' => $id, 'name' => $id, 'status' => '', 'parentEnabled' => false, 'package' => null, 'version' => null];
     }
 
     private function yesNo(bool $value): string
@@ -756,17 +720,38 @@ final class ExtensionsSetupScreen
     }
 
     /**
-     * @param array<string, mixed> $base
-     * @param array<string, mixed> $over
-     *
-     * @return array<string, mixed>
+     * @param array<string, mixed> $source
      */
-    private function assocMerge(array $base, array $over): array
+    private function valueAtPath(array $source, string $dotted): mixed
     {
-        foreach ($over as $key => $value) {
-            $base[$key] = $value;
+        $cursor = $source;
+        foreach (explode('.', $dotted) as $segment) {
+            if (!\is_array($cursor) || !\array_key_exists($segment, $cursor)) {
+                return null;
+            }
+            $cursor = $cursor[$segment];
         }
 
-        return $base;
+        return $cursor;
+    }
+
+    /**
+     * @param array<string, mixed> $target
+     */
+    private function setAtPath(array &$target, string $dotted, mixed $value): void
+    {
+        $segments = explode('.', $dotted);
+        $cursor = &$target;
+        foreach ($segments as $index => $segment) {
+            if ($index === \count($segments) - 1) {
+                $cursor[$segment] = $value;
+
+                return;
+            }
+            if (!isset($cursor[$segment]) || !\is_array($cursor[$segment])) {
+                $cursor[$segment] = [];
+            }
+            $cursor = &$cursor[$segment];
+        }
     }
 }

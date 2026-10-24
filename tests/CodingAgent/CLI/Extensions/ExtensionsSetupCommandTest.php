@@ -9,32 +9,23 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\ProvidedExtensionsCatalog;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
+use Ineersa\CodingAgent\Tests\Support\ExtensionsSetupTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Theme\ThemeRegistry;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
-use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
-use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
-use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
-use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
-use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
-use Symfony\Component\Validator\Validation;
 
 /**
  * Thesis: extensions:setup refuses non-interactive / non-TTY runs before any writes.
@@ -42,9 +33,9 @@ use Symfony\Component\Validator\Validation;
 #[CoversClass(ExtensionsSetupCommand::class)]
 final class ExtensionsSetupCommandTest extends TestCase
 {
-    private string $tmpDir;
-    private string $homeDir;
-    private string $projectDir;
+    private string $tmpDir = '';
+    private string $homeDir = '';
+    private string $projectDir = '';
 
     protected function setUp(): void
     {
@@ -54,19 +45,15 @@ final class ExtensionsSetupCommandTest extends TestCase
         TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
         TestDirectoryIsolation::ensureDirectory($this->projectDir.'/.hatfield');
         TestDirectoryIsolation::ensureDirectory($this->tmpDir.'/config');
-        file_put_contents($this->tmpDir.'/config/hatfield-provided-extensions.yaml', <<<'YAML'
-packages:
-    - id: safe-guard
-      name: SafeGuard
-      builtin: true
-      extension_class: Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
-YAML);
-        file_put_contents($this->tmpDir.'/config/hatfield.defaults.yaml', "extensions:\n    enabled: []\n");
+        file_put_contents($this->tmpDir.'/config/hatfield-provided-extensions.yaml', ExtensionsSetupTestSupport::catalogYaml());
+        file_put_contents($this->tmpDir.'/config/hatfield.defaults.yaml', ExtensionsSetupTestSupport::defaultsYaml());
     }
 
     protected function tearDown(): void
     {
-        TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        if ('' !== $this->tmpDir) {
+            TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        }
     }
 
     #[Test]
@@ -76,29 +63,27 @@ YAML);
         $this->assertFileDoesNotExist($settingsPath);
 
         $pathResolver = new SettingsPathResolver($this->projectDir, $this->homeDir);
-        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-        $nameConverter = new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter());
-        $propertyInfo = new PropertyInfoExtractor([], [new PhpDocExtractor(), new ReflectionExtractor()]);
-        $serializer = new Serializer([
-            new ArrayDenormalizer(),
-            new ObjectNormalizer($classMetadataFactory, $nameConverter, null, $propertyInfo),
-        ]);
+        $serializer = ExtensionsSetupTestSupport::createSerializer();
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'cyberpunk', themePaths: []),
+            logging: new LoggingConfig(logDir: $this->tmpDir.'/logs'),
+            cwd: $this->projectDir,
+        );
         $command = new ExtensionsSetupCommand(
-            new ProvidedExtensionsCatalog(
+            ExtensionsSetupTestSupport::createCatalog(
                 $this->tmpDir.'/config/hatfield-provided-extensions.yaml',
                 $serializer,
-                Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(),
             ),
             new ExtensionPackageInstaller($pathResolver),
             new AppConfigLoader($pathResolver),
             new AppResourceLocator($this->tmpDir),
             new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem()),
             $pathResolver,
-            new AppConfig(
-                tui: new TuiConfig(theme: 'default'),
-                logging: new LoggingConfig(logDir: $this->tmpDir.'/logs'),
-                cwd: $this->projectDir,
-            ),
+            $appConfig,
+            $serializer,
+            $serializer,
+            ExtensionsSetupTestSupport::createValidator(),
+            new ThemeRegistry($appConfig, new AppResourceLocator($this->tmpDir), new NullLogger()),
         );
 
         $input = new ArrayInput([]);

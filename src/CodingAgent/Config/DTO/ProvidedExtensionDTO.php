@@ -15,6 +15,9 @@ use Symfony\Component\Validator\Constraints as Assert;
  */
 final readonly class ProvidedExtensionDTO
 {
+    /**
+     * @param list<ProvidedExtensionGuidedFieldDTO> $guidedFields
+     */
     public function __construct(
         #[Assert\NotBlank]
         public string $id,
@@ -24,6 +27,16 @@ final readonly class ProvidedExtensionDTO
         #[SerializedName('extension_class')]
         #[Assert\NotBlank]
         public string $extensionClass,
+        #[SerializedName('settings_key')]
+        #[Assert\NotBlank]
+        public string $settingsKey,
+        /**
+         * @var list<ProvidedExtensionGuidedFieldDTO>
+         */
+        #[SerializedName('guided_fields')]
+        #[Assert\Valid]
+        #[Assert\All([new Assert\Type(ProvidedExtensionGuidedFieldDTO::class)])]
+        public array $guidedFields = [],
         #[Assert\When(
             expression: 'this.builtin === false',
             constraints: [new Assert\NotBlank()],

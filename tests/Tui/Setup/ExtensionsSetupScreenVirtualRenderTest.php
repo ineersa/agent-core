@@ -4,54 +4,35 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Setup;
 
-use Ineersa\CodingAgent\CLI\Extensions\ExtensionsSetupFlow;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\AppConfigLoader;
-use Ineersa\CodingAgent\Config\AppResourceLocator;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\ProvidedExtensionsCatalog;
-use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
+use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
+use Ineersa\CodingAgent\Tests\Support\ExtensionsSetupTestSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Setup\ExtensionsSetupFlowInterface;
 use Ineersa\Tui\Setup\ExtensionsSetupScreen;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\PropertyAccess\PropertyAccess;
-use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
-use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
-use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
-use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
-use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
-use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
-use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
-use Symfony\Component\Validator\Validation;
+use Symfony\Component\Tui\Widget\SettingsListWidget;
 use Symfony\Component\Yaml\Yaml;
 
 /**
  * Thesis: ExtensionsSetupScreen drives real keyboard editing through the native
  * settings list into persisted YAML via the real ExtensionsSetupFlow (offline
- * Composer shim only). Cancellation before Save leaves settings unchanged.
+ * Composer shim only). Scope can switch interactively; cancellation before Save
+ * leaves settings unchanged.
  */
 #[CoversClass(ExtensionsSetupScreen::class)]
 final class ExtensionsSetupScreenVirtualRenderTest extends TestCase
 {
-    private const FILE_REWIND = 'Ineersa\\HatfieldExt\\FileRewind\\FileRewindExtension';
-
     private string $tmpDir = '';
     private string $homeDir = '';
     private string $projectDir = '';
-    private string $pathDir = '';
+    private string $catalogPath = '';
     private string $originalPath = '';
 
     protected function setUp(): void
@@ -62,76 +43,16 @@ final class ExtensionsSetupScreenVirtualRenderTest extends TestCase
         TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
         TestDirectoryIsolation::ensureDirectory($this->projectDir.'/.hatfield');
         TestDirectoryIsolation::ensureDirectory($this->tmpDir.'/config');
-
-        file_put_contents($this->tmpDir.'/config/hatfield.defaults.yaml', <<<'YAML'
-extensions:
-    enabled:
-        - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
-    settings:
-        safe_guard:
-            auto_deny_in_noninteractive: true
-            allow_write_outside_cwd: []
-            allow_command_patterns: []
-            protected_read_patterns: []
-            dangerous_command_patterns: []
-forks:
-    extensions:
-        always_on:
-            - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
-        enabled: []
-agents:
-    extensions:
-        always_on:
-            - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
-YAML);
-
-        file_put_contents($this->tmpDir.'/config/hatfield-provided-extensions.yaml', <<<'YAML'
-packages:
-    - id: safe-guard
-      name: SafeGuard
-      builtin: true
-      extension_class: Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
-    - id: task-workflow
-      name: Task Workflow
-      builtin: false
-      package: ineersa/hatfield-ext-task-workflow
-      version: 0.0.42
-      extension_class: Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
-    - id: file-rewind
-      name: File Rewind
-      builtin: false
-      package: ineersa/hatfield-ext-file-rewind
-      version: 0.0.42
-      extension_class: Ineersa\HatfieldExt\FileRewind\FileRewindExtension
-    - id: observational-memory
-      name: Observational Memory
-      builtin: false
-      package: ineersa/hatfield-ext-observational-memory
-      version: 0.0.42
-      extension_class: Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
-YAML);
-
-        $fakeComposer = \dirname(__DIR__, 2).'/CodingAgent/Extension/Support/fake-composer.php';
-        $this->pathDir = $this->tmpDir.'/bin';
-        TestDirectoryIsolation::ensureDirectory($this->pathDir);
-        file_put_contents($this->pathDir.'/composer', "#!/usr/bin/env php\n<?php\nrequire ".var_export($fakeComposer, true).";\n");
-        chmod($this->pathDir.'/composer', 0755);
-        $this->originalPath = (string) getenv('PATH');
-        $path = $this->pathDir.(\PATH_SEPARATOR.($this->originalPath ?: '/usr/bin:/bin'));
-        putenv('PATH='.$path);
-        $_ENV['PATH'] = $path;
-        $_SERVER['PATH'] = $path;
-        putenv('FAKE_COMPOSER_FAIL_MARKER');
-        unset($_ENV['FAKE_COMPOSER_FAIL_MARKER'], $_SERVER['FAKE_COMPOSER_FAIL_MARKER']);
+        file_put_contents($this->tmpDir.'/config/hatfield.defaults.yaml', ExtensionsSetupTestSupport::defaultsYaml());
+        $this->catalogPath = $this->tmpDir.'/config/hatfield-provided-extensions.yaml';
+        file_put_contents($this->catalogPath, ExtensionsSetupTestSupport::catalogYaml());
+        $shim = ExtensionsSetupTestSupport::installFakeComposerOnPath($this->tmpDir);
+        $this->originalPath = $shim['originalPath'];
     }
 
     protected function tearDown(): void
     {
-        putenv('FAKE_COMPOSER_FAIL_MARKER');
-        unset($_ENV['FAKE_COMPOSER_FAIL_MARKER'], $_SERVER['FAKE_COMPOSER_FAIL_MARKER']);
-        putenv('PATH='.$this->originalPath);
-        $_ENV['PATH'] = $this->originalPath;
-        $_SERVER['PATH'] = $this->originalPath;
+        ExtensionsSetupTestSupport::restorePath($this->originalPath);
         if ('' !== $this->tmpDir) {
             TestDirectoryIsolation::removeDirectory($this->tmpDir);
         }
@@ -149,7 +70,101 @@ YAML);
         $this->assertStringContainsString('File Rewind', $text);
         $this->assertStringContainsString('Observational Memory', $text);
         $this->assertStringContainsString('project (.hatfield/settings.yaml)', $text);
+        $this->assertStringContainsString('Change settings scope', $text);
         $this->assertSame('picker', $this->phase($screen));
+    }
+
+    #[Test]
+    public function keyboardScopeSwitchThenTextEditsPersistUserYamlWithoutProjectOnlyValues(): void
+    {
+        file_put_contents($this->projectDir.'/.hatfield/settings.yaml', <<<'YAML'
+extensions:
+    settings:
+        file_rewind:
+            enabled: true
+            max_retained_turns: 77
+            git_timeout_seconds: 11
+YAML);
+
+        $installer = new ExtensionPackageInstaller(new SettingsPathResolver($this->projectDir, $this->homeDir));
+        $installer->ensureInstalled(
+            SettingsLayerEnum::User,
+            $this->projectDir,
+            'ineersa/hatfield-ext-file-rewind',
+            '0.0.42',
+        );
+
+        [$screen, $terminal, $tui] = $this->mount($this->realFlow(project: true));
+
+        // Picker rows: SafeGuard, Task Workflow, File Rewind, OM, Change scope, Done.
+        for ($i = 0; $i < 4; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+        $tui->handleInput("\r"); // Change settings scope
+        $this->assertSame('scope', $this->phase($screen));
+        $tui->handleInput("\x1b[B"); // User
+        $tui->handleInput("\r");
+        $this->assertSame('picker', $this->phase($screen));
+        $this->assertStringContainsString('user (~/.hatfield/settings.yaml)', $this->plain($terminal));
+
+        // Select File Rewind (index 2).
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r");
+        $this->assertSame('action', $this->phase($screen));
+        $tui->handleInput("\r"); // Configure
+        $this->assertSame('settings', $this->phase($screen));
+
+        // Prefill must exclude project-only 77/11 values.
+        $this->assertStringContainsString('100', $this->plain($terminal));
+        $this->assertStringNotContainsString('77', $this->plain($terminal));
+
+        // Enable for parent.
+        $tui->handleInput("\r");
+
+        // Move to Max retained turns (parent + 3 child + enabled = index 5).
+        for ($i = 0; $i < 5; ++$i) {
+            $tui->handleInput("\x1b[B");
+        }
+        $tui->handleInput("\r"); // open SettingsTextInputWidget
+        $this->assertInstanceOf(
+            \Ineersa\Tui\Setup\SettingsTextInputWidget::class,
+            $this->activeSubmenu($screen),
+        );
+        // Clear default "100" then type 55.
+        $tui->handleInput("\x7f");
+        $tui->handleInput("\x7f");
+        $tui->handleInput("\x7f");
+        $tui->handleInput('55');
+        $tui->handleInput("\r"); // commit text edit
+        $this->assertNull($this->activeSubmenu($screen));
+        $this->assertSame('55', $this->settingsWidget($screen)->getValue('fr.max_retained_turns'));
+
+        // Move to Git timeout (next row) and edit 30 → 12.
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r");
+        $tui->handleInput("\x7f");
+        $tui->handleInput("\x7f");
+        $tui->handleInput('12');
+        $tui->handleInput("\r");
+        $this->assertSame('12', $this->settingsWidget($screen)->getValue('fr.git_timeout_seconds'));
+
+        // Return to Save (one more down) and save.
+        $tui->handleInput("\x1b[B");
+        $this->assertSame('↵', $this->settingsWidget($screen)->getValue('save'));
+        $tui->handleInput("\r");
+        $this->assertSame('picker', $this->phase($screen));
+
+        $userParsed = Yaml::parseFile($this->homeDir.'/.hatfield/settings.yaml');
+        $this->assertContains(ExtensionsSetupTestSupport::FILE_REWIND, $userParsed['extensions']['enabled']);
+        $this->assertSame(55, $userParsed['extensions']['settings']['file_rewind']['max_retained_turns']);
+        $this->assertSame(12, $userParsed['extensions']['settings']['file_rewind']['git_timeout_seconds']);
+        $this->assertTrue($userParsed['extensions']['settings']['file_rewind']['enabled']);
+
+        $projectParsed = Yaml::parseFile($this->projectDir.'/.hatfield/settings.yaml');
+        $this->assertSame(77, $projectParsed['extensions']['settings']['file_rewind']['max_retained_turns']);
+        $this->assertSame(11, $projectParsed['extensions']['settings']['file_rewind']['git_timeout_seconds']);
+        $this->assertArrayNotHasKey('enabled', $projectParsed['extensions'] ?? []);
     }
 
     #[Test]
@@ -166,31 +181,39 @@ YAML);
         $tui->handleInput("\r");
         $this->assertSame('action', $this->phase($screen));
 
-        // Action: Configure.
-        $tui->handleInput("\r");
+        $tui->handleInput("\r"); // Configure
         $this->assertSame('confirm', $this->phase($screen));
         $this->assertStringContainsString('Install ineersa/hatfield-ext-file-rewind:0.0.42', $this->plain($terminal));
 
-        // Confirm Composer install.
-        $tui->handleInput("\r");
+        $tui->handleInput("\r"); // Confirm Composer install
         $this->assertSame('settings', $this->phase($screen));
         $this->assertFileExists($this->projectDir.'/.hatfield/extensions/vendor/autoload.php');
 
-        // Enable for parent (first item yes/no; default false for missing class).
-        $tui->handleInput("\r"); // toggle parentEnabled to yes
-        // Move to Save (parent + 3 child + 3 file-rewind fields = index 7).
-        for ($i = 0; $i < 7; ++$i) {
+        $tui->handleInput("\r"); // enable parent
+        // Move to Max retained turns and change 100 → 88.
+        for ($i = 0; $i < 5; ++$i) {
             $tui->handleInput("\x1b[B");
         }
-        $tui->handleInput("\r"); // Save
+        $tui->handleInput("\r");
+        $tui->handleInput("\x7f");
+        $tui->handleInput("\x7f");
+        $tui->handleInput("\x7f");
+        $tui->handleInput('88');
+        $tui->handleInput("\r");
+        $this->assertSame('88', $this->settingsWidget($screen)->getValue('fr.max_retained_turns'));
+
+        // Down to Save (git timeout + save).
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\x1b[B");
+        $tui->handleInput("\r");
 
         $this->assertSame('picker', $this->phase($screen));
         $parsed = Yaml::parseFile($settingsPath);
         $this->assertSame('cyberpunk', $parsed['tui']['theme']);
         $this->assertTrue($parsed['extensions']['settings']['unrelated_extension']['keep']);
-        $this->assertContains(self::FILE_REWIND, $parsed['extensions']['enabled']);
+        $this->assertContains(ExtensionsSetupTestSupport::FILE_REWIND, $parsed['extensions']['enabled']);
         $this->assertTrue($parsed['extensions']['settings']['file_rewind']['enabled']);
-        $this->assertSame(100, $parsed['extensions']['settings']['file_rewind']['max_retained_turns']);
+        $this->assertSame(88, $parsed['extensions']['settings']['file_rewind']['max_retained_turns']);
     }
 
     #[Test]
@@ -200,10 +223,9 @@ YAML);
         $before = "tui:\n    theme: oh-p-dark\n";
         file_put_contents($settingsPath, $before);
 
-        // Preinstall so configure opens settings without Composer confirm.
         $installer = new ExtensionPackageInstaller(new SettingsPathResolver($this->projectDir, $this->homeDir));
         $installer->ensureInstalled(
-            \Ineersa\CodingAgent\Config\SettingsLayerEnum::Project,
+            SettingsLayerEnum::Project,
             $this->projectDir,
             'ineersa/hatfield-ext-file-rewind',
             '0.0.42',
@@ -257,7 +279,7 @@ YAML);
     {
         $terminal = new VirtualTerminal(columns: $columns, rows: 40);
         $tui = new Tui(terminal: $terminal);
-        $screen = new ExtensionsSetupScreen($flow);
+        $screen = new ExtensionsSetupScreen($flow, ExtensionsSetupTestSupport::createTheme());
         $screen->mount($tui);
         $tui->start();
         $tui->requestRender(force: true);
@@ -266,34 +288,14 @@ YAML);
         return [$screen, $terminal, $tui];
     }
 
-    private function realFlow(bool $project): ExtensionsSetupFlow
+    private function realFlow(bool $project): \Ineersa\CodingAgent\CLI\Extensions\ExtensionsSetupFlow
     {
-        $pathResolver = new SettingsPathResolver($this->projectDir, $this->homeDir);
-        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
-        $nameConverter = new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter());
-        $propertyInfo = new PropertyInfoExtractor([], [new PhpDocExtractor(), new ReflectionExtractor()]);
-        $serializer = new Serializer([
-            new ArrayDenormalizer(),
-            new ObjectNormalizer($classMetadataFactory, $nameConverter, null, $propertyInfo),
-        ]);
-
-        return ExtensionsSetupFlow::for(
-            new ProvidedExtensionsCatalog(
-                $this->tmpDir.'/config/hatfield-provided-extensions.yaml',
-                $serializer,
-                Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(),
-            ),
-            new ExtensionPackageInstaller($pathResolver),
-            new AppConfigLoader($pathResolver),
-            new AppResourceLocator($this->tmpDir),
-            new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem()),
-            $pathResolver,
-            new AppConfig(
-                tui: new TuiConfig(theme: 'default'),
-                logging: new LoggingConfig(logDir: $this->tmpDir.'/logs'),
-                cwd: $this->projectDir,
-            ),
-            project: $project,
+        return ExtensionsSetupTestSupport::createFlowFromAppConfig(
+            $this->tmpDir,
+            $this->projectDir,
+            $this->homeDir,
+            $this->catalogPath,
+            $project,
         );
     }
 
@@ -318,5 +320,20 @@ YAML);
         $errorWidget = (new \ReflectionProperty(ExtensionsSetupScreen::class, 'errorWidget'))->getValue($screen);
 
         return $errorWidget->getText();
+    }
+
+    private function settingsWidget(ExtensionsSetupScreen $screen): SettingsListWidget
+    {
+        $widget = (new \ReflectionProperty(ExtensionsSetupScreen::class, 'settingsWidget'))->getValue($screen);
+        $this->assertInstanceOf(SettingsListWidget::class, $widget);
+
+        return $widget;
+    }
+
+    private function activeSubmenu(ExtensionsSetupScreen $screen): mixed
+    {
+        $widget = $this->settingsWidget($screen);
+
+        return (new \ReflectionProperty(SettingsListWidget::class, 'activeSubmenu'))->getValue($widget);
     }
 }

@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI\Extensions;
 
+use Ineersa\CodingAgent\CLI\Extensions\DTO\ExtensionsSetupFormDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\FileRewindGuidedSettingsDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\ObservationalMemoryGuidedSettingsDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\SafeGuardGuidedSettingsDTO;
+use Ineersa\CodingAgent\CLI\Extensions\DTO\TaskWorkflowGuidedSettingsDTO;
+use Ineersa\CodingAgent\CLI\Extensions\Exception\ExtensionsSetupValidationException;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\DTO\ProvidedExtensionDTO;
+use Ineersa\CodingAgent\Config\DTO\ProvidedExtensionGuidedFieldDTO;
 use Ineersa\CodingAgent\Config\ProvidedExtensionsCatalog;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
@@ -16,6 +23,12 @@ use Ineersa\CodingAgent\Config\SettingsResolutionDTO;
 use Ineersa\CodingAgent\Extension\Exception\ExtensionPackageInstallException;
 use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
 use Ineersa\Tui\Setup\ExtensionsSetupFlowInterface;
+use Symfony\Component\PropertyAccess\PropertyAccess;
+use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
+use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Headless extensions:setup mutations. Owns scoped install + sparse settings
@@ -23,15 +36,14 @@ use Ineersa\Tui\Setup\ExtensionsSetupFlowInterface;
  */
 final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
 {
-    private const SAFE_GUARD_ID = 'safe-guard';
-    private const TASK_WORKFLOW_ID = 'task-workflow';
-    private const FILE_REWIND_ID = 'file-rewind';
-    private const OM_ID = 'observational-memory';
-
     /** @var list<string> */
     private array $summary = [];
 
     private bool $wroteSomething = false;
+
+    private SettingsLayerEnum $layer;
+
+    private readonly PropertyAccessorInterface $propertyAccessor;
 
     public function __construct(
         private readonly ProvidedExtensionsCatalog $catalog,
@@ -40,12 +52,18 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
         private readonly AppResourceLocator $resourceLocator,
         private readonly SettingsOverrideWriter $settingsWriter,
         private readonly SettingsPathResolver $pathResolver,
-        private readonly SettingsLayerEnum $layer,
+        private readonly DenormalizerInterface $denormalizer,
+        private readonly NormalizerInterface $normalizer,
+        private readonly ValidatorInterface $validator,
+        SettingsLayerEnum $layer,
         private readonly string $cwd,
+        ?PropertyAccessorInterface $propertyAccessor = null,
     ) {
-        if (SettingsLayerEnum::Defaults === $this->layer) {
+        if (SettingsLayerEnum::Defaults === $layer) {
             throw new \InvalidArgumentException('Built-in defaults are not an extensions:setup target.');
         }
+        $this->layer = $layer;
+        $this->propertyAccessor = $propertyAccessor ?? PropertyAccess::createPropertyAccessor();
     }
 
     public static function for(
@@ -55,8 +73,12 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
         AppResourceLocator $resourceLocator,
         SettingsOverrideWriter $settingsWriter,
         SettingsPathResolver $pathResolver,
+        DenormalizerInterface $denormalizer,
+        NormalizerInterface $normalizer,
+        ValidatorInterface $validator,
         AppConfig $appConfig,
         bool $project = true,
+        ?PropertyAccessorInterface $propertyAccessor = null,
     ): self {
         $layer = $project ? SettingsLayerEnum::Project : SettingsLayerEnum::User;
         $cwd = '' !== $appConfig->cwd ? $appConfig->cwd : ((string) getcwd());
@@ -71,8 +93,12 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             $resourceLocator,
             $settingsWriter,
             $pathResolver,
+            $denormalizer,
+            $normalizer,
+            $validator,
             $layer,
             $cwd,
+            $propertyAccessor,
         );
     }
 
@@ -92,6 +118,7 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
                 'package' => $extension->package,
                 'version' => $extension->version,
                 'extensionClass' => $extension->extensionClass,
+                'settingsKey' => $extension->settingsKey,
                 'parentEnabled' => $parentEnabled,
                 'installAvailable' => $installAvailable,
                 'needsInstall' => $needsInstall,
@@ -115,6 +142,16 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             : rtrim($this->pathResolver->getHomeDir(), '/').'/.hatfield/settings.yaml';
     }
 
+    public function isProjectScope(): bool
+    {
+        return SettingsLayerEnum::Project === $this->layer;
+    }
+
+    public function setProjectScope(bool $project): void
+    {
+        $this->layer = $project ? SettingsLayerEnum::Project : SettingsLayerEnum::User;
+    }
+
     public function wroteSomething(): bool
     {
         return $this->wroteSomething;
@@ -130,14 +167,14 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
         $extension = $this->requireCatalogEntry($id);
         $resolution = $this->resolve();
         $source = $this->prefillSource($resolution);
-        $settingsKey = $this->settingsKeyFor($extension->id);
-        $settings = $this->guidedSettingsPrefill($extension->id, $resolution, $settingsKey);
+        $settings = $this->guidedSettingsPrefill($extension, $resolution);
 
         return [
             'id' => $extension->id,
             'name' => $extension->name,
             'builtin' => $extension->builtin,
             'extensionClass' => $extension->extensionClass,
+            'settingsKey' => $extension->settingsKey,
             'package' => $extension->package,
             'version' => $extension->version,
             'needsInstall' => !$extension->builtin && !$this->isInstallAvailable($extension),
@@ -146,6 +183,17 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             'forksEnabled' => $this->classInList($this->listAt($source, ['forks', 'extensions', 'enabled']), $extension->extensionClass),
             'agentsAlwaysOn' => $this->classInList($this->listAt($source, ['agents', 'extensions', 'always_on']), $extension->extensionClass),
             'settings' => $settings,
+            'guidedFields' => array_map(
+                static fn (ProvidedExtensionGuidedFieldDTO $field): array => [
+                    'id' => $field->id,
+                    'path' => $field->path,
+                    'type' => $field->type,
+                    'label' => $field->label,
+                    'description' => $field->description,
+                    'default' => $field->default,
+                ],
+                $extension->guidedFields,
+            ),
         ];
     }
 
@@ -187,65 +235,67 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
 
     public function save(array $formState): void
     {
-        $id = $this->requireString($formState, 'id');
-        $extension = $this->requireCatalogEntry($id);
+        $form = $this->denormalizeForm($formState);
+        $extension = $this->requireCatalogEntry($form->id);
         $class = $extension->extensionClass;
-        $parentEnabled = $this->requireBool($formState, 'parentEnabled');
-        $forksAlwaysOn = $this->requireBool($formState, 'forksAlwaysOn');
-        $forksEnabled = $this->requireBool($formState, 'forksEnabled');
-        $agentsAlwaysOn = $this->requireBool($formState, 'agentsAlwaysOn');
-        $settings = \is_array($formState['settings'] ?? null) ? $formState['settings'] : [];
 
-        if (($forksAlwaysOn || $forksEnabled || $agentsAlwaysOn) && !$parentEnabled) {
+        if (($form->forksAlwaysOn || $form->forksEnabled || $form->agentsAlwaysOn) && !$form->parentEnabled) {
             throw new \InvalidArgumentException('Child selections require the extension to be enabled for the parent (extensions.enabled). Enable it, or clear forks/agents membership first.');
         }
 
-        if (!$extension->builtin && !$this->isInstallAvailable($extension)) {
-            throw new \InvalidArgumentException(\sprintf('%s is not installed for this scope yet. Confirm Composer installation before saving.', $extension->name));
-        }
-
-        $guided = $this->normalizeGuidedSettings($extension->id, $settings);
         $resolution = $this->resolve();
         $layerRaw = $this->layerRaw($resolution);
         $source = $this->prefillSource($resolution);
 
         $enabled = $this->listAt($source, ['extensions', 'enabled']);
-        $enabled = $parentEnabled
+        $enabled = $form->parentEnabled
             ? $this->ensureClassInList($enabled, $class)
             : $this->removeClassFromList($enabled, $class);
 
         $forksAlways = $this->listAt($source, ['forks', 'extensions', 'always_on']);
-        $forksAlways = $forksAlwaysOn
+        $forksAlways = $form->forksAlwaysOn
             ? $this->ensureClassInList($forksAlways, $class)
             : $this->removeClassFromList($forksAlways, $class);
 
         $forksOptional = $this->listAt($source, ['forks', 'extensions', 'enabled']);
-        $forksOptional = $forksEnabled
+        $forksOptional = $form->forksEnabled
             ? $this->ensureClassInList($forksOptional, $class)
             : $this->removeClassFromList($forksOptional, $class);
 
         $agentsAlways = $this->listAt($source, ['agents', 'extensions', 'always_on']);
-        $agentsAlways = $agentsAlwaysOn
+        $agentsAlways = $form->agentsAlwaysOn
             ? $this->ensureClassInList($agentsAlways, $class)
             : $this->removeClassFromList($agentsAlways, $class);
 
-        $settingsBag = \is_array($layerRaw['extensions']['settings'] ?? null)
-            ? $layerRaw['extensions']['settings']
-            : [];
-        if ([] !== $settingsBag && array_is_list($settingsBag)) {
-            throw new \InvalidArgumentException('extensions.settings must be a mapping.');
+        // Disable-only path (parent off, children cleared): update membership lists
+        // without forcing install or rewriting guided settings. Enablement requires
+        // install availability and validated guided configuration.
+        $guided = null;
+        if ($form->parentEnabled) {
+            if (!$extension->builtin && !$this->isInstallAvailable($extension)) {
+                throw new \InvalidArgumentException(\sprintf('%s is not installed for this scope yet. Confirm Composer installation before enabling or saving configuration.', $extension->name));
+            }
+            $guided = $this->normalizeGuidedSettings($extension, $form->settings);
         }
 
-        $settingsKey = $this->settingsKeyFor($extension->id);
-        $existingSection = \is_array($settingsBag[$settingsKey] ?? null) ? $settingsBag[$settingsKey] : [];
-        if ([] !== $existingSection && array_is_list($existingSection)) {
-            throw new \InvalidArgumentException(\sprintf('extensions.settings.%s must be a mapping.', $settingsKey));
-        }
-        $settingsBag[$settingsKey] = $this->configLoader->overlayConfig($existingSection, $guided);
-
-        // Preserve unrelated keys by rewriting only the known sparse branches.
         $this->settingsWriter->set($this->layer, $this->cwd, 'extensions.enabled', $enabled);
-        $this->settingsWriter->set($this->layer, $this->cwd, 'extensions.settings.'.$settingsKey, $settingsBag[$settingsKey]);
+        if (null !== $guided) {
+            $settingsBag = \is_array($layerRaw['extensions']['settings'] ?? null)
+                ? $layerRaw['extensions']['settings']
+                : [];
+            if ([] !== $settingsBag && array_is_list($settingsBag)) {
+                throw new \InvalidArgumentException('extensions.settings must be a mapping.');
+            }
+            $existingSection = \is_array($settingsBag[$extension->settingsKey] ?? null)
+                ? $settingsBag[$extension->settingsKey]
+                : [];
+            if ([] !== $existingSection && array_is_list($existingSection)) {
+                throw new \InvalidArgumentException(\sprintf('extensions.settings.%s must be a mapping.', $extension->settingsKey));
+            }
+            $merged = $this->configLoader->overlayConfig($existingSection, $guided);
+            $this->settingsWriter->set($this->layer, $this->cwd, 'extensions.settings.'.$extension->settingsKey, $merged);
+        }
+
         $this->settingsWriter->set($this->layer, $this->cwd, 'forks.extensions.always_on', $forksAlways);
         $this->settingsWriter->set($this->layer, $this->cwd, 'forks.extensions.enabled', $forksOptional);
         $this->settingsWriter->set($this->layer, $this->cwd, 'agents.extensions.always_on', $agentsAlways);
@@ -255,38 +305,8 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             'Saved %s to %s (%s). Restart Hatfield so registration picks up the change. Optional per-agent frontmatter extensions remain separate from agents.extensions.always_on.',
             $extension->name,
             $this->settingsPath(),
-            $parentEnabled ? 'enabled' : 'disabled',
+            $form->parentEnabled ? 'enabled' : 'disabled',
         );
-    }
-
-    public function enable(string $id): void
-    {
-        $extension = $this->requireCatalogEntry($id);
-        if (!$extension->builtin && !$this->isInstallAvailable($extension)) {
-            throw new \InvalidArgumentException(\sprintf('%s is not installed for this scope yet. Install or configure it first.', $extension->name));
-        }
-
-        $resolution = $this->resolve();
-        $enabled = $this->ensureClassInList(
-            $this->listAt($this->prefillSource($resolution), ['extensions', 'enabled']),
-            $extension->extensionClass,
-        );
-        $this->settingsWriter->set($this->layer, $this->cwd, 'extensions.enabled', $enabled);
-        $this->wroteSomething = true;
-        $this->summary[] = \sprintf('Enabled %s in %s. Restart Hatfield to load it.', $extension->name, $this->settingsPath());
-    }
-
-    public function disable(string $id): void
-    {
-        $extension = $this->requireCatalogEntry($id);
-        $resolution = $this->resolve();
-        $enabled = $this->removeClassFromList(
-            $this->listAt($this->prefillSource($resolution), ['extensions', 'enabled']),
-            $extension->extensionClass,
-        );
-        $this->settingsWriter->set($this->layer, $this->cwd, 'extensions.enabled', $enabled);
-        $this->wroteSomething = true;
-        $this->summary[] = \sprintf('Disabled %s in %s. Restart Hatfield so it unloads.', $extension->name, $this->settingsPath());
     }
 
     private function resolve(): SettingsResolutionDTO
@@ -361,76 +381,30 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
         return $extension;
     }
 
-    private function settingsKeyFor(string $id): string
-    {
-        return match ($id) {
-            self::SAFE_GUARD_ID => 'safe_guard',
-            self::TASK_WORKFLOW_ID => 'task_workflow',
-            self::FILE_REWIND_ID => 'file_rewind',
-            self::OM_ID => 'observational_memory',
-            default => throw new \InvalidArgumentException(\sprintf('No guided settings key for "%s".', $id)),
-        };
-    }
-
     /**
      * @return array<string, mixed>
      */
-    private function guidedSettingsPrefill(string $id, SettingsResolutionDTO $resolution, string $settingsKey): array
+    private function guidedSettingsPrefill(ProvidedExtensionDTO $extension, SettingsResolutionDTO $resolution): array
     {
         $source = $this->prefillSource($resolution);
-        $section = $source['extensions']['settings'][$settingsKey] ?? [];
+        $section = $source['extensions']['settings'][$extension->settingsKey] ?? [];
         if (!\is_array($section) || ([] !== $section && array_is_list($section))) {
             $section = [];
         }
 
-        return match ($id) {
-            self::SAFE_GUARD_ID => [
-                'allow_command_patterns' => $this->stringList($section['allow_command_patterns'] ?? []),
-                'allow_write_outside_cwd' => $this->stringList($section['allow_write_outside_cwd'] ?? []),
-                'protected_read_patterns' => $this->stringList($section['protected_read_patterns'] ?? []),
-                'dangerous_command_patterns' => $this->stringList($section['dangerous_command_patterns'] ?? []),
-                'auto_deny_in_noninteractive' => (bool) ($section['auto_deny_in_noninteractive'] ?? true),
-            ],
-            self::TASK_WORKFLOW_ID => [
-                'task_root' => \is_string($section['task_root'] ?? null) ? $section['task_root'] : '',
-            ],
-            self::FILE_REWIND_ID => [
-                'enabled' => (bool) ($section['enabled'] ?? true),
-                'max_retained_turns' => max(1, (int) ($section['max_retained_turns'] ?? 100)),
-                'git_timeout_seconds' => max(1, (int) ($section['git_timeout_seconds'] ?? 30)),
-            ],
-            self::OM_ID => [
-                'model' => \is_string($section['model'] ?? null) ? $section['model'] : '',
-                'storage' => [
-                    'database' => \is_array($section['storage'] ?? null) && \is_string($section['storage']['database'] ?? null)
-                        ? $section['storage']['database']
-                        : '.hatfield/extensions-data/observational-memory/om.sqlite',
-                ],
-                'observer' => [
-                    'context_window_ratio' => $this->ratio(
-                        \is_array($section['observer'] ?? null) ? ($section['observer']['context_window_ratio'] ?? null) : null,
-                        0.65,
-                    ),
-                ],
-                'reflector' => [
-                    'reflect_after_observation_tokens' => max(
-                        1,
-                        (int) (\is_array($section['reflector'] ?? null)
-                            ? ($section['reflector']['reflect_after_observation_tokens'] ?? 40000)
-                            : 40000),
-                    ),
-                ],
-                'pools' => [
-                    'observations_max_tokens' => max(
-                        1,
-                        (int) (\is_array($section['pools'] ?? null)
-                            ? ($section['pools']['observations_max_tokens'] ?? 30000)
-                            : 30000),
-                    ),
-                ],
-            ],
-            default => [],
-        };
+        $settings = [];
+        foreach ($extension->guidedFields as $field) {
+            $path = $this->propertyPath($field->path);
+            $value = $this->propertyAccessor->isReadable($section, $path)
+                ? $this->propertyAccessor->getValue($section, $path)
+                : null;
+            if (null === $value || '' === $value || ([] === $value && \in_array($field->type, ['csv_list', 'absolute_path_list'], true))) {
+                $value = $field->default;
+            }
+            $this->propertyAccessor->setValue($settings, $path, $this->displayValue($field->type, $value));
+        }
+
+        return $settings;
     }
 
     /**
@@ -438,27 +412,40 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
      *
      * @return array<string, mixed>
      */
-    private function normalizeGuidedSettings(string $id, array $settings): array
+    private function normalizeGuidedSettings(ProvidedExtensionDTO $extension, array $settings): array
     {
-        return match ($id) {
-            self::SAFE_GUARD_ID => [
-                'allow_command_patterns' => $this->parseCsvList($settings['allow_command_patterns'] ?? []),
-                'allow_write_outside_cwd' => $this->parseAbsolutePathList($settings['allow_write_outside_cwd'] ?? []),
-                'protected_read_patterns' => $this->parseCsvList($settings['protected_read_patterns'] ?? []),
-                'dangerous_command_patterns' => $this->parseCsvList($settings['dangerous_command_patterns'] ?? []),
-                'auto_deny_in_noninteractive' => $this->boolish($settings['auto_deny_in_noninteractive'] ?? true, 'auto_deny_in_noninteractive'),
-            ],
-            self::TASK_WORKFLOW_ID => [
-                'task_root' => $this->optionalPath($settings['task_root'] ?? ''),
-            ],
-            self::FILE_REWIND_ID => [
-                'enabled' => $this->boolish($settings['enabled'] ?? true, 'file_rewind.enabled'),
-                'max_retained_turns' => $this->positiveInt($settings['max_retained_turns'] ?? 100, 'max_retained_turns'),
-                'git_timeout_seconds' => $this->positiveInt($settings['git_timeout_seconds'] ?? 30, 'git_timeout_seconds'),
-            ],
-            self::OM_ID => $this->normalizeOmSettings($settings),
-            default => throw new \InvalidArgumentException(\sprintf('No guided settings normalizer for "%s".', $id)),
+        $prepared = $this->prepareSettingsForDenormalization($extension, $settings);
+        $dtoClass = match ($extension->id) {
+            'safe-guard' => SafeGuardGuidedSettingsDTO::class,
+            'task-workflow' => TaskWorkflowGuidedSettingsDTO::class,
+            'file-rewind' => FileRewindGuidedSettingsDTO::class,
+            'observational-memory' => ObservationalMemoryGuidedSettingsDTO::class,
+            default => throw new \InvalidArgumentException(\sprintf('No guided settings DTO for "%s".', $extension->id)),
         };
+
+        try {
+            $dto = $this->denormalizer->denormalize($prepared, $dtoClass);
+        } catch (SerializerExceptionInterface $e) {
+            throw new \InvalidArgumentException(\sprintf('Invalid guided settings for %s: %s', $extension->name, $e->getMessage()), 0, $e);
+        }
+
+        $violations = $this->validator->validate($dto);
+        if (\count($violations) > 0) {
+            throw ExtensionsSetupValidationException::fromViolations($violations);
+        }
+
+        try {
+            /** @var array<string, mixed> $normalized */
+            $normalized = $this->normalizer->normalize($dto);
+        } catch (SerializerExceptionInterface $e) {
+            throw new \RuntimeException(\sprintf('Failed to normalize guided settings for %s: %s', $extension->name, $e->getMessage()), 0, $e);
+        }
+
+        if (!\is_array($normalized)) {
+            throw new \RuntimeException(\sprintf('Normalized guided settings for %s must be a mapping.', $extension->name));
+        }
+
+        return $normalized;
     }
 
     /**
@@ -466,53 +453,173 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
      *
      * @return array<string, mixed>
      */
-    private function normalizeOmSettings(array $settings): array
+    private function prepareSettingsForDenormalization(ProvidedExtensionDTO $extension, array $settings): array
     {
-        $model = trim((string) ($settings['model'] ?? ''));
-        if ('' === $model || !str_contains($model, '/')) {
-            throw new \InvalidArgumentException('observational_memory.model must be an exact provider/model id (example: llama_cpp/flash).');
+        $prepared = $settings;
+        foreach ($extension->guidedFields as $field) {
+            $path = $this->propertyPath($field->path);
+            if (!$this->propertyAccessor->isReadable($prepared, $path)) {
+                continue;
+            }
+            $raw = $this->propertyAccessor->getValue($prepared, $path);
+            $this->propertyAccessor->setValue($prepared, $path, $this->coerceIncoming($field->type, $raw, $field->path));
         }
 
-        $database = trim((string) (
-            \is_array($settings['storage'] ?? null)
-                ? ($settings['storage']['database'] ?? '')
-                : ($settings['database'] ?? '')
-        ));
-        if ('' === $database) {
-            throw new \InvalidArgumentException('observational_memory.storage.database must be a non-empty path.');
+        return $prepared;
+    }
+
+    private function coerceIncoming(string $type, mixed $raw, string $label): mixed
+    {
+        return match ($type) {
+            'bool' => $this->strictBool($raw, $label),
+            'csv_list', 'absolute_path_list' => $this->parseList($raw),
+            'path_string', 'model_id' => \is_string($raw) ? trim($raw) : (null === $raw ? '' : (string) $raw),
+            'positive_int' => $this->strictPositiveInt($raw, $label),
+            'open_unit_ratio' => $this->strictFloat($raw, $label),
+            default => $raw,
+        };
+    }
+
+    private function displayValue(string $type, mixed $value): mixed
+    {
+        return match ($type) {
+            'bool' => (bool) $value,
+            'csv_list', 'absolute_path_list' => $this->parseList($value),
+            'positive_int' => is_numeric($value) ? (int) $value : $value,
+            'open_unit_ratio' => is_numeric($value) ? (float) $value : $value,
+            'path_string', 'model_id' => \is_string($value) ? $value : (null === $value ? '' : (string) $value),
+            default => $value,
+        };
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function parseList(mixed $value): array
+    {
+        if (\is_array($value)) {
+            $out = [];
+            foreach ($value as $item) {
+                if (\is_string($item) && '' !== trim($item)) {
+                    $out[] = trim($item);
+                }
+            }
+
+            return $out;
         }
 
-        $observerRatio = $this->ratio(
-            \is_array($settings['observer'] ?? null)
-                ? ($settings['observer']['context_window_ratio'] ?? ($settings['context_window_ratio'] ?? null))
-                : ($settings['context_window_ratio'] ?? null),
-            0.65,
-        );
-        if ($observerRatio <= 0.0 || $observerRatio > 1.0) {
-            throw new \InvalidArgumentException('observer.context_window_ratio must be between 0 exclusive and 1 inclusive.');
+        $raw = trim((string) $value);
+        if ('' === $raw) {
+            return [];
         }
 
-        return [
-            'model' => $model,
-            'storage' => ['database' => $database],
-            'observer' => ['context_window_ratio' => $observerRatio],
-            'reflector' => [
-                'reflect_after_observation_tokens' => $this->positiveInt(
-                    \is_array($settings['reflector'] ?? null)
-                        ? ($settings['reflector']['reflect_after_observation_tokens'] ?? ($settings['reflect_after_observation_tokens'] ?? 40000))
-                        : ($settings['reflect_after_observation_tokens'] ?? 40000),
-                    'reflect_after_observation_tokens',
-                ),
-            ],
-            'pools' => [
-                'observations_max_tokens' => $this->positiveInt(
-                    \is_array($settings['pools'] ?? null)
-                        ? ($settings['pools']['observations_max_tokens'] ?? ($settings['observations_max_tokens'] ?? 30000))
-                        : ($settings['observations_max_tokens'] ?? 30000),
-                    'observations_max_tokens',
-                ),
-            ],
+        // Split only on ", " so unedited comma-containing entries stay intact
+        // when the settings list round-trips through implode(', ', ...).
+        if (str_contains($raw, ', ')) {
+            $parts = explode(', ', $raw);
+        } else {
+            $parts = [$raw];
+        }
+
+        $out = [];
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if ('' !== $part) {
+                $out[] = $part;
+            }
+        }
+
+        return array_values(array_unique($out, \SORT_STRING));
+    }
+
+    private function strictBool(mixed $value, string $label): bool
+    {
+        if (\is_bool($value)) {
+            return $value;
+        }
+        if (\is_string($value)) {
+            $normalized = strtolower(trim($value));
+            if ('yes' === $normalized || 'true' === $normalized) {
+                return true;
+            }
+            if ('no' === $normalized || 'false' === $normalized) {
+                return false;
+            }
+        }
+
+        throw new \InvalidArgumentException(\sprintf('%s must be yes/no.', $label));
+    }
+
+    private function strictPositiveInt(mixed $value, string $label): int
+    {
+        if (\is_int($value)) {
+            if ($value < 1) {
+                throw new \InvalidArgumentException(\sprintf('%s must be a positive integer.', $label));
+            }
+
+            return $value;
+        }
+        if (\is_string($value) && preg_match('/^\d+$/', trim($value))) {
+            $int = (int) trim($value);
+            if ($int < 1) {
+                throw new \InvalidArgumentException(\sprintf('%s must be a positive integer.', $label));
+            }
+
+            return $int;
+        }
+
+        throw new \InvalidArgumentException(\sprintf('%s must be a positive integer.', $label));
+    }
+
+    private function strictFloat(mixed $value, string $label): float
+    {
+        if (\is_int($value) || \is_float($value)) {
+            return (float) $value;
+        }
+        if (\is_string($value) && is_numeric(trim($value))) {
+            return (float) trim($value);
+        }
+
+        throw new \InvalidArgumentException(\sprintf('%s must be numeric.', $label));
+    }
+
+    /**
+     * @param array<string, mixed> $formState
+     */
+    private function denormalizeForm(array $formState): ExtensionsSetupFormDTO
+    {
+        $payload = [
+            'id' => $formState['id'] ?? null,
+            'parentEnabled' => $formState['parentEnabled'] ?? null,
+            'forksAlwaysOn' => $formState['forksAlwaysOn'] ?? null,
+            'forksEnabled' => $formState['forksEnabled'] ?? null,
+            'agentsAlwaysOn' => $formState['agentsAlwaysOn'] ?? null,
+            'settings' => \is_array($formState['settings'] ?? null) ? $formState['settings'] : [],
         ];
+
+        try {
+            $form = $this->denormalizer->denormalize($payload, ExtensionsSetupFormDTO::class);
+        } catch (SerializerExceptionInterface $e) {
+            throw new \InvalidArgumentException('Invalid extensions:setup form payload: '.$e->getMessage(), 0, $e);
+        }
+
+        $violations = $this->validator->validate($form);
+        if (\count($violations) > 0) {
+            throw ExtensionsSetupValidationException::fromViolations($violations);
+        }
+
+        return $form;
+    }
+
+    private function propertyPath(string $dotted): string
+    {
+        $segments = explode('.', $dotted);
+        $parts = [];
+        foreach ($segments as $segment) {
+            $parts[] = '['.$segment.']';
+        }
+
+        return implode('', $parts);
     }
 
     private function classEnabled(SettingsResolutionDTO $resolution, string $class): bool
@@ -583,157 +690,5 @@ final class ExtensionsSetupFlow implements ExtensionsSetupFlowInterface
             $classes,
             static fn (string $item): bool => $item !== $class,
         ));
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function stringList(mixed $value): array
-    {
-        if (\is_string($value)) {
-            return $this->parseCsvList($value);
-        }
-        if (!\is_array($value)) {
-            return [];
-        }
-        $out = [];
-        foreach ($value as $item) {
-            if (\is_string($item) && '' !== trim($item)) {
-                $out[] = trim($item);
-            }
-        }
-
-        return $out;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function parseCsvList(mixed $value): array
-    {
-        if (\is_array($value)) {
-            return $this->stringList($value);
-        }
-        $raw = trim((string) $value);
-        if ('' === $raw) {
-            return [];
-        }
-        $parts = preg_split('/\s*,\s*/', $raw);
-        if (false === $parts) {
-            return [];
-        }
-        $out = [];
-        foreach ($parts as $part) {
-            $part = trim($part);
-            if ('' !== $part) {
-                $out[] = $part;
-            }
-        }
-
-        return array_values(array_unique($out));
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function parseAbsolutePathList(mixed $value): array
-    {
-        $paths = $this->parseCsvList($value);
-        foreach ($paths as $path) {
-            if (!str_starts_with($path, '/')) {
-                throw new \InvalidArgumentException(\sprintf('allow_write_outside_cwd entries must be absolute paths; got "%s".', $path));
-            }
-        }
-
-        return $paths;
-    }
-
-    private function optionalPath(mixed $value): string
-    {
-        return trim((string) $value);
-    }
-
-    private function positiveInt(mixed $value, string $label): int
-    {
-        if (\is_string($value) && '' === trim($value)) {
-            throw new \InvalidArgumentException(\sprintf('%s must be a positive integer.', $label));
-        }
-        if (!is_numeric($value)) {
-            throw new \InvalidArgumentException(\sprintf('%s must be a positive integer.', $label));
-        }
-        $int = (int) $value;
-        if ((string) $int !== trim((string) $value) && !\is_int($value)) {
-            // Allow "100" / 100; reject floats like 1.5.
-            if (!preg_match('/^-?\d+$/', trim((string) $value))) {
-                throw new \InvalidArgumentException(\sprintf('%s must be a positive integer.', $label));
-            }
-        }
-        if ($int < 1) {
-            throw new \InvalidArgumentException(\sprintf('%s must be a positive integer.', $label));
-        }
-
-        return $int;
-    }
-
-    private function ratio(mixed $value, float $default): float
-    {
-        if (null === $value || '' === $value) {
-            return $default;
-        }
-        if (!is_numeric($value)) {
-            throw new \InvalidArgumentException('context_window_ratio must be numeric.');
-        }
-
-        return (float) $value;
-    }
-
-    private function boolish(mixed $value, string $label): bool
-    {
-        if (\is_bool($value)) {
-            return $value;
-        }
-        if (\is_string($value)) {
-            $normalized = strtolower(trim($value));
-            if (\in_array($normalized, ['1', 'true', 'yes', 'on', 'enabled'], true)) {
-                return true;
-            }
-            if (\in_array($normalized, ['0', 'false', 'no', 'off', 'disabled'], true)) {
-                return false;
-            }
-        }
-        if (1 === $value || 0 === $value) {
-            return 1 === $value;
-        }
-
-        throw new \InvalidArgumentException(\sprintf('%s must be yes/no.', $label));
-    }
-
-    /**
-     * @param array<string, mixed> $formState
-     */
-    private function requireString(array $formState, string $key): string
-    {
-        $value = $formState[$key] ?? null;
-        if (!\is_string($value) || '' === trim($value)) {
-            throw new \InvalidArgumentException(\sprintf('Missing %s.', $key));
-        }
-
-        return trim($value);
-    }
-
-    /**
-     * @param array<string, mixed> $formState
-     */
-    private function requireBool(array $formState, string $key): bool
-    {
-        $value = $formState[$key] ?? null;
-        if (\is_bool($value)) {
-            return $value;
-        }
-        if (\is_string($value)) {
-            return $this->boolish($value, $key);
-        }
-
-        throw new \InvalidArgumentException(\sprintf('%s must be a boolean.', $key));
     }
 }

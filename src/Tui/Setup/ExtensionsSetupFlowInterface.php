@@ -21,6 +21,7 @@ interface ExtensionsSetupFlowInterface
      *     package: ?string,
      *     version: ?string,
      *     extensionClass: string,
+     *     settingsKey: string,
      *     parentEnabled: bool,
      *     installAvailable: bool,
      *     needsInstall: bool
@@ -31,6 +32,15 @@ interface ExtensionsSetupFlowInterface
     public function scopeLabel(): string;
 
     public function settingsPath(): string;
+
+    public function isProjectScope(): bool;
+
+    /**
+     * Switch the active settings layer. Project is the wizard default; user
+     * writes ~/.hatfield/settings.yaml. Prefill excludes project-only values
+     * when the user layer is selected.
+     */
+    public function setProjectScope(bool $project): void;
 
     public function wroteSomething(): bool;
 
@@ -47,6 +57,7 @@ interface ExtensionsSetupFlowInterface
      *     name: string,
      *     builtin: bool,
      *     extensionClass: string,
+     *     settingsKey: string,
      *     package: ?string,
      *     version: ?string,
      *     needsInstall: bool,
@@ -54,7 +65,15 @@ interface ExtensionsSetupFlowInterface
      *     forksAlwaysOn: bool,
      *     forksEnabled: bool,
      *     agentsAlwaysOn: bool,
-     *     settings: array<string, mixed>
+     *     settings: array<string, mixed>,
+     *     guidedFields: list<array{
+     *         id: string,
+     *         path: string,
+     *         type: string,
+     *         label: string,
+     *         description: string,
+     *         default: mixed
+     *     }>
      * }
      */
     public function formStateFor(string $id): array;
@@ -76,24 +95,14 @@ interface ExtensionsSetupFlowInterface
     /**
      * Validate + persist guided settings, parent enablement, and child membership.
      *
+     * Disable (parent off, no child membership) does not force install or rewrite
+     * guided settings. Enablement requires a successful install and valid guided
+     * configuration for non-built-in packages.
+     *
      * @param array<string, mixed> $formState
      *
      * @throws \InvalidArgumentException when validation fails
      * @throws \RuntimeException         when persistence fails
      */
     public function save(array $formState): void;
-
-    /**
-     * Enable an already-installable/builtin extension without rewriting settings.
-     *
-     * @throws \InvalidArgumentException|\RuntimeException
-     */
-    public function enable(string $id): void;
-
-    /**
-     * Disable parent enablement for a curated extension.
-     *
-     * @throws \InvalidArgumentException|\RuntimeException
-     */
-    public function disable(string $id): void;
 }
