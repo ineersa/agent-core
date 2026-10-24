@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory;
 
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
@@ -18,6 +18,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryTerminalHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmSessionContext;
+use Ineersa\HatfieldExt\ObservationalMemory\Runtime\ObservationalMemoryConfiguration;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticIndexJobHandler;
@@ -28,6 +29,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Tui\OmBackgroundStatusPoller;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\Config\Definition\ConfigurationInterface;
 
 /**
  * Hatfield registration surface for observational memory.
@@ -40,7 +42,7 @@ use Psr\Log\NullLogger;
  * - permanent ambient search and recall tools
  * - TUI status-row poller for live Observer/Reflector/Dropper notices
  */
-final class ObservationalMemoryExtension implements HatfieldExtensionInterface, TuiExtensionInterface, LoggerAwareInterface
+final class ObservationalMemoryExtension implements ConfigurableExtensionInterface, TuiExtensionInterface, LoggerAwareInterface
 {
     private LoggerInterface $logger;
 
@@ -57,6 +59,11 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
     public function setLogger(LoggerInterface $logger): void
     {
         $this->logger = $logger;
+    }
+
+    public function getConfiguration(): ConfigurationInterface
+    {
+        return new ObservationalMemoryConfiguration();
     }
 
     public function register(ExtensionApiInterface $api): void
