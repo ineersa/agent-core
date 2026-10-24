@@ -7,15 +7,19 @@ namespace Ineersa\CodingAgent\Entity;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionOriginEnum;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionReceiptDTO;
+use Symfony\Component\Serializer\SerializerInterface;
 
 /** @extends ServiceEntityRepository<BackgroundCompletionReceipt> */
 final class BackgroundCompletionReceiptRepository extends ServiceEntityRepository
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly SerializerInterface $serializer,
+    ) {
         parent::__construct($registry, BackgroundCompletionReceipt::class);
     }
 
@@ -76,11 +80,7 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
             'disposition' => $receipt->disposition->value,
             'origin' => $receipt->origin->value,
             'deferred_id' => $receipt->deferredId,
-            'source_tool_call_id' => $receipt->sourceToolCallId,
-            'source_turn_no' => $receipt->sourceTurnNo,
-            'source_step_id' => $receipt->sourceStepId,
-            'source_attempt' => $receipt->sourceAttempt,
-            'source_idempotency_key' => $receipt->sourceIdempotencyKey,
+            'invocation_reference_json' => null === $receipt->invocation ? null : $this->serializer->serialize($receipt->invocation, 'json'),
         ]);
     }
 
@@ -97,6 +97,10 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
     /** @param array<string, mixed> $row */
     private function snapshot(array $row): BackgroundCompletionReceiptDTO
     {
+        $invocationJson = isset($row['invocation_reference_json']) && '' !== $row['invocation_reference_json']
+            ? (string) $row['invocation_reference_json']
+            : null;
+
         return new BackgroundCompletionReceiptDTO(
             (string) $row['identity'], (string) $row['source_run_id'],
             (string) $row['accepted_destination_run_id'], (string) $row['destination_run_id'],
@@ -104,11 +108,7 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
             BackgroundCompletionDispositionEnum::from((string) $row['disposition']),
             BackgroundCompletionOriginEnum::from((string) $row['origin']),
             isset($row['deferred_id']) && '' !== $row['deferred_id'] ? (string) $row['deferred_id'] : null,
-            isset($row['source_tool_call_id']) && '' !== $row['source_tool_call_id'] ? (string) $row['source_tool_call_id'] : null,
-            isset($row['source_turn_no']) && '' !== $row['source_turn_no'] ? (int) $row['source_turn_no'] : null,
-            isset($row['source_step_id']) && '' !== $row['source_step_id'] ? (string) $row['source_step_id'] : null,
-            isset($row['source_attempt']) && '' !== $row['source_attempt'] ? (int) $row['source_attempt'] : null,
-            isset($row['source_idempotency_key']) && '' !== $row['source_idempotency_key'] ? (string) $row['source_idempotency_key'] : null,
+            null === $invocationJson ? null : $this->serializer->deserialize($invocationJson, ToolPayloadReferenceDTO::class, 'json'),
         );
     }
 }

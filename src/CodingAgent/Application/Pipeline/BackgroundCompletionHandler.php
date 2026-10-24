@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\CodingAgent\Application\Deferred\DeferredBackgroundCompletionSettlement;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
@@ -20,6 +21,7 @@ final readonly class BackgroundCompletionHandler
         private OwnerRunInitializationMiddleware $initialization,
         private RunMessageProcessor $processor,
         private DeferredBackgroundCompletionSettlement $deferredSettlement,
+        private BackgroundCompletionReceiptRepository $receipts,
     ) {
     }
 
@@ -33,10 +35,7 @@ final readonly class BackgroundCompletionHandler
             // succeeded. Duplicate admission also retries guarded file cleanup.
             $this->deferredSettlement->cleanup(
                 $message->identity,
-                $message->deferredId,
-                $message->origin,
-                $message->sourceToolCallId,
-                $message->sourceRunId ?? $message->runId(),
+                $this->receipts->receipt($message->identity),
             );
         });
     }

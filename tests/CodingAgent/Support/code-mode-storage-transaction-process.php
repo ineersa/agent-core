@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
@@ -18,8 +17,8 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence;
 use Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
+use Ineersa\CodingAgent\Application\Deferred\DeferredControllerLossRecovery;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
@@ -110,7 +109,7 @@ try {
             $service = new CodeModeExecutionService($c->get(StackToolExecutionContextAccessor::class), $c->get(ToolBatchStoreInterface::class), $c->get(ToolPayloadStoreInterface::class), $c->get(DeferredToolCompletionRepositoryInterface::class), $c->get(CodeModeExecutionRepository::class), $c->get(CodeModeResultArtifactStore::class), $c->get(RunLockManager::class), $c->get(SerializerInterface::class), $transactions, $c->get(DeferredToolInvocationFence::class), $c->get(RunHistorySourceProviderInterface::class), $paths);
             $c->get(StackToolExecutionContextAccessor::class)->with(new ToolContext($run, 1, 'cm', 'code_mode', new NullCancellationToken(), 8, 0, null, 'step'), $service->begin(...));
         } else {
-            $listener = new CodeModeControllerSessionLifecycleListener($c->get(OwnedRunIdsProvider::class), $c->get(CodeModeExecutionRepository::class), $c->get(RunLockManager::class), $c->get(DeferredToolCompletionRepositoryInterface::class), $c->get(ToolPayloadStoreInterface::class), $transactions, $paths, $c->get(CompleteDeferredToolCallHandler::class), $c->get(BackgroundCompletionReceiptRepository::class));
+            $listener = new CodeModeControllerSessionLifecycleListener($c->get(OwnedRunIdsProvider::class), $c->get(CodeModeExecutionRepository::class), $c->get(RunLockManager::class), $paths, $c->get(DeferredControllerLossRecovery::class));
             $listener->starting(new ControllerSessionStartingEvent($run));
         }
         file_put_contents($directory.'/writer-completed', 'yes');

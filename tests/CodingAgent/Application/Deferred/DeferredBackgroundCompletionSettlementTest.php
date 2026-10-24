@@ -613,11 +613,19 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
             $text,
             $this->origin($native),
             deferredId: $identity,
-            sourceToolCallId: 'cm',
-            sourceTurnNo: 1,
-            sourceStepId: 'step',
-            sourceAttempt: 1,
-            sourceIdempotencyKey: 'original-execution',
+            invocation: new ToolPayloadReferenceDTO(
+                'call',
+                $runId,
+                1,
+                'step',
+                1,
+                'original-execution',
+                'cm',
+                0,
+                $native ? 'code_mode' : 'subagent',
+                str_repeat('a', 64),
+                1,
+            ),
         );
     }
 

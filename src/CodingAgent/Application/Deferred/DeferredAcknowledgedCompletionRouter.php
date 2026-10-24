@@ -53,11 +53,7 @@ final readonly class DeferredAcknowledgedCompletionRouter implements DeferredAck
             $text,
             $origin,
             deferredId: $deferredId,
-            sourceToolCallId: $reference->toolCallId,
-            sourceTurnNo: $reference->turnNo,
-            sourceStepId: $reference->stepId,
-            sourceAttempt: $reference->attempt,
-            sourceIdempotencyKey: $reference->idempotencyKey,
+            invocation: $reference,
             explicitContinuation: $explicitContinuation,
         ));
     }

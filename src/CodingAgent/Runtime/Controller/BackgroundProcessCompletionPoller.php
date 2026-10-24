@@ -159,11 +159,7 @@ final class BackgroundProcessCompletionPoller
                     $receipt->origin,
                     $receipt->sourceRunId,
                     $receipt->deferredId,
-                    $receipt->sourceToolCallId,
-                    $receipt->sourceTurnNo,
-                    $receipt->sourceStepId,
-                    $receipt->sourceAttempt,
-                    $receipt->sourceIdempotencyKey,
+                    $receipt->invocation,
                 ));
             }
         } catch (\Throwable $exception) {

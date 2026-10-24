@@ -317,11 +317,7 @@ try {
         $receipt->text,
         $receipt->origin,
         deferredId: $receipt->deferredId,
-        sourceToolCallId: $receipt->sourceToolCallId,
-        sourceTurnNo: $receipt->sourceTurnNo,
-        sourceStepId: $receipt->sourceStepId,
-        sourceAttempt: $receipt->sourceAttempt,
-        sourceIdempotencyKey: $receipt->sourceIdempotencyKey,
+        invocation: $receipt->invocation,
     ));
     $duplicateNotice = 0;
     foreach ($transport->getSent() as $envelope) {

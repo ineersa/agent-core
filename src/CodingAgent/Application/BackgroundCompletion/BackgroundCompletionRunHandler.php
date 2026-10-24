@@ -94,8 +94,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 $receipt->identity, $receipt->sourceRunId, $receipt->acceptedDestinationRunId,
                 $receipt->destinationRunId, $receipt->rootRunId, $receipt->text,
                 $receipt->forwardedText, BackgroundCompletionDispositionEnum::Pending,
-                $receipt->origin, $receipt->deferredId, $receipt->sourceToolCallId,
-                $receipt->sourceTurnNo, $receipt->sourceStepId, $receipt->sourceAttempt, $receipt->sourceIdempotencyKey,
+                $receipt->origin, $receipt->deferredId, $receipt->invocation,
             );
         } else {
             if (null !== $message->sourceRunId && $message->sourceRunId !== $state->runId) {
@@ -118,8 +117,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 $message->identity, $state->runId, $destination, $destination,
                 $rootRunId, $message->text, $forwardedText,
                 $forward ? BackgroundCompletionDispositionEnum::Forwarding : BackgroundCompletionDispositionEnum::Pending,
-                $message->origin, $message->deferredId, $message->sourceToolCallId,
-                $message->sourceTurnNo, $message->sourceStepId, $message->sourceAttempt, $message->sourceIdempotencyKey,
+                $message->origin, $message->deferredId, $message->invocation,
             );
             if ($forward) {
                 // The durable obligation precedes the best-effort send. Native
@@ -142,11 +140,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                     $receipt->sourceRunId,
                     $receipt->origin,
                     $receipt->deferredId,
-                    $receipt->sourceToolCallId,
-                    $receipt->sourceTurnNo,
-                    $receipt->sourceStepId,
-                    $receipt->sourceAttempt,
-                    $receipt->sourceIdempotencyKey,
+                    $receipt->invocation,
                 ),
             ],
         ), $state);
@@ -165,11 +159,14 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 'destination_run_id' => $receipt->destinationRunId,
                 'origin' => $receipt->origin->value,
                 'deferred_id' => $receipt->deferredId,
-                'source_tool_call_id' => $receipt->sourceToolCallId,
-                'source_turn_no' => $receipt->sourceTurnNo,
-                'source_step_id' => $receipt->sourceStepId,
-                'source_attempt' => $receipt->sourceAttempt,
-                'source_idempotency_key' => $receipt->sourceIdempotencyKey,
+                'invocation' => null === $receipt->invocation ? null : [
+                    'run_id' => $receipt->invocation->runId,
+                    'tool_call_id' => $receipt->invocation->toolCallId,
+                    'turn_no' => $receipt->invocation->turnNo,
+                    'step_id' => $receipt->invocation->stepId,
+                    'attempt' => $receipt->invocation->attempt,
+                    'idempotency_key' => $receipt->invocation->idempotencyKey,
+                ],
             ]], $event->createdAt,
         ), $result->events);
 
@@ -187,13 +184,14 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         if ($message->explicitContinuation) {
             return false;
         }
-        if ($this->deferred->requiresContinuation($message->runId(), $message->sourceToolCallId ?? $message->deferredId)) {
+        $toolCallId = null !== $message->invocation ? $message->invocation->toolCallId : $message->deferredId;
+        if ($this->deferred->requiresContinuation($message->runId(), $toolCallId)) {
             return true;
         }
-        if (BackgroundCompletionOriginEnum::CodeMode !== $message->origin || null === $message->sourceToolCallId) {
+        if (BackgroundCompletionOriginEnum::CodeMode !== $message->origin || null === $message->invocation) {
             return false;
         }
-        $reason = $this->codeModeExecutions->interruption($message->runId(), $message->sourceToolCallId);
+        $reason = $this->codeModeExecutions->interruption($message->runId(), $message->invocation->toolCallId);
 
         // Controller loss parks through shared continuation_required. Sticky
         // cancellation and history discard remain the only native refusals.
@@ -247,11 +245,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
             $receipt->origin,
             $receipt->sourceRunId,
             $receipt->deferredId,
-            $receipt->sourceToolCallId,
-            $receipt->sourceTurnNo,
-            $receipt->sourceStepId,
-            $receipt->sourceAttempt,
-            $receipt->sourceIdempotencyKey,
+            $receipt->invocation,
             $explicitContinuation,
         );
     }
