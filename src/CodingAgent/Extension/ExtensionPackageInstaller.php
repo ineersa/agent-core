@@ -9,8 +9,10 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Extension\DTO\ExtensionPackageInstallResultDTO;
 use Ineersa\CodingAgent\Extension\Exception\ExtensionPackageInstallException;
 use Ineersa\CodingAgent\Utility\AtomicFileWriter;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Exception\ProcessStartFailedException;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 /**
@@ -22,19 +24,19 @@ use Symfony\Component\Process\Process;
  *  - Never writes extensions.enabled or extensions.settings.
  *  - Preserves existing extension Composer repositories and unrelated require entries.
  *  - Forces config.prepend-autoloader=false so extension deps cannot shadow host libraries.
- *  - Reuses an already-required package without running Composer update/upgrade.
+ *  - Reuses an already-installed package without Composer update/upgrade.
  */
 final class ExtensionPackageInstaller
 {
     private const COMPOSER_JSON = 'composer.json';
+    private const INSTALLED_JSON = 'vendor/composer/installed.json';
     private const VENDOR_AUTOLOAD = 'vendor/autoload.php';
     private const DEFAULT_TIMEOUT_SECONDS = 300.0;
 
     public function __construct(
         private readonly SettingsPathResolver $pathResolver,
-        /** @var list<string> */
-        private readonly array $composerCommand = ['composer'],
-        private readonly float $timeoutSeconds = self::DEFAULT_TIMEOUT_SECONDS,
+        private readonly Filesystem $filesystem = new Filesystem(),
+        private readonly ExecutableFinder $executableFinder = new ExecutableFinder(),
     ) {
     }
 
@@ -52,36 +54,23 @@ final class ExtensionPackageInstaller
         $this->assertWritableLayer($layer);
         $package = $this->normalizePackageName($package);
         $root = $this->rootFor($layer, $cwd);
-        $manifest = $this->readManifest($root);
-        if (null === $manifest) {
-            return false;
-        }
 
-        $require = $manifest['require'] ?? null;
-        if (!\is_array($require) || !\array_key_exists($package, $require)) {
-            return false;
-        }
-
-        return is_file($root.'/'.self::VENDOR_AUTOLOAD);
+        return $this->packagePresentInRoot($root, $package);
     }
 
     /**
      * Ensure a curated package is present in the selected layer root.
      *
-     * Already-required packages with an existing vendor autoload are returned as
-     * alreadyInstalled without invoking Composer. Failed installs leave settings
-     * unchanged because this service never writes enablement or extension settings.
-     *
-     * @param array<string, mixed>|null $composerConfigOverride Optional composer.json fragment
-     *                                                          merged only when creating a new
-     *                                                          root (tests use path repositories).
+     * Already-installed packages are returned without Composer require/update.
+     * Wrong prepend-autoloader config is still corrected and dump-autoload is
+     * rerun so generated autoload keeps host-safe registration. Failed installs
+     * leave settings unchanged because this service never writes enablement.
      */
     public function ensureInstalled(
         SettingsLayerEnum $layer,
         string $cwd,
         string $package,
         string $version,
-        ?array $composerConfigOverride = null,
     ): ExtensionPackageInstallResultDTO {
         $this->assertWritableLayer($layer);
         $package = $this->normalizePackageName($package);
@@ -91,7 +80,13 @@ final class ExtensionPackageInstaller
         }
 
         $root = $this->rootFor($layer, $cwd);
-        if ($this->isInstalled($layer, $cwd, $package)) {
+        $this->ensureRoot($root);
+        // Fail closed on malformed existing manifests before invoking Composer.
+        $this->readManifest($root);
+
+        if ($this->packagePresentInRoot($root, $package)) {
+            $this->enforceSafeAutoload($root);
+
             return new ExtensionPackageInstallResultDTO(
                 layer: $layer,
                 root: $root,
@@ -101,12 +96,13 @@ final class ExtensionPackageInstaller
             );
         }
 
-        $this->ensureRoot($root, $composerConfigOverride);
-        $this->runComposerRequire($root, $package, $version);
+        $this->runComposer(['require', $package.':'.$version, '--no-interaction', '--no-ansi', '--working-dir='.$root], $root, $package);
 
-        if (!$this->isInstalled($layer, $cwd, $package)) {
+        if (!$this->packagePresentInRoot($root, $package)) {
             throw new ExtensionPackageInstallException(\sprintf('Composer finished without installing "%s" into %s.', $package, $root));
         }
+
+        $this->enforceSafeAutoload($root);
 
         return new ExtensionPackageInstallResultDTO(
             layer: $layer,
@@ -134,44 +130,92 @@ final class ExtensionPackageInstaller
         return $package;
     }
 
-    /**
-     * @param array<string, mixed>|null $composerConfigOverride
-     */
-    private function ensureRoot(string $root, ?array $composerConfigOverride): void
+    private function ensureRoot(string $root): void
     {
-        if (!is_dir($root) && !@mkdir($root, 0o755, true) && !is_dir($root)) {
-            throw new ExtensionPackageInstallException(\sprintf('Failed to create extensions root "%s".', $root));
+        try {
+            $this->filesystem->mkdir($root);
+        } catch (\Throwable $e) {
+            throw new ExtensionPackageInstallException(\sprintf('Failed to create extensions root "%s": %s', $root, $e->getMessage()), 0, $e);
         }
 
         $manifestPath = $root.'/'.self::COMPOSER_JSON;
         if (!is_file($manifestPath)) {
-            $manifest = $this->defaultManifest();
-            if (null !== $composerConfigOverride) {
-                $manifest = $this->mergeManifest($manifest, $composerConfigOverride);
-            }
-            $this->writeManifest($manifestPath, $manifest);
+            $this->writeManifest($manifestPath, $this->defaultManifest());
+        }
+    }
 
+    /**
+     * Correct prepend-autoloader=false and regenerate vendor autoload when needed.
+     */
+    private function enforceSafeAutoload(string $root): void
+    {
+        $this->ensurePrependAutoloaderDisabled($root, dumpAutoload: true);
+    }
+
+    private function ensurePrependAutoloaderDisabled(string $root, bool $dumpAutoload): void
+    {
+        $manifestPath = $root.'/'.self::COMPOSER_JSON;
+        if (!is_file($manifestPath)) {
             return;
         }
 
         $manifest = $this->readManifest($root);
-        if (null === $manifest) {
-            throw new ExtensionPackageInstallException(\sprintf('Existing composer.json is unreadable: %s', $manifestPath));
-        }
-
+        $config = \is_array($manifest['config'] ?? null) ? $manifest['config'] : [];
         $changed = false;
-        if (($manifest['config']['prepend-autoloader'] ?? null) !== false) {
-            $manifest['config'] = \is_array($manifest['config'] ?? null) ? $manifest['config'] : [];
-            $manifest['config']['prepend-autoloader'] = false;
+        if (($config['prepend-autoloader'] ?? null) !== false) {
+            $config['prepend-autoloader'] = false;
             $changed = true;
         }
-        if (!isset($manifest['config']['sort-packages'])) {
-            $manifest['config']['sort-packages'] = true;
+        if (!isset($config['sort-packages'])) {
+            $config['sort-packages'] = true;
             $changed = true;
         }
         if ($changed) {
+            $manifest['config'] = $config;
             $this->writeManifest($manifestPath, $manifest);
         }
+
+        if ($dumpAutoload && ($changed || !is_file($root.'/'.self::VENDOR_AUTOLOAD))) {
+            $this->runComposer(['dump-autoload', '--no-interaction', '--no-ansi', '--working-dir='.$root], $root);
+        }
+    }
+
+    private function packagePresentInRoot(string $root, string $package): bool
+    {
+        if (!is_file($root.'/'.self::VENDOR_AUTOLOAD)) {
+            return false;
+        }
+
+        $installedPath = $root.'/'.self::INSTALLED_JSON;
+        if (!is_file($installedPath) || !is_readable($installedPath)) {
+            return false;
+        }
+
+        $content = file_get_contents($installedPath);
+        if (false === $content || '' === trim($content)) {
+            return false;
+        }
+
+        try {
+            $decoded = json_decode($content, true, 512, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new ExtensionPackageInstallException(\sprintf('Invalid Composer installed.json at %s: %s', $installedPath, $e->getMessage()), 0, $e);
+        }
+
+        $packages = [];
+        if (\is_array($decoded) && \array_key_exists('packages', $decoded) && \is_array($decoded['packages'])) {
+            $packages = $decoded['packages'];
+        } elseif (\is_array($decoded) && array_is_list($decoded)) {
+            $packages = $decoded;
+        }
+
+        foreach ($packages as $entry) {
+            if (\is_array($entry) && ($entry['name'] ?? null) === $package) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -197,57 +241,31 @@ final class ExtensionPackageInstaller
     }
 
     /**
-     * @param array<string, mixed> $base
-     * @param array<string, mixed> $override
-     *
      * @return array<string, mixed>
      */
-    private function mergeManifest(array $base, array $override): array
-    {
-        foreach ($override as $key => $value) {
-            if (!\is_string($key)) {
-                continue;
-            }
-            if (\is_array($value) && \is_array($base[$key] ?? null) && !$this->isList($value) && !$this->isList($base[$key])) {
-                $base[$key] = $this->mergeManifest($base[$key], $value);
-                continue;
-            }
-            $base[$key] = $value;
-        }
-
-        return $base;
-    }
-
-    /**
-     * @param array<mixed> $value
-     */
-    private function isList(array $value): bool
-    {
-        return [] === $value || array_is_list($value);
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function readManifest(string $root): ?array
+    private function readManifest(string $root): array
     {
         $path = $root.'/'.self::COMPOSER_JSON;
         if (!is_file($path) || !is_readable($path)) {
-            return null;
+            throw new ExtensionPackageInstallException(\sprintf('composer.json is missing or unreadable: %s', $path));
         }
 
         $content = file_get_contents($path);
         if (false === $content || '' === trim($content)) {
-            return null;
+            throw new ExtensionPackageInstallException(\sprintf('composer.json is empty: %s', $path));
         }
 
         try {
             $decoded = json_decode($content, true, 512, \JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            return null;
+        } catch (\JsonException $e) {
+            throw new ExtensionPackageInstallException(\sprintf('Invalid composer.json at %s: %s', $path, $e->getMessage()), 0, $e);
         }
 
-        return \is_array($decoded) ? $decoded : null;
+        if (!\is_array($decoded)) {
+            throw new ExtensionPackageInstallException(\sprintf('composer.json must decode to an object: %s', $path));
+        }
+
+        return $decoded;
     }
 
     /**
@@ -268,34 +286,25 @@ final class ExtensionPackageInstaller
         }
     }
 
-    private function runComposerRequire(string $root, string $package, string $version): void
+    /**
+     * @param list<string> $arguments
+     */
+    private function runComposer(array $arguments, string $root, ?string $package = null): void
     {
-        $constraint = $package.':'.$version;
-        if ([] === $this->composerCommand) {
-            throw new ExtensionPackageInstallException('Composer command is empty.');
+        $composer = $this->executableFinder->find('composer');
+        if (null === $composer) {
+            throw new ExtensionPackageInstallException('Composer executable was not found on PATH.');
         }
-        $process = new Process(
-            [
-                ...$this->composerCommand,
-                'require',
-                $constraint,
-                '--no-interaction',
-                '--no-ansi',
-                '--working-dir='.$root,
-            ],
-            $root,
-            null,
-            null,
-            $this->timeoutSeconds,
-        );
+
+        $process = new Process([$composer, ...$arguments], $root, null, null, self::DEFAULT_TIMEOUT_SECONDS);
 
         try {
             $process->mustRun();
         } catch (ProcessStartFailedException $e) {
-            throw new ExtensionPackageInstallException(\sprintf('Failed to start Composer for "%s" in %s: %s', $package, $root, $e->getMessage()), 0, $e);
+            throw new ExtensionPackageInstallException(null !== $package ? \sprintf('Failed to start Composer for "%s" in %s: %s', $package, $root, $e->getMessage()) : \sprintf('Failed to start Composer in %s: %s', $root, $e->getMessage()), 0, $e);
         } catch (ProcessFailedException $e) {
             $output = trim($process->getErrorOutput()."\n".$process->getOutput());
-            throw new ExtensionPackageInstallException(\sprintf('Composer require failed for "%s" in %s%s', $package, $root, '' !== $output ? ": \n".$output : '.'), 0, $e);
+            throw new ExtensionPackageInstallException(null !== $package ? \sprintf('Composer require failed for "%s" in %s%s', $package, $root, '' !== $output ? ": \n".$output : '.') : \sprintf('Composer command failed in %s%s', $root, '' !== $output ? ": \n".$output : '.'), 0, $e);
         }
     }
 }

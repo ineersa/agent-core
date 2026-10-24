@@ -14,12 +14,19 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 
+/**
+ * Offline Composer proof via PATH shim {@see Support/fake-composer.php}.
+ *
+ * Production discovers `composer` with Symfony ExecutableFinder. Tests place a
+ * shim named `composer` first on PATH; no live Packagist or host composer.json.
+ */
 final class ExtensionPackageInstallerTest extends TestCase
 {
     private string $tmpDir = '';
     private string $homeDir = '';
     private string $projectDir = '';
-    private string $fakeComposer = '';
+    private string $pathDir = '';
+    private string $originalPath = '';
 
     protected function setUp(): void
     {
@@ -27,16 +34,31 @@ final class ExtensionPackageInstallerTest extends TestCase
         $this->tmpDir = TestDirectoryIsolation::createOsTempDir('ext-pkg-installer');
         $this->homeDir = $this->tmpDir.'/home';
         $this->projectDir = $this->tmpDir.'/project';
+        $this->pathDir = $this->tmpDir.'/bin';
         TestDirectoryIsolation::ensureDirectory($this->homeDir);
         TestDirectoryIsolation::ensureDirectory($this->projectDir);
-        $this->fakeComposer = \dirname(__DIR__).'/Extension/Support/fake-composer.php';
-        $this->assertFileExists($this->fakeComposer);
+        TestDirectoryIsolation::ensureDirectory($this->pathDir);
+
+        $fakeComposer = \dirname(__DIR__).'/Extension/Support/fake-composer.php';
+        $this->assertFileExists($fakeComposer);
+        $shim = $this->pathDir.'/composer';
+        file_put_contents($shim, "#!/usr/bin/env bash\nexec ".escapeshellarg(\PHP_BINARY).' '.escapeshellarg($fakeComposer)." \"$@\"\n");
+        chmod($shim, 0755);
+
+        $this->originalPath = (string) getenv('PATH');
+        $path = $this->pathDir.(\PATH_SEPARATOR.($this->originalPath ?: '/usr/bin:/bin'));
+        putenv('PATH='.$path);
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
     }
 
     protected function tearDown(): void
     {
         putenv('FAKE_COMPOSER_FAIL_MARKER');
         unset($_ENV['FAKE_COMPOSER_FAIL_MARKER'], $_SERVER['FAKE_COMPOSER_FAIL_MARKER']);
+        putenv('PATH='.$this->originalPath);
+        $_ENV['PATH'] = $this->originalPath;
+        $_SERVER['PATH'] = $this->originalPath;
         if ('' !== $this->tmpDir) {
             TestDirectoryIsolation::removeDirectory($this->tmpDir);
         }
@@ -89,6 +111,7 @@ final class ExtensionPackageInstallerTest extends TestCase
         $this->assertSame([['type' => 'path', 'url' => 'existing-extension']], $manifest['repositories']);
         $this->assertFalse($manifest['config']['prepend-autoloader']);
         $this->assertFileExists($root.'/vendor/autoload.php');
+        $this->assertFileExists($root.'/vendor/composer/installed.json');
 
         // Installer must not mutate settings/enablement.
         $this->assertSame("tui:\n    theme: cyberpunk\n", file_get_contents($settingsPath));
@@ -116,7 +139,7 @@ final class ExtensionPackageInstallerTest extends TestCase
         $this->assertFalse($manifest['config']['prepend-autoloader']);
     }
 
-    public function testAlreadyInstalledIsReusableWithoutComposerRerun(): void
+    public function testAlreadyInstalledIsReusableWithoutComposerRequire(): void
     {
         $installer = $this->installer();
         $first = $installer->ensureInstalled(
@@ -127,16 +150,8 @@ final class ExtensionPackageInstallerTest extends TestCase
         );
         $this->assertFalse($first->alreadyInstalled);
 
-        $marker = $this->projectDir.'/.hatfield/extensions/vendor/autoload.php';
-        $before = file_get_contents($marker);
-        $mtimeBefore = filemtime($marker);
-
-        // Force any accidental composer invocation to fail hard.
-        $failMarker = $this->tmpDir.'/fail-composer';
-        file_put_contents($failMarker, '1');
-        putenv('FAKE_COMPOSER_FAIL_MARKER='.$failMarker);
-        $_ENV['FAKE_COMPOSER_FAIL_MARKER'] = $failMarker;
-        $_SERVER['FAKE_COMPOSER_FAIL_MARKER'] = $failMarker;
+        $installedPath = $this->projectDir.'/.hatfield/extensions/vendor/composer/installed.json';
+        $beforeInstalled = file_get_contents($installedPath);
 
         $second = $installer->ensureInstalled(
             SettingsLayerEnum::Project,
@@ -146,8 +161,98 @@ final class ExtensionPackageInstallerTest extends TestCase
         );
 
         $this->assertTrue($second->alreadyInstalled);
-        $this->assertSame($before, file_get_contents($marker));
-        $this->assertSame($mtimeBefore, filemtime($marker));
+        $this->assertSame($beforeInstalled, file_get_contents($installedPath));
+    }
+
+    public function testManifestOnlyPackageIsNotTreatedAsInstalled(): void
+    {
+        $root = $this->projectDir.'/.hatfield/extensions';
+        TestDirectoryIsolation::ensureDirectory($root.'/vendor/composer');
+        file_put_contents($root.'/composer.json', json_encode([
+            'name' => 'ineersa/hatfield-extensions',
+            'require' => [
+                'php' => '>=8.3',
+                'ineersa/hatfield-ext-file-rewind' => '0.0.42',
+                'ineersa/other-extension' => '1.0.0',
+            ],
+            'config' => [
+                'prepend-autoloader' => false,
+            ],
+        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
+        // Autoload exists because another package was installed, but selected package is absent
+        // from installed.json metadata.
+        file_put_contents($root.'/vendor/autoload.php', "<?php\n");
+        file_put_contents($root.'/vendor/composer/installed.json', json_encode([
+            'packages' => [
+                [
+                    'name' => 'ineersa/other-extension',
+                    'version' => '1.0.0',
+                ],
+            ],
+        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
+
+        $installer = $this->installer();
+        $this->assertFalse($installer->isInstalled(SettingsLayerEnum::Project, $this->projectDir, 'ineersa/hatfield-ext-file-rewind'));
+
+        $result = $installer->ensureInstalled(
+            SettingsLayerEnum::Project,
+            $this->projectDir,
+            'ineersa/hatfield-ext-file-rewind',
+            '0.0.42',
+        );
+        $this->assertFalse($result->alreadyInstalled);
+        $this->assertTrue($installer->isInstalled(SettingsLayerEnum::Project, $this->projectDir, 'ineersa/hatfield-ext-file-rewind'));
+    }
+
+    public function testAlreadyInstalledCorrectsUnsafePrependAutoloaderWithoutRequire(): void
+    {
+        $root = $this->projectDir.'/.hatfield/extensions';
+        TestDirectoryIsolation::ensureDirectory($root.'/vendor/composer');
+        file_put_contents($root.'/composer.json', json_encode([
+            'name' => 'ineersa/hatfield-extensions',
+            'require' => [
+                'php' => '>=8.3',
+                'ineersa/hatfield-ext-task-workflow' => '0.0.42',
+            ],
+            'config' => [
+                'prepend-autoloader' => true,
+            ],
+        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
+        file_put_contents($root.'/vendor/autoload.php', "<?php\n// stale\n");
+        file_put_contents($root.'/vendor/composer/installed.json', json_encode([
+            'packages' => [
+                [
+                    'name' => 'ineersa/hatfield-ext-task-workflow',
+                    'version' => '0.0.42',
+                ],
+            ],
+        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
+
+        $installer = $this->installer();
+        $result = $installer->ensureInstalled(
+            SettingsLayerEnum::Project,
+            $this->projectDir,
+            'ineersa/hatfield-ext-task-workflow',
+            '0.0.42',
+        );
+
+        $this->assertTrue($result->alreadyInstalled);
+        /** @var array<string, mixed> $manifest */
+        $manifest = json_decode((string) file_get_contents($root.'/composer.json'), true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertFalse($manifest['config']['prepend-autoloader']);
+        $autoload = (string) file_get_contents($root.'/vendor/autoload.php');
+        $this->assertStringContainsString('dump-autoload', $autoload);
+        $this->assertStringNotContainsString('stale', $autoload);
+        // Package set unchanged (no require).
+        $this->assertSame(
+            [
+                [
+                    'name' => 'ineersa/hatfield-ext-task-workflow',
+                    'version' => '0.0.42',
+                ],
+            ],
+            json_decode((string) file_get_contents($root.'/vendor/composer/installed.json'), true, 512, \JSON_THROW_ON_ERROR)['packages'],
+        );
     }
 
     public function testFailedInstallDoesNotWriteEnablementOrSettings(): void
@@ -191,6 +296,22 @@ final class ExtensionPackageInstallerTest extends TestCase
         }
     }
 
+    public function testMalformedManifestPropagatesTypedError(): void
+    {
+        $root = $this->projectDir.'/.hatfield/extensions';
+        TestDirectoryIsolation::ensureDirectory($root);
+        file_put_contents($root.'/composer.json', '{not-json');
+
+        $this->expectException(ExtensionPackageInstallException::class);
+        $this->expectExceptionMessage('Invalid composer.json');
+        $this->installer()->ensureInstalled(
+            SettingsLayerEnum::Project,
+            $this->projectDir,
+            'ineersa/hatfield-ext-file-rewind',
+            '0.0.42',
+        );
+    }
+
     public function testDefaultsLayerIsRejected(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -206,8 +327,7 @@ final class ExtensionPackageInstallerTest extends TestCase
     {
         return new ExtensionPackageInstaller(
             pathResolver: new SettingsPathResolver($this->projectDir, $this->homeDir),
-            composerCommand: [\PHP_BINARY, $this->fakeComposer],
-            timeoutSeconds: 15.0,
+            filesystem: new Filesystem(),
         );
     }
 }

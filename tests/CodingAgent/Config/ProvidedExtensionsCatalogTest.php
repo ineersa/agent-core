@@ -5,10 +5,24 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Ineersa\CodingAgent\Config\Exception\ProvidedExtensionsCatalogException;
 use Ineersa\CodingAgent\Config\ProvidedExtensionsCatalog;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
+use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
+use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
+use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
+use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
+use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\Validator\Validation;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class ProvidedExtensionsCatalogTest extends TestCase
 {
@@ -26,6 +40,8 @@ final class ProvidedExtensionsCatalogTest extends TestCase
     {
         $catalog = new ProvidedExtensionsCatalog(
             (new AppResourceLocator(ProjectDir::get()))->getProvidedExtensionsCatalogPath(),
+            $this->createSerializer(),
+            $this->createValidator(),
         );
 
         $all = $catalog->all();
@@ -61,16 +77,53 @@ final class ProvidedExtensionsCatalogTest extends TestCase
         }
     }
 
-    public function testInvalidCatalogFailsClosed(): void
+    public function testInvalidCatalogFailsClosedWithTypedException(): void
     {
         $this->tmpDir = TestDirectoryIsolation::createOsTempDir('provided-ext-catalog');
         $path = $this->tmpDir.'/bad.yaml';
-        file_put_contents($path, "packages:\n  - id: broken\n");
+        file_put_contents($path, <<<'YAML'
+packages:
+  - id: broken
+    name: Broken
+    builtin: false
+    extension_class: Broken\Extension
+YAML);
 
-        $catalog = new ProvidedExtensionsCatalog($path);
+        $catalog = new ProvidedExtensionsCatalog(
+            $path,
+            $this->createSerializer(),
+            $this->createValidator(),
+        );
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('expected non-empty string');
+        $this->expectException(ProvidedExtensionsCatalogException::class);
+        $this->expectExceptionMessage('failed validation');
         $catalog->all();
+    }
+
+    private function createSerializer(): SerializerInterface
+    {
+        $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
+        $nameConverter = new MetadataAwareNameConverter($classMetadataFactory, new CamelCaseToSnakeCaseNameConverter());
+        $propertyInfo = new PropertyInfoExtractor(
+            [],
+            [new PhpDocExtractor(), new ReflectionExtractor()],
+        );
+
+        return new Serializer([
+            new ArrayDenormalizer(),
+            new ObjectNormalizer(
+                $classMetadataFactory,
+                $nameConverter,
+                null,
+                $propertyInfo,
+            ),
+        ]);
+    }
+
+    private function createValidator(): ValidatorInterface
+    {
+        return Validation::createValidatorBuilder()
+            ->enableAttributeMapping()
+            ->getValidator();
     }
 }

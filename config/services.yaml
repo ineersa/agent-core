@@ -166,10 +166,6 @@ services:
     arguments:
       $catalogPath: '@=service("Ineersa\\CodingAgent\\Config\\AppResourceLocator").getProvidedExtensionsCatalogPath()'
 
-  Ineersa\CodingAgent\Extension\ExtensionPackageInstaller:
-    arguments:
-      $pathResolver: '@Ineersa\CodingAgent\Config\SettingsPathResolver'
-
   # Provenance path queries need THROW_ON_INVALID_INDEX so isReadable()
   # distinguishes missing keys from explicit null. FrameworkBundle's shared
   # @property_accessor is non-strict by default and would report missing array
