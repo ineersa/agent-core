@@ -13,4 +13,7 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 interface DeferredAcknowledgedCompletionRouterInterface
 {
     public function deliver(string $deferredId, ToolCallResult $result, bool $explicitContinuation = false): void;
+
+    /** True when an admitted background completion still needs owner consumption. */
+    public function hasOutstandingAdmission(string $deferredId): bool;
 }

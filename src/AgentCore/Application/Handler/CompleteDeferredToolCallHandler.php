@@ -186,6 +186,69 @@ final readonly class CompleteDeferredToolCallHandler
         });
     }
 
+    /**
+     * Park delivery after host ownership loss, or retire abandoned work without fabricating output.
+     * Caller records any native host fence in the same outer metadata transaction.
+     */
+    public function parkForControllerLoss(string $deferredId, bool $abandoned = false, ?string $interruptionMessage = null): bool
+    {
+        $metadata = $this->deferredRepository->findMetadataByDeferredId($deferredId)
+            ?? throw new \RuntimeException('Controller recovery lost its deferred registration.');
+        $reference = $metadata->reference;
+        $pending = 'pending' === $this->deferredRepository->status($deferredId);
+        $parked = $this->deferredRepository->requiresContinuation($reference->runId, $reference->toolCallId);
+        $outstanding = null !== $this->acknowledgedRouter && $this->acknowledgedRouter->hasOutstandingAdmission($deferredId);
+        if (!$pending && !$parked && !$outstanding) {
+            return false;
+        }
+        if ($abandoned) {
+            // File cleanup must stay outside the caller's metadata transaction.
+            $this->deferredRepository->requireContinuation($deferredId, false);
+            $this->deferredRepository->markCompleted($deferredId);
+
+            return true;
+        }
+        $this->deferredRepository->requireContinuation($deferredId, true);
+        if (null !== $this->deferredRepository->findAcceptedResultReferenceByDeferredId($deferredId) || $outstanding) {
+            return true;
+        }
+        $invocation = $this->deferredRepository->findInvocationReferenceByDeferredId($deferredId)
+            ?? throw new \RuntimeException('Controller recovery lost its retained invocation.');
+        $processed = $this->payloads->findProcessedResultReference($invocation);
+        if (null !== $processed) {
+            $result = $this->payloads->read($processed);
+            if (!$result instanceof ToolCallResult || null !== $result->pendingHumanInput) {
+                throw new \RuntimeException('Controller recovery requires terminal evidence.');
+            }
+            $accepted = $processed;
+        } else {
+            $call = $this->payloads->read($invocation);
+            if (!$call instanceof ExecuteToolCall) {
+                throw new \RuntimeException('Controller recovery lost its immutable invocation.');
+            }
+            $text = $interruptionMessage ?? 'Deferred execution was interrupted by controller ownership loss. No processed terminal result was retained; external effects may already have occurred. Execution was not retried.';
+            $fallback = new ToolCallResult(
+                $invocation->runId,
+                $invocation->turnNo,
+                $invocation->stepId,
+                $invocation->attempt,
+                $invocation->idempotencyKey,
+                $invocation->toolCallId,
+                $invocation->orderIndex,
+                ['tool_name' => $invocation->toolName ?? 'tool', 'content' => [['type' => 'text', 'text' => $text]]],
+                true,
+                ['type' => 'controller_interrupted', 'message' => $text, 'retryable' => false],
+            );
+            if (!$this->fence->matchesResult($fallback, $call)) {
+                throw new \RuntimeException('Controller recovery fallback must match the frozen invocation.');
+            }
+            $accepted = $this->payloads->retainProcessedResult($invocation, $fallback);
+        }
+        $this->deferredRepository->acceptResult($deferredId, $accepted);
+
+        return true;
+    }
+
     /** Settle admitted or explicitly discarded completions, then retry guarded cleanup. */
     public function settle(string $deferredId, string $runId, int $turnNo, string $stepId): void
     {
