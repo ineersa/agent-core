@@ -48,7 +48,7 @@ use function Symfony\Component\String\u;
  */
 final class HatfieldSessionStore
 {
-    /** @var array<string, true> */
+    /** @var array<string, bool> Authority is valid only while this storage lock is held. */
     private array $storageLocks = [];
 
     public function __construct(
@@ -63,7 +63,7 @@ final class HatfieldSessionStore
     {
         $sessionId = (string) ($this->parsePositiveSessionId($sessionId) ?? $sessionId);
         if (isset($this->storageLocks[$sessionId])) {
-            if (!$this->exists($sessionId)) {
+            if (!$this->storageLocks[$sessionId]) {
                 throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
             }
 
@@ -378,6 +378,9 @@ final class HatfieldSessionStore
             $this->entityManager->flush();
         });
 
+        // A reentrant deletion invalidates the held publication scope only
+        // after SQL commits. Failed deletion must leave its authority intact.
+        $this->storageLocks[$sessionId] = false;
         (new Filesystem())->remove(array_unique([$sessionDir, ...$shutdown->payloadDirectories]));
     }
 

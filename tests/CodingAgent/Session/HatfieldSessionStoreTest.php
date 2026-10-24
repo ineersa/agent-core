@@ -187,6 +187,35 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertDirectoryDoesNotExist($this->store->resolveSessionsBasePath().'/'.$run);
     }
 
+    public function testHeldPublicationAuthoritySurvivesRollbackButNotCommittedReentrantDeletion(): void
+    {
+        $run = $this->store->createSession('reentrant deletion');
+        $payloads = self::getContainer()->get(SessionToolPayloadStore::class);
+        $dispatcher = self::getContainer()->get(EventDispatcherInterface::class);
+        $failure = static function (): void { throw new \RuntimeException('rollback deletion'); };
+        $payloads->withStorage($run, function () use ($run, $payloads, $dispatcher, $failure): void {
+            $dispatcher->addListener(ControllerSessionShutdownEvent::class, $failure, -8192);
+            try {
+                $this->store->deleteSession($run);
+                $this->fail('Deletion must roll back.');
+            } catch (\RuntimeException $exception) {
+                $this->assertSame('rollback deletion', $exception->getMessage());
+            } finally {
+                $dispatcher->removeListener(ControllerSessionShutdownEvent::class, $failure);
+            }
+            $call = new ExecuteToolCall($run, 1, 'step', 1, 'key', 'call', 'echo', [], 0);
+            $this->assertSame('call', $payloads->publish($call)->toolCallId);
+            $this->store->deleteSession($run);
+            try {
+                $payloads->publish($call);
+                $this->fail('Committed deletion must invalidate the held publication scope.');
+            } catch (\RuntimeException $exception) {
+                $this->assertStringContainsString('not found', $exception->getMessage());
+            }
+        });
+        $this->assertDirectoryDoesNotExist($this->store->resolveSessionsBasePath().'/'.$run);
+    }
+
     public function testSqlDeletionFailureRetainsParentAndChildPayloadsUntilSuccessfulDeletion(): void
     {
         $container = self::getContainer();

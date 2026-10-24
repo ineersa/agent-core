@@ -178,7 +178,7 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
         $store->prepareChanges([$action], new VerifiedTransitionDTO('finish', ['run_id' => $run, 'actions' => [$action]]));
     }
 
-    public function testBatchPublicationLoadingAndDeletionResolveNumericParentOncePerOperation(): void
+    public function testBatchPublicationLoadingAndDeletionUseAtMostOneNumericParentLookupPerOperation(): void
     {
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('batch paths');
@@ -206,14 +206,16 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
             $results = $full ? $store->load($run, 1, 'tools')->results : $store->loadResults($run, 1, 'tools');
             $this->assertSame($ids, array_keys($results));
             $this->assertSame(1, $paths->calls);
-            $this->assertSame(1, $this->parentCounts($sql));
+            $this->assertSame(0, $this->parentCounts($sql), 'Cached paths require no authority query for immutable reads.');
         }
         $paths->calls = 0;
         $sql->records = [];
         $store->delete($run, 1, 'tools');
         $this->assertSame(1, $paths->calls);
-        $this->assertSame(1, $this->parentCounts($sql));
-        $this->assertCount(1, array_filter($sql->records, static fn (array $r): bool => str_contains($r['context']['sql'] ?? '', 'SELECT DISTINCT tool_call_id')));
+        $this->assertSame(0, $this->parentCounts($sql), 'File retirement cannot recreate deleted storage.');
+        foreach (['tool_batch_call', 'tool_deferred_completion'] as $table) {
+            $this->assertCount(1, array_filter($sql->records, static fn (array $r): bool => str_contains($r['context']['sql'] ?? '', 'SELECT DISTINCT tool_call_id FROM '.$table)), 'Surviving batches and retained deferred evidence each use one batched lookup.');
+        }
     }
 
     public function testScopedDeletesFinishBeforeOwnerReleaseAndRetainSharedAndNewReferences(): void
@@ -257,7 +259,9 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
             $this->assertStringContainsString('run_id=? AND turn_no=? AND step_id=?', $details);
             $this->assertStringNotContainsString('SCAN '.$table, $details);
         }
-        $this->assertCount(1, array_filter($sql->records, static fn (array $r): bool => str_contains($r['context']['sql'] ?? '', 'SELECT DISTINCT tool_call_id')));
+        foreach (['tool_batch_call', 'tool_deferred_completion'] as $table) {
+            $this->assertCount(1, array_filter($sql->records, static fn (array $r): bool => str_contains($r['context']['sql'] ?? '', 'SELECT DISTINCT tool_call_id FROM '.$table)));
+        }
         $this->assertDirectoryExists($root.hash('sha256', 'shared'));
         $this->assertDirectoryExists($root.hash('sha256', 'new-reference'));
         $this->assertDirectoryDoesNotExist($root.hash('sha256', 'delete-a'));

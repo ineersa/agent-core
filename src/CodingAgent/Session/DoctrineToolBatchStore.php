@@ -113,7 +113,10 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         }
         $store = null === $runId ? $this : $this->withRunPayloads($runId);
 
-        return $store->prepareVerifiedChanges($actions, $transition);
+        // Reuse one short publication guard across every touched body. The
+        // returned SQL action executes later, after this storage lock releases.
+        return null === $runId ? $store->prepareVerifiedChanges($actions, $transition)
+            : $store->payloads->withStorage($runId, static fn (): \Closure => $store->prepareVerifiedChanges($actions, $transition));
     }
 
     public function delete(string $runId, int $turnNo, string $stepId): void
