@@ -42,24 +42,11 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
 {
     private FakeNoopAgentRunner $spyRunner;
 
-    public static function setUpBeforeClass(): void
-    {
-        parent::setUpBeforeClass();
-
-        // Replace AgentRunnerInterface with a spy BEFORE any test
-        // accesses it.  With IsolatedKernelTestCase (per-class boot,
-        // shared container), services can only be replaced before
-        // first access — after that TestContainer rejects replacements.
-        // setUpBeforeClass runs before any test method, so the spy is
-        // in place before the first client() resolution.
-        self::getContainer()->set(AgentRunnerInterface::class, new FakeNoopAgentRunner());
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
 
-        // Fetch the spy runner installed in setUpBeforeClass.  The
+        // Fetch the spy runner installed by the class boot hook. The
         // container is shared across methods, so this returns the
         // same spy instance each time.  lastStartInput is overwritten
         // by each start() call, so no per-method re-install is needed.
@@ -325,6 +312,17 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         $resolvedReasoning = $changedDefaultResolver->resolveInitialReasoning(null, $sessionId);
         $this->assertSame($expectedReasoning, $resolvedReasoning,
             'Resolved reasoning must come from session metadata, not new global default');
+    }
+
+    protected static function configureBootedClassContainer(): void
+    {
+        // Replace AgentRunnerInterface with a spy BEFORE any test
+        // accesses it.  With IsolatedKernelTestCase (per-class boot,
+        // shared container), services can only be replaced before
+        // first access — after that TestContainer rejects replacements.
+        // The boot hook runs before any test method, so the spy is
+        // in place before the first client() resolution.
+        self::getContainer()->set(AgentRunnerInterface::class, new FakeNoopAgentRunner());
     }
 
     protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void

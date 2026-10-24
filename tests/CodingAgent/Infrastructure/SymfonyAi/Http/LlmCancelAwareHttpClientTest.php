@@ -32,6 +32,7 @@ final class LlmCancelAwareHttpClientTest extends TestCase
     {
         yield 'curl' => [static fn (): HttpClientInterface => new CurlHttpClient(['timeout' => 30, 'max_duration' => 60])];
         yield 'native' => [static fn (): HttpClientInterface => new NativeHttpClient(['timeout' => 30, 'max_duration' => 60])];
+        yield 'amp' => [static fn (): HttpClientInterface => new \Symfony\Component\HttpClient\AmpHttpClient(['timeout' => 30, 'max_duration' => 60])];
     }
 
     #[DataProvider('transportFactoryProvider')]

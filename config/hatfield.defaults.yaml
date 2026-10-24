@@ -342,18 +342,22 @@ logging:
 prompts: []
 
 # ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
+#
+# Controller-owned runtime knobs that are not tool policy and not agent
+# discovery policy. Distinct from tools.execution.max_parallelism.
+runtime:
+    # Same-process Fiber admission limit for the single llm consumer
+    # (`hatfield:messenger:consume-llm`). Positive integer only. Default 10.
+    # Distinct from tools.execution.max_parallelism and the Amp HTTP host
+    # connection pool (maxHostConnections=6).
+    llm_concurrency: 10
+
+# ---------------------------------------------------------------------------
 # Agent definitions
 # ---------------------------------------------------------------------------
 #
-# Controller runtime process knobs (not tool policy).
-# Distinct from tools.execution.max_parallelism (tool workers).
-runtime:
-    # Fixed pool of messenger:consume llm workers launched by HeadlessController.
-    # Bounded 1..8 via Symfony Validator attributes on RuntimeConfig. Default 4
-    # enables overlapping provider calls for parallel subagents without dynamic
-    # per-batch spawning.
-    llm_worker_count: 4
-
 # Agent definitions configure named child-agent roles for your project or user
 # environment. For example, you can define agents named scout, reviewer,
 # researcher, worker, or any custom name. Each definition is a Markdown file

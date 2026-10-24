@@ -21,10 +21,9 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * the test suite runs.
  *
  * Kernel and CWD lifecycle (per-class, not per-method):
- *  1. setUpBeforeClass() creates ONE isolated CWD, chdir() into it,
- *     and boots the Symfony kernel once for the entire test class.
- *  2. setUp() ensures the CWD and env vars are still correct before
- *     each test method (in case a prior test changed them).
+ *  1. setUpBeforeClass() creates ONE isolated CWD and changes into it.
+ *  2. setUp() ensures the CWD and env vars are still correct, then boots
+ *     the class-scoped kernel on first use after DAMA arms method isolation.
  *  3. tearDown() clears the EntityManager identity map, then resets only
  *     <cwd>/.hatfield/sessions (filesystem session isolation is per-method,
  *     matching DAMA's per-method DB rollback). Kernel, class CWD, and
@@ -82,15 +81,15 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         $_ENV['HATFIELD_CWD'] = self::$classCwd;
         putenv('HATFIELD_CWD='.self::$classCwd);
 
-        // Boot without debug mode so Symfony ErrorHandler does not leave
-        // exception handlers on PHPUnit's stack and mark tests risky.
-        self::bootKernel(['environment' => 'test', 'debug' => false]);
+        // Kernel boot is deferred to setUp: DAMA's PreparationStarted subscriber
+        // must start method isolation before boot can open a static connection.
     }
 
     // ── Class-level cleanup ───────────────────────────────────────
 
     public static function tearDownAfterClass(): void
     {
+        $wasBooted = self::$booted;
         // Close EntityManager (EM stays open across tests with clear() only,
         // so close it now that the class is done).
         if (self::$booted && self::getContainer()->has('doctrine.orm.default_entity_manager')) {
@@ -113,7 +112,7 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
             // Manually shut down the kernel INSTEAD of calling
             // ensureKernelShutdown(), which re-boots the kernel
             // (pushing another exception handler) before shutdown.
-            // The setUpBeforeClass boot already pushed one handler;
+            // The first setUp boot already pushed one handler;
             // we pop it with restore_exception_handler below.
             //
             // parent::tearDownAfterClass() is also skipped — it calls
@@ -137,12 +136,14 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         }
 
         // Pop the exception handler that FrameworkBundle::boot()
-        // registered during setUpBeforeClass kernel boot.  This
+        // registered during the first setUp kernel boot. This
         // leaves the handler stack exactly as it was before the
         // test class ran, so subsequent KernelTestCase-direct tests
         // (e.g. ModelSelectionServiceTest) do not detect a stray
         // handler as "risky".
-        restore_exception_handler();
+        if ($wasBooted) {
+            restore_exception_handler();
+        }
 
         // Do NOT call parent::tearDownAfterClass() — it calls
         // ensureKernelShutdown() which re-boots the already-shutdown
@@ -155,7 +156,7 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
     {
         // Do NOT call parent::setUp() — there is no PHPUnit setup to chain
         // (TestCase::setUp() is an empty hook), and KernelTestCase::bootKernel
-        // is handled once per class in setUpBeforeClass.
+        // is handled once per class below, after DAMA's preparation event.
 
         // Ensure cwd is still the isolated dir (a prior test may have changed it).
         if (getcwd() !== self::$classCwd) {
@@ -168,6 +169,13 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         $_ENV['APP_ENV'] = 'test';
         $_ENV['HATFIELD_CWD'] = self::$classCwd;
         putenv('HATFIELD_CWD='.self::$classCwd);
+
+        if (!self::$booted) {
+            // Keep the kernel class-scoped, but open its first connection only
+            // after DAMA has armed the current test transaction.
+            self::bootKernel(['environment' => 'test', 'debug' => false]);
+            static::configureBootedClassContainer();
+        }
     }
 
     protected function tearDown(): void
@@ -206,6 +214,10 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         // Do NOT call parent::tearDown() — KernelTestCase::tearDown() calls
         // ensureKernelShutdown() which would destroy the kernel we want to
         // reuse across test methods in this class.
+    }
+
+    protected static function configureBootedClassContainer(): void
+    {
     }
 
     /**
