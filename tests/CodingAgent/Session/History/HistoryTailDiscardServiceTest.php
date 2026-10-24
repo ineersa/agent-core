@@ -179,8 +179,7 @@ final class HistoryTailDiscardServiceTest extends IsolatedKernelTestCase
                 cwd: $this->tempDir,
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
     }
 
     /**

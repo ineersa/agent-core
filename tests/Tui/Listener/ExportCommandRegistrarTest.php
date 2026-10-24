@@ -94,8 +94,7 @@ final class ExportCommandRegistrarTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
 
         return new TuiRuntimeContext(
             tui: $this->createStub(\Symfony\Component\Tui\Tui::class),

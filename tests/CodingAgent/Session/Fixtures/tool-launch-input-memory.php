@@ -17,6 +17,11 @@ $paths = new class($argv[1]) implements ToolBatchRunStoragePathsInterface {
     {
     }
 
+    public function withStorage(string $runId, callable $write): mixed
+    {
+        return $write();
+    }
+
     public function resolveToolBatchesDirectory(string $runId): string
     {
         return $this->directory.'/'.$runId.'/runtime/tool-batches';

@@ -36,7 +36,7 @@ final class TuiResumeSessionVirtualTest extends TestCase
     public function testResumeShowsRestoringNoticeInsteadOfReconstructingTheArchive(): void
     {
         $store = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $this->projectDir),
-            $this->createStub(EntityManagerInterface::class), new \Symfony\Component\EventDispatcher\EventDispatcher());
+            $this->createStub(EntityManagerInterface::class), new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
         $initializer = new \Ineersa\Tui\Application\SessionInitializer($store, new \Ineersa\Tui\Transcript\TranscriptBlockFactory());
         $state = new TuiSessionState(self::SESSION_ID, true);
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);

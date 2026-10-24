@@ -525,7 +525,7 @@ final class ExportCommandHandlerTest extends TestCase
         );
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->never())->method('find');
-        $sessionStore = new HatfieldSessionStore($appConfig, $entityManager, new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $sessionStore = new HatfieldSessionStore($appConfig, $entityManager, new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
 
         $handler = new ExportCommandHandler(
             new TuiSessionState($sessionId),
@@ -1454,8 +1454,7 @@ You are a helpful assistant.
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
 
         return new ExportCommandHandler($state, $sessionStore, SessionEventsExportServiceFactory::create($toolbox));
     }

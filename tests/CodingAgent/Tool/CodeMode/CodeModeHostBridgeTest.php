@@ -343,6 +343,7 @@ PHP);
             self::getContainer()->get(OutputCap::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
         );
 
         $result = $accessor->with(
@@ -424,6 +425,7 @@ PHP);
             self::getContainer()->get(OutputCap::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
         );
 
         $result = $this->runScript($bridge, "return tool('code_mode', ['script' => 'return 1;']);");
@@ -642,6 +644,7 @@ PHP);
             self::getContainer()->get(OutputCap::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
         );
 
         $result = $this->runScript($bridge, 'return "path-php-ok";');
@@ -650,11 +653,13 @@ PHP);
 
     public function testLargeStreamsRemainRecoverableWithoutLosingReturnValue(): void
     {
+        $run = $this->retainedRun();
         $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/artifacts'), new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
         $bridge = $this->bridgeWithToolbox(static fn () => null, $cap);
-        $result = $this->runScript($bridge, 'for ($i=0; $i<160; ++$i) { fwrite(STDOUT, str_repeat("O",8192)); fwrite(STDERR, str_repeat("E",8192)); } return ["answer"=>42];');
+        $result = $this->runScript($bridge, 'for ($i=0; $i<160; ++$i) { fwrite(STDOUT, str_repeat("O",8192)); fwrite(STDERR, str_repeat("E",8192)); } return ["answer"=>42];', runId: $run);
         $this->assertInstanceOf(CodeModeExecutionResult::class, $result);
         $this->assertSame(['answer' => 42], $result->result);
+        $cap->cleanupRun($run, 'controller_restart');
         foreach (['stdout' => 'O', 'stderr' => 'E'] as $label => $byte) {
             $notice = $result->diagnostics[$label];
             $this->assertLessThan(1024, \strlen($notice));
@@ -671,7 +676,15 @@ PHP);
         $this->assertStringContainsString('"answer":42', $domain->content[0]['text']);
         $this->assertStringContainsString("stdout:\n[Raw stdout", $domain->content[0]['text']);
         $this->assertStringContainsString("stderr:\n[Raw stderr", $domain->content[0]['text']);
-        $cap->cleanupRun('code-mode-bridge-test', 'test');
+        $repository = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class);
+        $correlation = $repository->findByRunAndToolCall($run, 'code-mode-bridge-test-1');
+        $metadata = $repository->findMetadataByDeferredId($correlation->deferredId);
+        $terminal = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, $domain->content, $domain->details);
+        $payloads = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class);
+        $reference = $payloads->publishFirstResult($terminal, $metadata->reference);
+        $cap->cleanupRun($run, 'controller_shutdown');
+        $this->assertEquals($reference, $repository->findMetadataByDeferredId($correlation->deferredId)->acceptedResultReference, 'Repair discovers the retained reference before SQL acceptance.');
+        $this->assertEquals($terminal, $payloads->read($reference));
     }
 
     /** @return iterable<string, array{string, string}> */
@@ -686,6 +699,7 @@ PHP);
     #[DataProvider('diagnosticFailureModes')]
     public function testLargeFailureDiagnosticsKeepAnExactArtifact(string $mode, string $message): void
     {
+        $run = $this->retainedRun();
         $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/artifacts'), new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
         $bridge = $this->bridgeWithToolbox(static fn () => null, $cap);
         $marker = $this->tmpDir.'/ready-to-cancel';
@@ -710,7 +724,7 @@ PHP);
             'cancel' => 'file_put_contents('.var_export($marker, true).', "ready"); sleep(3); return 42;',
         };
         try {
-            $this->runScript($bridge, 'for ($i=0; $i<160; ++$i) fwrite(STDERR, str_repeat("E",8192)); '.$ending, timeoutSeconds: 1, cancelToken: $token);
+            $this->runScript($bridge, 'for ($i=0; $i<160; ++$i) fwrite(STDERR, str_repeat("E",8192)); '.$ending, timeoutSeconds: 1, cancelToken: $token, runId: $run);
             $this->fail('Expected failed execution');
         } catch (ToolCallException $exception) {
             $this->assertSame(ToolCallException::class, $exception::class);
@@ -719,6 +733,7 @@ PHP);
             $this->assertStringContainsString($message, $exception->getMessage());
             $this->assertLessThan(2048, \strlen($exception->getMessage()));
             $this->assertSame(1, preg_match('/Saved full output: (.+)/', $exception->getMessage(), $matches));
+            $cap->cleanupRun($run, 'controller_shutdown');
             $this->assertSame(hash('sha256', str_repeat('E', 1310720)), hash_file('sha256', $matches[1]));
         } finally {
             $cap->cleanupRun('code-mode-bridge-test', 'test');
@@ -789,7 +804,17 @@ PHP);
             $outputCap ?? self::getContainer()->get(OutputCap::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
         );
+    }
+
+    private function retainedRun(): string
+    {
+        $run = self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('retained diagnostics');
+        $call = new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), $run, 1, 'code-mode-bridge-test-step', 1, 'key', 'code-mode-bridge-test-1', 'code_mode', [], 0);
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class), $call);
+
+        return $run;
     }
 
     private function runScript(
@@ -799,13 +824,14 @@ PHP);
         int $memoryLimitMb = 256,
         ?int $parentTimeoutSeconds = 10,
         ?CancellationTokenInterface $cancelToken = null,
+        string $runId = 'code-mode-bridge-test',
     ): mixed {
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
 
         return $accessor->with(
             new ToolContext(
-                runId: 'code-mode-bridge-test',
+                runId: $runId,
                 turnNo: 1,
                 toolCallId: 'code-mode-bridge-test-1',
                 toolName: 'code_mode',

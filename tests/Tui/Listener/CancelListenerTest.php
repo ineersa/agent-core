@@ -577,8 +577,7 @@ class CancelListenerTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
 
         $eventDispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
         $eventDispatcher->addSubscriber(new RuntimeExceptionPolicySubscriber(

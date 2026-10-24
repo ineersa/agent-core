@@ -38,8 +38,7 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
 
         $this->store = new SessionRunEventStore(
             hatfieldSessionStore: $hatfieldSessionStore,

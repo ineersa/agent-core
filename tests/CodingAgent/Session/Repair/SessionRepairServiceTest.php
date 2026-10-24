@@ -81,7 +81,19 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $deferred->registerPending($call);
         $terminal = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromDeferredCorrelationAndCompletion($call, [['type' => 'text', 'text' => 'FIRST']], [], false);
         if ($retained) {
-            $deferred->acceptResultReference($call->deferredId, $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class)->publish($terminal));
+            $payloads = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class);
+            $invocation = $deferred->findMetadataByDeferredId($call->deferredId)->reference;
+            $reference = $payloads->publishFirstResult($terminal, $invocation);
+            $em = $container->get(\Doctrine\ORM\EntityManagerInterface::class);
+            $connection = $em->getConnection();
+            $connection->beginTransaction();
+            $deferred->acceptResultReference($call->deferredId, $reference);
+            $connection->rollBack();
+            $em->clear();
+            $this->assertNull($connection->fetchOne('SELECT accepted_result_reference_json FROM tool_deferred_completion WHERE deferred_id = ?', [$call->deferredId]));
+            $this->assertEquals($reference, $deferred->findMetadataByDeferredId($call->deferredId)->acceptedResultReference, 'First immutable reference survives failed SQL admission.');
+            $changed = new ToolCallResult($run, 1, 'step', 2, 'exact-key', 'host', 0, ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => 'SECOND']]]);
+            $this->assertEquals($reference, $payloads->publishFirstResult($changed, $invocation));
         }
         if ($completed) {
             $deferred->markCompleted($call->deferredId);
@@ -1016,8 +1028,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
 
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);
@@ -1119,8 +1130,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);
         $eventStore = new SessionRunEventStore(
@@ -1147,8 +1157,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);
         $eventStore = new SessionRunEventStore(

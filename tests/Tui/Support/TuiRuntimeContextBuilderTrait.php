@@ -74,8 +74,7 @@ trait TuiRuntimeContextBuilderTrait
         return new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $testCase->createStub(EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
     }
 }
 

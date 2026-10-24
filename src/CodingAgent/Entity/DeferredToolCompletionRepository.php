@@ -50,7 +50,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
     {
-        return $this->locks->synchronized($correlation->runId, fn () => $this->registerLocked($correlation));
+        return $this->locks->synchronized($correlation->runId, fn () => $this->payloads->withStorage($correlation->runId, fn () => $this->registerLocked($correlation)));
     }
 
     public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
@@ -112,6 +112,8 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                 throw new ToolPayloadException('Deferred accepted result reference does not match its index.');
             }
         }
+
+        $accepted ??= 'pending' === $entity->status ? $this->payloads->findFirstResult($reference) : null;
 
         return new DeferredToolCompletionMetadataDTO($entity->deferredId, $reference, $entity->status, $entity->readyAt, $entity->backgroundedAt, $accepted, $entity->interruptionReason, $entity->continuationRequired);
     }

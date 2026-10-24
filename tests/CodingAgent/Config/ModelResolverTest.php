@@ -612,8 +612,7 @@ class ModelResolverTest extends TestCase
         return new HatfieldSessionStore(
             appConfig: $this->makeAppConfig($this->standardAiData()),
             entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
     }
 
     private function makeAppConfig(array $aiData): AppConfig

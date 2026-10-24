@@ -147,6 +147,46 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         }
     }
 
+    public function testPublicationBlocksDeletionBeforeItsSqlTransaction(): void
+    {
+        $container = self::getContainer();
+        $run = $this->store->createSession('storage barrier');
+        $connection = $container->get(Connection::class);
+        $depth = $connection->getTransactionNestingLevel();
+        $factory = new class($container->get(\Symfony\Component\Lock\LockFactory::class), function ($lock) use ($connection, $depth): void {
+            $this->assertSame($depth, $connection->getTransactionNestingLevel(), 'Deletion acquires storage before beginning its SQL transaction.');
+            $this->assertFalse($lock->acquire(false), 'An independent deletion owner sees the actual publication lock.');
+            throw new \RuntimeException('publication barrier');
+        }) extends \Symfony\Component\Lock\LockFactory {
+            public function __construct(private readonly \Symfony\Component\Lock\LockFactory $inner, private readonly \Closure $probe)
+            {
+                parent::__construct(new \Symfony\Component\Lock\Store\FlockStore());
+            }
+
+            public function createLock(string $resource, ?float $ttl = 300.0, bool $autoRelease = true): \Symfony\Component\Lock\SharedLockInterface
+            {
+                $lock = $this->inner->createLock($resource, $ttl, $autoRelease);
+                ($this->probe)($lock);
+
+                return $lock;
+            }
+        };
+        $deleter = new HatfieldSessionStore($container->get(\Ineersa\CodingAgent\Config\AppConfig::class), $container->get(EntityManagerInterface::class), $container->get(EventDispatcherInterface::class), $factory);
+        $payloads = $container->get(SessionToolPayloadStore::class);
+        $payloads->withStorage($run, function () use ($run, $payloads, $deleter): void {
+            $payloads->publish(new ExecuteToolCall($run, 1, 'step', 1, 'key', 'call', 'code_mode', [], 0));
+            try {
+                $deleter->deleteSession($run);
+                $this->fail('Deletion cannot cross a live publication guard.');
+            } catch (\RuntimeException $exception) {
+                $this->assertSame('publication barrier', $exception->getMessage());
+            }
+        });
+        $this->assertTrue($this->store->exists($run));
+        $this->store->deleteSession($run);
+        $this->assertDirectoryDoesNotExist($this->store->resolveSessionsBasePath().'/'.$run);
+    }
+
     public function testSqlDeletionFailureRetainsParentAndChildPayloadsUntilSuccessfulDeletion(): void
     {
         $container = self::getContainer();
@@ -163,8 +203,12 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $payloads = $container->get(SessionToolPayloadStore::class);
         $paths = $container->get(ToolBatchRunStoragePathsInterface::class);
         $files = [];
+        $scoped = [];
+        $calls = [];
         foreach ([$owner, $child, $grandchild, $foreign] as $run) {
             $call = new ExecuteToolCall($run, 1, 'tools', 1, 'key', 'call', 'echo', ['text' => $run], 0);
+            $scoped[$run] = $payloads->forRun($run);
+            $calls[$run] = $call;
             $register = new RegisterToolBatchDTO($run, 1, 'tools', [$call], ['call' => 0], [], ['call' => true], 1);
             $apply = $batches->prepareChanges([$register], new VerifiedTransitionDTO('register', ['run_id' => $run, 'actions' => [$register]]));
             $connection->transactional($apply);
@@ -201,11 +245,23 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertTrue($this->store->exists($owner));
         foreach ($files as $run => $file) {
             $this->assertFileExists($file);
+            $this->assertSame((string) $run, $scoped[$run]->read($scoped[$run]->publish($calls[$run]))->runId(), 'Rollback retains cached writer authority.');
             $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM tool_batch WHERE run_id = ?', [(string) $run]));
             $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM tool_batch_call WHERE run_id = ?', [(string) $run]));
         }
         $this->store->deleteSession($owner);
         $this->assertFalse($this->store->exists($owner));
+        foreach ([$owner, $child, $grandchild] as $run) {
+            foreach ([static fn () => $scoped[$run]->publish($calls[$run]), static fn () => $scoped[$run]->saveAttachment($run, 'call', static fn ($handle) => fwrite($handle, 'late'))] as $write) {
+                try {
+                    $write();
+                    $this->fail('Deleted owner must refuse cached root and descendant writers.');
+                } catch (\RuntimeException $exception) {
+                    $this->assertStringContainsString('not found', $exception->getMessage());
+                }
+            }
+            $this->assertFileDoesNotExist($files[$run]);
+        }
         $this->assertDirectoryDoesNotExist($ownerDirectory);
         $this->assertFileDoesNotExist($files[$owner]);
         $this->assertFileDoesNotExist($files[$child]);

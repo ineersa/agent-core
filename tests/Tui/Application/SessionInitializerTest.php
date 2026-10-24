@@ -24,7 +24,7 @@ final class SessionInitializerTest extends TestCase
     protected function setUp(): void
     {
         $this->projectDir = TestDirectoryIsolation::createProjectTempDir('session-initializer');
-        $store = new HatfieldSessionStore(new AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $this->projectDir), $this->createStub(EntityManagerInterface::class), new EventDispatcher());
+        $store = new HatfieldSessionStore(new AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $this->projectDir), $this->createStub(EntityManagerInterface::class), new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
         $this->sessionInit = new SessionInitializer($store, new TranscriptBlockFactory());
     }
 

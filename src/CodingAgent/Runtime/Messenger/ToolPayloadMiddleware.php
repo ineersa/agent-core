@@ -213,7 +213,7 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
      */
     private function publishProcessedResult(ToolCallResult $message): array
     {
-        return $this->locks->synchronized($message->runId(), function () use ($message): array {
+        return $this->locks->synchronized($message->runId(), fn (): array => $this->payloads->withStorage($message->runId(), function () use ($message): array {
             if ('completed' === $this->deferred->statusForRunAndToolCall($message->runId(), $message->toolCallId)) {
                 return [null, null];
             }
@@ -229,9 +229,7 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
             if (null === $metadata) {
                 return [null, $this->payloads->publish($message)];
             }
-            $reference = null === $metadata->acceptedResultReference
-                ? $this->deferred->acceptResultReference($metadata->deferredId, $this->payloads->publish($message))
-                : $metadata->acceptedResultReference;
+            $reference = $this->deferred->acceptResultReference($metadata->deferredId, $metadata->acceptedResultReference ?? $this->payloads->publishFirstResult($message, $metadata->reference));
             if ($metadata->continuationRequired) {
                 return [null, null];
             }
@@ -258,7 +256,7 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
             // Foreground admission stays an ordinary ToolCallResult so batch
             // finalization owns settlement. Retain the accepted reference only.
             return [null, $reference];
-        });
+        }));
     }
 
     private function findEarlyDeferredRegistration(ToolCallResult $message): ?DeferredToolCompletionMetadataDTO

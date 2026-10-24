@@ -225,8 +225,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
                 $sessions = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
                     new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig('default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
                     $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                    new \Symfony\Component\EventDispatcher\EventDispatcher(),
-                );
+                    new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
 
                 return new \Ineersa\CodingAgent\Session\SessionRunEventStore($sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()), new NullLogger(), new \Ineersa\CodingAgent\Session\FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
             };

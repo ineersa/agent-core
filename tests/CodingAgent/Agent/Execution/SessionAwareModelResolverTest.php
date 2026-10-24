@@ -516,7 +516,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->invoke($messages, 'high');
         $em = static::getContainer()->get('doctrine.orm.default_entity_manager');
         $em->clear();
-        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher());
+        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
         $this->invoke($messages, 'max');
         $this->invoke($messages, 'low');
         $this->assertSame(['low', 'high', 'max', 'low'], array_column(array_column($this->bodies, 'reasoning'), 'effort'));
@@ -553,8 +553,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
                 cwd: $this->tempDir.'/project',
             ),
             entityManager: $this->entityManager,
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
         $sessionMetaStore = $hatfieldSessionStore;
 
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
@@ -694,7 +693,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $em->persist($entity);
         $em->flush();
         $this->sessionId = (string) $entity->id;
-        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher());
+        $this->sessions = new HatfieldSessionStore($this->config, $em, new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
     }
 
     /** @param list<AgentMessage> $messages */

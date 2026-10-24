@@ -78,6 +78,60 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
         return $reference;
     }
 
+    public function withStorage(string $runId, callable $write): mixed
+    {
+        return $this->paths->withStorage($runId, $write);
+    }
+
+    public function publishFirstResult(ToolCallResult $message, ToolPayloadReferenceDTO $invocation): ToolPayloadReferenceDTO
+    {
+        return $this->withStorage($message->runId(), function () use ($message, $invocation): ToolPayloadReferenceDTO {
+            $this->assertIdentity($message, $invocation);
+            $first = $this->findFirstResult($invocation);
+            if (null !== $first) {
+                return $first;
+            }
+            $reference = $this->publish($message);
+            $this->filesystem->dumpFile($this->firstResultPath($reference), $this->serializer->serialize($reference, 'json'));
+
+            return $reference;
+        });
+    }
+
+    public function findFirstResult(ToolPayloadReferenceDTO $invocation): ?ToolPayloadReferenceDTO
+    {
+        $path = $this->firstResultPath($invocation);
+        if (!is_file($path)) {
+            return null;
+        }
+        if (is_link($path) || filesize($path) > 16384) {
+            throw new ToolPayloadException('Invalid retained result reference.');
+        }
+        $reference = $this->serializer->deserialize(file_get_contents($path), ToolPayloadReferenceDTO::class, 'json');
+        $this->validate($reference);
+        if ('result' !== $reference->kind || $this->firstResultPath($reference) !== $path || filesize($this->path($reference)) !== $reference->bytes || hash_file('sha256', $this->path($reference)) !== $reference->sha256) {
+            throw new ToolPayloadException('Retained result identity or checksum changed.');
+        }
+
+        return $reference;
+    }
+
+    public function saveAttachment(string $runId, string $toolCallId, callable $write): string
+    {
+        return $this->withStorage($runId, function () use ($runId, $toolCallId, $write): string {
+            $path = $this->directory($runId, $toolCallId).'/diagnostic-'.bin2hex(random_bytes(16)).'.txt';
+            $this->filesystem->mkdir(\dirname($path), 0700);
+            $handle = fopen($path, 'xb');
+            try {
+                $write($handle);
+            } finally {
+                fclose($handle);
+            }
+
+            return $path;
+        });
+    }
+
     public function read(ToolPayloadReferenceDTO $reference): ExecuteToolCall|ExecuteShellToolCall|ToolCallResult|DeferredToolCompletionCorrelation
     {
         $this->validate($reference);
@@ -120,6 +174,11 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
     public function deleteAllForRun(string $runId): void
     {
         $this->filesystem->remove(\dirname($this->directory($runId, 'cleanup')));
+    }
+
+    private function firstResultPath(ToolPayloadReferenceDTO $ref): string
+    {
+        return $this->directory($ref->runId, $ref->toolCallId).'/first-'.hash('sha256', serialize([$ref->turnNo, $ref->stepId, $ref->attempt, $ref->idempotencyKey, $ref->orderIndex])).'.json';
     }
 
     private function readJson(ToolPayloadReferenceDTO $reference): string
@@ -178,6 +237,11 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
     }
 
     private function seal(ToolPayloadReferenceDTO $reference, string $json): void
+    {
+        $this->withStorage($reference->runId, fn () => $this->sealOwned($reference, $json));
+    }
+
+    private function sealOwned(ToolPayloadReferenceDTO $reference, string $json): void
     {
         $this->validate($reference);
         $path = $this->path($reference);

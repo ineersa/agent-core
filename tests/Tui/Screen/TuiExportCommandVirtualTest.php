@@ -122,8 +122,7 @@ final class TuiExportCommandVirtualTest extends TestCase
         return new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
     }
 
     private function writeEventsJsonl(string $sessionId): void

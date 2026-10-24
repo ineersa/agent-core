@@ -17,6 +17,7 @@ final class CodeModeDiagnosticCapture
         private readonly OutputCap $outputCap,
         private readonly ?string $runId,
         string $workspace,
+        private readonly ?\Closure $retain = null,
     ) {
         $this->stdoutPath = $workspace.'/stdout.log';
         $this->stderrPath = $workspace.'/stderr.log';
@@ -32,7 +33,7 @@ final class CodeModeDiagnosticCapture
                 throw new \RuntimeException('Failed to open code-mode diagnostic stream.');
             }
             try {
-                $captured = $this->outputCap->capture($this->validatedChunks($stream), $this->runId);
+                $captured = $this->outputCap->capture($this->validatedChunks($stream), $this->runId, $this->retain);
             } finally {
                 fclose($stream);
             }

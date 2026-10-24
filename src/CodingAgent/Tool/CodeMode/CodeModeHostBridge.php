@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
@@ -58,6 +59,7 @@ final readonly class CodeModeHostBridge
         private OutputCap $outputCap,
         private DeferredToolCompletionRepositoryInterface $deferred,
         private ToolBatchStoreInterface $batches,
+        private ToolPayloadStoreInterface $payloads,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -82,7 +84,7 @@ final readonly class CodeModeHostBridge
             $process = null;
             $server = null;
             $connection = null;
-            $capture = new CodeModeDiagnosticCapture($this->outputCap, $parentContext?->runId(), $workspace['dir']);
+            $capture = new CodeModeDiagnosticCapture($this->outputCap, $parentContext?->runId(), $workspace['dir'], null !== $deferredId && null !== $parentContext ? fn (callable $write): string => $this->payloads->saveAttachment($parentContext->runId(), $parentContext->toolCallId(), $write) : null);
 
             try {
                 $this->writeScript($workspace['script'], $script);
@@ -100,12 +102,12 @@ final readonly class CodeModeHostBridge
                 // Ordinary ToolExecutor processors own the terminal once. This
                 // host only registers readiness for later caller detachment.
                 return $this->packExecutionResult($result, $capture);
-            } catch (ToolCallException $exception) {
+            } catch (\Throwable $exception) {
                 if ($exception instanceof MalformedToolResultException || null === $process) {
                     throw $exception;
                 }
                 $this->stopProcess($process);
-                throw new ToolCallException(CodeModeDiagnostics::appendToMessage($exception->getMessage(), $capture->prepare(self::SCRIPT_WRAPPER_PREFIX_LINES)), retryable: $exception->retryable(), hint: $exception->hint(), previous: $exception);
+                throw new ToolCallException(CodeModeDiagnostics::appendToMessage($exception->getMessage(), $capture->prepare(self::SCRIPT_WRAPPER_PREFIX_LINES)), retryable: $exception instanceof ToolCallException && $exception->retryable(), hint: $exception instanceof ToolCallException ? $exception->hint() : null, previous: $exception);
             } finally {
                 $this->stopProcess($process);
                 $this->closeResource($connection);

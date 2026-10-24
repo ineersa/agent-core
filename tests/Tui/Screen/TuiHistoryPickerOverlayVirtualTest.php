@@ -322,8 +322,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
             $sessionStore = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
                 new \Ineersa\CodingAgent\Config\AppConfig(tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), logging: new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
                 $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-                new \Symfony\Component\EventDispatcher\EventDispatcher(),
-            );
+                new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
             $events = [];
             for ($i = 70; $i >= 1; --$i) {
                 $events[] = \Ineersa\AgentCore\Domain\Event\RunEvent::forAppend($sessionId, $i, 'agent_command_applied', ['kind' => 'follow_up', 'text' => 'Prompt number '.$i]);

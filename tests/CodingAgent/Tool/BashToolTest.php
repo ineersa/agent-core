@@ -38,6 +38,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
@@ -731,6 +732,7 @@ final class BashToolTest extends IsolatedKernelTestCase
     public function testRequestedDetachmentKeepsSameProcessAndPollerNotifiesOnce(): void
     {
         $this->createManager();
+        $session = self::getContainer()->get(HatfieldSessionStore::class)->createSession('Bash detachment');
         $fifo = $this->tmpDir.'/detach-release';
         $this->assertTrue(posix_mkfifo($fifo, 0600));
         $endpoint = fopen($fifo, 'r+b');
@@ -738,13 +740,13 @@ final class BashToolTest extends IsolatedKernelTestCase
         $token = $this->createStub(CancellationTokenInterface::class);
         $selected = null;
         $originalDeadline = null;
-        $token->method('isCancellationRequested')->willReturnCallback(function () use (&$selected, &$originalDeadline): bool {
+        $token->method('isCancellationRequested')->willReturnCallback(function () use ($session, &$selected, &$originalDeadline): bool {
             if (null === $selected) {
-                $records = $this->manager->foregroundTools(self::TEST_SESSION);
+                $records = $this->manager->foregroundTools($session);
                 if ([] !== $records) {
                     $selected = $records[0];
                     $originalDeadline = $selected->deadlineNanoseconds;
-                    $this->assertTrue($this->manager->requestBackground(self::TEST_SESSION, $selected->id, 'tc_bash'));
+                    $this->assertTrue($this->manager->requestBackground($session, $selected->id, 'tc_bash'));
                 }
             }
 
@@ -763,12 +765,12 @@ final class BashToolTest extends IsolatedKernelTestCase
                 contextAccessor: $this->contextAccessor,
             );
             $call = ToolCallBuilder::create('tc_bash')->withToolName('bash')->withArguments($arguments)
-                ->withRunId(self::TEST_SESSION)->withContext(['cancel_token' => $token, 'turn_no' => 1, 'step_id' => 'detach-step'])->build();
+                ->withRunId($session)->withContext(['cancel_token' => $token, 'turn_no' => 1, 'step_id' => 'detach-step'])->build();
             $batch = self::getContainer()->get(ToolBatchCollector::class);
             $store = self::getContainer()->get(ToolBatchStoreInterface::class);
-            $first = new ExecuteToolCall(self::TEST_SESSION, 1, 'detach-step', 1, 'first', 'tc_bash', 'bash', $arguments, 0, mode: 'parallel', maxParallelism: 2);
-            $sibling = new ExecuteToolCall(self::TEST_SESSION, 1, 'detach-step', 1, 'sibling', 'sibling', 'read', [], 1, mode: 'sequential');
-            $initial = TestToolBatchRegistration::register($batch, $store, self::TEST_SESSION, 1, 'detach-step', [$first, $sibling]);
+            $first = new ExecuteToolCall($session, 1, 'detach-step', 1, 'first', 'tc_bash', 'bash', $arguments, 0, mode: 'parallel', maxParallelism: 2);
+            $sibling = new ExecuteToolCall($session, 1, 'detach-step', 1, 'sibling', 'sibling', 'read', [], 1, mode: 'sequential');
+            $initial = TestToolBatchRegistration::register($batch, $store, $session, 1, 'detach-step', [$first, $sibling]);
             $this->assertSame(['tc_bash'], array_column($initial, 'toolCallId'));
             $result = $executor->execute($call);
             $acknowledgment = $result->content[0]['text'];
@@ -782,13 +784,13 @@ final class BashToolTest extends IsolatedKernelTestCase
             $this->assertSame([], $duplicate->effectsToDispatch);
             $this->assertNotNull($selected);
             $this->assertStringContainsString('Command moved to background.', $acknowledgment);
-            $record = $this->manager->findByRecordId($selected->id, self::TEST_SESSION);
+            $record = $this->manager->findByRecordId($selected->id, $session);
             $this->assertNotNull($record);
             $this->assertSame($selected->pid, $record->pid);
             $this->assertSame($originalDeadline, $record->deadlineNanoseconds);
             $this->assertNull($record->finishedAt);
             $this->assertNotNull($record->backgroundedAt);
-            $this->assertCount(1, $this->recordsForSession(self::TEST_SESSION));
+            $this->assertCount(1, $this->recordsForSession($session));
             $siblingResult = ToolCallResultFactory::fromExecuteToolCallAndToolResult($sibling, new ToolResult('sibling', 'read', [['type' => 'text', 'text' => 'sibling output']]));
             $settled = TestToolBatchCoordination::collect($batch, $store, $siblingResult);
             $this->assertTrue($settled->complete);
@@ -797,7 +799,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
             $deadline = hrtime(true) + 2_000_000_000;
             do {
-                $record = $this->manager->findByRecordId($selected->id, self::TEST_SESSION);
+                $record = $this->manager->findByRecordId($selected->id, $session);
                 if (null !== $record?->finishedAt) {
                     break;
                 }
@@ -807,7 +809,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             $this->assertSame(1, substr_count((string) file_get_contents($selected->logPath), "started\n"));
             $bus = $this->createMock(MessageBusInterface::class);
             $bus->expects($this->once())->method('dispatch')->with($this->callback(
-                static fn (DeliverBackgroundCompletionDTO $message): bool => self::TEST_SESSION === $message->runId() && str_contains($message->text, 'finished'),
+                static fn (DeliverBackgroundCompletionDTO $message): bool => $session === $message->runId() && str_contains($message->text, 'finished'),
             ))->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
             $poller = new BackgroundProcessCompletionPoller(
                 static::getContainer()->get(ProcessStore::class),
@@ -817,15 +819,15 @@ final class BashToolTest extends IsolatedKernelTestCase
                 new NullLogger(),
                 static::getContainer()->get(AgentArtifactRegistry::class),
                 static::getContainer()->get(BackgroundCompletionReceiptRepository::class),
-                self::TEST_SESSION,
+                $session,
             );
             $poll = new \ReflectionMethod($poller, 'poll');
             $poll->invoke($poller);
             $poll->invoke($poller);
             $this->assertNotNull($this->manager->findByRecordId($selected->id)?->completionNotifiedAt);
             $this->assertSame($result->content, $executor->execute($call)->content, 'Native completion must not overwrite the original acknowledgment cache.');
-            $this->assertCount(2, $store->load(self::TEST_SESSION, 1, 'detach-step')->results);
-            $this->assertCount(1, $this->recordsForSession(self::TEST_SESSION));
+            $this->assertCount(2, $store->load($session, 1, 'detach-step')->results);
+            $this->assertCount(1, $this->recordsForSession($session));
         } finally {
             fclose($endpoint);
         }

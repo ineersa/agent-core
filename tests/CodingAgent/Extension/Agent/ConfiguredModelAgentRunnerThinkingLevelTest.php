@@ -261,8 +261,7 @@ final class ConfiguredModelAgentRunnerThinkingLevelTest extends IsolatedKernelTe
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->entityManager,
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $selectionService = new ModelSelectionService(

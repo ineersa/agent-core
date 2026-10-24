@@ -176,7 +176,7 @@ STRING;
      *
      * @return string|array{output_cap: array{saved_path: string, byte_count: int}}
      */
-    public function capture(iterable $chunks, ?string $runId): string|array
+    public function capture(iterable $chunks, ?string $runId, ?callable $persist = null): string|array
     {
         $stream = fopen('php://temp/maxmemory:'.self::STREAM_BYTE_LIMIT, 'w+b');
         if (false === $stream) {
@@ -202,11 +202,12 @@ STRING;
             if (null === $runId || '' === trim($runId)) {
                 throw new \LogicException('OutputCap requires a run ID when persisting oversized output.');
             }
-            $savedPath = $this->persistUsing($runId, static function ($handle) use ($stream, $bytes): void {
+            $write = static function ($handle) use ($stream, $bytes): void {
                 if ($bytes !== stream_copy_to_stream($stream, $handle)) {
                     throw new \RuntimeException('Failed to persist captured tool output.');
                 }
-            });
+            };
+            $savedPath = null === $persist ? $this->persistUsing($runId, $write) : $persist($write);
 
             return ['output_cap' => ['saved_path' => $savedPath, 'byte_count' => $bytes]];
         } finally {

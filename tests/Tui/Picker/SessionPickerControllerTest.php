@@ -54,8 +54,7 @@ final class SessionPickerControllerTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
             $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
         $controller = new SessionPickerController($this->tui(), $this->screen(), $sessionStore, $switch);
 
         $controller->applySelectEffect('42');
