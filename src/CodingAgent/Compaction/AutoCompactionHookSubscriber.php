@@ -148,7 +148,8 @@ final class AutoCompactionHookSubscriber implements EssentialAfterTurnHookInterf
         // trigger compaction with continueAfterCompaction=true before
         // the next LLM step if token pressure warrants; that is
         // semantically correct and preserves continuation.
-        if ($this->containsEventType($context, RunEventTypeEnum::ToolBatchCommitted->value)) {
+        if ($this->containsEventType($context, RunEventTypeEnum::ToolBatchCommitted->value)
+            || $this->containsEventType($context, RunEventTypeEnum::HistoryTailDiscarded->value)) {
             return [];
         }
 

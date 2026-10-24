@@ -123,6 +123,11 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
                         'name' => 'bash',
                         'arguments' => ['command' => 'castor test'],
                         'order_index' => 0,
+                    ], [
+                        'id' => 'background-host',
+                        'name' => 'code_mode',
+                        'arguments' => [],
+                        'order_index' => 1,
                     ]],
                 ],
             ]],
@@ -132,6 +137,10 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
                 'order_index' => 0,
                 'mode' => 'parallel',
             ]],
+            ['type' => RunEventTypeEnum::ToolCallAcknowledged->value, 'payload' => static::getContainer()->get(ToolExecutionEndPayloadCodec::class)->toEventPayload(new ToolCallResult(
+                $runId, $turnNo, $stepId, 1, 'host-key', 'background-host', 1,
+                ['content' => [['type' => 'text', 'text' => 'HOST_ACK']], 'backgrounded' => true],
+            ))],
             ['type' => RunEventTypeEnum::AgentEnd->value, 'payload' => [
                 'reason' => 'failed',
                 'error' => 'Handling ToolCallResult failed: Tool batch snapshot write failed.',
@@ -145,7 +154,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             status: RunStatus::Failed,
             version: 1,
             turnNo: $turnNo,
-            lastSeq: 5,
+            lastSeq: 6,
             activeStepId: $stepId,
             model: 'test-model',
         ));
@@ -168,12 +177,13 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $this->assertSame(1, $this->countEvents($events, RunEventTypeEnum::AgentEnd->value));
 
         $messages = $this->replayMessages($runId);
-        $this->assertCount(2, $messages);
+        $this->assertCount(3, $messages);
         $this->assertSame('assistant', $messages[0]->role);
-        $this->assertSame('tool', $messages[1]->role);
-        $this->assertSame($toolCallId, $messages[1]->toolCallId);
-        $this->assertTrue($messages[1]->isError);
-        $this->assertStringContainsString('run failed before the result was committed', (string) ($messages[1]->content[0]['text'] ?? ''));
+        $toolMessages = array_column(\array_slice($messages, 1), null, 'toolCallId');
+        $this->assertSame('HOST_ACK', $toolMessages['background-host']->content[0]['text']);
+        $this->assertFalse($toolMessages['background-host']->isError);
+        $this->assertTrue($toolMessages[$toolCallId]->isError);
+        $this->assertStringContainsString('run failed before the result was committed', (string) ($toolMessages[$toolCallId]->content[0]['text'] ?? ''));
         $this->assertReplayStatus($runId, RunStatus::Failed);
 
         $lineCountAfterFirst = \count($this->readRawLines($runId));

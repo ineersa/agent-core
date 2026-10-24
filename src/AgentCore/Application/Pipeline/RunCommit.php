@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Psr\Log\LoggerInterface;
@@ -41,7 +42,7 @@ final readonly class RunCommit
         $attributes = ['run_id' => $nextState->runId, 'turn_no' => $nextState->turnNo, 'step_id' => $nextState->activeStepId];
         $this->assertTransitionReady($state->runId);
         $afterTurnActions = [];
-        if ($dispatchAfterTurnHooks) {
+        if ($dispatchAfterTurnHooks || \in_array(RunEventTypeEnum::HistoryTailDiscarded->value, array_column($events, 'type'), true)) {
             $afterTurnActions = $this->probe('commit.prepare_hooks', $attributes, fn () => $this->hookDispatcher?->prepareAfterTurnCommit(
                 AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)), $state->lastSeq,
             ) ?? []);

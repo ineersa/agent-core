@@ -749,7 +749,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     {
         $events = $this->historyReplayFilter->filter($events);
         foreach ($events as $event) {
-            if (RunEventTypeEnum::ToolExecutionEnd->value !== $event->type) {
+            if (!\in_array($event->type, [RunEventTypeEnum::ToolExecutionEnd->value, RunEventTypeEnum::ToolCallAcknowledged->value], true)) {
                 continue;
             }
             if ($this->toolExecutionEndPayloadCodec->fromEventPayload($event->payload)->toolCallId === $toolCallId) {
