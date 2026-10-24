@@ -76,21 +76,21 @@ execution redelivery reads that evidence before considering execution; completed
 deferred redelivery returns before recreating cleaned files. Human-input waits
 are not terminal evidence.
 
-The local `ProcessedToolResultDTO` includes both the original execution envelope
-and the processed result. CodingAgent validates both against the frozen invocation,
-then freezes the first accepted result on the shared deferred record and dispatches
+The worker retains the processed terminal against the frozen invocation, freezes
+the first accepted result on the shared deferred record, and dispatches
 `CompleteDeferredToolCall`. That common path routes a still-waiting caller through
 the ordinary result handler, or an acknowledged completion through the existing
 background-completion mailbox with paths to retained processed and original
-structured results. Child terminal delivery uses the same path. Failed sends and
-acknowledged deliveries without durable mailbox admission retain the first
-accepted reference for explicit `/repair`. If publication fails before acceptance,
-repair finds the processed evidence through the pending registration's immutable
-call reference and repeats publication validation, not execution or processors.
-This evidence is not a second acceptance authority. The shared deferred record
-still owns first acceptance and routing. Repair captures a bounded
-`RedriveDeferredToolCall` through the existing owner transition. It reuses the
-retained result without repeating execution or terminal processing, even when
+structured results. Child terminal delivery uses the same path. Unacknowledged
+settlement commits with the verified tool-result metadata transaction; completed
+never reopens. Failed sends and acknowledged deliveries without durable mailbox
+admission retain the first accepted reference for explicit `/repair`. If send
+fails before acceptance, repair finds the processed evidence through the pending
+registration's immutable call reference and accepts that retained result, not
+execution or processors. This evidence is not a second acceptance authority. The
+shared deferred record still owns first acceptance and routing. Repair captures a
+bounded `RedriveDeferredToolCall` through the existing owner transition. It reuses
+the retained result without repeating execution or terminal processing, even when
 the root completed normally. Preview and refused repair do not send or mutate.
 Detached producer and receiver admission validate the retained invocation after
 the parent turn advances.

@@ -18,7 +18,6 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Messenger\Envelope;
@@ -28,7 +27,7 @@ use Symfony\Component\Serializer\Serializer;
 final class CompleteDeferredToolCallHandlerTest extends TestCase
 {
     #[DataProvider('sendOutcomes')]
-    public function testPendingCorrelationSettlesOnlyAfterNormalResultSendSucceeds(bool $sendSucceeds): void
+    public function testPendingCorrelationRetainsFirstAcceptedResultAcrossSendBoundary(bool $sendSucceeds): void
     {
         $pending = true;
         $correlation = new DeferredToolCompletionCorrelation('deferred', 'run', 1, 'step', 1, 'key', 'call', 'echo', [], 0);
@@ -43,14 +42,12 @@ final class CompleteDeferredToolCallHandlerTest extends TestCase
         $repository->method('findAcceptedResultReferenceByDeferredId')->willReturn(null);
         $repository->method('findInvocationReferenceByDeferredId')->willReturn($invocation);
         $repository->expects($this->once())->method('acceptResult')->willReturn($accepted);
-        $repository->expects($sendSucceeds ? $this->once() : $this->never())->method('markCompleted')->with('deferred')->willReturnCallback(static function () use (&$pending): void {
-            $pending = false;
-        });
+        $repository->expects($this->never())->method('markCompleted');
         $batches = $this->createMock(ToolBatchStoreInterface::class);
-        $batches->expects($sendSucceeds ? $this->once() : $this->never())->method('delete')->with('run', 1, 'step');
+        $batches->expects($this->never())->method('delete');
         $payloads = $this->createStub(ToolPayloadStoreInterface::class);
         $payloads->method('read')->willReturnCallback(static fn (ToolPayloadReferenceDTO $reference): object => 'call' === $reference->kind ? $call : $result);
-        $payloads->method('publish')->willReturn($accepted);
+        $payloads->method('retainProcessedResult')->willReturn($accepted);
         $bus = $this->createMock(MessageBusInterface::class);
         $bus->expects($this->once())->method('dispatch')->willReturnCallback(static function (object $message) use (&$pending, $sendSucceeds): Envelope {
             self::assertTrue($pending, 'The pending correlation survives through the send boundary.');
@@ -69,11 +66,9 @@ final class CompleteDeferredToolCallHandlerTest extends TestCase
             new DeferredToolInvocationFence(new Serializer()),
             new TestLogger(),
             null,
-            null,
-            events: new EventDispatcher(),
         );
         $handler(new CompleteDeferredToolCall('deferred', []));
-        $this->assertSame(!$sendSucceeds, $pending);
+        $this->assertTrue($pending);
     }
 
     public function testAcknowledgedPendingCorrelationDoesNotSettleOnSuccessfulEnqueue(): void
@@ -96,7 +91,7 @@ final class CompleteDeferredToolCallHandlerTest extends TestCase
         $batches->expects($this->never())->method('delete');
         $payloads = $this->createStub(ToolPayloadStoreInterface::class);
         $payloads->method('read')->willReturnCallback(static fn (ToolPayloadReferenceDTO $reference): object => 'call' === $reference->kind ? $call : $result);
-        $payloads->method('publish')->willReturn($accepted);
+        $payloads->method('retainProcessedResult')->willReturn($accepted);
         $router = $this->createMock(\Ineersa\AgentCore\Contract\Tool\DeferredAcknowledgedCompletionRouterInterface::class);
         $router->expects($this->once())->method('deliver')->with('deferred', $result);
         $bus = $this->createMock(MessageBusInterface::class);
@@ -110,8 +105,6 @@ final class CompleteDeferredToolCallHandlerTest extends TestCase
             new DeferredToolInvocationFence(new Serializer()),
             new TestLogger(),
             $router,
-            null,
-            events: new EventDispatcher(),
         );
         $handler(new CompleteDeferredToolCall('deferred', []));
         $this->assertTrue($pending);

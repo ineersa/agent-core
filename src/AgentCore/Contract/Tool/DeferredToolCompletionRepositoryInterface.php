@@ -59,6 +59,9 @@ interface DeferredToolCompletionRepositoryInterface
      */
     public function listPendingDeferredIdsForRun(string $runId): array;
 
+    /** True when pending or accepted deferred evidence must outlive batch cleanup. */
+    public function hasRetainedEvidenceForRun(string $runId): bool;
+
     public function markCompleted(string $deferredId): void;
 
     /** Park delivery until explicit maintenance authorizes continuation. */

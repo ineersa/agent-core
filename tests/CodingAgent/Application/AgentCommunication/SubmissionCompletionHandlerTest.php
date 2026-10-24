@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Application\AgentCommunication;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\AcceptSubmissionDTO;
@@ -34,8 +35,11 @@ final class SubmissionCompletionHandlerTest extends IsolatedKernelTestCase
         $reply = array_find($transport->getSent(), static fn ($envelope): bool => $envelope->getMessage() instanceof CompleteSubmissionDTO);
         Assert::assertNotNull($reply);
         $bus->dispatch($reply->with(new ReceivedStamp('run_control')));
+        self::drainResult($bus, $transport);
         Assert::assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($receipt->identity));
-        $f->append($f->child, 5, 1, 'agent_end', ['reason' => 'completed']);
+        $events = $c->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class)->allFor($f->child);
+        $lastSeq = $events[array_key_last($events)]->seq;
+        $f->append($f->child, $lastSeq + 1, 1, 'agent_end', ['reason' => 'completed']);
         $f->status($f->child, RunStatus::Completed);
         $active->release($f->child);
         $transport->reset();
@@ -60,11 +64,27 @@ final class SubmissionCompletionHandlerTest extends IsolatedKernelTestCase
         $reply = $transport->getSent()[0];
         $transport->reset();
         $bus->dispatch($reply->with(new ReceivedStamp('run_control')));
+        self::drainResult($bus, $transport);
         Assert::assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($receipt->identity));
-        $sent = $c->get('messenger.transport.run_control')->getSent();
-        Assert::assertCount(1, $sent);
-        Assert::assertInstanceOf(ToolPayloadMessage::class, $sent[0]->getMessage());
+        $sentAfterSettlement = \count($c->get('messenger.transport.run_control')->getSent());
         $c->get(SubmissionCompletionHandler::class)($reply->getMessage());
-        Assert::assertCount(1, $c->get('messenger.transport.run_control')->getSent());
+        Assert::assertCount($sentAfterSettlement, $c->get('messenger.transport.run_control')->getSent());
+    }
+
+    private static function drainResult(object $bus, object $transport): void
+    {
+        $cursor = 0;
+        for ($i = 0; $i < 8; ++$i) {
+            $sent = $transport->getSent();
+            if ($cursor >= \count($sent)) {
+                return;
+            }
+            for (; $cursor < \count($sent); ++$cursor) {
+                $payload = $sent[$cursor]->getMessage();
+                if ($payload instanceof ToolPayloadMessage || $payload instanceof ToolCallResult) {
+                    $bus->dispatch($sent[$cursor]->with(new ReceivedStamp('run_control')));
+                }
+            }
+        }
     }
 }

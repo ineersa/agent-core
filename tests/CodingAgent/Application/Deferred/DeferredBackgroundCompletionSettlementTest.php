@@ -33,7 +33,6 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
-use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
@@ -41,7 +40,6 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionReasonEnum;
-use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
 use Ineersa\CodingAgent\Application\Deferred\DeferredCallerAcknowledgementService;
@@ -68,7 +66,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as ToolboxResult;
 use Symfony\AI\Platform\Result\ToolCall as ToolboxCall;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Messenger\Envelope;
@@ -123,13 +120,13 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
 
     public static function publicationFailures(): iterable
     {
-        foreach (['subscriber', 'acceptance database'] as $failure) {
+        foreach (['failed send', 'acceptance database'] as $failure) {
             yield $failure.' success' => [$failure, false, true];
             yield $failure.' error' => [$failure, true, true];
         }
-        yield 'cold worker success' => ['subscriber', false, false];
-        yield 'cold worker error' => ['subscriber', true, false];
-        yield 'bounded host diagnostics and explicit repair' => ['subscriber', false, true, true];
+        yield 'cold worker success' => ['failed send', false, false];
+        yield 'cold worker error' => ['failed send', true, false];
+        yield 'bounded host diagnostics and explicit repair' => ['failed send', false, true, true];
     }
 
     #[DataProvider('publicationFailures')]
@@ -199,13 +196,25 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
         };
         $results = new ToolExecutionResultStore();
         $executor = new ToolExecutor('sequential', 2, $results, $toolbox, $c->get(StackToolExecutionContextAccessor::class), toolResultProcessors: [new CodeModeDiagnosticsToolResultProcessor(), $processor]);
-        $events = new EventDispatcher();
-        if ('subscriber' === $failure) {
-            $events->addListener(ProcessedToolResultDTO::class, static function (): never { throw new \RuntimeException('terminal subscriber unavailable'); }, 10);
-        }
-        $events->addListener(ProcessedToolResultDTO::class, $c->get(CodeModeProcessedResultSubscriber::class));
         $logger = new TestLogger();
-        $worker = new ExecuteToolCallWorker($c->get('agent.command.bus'), $logger, $executor, $deferred, $results, $c->get(RunOperationalStatusReaderInterface::class), $payloads, eventDispatcher: $events);
+        $bus = $c->get('agent.command.bus');
+        if ('failed send' === $failure) {
+            $bus = new class($bus) implements \Symfony\Component\Messenger\MessageBusInterface {
+                public function __construct(private \Symfony\Component\Messenger\MessageBusInterface $inner)
+                {
+                }
+
+                public function dispatch(object $message, array $stamps = []): Envelope
+                {
+                    if ($message instanceof CompleteDeferredToolCall || $message instanceof ToolCallResult) {
+                        throw new \RuntimeException('terminal send unavailable');
+                    }
+
+                    return $this->inner->dispatch($message, $stamps);
+                }
+            };
+        }
+        $worker = new ExecuteToolCallWorker($bus, $logger, $executor, $deferred, $results, $c->get(RunOperationalStatusReaderInterface::class), $payloads);
         try {
             $result = $worker($fixture->call);
         } finally {
@@ -238,13 +247,23 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
             $this->assertStringContainsString('ERR', $result->result['content'][0]['text']);
         }
         $this->assertContains('runtime.result_send_failed', array_column($logger->records, 'message'));
-        $this->assertNull($deferred->findAcceptedResultReferenceByDeferredId($id));
+        $acceptedAfterWorker = $deferred->findAcceptedResultReferenceByDeferredId($id);
+        if ('failed send' === $failure) {
+            // Acceptance precedes fallible dispatch. A send failure leaves the
+            // first accepted reference for repair without re-executing.
+            $this->assertNotNull($acceptedAfterWorker);
+        } else {
+            $this->assertNull($acceptedAfterWorker);
+        }
         $this->assertSame('pending', $deferred->status($id));
         $invocation = $deferred->findInvocationReferenceByDeferredId($id);
         $this->assertNotNull($invocation);
         $processed = $payloads->findProcessedResultReference($invocation);
         $this->assertNotNull($processed);
         $this->assertEquals($result, $payloads->read($processed));
+        if (null !== $acceptedAfterWorker) {
+            $this->assertEquals($processed, $acceptedAfterWorker);
+        }
         $this->completeRoot($run);
         if ($host) {
             // Exercise the production lifecycle listeners, including OutputCap
@@ -287,21 +306,25 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
         $acceptedJson = $db->fetchOne('SELECT accepted_result_reference_json FROM tool_deferred_completion WHERE deferred_id = ?', [$id]);
         $this->assertIsString($acceptedJson);
         $accepted = $c->get(SerializerInterface::class)->deserialize($acceptedJson, ToolPayloadReferenceDTO::class, 'json');
-        $this->assertEquals($result, $c->get(CodeModeResultArtifactStore::class)->read($accepted));
+        $this->assertEquals($result, $payloads->read($accepted));
+        $this->assertEquals($processed, $accepted, 'Repair and cold recovery reuse the first shared processed reference.');
         $this->assertSame('completed', $deferred->status($id));
         $this->assertNotNull($c->get(BackgroundCompletionReceiptRepository::class)->receipt('background-'.$id));
         $this->assertNull($c->get(ToolBatchStoreInterface::class)->loadSchedule($run, 1, 'step'));
-        $this->assertNull($payloads->findProcessedResultReference($invocation));
+        // Batch cleanup retains deferred-owned processed/accepted evidence until
+        // permanent session deletion. Completed status never reopens.
+        $this->assertEquals($processed, $payloads->findProcessedResultReference($invocation));
+        $this->assertEquals($result, $payloads->read($accepted));
         $before = $this->transport->getSent();
         $this->assertNull($cold($fixture->call));
         $this->assertEquals($before, $this->transport->getSent());
-        $this->assertNull($payloads->findProcessedResultReference($invocation), 'Completed redelivery must not recreate cleaned processed evidence.');
+        $this->assertEquals($processed, $payloads->findProcessedResultReference($invocation), 'Completed redelivery must not recreate or replace retained processed evidence.');
         $this->assertSame(1, $runs);
         $this->assertSame(1, $processor->count);
         if ($host) {
             $this->assertSame($nativeReference, $c->get(CodeModeExecutionRepository::class)->invocation($run, 'cm')['raw_reference']);
             foreach ($paths as $index => $path) {
-                $this->assertStringContainsString($path, $c->get(CodeModeResultArtifactStore::class)->read($accepted)->result['content'][0]['text']);
+                $this->assertStringContainsString($path, $payloads->read($accepted)->result['content'][0]['text']);
                 $this->assertSame(hash('sha256', str_repeat(0 === $index ? 'O' : 'E', 1310720)), hash_file('sha256', $path));
             }
             $this->assertCount(2, glob(\dirname($paths[0]).'/*.txt'));
@@ -553,9 +576,12 @@ final class DeferredBackgroundCompletionSettlementTest extends PerMethodIsolated
         $c = self::getContainer();
         $c->get(CodeModeExecutionService::class)->preserve($id, 42, null);
         $result = new ToolCallResult($fixture->state->runId, 1, 'step', 1, $fixture->call->idempotencyKey(), 'cm', 0, ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => '42']]]);
-        $event = new ProcessedToolResultDTO($result, $fixture->call);
-        ($c->get(CodeModeProcessedResultSubscriber::class))($event);
-        $this->assertTrue($event->handled);
+        $payloads = $c->get(ToolPayloadStoreInterface::class);
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $invocation = $deferred->findInvocationReferenceByDeferredId($id) ?? throw new \RuntimeException('Missing invocation.');
+        $accepted = $payloads->retainProcessedResult($invocation, $result);
+        $deferred->acceptResult($id, $accepted);
+        $this->dispatch(new CompleteDeferredToolCall($id, [['type' => 'text', 'text' => '42']]));
     }
 
     private function completeRoot(string $run): void

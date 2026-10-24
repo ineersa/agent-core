@@ -204,7 +204,7 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
 
     private function readJson(ToolPayloadReferenceDTO $reference): string
     {
-        $path = $this->path($reference);
+        $path = $this->absolutePath($reference);
         if (!is_file($path) || is_link($path)) {
             throw new ToolPayloadException('Active tool data is missing.');
         }
@@ -260,7 +260,7 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
     private function seal(ToolPayloadReferenceDTO $reference, string $json): void
     {
         $this->validate($reference);
-        $path = $this->path($reference);
+        $path = $this->absolutePath($reference);
         $this->filesystem->mkdir(\dirname($path), 0700);
         if (is_link($path)) {
             throw new ToolPayloadException('Tool data cannot be a symbolic link.');
@@ -276,7 +276,7 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
         $this->filesystem->chmod($path, 0600);
     }
 
-    private function path(ToolPayloadReferenceDTO $reference): string
+    private function absolutePath(ToolPayloadReferenceDTO $reference): string
     {
         return $this->directory($reference->runId, $reference->toolCallId).'/'.$reference->sha256.'.json';
     }

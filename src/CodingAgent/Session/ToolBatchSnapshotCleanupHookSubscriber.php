@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
@@ -28,6 +29,7 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
         private readonly ToolLaunchInputStoreInterface $launchInputStore,
         private readonly ToolPayloadStoreInterface $payloads,
         private readonly RunLockManager $locks,
+        private readonly DeferredToolCompletionRepositoryInterface $deferred,
     ) {
     }
 
@@ -85,7 +87,10 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
             try {
                 if (!$this->toolBatchStore->hasUnresolvedExecution($context->runId)) {
                     $this->launchInputStore->deleteAllForRun($context->runId);
-                    if ([] === $context->runState->pendingShellToolCalls) {
+                    // Retained deferred evidence outlives batch settlement until
+                    // permanent session deletion. Ordinary unresolved work still
+                    // blocks full payload wipe through hasUnresolvedExecution.
+                    if ([] === $context->runState->pendingShellToolCalls && !$this->hasRetainedDeferredEvidence($context->runId)) {
                         $this->payloads->deleteAllForRun($context->runId);
                     }
                 }
@@ -194,5 +199,10 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
                 'error' => $throwable->getMessage(),
             ]);
         }
+    }
+
+    private function hasRetainedDeferredEvidence(string $runId): bool
+    {
+        return $this->deferred->hasRetainedEvidenceForRun($runId);
     }
 }

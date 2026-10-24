@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
 use Doctrine\DBAL\Connection;
-use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayAssistantMessageFactory;
@@ -16,16 +15,14 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
-use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeAcknowledgementHandler;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
-use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
@@ -78,14 +75,9 @@ final class CodeModeAcknowledgementHandlerTest extends IsolatedKernelTestCase
         $service->ready($id);
         $service->preserve($id, 42, null);
         $result = $this->terminalResult($f->call);
-        $event = new ProcessedToolResultDTO($result, $f->call);
-        $bus = $this->publish($event);
-        $this->assertTrue($event->handled);
-        $this->assertCount(1, $bus->messages);
-        $this->assertInstanceOf(CompleteDeferredToolCall::class, $bus->messages[0]);
+        $this->acceptAndComplete($id, $f->call, $result);
         $handler = self::getContainer()->get(CodeModeAcknowledgementHandler::class);
         $this->assertSame([], $handler->handle(new CodeModeOwnerDTO($f->state->runId, $id, 'cm', true), $f->state)->events);
-        $this->consumeDeferred($bus->messages[0]);
         $events = self::getContainer()->get(PreparedTransitionEventStoreInterface::class)->allFor($f->state->runId);
         $this->assertContains('tool_execution_end', array_column($events, 'type'));
         $this->assertSame('completed', self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
@@ -110,31 +102,31 @@ final class CodeModeAcknowledgementHandlerTest extends IsolatedKernelTestCase
         $this->assertContains('tool_call_acknowledged', array_column($handler->handle($message, $f->state)->events, 'type'));
     }
 
-    public function testMismatchedTerminalEnvelopeCannotInterceptOrReplaceFrozenEvidence(): void
+    public function testMismatchedTerminalEnvelopeCannotReplaceFrozenEvidence(): void
     {
         $f = new CodeModeBackendFixture(self::getContainer(), 'return 42;');
         $id = $this->begin($f->call);
         self::getContainer()->get(CodeModeExecutionService::class)->ready($id);
-        foreach (['turn', 'step', 'attempt', 'idempotency', 'order', 'name', 'invocation'] as $field) {
+        $payloads = self::getContainer()->get(ToolPayloadStoreInterface::class);
+        $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+        $invocation = $deferred->findInvocationReferenceByDeferredId($id)
+            ?? throw new \RuntimeException('Missing invocation.');
+        foreach (['turn', 'step', 'attempt', 'idempotency', 'order', 'name'] as $field) {
             $call = $f->call;
             $result = new ToolCallResult($call->runId(), 'turn' === $field ? 2 : 1, 'step' === $field ? 'other' : 'step', 'attempt' === $field ? 2 : 1, 'idempotency' === $field ? 'wrong' : $call->idempotencyKey(), 'cm', 'order' === $field ? 1 : 0, ['tool_name' => 'name' === $field ? 'bash' : 'code_mode', 'content' => [['type' => 'text', 'text' => '42']]]);
-            $original = 'invocation' === $field ? new ExecuteToolCall($call->runId(), 1, 'step', 1, $call->idempotencyKey(), 'cm', 'code_mode', ['script' => 'return 99;'], 0) : $call;
-            $event = new ProcessedToolResultDTO($result, $original);
             try {
-                $this->publish($event);
-                $this->fail('Mismatched '.$field.' was intercepted.');
-            } catch (\RuntimeException $error) {
-                $this->assertStringContainsString('frozen invocation', $error->getMessage());
+                $payloads->retainProcessedResult($invocation, $result);
+                $this->fail('Mismatched '.$field.' was retained.');
+            } catch (\Throwable $error) {
+                $this->assertNotSame('', $error->getMessage());
             }
-            $this->assertFalse($event->handled);
+            $this->assertNull($deferred->findAcceptedResultReferenceByDeferredId($id));
         }
-        $this->assertNull(self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->findAcceptedResultReferenceByDeferredId($id));
         $this->assertSame(36, \strlen($id));
-        $this->publish(new ProcessedToolResultDTO($this->terminalResult($f->call), $f->call));
-        $first = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->findAcceptedResultReferenceByDeferredId($id);
-        $this->assertNotNull($first);
-        $this->publish(new ProcessedToolResultDTO($this->terminalResult($f->call, 'late replacement'), $f->call));
-        $this->assertEquals($first, self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->findAcceptedResultReferenceByDeferredId($id));
+        $first = $payloads->retainProcessedResult($invocation, $this->terminalResult($f->call));
+        $deferred->acceptResult($id, $first);
+        $deferred->acceptResult($id, $payloads->retainProcessedResult($invocation, $this->terminalResult($f->call, 'late replacement')));
+        $this->assertEquals($first, $deferred->findAcceptedResultReferenceByDeferredId($id));
     }
 
     public function testNativeRegistrationRollsBackItsDeferredRowOnOwnershipFailure(): void
@@ -195,21 +187,22 @@ final class CodeModeAcknowledgementHandlerTest extends IsolatedKernelTestCase
         return new ToolCallResult($call->runId(), 1, 'step', 1, $call->idempotencyKey(), 'cm', 0, ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => $text]]]);
     }
 
-    private function publish(ProcessedToolResultDTO $event): TestMessageBus
+    private function acceptAndComplete(string $id, ExecuteToolCall $call, ToolCallResult $result): void
     {
         $c = self::getContainer();
-        $bus = new TestMessageBus();
-        (new CodeModeProcessedResultSubscriber(
-            $c->get(CodeModeExecutionRepository::class),
-            $c->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore::class),
-            $c->get(DeferredToolCompletionRepositoryInterface::class),
-            $c->get(CodeModeExecutionService::class),
-            $c->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            $bus,
-            $c->get(CompleteDeferredToolCallHandler::class),
-        ))($event);
-
-        return $bus;
+        $payloads = $c->get(ToolPayloadStoreInterface::class);
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $invocation = $deferred->findInvocationReferenceByDeferredId($id)
+            ?? throw new \RuntimeException('Missing invocation.');
+        $accepted = $payloads->retainProcessedResult($invocation, $result);
+        $deferred->acceptResult($id, $accepted);
+        $this->consumeDeferred(new CompleteDeferredToolCall(
+            $id,
+            \is_array($result->result['content'] ?? null) ? $result->result['content'] : [],
+            \is_array($result->result['details'] ?? null) ? $result->result['details'] : null,
+            $result->isError,
+            $result->error,
+        ));
     }
 
     private function consumeDeferred(CompleteDeferredToolCall $message): void

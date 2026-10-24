@@ -21,14 +21,12 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\RedriveDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeAcknowledgementHandler;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionReasonEnum;
-use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\StopCodeModeDTO;
@@ -52,7 +50,6 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
     /** @return iterable<string, array{bool}> */
     public static function queuedOutcomes(): iterable
     {
-        yield 'queued foreground result' => [false];
         yield 'admitted unconsumed background receipt' => [true];
     }
 
@@ -69,13 +66,14 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
         }
         $result = new ToolCallResult($run, 1, 'step', 1, $f->call->idempotencyKey(), 'cm', 0, ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => 'first immutable output']]]);
         $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
-        $accepted = $c->get(CodeModeResultArtifactStore::class)->publish($result);
+        $invocation = $deferred->findInvocationReferenceByDeferredId($id) ?? throw new \RuntimeException('Missing invocation.');
+        $accepted = $c->get(ToolPayloadStoreInterface::class)->retainProcessedResult($invocation, $result);
         $deferred->acceptResult($id, $accepted);
         $c->get(CompleteDeferredToolCallHandler::class)->__invoke(new CompleteDeferredToolCall($id, []));
-        if ($acknowledged) {
-            $f->consumeCompletions();
-        }
-        $this->assertSame('completed', $deferred->status($id), 'Successful enqueue/admission precedes this restart barrier.');
+        // Unacknowledged settlement joins verified tool-result finalization.
+        // Acknowledged work settles only after durable mailbox admission.
+        $f->consumeCompletions();
+        $this->assertSame('completed', $deferred->status($id), 'Verified finalization/admission precedes this restart barrier.');
         $transport = $c->get('messenger.transport.run_control');
         $before = $transport->getSent();
         $listener = $c->get(CodeModeControllerSessionLifecycleListener::class);
@@ -84,7 +82,7 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
         $this->assertEquals($before, $transport->getSent(), 'Cold attachment never creates successor work.');
         $this->assertTrue($deferred->requiresContinuation($run, 'cm'));
         $this->assertEquals($accepted, $deferred->findAcceptedResultReferenceByDeferredId($id));
-        $f->consumeCompletions(); // Consume the old foreground result after the fence.
+        $f->consumeCompletions(); // Drain any residual old envelopes after the fence.
         $events = $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run);
         $this->assertCount(0, array_filter($events, static fn (RunEvent $e): bool => 'tool_execution_end' === $e->type));
         $state = $c->get(ActiveRunContextInterface::class)->requireLoaded($run);
@@ -103,12 +101,7 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
         $f->consumeCompletions();
         $this->assertFalse($deferred->requiresContinuation($run, 'cm'));
         $this->assertTrue($c->get(CodeModeExecutionService::class)->cancellationToken($id, new NullCancellationToken())->isCancellationRequested(), 'Repair never reauthorizes the old host.');
-        if ($acknowledged) {
-            $this->assertSame(['background-'.$id], $c->get(CommandStoreInterface::class)->pendingKeys($run), 'Repair reuses the admitted mailbox row.');
-        } else {
-            $events = $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run);
-            $this->assertCount(1, array_filter($events, static fn (RunEvent $e): bool => 'tool_execution_end' === $e->type));
-        }
+        $this->assertSame(['background-'.$id], $c->get(CommandStoreInterface::class)->pendingKeys($run), 'Repair reuses the admitted mailbox row.');
         $this->assertSame([], $c->get('messenger.transport.tool')->getSent(), 'Repair never repeats execution or processors.');
         foreach (\array_slice($transport->getSent(), $repairOffset) as $envelope) {
             if ($envelope->getMessage() instanceof AdvanceRun) {
@@ -120,6 +113,37 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
         $c->get(CompleteDeferredToolCallHandler::class)->redrive(new RedriveDeferredToolCall($run, $id));
         $f->consumeCompletions();
         $this->assertCount($llmBefore + 1, $c->get('messenger.transport.llm')->getSent(), 'Duplicate repair cannot continue twice.');
+    }
+
+    public function testFinalizedForegroundOutcomeIsNotReparkedOnControllerRestart(): void
+    {
+        // Unacknowledged settlement now joins verified tool-result finalization.
+        // Once that commit lands, cold restart must not invent a parked recovery.
+        $c = self::getContainer();
+        $f = new CodeModeBackendFixture($c, 'throw new RuntimeException("Do not rerun.");');
+        $llmBefore = \count($c->get('messenger.transport.llm')->getSent());
+        $run = $f->state->runId;
+        $id = $f->registerReadyHost();
+        $result = new ToolCallResult($run, 1, 'step', 1, $f->call->idempotencyKey(), 'cm', 0, ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => 'first immutable output']]]);
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $invocation = $deferred->findInvocationReferenceByDeferredId($id) ?? throw new \RuntimeException('Missing invocation.');
+        $accepted = $c->get(ToolPayloadStoreInterface::class)->retainProcessedResult($invocation, $result);
+        $deferred->acceptResult($id, $accepted);
+        $c->get(CompleteDeferredToolCallHandler::class)->__invoke(new CompleteDeferredToolCall($id, []));
+        $f->consumeCompletions();
+        $this->assertSame('completed', $deferred->status($id));
+        $events = $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run);
+        $this->assertCount(1, array_filter($events, static fn (RunEvent $e): bool => 'tool_execution_end' === $e->type));
+        $transport = $c->get('messenger.transport.run_control');
+        $before = $transport->getSent();
+        $listener = $c->get(CodeModeControllerSessionLifecycleListener::class);
+        $listener->starting(new ControllerSessionStartingEvent($run));
+        $listener->starting(new ControllerSessionStartingEvent($run));
+        $this->assertEquals($before, $transport->getSent(), 'Cold attachment never creates successor work for finalized foreground results.');
+        $this->assertFalse($deferred->requiresContinuation($run, 'cm'));
+        $this->assertNull($deferred->findAcceptedResultReferenceByDeferredId($id));
+        $this->assertCount($llmBefore, $c->get('messenger.transport.llm')->getSent());
+        $this->assertSame([], $c->get('messenger.transport.tool')->getSent());
     }
 
     /** @return iterable<string, array{CodeModeInterruptionReasonEnum, bool}> */
@@ -169,9 +193,7 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
         $this->assertTrue($observed->terminal);
         $this->assertSame('interrupted', $observed->status);
         $this->assertNull($c->get(ToolBatchStoreInterface::class)->loadSchedule($run, 1, 'step'));
-        $late = new ProcessedToolResultDTO(new ToolCallResult($run, 1, 'step', 1, $f->call->idempotencyKey(), 'cm', 0, ['content' => []]), $f->call);
-        $c->get(CodeModeProcessedResultSubscriber::class)($late);
-        $this->assertTrue($late->handled, 'A late return must not read invocation files removed by cleanup.');
+        $this->assertNull($c->get(DeferredToolCompletionRepositoryInterface::class)->findAcceptedResultReferenceByDeferredId($id));
         $this->assertCount($sent, $c->get('messenger.transport.run_control')->getSent());
         $this->assertCount($llm, $c->get('messenger.transport.llm')->getSent());
         $this->assertSame([], array_filter($c->get(PreparedTransitionEventStoreInterface::class)->allFor($run), static fn (RunEvent $event): bool => 'tool_execution_end' === $event->type));
@@ -341,7 +363,7 @@ final class CodeModeControllerSessionLifecycleListenerTest extends IsolatedKerne
         $acceptedJson = $c->get(Connection::class)->fetchOne('SELECT accepted_result_reference_json FROM tool_deferred_completion WHERE deferred_id = ?', [$id]);
         $this->assertIsString($acceptedJson);
         $accepted = $service->resultReference($acceptedJson);
-        $terminal = $c->get(CodeModeResultArtifactStore::class)->read($accepted);
+        $terminal = $c->get(ToolPayloadStoreInterface::class)->read($accepted);
         $this->assertTrue($terminal->isError);
         $this->assertSame($processed ? 'original_failure' : 'controller_interrupted', $terminal->error['type']);
         if ($processed) {

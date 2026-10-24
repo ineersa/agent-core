@@ -16,20 +16,20 @@ use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\RedriveDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeAcknowledgementHandler;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionHookSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionReasonEnum;
-use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
@@ -51,9 +51,12 @@ final class CodeModeInterruptionHookSubscriberTest extends IsolatedKernelTestCas
         $result = new ToolCallResult($f->call->runId(), 1, 'step', 1, $f->call->idempotencyKey(), 'cm', 0, ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => 'Host failed before readiness.']]], true);
         $c = self::getContainer();
         $c->get(CodeModeExecutionService::class)->preserve($id, null, new \RuntimeException('Host failed before readiness.'));
-        $publication = new ProcessedToolResultDTO($result, $f->call);
-        $c->get(CodeModeProcessedResultSubscriber::class)($publication);
-        $this->assertTrue($publication->handled);
+        $payloads = $c->get(ToolPayloadStoreInterface::class);
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $invocation = $deferred->findInvocationReferenceByDeferredId($id) ?? throw new \RuntimeException('Missing invocation.');
+        $accepted = $payloads->retainProcessedResult($invocation, $result);
+        $deferred->acceptResult($id, $accepted);
+        $c->get(CompleteDeferredToolCallHandler::class)(new CompleteDeferredToolCall($id, \is_array($result->result['content'] ?? null) ? $result->result['content'] : [], \is_array($result->result['details'] ?? null) ? $result->result['details'] : null, $result->isError, $result->error));
         $transport = $c->get('messenger.transport.run_control');
         $bus = $c->get('agent.command.bus');
         $seen = 0;
@@ -137,13 +140,26 @@ final class CodeModeInterruptionHookSubscriberTest extends IsolatedKernelTestCas
         $this->assertSame(0, $discard[0]->payload['after_turn_no']);
         $this->assertSame('history_discarded', $c->get(CodeModeExecutionRepository::class)->invocation($run, 'cm')['interruption_reason']);
         $this->assertCount($llmBefore, $c->get('messenger.transport.llm')->getSent(), 'Discard must not start automatic model work.');
-        $sent = \count($c->get('messenger.transport.run_control')->getSent());
-        $event = new ProcessedToolResultDTO(new ToolCallResult($run, 1, 'step', 1, $f->call->idempotencyKey(), 'cm', 0,
-            ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => 'Abandoned branch output']]]), $f->call);
-        $c->get(CodeModeProcessedResultSubscriber::class)($event);
-        $this->assertTrue($event->handled);
+        $historyBeforeCompletion = $events;
+        $result = new ToolCallResult($run, 1, 'step', 1, $f->call->idempotencyKey(), 'cm', 0,
+            ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => 'Abandoned branch output']]]);
+        $payloads = $c->get(ToolPayloadStoreInterface::class);
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $invocation = $deferred->findInvocationReferenceByDeferredId($id) ?? throw new \RuntimeException('Missing invocation.');
+        $accepted = $payloads->retainProcessedResult($invocation, $result);
+        $deferred->acceptResult($id, $accepted);
+        // Production refuses replacement-branch delivery for the discarded host.
+        // Interrupted cleanup retires the deferred row without mailbox admission.
+        $c->get(CompleteDeferredToolCallHandler::class)(new CompleteDeferredToolCall(
+            $id,
+            \is_array($result->result['content'] ?? null) ? $result->result['content'] : [],
+            \is_array($result->result['details'] ?? null) ? $result->result['details'] : null,
+            $result->isError,
+            $result->error,
+        ));
+        $f->consumeCompletions();
         $this->assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
-        $this->assertCount($sent, $c->get('messenger.transport.run_control')->getSent(), 'The abandoned result cannot enter the replacement mailbox.');
+        $this->assertEquals($historyBeforeCompletion, $c->get(PreparedTransitionEventStoreInterface::class)->allFor($run), 'Delivery must not admit an abandoned result into replacement history or queue a mailbox command.');
         $this->assertSame([], array_filter($c->get(PreparedTransitionEventStoreInterface::class)->allFor($run), static fn (RunEvent $event): bool => 'tool_execution_end' === $event->type));
     }
 
@@ -160,9 +176,7 @@ final class CodeModeInterruptionHookSubscriberTest extends IsolatedKernelTestCas
         $row = $c->get(CodeModeExecutionRepository::class)->invocation($f->state->runId, 'cm');
         $this->assertSame('controller_restarted', $row['interruption_reason']);
         $this->assertSame([], $c->get(CodeModeAcknowledgementHandler::class)->handle(new CodeModeOwnerDTO($f->state->runId, $id, 'cm', true), $f->state)->events);
-        $event = new ProcessedToolResultDTO(new ToolCallResult($f->call->runId(), 1, 'step', 1, $f->call->idempotencyKey(), 'cm', 0, ['tool_name' => 'code_mode', 'content' => []]), $f->call);
-        $c->get(CodeModeProcessedResultSubscriber::class)($event);
-        $this->assertTrue($event->handled);
+        // Late worker after controller loss must not accept or settle; recovery owns delivery.
         $this->assertSame('pending', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id), 'Late work cannot retire the controller recovery send.');
         $f->consumeCompletions();
         $this->assertSame('pending', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id), 'Passive recovery parks delivery.');

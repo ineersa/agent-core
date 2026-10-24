@@ -5,19 +5,19 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
 use Doctrine\DBAL\Connection;
-use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
+use Doctrine\Persistence\ManagerRegistry;
+use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
-use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
-use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
 use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
@@ -75,6 +75,11 @@ final class CodeModeAcknowledgementMessageHandlerTest extends IsolatedKernelTest
         } finally {
             $db->executeStatement('DROP TRIGGER fail_code_mode_settlement');
         }
+        // Aborted owner finalization closes Doctrine and leaves the staged journal
+        // with a warm registry ahead of readable history. Production owner receive
+        // recovers before admission; this producer retry must do the same.
+        self::getContainer()->get(ManagerRegistry::class)->resetManager();
+        self::getContainer()->get(PendingTransitionRecovery::class)->recover($fixture->state->runId);
         $this->deliver($message);
         $this->assertNull(self::getContainer()->get(ToolBatchStoreInterface::class)->loadSchedule($fixture->state->runId, 1, 'step'));
     }
@@ -89,18 +94,14 @@ final class CodeModeAcknowledgementMessageHandlerTest extends IsolatedKernelTest
         $c->get(CodeModeExecutionService::class)->ready($id);
         $c->get(CodeModeExecutionService::class)->preserve($id, 42, null);
         $result = new ToolCallResult($run, 1, 'step', 1, $fixture->call->idempotencyKey(), 'cm', 0, ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => '42']]]);
-        $bus = new \Ineersa\AgentCore\Tests\Support\TestMessageBus();
-        (new CodeModeProcessedResultSubscriber(
-            $c->get(\Ineersa\CodingAgent\Entity\CodeModeExecutionRepository::class),
-            $c->get(\Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore::class),
-            $c->get(DeferredToolCompletionRepositoryInterface::class),
-            $c->get(CodeModeExecutionService::class),
-            $c->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            $bus,
-            $c->get(CompleteDeferredToolCallHandler::class),
-        ))(new ProcessedToolResultDTO($result, $fixture->call));
+        $payloads = $c->get(ToolPayloadStoreInterface::class);
+        $deferred = $c->get(DeferredToolCompletionRepositoryInterface::class);
+        $invocation = $deferred->findInvocationReferenceByDeferredId($id) ?? throw new \RuntimeException('Missing invocation.');
+        $accepted = $payloads->retainProcessedResult($invocation, $result);
+        $deferred->acceptResult($id, $accepted);
+        $message = new CompleteDeferredToolCall($id, [['type' => 'text', 'text' => '42']]);
 
-        return [$fixture, $bus->messages[0]];
+        return [$fixture, $message];
     }
 
     private function deliver(CompleteDeferredToolCall $message, bool $retrySettle = true): void

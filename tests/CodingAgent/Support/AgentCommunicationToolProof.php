@@ -12,6 +12,8 @@ use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\AcceptSubmissionDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\CompleteSubmissionDTO;
@@ -54,7 +56,22 @@ final class AgentCommunicationToolProof
         Assert::assertInstanceOf(DeliverSubmissionDTO::class, $delivery);
         Assert::assertSame('source_accepted', $completion->completion->details['status']);
         Assert::assertStringContainsString('does not confirm receiver delivery or attention', $completion->completion->content[0]['text']);
+        $cursor = \count($transport->getSent());
         $bus->dispatch($completion, [new ReceivedStamp('run_control')]);
+        // Unacknowledged settlement joins verified tool-result finalization.
+        // Drain the sealed ToolCallResult the completion handler posted.
+        for ($i = 0; $i < 8; ++$i) {
+            $queued = $transport->getSent();
+            if ($cursor >= \count($queued)) {
+                break;
+            }
+            for (; $cursor < \count($queued); ++$cursor) {
+                $payload = $queued[$cursor]->getMessage();
+                if ($payload instanceof ToolPayloadMessage || $payload instanceof ToolCallResult) {
+                    $bus->dispatch($queued[$cursor]->with(new ReceivedStamp('run_control')));
+                }
+            }
+        }
         Assert::assertSame('completed', $c->get(DeferredToolCompletionRepositoryInterface::class)->status($accept->identity));
         $active->loadRecovered($target);
         $bus->dispatch($delivery, [new ReceivedStamp('run_control')]);

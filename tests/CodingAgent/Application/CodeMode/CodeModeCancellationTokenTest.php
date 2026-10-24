@@ -26,7 +26,11 @@ final class CodeModeCancellationTokenTest extends TestCase
             $this->assertTrue($evidence['nested_cancelled']);
             $this->assertSame('cancelled', $evidence['reason']);
             $this->assertSame(1, $evidence['worker']['processors']);
-            $this->assertSame(0, $evidence['worker']['publications']);
+            $this->assertSame(1, $evidence['worker']['publications']);
+            $this->assertSame(
+                [\Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall::class],
+                $evidence['worker']['published'] ?? [],
+            );
             $this->assertTrue($evidence['worker']['error']);
             $this->assertSame('completed', $evidence['deferred_status']);
             $this->assertTrue($evidence['raw_exists']);

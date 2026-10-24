@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionReasonEnum;
-use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
@@ -28,7 +27,6 @@ final readonly class CodeModeControllerSessionLifecycleListener
         private RunLockManager $locks,
         private DeferredToolCompletionRepositoryInterface $deferred,
         private ToolPayloadStoreInterface $payloads,
-        private CodeModeResultArtifactStore $artifacts,
         private ApplicationDbTransactionInterface $transactions,
         private ToolBatchRunStoragePathsInterface $paths,
         private CompleteDeferredToolCallHandler $completions,
@@ -83,13 +81,14 @@ final readonly class CodeModeControllerSessionLifecycleListener
                                     if (!$result instanceof ToolCallResult || null !== $result->pendingHumanInput) {
                                         throw new \RuntimeException('Controller recovery requires terminal evidence.');
                                     }
+                                    $accepted = $processed;
                                 } else {
                                     $text = 'Code-mode execution was interrupted by controller ownership loss. No processed terminal result was retained; external effects may already have occurred. Execution was not retried.';
                                     $result = new ToolCallResult($reference->runId, $reference->turnNo, $reference->stepId, $reference->attempt, $reference->idempotencyKey, $reference->toolCallId, $reference->orderIndex,
                                         ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => $text]]],
                                         true, ['type' => 'controller_interrupted', 'message' => $text, 'retryable' => false]);
+                                    $accepted = $this->payloads->retainProcessedResult($reference, $result);
                                 }
-                                $accepted = $this->artifacts->publish($result);
                             }
                             // Immutable publication can leave an unreferenced file on
                             // rollback, never accepted authority. Parking, first acceptance

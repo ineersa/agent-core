@@ -276,6 +276,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             $store, new TestLogger(), $inputStore ?? $this->createStub(ToolLaunchInputStoreInterface::class),
             $this->createStub(ToolPayloadStoreInterface::class),
             new RunLockManager(new LockFactory(new InMemoryStore())),
+            $this->createStub(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
         );
     }
 

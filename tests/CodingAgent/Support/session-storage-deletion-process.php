@@ -108,7 +108,7 @@ try {
             fclose($barrier);
         }
         $denied = [];
-        foreach (['generic' => static fn () => $payloads->publish($result), 'processed' => static fn () => $payloads->retainProcessedResult($invocation, $result), 'native' => static fn () => $c->get(CodeModeResultArtifactStore::class)->publish($result)] as $kind => $write) {
+        foreach (['generic' => static fn () => $payloads->publish($result), 'processed' => static fn () => $payloads->retainProcessedResult($invocation, $result), 'native' => static fn () => $c->get(CodeModeResultArtifactStore::class)->publishRaw($result)] as $kind => $write) {
             try {
                 $write();
                 throw new RuntimeException('Late '.$kind.' publication unexpectedly succeeded.');

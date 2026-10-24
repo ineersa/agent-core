@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\CodeMode;
 
-use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
@@ -17,14 +16,14 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
-/** Immutable native results are outside disposable batch transport storage. */
+/** Raw structured value and diagnostic evidence only. Processed terminals live in shared payload storage. */
 final readonly class CodeModeResultArtifactStore
 {
     public function __construct(private ToolBatchRunStoragePathsInterface $paths, private SerializerInterface&NormalizerInterface&DenormalizerInterface $serializer, private ValidatorInterface $validator, private Filesystem $filesystem, private LockFactory $locks)
     {
     }
 
-    public function publish(ToolCallResult|ExecuteToolCall $result): ToolPayloadReferenceDTO
+    public function publishRaw(ToolCallResult $result): ToolPayloadReferenceDTO
     {
         return $this->store($result->runId())->publish($result);
     }
@@ -65,16 +64,6 @@ final readonly class CodeModeResultArtifactStore
         }
 
         return $result;
-    }
-
-    public function invocation(ToolPayloadReferenceDTO $reference): ExecuteToolCall
-    {
-        $call = $this->store($reference->runId)->read($reference);
-        if (!$call instanceof ExecuteToolCall) {
-            throw new \UnexpectedValueException('Code-mode artifact is not an invocation.');
-        }
-
-        return $call;
     }
 
     public function path(ToolPayloadReferenceDTO $reference): string

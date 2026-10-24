@@ -937,7 +937,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame(2, $notifications, 'Pending redelivery re-emits registration without reading input.');
         $terminalBus = new TestMessageBus();
         $container = self::getContainer();
-        (new CompleteDeferredToolCallHandler($deferred, $terminalBus, $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $batchStore, $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class), $container->get(\Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence::class), new TestLogger(), null, null, events: new EventDispatcher()))($complete);
+        $completionHandler = new CompleteDeferredToolCallHandler($deferred, $terminalBus, $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class), $batchStore, $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class), $container->get(\Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence::class), new TestLogger(), null);
+        $completionHandler($complete);
+        $this->assertSame('pending', $deferred->status($lifecycle), 'Unacknowledged settlement waits for verified tool-result metadata.');
+        $completionHandler->settle($lifecycle, $parent, 2, 'turn-2-tools-1');
         $this->assertSame('completed', $deferred->status($lifecycle));
         $this->assertCount(1, $terminalBus->messages);
         $worker($original);
@@ -1016,10 +1019,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
             $container->get(\Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence::class),
             new TestLogger(),
-            null,
-            null,
-            events: new EventDispatcher(),
-        );
+            null);
         $completionHandler($complete);
         $this->assertCount(1, $resultBus->messages);
         $toolCallResult = $resultBus->messages[0];

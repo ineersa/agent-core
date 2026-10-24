@@ -158,6 +158,20 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         return $ids;
     }
 
+    public function hasRetainedEvidenceForRun(string $runId): bool
+    {
+        foreach ($this->byDeferredId as $deferredId => $row) {
+            if ($row['correlation']->runId !== $runId) {
+                continue;
+            }
+            if ('pending' === $row['status'] || ($this->continuationRequired[$deferredId] ?? false) || null !== $row['acceptedResultReference']) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function markCompleted(string $deferredId): void
     {
         if (isset($this->byDeferredId[$deferredId])) {

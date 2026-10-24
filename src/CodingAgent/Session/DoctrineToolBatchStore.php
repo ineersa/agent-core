@@ -308,7 +308,13 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         // One run-scoped read protects shared IDs in surviving batches. The
         // owner lock prevents new references until these deletions finish.
         $survivors = array_fill_keys($this->connection->fetchFirstColumn('SELECT DISTINCT tool_call_id FROM tool_batch_call WHERE run_id = ?', [$runId]), true);
-        $safeIds = array_diff(array_unique($callIds), array_keys($survivors));
+        // Deferred-owned directories keep invocation and accepted processed
+        // evidence for repair until permanent session deletion.
+        $retained = array_fill_keys($this->connection->fetchFirstColumn(
+            "SELECT tool_call_id FROM tool_deferred_completion WHERE run_id = ? AND (status = 'pending' OR accepted_result_reference_json IS NOT NULL)",
+            [$runId],
+        ), true);
+        $safeIds = array_diff(array_unique($callIds), array_keys($survivors), array_keys($retained));
         if ([] === $safeIds) {
             return;
         }

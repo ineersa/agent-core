@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
-use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
@@ -20,7 +18,6 @@ use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -28,7 +25,6 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeAcknowledgementHandler;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeInterruptionHookSubscriber;
-use Ineersa\CodingAgent\Application\CodeMode\CodeModeProcessedResultSubscriber;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
 use Ineersa\CodingAgent\Application\CodeMode\DTO\CodeModeOwnerDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
@@ -37,7 +33,9 @@ use Ineersa\CodingAgent\Entity\CodeModeExecutionRepository;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Runtime\Controller\CodeModeControllerSessionLifecycleListener;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Tests\Support\CodeModeBackendFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
@@ -51,7 +49,6 @@ use Psr\Container\ContainerInterface;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as ToolboxResult;
 use Symfony\AI\Platform\Result\ToolCall as ToolboxCall;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Process\Process;
 
@@ -154,18 +151,7 @@ try {
         $results = new ToolExecutionResultStore();
         $executor = new ToolExecutor('sequential', 2, $results, $toolbox, $contexts, toolResultProcessors: [new CodeModeDiagnosticsToolResultProcessor(), $counter]);
         $bus = new TestMessageBus();
-        $dispatcher = new EventDispatcher();
-        $subscriber = new CodeModeProcessedResultSubscriber(
-            $executions,
-            $artifacts,
-            $c->get(DeferredToolCompletionRepositoryInterface::class),
-            $execution,
-            $c->get(RunLockManager::class),
-            $bus,
-            $c->get(CompleteDeferredToolCallHandler::class),
-        );
-        $dispatcher->addListener(ProcessedToolResultDTO::class, $subscriber);
-        $workerHandler = new ExecuteToolCallWorker($bus, new TestLogger(), $executor, $c->get(DeferredToolCompletionRepositoryInterface::class), $results, $c->get(RunOperationalStatusReaderInterface::class), eventDispatcher: $dispatcher, payloads: $c->get(ToolPayloadStoreInterface::class));
+        $workerHandler = new ExecuteToolCallWorker($bus, new TestLogger(), $executor, $c->get(DeferredToolCompletionRepositoryInterface::class), $results, $c->get(RunOperationalStatusReaderInterface::class), payloads: $c->get(ToolPayloadStoreInterface::class));
         $result = $workerHandler($call);
         file_put_contents($directory.'/worker-done', json_encode(['processors' => $counter->count, 'result' => $result?->result, 'error' => $result?->isError, 'publications' => count($bus->messages), 'published' => array_map(static fn ($message): string => $message::class, $bus->messages)], \JSON_THROW_ON_ERROR));
         // Persist the sealed deferred publication into the shared owner transport
@@ -226,6 +212,10 @@ try {
     if ('cancel' === $scenario) {
         $row = $executions->invocation($state->runId, 'cm');
         $rawReference = $execution->resultReference($row['raw_reference']);
+        // Interrupted hosts no longer settle inside a native publication subscriber.
+        // Definitive controller ownership loss retires the cancelled pending row.
+        $c->get(CodeModeControllerSessionLifecycleListener::class)
+            ->shutdown(new ControllerSessionShutdownEvent($state->runId));
         echo json_encode([
             'worker' => $done,
             'nested_cancelled' => json_decode(file_get_contents($directory.'/nested-cancelled'), true, flags: \JSON_THROW_ON_ERROR),
@@ -306,7 +296,7 @@ try {
     if (null === $accepted) {
         throw new RuntimeException('Shared terminal acceptance missing after host completion.');
     }
-    $acceptedResult = $artifacts->read($accepted);
+    $c->get(ToolPayloadStoreInterface::class)->read($accepted);
     $row = $executions->invocation($state->runId, 'cm');
     $rawRef = $execution->resultReference($row['raw_reference']);
     $rawPath = $artifacts->path($rawRef);

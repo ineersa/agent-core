@@ -40,11 +40,10 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 
 ## Dispatch ownership (producers)
 
-`ExecuteToolCallWorker` emits the worker-local `ProcessedToolResultDTO` after
-ordinary terminal processing. The event includes the original immutable execution
-envelope. A native producer may accept publication responsibility; otherwise the
-worker posts the ordinary `ToolCallResult`. This event has no Messenger route.
-It never reruns terminal processors or selects scheduling policy.
+`ExecuteToolCallWorker` retains the first processed terminal in shared payload
+storage, then either accepts a deferred registration and dispatches
+`CompleteDeferredToolCall` or posts an ordinary `ToolCallResult`. It never reruns
+terminal processors or selects scheduling policy.
 
 CodingAgent's retained code-mode owner and child backgrounding both use shared
 deferred caller acknowledgement and shared first-terminal acceptance.
@@ -55,13 +54,14 @@ Shared `acknowledged_at` joins `LocalMetadataCoordinator`'s transaction while th
 deferred registration stays pending. `CompleteDeferredToolCallHandler` freezes the
 first accepted result reference and routes waiting callers ordinarily or
 acknowledged work through CodingAgent's background-completion mailbox.
+Unacknowledged settlement joins the verified tool-result metadata transaction.
 Acknowledged settlement waits for durable receipt admission. Receipt and source
 status commit with mailbox metadata; the background-completion owner facade
 deletes settled batch files only after verified finalization. Duplicate admission
 retries guarded cleanup. `/repair` captures `RedriveDeferredToolCall` for pending
 accepted results, including normally completed roots, without repeating source
-execution or terminal processing. Before subscriber dispatch, the tool worker
-retains processed terminals in shared payload storage, bound to the full
+execution or terminal processing. The tool worker retains processed terminals in
+shared payload storage, bound to the full
 invocation digest. Pending redelivery and explicit repair reuse that evidence
 when owner acceptance failed; it does not grant acceptance or routing authority.
 Completed deferred redelivery returns before touching cleaned payload files.

@@ -109,7 +109,7 @@ try {
             $service = new CodeModeExecutionService($c->get(StackToolExecutionContextAccessor::class), $c->get(ToolBatchStoreInterface::class), $c->get(ToolPayloadStoreInterface::class), $c->get(DeferredToolCompletionRepositoryInterface::class), $c->get(CodeModeExecutionRepository::class), $c->get(CodeModeResultArtifactStore::class), $c->get(RunLockManager::class), $c->get(SerializerInterface::class), $transactions, $c->get(DeferredToolInvocationFence::class), $c->get(RunHistorySourceProviderInterface::class), $paths);
             $c->get(StackToolExecutionContextAccessor::class)->with(new ToolContext($run, 1, 'cm', 'code_mode', new NullCancellationToken(), 8, 0, null, 'step'), $service->begin(...));
         } else {
-            $listener = new CodeModeControllerSessionLifecycleListener($c->get(OwnedRunIdsProvider::class), $c->get(CodeModeExecutionRepository::class), $c->get(RunLockManager::class), $c->get(DeferredToolCompletionRepositoryInterface::class), $c->get(ToolPayloadStoreInterface::class), $c->get(CodeModeResultArtifactStore::class), $transactions, $paths, $c->get(CompleteDeferredToolCallHandler::class));
+            $listener = new CodeModeControllerSessionLifecycleListener($c->get(OwnedRunIdsProvider::class), $c->get(CodeModeExecutionRepository::class), $c->get(RunLockManager::class), $c->get(DeferredToolCompletionRepositoryInterface::class), $c->get(ToolPayloadStoreInterface::class), $transactions, $paths, $c->get(CompleteDeferredToolCallHandler::class));
             $listener->starting(new ControllerSessionStartingEvent($run));
         }
         file_put_contents($directory.'/writer-completed', 'yes');
@@ -123,7 +123,7 @@ try {
         }
         $result = new ToolCallResult($run, 1, 'step', 1, 'original-execution', 'cm', 0, ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => 'late terminal']]]);
         $denied = [];
-        foreach (['generic' => static fn () => $c->get(ToolPayloadStoreInterface::class)->publish($result), 'native' => static fn () => $c->get(CodeModeResultArtifactStore::class)->publish($result), 'diagnostic' => static fn () => $c->get(CodeModeResultArtifactStore::class)->retainDiagnostic($run, 'cm', $directory.'/diagnostic-source')] as $kind => $write) {
+        foreach (['generic' => static fn () => $c->get(ToolPayloadStoreInterface::class)->publish($result), 'native' => static fn () => $c->get(CodeModeResultArtifactStore::class)->publishRaw($result), 'diagnostic' => static fn () => $c->get(CodeModeResultArtifactStore::class)->retainDiagnostic($run, 'cm', $directory.'/diagnostic-source')] as $kind => $write) {
             try {
                 $write();
                 throw new RuntimeException('Deleted '.$kind.' storage was recreated.');

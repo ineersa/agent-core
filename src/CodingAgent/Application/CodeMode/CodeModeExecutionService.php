@@ -72,17 +72,13 @@ final readonly class CodeModeExecutionService
             if (null !== $this->executions->invocation($call->runId(), $call->toolCallId)) {
                 throw new \RuntimeException('Code-mode invocation already has a native owner.');
             }
-            $frozen = $this->artifacts->publish($call);
-            if ((array) $frozen !== (array) $reference) {
-                throw new \RuntimeException('Code-mode invocation does not match its original reference.');
-            }
-            $this->transactions->transactional(function () use ($identity, $call, $frozen): void {
+            $this->transactions->transactional(function () use ($identity, $call, $reference): void {
                 $registered = $this->deferred->registerPending(new DeferredToolCompletionCorrelation($identity, $call->runId(), $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->toolName, $call->args, $call->orderIndex, $call->toolIdempotencyKey, $call->mode, $call->timeoutSeconds, $call->maxParallelism, $call->argSchema, $call->toolsRef));
                 if ($registered->deferredId !== $identity) {
                     throw new \RuntimeException('Code-mode invocation already has a different deferred owner.');
                 }
                 $retained = $this->deferred->findInvocationReferenceByDeferredId($identity);
-                if (null === $retained || (array) $retained !== (array) $frozen) {
+                if (null === $retained || (array) $retained !== (array) $reference) {
                     throw new \RuntimeException('Code-mode deferred registration did not retain the exact invocation reference.');
                 }
                 $this->executions->register($identity, $call->runId(), $call->toolCallId);
@@ -124,22 +120,12 @@ final readonly class CodeModeExecutionService
         $raw = null !== $failure ? [] : ($value instanceof CodeModeExecutionResult ? ['code_mode_value' => $value->result, 'code_mode_diagnostics' => $value->diagnostics] : ['code_mode_value' => $value, 'code_mode_diagnostics' => []]);
         $error = null === $failure ? null : ['type' => $failure::class, 'cause_type' => null === $failure->getPrevious() ? null : $failure->getPrevious()::class, 'message' => $failure->getMessage(), 'retryable' => $failure instanceof ToolCallException ? $failure->retryable() : false, 'hint' => $failure instanceof ToolCallException ? $failure->hint() : null];
         $result = new ToolCallResult($correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->attempt, $correlation->idempotencyKey, $correlation->toolCallId, $correlation->orderIndex, ['tool_name' => 'code_mode', 'content' => null === $failure ? [] : [['type' => 'text', 'text' => $failure->getMessage()]], 'details' => $raw], null !== $failure, $error);
-        $reference = $this->artifacts->publish($result->finalized());
+        $reference = $this->artifacts->publishRaw($result->finalized());
         $this->executions->freezeRaw($identity, $this->serializer->serialize($reference, 'json'));
     }
 
     public function resultReference(string $json): ToolPayloadReferenceDTO
     {
         return $this->serializer->deserialize($json, ToolPayloadReferenceDTO::class, 'json');
-    }
-
-    public function matches(ToolCallResult $result, ExecuteToolCall $call): bool
-    {
-        return $this->fence->matchesResult($result, $call);
-    }
-
-    public function sameInvocation(ExecuteToolCall $call, ?ExecuteToolCall $other): bool
-    {
-        return $this->fence->sameInvocation($call, $other);
     }
 }

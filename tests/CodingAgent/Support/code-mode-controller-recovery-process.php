@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\RedriveDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
@@ -122,7 +123,7 @@ try {
 
                 continue;
             }
-            $result = $c->get(CodeModeResultArtifactStore::class)->read($service->resultReference($json));
+            $result = $c->get(ToolPayloadStoreInterface::class)->read($service->resultReference($json));
             $evidence[] = ['root' => $run === $scope['owner'], 'status' => $c->get(DeferredToolCompletionRepositoryInterface::class)->status($id), 'ends' => count(array_filter($events, static fn ($e): bool => 'tool_execution_end' === $e->type)), 'acks' => count(array_filter($events, static fn ($e): bool => 'tool_call_acknowledged' === $e->type)), 'error' => $result->error['type'], 'raw_exists' => is_file($c->get(CodeModeResultArtifactStore::class)->path($service->resultReference($row['raw_reference'])))];
         }
         echo json_encode($evidence, \JSON_THROW_ON_ERROR)."\n";

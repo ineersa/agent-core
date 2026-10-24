@@ -9,11 +9,11 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
-use Ineersa\AgentCore\Contract\Tool\DeferredAcceptedResultReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
@@ -38,7 +38,6 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         private readonly SerializerInterface $serializer,
         private readonly ValidatorInterface $validator,
         private readonly DeferredToolInvocationFence $fence,
-        private readonly DeferredAcceptedResultReaderInterface $acceptedResults,
         private readonly ToolBatchRunStoragePathsInterface $paths,
     ) {
         parent::__construct($registry, DeferredToolCompletion::class);
@@ -174,17 +173,11 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
     public function requireContinuation(string $deferredId, bool $required): void
     {
-        // A successful enqueue is not canonical caller admission. Reopen that
-        // narrow waiting-caller gap while its active batch still retains bodies.
-        // Already admitted background receipts keep their completed marker.
-        $this->getEntityManager()->getConnection()->executeStatement(<<<'SQL'
-            UPDATE tool_deferred_completion SET continuation_required = ?,
-                status = CASE WHEN CAST(? AS INTEGER) = 1 AND acknowledged_at IS NULL
-                    AND EXISTS (SELECT 1 FROM tool_batch_call c WHERE c.run_id = tool_deferred_completion.run_id AND c.turn_no = tool_deferred_completion.turn_no AND c.step_id = tool_deferred_completion.step_id AND c.tool_call_id = tool_deferred_completion.tool_call_id)
-                    AND NOT EXISTS (SELECT 1 FROM tool_batch_result r WHERE r.run_id = tool_deferred_completion.run_id AND r.turn_no = tool_deferred_completion.turn_no AND r.step_id = tool_deferred_completion.step_id AND r.tool_call_id = tool_deferred_completion.tool_call_id)
-                THEN 'pending' ELSE status END
-            WHERE deferred_id = ?
-            SQL, [(int) $required, (int) $required, $deferredId]);
+        // Delivery parking is independent of settlement. Completed stays completed.
+        $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE tool_deferred_completion SET continuation_required = ? WHERE deferred_id = ?',
+            [(int) $required, $deferredId],
+        );
     }
 
     public function requiresContinuation(string $runId, string $toolCallId): bool
@@ -212,7 +205,10 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                 if ('result' !== $reference->kind || $identity !== $storedIdentity) {
                     throw new ToolPayloadException('Accepted deferred result does not match its invocation.');
                 }
-                $result = $this->acceptedResults->read($deferredId, $reference);
+                $result = $this->payloads->read($reference);
+                if (!$result instanceof ToolCallResult) {
+                    throw new ToolPayloadException('Accepted deferred result is not a tool result.');
+                }
                 $call = $this->payloads->read($invocation);
                 if (!$call instanceof ExecuteToolCall || !$this->fence->matchesResult($result, $call)) {
                     throw new ToolPayloadException('Accepted deferred result does not match its frozen invocation.');
@@ -262,6 +258,14 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
             return array_values(array_map(static fn (mixed $id): string => (string) $id, $rows));
         });
+    }
+
+    public function hasRetainedEvidenceForRun(string $runId): bool
+    {
+        return (bool) $this->getEntityManager()->getConnection()->fetchOne(
+            "SELECT 1 FROM tool_deferred_completion WHERE run_id = ? AND (status = 'pending' OR continuation_required = 1 OR accepted_result_reference_json IS NOT NULL) LIMIT 1",
+            [$runId],
+        );
     }
 
     public function markCompleted(string $deferredId): void

@@ -314,7 +314,7 @@ final class ToolPayloadMiddlewareTest extends TestCase
         return new ToolPayloadMiddleware(
             $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class)), $deferred, $payloads, $fence), $deferred, $locks,
             Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(), $commands, $logger,
-            new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $payloads, $fence, $logger, null, null, events: new EventDispatcher()),
+            new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $payloads, $fence, $logger, null),
         );
     }
 }

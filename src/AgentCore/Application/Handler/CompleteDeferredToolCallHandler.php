@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
-use Ineersa\AgentCore\Contract\Tool\DeferredAcceptedResultReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredAcknowledgedCompletionRouterInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
@@ -14,10 +13,8 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\RedriveDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolInvocationFence;
-use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -32,8 +29,6 @@ final readonly class CompleteDeferredToolCallHandler
         private DeferredToolInvocationFence $fence,
         private LoggerInterface $logger,
         private ?DeferredAcknowledgedCompletionRouterInterface $acknowledgedRouter,
-        private ?DeferredAcceptedResultReaderInterface $acceptedResults,
-        private EventDispatcherInterface $events,
     ) {
     }
 
@@ -91,13 +86,11 @@ final readonly class CompleteDeferredToolCallHandler
                 }
                 $accepted = $this->deferredRepository->acceptResult(
                     $message->deferredId,
-                    $this->payloads->publish($toolCallResult),
+                    $this->payloads->retainProcessedResult($invocationReference, $toolCallResult),
                 );
             }
 
-            $result = null !== $this->acceptedResults
-                ? $this->acceptedResults->read($message->deferredId, $accepted)
-                : $this->payloads->read($accepted);
+            $result = $this->payloads->read($accepted);
             if (!$result instanceof ToolCallResult) {
                 throw new \RuntimeException('Accepted deferred completion is not a tool result.');
             }
@@ -127,11 +120,9 @@ final readonly class CompleteDeferredToolCallHandler
 
                     return;
                 }
-                // Acknowledged work settles only after durable background-completion
+                // Unacknowledged settlement joins the verified tool-result
+                // metadata transaction. Acknowledged work waits for mailbox
                 // receipt admission. Successful enqueue alone is not settlement.
-                if (!$acknowledged) {
-                    $this->settle($message->deferredId, $correlation->runId, $correlation->turnNo, $correlation->stepId);
-                }
             });
         } finally {
             RunLogContext::leave();
@@ -163,13 +154,6 @@ final readonly class CompleteDeferredToolCallHandler
                 if (!$result instanceof ToolCallResult || null !== $result->pendingHumanInput || !$this->fence->matchesResult($result, $call)) {
                     throw new \RuntimeException('Deferred repair requires matching processed terminal evidence.');
                 }
-                // Reuse native publication validation, not execution or result
-                // processors. Generic deferred producers use the same acceptance.
-                $publication = new ProcessedToolResultDTO($result, $call);
-                $this->events->dispatch($publication);
-                if ($publication->handled) {
-                    return;
-                }
                 $this->deferredRepository->acceptResult($message->deferredId, $processed);
             }
             // The accepted-reference check prevents repair from manufacturing a
@@ -177,7 +161,7 @@ final readonly class CompleteDeferredToolCallHandler
             if ($completed) {
                 $accepted = $this->deferredRepository->findAcceptedResultReferenceByDeferredId($message->deferredId)
                     ?? throw new \RuntimeException('Parked admitted completion lost its retained terminal.');
-                $result = $this->acceptedResults?->read($message->deferredId, $accepted) ?? $this->payloads->read($accepted);
+                $result = $this->payloads->read($accepted);
                 if (!$result instanceof ToolCallResult || null === $this->acknowledgedRouter) {
                     throw new \RuntimeException('Parked admission requires an acknowledged completion router.');
                 }

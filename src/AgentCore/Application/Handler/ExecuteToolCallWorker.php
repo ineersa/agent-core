@@ -10,11 +10,11 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
+use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\AgentCore\Domain\Tool\DTO\ProcessedToolResultDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
@@ -121,9 +121,21 @@ final readonly class ExecuteToolCallWorker
                 $result = $retained;
             }
             try {
-                $publication = new ProcessedToolResultDTO($result, $message);
-                $this->eventDispatcher?->dispatch($publication);
-                if (!$publication->handled) {
+                $deferred = null === $result->pendingHumanInput
+                    ? $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId)
+                    : null;
+                if (null !== $deferred) {
+                    $accepted = $processedReference ?? $payloads->findProcessedResultReference($invocation)
+                        ?? throw new \RuntimeException('Deferred terminal lacks retained processed evidence.');
+                    $this->deferredToolCompletionRepository->acceptResult($deferred->deferredId, $accepted);
+                    $this->commandBus->dispatch(new CompleteDeferredToolCall(
+                        $deferred->deferredId,
+                        \is_array($result->result['content'] ?? null) ? $result->result['content'] : [],
+                        \is_array($result->result['details'] ?? null) ? $result->result['details'] : null,
+                        $result->isError,
+                        $result->error,
+                    ));
+                } else {
                     $this->commandBus->dispatch($result);
                 }
             } catch (\Throwable $exception) {

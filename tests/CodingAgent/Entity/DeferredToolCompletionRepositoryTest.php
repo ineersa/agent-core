@@ -33,7 +33,6 @@ use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBus;
@@ -187,7 +186,7 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         return new MessageBus([new ToolPayloadMiddleware(
             $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, $container->get(CanonicalToolInvocationReader::class), $repository, $payloads, $fence), $repository, $locks,
             $container->get(ValidatorInterface::class), $commands, $logger,
-            new CompleteDeferredToolCallHandler($repository, $commands, $locks, $batches, $payloads, $fence, $logger, null, null, events: new EventDispatcher()),
+            new CompleteDeferredToolCallHandler($repository, $commands, $locks, $batches, $payloads, $fence, $logger, null),
         )]);
     }
 }

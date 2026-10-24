@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\ApplicationDbTransactionInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
@@ -24,6 +25,7 @@ final readonly class LocalMetadataCoordinator
         private ToolBatchStoreInterface $batches,
         private CommandStoreInterface $commands,
         private StepDispatcher $dispatcher,
+        private DeferredToolCompletionRepositoryInterface $deferred,
     ) {
     }
 
@@ -65,6 +67,19 @@ final readonly class LocalMetadataCoordinator
                     // rolls back mailbox changes and leaves the plan recoverable.
                     $this->dispatcher->dispatchCoordinationActions([$action->message], $plan->verified);
                 }
+            }
+            // Unacknowledged deferred terminals settle with the verified batch
+            // result. Completed never reopens; acknowledged work waits for
+            // durable mailbox admission instead.
+            foreach ($plan->localActions as $action) {
+                if (!$action instanceof FinalizeToolBatchDTO || null === $action->result) {
+                    continue;
+                }
+                $deferredId = $this->deferred->findByRunAndToolCall($action->runId, $action->result->toolCallId)?->deferredId;
+                if (null === $deferredId || null !== $this->deferred->acknowledgedAt($deferredId)) {
+                    continue;
+                }
+                $this->deferred->markCompleted($deferredId);
             }
         });
     }

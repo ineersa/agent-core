@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Application\Deferred;
 
 use Ineersa\AgentCore\Contract\Tool\DeferredAcknowledgedCompletionRouterInterface;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeExecutionService;
 use Ineersa\CodingAgent\Application\CodeMode\CodeModeResultArtifactStore;
@@ -18,7 +17,6 @@ final readonly class DeferredAcknowledgedCompletionRouter implements DeferredAck
 {
     public function __construct(
         private MessageBusInterface $commandBus,
-        private DeferredToolCompletionRepositoryInterface $deferred,
         private CodeModeExecutionRepository $codeModeExecutions,
         private CodeModeExecutionService $codeModeExecution,
         private CodeModeResultArtifactStore $codeModeArtifacts,
@@ -31,10 +29,6 @@ final readonly class DeferredAcknowledgedCompletionRouter implements DeferredAck
         $row = $this->codeModeExecutions->invocation($result->runId(), $result->toolCallId);
         if (null !== $row && $row['identity'] === $deferredId) {
             $text = \sprintf("Code-mode result (run: %s, tool call: %s, invocation: %s):\n%s", $result->runId(), $result->toolCallId, $deferredId, $text);
-            $accepted = $this->deferred->findAcceptedResultReferenceByDeferredId($deferredId);
-            if (null !== $accepted) {
-                $text .= "\nRetained code-mode result: ".$this->codeModeArtifacts->path($accepted);
-            }
             if (null !== $row['raw_reference'] && '' !== $row['raw_reference']) {
                 $text .= "\nOriginal structured value and diagnostics: ".$this->codeModeArtifacts->path(
                     $this->codeModeExecution->resultReference($row['raw_reference']),
