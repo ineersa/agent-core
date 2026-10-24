@@ -83,6 +83,7 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $paths = $this->createStub(ToolBatchRunStoragePathsInterface::class);
         $paths->method('resolveToolBatchesDirectory')->willReturn(\dirname($this->path).'/runtime/tool-batches');
+        $paths->method('withStorage')->willReturnCallback(static fn (string $runId, callable $write): mixed => $write());
         $payloads = new SessionToolPayloadStore($paths, $container->get(SerializerInterface::class), $container->get(ValidatorInterface::class), $container->get(Filesystem::class));
         $deferred = $this->createStub(DeferredToolCompletionRepositoryInterface::class);
         $locks = $container->get(RunLockManager::class);
