@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI\Extensions;
 
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
@@ -104,13 +106,22 @@ final class ExtensionsSetupFlow
     /** @return list<string> */
     public function models(): array
     {
-        return array_map(static fn ($ref): string => $ref->toString(), $this->app->catalog?->allModels() ?? []);
+        $ai = AiConfig::optionalFromArray($this->snapshot());
+
+        return null === $ai ? [] : array_map(static fn ($ref): string => $ref->toString(), (new HatfieldModelCatalog($ai))->allModels());
     }
 
     /** @param array<string, mixed> $values */
     public function value(array $values, string $path): mixed
     {
-        return PropertyAccess::createPropertyAccessor()->getValue($values, '['.str_replace('.', '][', $path).']');
+        foreach (explode('.', $path) as $key) {
+            if (!\is_array($values) || !\array_key_exists($key, $values)) {
+                return null;
+            }
+            $values = $values[$key];
+        }
+
+        return $values;
     }
 
     /** @param array<string, string> $edits Only keyboard-edited fields, never materialized defaults. */

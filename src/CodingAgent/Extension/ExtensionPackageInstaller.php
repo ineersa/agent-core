@@ -57,7 +57,7 @@ final readonly class ExtensionPackageInstaller
             throw new ExtensionPackageInstallException('Expected a Composer manifest object at '.$manifestPath);
         }
         $installed = isset($this->packages($layer, $cwd)[$package]);
-        $suffix = 'HatfieldExt'.$layer->name;
+        $suffix = 'HatfieldExt'.hash('sha256', (string) realpath($root));
         $generated = $root.'/vendor/composer/autoload_real.php';
         if ($installed && false === ($manifest['config']['prepend-autoloader'] ?? null)
             && $suffix === ($manifest['config']['autoloader-suffix'] ?? null)
@@ -67,7 +67,8 @@ final readonly class ExtensionPackageInstaller
             return;
         }
         $manifest['config']['prepend-autoloader'] = false;
-        // Separate generated Composer init classes even for identical project/user package sets.
+        // Physical roots, not settings layers, identify generated Composer classes:
+        // HOME may also be a project, and symlinked scope aliases must stay identical.
         $manifest['config']['autoloader-suffix'] = $suffix;
         $this->filesystem->dumpFile($manifestPath, json_encode($manifest, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR)."\n");
         $composer = (new ExecutableFinder())->find('composer');

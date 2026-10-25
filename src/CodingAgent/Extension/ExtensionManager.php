@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use Composer\Autoload\ClassLoader;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedExtensionItemDTO;
@@ -113,10 +114,9 @@ final class ExtensionManager
     /**
      * Require project then user extension Composer autoloaders when present.
      *
-     * Missing autoload files are ignored. Distinct installer-pinned
-     * autoloader-suffix values let both roots load when they install the same
-     * packages. When project and user resolve to the same path (for example
-     * HOME under cwd in tests), require_once loads once.
+     * Physical-root suffixes let distinct roots load identical package sets;
+     * aliases of one root share a loader. Refresh maps in place after Composer
+     * installs another package, without changing host/project/user priority.
      */
     public function loadAutoloaders(): void
     {
@@ -125,12 +125,22 @@ final class ExtensionManager
                 continue;
             }
 
-            // Registers via spl_autoload_register(). Keep extensions Composer
-            // config.prepend-autoloader=false so this does not shadow the host
-            // app's Symfony packages (for example symfony/tui) after load.
-            // require_once avoids double-loading during test isolation and when
-            // project/user roots coincide.
-            require_once $autoloadPath;
+            $vendor = \dirname($autoloadPath);
+            $loader = ClassLoader::getRegisteredLoaders()[$vendor] ?? null;
+            if (null === $loader) {
+                // Installer sets prepend-autoloader=false: host libraries win.
+                require_once $autoloadPath;
+                continue;
+            }
+            // Composer's init class caches its loader, so requiring autoload.php
+            // again cannot discover packages installed during this wizard.
+            foreach (require $vendor.'/composer/autoload_psr4.php' as $prefix => $paths) {
+                $loader->setPsr4($prefix, $paths);
+            }
+            foreach (require $vendor.'/composer/autoload_namespaces.php' as $prefix => $paths) {
+                $loader->add($prefix, $paths);
+            }
+            $loader->addClassMap(require $vendor.'/composer/autoload_classmap.php');
         }
     }
 
