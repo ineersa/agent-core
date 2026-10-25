@@ -30,13 +30,8 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  */
 final class AssistantTextStreamSubscriber implements EventSubscriberInterface
 {
-    private bool $textStarted = false;
-
-    /** @var array<string, mixed>|null */
-    private ?array $activeMessage = null;
-
-    /** @var array<string, array<string, mixed>> */
-    private array $messages = [];
+    /** @var array<string, array{textStarted: bool, activeMessage: array<string, mixed>|null, messages: array<string, array<string, mixed>>}> */
+    private array $streams = [];
 
     /**
      * @param RuntimeEventSinkInterface  $sink       in-process sink (always available)
@@ -53,6 +48,8 @@ final class AssistantTextStreamSubscriber implements EventSubscriberInterface
     {
         return [
             LlmStreamDispatchObserver::EVENT_START => 'onStreamStart',
+            LlmStreamDispatchObserver::EVENT_END => 'onStreamTerminal',
+            LlmStreamDispatchObserver::EVENT_ERROR => 'onStreamTerminal',
             TextDelta::class => 'onTextDelta',
             MessageStart::class => 'onMessageStart',
             MessageComplete::class => 'onMessageComplete',
@@ -61,9 +58,7 @@ final class AssistantTextStreamSubscriber implements EventSubscriberInterface
 
     public function onStreamStart(RuntimeStreamLifecycleEvent $event): void
     {
-        $this->textStarted = false;
-        $this->activeMessage = null;
-        $this->messages = [];
+        $this->onStreamTerminal($event);
 
         $this->emit(
             $event->runId, $event->stepId,
@@ -74,28 +69,30 @@ final class AssistantTextStreamSubscriber implements EventSubscriberInterface
 
     public function onMessageStart(RuntimeStreamDeltaEvent $event): void
     {
+        $state = &$this->state($event->runId, $event->stepId);
         $delta = $event->delta;
         \assert($delta instanceof MessageStart);
         $item = $delta->getItem();
         $id = AssistantMessageContentMapper::blockId($event->runId, $event->stepId, $item, $delta->getOutputIndex());
-        $this->activeMessage = [
+        $state['activeMessage'] = [
             'block_id' => $id,
             'item_id' => $item['id'] ?? null,
             'output_index' => $delta->getOutputIndex(),
             'phase' => $item['phase'] ?? null,
         ];
-        $this->messages[$id] = $this->activeMessage + ['started' => false];
+        $state['messages'][$id] = $state['activeMessage'] + ['started' => false];
         $event->handled = true;
     }
 
     public function onMessageComplete(RuntimeStreamDeltaEvent $event): void
     {
+        $state = &$this->state($event->runId, $event->stepId);
         $delta = $event->delta;
         \assert($delta instanceof MessageComplete);
         $item = MessageItem::fromText($delta->getContent());
         \assert(null !== $item);
         $id = AssistantMessageContentMapper::blockId($event->runId, $event->stepId, $item, $delta->getOutputIndex());
-        $previous = $this->messages[$id] ?? [];
+        $previous = $state['messages'][$id] ?? [];
         $started = (bool) ($previous['started'] ?? false);
         $payload = [
             'block_id' => $id,
@@ -110,15 +107,16 @@ final class AssistantTextStreamSubscriber implements EventSubscriberInterface
         if ($started || '' !== $payload['text']) {
             $this->emit($event->runId, $event->stepId, RuntimeEventTypeEnum::AssistantTextCompleted, $payload);
         }
-        $this->messages[$id] = $payload + ['started' => true];
-        if (($this->activeMessage['block_id'] ?? null) === $id) {
-            $this->activeMessage = null;
+        $state['messages'][$id] = $payload + ['started' => true];
+        if (($state['activeMessage']['block_id'] ?? null) === $id) {
+            $state['activeMessage'] = null;
         }
         $event->handled = true;
     }
 
     public function onTextDelta(RuntimeStreamDeltaEvent $event): void
     {
+        $state = &$this->state($event->runId, $event->stepId);
         if ($event->handled) {
             return;
         }
@@ -127,27 +125,27 @@ final class AssistantTextStreamSubscriber implements EventSubscriberInterface
         \assert($delta instanceof TextDelta);
         $text = $delta->getText();
 
-        if (null !== $this->activeMessage && '' === $text) {
+        if (null !== $state['activeMessage'] && '' === $text) {
             $event->handled = true;
 
             return;
         }
-        if (null !== $this->activeMessage) {
-            $id = (string) $this->activeMessage['block_id'];
-            $started = (bool) $this->messages[$id]['started'];
-            $this->messages[$id]['started'] = true;
+        if (null !== $state['activeMessage']) {
+            $id = (string) $state['activeMessage']['block_id'];
+            $started = (bool) $state['messages'][$id]['started'];
+            $state['messages'][$id]['started'] = true;
             $this->emit(
                 $event->runId, $event->stepId,
                 $started ? RuntimeEventTypeEnum::AssistantTextDelta : RuntimeEventTypeEnum::AssistantTextStarted,
-                $this->activeMessage + ['text' => $text],
+                $state['activeMessage'] + ['text' => $text],
             );
             $event->handled = true;
 
             return;
         }
 
-        if (!$this->textStarted) {
-            $this->textStarted = true;
+        if (!$state['textStarted']) {
+            $state['textStarted'] = true;
             $event->handled = true;
 
             $this->emit(
@@ -166,6 +164,27 @@ final class AssistantTextStreamSubscriber implements EventSubscriberInterface
                 $this->blockId($event->runId, $event->stepId, 'text'),
             );
         }
+    }
+
+    public function onStreamTerminal(RuntimeStreamLifecycleEvent $event): void
+    {
+        unset($this->streams[$this->streamKey($event->runId, $event->stepId)]);
+    }
+
+    /** @return array{textStarted: bool, activeMessage: array<string, mixed>|null, messages: array<string, array<string, mixed>>} */
+    private function &state(string $runId, ?string $stepId): array
+    {
+        $key = $this->streamKey($runId, $stepId);
+        // Retries reset only their run/step. Terminal lifecycle events release
+        // the complete attempt state without disturbing overlapping streams.
+        $this->streams[$key] ??= ['textStarted' => false, 'activeMessage' => null, 'messages' => []];
+
+        return $this->streams[$key];
+    }
+
+    private function streamKey(string $runId, ?string $stepId): string
+    {
+        return json_encode([$runId, $stepId], \JSON_THROW_ON_ERROR);
     }
 
     /**

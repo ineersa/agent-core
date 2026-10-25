@@ -7,9 +7,10 @@ namespace Ineersa\CodingAgent\Tests\Config;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
-use Ineersa\CodingAgent\Config\RuntimeConfig;
+use Ineersa\CodingAgent\Config\DTO\RuntimeConfigDTO;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
@@ -22,11 +23,11 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Thesis: runtime.llm_worker_count is a typed bounded setting (default 4,
- * range 1..8), distinct from tools.execution.max_parallelism.
+ * Thesis: runtime.llm_concurrency is a typed positive-integer setting
+ * (default 10), distinct from tools.execution.max_parallelism.
  */
-#[CoversClass(RuntimeConfig::class)]
-final class RuntimeConfigLlmWorkerCountTest extends TestCase
+#[CoversClass(RuntimeConfigDTO::class)]
+final class RuntimeConfigDTOTest extends TestCase
 {
     private string $tmpDir;
     private string $homeDir;
@@ -36,7 +37,7 @@ final class RuntimeConfigLlmWorkerCountTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('hatfield_runtime_llm_workers');
+        $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('hatfield_runtime_llm_concurrency');
         $this->homeDir = $this->tmpDir.'/home';
         $this->defaultsDir = $this->tmpDir.'/config';
         mkdir($this->homeDir.'/.hatfield', 0755, true);
@@ -57,41 +58,73 @@ final class RuntimeConfigLlmWorkerCountTest extends TestCase
         parent::tearDown();
     }
 
-    public function testDefaultLlmWorkerCountIsFourAndDistinctFromToolAndAgentLimits(): void
+    public function testDefaultLlmConcurrencyIsTenAndDistinctFromToolParallelism(): void
     {
         $this->writeDefaults($this->baseDefaults([
             'tools' => [
                 'execution' => [
                     'default_mode' => 'sequential',
-                    'max_parallelism' => 3,
+                    'max_parallelism' => 4,
                 ],
             ],
         ]));
 
         $config = $this->buildConfig();
 
-        $this->assertSame(RuntimeConfig::DEFAULT_LLM_WORKER_COUNT, $config->runtime->llmWorkerCount);
-        $this->assertSame(4, $config->runtime->llmWorkerCount);
-        $this->assertSame(3, $config->tools->execution->maxParallelism);
+        $this->assertSame(RuntimeConfigDTO::DEFAULT_LLM_CONCURRENCY, $config->runtime->llmConcurrency);
+        $this->assertSame(10, $config->runtime->llmConcurrency);
+        $this->assertSame(4, $config->tools->execution->maxParallelism);
     }
 
-    public function testConfiguredLlmWorkerCountIsAcceptedWithinBounds(): void
+    #[DataProvider('validConcurrencyProvider')]
+    public function testConfiguredLlmConcurrencyIsAccepted(int $value): void
     {
         $this->writeDefaults($this->baseDefaults([
-            'runtime' => ['llm_worker_count' => 2],
+            'runtime' => ['llm_concurrency' => $value],
         ]));
 
         $config = $this->buildConfig();
-        $this->assertSame(2, $config->runtime->llmWorkerCount);
+        $this->assertSame($value, $config->runtime->llmConcurrency);
     }
 
-    public function testOutOfRangeLlmWorkerCountIsRejected(): void
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function validConcurrencyProvider(): iterable
+    {
+        yield 'one' => [1];
+        yield 'six' => [6];
+        yield 'ten' => [10];
+        yield 'large' => [64];
+    }
+
+    #[DataProvider('invalidConcurrencyProvider')]
+    public function testInvalidLlmConcurrencyIsRejected(mixed $value): void
     {
         $this->writeDefaults($this->baseDefaults([
-            'runtime' => ['llm_worker_count' => 9],
+            'runtime' => ['llm_concurrency' => $value],
         ]));
 
         $this->expectException(ValidationFailedException::class);
+        $this->buildConfig();
+    }
+
+    /**
+     * @return iterable<string, array{mixed}>
+     */
+    public static function invalidConcurrencyProvider(): iterable
+    {
+        yield 'zero' => [0];
+        yield 'negative' => [-1];
+    }
+
+    public function testNonIntegerLlmConcurrencyIsRejected(): void
+    {
+        $this->writeDefaults($this->baseDefaults([
+            'runtime' => ['llm_concurrency' => 'six'],
+        ]));
+
+        $this->expectException(\Throwable::class);
         $this->buildConfig();
     }
 

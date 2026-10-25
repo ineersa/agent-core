@@ -1,5 +1,7 @@
 tui:
     theme: oh-p-dark
+runtime:
+    llm_concurrency: 10
 tools:
     code_mode:
         enabled: true
