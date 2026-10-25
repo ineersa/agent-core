@@ -58,6 +58,11 @@ final readonly class CodeModeBackgroundCoordinationHandler implements Coordinati
             }
             if (null !== $action->interruptionReason) {
                 $this->deferred->interrupt($action->deferredId, $action->interruptionReason);
+                // A retained terminal needs no future worker delivery to retire
+                // an explicitly abandoned invocation. A live host stays pending.
+                if ('controller_lost' !== $action->interruptionReason && null !== $this->deferred->findMetadataByDeferredId($action->deferredId)?->acceptedResultReference) {
+                    $this->deferred->markCompleted($action->deferredId);
+                }
 
                 return;
             }

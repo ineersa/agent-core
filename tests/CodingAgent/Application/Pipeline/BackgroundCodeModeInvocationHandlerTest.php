@@ -127,7 +127,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
     }
 
     #[DataProvider('interruptions')]
-    public function testCapturedInterruptionRemainsInvocationStickyAfterParentProgress(string $reason, bool $lost = false): void
+    public function testCapturedInterruptionRemainsInvocationStickyAfterParentProgress(string $reason, bool $lost = false, bool $terminal = false): void
     {
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('sticky interruption');
@@ -149,6 +149,13 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $token = new CodeModeCancellationToken(new NullCancellationToken(), $repository, $first->deferredId);
         $otherToken = new CodeModeCancellationToken(new NullCancellationToken(), $repository, $other->deferredId);
         $this->assertFalse($token->isCancellationRequested());
+        if ($terminal) {
+            $payloads = $container->get(ToolPayloadStoreInterface::class);
+            $attachment = $payloads->saveAttachment($run, 'host', static fn ($handle) => fwrite($handle, 'retained output'));
+            $result = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($first, [['type' => 'text', 'text' => 'retained terminal']]);
+            $payloads->publishFirstResult($result, $repository->findMetadataByDeferredId($first->deferredId)->reference);
+            $container->get(CodeModeBackgroundCoordinationHandler::class)->controllerStarting(new \Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent($run));
+        }
         if ($lost) {
             $repository->interrupt($first->deferredId, 'controller_lost');
             $repository->requireContinuation($first->deferredId, true);
@@ -164,8 +171,23 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $this->assertSame($lost, $token->isCancellationRequested(), 'Preparation is not metadata admission.');
         $this->admit($run, $actions);
         $this->assertTrue($token->isCancellationRequested());
-        $this->assertSame('stopped' !== $reason, $otherToken->isCancellationRequested());
+        $this->assertSame($terminal || 'stopped' !== $reason, $otherToken->isCancellationRequested());
         $this->assertSame(RunStatus::Running, $state->status);
+        if ($terminal) {
+            $this->assertSame('completed', $repository->status($first->deferredId), 'Stop retires retained terminal evidence without another worker delivery or restart.');
+            $work = $container->get(\Ineersa\CodingAgent\Runtime\BackgroundWorkSnapshotProvider::class)->snapshot($run)->work;
+            $this->assertNotContains($first->deferredId, array_column($work, 'id'));
+            $repository->markCompleted($other->deferredId);
+            $batches = $container->get(ToolBatchStoreInterface::class);
+            $batches->deleteAllForRun($run);
+            $this->assertFalse($batches->hasUnresolvedExecution($run));
+            $payloads->deleteAllForRun($run);
+            $this->assertSame('retained output', file_get_contents($attachment));
+            $this->assertSame([], $container->get('messenger.transport.run_control')->getSent());
+            $this->assertTrue($token->isCancellationRequested());
+
+            return;
+        }
         $this->assertSame('pending', $repository->status($first->deferredId), 'Stop is not physical completion.');
         $this->assertSame($reason, $repository->findMetadataByDeferredId($first->deferredId)->interruptionReason);
         $delivery = new DeliverBackgroundCompletionDTO($run, $first->deferredId, 'late', $run, $first->deferredId, $repository->findMetadataByDeferredId($first->deferredId)->reference);
@@ -179,6 +201,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
 
     public static function interruptions(): iterable
     {
+        yield 'stop retained terminal after controller loss' => ['stopped', true, true];
         foreach (['stopped', 'cancelled', 'history_discarded'] as $reason) {
             yield $reason => [$reason];
             yield 'controller loss then '.$reason => [$reason, true];
