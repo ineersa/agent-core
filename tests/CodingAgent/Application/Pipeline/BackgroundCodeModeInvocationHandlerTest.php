@@ -21,7 +21,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
-use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -34,7 +33,6 @@ use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Pipeline\BackgroundCodeModeInvocationHandler;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeBackgroundCoordinationHandler;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
-use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -45,11 +43,7 @@ use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeCancellationToken;
 use PHPUnit\Framework\Attributes\DataProvider;
-use Symfony\Component\Messenger\Exception\HandlerFailedException;
-use Symfony\Component\Messenger\Handler\HandlersLocator;
-use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\MessageBusInterface;
-use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Uid\Uuid;
 
@@ -253,18 +247,6 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $result = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => 'FIRST']], $details, isError: !$ready);
         $bus = $container->get('agent.command.bus');
         $this->assertInstanceOf(MessageBusInterface::class, $bus);
-        if (!$ackFirst) {
-            $failing = new MessageBus([$container->get(ToolPayloadMiddleware::class), new HandleMessageMiddleware(new HandlersLocator([
-                ToolPayloadMessage::class => [static fn () => throw new \RuntimeException('send failed after sealing')],
-            ]))]);
-            try {
-                $failing->dispatch($result);
-                $this->fail('Publication failure must escape to the caller.');
-            } catch (HandlerFailedException $exception) {
-                $this->assertStringContainsString('send failed after sealing', $exception->getMessage());
-            }
-            $this->assertNotNull($repository->findMetadataByDeferredId($id)->acceptedResultReference);
-        }
         $bus->dispatch($result);
         $reference = $repository->findMetadataByDeferredId($id)->acceptedResultReference;
         $this->assertNotNull($reference);

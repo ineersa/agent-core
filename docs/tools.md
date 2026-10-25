@@ -105,14 +105,8 @@ Nested tool calls receive the remaining script budget as cooperative ToolContext
 metadata. The host can enforce that budget only while it is polling the script; a
 nested handler that blocks synchronously can still overrun until it returns.
 
-The user can press Ctrl+B to background a ready top-level script, including its
-blocked nested call. No script argument requests backgrounding. The same host
-continues under its original deadline; nested calls remain synchronous. Each host
-occupies one tool consumer, so a saturated pool queues other tool calls until
-capacity returns. `/bg` lists root-owned scripts and offers exact-invocation
-cooperative stop. Late results are attributed agent notifications. Controller
-loss parks unresolved delivery for explicit `/repair`, without rerunning the
-script or restoring its stack. See [background processes](background-processes.md).
+For script detachment, worker occupancy, stopping and recovery, see
+[code-mode backgrounding](background-processes.md#code-mode-scripts).
 
 ## Background work
 
