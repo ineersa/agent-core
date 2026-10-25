@@ -24,11 +24,15 @@ final class RunTracer
     /** @var list<string> */
     private array $spanStack = [];
 
+    /** @var \WeakMap<\Fiber<mixed, mixed, mixed, mixed>, list<string>> */
+    private readonly \WeakMap $fiberStacks;
+
     private int $sequence = 0;
 
     public function __construct(
         private readonly LoggerInterface $logger,
     ) {
+        $this->fiberStacks = new \WeakMap();
     }
 
     /**
@@ -44,9 +48,16 @@ final class RunTracer
     public function inSpan(string $name, array $attributes, callable $operation, bool $root = false, string $level = LogLevel::DEBUG): mixed
     {
         $spanId = \sprintf('span-%d', ++$this->sequence);
-        $parentSpanId = $root || [] === $this->spanStack ? null : $this->spanStack[array_key_last($this->spanStack)];
+        $fiber = \Fiber::getCurrent();
+        $stack = null === $fiber ? $this->spanStack : ($this->fiberStacks[$fiber] ?? []);
+        $parentSpanId = $root || [] === $stack ? null : $stack[array_key_last($stack)];
 
-        $this->spanStack[] = $spanId;
+        // A suspended invocation must not become a sibling's tracing parent.
+        if (null === $fiber) {
+            $this->spanStack = [...$stack, $spanId];
+        } else {
+            $this->fiberStacks->offsetSet($fiber, [...$stack, $spanId]);
+        }
         $startedAt = hrtime(true);
 
         $this->logger->log($level, 'agent_loop.trace.start', [
@@ -64,7 +75,13 @@ final class RunTracer
 
             return $result;
         } finally {
-            array_pop($this->spanStack);
+            if (null === $fiber) {
+                $this->spanStack = $stack;
+            } elseif ([] === $stack) {
+                unset($this->fiberStacks[$fiber]);
+            } else {
+                $this->fiberStacks->offsetSet($fiber, $stack);
+            }
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
