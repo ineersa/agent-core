@@ -441,13 +441,6 @@ class AppConfigTest extends TestCase
         );
     }
 
-    private function createValidator(): ValidatorInterface
-    {
-        return Validation::createValidatorBuilder()
-            ->enableAttributeMapping()
-            ->getValidator();
-    }
-
     private function createSerializer(): SerializerInterface
     {
         $reflectionExtractor = new \Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor();
@@ -468,5 +461,12 @@ class AppConfigTest extends TestCase
             normalizers: $denormalizers,
             encoders: [],
         );
+    }
+
+    private function createValidator(): ValidatorInterface
+    {
+        return Validation::createValidatorBuilder()
+            ->enableAttributeMapping()
+            ->getValidator();
     }
 }

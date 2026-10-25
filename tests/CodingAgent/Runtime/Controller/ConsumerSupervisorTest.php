@@ -244,26 +244,29 @@ final class ConsumerSupervisorTest extends TestCase
         }
     }
 
-    public function testLaunchMultipleCreatesIndependentLlmInstances(): void
+    public function testLaunchLlmUsesFiberConsumeCommand(): void
     {
         $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-llm-pool-');
         $this->assertNotFalse($argvFile);
 
         try {
             $supervisor = $this->createSupervisor($argvFile);
-            $supervisor->launchMultiple('llm', 4);
+            $supervisor->launch('llm', 0);
+
+            $process = $this->getConsumerProcess($supervisor, 'llm#0');
+            $process->wait();
+
+            $argv = json_decode((string) file_get_contents($argvFile), true, 512, \JSON_THROW_ON_ERROR);
+            $this->assertIsArray($argv);
+            $this->assertContains('hatfield:messenger:consume-llm', $argv);
+            $this->assertNotContains('messenger:consume', $argv);
+            $this->assertNotContains('llm', $argv);
+            $this->assertContains('--memory-limit=256M', $argv);
+            $this->assertContains('--keepalive=5', $argv);
+            $this->assertFalse(array_reduce($argv, static fn (bool $found, mixed $arg): bool => $found || (\is_string($arg) && str_starts_with($arg, '--sleep=')), false));
 
             $running = $this->consumerKeysRunning($supervisor);
-            $keys = array_keys($running);
-            sort($keys);
-            $this->assertSame(['llm#0', 'llm#1', 'llm#2', 'llm#3'], $keys);
-
-            foreach (['llm#0', 'llm#1', 'llm#2', 'llm#3'] as $key) {
-                $process = $this->getConsumerProcess($supervisor, $key);
-                if ($process->isRunning()) {
-                    $process->stop(0);
-                }
-            }
+            $this->assertSame(['llm#0'], array_keys($running));
         } finally {
             @unlink($argvFile);
         }

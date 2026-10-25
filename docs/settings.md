@@ -116,6 +116,14 @@ Full compaction behavior: [compaction.md](compaction.md).
 
 Parent reminders are off by default. Fork and subagent reminders remain on by default. Each flag affects only its run kind. Reminder flags and thresholds do not control automatic compaction or context-limit enforcement.
 
+### Runtime
+
+| Key | Meaning | Default |
+|---|---|---|
+| `runtime.llm_concurrency` | Same-process Fiber admission limit for the single llm consumer | `10` |
+
+Distinct from `tools.execution.max_parallelism` and from the Amp HTTP host connection pool.
+
 ### Tool execution
 
 There is **no** global tool timeout. Blocking tools own their deadlines
@@ -126,7 +134,6 @@ a successful late result into a timeout failure.
 |---|---|---|
 | `tools.execution.default_mode` | `sequential` or `parallel` | `sequential` |
 | `tools.execution.max_parallelism` | Concurrent tool workers | `4` |
-| `runtime.llm_worker_count` | LLM worker processes | `4` |
 
 ### Output cap
 

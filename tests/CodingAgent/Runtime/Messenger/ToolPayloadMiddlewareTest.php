@@ -154,7 +154,15 @@ final class ToolPayloadMiddlewareTest extends TestCase
         }, -100);
         $worker->run(['sleep' => 0]);
         $worker->keepalive(5);
-        $this->assertSame($transport->received[0]->getMessage(), $transport->rejected[0]->getMessage());
+        // Symfony Messenger 8.2 ACKs envelopes that will retry and rejects only
+        // terminal failures. Keepalive must still release either path.
+        if ($recoverable) {
+            $this->assertSame([], $transport->rejected);
+            $this->assertSame($transport->received[0]->getMessage(), $transport->acked[0]->getMessage());
+        } else {
+            $this->assertSame($transport->received[0]->getMessage(), $transport->rejected[0]->getMessage());
+            $this->assertSame([], $transport->acked);
+        }
         $this->assertSame([], $transport->keepaliveRequests);
         $this->assertCount($recoverable ? 2 : 1, $transport->getSent());
         if ($recoverable) {

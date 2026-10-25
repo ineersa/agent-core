@@ -82,6 +82,12 @@ services:
   Symfony\Contracts\HttpClient\HttpClientInterface:
     factory: ['Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayHttpClientFactory', 'create']
 
+  # Provider HTTP uses a dedicated Amp service in production. Keep that named
+  # dependency on the same replay seam instead of contacting a real endpoint.
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\llm.http_client:
+    class: Symfony\Contracts\HttpClient\HttpClientInterface
+    factory: ['Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayHttpClientFactory', 'create']
+
   # Deterministic /usage provider quota HTTP for APP_ENV=test (TUI E2E + unit).
   # Keeps the real ProviderQuotaProbeService; MockHttpClient never contacts networks.
   Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService.http_client:
