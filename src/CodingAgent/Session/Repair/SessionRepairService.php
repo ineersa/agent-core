@@ -1029,7 +1029,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             // Explicit repair may resume an already-consumed receipt. There is
             // no new user message and the old physical-host fence stays set.
             $resumeEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => ['kind' => 'continue', 'reason' => 'deferred_continuation']]]);
-            $next = $this->runStateReducer->replay($state, $resumeEvents)->with(['version' => $state->version + 1]);
+            $next = $this->retainedReplay($runId, [...$events, ...$resumeEvents])->with(['version' => $state->version + 1]);
         }
 
         return new SessionRepairPlan($state, $next, $resumeEvents, $actions, new RepairResult(false, false, 'Deferred continuation requested without re-executing tools or processors.', activeOperationsRedriven: \count($effects)), $effects);

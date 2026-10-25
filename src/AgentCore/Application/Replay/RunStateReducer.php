@@ -282,10 +282,23 @@ final readonly class RunStateReducer
             return $state->with($changes);
         }
 
-        // Message commands append prompt context; explicit continue has no message.
+        // Only explicit deferred repair can revive an idle terminal owner without
+        // a message. Historical generic continue commands remain unsupported.
+        if ('continue' === $kind) {
+            return 'deferred_continuation' === ($payload['reason'] ?? null)
+                && \in_array($state->status, [RunStatus::Completed, RunStatus::Failed], true)
+                && null === $state->currentOperation
+                && !\in_array(false, $state->pendingToolCalls, true)
+                && [] === $state->pendingShellToolCalls
+                && [] === $state->pendingHumanInputRequests
+                ? $state->with(['status' => RunStatus::Running, 'errorMessage' => null])
+                : $state;
+        }
+
+        // Message commands append prompt context.
         // These lifecycle advances abandon any outstanding human-input queue so a
         // later response cannot target a superseded question behind a new wait.
-        if (\in_array($kind, ['steer', 'follow_up', 'append_message', 'continue'], true)) {
+        if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
             $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
             if (null !== $messagePayload) {
                 $msg = AgentMessage::fromPayload($messagePayload);
