@@ -82,8 +82,8 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             $this->assertFileExists($identities['two']['socket'], 'The other host is still retained when ordinary work progresses.');
             $this->assertFileDoesNotExist($this->tempDir.'/two.after');
             if (!$stop) {
-                $first = isset($this->indexByType($progress)['model.notification']) ? $progress : $this->waitForNotice();
-                $this->assertSame($invocations['one'], $this->indexByType($first)['model.notification'][0]['payload']['metadata']['background_completion']['invocation_id']);
+                $first = $this->indexByType($progress)['model.notification'][0] ?? $this->waitForEvent('model.notification', 5);
+                $this->assertSame($invocations['one'], $first['payload']['metadata']['background_completion']['invocation_id']);
             } else {
                 $this->collectEventsUntil('run.completed', 5);
                 $this->assertCount(4, $this->requests(), 'Only the completed read, not the stopped host, advances the model.');
@@ -91,18 +91,17 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             }
             fwrite($releases['two'], "finish\n");
             fflush($releases['two']);
-            $second = $this->waitForNotice();
-            $this->assertCount(1, $this->indexByType($second)['model.notification']);
-            $this->assertSame('two', $this->indexByType($second)['model.notification'][0]['payload']['metadata']['background_completion']['tool_call_id']);
+            $second = $this->waitForEvent('model.notification', 5);
+            $this->assertSame('two', $second['payload']['metadata']['background_completion']['tool_call_id']);
             foreach ($stop ? ['two'] : ['one', 'two'] as $id) {
                 $after = json_decode(file_get_contents($this->tempDir.'/'.$id.'.after'), true, 32, \JSON_THROW_ON_ERROR);
                 $this->assertSame($identities[$id], $after['identity'], 'PID, socket, workspace and script-local state survive detachment.');
                 $this->assertStringContainsString('NESTED_'.$id, $after['nested']);
             }
-            $this->assertSame($invocations['two'], $this->indexByType($second)['model.notification'][0]['payload']['metadata']['background_completion']['invocation_id']);
-            $this->assertArrayNotHasKey('user.message_submitted', $this->indexByType($second));
+            $this->assertSame($invocations['two'], $second['payload']['metadata']['background_completion']['invocation_id']);
             $canonical = array_map(static fn (string $line): array => json_decode($line, true, 512, \JSON_THROW_ON_ERROR), file($this->tempDir.'/.hatfield/sessions/'.$this->runId.'/events.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES));
             foreach (['one', 'two'] as $id) {
+                $this->assertCount($stop && 'one' === $id ? 0 : 1, array_filter($canonical, static fn (array $e): bool => 'agent_command_applied' === $e['type'] && $invocations[$id] === ($e['payload']['message']['metadata']['background_completion']['invocation_id'] ?? '')));
                 $this->assertCount(1, array_filter($canonical, static fn (array $e): bool => 'tool_call_acknowledged' === $e['type'] && $id === ($e['payload']['tool_result']['tool_call_id'] ?? '')));
                 $this->assertCount(0, array_filter($canonical, static fn (array $e): bool => 'tool_execution_end' === $e['type'] && $id === ($e['payload']['tool_result']['tool_call_id'] ?? '')));
             }
@@ -151,19 +150,6 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
     protected function extraSettingsYaml(): string
     {
         return "tools:\n  execution:\n    max_parallelism: 2\n  code_mode:\n    enabled: true\n";
-    }
-
-    private function waitForNotice(): array
-    {
-        // The ordinary collector also returns at intervening parent turn ends.
-        $deadline = microtime(true) + 5;
-        do {
-            $events = $this->collectEventsUntil('model.notification', max(0.01, $deadline - microtime(true)));
-            if (isset($this->indexByType($events)['model.notification'])) {
-                return $events;
-            }
-        } while ($this->isRunning() && microtime(true) < $deadline);
-        $this->fail($this->collectDiagnostics($events));
     }
 
     private function waitForFile(string $name): void
