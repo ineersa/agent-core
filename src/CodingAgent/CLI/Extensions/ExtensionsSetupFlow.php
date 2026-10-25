@@ -114,14 +114,7 @@ final class ExtensionsSetupFlow
     /** @param array<string, mixed> $values */
     public function value(array $values, string $path): mixed
     {
-        foreach (explode('.', $path) as $key) {
-            if (!\is_array($values) || !\array_key_exists($key, $values)) {
-                return null;
-            }
-            $values = $values[$key];
-        }
-
-        return $values;
+        return PropertyAccess::createPropertyAccessor()->getValue($values, '['.str_replace('.', '?][', $path).'?]');
     }
 
     /** @param array<string, string> $edits Only keyboard-edited fields, never materialized defaults. */
