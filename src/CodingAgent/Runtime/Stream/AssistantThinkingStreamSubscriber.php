@@ -30,7 +30,8 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  */
 final class AssistantThinkingStreamSubscriber implements EventSubscriberInterface
 {
-    private bool $thinkingStarted = false;
+    /** @var array<string, true> */
+    private array $started = [];
 
     /**
      * @param RuntimeEventSinkInterface  $sink       in-process sink (always available)
@@ -47,15 +48,17 @@ final class AssistantThinkingStreamSubscriber implements EventSubscriberInterfac
     {
         return [
             LlmStreamDispatchObserver::EVENT_START => 'onStreamStart',
+            LlmStreamDispatchObserver::EVENT_END => 'onStreamStart',
+            LlmStreamDispatchObserver::EVENT_ERROR => 'onStreamStart',
             ThinkingStart::class => 'onThinkingStart',
             ThinkingDelta::class => 'onThinkingDelta',
             ThinkingComplete::class => 'onThinkingComplete',
         ];
     }
 
-    public function onStreamStart(): void
+    public function onStreamStart(RuntimeStreamLifecycleEvent $event): void
     {
-        $this->thinkingStarted = false;
+        unset($this->started[$this->streamKey($event->runId, $event->stepId)]);
     }
 
     public function onThinkingStart(RuntimeStreamDeltaEvent $event): void
@@ -64,7 +67,7 @@ final class AssistantThinkingStreamSubscriber implements EventSubscriberInterfac
             return;
         }
 
-        $this->thinkingStarted = true;
+        $this->started[$this->streamKey($event->runId, $event->stepId)] = true;
         $event->handled = true;
 
         $this->emit(
@@ -85,8 +88,8 @@ final class AssistantThinkingStreamSubscriber implements EventSubscriberInterfac
         \assert($delta instanceof ThinkingDelta);
         $event->handled = true;
 
-        if (!$this->thinkingStarted) {
-            $this->thinkingStarted = true;
+        if (!isset($this->started[$this->streamKey($event->runId, $event->stepId)])) {
+            $this->started[$this->streamKey($event->runId, $event->stepId)] = true;
 
             $this->emit(
                 $event->runId, $event->stepId,
@@ -123,6 +126,11 @@ final class AssistantThinkingStreamSubscriber implements EventSubscriberInterfac
             ],
             $this->blockId($event->runId, $event->stepId, 'thinking'),
         );
+    }
+
+    private function streamKey(string $runId, ?string $stepId): string
+    {
+        return json_encode([$runId, $stepId], \JSON_THROW_ON_ERROR);
     }
 
     /**

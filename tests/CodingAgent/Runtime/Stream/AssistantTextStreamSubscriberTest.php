@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Stream;
 
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
+use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeEventPerRunCompactBuffer;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -96,6 +97,75 @@ final class AssistantTextStreamSubscriberTest extends TestCase
         $this->assertSame(RuntimeEventTypeEnum::AssistantTextStarted->value, $this->events[0]->type);
         $this->assertSame('run_step_text', $this->events[0]->payload['block_id']);
         $this->assertArrayNotHasKey('phase', $this->events[0]->payload);
+    }
+
+    public function testOverlappingNativeMessagesAndRetryKeepSiblingMetadata(): void
+    {
+        $a = self::item('item-a', 'commentary', 'A');
+        $b = self::item('item-b', 'final_answer', 'B');
+        $this->observer->onDelta('run', 'step', new MessageStart($a, 3));
+        $this->observer->onStreamStart('run', 'sibling');
+        $this->observer->onDelta('run', 'sibling', new MessageStart($b, 8));
+        $this->observer->onDelta('run', 'step', new TextDelta('A'));
+        $this->observer->onDelta('run', 'sibling', new TextDelta('B'));
+        $started = $this->ofType(RuntimeEventTypeEnum::AssistantTextStarted);
+        $this->assertSame('item-a', $started[0]->payload['item_id']);
+        $this->assertSame(3, $started[0]->payload['output_index']);
+        $this->assertSame('commentary', $started[0]->payload['phase']);
+        $this->assertSame('run_step_text_item-a', $started[0]->payload['block_id']);
+        $this->assertNotSame($started[0]->payload['block_id'], $started[1]->payload['block_id']);
+        $this->observer->onStreamStart('run', 'step');
+        $this->observer->onDelta('run', 'sibling', new TextDelta('B2'));
+        $delta = $this->ofType(RuntimeEventTypeEnum::AssistantTextDelta)[0];
+        $this->assertSame($started[1]->payload['block_id'], $delta->payload['block_id']);
+        $this->assertSame('item-b', $delta->payload['item_id']);
+        $this->assertSame(8, $delta->payload['output_index']);
+        $this->assertSame('final_answer', $delta->payload['phase']);
+        $this->observer->onStreamError('run', 'step', new \RuntimeException('cancelled'));
+        $this->observer->onDelta('run', 'sibling', new MessageComplete(MessageItem::toText($b), 8));
+        $complete = $this->ofType(RuntimeEventTypeEnum::AssistantTextCompleted)[0];
+        $this->assertSame($delta->payload['block_id'], $complete->payload['block_id']);
+        $this->assertSame('B', $complete->payload['text']);
+        $this->observer->onStreamEnd('run', 'sibling');
+    }
+
+    public function testTerminalLifecycleReleasesOnlyItsOwnNativeState(): void
+    {
+        $sink = new InMemoryRuntimeEventSink();
+        $subscriber = new AssistantTextStreamSubscriber($sink);
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber($subscriber);
+        $observer = new LlmStreamDispatchObserver($dispatcher);
+        $a = self::item('item-a', 'commentary', 'A');
+        $b = self::item('item-b', 'final_answer', 'B');
+        $observer->onStreamStart('a', null);
+        $observer->onStreamStart('b', null);
+        $observer->onDelta('a', null, new MessageStart($a, 1));
+        $observer->onDelta('b', null, new MessageStart($b, 2));
+        $observer->onStreamEnd('a', null);
+        $observer->onDelta('b', null, new TextDelta('B'));
+        $events = iterator_to_array($sink->drain('b'));
+        $this->assertSame('item-b', $events[1]->payload['item_id']);
+        $observer->onStreamError('b', null, new \RuntimeException('failure'));
+        $this->assertSame([], (new \ReflectionProperty($subscriber, 'streams'))->getValue($subscriber));
+    }
+
+    public function testGenericTextStartsIndependentlyAndRetryDoesNotRestartSibling(): void
+    {
+        $this->observer->onStreamStart('other', 'step');
+        $this->observer->onDelta('run', 'step', new TextDelta('A'));
+        $this->observer->onDelta('other', 'step', new TextDelta('B'));
+        $started = $this->ofType(RuntimeEventTypeEnum::AssistantTextStarted);
+        $this->assertCount(2, $started);
+        $this->assertSame('run_step_text', $started[0]->payload['block_id']);
+        $this->assertSame('other_step_text', $started[1]->payload['block_id']);
+        $this->observer->onStreamStart('run', 'step');
+        $this->observer->onDelta('other', 'step', new TextDelta('B2'));
+        $delta = $this->ofType(RuntimeEventTypeEnum::AssistantTextDelta);
+        $this->assertCount(1, $delta);
+        $this->assertSame('B2', $delta[0]->payload['text']);
+        $this->observer->onStreamEnd('run', 'step');
+        $this->observer->onStreamEnd('other', 'step');
     }
 
     /** @return list<RuntimeEvent> */

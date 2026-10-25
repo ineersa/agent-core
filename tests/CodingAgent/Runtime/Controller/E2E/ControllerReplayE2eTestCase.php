@@ -88,7 +88,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     }
 
     // Single-llm isolation for process-local FIFO fixtures is applied in
-    // ControllerE2eTestCase::createIsolatedProjectDir() (runtime.llm_worker_count=1).
+    // ControllerE2eTestCase::createIsolatedProjectDir() (one llm Fiber consumer).
     // Replay inherits that base seam; do not re-write settings here (duplicate keys
     // / post-parse YAML dump would only obscure the shared isolation contract).
 
