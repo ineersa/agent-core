@@ -153,24 +153,13 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $run = $this->store->createSession('storage barrier');
         $connection = $container->get(Connection::class);
         $depth = $connection->getTransactionNestingLevel();
-        $factory = new class($container->get(\Symfony\Component\Lock\LockFactory::class), function ($lock) use ($connection, $depth): void {
+        $realFactory = $container->get(\Symfony\Component\Lock\LockFactory::class);
+        $factory = $this->createMock(\Symfony\Component\Lock\LockFactory::class);
+        $factory->expects($this->once())->method('createLock')->willReturnCallback(function (string $resource, ?float $ttl, bool $autoRelease) use ($realFactory, $connection, $depth): never {
             $this->assertSame($depth, $connection->getTransactionNestingLevel(), 'Deletion acquires storage before beginning its SQL transaction.');
-            $this->assertFalse($lock->acquire(false), 'An independent deletion owner sees the actual publication lock.');
+            $this->assertFalse($realFactory->createLock($resource, $ttl, $autoRelease)->acquire(false), 'An independent deletion owner sees the actual publication lock.');
             throw new \RuntimeException('publication barrier');
-        }) extends \Symfony\Component\Lock\LockFactory {
-            public function __construct(private readonly \Symfony\Component\Lock\LockFactory $inner, private readonly \Closure $probe)
-            {
-                parent::__construct(new \Symfony\Component\Lock\Store\FlockStore());
-            }
-
-            public function createLock(string $resource, ?float $ttl = 300.0, bool $autoRelease = true): \Symfony\Component\Lock\SharedLockInterface
-            {
-                $lock = $this->inner->createLock($resource, $ttl, $autoRelease);
-                ($this->probe)($lock);
-
-                return $lock;
-            }
-        };
+        });
         $deleter = new HatfieldSessionStore($container->get(\Ineersa\CodingAgent\Config\AppConfig::class), $container->get(EntityManagerInterface::class), $container->get(EventDispatcherInterface::class), $factory);
         $payloads = $container->get(SessionToolPayloadStore::class);
         $payloads->withStorage($run, function () use ($run, $payloads, $deleter): void {

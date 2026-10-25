@@ -163,48 +163,37 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         }
         $this->assertNull($applied->refusalReason);
         $results = array_values(array_filter($bus->messages, static fn (object $message): bool => $message instanceof ToolCallResult));
+        $this->assertCount(!$completed && ($retained || !$live) ? 1 : 0, $results);
+        $metadata = $deferred->findMetadataByDeferredId($call->deferredId);
+        $this->assertSame($completed ? 'completed' : 'pending', $metadata->status, 'Transport dispatch is not durable result admission.');
+        $this->assertSame($live ? null : 'controller_lost', $metadata->interruptionReason);
+        if ([] !== $results) {
+            if ($retained) {
+                $this->assertEquals($terminal, $results[0]);
+            } else {
+                $this->assertTrue($results[0]->isError);
+                $this->assertFalse($results[0]->error['retryable']);
+            }
+            $this->assertSame(2, $results[0]->attempt());
+            $this->assertSame('exact-key', $results[0]->idempotencyKey());
+        }
         if ($live) {
-            $this->assertCount($retained && !$completed ? 1 : 0, $results);
             $advances = array_values(array_filter($bus->messages, static fn (object $message): bool => $message instanceof AdvanceRun));
             $this->assertCount($completed && !$backgrounded ? 1 : 0, $advances);
             $this->assertSame([...$results, ...$advances], $bus->messages, 'Repair only redrives processed evidence or an idle admitted mailbox, never the host, processors or an unrelated LLM operation.');
-            if ($retained && !$completed) {
-                $this->assertEquals($terminal, $results[0]);
-            }
             if (!$completed) {
                 $this->assertSame($liveStatus, $store->requireLoaded($run)->status, 'Ordinary result redelivery leaves continuation to result/mailbox admission.');
             }
-            $metadata = $deferred->findMetadataByDeferredId($call->deferredId);
-            $this->assertNull($metadata->interruptionReason);
             $this->assertFalse($metadata->continuationRequired);
-            $this->assertSame($completed ? 'completed' : 'pending', $metadata->status);
             $this->assertCount($backgrounded || $completed ? 1 : 0, array_filter($this->readEvents($run), static fn (array $event): bool => RunEventTypeEnum::ToolCallAcknowledged->value === $event['type']));
-
-            return;
-        }
-        if ($completed) {
-            $this->assertSame([], $results);
+        } elseif ($completed) {
             $this->assertSame(RunStatus::Running, $store->requireLoaded($run)->status);
-            $this->assertSame('completed', $deferred->status($call->deferredId));
             $events = $this->readEvents($run);
             $last = $events[array_key_last($events)];
             $this->assertSame('continue', $last['payload']['kind']);
             $runtime = $container->get(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator::class)->translate(new RunEvent($run, $last['seq'], 1, $last['type'], $last['payload']));
             $this->assertNotSame('user.message_submitted', $runtime?->type);
-
-            return;
         }
-        $this->assertCount(1, $results);
-        if ($retained) {
-            $this->assertEquals($terminal, $results[0]);
-        } else {
-            $this->assertTrue($results[0]->isError);
-            $this->assertFalse($results[0]->error['retryable']);
-        }
-        $this->assertSame(2, $results[0]->attempt());
-        $this->assertSame('exact-key', $results[0]->idempotencyKey());
-        $this->assertSame('pending', $deferred->status($call->deferredId), 'Transport dispatch is not durable result admission.');
-        $this->assertSame('controller_lost', $deferred->findMetadataByDeferredId($call->deferredId)->interruptionReason);
     }
 
     public static function deferredRepairs(): iterable

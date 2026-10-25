@@ -4,32 +4,25 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Process\Process;
 
 #[Group('controller-replay')]
 final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTestCase
 {
-    private string $databasePath;
-
     protected function tearDown(): void
     {
         parent::tearDown();
         foreach (['', '-wal', '-shm'] as $suffix) {
-            @unlink($this->projectDir.'/var/test/'.$this->databasePath.$suffix);
+            @unlink($this->projectDir.'/var/test/app_test-replay-'.$this->sessionId.'.sqlite'.$suffix);
         }
-    }
-
-    public static function settlements(): iterable
-    {
-        yield 'natural return' => [false];
-        yield 'targeted stop' => [true];
     }
 
     // Only real broker consumers can prove occupancy and queued dispatch. FIFO
     // release is the rendezvous; bounded waits are failure caps, not scheduling.
-    #[DataProvider('settlements')]
+    #[TestWith([false], 'natural return')]
+    #[TestWith([true], 'targeted stop')]
     public function testTwoRetainedHostsSaturateTheExistingPoolUntilOneReturns(bool $stop): void
     {
         $releases = [];
@@ -69,7 +62,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             $snapshot = json_decode(trim($this->query($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
             $this->assertCount(2, $snapshot['work']);
             $this->assertContains('["free"]', $snapshot['inFlight'], 'Ordinary work has been dispatched while both real consumers are occupied.');
-            $this->assertCount(3, $this->requests(), 'The dispatched read has not returned to the model.');
+            $this->assertCount(3, file($this->tempDir.'/requests.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES), 'The dispatched read has not returned to the model.');
             if ($stop) {
                 $this->writeCommand(['v' => 1, 'id' => 'stop', 'type' => 'stop_code_mode', 'runId' => $this->runId,
                     'payload' => ['deferred_id' => $invocations['one'], 'tool_call_id' => 'one']]);
@@ -86,7 +79,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
                 $this->assertSame($invocations['one'], $first['payload']['metadata']['background_completion']['invocation_id']);
             } else {
                 $this->collectEventsUntil('run.completed', 5);
-                $this->assertCount(4, $this->requests(), 'Only the completed read, not the stopped host, advances the model.');
+                $this->assertCount(4, file($this->tempDir.'/requests.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES), 'Only the completed read, not the stopped host, advances the model.');
                 $this->assertFileDoesNotExist($this->tempDir.'/one.after');
             }
             fwrite($releases['two'], "finish\n");
@@ -119,7 +112,6 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
 
     protected function replayFixtures(): array
     {
-        $this->databasePath = 'app_test-code-mode-'.$this->sessionId.'.sqlite';
         $calls = [];
         foreach (['one', 'two'] as $id) {
             $prefix = var_export($this->tempDir.'/'.$id, true);
@@ -142,11 +134,6 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
         return $fixtures;
     }
 
-    protected function replayExtraEnv(): array
-    {
-        return ['HATFIELD_TEST_DATABASE_PATH' => $this->databasePath];
-    }
-
     protected function extraSettingsYaml(): string
     {
         return "tools:\n  execution:\n    max_parallelism: 2\n  code_mode:\n    enabled: true\n";
@@ -159,9 +146,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             $this->assertTrue($this->isRunning());
             usleep(10000);
         }
-        if (!is_file($this->tempDir.'/'.$name)) {
-            $this->fail($this->collectDiagnostics($this->readEvents()));
-        }
+        $this->assertFileExists($this->tempDir.'/'.$name, $this->collectDiagnostics([]));
     }
 
     private function query(?string $runId = null): Process
@@ -170,16 +155,10 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
         if (null !== $runId) {
             array_push($args, $runId, 'code_mode');
         }
-        $process = new Process($args, $this->tempDir, array_merge($this->controllerSubprocessEnv(), ['APP_ENV' => 'test', 'APP_DEBUG' => '1', 'HATFIELD_CWD' => $this->tempDir, 'HOME' => $this->tempDir, 'HATFIELD_SESSION_ID' => false, 'HATFIELD_TEST_DATABASE_PATH' => $this->databasePath]));
+        $process = new Process($args, $this->tempDir, array_merge($this->controllerSubprocessEnv(), ['APP_ENV' => 'test', 'APP_DEBUG' => '1', 'HATFIELD_CWD' => $this->tempDir, 'HOME' => $this->tempDir, 'HATFIELD_SESSION_ID' => false, 'HATFIELD_TEST_DATABASE_PATH' => 'app_test-replay-'.$this->sessionId.'.sqlite']));
         $process->setTimeout(3);
         $process->mustRun();
 
         return $process;
-    }
-
-    /** @return list<list<array<string, mixed>>> */
-    private function requests(): array
-    {
-        return array_map(static fn (string $line): array => json_decode($line, true, 512, \JSON_THROW_ON_ERROR), file($this->tempDir.'/requests.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES));
     }
 }
