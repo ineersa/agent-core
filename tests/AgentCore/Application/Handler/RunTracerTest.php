@@ -11,6 +11,56 @@ use Psr\Log\LogLevel;
 
 final class RunTracerTest extends TestCase
 {
+    public function testInterleavedFibersKeepTheirParentsAndUnwindIndependently(): void
+    {
+        $logger = new TestLogger();
+        $tracer = new RunTracer($logger);
+        $failure = new \RuntimeException('cancel A');
+        $a = new \Fiber(static function () use ($tracer, $failure): void {
+            try {
+                $tracer->inSpan('a', [], static function () use ($tracer): void {
+                    \Fiber::suspend();
+                    $tracer->inSpan('a.child', [], static function (): void { \Fiber::suspend(); });
+                });
+                self::fail('The injected failure must propagate.');
+            } catch (\RuntimeException $caught) {
+                self::assertSame($failure, $caught);
+            }
+            $tracer->inSpan('a.after', [], static fn (): string => 'done');
+        });
+        $b = new \Fiber(static function () use ($tracer): void {
+            $tracer->inSpan('b', [], static function () use ($tracer): void {
+                \Fiber::suspend();
+                $tracer->inSpan('b.child', [], static fn (): string => 'done');
+            });
+        });
+        $a->start();
+        $b->start();
+        $tracer->inSpan('main', [], static fn (): string => 'done');
+        $a->resume();
+        $a->throw($failure);
+        $b->resume();
+
+        $starts = [];
+        foreach ($logger->records as $record) {
+            if ('agent_loop.trace.start' === $record['message']) {
+                $starts[$record['context']['span_name']] = $record['context'];
+            }
+        }
+        foreach (['a', 'b', 'main', 'a.after'] as $name) {
+            $this->assertNull($starts[$name]['parent_span_id'], $name.' must have no unrelated parent.');
+        }
+        $this->assertSame($starts['a']['span_id'], $starts['a.child']['parent_span_id']);
+        $this->assertSame($starts['b']['span_id'], $starts['b.child']['parent_span_id']);
+        $this->assertTrue($a->isTerminated());
+        $this->assertTrue($b->isTerminated());
+        $weakA = \WeakReference::create($a);
+        $weakB = \WeakReference::create($b);
+        unset($a, $b);
+        $this->assertNull($weakA->get());
+        $this->assertNull($weakB->get());
+    }
+
     public function testEmitsStartAndFinishRecords(): void
     {
         $logger = new TestLogger();
