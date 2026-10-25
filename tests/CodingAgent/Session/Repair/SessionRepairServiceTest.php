@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -77,7 +78,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('deferredRepairs')]
-    public function testDeferredRepairReusesProcessedEvidenceWithoutExecutingTools(bool $retained, bool $completed, bool $valid, ?RunStatus $liveStatus = null, bool $accepted = false, bool $backgrounded = false): void
+    public function testDeferredRepairReusesProcessedEvidenceWithoutExecutingTools(bool $retained, bool $completed, bool $valid, ?RunStatus $liveStatus = null, bool $accepted = false, bool $backgrounded = false, ?string $interruption = null): void
     {
         $live = null !== $liveStatus;
         $container = self::getContainer();
@@ -92,7 +93,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         }
         $terminal = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromDeferredCorrelationAndCompletion($call, [['type' => 'text', 'text' => 'FIRST']], [], false);
         if ($retained) {
-            $payloads = $container->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class);
+            $payloads = $container->get(ToolPayloadStoreInterface::class);
             $invocation = $deferred->findMetadataByDeferredId($call->deferredId)->reference;
             $reference = $payloads->publishFirstResult($terminal, $invocation);
             $em = $container->get(\Doctrine\ORM\EntityManagerInterface::class);
@@ -122,6 +123,9 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             $deferred->interrupt($call->deferredId, 'controller_lost');
             $deferred->requireContinuation($call->deferredId, true);
         }
+        if (null !== $interruption) {
+            $deferred->interrupt($call->deferredId, $interruption);
+        }
         $specs = [
             ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['messages' => []]],
             ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => 'step']],
@@ -142,6 +146,14 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $this->assertSame($valid ? null : SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $dry->refusalReason);
         $this->assertSame([], $bus->messages);
         $applied = $service->repair($run, true, \Symfony\Component\Uid\Uuid::v7()->toRfc4122());
+        if (null !== $interruption) {
+            $this->assertSame([], $bus->messages, 'Controller-loss evidence cannot authorize delivery after cancellation or history discard.');
+            $this->assertFalse($deferred->runRequiresContinuation($run));
+            $this->assertSame($interruption, $deferred->findMetadataByDeferredId($call->deferredId)->interruptionReason);
+            $this->assertSame(RunStatus::Failed, $store->requireLoaded($run)->status);
+
+            return;
+        }
         if (!$valid) {
             $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $applied->refusalReason);
             $this->assertSame([], $bus->messages);
@@ -197,6 +209,9 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
 
     public static function deferredRepairs(): iterable
     {
+        foreach (['stopped', 'cancelled', 'history_discarded'] as $reason) {
+            yield 'controller loss then '.$reason => [true, false, true, null, false, true, $reason];
+        }
         yield 'live host without terminal evidence is not rerun or failed' => [false, false, true, RunStatus::Running];
         yield 'parent failure does not invent a terminal for a live host' => [false, false, true, RunStatus::Failed];
         yield 'live controller repairs first reference after SQL rollback' => [true, false, true, RunStatus::Running];
@@ -1116,7 +1131,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             ),
             deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
             deferred: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository::class),
-            payloads: self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
+            payloads: self::getContainer()->get(ToolPayloadStoreInterface::class),
             receipts: self::getContainer()->get(BackgroundCompletionReceiptRepository::class),
         );
     }

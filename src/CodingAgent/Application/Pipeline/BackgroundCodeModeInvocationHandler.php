@@ -37,7 +37,7 @@ final readonly class BackgroundCodeModeInvocationHandler implements RunMessageHa
         $metadata = $this->deferred->findMetadataByDeferredId($message->deferredId);
         if ($message->stop) {
             return null !== $metadata && 'pending' === $metadata->status && null !== $metadata->backgroundedAt
-                && null === $metadata->interruptionReason && null === $metadata->acceptedResultReference
+                && (('controller_lost' === $metadata->interruptionReason) || (null === $metadata->interruptionReason && null === $metadata->acceptedResultReference))
                 && $metadata->reference->runId === $state->runId && $metadata->reference->toolCallId === $message->toolCallId
                 && 'code_mode' === $metadata->reference->toolName
                 ? new HandlerResult(postCommitActions: [new DispatchLocalMetadataMessageDTO(new MarkCodeModeBackgroundedDTO($message->deferredId, new \DateTimeImmutable(), 'stopped'))])

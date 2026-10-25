@@ -9,11 +9,13 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
+use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
@@ -32,6 +34,7 @@ use Symfony\Component\Messenger\Stamp\AckStamp;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -47,6 +50,7 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
         private MessageBusInterface $commandBus,
         private LoggerInterface $logger,
         private CompleteDeferredToolCallHandler $deferredHandler,
+        private DenormalizerInterface $serializer,
     ) {
     }
 
@@ -280,25 +284,9 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
 
     private function backgroundCompletionText(ToolCallResult $message): string
     {
-        if (!\is_array($message->result)) {
-            return \is_scalar($message->result) || null === $message->result
-                ? (string) $message->result
-                : json_encode($message->result, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-        }
-        $content = $message->result['content'] ?? null;
-        if (\is_array($content)) {
-            $parts = [];
-            foreach ($content as $block) {
-                if (\is_array($block) && isset($block['text']) && \is_string($block['text']) && '' !== $block['text']) {
-                    $parts[] = $block['text'];
-                }
-            }
-            if ([] !== $parts) {
-                return implode("\n", $parts);
-            }
-        }
+        $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $message->result['details'] ?? null);
 
-        return json_encode($message->result, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+        return (new AgentMessageNormalizer())->toolMessage($message, $notifications)->content[0]['text'];
     }
 
     private function deferredMetadata(string $deferredId): DeferredToolCompletionMetadataDTO

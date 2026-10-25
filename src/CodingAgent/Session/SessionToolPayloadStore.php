@@ -119,7 +119,11 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
     public function saveAttachment(string $runId, string $toolCallId, callable $write): string
     {
         return $this->withStorage($runId, function () use ($runId, $toolCallId, $write): string {
-            $path = $this->directory($runId, $toolCallId).'/diagnostic-'.bin2hex(random_bytes(16)).'.txt';
+            // Transcript references outlive disposable batch bodies, until permanent session deletion.
+            $path = \dirname($this->root($runId)).'/tool-attachments/'.hash('sha256', $toolCallId).'/'.bin2hex(random_bytes(16)).'.txt';
+            if (is_link(\dirname($path)) || is_link(\dirname($path, 2))) {
+                throw new ToolPayloadException('Tool attachment directory cannot be a symbolic link.');
+            }
             $this->filesystem->mkdir(\dirname($path), 0700);
             $handle = fopen($path, 'xb');
             try {

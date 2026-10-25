@@ -127,7 +127,14 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
     public function interrupt(string $deferredId, string $reason): void
     {
         $entity = $this->require($deferredId);
-        $entity->interruptionReason ??= $reason;
+        // Cancellation or discard supersedes recovery permission, but the
+        // non-null interruption still fences the old physical host.
+        if (null === $entity->interruptionReason || 'controller_lost' === $entity->interruptionReason) {
+            $entity->interruptionReason = $reason;
+        }
+        if ('controller_lost' !== $entity->interruptionReason) {
+            $entity->continuationRequired = false;
+        }
         $this->getEntityManager()->flush();
     }
 

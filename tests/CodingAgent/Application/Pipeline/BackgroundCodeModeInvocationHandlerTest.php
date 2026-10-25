@@ -127,7 +127,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
     }
 
     #[DataProvider('interruptions')]
-    public function testCapturedInterruptionRemainsInvocationStickyAfterParentProgress(string $reason): void
+    public function testCapturedInterruptionRemainsInvocationStickyAfterParentProgress(string $reason, bool $lost = false): void
     {
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('sticky interruption');
@@ -149,6 +149,10 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $token = new CodeModeCancellationToken(new NullCancellationToken(), $repository, $first->deferredId);
         $otherToken = new CodeModeCancellationToken(new NullCancellationToken(), $repository, $other->deferredId);
         $this->assertFalse($token->isCancellationRequested());
+        if ($lost) {
+            $repository->interrupt($first->deferredId, 'controller_lost');
+            $repository->requireContinuation($first->deferredId, true);
+        }
         if ('stopped' === $reason) {
             $this->assertSame([], $handler->handle(new BackgroundCodeModeInvocationDTO($run, $first->deferredId, 'wrong', true), $state)->postCommitActions);
             $actions = $handler->handle(new BackgroundCodeModeInvocationDTO($run, $first->deferredId, 'host', true), $state)->postCommitActions;
@@ -157,7 +161,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
             $context = AfterTurnCommitHookContext::fromRunState('cancelled' === $reason ? $state->with(['status' => RunStatus::Cancelling]) : $state, $events, 0);
             $actions = $container->get(CodeModeBackgroundCoordinationHandler::class)->prepareAfterTurnCommit($context, 1);
         }
-        $this->assertFalse($token->isCancellationRequested(), 'Preparation is not metadata admission.');
+        $this->assertSame($lost, $token->isCancellationRequested(), 'Preparation is not metadata admission.');
         $this->admit($run, $actions);
         $this->assertTrue($token->isCancellationRequested());
         $this->assertSame('stopped' !== $reason, $otherToken->isCancellationRequested());
@@ -177,6 +181,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
     {
         foreach (['stopped', 'cancelled', 'history_discarded'] as $reason) {
             yield $reason => [$reason];
+            yield 'controller loss then '.$reason => [$reason, true];
         }
     }
 
@@ -221,7 +226,8 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
             $this->admit($runId, $ack->postCommitActions);
             $this->assertSame('pending', $repository->status($id));
         }
-        $result = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => 'FIRST']], isError: !$ready);
+        $details = $ackFirst ? ['model_notifications' => [['id' => 'cap', 'source' => 'output_cap', 'kind' => 'output_capped', 'severity' => 'warning', 'delivery' => 'tool_result_replace', 'text' => 'PREVIEW: first result; Saved full output: /owned/artifact.txt', 'tool_call_id' => 'call', 'tool_name' => 'code_mode']]] : [];
+        $result = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => 'FIRST']], $details, isError: !$ready);
         $bus = $container->get('agent.command.bus');
         $this->assertInstanceOf(MessageBusInterface::class, $bus);
         if (!$ackFirst) {
@@ -250,9 +256,10 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
             $this->assertInstanceOf(InMemoryTransport::class, $transport);
             $notices = array_values(array_filter(array_map(static fn ($envelope) => $envelope->getMessage(), $transport->getSent()), static fn (object $message): bool => $message instanceof DeliverBackgroundCompletionDTO && $message->identity === $id));
             $this->assertCount(2, $notices);
-            $this->assertSame(['FIRST', 'FIRST'], array_column($notices, 'text'));
+            $this->assertSame(array_fill(0, 2, 'PREVIEW: first result; Saved full output: /owned/artifact.txt'), array_column($notices, 'text'));
             $delivery = $container->get(BackgroundCompletionRunHandler::class)->handle($notices[0], $ack->nextState);
             $this->admit($runId, $delivery->postCommitActions);
+            $this->assertSame([], $container->get(BackgroundCompletionRunHandler::class)->handle($notices[1], $ack->nextState)->events);
             $this->assertSame('completed', $repository->status($id));
             if ($fenceReceipt) {
                 $hook = $container->get(CodeModeBackgroundCoordinationHandler::class);

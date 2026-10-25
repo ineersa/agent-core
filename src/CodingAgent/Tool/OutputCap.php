@@ -58,7 +58,7 @@ final class OutputCap
      *
      * @return OutputCapResult|null structured result when capped
      */
-    public function capIfNeeded(string $text, ?string $runId, ?string $path = null): ?OutputCapResult
+    public function capIfNeeded(string $text, ?string $runId, ?string $path = null, ?callable $persist = null): ?OutputCapResult
     {
         $this->maybeCleanup();
 
@@ -77,7 +77,11 @@ final class OutputCap
             throw new \LogicException('OutputCap requires a run ID when persisting oversized output.');
         }
 
-        $savedPath = $this->persist($text, $runId);
+        $savedPath = null === $persist ? $this->persist($text, $runId) : $persist(static function ($handle) use ($text): void {
+            if (\strlen($text) !== fwrite($handle, $text)) {
+                throw new \RuntimeException('Failed to persist capped output.');
+            }
+        });
 
         return new OutputCapResult(
             savedPath: $savedPath,

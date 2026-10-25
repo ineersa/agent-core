@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
@@ -371,7 +373,7 @@ final class OutputCapTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
         $outputCap = $this->outputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
         $hook = new OutputCapLlmTransformHook($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
 
         $body = str_repeat('D', 25000);
@@ -434,7 +436,7 @@ final class OutputCapTest extends TestCase
     public function testHatfieldDocsReadOverDocCapIsCappedAtFiftyK(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
-        $processor = new OutputCapToolResultProcessor($this->outputCap($cfg), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($this->outputCap($cfg), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
         $body = str_repeat('Z', 50001);
         $toolCall = new ToolCall(
             toolCallId: 'call-docs-over',

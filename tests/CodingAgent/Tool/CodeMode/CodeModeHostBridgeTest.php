@@ -4,17 +4,36 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
+use Ineersa\AgentCore\Application\Pipeline\RunCommit;
+use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
+use Ineersa\AgentCore\Application\Pipeline\TransitionFinalizer;
+use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\CodingAgent\Application\Pipeline\CodeModeBackgroundCoordinationHandler;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
+use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
+use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
@@ -28,7 +47,12 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Messenger\Exception\HandlerFailedException;
+use Symfony\Component\Messenger\Handler\HandlersLocator;
+use Symfony\Component\Messenger\MessageBus;
+use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
 use Symfony\Component\Process\Process;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge
@@ -341,9 +365,9 @@ PHP);
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
             self::getContainer()->get(OutputCap::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
+            self::getContainer()->get(ToolPayloadStoreInterface::class),
         );
 
         $result = $accessor->with(
@@ -423,9 +447,9 @@ PHP);
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
             self::getContainer()->get(OutputCap::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
+            self::getContainer()->get(ToolPayloadStoreInterface::class),
         );
 
         $result = $this->runScript($bridge, "return tool('code_mode', ['script' => 'return 1;']);");
@@ -642,49 +666,91 @@ PHP);
             },
             new RuntimeProcessConfig($locator, $this->tmpDir),
             self::getContainer()->get(OutputCap::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
+            self::getContainer()->get(ToolPayloadStoreInterface::class),
         );
 
         $result = $this->runScript($bridge, 'return "path-php-ok";');
         $this->assertSame('path-php-ok', $result);
     }
 
-    public function testLargeStreamsRemainRecoverableWithoutLosingReturnValue(): void
+    #[DataProvider('retainedOutputs')]
+    public function testLargeStreamsRemainRecoverableWithoutLosingReturnValue(string $script, string $expected): void
     {
         $run = $this->retainedRun();
+        $container = self::getContainer();
+        $context = $container->get(ActiveRunContextInterface::class);
+        $state = $context->createNew($run);
+        $events = (new EventFactory())->eventsFromSpecs($run, 1, 1, [
+            ['type' => 'run_started', 'payload' => ['messages' => []]],
+            ['type' => 'turn_advanced', 'payload' => ['turn_no' => 1, 'step_id' => 'code-mode-bridge-test-step']],
+            ['type' => 'llm_step_completed', 'payload' => ['step_id' => 'code-mode-bridge-test-step', 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'code-mode-bridge-test-1', 'name' => 'code_mode', 'arguments' => [], 'order_index' => 0]]]]],
+        ]);
+        $reducer = $container->get(RunStateReducer::class);
+        $commit = new RunCommit($context,
+            $container->get(PreparedTransitionEventStoreInterface::class), new NullLogger(),
+            $container->get(TransitionFinalizer::class),
+            new HookDispatcher([$container->get(ToolBatchSnapshotCleanupHookSubscriber::class)]));
+        $state = $commit->commit($state, $reducer->replay($state, $events), $events);
         $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/artifacts'), new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
-        $bridge = $this->bridgeWithToolbox(static fn () => null, $cap);
-        $result = $this->runScript($bridge, 'for ($i=0; $i<160; ++$i) { fwrite(STDOUT, str_repeat("O",8192)); fwrite(STDERR, str_repeat("E",8192)); } return ["answer"=>42];', runId: $run);
-        $this->assertInstanceOf(CodeModeExecutionResult::class, $result);
-        $this->assertSame(['answer' => 42], $result->result);
-        $cap->cleanupRun($run, 'controller_restart');
-        foreach (['stdout' => 'O', 'stderr' => 'E'] as $label => $byte) {
-            $notice = $result->diagnostics[$label];
-            $this->assertLessThan(1024, \strlen($notice));
-            $this->assertStringContainsString('Raw '.$label.' diagnostics: 1310720 bytes', $notice);
-            $this->assertSame(1, preg_match('/Saved full output: (.+)/', $notice, $matches));
-            $this->assertSame(hash('sha256', str_repeat($byte, 1310720)), hash_file('sha256', $matches[1]));
+        $result = $this->runScript($this->bridgeWithToolbox(static fn () => null, $cap), $script, runId: $run);
+        $call = new DomainToolCall('code-mode-bridge-test-1', 'code_mode', [], 0, $run);
+        $raw = ['code_mode_value' => $result instanceof CodeModeExecutionResult ? $result->result : $result, 'code_mode_diagnostics' => $result instanceof CodeModeExecutionResult ? $result->diagnostics : []];
+        $domain = new ToolResult($call->toolCallId, 'code_mode', [['type' => 'text', 'text' => json_encode($raw, \JSON_THROW_ON_ERROR)]], ['raw_result' => $raw]);
+        $domain = (new CodeModeDiagnosticsToolResultProcessor())->process($domain, $call);
+        $repository = $container->get(DeferredToolCompletionRepository::class);
+        $payloads = $container->get(ToolPayloadStoreInterface::class);
+        $domain = (new OutputCapToolResultProcessor($cap, AttributeSerializerValidatorTestFactory::denormalizer(), $payloads, $repository))->process($domain, $call);
+        $paths = [];
+        $modelText = $domain->details['model_notifications'][0]['text'] ?? $domain->content[0]['text'];
+        preg_match_all('/Saved full output: (.+)/', $modelText, $matches);
+        foreach ($matches[1] as $path) {
+            $paths[$path] = hash_file('sha256', $path);
+            $this->assertStringContainsString($expected, file_get_contents($path));
         }
-        $call = new DomainToolCall('large-diagnostics', 'code_mode', [], 0, 'code-mode-bridge-test');
-        $raw = ['code_mode_value' => $result->result, 'code_mode_diagnostics' => $result->diagnostics];
-        $domain = new ToolResult('large-diagnostics', 'code_mode', [['type' => 'text', 'text' => json_encode($raw, \JSON_THROW_ON_ERROR)]], ['raw_result' => $raw]);
-        $domain = new CodeModeDiagnosticsToolResultProcessor()->process($domain, $call);
-        $domain = new OutputCapToolResultProcessor($cap, AttributeSerializerValidatorTestFactory::denormalizer())->process($domain, $call);
-        $this->assertSame(['answer' => 42], $domain->details['raw_result']);
-        $this->assertStringContainsString('"answer":42', $domain->content[0]['text']);
-        $this->assertStringContainsString("stdout:\n[Raw stdout", $domain->content[0]['text']);
-        $this->assertStringContainsString("stderr:\n[Raw stderr", $domain->content[0]['text']);
-        $repository = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class);
-        $correlation = $repository->findByRunAndToolCall($run, 'code-mode-bridge-test-1');
-        $metadata = $repository->findMetadataByDeferredId($correlation->deferredId);
-        $terminal = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, $domain->content, $domain->details);
-        $payloads = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class);
-        $reference = $payloads->publishFirstResult($terminal, $metadata->reference);
-        $cap->cleanupRun($run, 'controller_shutdown');
-        $this->assertEquals($reference, $repository->findMetadataByDeferredId($correlation->deferredId)->acceptedResultReference, 'Repair discovers the retained reference before SQL acceptance.');
+        $this->assertNotEmpty($paths);
+        $correlation = $repository->findByRunAndToolCall($run, $call->toolCallId);
+        $terminal = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, $domain->content, $domain->details);
+        $failing = new MessageBus([$container->get(ToolPayloadMiddleware::class), new HandleMessageMiddleware(new HandlersLocator([
+            ToolPayloadMessage::class => [static fn () => throw new \RuntimeException('lost send')],
+        ]))]);
+        try {
+            $failing->dispatch($terminal);
+            $this->fail('The publication failure must escape.');
+        } catch (HandlerFailedException $exception) {
+            $this->assertStringContainsString('lost send', $exception->getMessage());
+        }
+        $container->get(CodeModeBackgroundCoordinationHandler::class)->controllerStarting(new ControllerSessionStartingEvent($run));
+        $cap->cleanupRun($run, 'controller_restart');
+        $repair = $container->get(SessionRepairService::class)->repair($run, true, Uuid::v7()->toRfc4122());
+        $this->assertNull($repair->refusalReason);
+        $this->assertSame(2, $repair->activeOperationsRedriven, 'Repair requests the retained result and its ordinary continuation.');
+        $reference = $repository->findMetadataByDeferredId($correlation->deferredId)->acceptedResultReference;
         $this->assertEquals($terminal, $payloads->read($reference));
+        $state = $context->requireLoaded($run);
+        $admission = $container->get(ToolCallResultHandler::class)->handle($payloads->read($reference), $state);
+        $state = $commit->commit($state, $admission->nextState, $admission->events, postCommitActions: $admission->postCommitActions);
+        $this->assertSame('completed', $repository->status($correlation->deferredId));
+        $events = (new EventFactory())->eventsFromSpecs($run, 1, $state->lastSeq + 1, [['type' => 'agent_end', 'payload' => ['reason' => 'completed']]]);
+        $commit->commit($state, $reducer->replay($state, $events), $events);
+        $cap->cleanupRun($run, 'controller_shutdown');
+        foreach ($paths as $path => $hash) {
+            $this->assertSame($hash, hash_file('sha256', $path), 'Committed AgentEnd must retain referenced output.');
+            $this->assertDirectoryDoesNotExist(\dirname($path, 3).'/tool-payloads', 'Terminal cleanup still deletes disposable payloads.');
+        }
+        $container->get(HatfieldSessionStore::class)->deleteSession($run);
+        $context->release($run);
+        foreach ($paths as $path => $hash) {
+            $this->assertFileDoesNotExist($path, 'Permanent deletion still owns retained attachments.');
+        }
+    }
+
+    public static function retainedOutputs(): iterable
+    {
+        yield 'large PHP value' => ['return str_repeat("V", 70000);', str_repeat('V', 70000)];
+        yield 'sub-MiB diagnostics' => ['fwrite(STDOUT, str_repeat("D", 70000)); return 42;', str_repeat('D', 70000)];
+        yield 'above-MiB streams' => ['for ($i=0; $i<160; ++$i) { fwrite(STDOUT, str_repeat("O",8192)); fwrite(STDERR, str_repeat("O",8192)); } return ["answer"=>42];', str_repeat('O', 1310720)];
     }
 
     /** @return iterable<string, array{string, string}> */
@@ -802,16 +868,16 @@ PHP);
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
             $outputCap ?? self::getContainer()->get(OutputCap::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
-            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface::class),
+            self::getContainer()->get(ToolPayloadStoreInterface::class),
         );
     }
 
     private function retainedRun(): string
     {
-        $run = self::getContainer()->get(\Ineersa\CodingAgent\Session\HatfieldSessionStore::class)->createSession('retained diagnostics');
-        $call = new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), $run, 1, 'code-mode-bridge-test-step', 1, 'key', 'code-mode-bridge-test-1', 'code_mode', [], 0);
+        $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('retained diagnostics');
+        $call = new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(Uuid::v7()->toRfc4122(), $run, 1, 'code-mode-bridge-test-step', 1, 'key', 'code-mode-bridge-test-1', 'code_mode', [], 0);
         \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class), $call);
 
         return $run;

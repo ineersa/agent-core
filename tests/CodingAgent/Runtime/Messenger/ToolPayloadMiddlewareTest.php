@@ -312,7 +312,6 @@ final class ToolPayloadMiddlewareTest extends TestCase
         return new ToolPayloadMiddleware(
             $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class))), $deferred, $locks,
             Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(), $commands, $logger,
-            new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger),
-        );
+            new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
     }
 }

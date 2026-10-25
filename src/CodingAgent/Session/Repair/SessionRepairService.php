@@ -938,12 +938,11 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             $sourceEvents = $sourceRun === $runId ? $events : $this->canonicalHistory($sourceRun);
             foreach ($ids as $id) {
                 $metadata = $this->deferred->findMetadataByDeferredId($id);
-                if (null === $metadata) {
+                if (null === $metadata || \in_array($metadata->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true)) {
                     continue;
                 }
                 $requiresContinuation = $metadata->continuationRequired || ('pending' === $metadata->status && 'controller_lost' === $metadata->interruptionReason);
-                $admitted = !\in_array($metadata->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true)
-                    && 0 < $this->receipts->count(['deferredId' => $id, 'destinationRunId' => $runId, 'disposition' => 'pending']);
+                $admitted = 0 < $this->receipts->count(['deferredId' => $id, 'destinationRunId' => $runId, 'disposition' => 'pending']);
                 if (!$requiresContinuation && !$admitted && !('pending' === $metadata->status && null === $metadata->interruptionReason && null !== $metadata->acceptedResultReference)) {
                     continue;
                 }
@@ -972,9 +971,6 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                     if (!$resolved) {
                         return $this->refusalResult($runId, 'Settled deferred invocation has no matching canonical caller result.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
                     }
-                    continue;
-                }
-                if (\in_array($metadata->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true)) {
                     continue;
                 }
                 $correlation = $this->payloads->read($metadata->reference);

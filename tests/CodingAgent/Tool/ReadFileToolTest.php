@@ -7,7 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
@@ -681,7 +683,7 @@ final class ReadFileToolTest extends TestCase
         $raw = $this->contextAccessor->with($this->contextWithToken($this->createToken(false)), static fn () => $toolbox->execute(new ToolCall('read_call_1', 'read', ['path' => $path, 'offset' => 1, 'limit' => $limit]))->getResult());
         $this->assertIsArray($raw);
         $this->assertLessThan(1024, \strlen(json_encode($raw, \JSON_THROW_ON_ERROR)));
-        $processor = new OutputCapToolResultProcessor($cap, AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($cap, AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
         $result = $processor->process(
             new ToolResult('read_call_1', 'read', [['type' => 'text', 'text' => json_encode($raw, \JSON_THROW_ON_ERROR)]], ['raw_result' => $raw]),
             new DomainToolCall('read_call_1', 'read', ['path' => $path], 0, 'read_test_run'),
