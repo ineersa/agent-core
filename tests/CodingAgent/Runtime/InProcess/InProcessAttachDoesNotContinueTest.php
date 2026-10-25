@@ -22,12 +22,6 @@ final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
 {
     private RecordingNoopAgentRunner $spyRunner;
 
-    public static function setUpBeforeClass(): void
-    {
-        parent::setUpBeforeClass();
-        self::getContainer()->set(AgentRunnerInterface::class, new RecordingNoopAgentRunner());
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -52,6 +46,11 @@ final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
         $this->assertSame('bootstrapping', $handle->status);
         $this->assertNotNull($handle->bootstrapRequestId);
         $this->assertSame([], $this->spyRunner->calls, 'attach must not call AgentRunnerInterface mutators');
+    }
+
+    protected static function configureBootedClassContainer(): void
+    {
+        self::getContainer()->set(AgentRunnerInterface::class, new RecordingNoopAgentRunner());
     }
 }
 

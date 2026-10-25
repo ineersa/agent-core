@@ -1,5 +1,7 @@
 tui:
     theme: oh-p-dark
+runtime:
+    llm_concurrency: 10
 tools:
     code_mode:
         enabled: true
@@ -40,7 +42,7 @@ extensions:
         safe_guard:
             allow_write_outside_cwd: [/home/ineersa/projects/agent-core-worktrees, /tmp, /home/ineersa/projects/symfony, /home/ineersa/projects/ai]
 forks:
-    model: grok-cli/grok-composer-2.5-fast
+    model: openai-codex/gpt-6.1-sol
     thinking_level: low
     extensions:
         enabled: {}

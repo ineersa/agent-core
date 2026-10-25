@@ -90,6 +90,9 @@ if ('result' === $argv[2]) {
     fwrite($socket, 'exit:'.$argv[3]."\n");
     exit(0);
 }
+// The trap shell ignores repeated TERM, but its cleanup child must remain
+// killable by a new group signal from scheduled maintenance.
+pcntl_signal(SIGTERM, SIG_DFL);
 fwrite($socket, $argv[2].':'.getmypid()."\n");
 if ('release' !== trim((string) fgets($socket))) {
     exit(1);
@@ -113,10 +116,11 @@ PHP);
                 $container->get(OwnedRunIdsProvider::class), 'accepted-cleanup',
             );
             $invoke = escapeshellarg(\PHP_BINARY).' '.escapeshellarg($script).' '.escapeshellarg($address);
-            // The cleanup child is spawned only after the first TERM. Unlike
-            // its shell parent, it has default TERM handling, so a second group
-            // signal kills it while this test holds its release at the socket.
-            $command = 'trap '.escapeshellarg($invoke.' cleanup; result=$?; '.$invoke.' result "$result"; exit "$result"').' TERM; '.$invoke.' running';
+            // Group TERM reaches both the command shell and its launcher,
+            // whose trap also forwards TERM to that shell. Ignore that repeat
+            // before starting cleanup so it cannot reenter this trap. The PHP
+            // child restores default TERM before publishing its ready barrier.
+            $command = 'trap '.escapeshellarg('trap "" TERM; '.$invoke.' cleanup; result=$?; '.$invoke.' result "$result"; exit "$result"').' TERM; '.$invoke.' running';
             $process = $owner->start($command, 'accepted-cleanup', 'timeout-call', hrtime(true) - 1);
             $owner->markBackgroundedForRecord($process->id, 'accepted-cleanup');
             $running = stream_socket_accept($server, 3);

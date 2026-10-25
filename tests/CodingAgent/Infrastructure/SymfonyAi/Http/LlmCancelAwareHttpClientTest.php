@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\Http;
 
+use Amp\TimeoutCancellation;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmInvocationCancelScope;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
@@ -12,6 +13,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Result\Stream\SseStream;
+use Symfony\Component\HttpClient\AmpHttpClient;
 use Symfony\Component\HttpClient\CurlHttpClient;
 use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\Exception\TimeoutException;
@@ -21,6 +23,9 @@ use Symfony\Contracts\HttpClient\ChunkInterface;
 use Symfony\Contracts\HttpClient\Exception\TimeoutExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
+
+use function Amp\async;
+use function Amp\Socket\listen;
 
 #[CoversClass(LlmCancelAwareHttpClient::class)]
 final class LlmCancelAwareHttpClientTest extends TestCase
@@ -32,6 +37,86 @@ final class LlmCancelAwareHttpClientTest extends TestCase
     {
         yield 'curl' => [static fn (): HttpClientInterface => new CurlHttpClient(['timeout' => 30, 'max_duration' => 60])];
         yield 'native' => [static fn (): HttpClientInterface => new NativeHttpClient(['timeout' => 30, 'max_duration' => 60])];
+        yield 'amp' => [static fn (): HttpClientInterface => new AmpHttpClient(['timeout' => 30, 'max_duration' => 60])];
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function proxyEnvironmentProvider(): iterable
+    {
+        foreach (['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'HTTP_PROXY', 'all_proxy', 'ALL_PROXY'] as $name) {
+            yield $name => [$name, str_contains(strtolower($name), 'https') ? 'https' : 'http'];
+        }
+    }
+
+    #[DataProvider('proxyEnvironmentProvider')]
+    public function testAmpProxyEnvironmentAllowsRequestWithMatchingNoProxy(string $name, string $scheme): void
+    {
+        $this->withProxyEnvironment([$name => 'http://127.0.0.1:1', 'NO_PROXY' => 'localhost'], function () use ($scheme): void {
+            $client = new LlmCancelAwareHttpClient(new AmpHttpClient());
+            // Request preparation checks the tunnel dependency even when NO_PROXY will bypass it.
+            $response = $client->request('GET', $scheme.'://localhost:1/');
+            $response->cancel();
+            $this->assertTrue($response->getInfo('canceled'));
+        });
+    }
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function proxyRoutingProvider(): iterable
+    {
+        // Uppercase HTTP_PROXY is honored here because the application runs under CLI, not CGI.
+        foreach (['http_proxy', 'HTTP_PROXY', 'all_proxy', 'ALL_PROXY'] as $name) {
+            yield $name.' tunnel' => [$name, false];
+            yield $name.' bypass' => [$name, true];
+        }
+    }
+
+    #[DataProvider('proxyRoutingProvider')]
+    public function testAmpProxyRoutingAndDirectNoProxyRequest(string $name, bool $bypass): void
+    {
+        $server = listen('127.0.0.1:0');
+        $cancellation = new TimeoutCancellation(3);
+        $request = async(static function () use ($server, $cancellation, $bypass): array {
+            $socket = $server->accept($cancellation);
+            self::assertNotNull($socket);
+            try {
+                $readHeaders = static function () use ($socket, $cancellation): string {
+                    $headers = '';
+                    while (!str_contains($headers, "\r\n\r\n")) {
+                        $chunk = $socket->read($cancellation);
+                        self::assertNotNull($chunk, 'The client must finish its request headers.');
+                        $headers .= $chunk;
+                    }
+
+                    return $headers;
+                };
+                $first = $readHeaders();
+                if (!$bypass) {
+                    $socket->write("HTTP/1.1 200 Connection Established\r\n\r\n");
+                    $headers = $readHeaders();
+                } else {
+                    $headers = $first;
+                }
+                $socket->write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK");
+
+                return [$first, $headers];
+            } finally {
+                $socket->close();
+            }
+        });
+        $address = (string) $server->getAddress();
+        try {
+            $this->withProxyEnvironment([$name => 'http://'.$address, 'no_proxy' => $bypass ? '127.0.0.1' : ''], function () use ($bypass, $address, $request, $cancellation): void {
+                $client = new LlmCancelAwareHttpClient(new AmpHttpClient(['timeout' => 3, 'max_duration' => 3]));
+                $url = $bypass ? 'http://'.$address.'/direct' : 'http://provider.invalid/proxied';
+                $this->assertSame('OK', $client->request('GET', $url)->getContent());
+                [$first, $headers] = $request->await($cancellation);
+                $this->assertStringStartsWith($bypass ? 'GET /direct HTTP/1.1' : 'CONNECT provider.invalid:80 HTTP/1.1', $first);
+                $this->assertStringStartsWith($bypass ? 'GET /direct HTTP/1.1' : 'GET /proxied HTTP/1.1', $headers);
+            });
+        } finally {
+            $server->close();
+            $request->ignore();
+        }
     }
 
     #[DataProvider('transportFactoryProvider')]
@@ -217,6 +302,35 @@ final class LlmCancelAwareHttpClientTest extends TestCase
         } finally {
             LlmInvocationCancelScope::leave();
             $server['stop']();
+        }
+    }
+
+    /** @param array<string, string> $values */
+    private function withProxyEnvironment(array $values, callable $test): void
+    {
+        $names = ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY', 'all_proxy', 'ALL_PROXY', 'no_proxy', 'NO_PROXY'];
+        $environment = [];
+        $server = $_SERVER;
+        $env = $_ENV;
+        foreach ($names as $name) {
+            $environment[$name] = getenv($name);
+        }
+        try {
+            foreach ($names as $name) {
+                putenv($name);
+                unset($_SERVER[$name], $_ENV[$name]);
+            }
+            foreach ($values as $name => $value) {
+                putenv($name.'='.$value);
+                $_SERVER[$name] = $_ENV[$name] = $value;
+            }
+            $test();
+        } finally {
+            foreach ($environment as $name => $value) {
+                putenv(false === $value ? $name : $name.'='.$value);
+            }
+            $_SERVER = $server;
+            $_ENV = $env;
         }
     }
 

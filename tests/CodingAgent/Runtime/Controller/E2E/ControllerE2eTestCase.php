@@ -128,15 +128,6 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
-     * Isolated controller E2E default is 1 (process-local FIFO / live-scenario isolation).
-     * Topology proofs may override to exercise the configured multi-worker pool.
-     */
-    protected function isolatedLlmWorkerCount(): int
-    {
-        return 1;
-    }
-
-    /**
      * @return array<string, string> extra lines for diagnostics output
      */
     protected function extraDiagnostics(): array
@@ -685,15 +676,10 @@ abstract class ControllerE2eTestCase extends TestCase
 
         // Live llm-real / controller E2Es run concurrently under ParaTest and
         // assert one scenario per isolated controller. Production default
-        // runtime.llm_worker_count=4 multiplies per-test messenger workers
-        // (resource pressure) and can destabilize ordering/timing/provider
-        // state across concurrent scenarios. Force a single llm consumer for
-        // all isolated live controller E2Es. Multi-worker topology (controller
-        // starts N independent messenger:consume llm processes) is proven by
-        // HeadlessControllerLlmWorkerPoolProcessTest; distinct-message claiming
-        // is trusted Symfony Messenger/Doctrine transport behavior. Replay
-        // subclasses inherit the same isolation (process-local FIFO fixtures
-        // also require one consumer).
+        // now launches one llm Fiber consumer. Replay subclasses inherit that
+        // single-consumer topology; process-local FIFO fixtures also require
+        // one consumer. HeadlessControllerLlmWorkerPoolProcessTest proves the
+        // controller starts that Fiber consumer command.
         // Likewise force tools.execution.max_parallelism=1: these E2Es use at
         // most one active generic tool; production default 4 tool consumers is
         // contention-only overhead. Multi-tool worker topology remains covered
@@ -725,10 +711,6 @@ ai:
                     tool_calling: {$toolCalling}
                     reasoning: false
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
-
-# Isolation only — not production behavior. See createIsolatedProjectDir() comment.
-runtime:
-    llm_worker_count: {$this->isolatedLlmWorkerCount()}
 
 tools:
     execution:

@@ -118,6 +118,15 @@ final class ExecutionWorkerTest extends TestCase
 
         $this->assertCount(1, $llmFinishSpans);
         $this->assertSame('error', $llmFinishSpans[0]['context']['status']);
+        $this->assertSame('info', $llmFinishSpans[0]['level']);
+
+        $workerFinishSpans = array_values(array_filter(
+            $traceLogger->records,
+            static fn (array $record): bool => 'agent_loop.trace.finish' === $record['message']
+                && 'turn.execution.llm_worker' === ($record['context']['span_name'] ?? null),
+        ));
+        $this->assertCount(1, $workerFinishSpans);
+        $this->assertSame('debug', $workerFinishSpans[0]['level']);
     }
 
     public function testToolWorkerDispatchesToolCallResult(): void
@@ -138,7 +147,8 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $worker = new ExecuteToolCallWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new TestLogger(), $toolExecutor, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
+        $traceLogger = new TestLogger();
+        $worker = new ExecuteToolCallWorker(new \Ineersa\AgentCore\Tests\Support\TestMessageBus(), new TestLogger(), $toolExecutor, new InMemoryDeferredToolCompletionRepository(), new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), tracer: new RunTracer($traceLogger));
 
         $result = $worker(new ExecuteToolCall(
             runId: 'run-worker-2',
@@ -156,6 +166,22 @@ final class ExecutionWorkerTest extends TestCase
         $this->assertSame('call-1', $result->toolCallId);
         $this->assertFalse($result->isError);
         $this->assertSame('web_search', $result->result['tool_name']);
+
+        $toolFinishSpans = array_values(array_filter(
+            $traceLogger->records,
+            static fn (array $record): bool => 'agent_loop.trace.finish' === $record['message']
+                && 'tool.call' === ($record['context']['span_name'] ?? null),
+        ));
+        $this->assertCount(1, $toolFinishSpans);
+        $this->assertSame('info', $toolFinishSpans[0]['level']);
+
+        $workerFinishSpans = array_values(array_filter(
+            $traceLogger->records,
+            static fn (array $record): bool => 'agent_loop.trace.finish' === $record['message']
+                && 'turn.execution.tool_worker' === ($record['context']['span_name'] ?? null),
+        ));
+        $this->assertCount(1, $workerFinishSpans);
+        $this->assertSame('debug', $workerFinishSpans[0]['level']);
     }
 
     public function testToolWorkerReleasesCompletedResultAfterSuccessfulReturn(): void

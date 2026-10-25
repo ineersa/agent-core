@@ -143,6 +143,7 @@ final class ExtensionsSetupCommandTest extends TestCase
             $tmux->waitForCaptureContains($pane, 'restored/model', 3);
             $this->assertStringNotContainsString('project_only/model', $tmux->capturePlain($pane));
             $send('Escape');
+            $tmux->waitForCaptureContains($pane, 'semantic.embedding_api.base_url', 3);
             $send('Escape');
             $tmux->waitForCaptureContains($pane, 'Scope: User', 3);
             $this->assertSame($homeManifest, json_decode(file_get_contents($home.'/.hatfield/extensions/composer.json'), true, flags: \JSON_THROW_ON_ERROR), 'User/Project aliases keep the same physical-root suffix.');

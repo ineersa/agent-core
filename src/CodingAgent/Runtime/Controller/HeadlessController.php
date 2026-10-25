@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
-use Ineersa\CodingAgent\Config\RuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
@@ -83,17 +82,11 @@ final class HeadlessController
         /** Project-scoped factory (not FrameworkBundle default LockFactory). */
         private readonly LockFactory $sessionOwnerLockFactory,
         private readonly string $runtimeCwd,
-        private readonly RuntimeConfig $runtimeConfig = new RuntimeConfig(),
         /**
          * Optional override for parallel tool messenger consumers.
          * Values <= 0 use tools.execution.max_parallelism from settings.
          */
         private readonly int $toolWorkerCount = 0,
-        /**
-         * Optional override for fixed llm messenger consumer pool size.
-         * Values <= 0 use runtime.llm_worker_count from settings (default 4, range 1..8).
-         */
-        private readonly int $llmWorkerCount = 0,
         /**
          * Optional background process completion poller for sending
          * follow-up notifications when a backgrounded process finishes.
@@ -103,12 +96,6 @@ final class HeadlessController
         private readonly ?BackgroundProcessCompletionPoller $bgProcessCompletionPoller = null,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
-        // Fail closed on invalid constructor overrides at construction time (no silent clamp).
-        // Values <= 0 mean "use RuntimeConfig"; positive values must be in RuntimeConfig range.
-        // MIN is 1, so any positive override is already >= MIN; only enforce the upper bound here.
-        if ($this->llmWorkerCount > RuntimeConfig::MAX_LLM_WORKER_COUNT) {
-            throw new \InvalidArgumentException(\sprintf('HeadlessController llmWorkerCount override must be an integer between %d and %d, got %d.', RuntimeConfig::MIN_LLM_WORKER_COUNT, RuntimeConfig::MAX_LLM_WORKER_COUNT, $this->llmWorkerCount));
-        }
     }
 
     public function run(): int
@@ -169,12 +156,10 @@ final class HeadlessController
         // run_control/llm queues under load.
         try {
             $this->consumerSupervisor->launch('run_control');
-            // llm consumers: fixed bounded pool for concurrent provider calls
-            // (parent turns + parallel subagent children share the llm transport).
-            // Count defaults to runtime.llm_worker_count (1..8, default 4) and is
-            // intentionally distinct from tools.execution.max_parallelism.
-            // Constructor override must already be in range; invalid overrides fail closed.
-            $this->consumerSupervisor->launchMultiple('llm', $this->resolveLlmWorkerCount());
+            // One llm consumer: FiberMessageExecutionStrategy admits up to 4
+            // overlapping ExecuteLlmStep handlers in that process. Parent turns
+            // and parallel subagent children share the llm transport.
+            $this->consumerSupervisor->launch('llm');
             // tool consumers: N parallel workers for concurrent tool execution.
             // N defaults to tools.execution.max_parallelism.
             $this->consumerSupervisor->launchMultiple('tool', $this->resolveToolWorkerCount());
@@ -597,7 +582,7 @@ final class HeadlessController
     {
         $paths = SessionSqliteQueueEnv::pathsFromEnvironment($this->sessionId);
         $requiredConnections = SessionSqliteQueueBrokerTopology::requiredConnections(
-            $this->resolveLlmWorkerCount(),
+            1,
             $this->resolveToolWorkerCount(),
         );
         $this->brokerSupervisor->start($paths, $requiredConnections);
@@ -610,18 +595,6 @@ final class HeadlessController
         if ($advertisedConnections < $requiredConnections) {
             throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" advertised max_connections=%d below topology requirement %d.', $this->sessionId, $advertisedConnections, $requiredConnections));
         }
-    }
-
-    /**
-     * Resolve the fixed llm consumer pool size once from either the constructor
-     * override or typed RuntimeConfig settings. Invalid overrides are rejected in
-     * the constructor; settings are validator-enforced at config load.
-     */
-    private function resolveLlmWorkerCount(): int
-    {
-        return $this->llmWorkerCount > 0
-            ? $this->llmWorkerCount
-            : $this->runtimeConfig->llmWorkerCount;
     }
 
     /**

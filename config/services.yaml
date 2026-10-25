@@ -147,6 +147,17 @@ services:
       $httpClient: '@Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService.http_client'
       $logger: '@Psr\Log\LoggerInterface'
 
+  # Cooperative Amp transport for LLM provider HTTP. Curl remains the default
+  # HttpClient::create() choice on this host and does not overlap inside fibers.
+  # Cancellation wrapping stays in SymfonyAiProviderFactory::getHttpClient().
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\llm.http_client:
+    class: Symfony\Component\HttpClient\AmpHttpClient
+
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory:
+    arguments:
+      $builders: !tagged_iterator hatfield.symfony_ai.provider_builder
+      $httpClient: '@Ineersa\CodingAgent\Infrastructure\SymfonyAi\llm.http_client'
+
   # ─── Hatfield config services ───
 
   Ineersa\CodingAgent\Config\AppResourceLocator:
@@ -191,10 +202,6 @@ services:
     arguments:
       $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
 
-
-  Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory:
-    arguments:
-      $builders: !tagged_iterator hatfield.symfony_ai.provider_builder
 
   # AppConfig is a value object, not an autowireable service.
   # The container uses the fromContainer() factory to construct it.
@@ -328,6 +335,10 @@ services:
 
   # Monolog processor — injects RunLogContext fields into every log record.
   Ineersa\CodingAgent\Logging\LogContextProcessor:
+    tags:
+      - { name: monolog.processor }
+
+  Ineersa\CodingAgent\Logging\FrameworkChannelLevelProcessor:
     tags:
       - { name: monolog.processor }
 
@@ -571,6 +582,29 @@ services:
     arguments:
       $inner: '@Ineersa\CodingAgent\Runtime\Messenger\SerializedBrokerSendersLocator.inner'
 
+  # Same-process llm Fiber consumer. Uses the sqlite-queue consume locator so
+  # native WAIT stays intact; stock messenger:consume --concurrency remains
+  # child-process ParallelExecutionStrategy and is not used for llm.
+  Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeReceiverLocator:
+    class: Ineersa\SqliteQueue\Messenger\ConsumeReceiverLocator
+    arguments:
+      - '@messenger.receiver_locator'
+      - '@Ineersa\SqliteQueue\Messenger\NativeConsumeWaitSubscriber'
+
+  Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeCommand:
+    arguments:
+      $routableBus: '@messenger.routable_message_bus'
+      $receiverLocator: '@Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeReceiverLocator'
+      $eventDispatcher: '@event_dispatcher'
+      $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
+      $logger: '@logger'
+
+  Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber:
+    arguments:
+      $receiverLocator: '@messenger.receiver_locator'
+    tags:
+      - { name: kernel.event_subscriber }
+
   # ─── Controller event loop ───
 
   # Command handlers (ControllerCommandEvent listeners) receive the
@@ -616,7 +650,6 @@ services:
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
       $dispatcher: '@event_dispatcher'
-      $runtimeConfig: '@Ineersa\CodingAgent\Config\RuntimeConfig'
       # Canonical project CWD for single-owner session lock key (not process getcwd()).
       $runtimeCwd: '%app.cwd%'
       # Project-scoped factory only — not the global default LockFactory.
@@ -627,11 +660,6 @@ services:
   Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor:
     arguments:
       $maxPayload: '%hatfield.sqlite_queue.max_payload%'
-
-  Ineersa\CodingAgent\Config\RuntimeConfig:
-    factory: ['Ineersa\CodingAgent\Config\RuntimeConfig', 'fromAppConfig']
-    arguments:
-      - '@Ineersa\CodingAgent\Config\AppConfig'
 
   Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller:
     arguments:
@@ -1097,6 +1125,12 @@ services:
       $hooks: !tagged_iterator agent_core.before_provider_request_hook
 
   # LlmPlatformAdapter hooks — ImageGatingConvertHook registers as a convert_to_llm hook.
+  # Only LLM retry backoff uses cooperative sleep; OAuth and other clock users
+  # keep their existing framework clock binding.
+  Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\AmpRetryClock:
+    arguments:
+      $clock: '@Symfony\Component\Clock\NativeClock'
+
   Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter:
     arguments:
       $transformContextHooks: !tagged_iterator agent_core.transform_context_hook
@@ -1105,6 +1139,7 @@ services:
       $modelResolver: '@Ineersa\AgentCore\Contract\Model\ModelResolverInterface'
       $retryObserver: '@Ineersa\AgentCore\Contract\Hook\LlmRequestRetryObserverInterface'
       $requestRetryPolicy: '@Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy'
+      $clock: '@Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\AmpRetryClock'
 
   Ineersa\AgentCore\Contract\Model\PlatformInterface:
     alias: Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter

@@ -99,7 +99,7 @@ final class StdoutRuntimeEventSinkTest extends TestCase
 
             rewind($stream);
             self::assertSame(JsonlCodec::encodeEvent($event), stream_get_contents($stream));
-            self::assertSame($debug ? ['info', 'debug', 'debug', 'debug', 'debug', 'info', 'info', 'info'] : ['info', 'info', 'info', 'info'], array_column($logger->records, 'level'));
+            self::assertSame($debug ? ['debug', 'debug', 'debug', 'debug', 'debug', 'debug', 'debug', 'debug'] : ['debug', 'debug', 'debug', 'debug'], array_column($logger->records, 'level'));
             // A skipped diagnostic must not allocate a span ID or change nesting.
             $next = $logger->records[$debug ? 5 : 1]['context'];
             self::assertSame($debug ? 'span-4' : 'span-2', $next['span_id']);

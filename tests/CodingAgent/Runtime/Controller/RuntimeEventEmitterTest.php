@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
+use Amp\DeferredFuture;
+use Amp\TimeoutCancellation;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -147,8 +149,14 @@ final class RuntimeEventEmitterTest extends TestCase
         $emptyFrame = new RuntimeEvent(RuntimeEventTypeEnum::BootstrapFrame->value, 'run', 0, ['data' => '']);
         $frame = new RuntimeEvent(RuntimeEventTypeEnum::BootstrapFrame->value, 'run', 0, ['data' => str_repeat('x', 65536 - \strlen(JsonlCodec::encodeEvent($emptyFrame)))]);
         $wire = '';
+        $received = new DeferredFuture();
         stream_set_blocking($reader, false);
-        $readWatcher = EventLoop::onReadable($reader, static function () use ($reader, &$wire): void { $wire .= stream_get_contents($reader); });
+        $readWatcher = EventLoop::onReadable($reader, static function () use ($reader, &$wire, $received): void {
+            $wire .= stream_get_contents($reader);
+            if (2 === substr_count($wire, "\n") && !$received->isComplete()) {
+                $received->complete();
+            }
+        });
         try {
             $emitter->emitTransfer($frame, $after);
             $pending = $reflection->getProperty('pending')->getValue($emitter);
@@ -160,7 +168,9 @@ final class RuntimeEventEmitterTest extends TestCase
             $reflection->getProperty('pendingBytes')->setValue($emitter, \strlen($pending[0]['line']));
             $emitter->whenDrained($after);
             $emitter->shutdown(microtime(true) + 1, new RuntimeEvent(RuntimeEventTypeEnum::ProtocolError->value, '', 0, ['error' => 'broker died', 'fatal' => true]));
-            $wire .= stream_get_contents($reader);
+            // Writer completion does not establish that the readable watcher has
+            // consumed both frames. Wait for the receiver's framing boundary.
+            $received->getFuture()->await(new TimeoutCancellation(1));
             $lines = explode("\n", trim($wire));
             $this->assertCount(2, $lines);
             $first = json_decode($lines[0], true, 16, \JSON_THROW_ON_ERROR);

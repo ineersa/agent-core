@@ -24,6 +24,7 @@ final class RunTracerTest extends TestCase
         $this->assertCount(2, $records);
         $this->assertSame('agent_loop.trace.start', $records[0]['message']);
         $this->assertSame('agent_loop.trace.finish', $records[1]['message']);
+        $this->assertSame(['debug', 'debug'], array_column($records, 'level'));
 
         $finishContext = $records[1]['context'];
         $this->assertSame('ok', $finishContext['status']);
@@ -90,13 +91,25 @@ final class RunTracerTest extends TestCase
                 self::assertSame($failure, $caught);
             }
 
-            self::assertSame('value', $tracer->inSpan('next', [], static fn (): string => 'value'));
-        });
+            self::assertSame('value', $tracer->inSpan('next', [], static fn (): string => 'value', level: LogLevel::INFO));
+        }, level: LogLevel::INFO);
 
         $this->assertSame(['info', 'debug', 'debug', 'info', 'info', 'info'], array_column($logger->records, 'level'));
         $this->assertSame('span-1', $logger->records[1]['context']['parent_span_id']);
         $this->assertSame('error', $logger->records[2]['context']['status']);
         $this->assertSame('span-1', $logger->records[3]['context']['parent_span_id']);
         $this->assertSame('ok', $logger->records[5]['context']['status']);
+    }
+
+    public function testExplicitInfoLevelPreservesMetricSpansAtInfo(): void
+    {
+        $logger = new TestLogger();
+        $tracer = new RunTracer($logger);
+
+        $tracer->inSpan('tool.call', ['tool_name' => 'bash'], static fn (): string => 'ok', level: LogLevel::INFO);
+
+        $this->assertSame(['info', 'info'], array_column($logger->records, 'level'));
+        $this->assertSame('tool.call', $logger->records[1]['context']['span_name']);
+        $this->assertSame('ok', $logger->records[1]['context']['status']);
     }
 }
