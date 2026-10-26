@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
+use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
+use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore;
 use Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\ControllerReplayE2eTestCase;
@@ -81,7 +83,10 @@ final class HeadlessControllerTest extends ControllerReplayE2eTestCase
         } elseif ('invalid' === $configuration) {
             file_put_contents($this->tempDir.'/.hatfield/mcp.json', '{invalid');
         } else {
-            (new SessionFileMcpToolCatalogStore($this->tempDir))->write($this->sessionId, new McpToolCatalogDTO(runId: $this->sessionId));
+            $servers = 'stale_catalog' === $configuration ? [
+                'stale' => new McpServerCatalogEntryDTO('stale', 'stdio', McpServerCatalogStatusEnum::CONNECTED),
+            ] : [];
+            (new SessionFileMcpToolCatalogStore($this->tempDir))->write($this->sessionId, new McpToolCatalogDTO(runId: $this->sessionId, servers: $servers));
         }
 
         $this->spawnController();
@@ -96,7 +101,8 @@ final class HeadlessControllerTest extends ControllerReplayE2eTestCase
         yield 'enabled server' => ['enabled', true];
         yield 'disabled server' => ['disabled', false];
         yield 'invalid config remains optional' => ['invalid', true];
-        yield 'previous catalog requires invalidation owner' => ['catalog', true];
+        yield 'empty invalidated catalog needs no owner' => ['catalog', false];
+        yield 'nonempty catalog requires invalidation owner' => ['stale_catalog', true];
     }
 
     public function testRegisteredExtensionJobRunsInDedicatedConsumer(): void

@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Tests\Mcp;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
+use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
@@ -40,6 +42,13 @@ final class McpSessionLifecycleDispatcherTest extends TestCase
         $this->assertSame([], $bus->messages);
 
         $catalogs->write('run', new McpToolCatalogDTO(runId: 'run'));
+        $this->assertFalse($dispatcher->requiresConsumer('run'));
+        $dispatcher->dispatchInitialize('run', 'attach');
+        $this->assertSame([], $bus->messages);
+
+        $catalogs->write('run', new McpToolCatalogDTO(runId: 'run', servers: [
+            'stale' => new McpServerCatalogEntryDTO('stale', 'stdio', McpServerCatalogStatusEnum::CONNECTED),
+        ]));
         $this->assertTrue($dispatcher->requiresConsumer('run'));
         $dispatcher->dispatchInitialize('run', 'attach');
         $this->assertCount(1, $bus->messages);

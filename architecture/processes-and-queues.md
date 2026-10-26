@@ -60,7 +60,8 @@ no agent-job handlers. Extension setup and activation require the existing
 restart workflow; an empty queue does not determine worker capability.
 
 The controller omits `mcp` when merged configuration has no enabled servers and
-the session has no persisted MCP catalog to invalidate. Invalid configuration
+the session has no nonempty persisted MCP catalog to invalidate. A catalog with
+`servers: []` is already invalidated and does not require a worker. Invalid configuration
 retains the worker so optional MCP failure reporting still runs. Start and attach
 recheck the requirement. Explicit MCP refresh starts an omitted worker before
 dispatch, so servers added during a session remain discoverable. Once launched,

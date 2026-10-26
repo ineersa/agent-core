@@ -32,11 +32,11 @@ final readonly class McpSessionLifecycleDispatcher
     ) {
     }
 
-    /** Existing catalogs need an owner even when configuration is now empty. */
+    /** Nonempty old catalogs need invalidation even when configuration is now empty. */
     public function requiresConsumer(string $runId): bool
     {
         try {
-            return [] !== $this->configLoader->load()->servers || null !== $this->catalogStore->read($runId);
+            return [] !== $this->configLoader->load()->servers || [] !== ($this->catalogStore->read($runId)->servers ?? []);
         } catch (\Throwable $exception) {
             // Preserve optional MCP degradation: the worker publishes a failed
             // catalog rather than preventing controller startup on invalid config.
