@@ -20,7 +20,7 @@ final class AgentResumeToolHandler
 {
     public const string NAME = 'agent_resume';
 
-    public const string DESCRIPTION_TEMPLATE = 'Continue an existing terminal subagent or fork by artifact_id (or agent_run_id) with a follow-up task. Returns the full latest handoff inline. Responses over 50,000 characters return a notice and artifact references instead. Use agent_retrieve for omitted handoffs; mode=handoff_history retrieves prior handoffs.';
+    public const string DESCRIPTION_TEMPLATE = 'Continue an existing terminal subagent or fork with a follow-up task, using artifact_id or agent_run_id. By default, wait for completion and return its latest handoff. Set backgrounded=true to continue other work while the child runs; you will be notified when it finishes. Do not poll for completion. Responses over 50,000 characters return artifact references instead. Use agent_retrieve for omitted handoffs or mode=handoff_history for earlier handoffs.';
 
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 

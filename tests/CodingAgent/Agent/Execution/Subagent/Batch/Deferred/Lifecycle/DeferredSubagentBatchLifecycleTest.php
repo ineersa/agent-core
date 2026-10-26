@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -52,9 +53,15 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChild
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunArtifactFinalizer;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
+use Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\MarkChildBackgroundedDTO;
+use Ineersa\CodingAgent\Application\Pipeline\BackgroundChildInvocationHandler;
+use Ineersa\CodingAgent\Application\Pipeline\ChildBackgroundCoordinationHandler;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
@@ -66,6 +73,7 @@ use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Clock\MockClock;
 
 #[Group('db')]
@@ -126,7 +134,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame(1, $batchAfter3->aggregateProgressRevision);
     }
 
-    public function testRegistrationListenerAndParentCancelHookEnqueueCorrectMessages(): void
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testRegistrationListenerAndParentCancelHookEnqueueCorrectMessages(bool $backgrounded): void
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
@@ -157,12 +167,18 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             idempotencyKey: 'idem-hooks',
             toolCallId: $tool,
             toolName: 'subagent',
-            arguments: [],
+            arguments: ['backgrounded' => $backgrounded],
             orderIndex: 0,
         )));
-        $this->assertCount(2, $regBus->messages);
+        $this->assertCount($backgrounded ? 3 : 2, $regBus->messages);
         $this->assertInstanceOf(DeliverDeferredSubagentBatchLifecycleMessage::class, $regBus->messages[0]);
-        $interruptMsg = $regBus->messages[1];
+        if ($backgrounded) {
+            $request = $regBus->messages[1];
+            $this->assertInstanceOf(BackgroundChildInvocationDTO::class, $request);
+            $this->assertSame($lifecycle, $request->lifecycleId);
+            $this->assertSame($tool, $request->toolCallId);
+        }
+        $interruptMsg = $regBus->messages[$backgrounded ? 2 : 1];
         $this->assertInstanceOf(InterruptDeferredSubagentBatchMessage::class, $interruptMsg);
         $this->assertSame(DeferredSubagentInterruptionKindEnum::Timeout, $interruptMsg->kind);
 
@@ -230,7 +246,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $parent = self::getContainer()->get(HatfieldSessionStore::class)->createSession('batch natural '.$scenario);
         $tool = 'tool-batch-single-nat-'.$scenario;
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
-        $inputStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
+        $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $inputStore->publish('fork', $parent, 2, 'turn-2-tools-1', $tool, 'deepseek/deepseek-v4-flash', '', [new AgentMessage('user', [['type' => 'text', 'text' => 'frozen launch']])]);
         $paths = self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class);
         $inputPath = \dirname($paths->resolveToolBatchesDirectory($parent)).'/tool-launch-inputs/'.hash('sha256', $tool).'.jsonl';
@@ -837,7 +853,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $tool = 'tool-batch-fork-once';
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
-        $inputStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
+        $inputStore = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $reference = $inputStore->publish('fork', $parent, 2, 'turn-2-tools-1', $tool, 'deepseek/deepseek-v4-flash', '', [new AgentMessage('user', [['type' => 'text', 'text' => 'Fork task']])]);
         $original = new \Ineersa\AgentCore\Domain\Message\ExecuteToolCall($parent, 2, 'turn-2-tools-1', 1, 'idem-fork-once', $tool, 'fork', ['task' => 'Fork task'], 0, parentModel: 'deepseek/deepseek-v4-flash', launchContext: $reference);
         $batchStore = self::getContainer()->get(ToolBatchStoreInterface::class);
@@ -877,7 +893,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $logger = new TestLogger();
         $cleanupStore = null;
         if ($failCleanup) {
-            $cleanupStore = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
+            $cleanupStore = $this->createMock(ToolLaunchInputStoreInterface::class);
             $cleanupStore->expects($this->once())->method('delete')->willThrowException(new \RuntimeException('SECRET PATH AND INPUT CONTENT'));
         }
         $delivery = $this->buildLifecycleDelivery($commandBus, launchInputStore: $cleanupStore, completionLogger: $logger);
@@ -1118,7 +1134,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->registerCorrelation(new DeferredToolCompletionCorrelation(
             $lifecycle, $parent, 2, 'step', 1, 'idempotency', $tool, 'subagent', [], 0,
         ));
-        $inputs = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
+        $inputs = self::getContainer()->get(ToolLaunchInputStoreInterface::class);
         $inputs->publish('subagent', $parent, 2, 'step', $tool, 'model', '', []);
         $paths = self::getContainer()->get(\Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface::class);
         $inputPath = \dirname($paths->resolveToolBatchesDirectory($parent)).'/tool-launch-inputs/'.hash('sha256', $tool).'.jsonl';
@@ -1179,6 +1195,54 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         yield 'single timeout' => ['single', 'timeout'];
         yield 'resolved normal call retires its obligation' => ['single', null, true];
         yield 'cancelled single followed by new turn' => ['single', 'parent_cancelled', true];
+    }
+
+    #[TestWith(['subagent'])]
+    #[TestWith(['fork'])]
+    #[TestWith(['agent_resume'])]
+    #[TestWith(['subagent', true])]
+    public function testModelLaunchAcknowledgesRegisteredChildAndDeliversLateHandoff(string $toolName, bool $terminalFirst = false): void
+    {
+        $container = self::getContainer();
+        $parent = $container->get(HatfieldSessionStore::class)->createSession('model child launch');
+        $factory = new DeferredSubagentBatchIdentityFactory();
+        $id = $factory->batchLifecycleId($parent, 'call');
+        $child = $factory->childIdentity($parent, 'call', 1);
+        $repo = $container->get(DeferredSubagentBatchRepository::class);
+        $repo->reserveBatch($id, $parent, 1, 'call', 0, new \DateTimeImmutable('+600 seconds'), new DeferredSubagentBatchChildIntentDTO(1, $child['childRunId'], $child['artifactId'], 'scout', 'inspect', 'deepseek/deepseek-v4-flash', 'medium'));
+        $repo->applyLaunchSuccessState($parent, 'call', $id, new \DateTimeImmutable());
+        $correlation = new DeferredToolCompletionCorrelation($id, $parent, 1, 'step', 1, 'key', 'call', $toolName, ['backgrounded' => true], 0);
+        $state = new RunState($parent, RunStatus::Running, turnNo: 1, pendingToolCalls: ['call' => false], activeStepId: 'step');
+        $bus = new TestMessageBus();
+        $listener = new DeferredToolCompletionRegisteredBatchListener($repo, $bus);
+        $handler = $container->get(BackgroundChildInvocationHandler::class);
+        $this->registerCorrelation($correlation);
+        $listener(new DeferredToolCompletionRegisteredEvent($correlation));
+        $request = $bus->messages[1];
+        $this->assertInstanceOf(BackgroundChildInvocationDTO::class, $request);
+        if ($terminalFirst) {
+            $container->get(ObserveDeferredSubagentBatchChildTurnHandler::class)(new ObserveDeferredSubagentBatchChildTurnMessage($id, 1, $child['childRunId'], RunStatus::Completed, 1, [new AfterTurnCommitEventSummary(1, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed'])]));
+            $this->assertSame([], $handler->handle($request, $state)->events, 'Terminal child wins without a background acknowledgement.');
+            $this->assertNull($repo->findByLifecycleId($id)->backgroundedAt);
+
+            return;
+        }
+        $ack = $handler->handle($request, $state);
+        $this->assertContains(RunEventTypeEnum::ToolExecutionEnd->value, array_column($ack->events, 'type'));
+        $this->assertStringContainsString($child['artifactId'], json_encode($ack->events, \JSON_THROW_ON_ERROR));
+        $this->assertStringContainsString('Child invocation moved to background', json_encode($ack->events, \JSON_THROW_ON_ERROR));
+        $mark = $ack->postCommitActions[0];
+        $this->assertInstanceOf(MarkChildBackgroundedDTO::class, $mark);
+        $container->get(ChildBackgroundCoordinationHandler::class)($mark);
+        $this->assertSame([], $handler->handle($request, $state)->events, 'Duplicate launch intent cannot acknowledge twice.');
+        $this->assertSame('completed', $container->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
+        $late = new TestMessageBus();
+        $dispatcher = new DeferredSubagentBatchCompletionDispatcher($container->get(DeferredToolCompletionRepositoryInterface::class), $repo, $late, new TestLogger(), $container->get(ToolLaunchInputStoreInterface::class), $container->get(SubagentChildRunArtifactFinalizer::class));
+        $dispatcher->dispatchCompletion($id, $parent, 'call', $repo->findByLifecycleId($id)->projectionVersion, 'HANDOFF', false, null);
+        $this->assertCount(1, $late->messages);
+        $this->assertInstanceOf(DeliverBackgroundCompletionDTO::class, $late->messages[0]);
+        $this->assertSame('HANDOFF', $late->messages[0]->text);
+        $this->assertSame($parent, $late->messages[0]->runId());
     }
 
     /**
@@ -1253,7 +1317,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         );
     }
 
-    private function buildLifecycleDelivery(TestMessageBus $commandBus, ?SubagentProgressEventAppender $spyAppender = null, ?\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface $launchInputStore = null, ?TestLogger $completionLogger = null): DeferredSubagentBatchLifecycleDeliveryService
+    private function buildLifecycleDelivery(TestMessageBus $commandBus, ?SubagentProgressEventAppender $spyAppender = null, ?ToolLaunchInputStoreInterface $launchInputStore = null, ?TestLogger $completionLogger = null): DeferredSubagentBatchLifecycleDeliveryService
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $ignoredProgress = [];
@@ -1268,8 +1332,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $repo,
             $commandBus,
             $completionLogger ?? new TestLogger(),
-            $launchInputStore ?? self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunArtifactFinalizer::class),
+            $launchInputStore ?? self::getContainer()->get(ToolLaunchInputStoreInterface::class),
+            self::getContainer()->get(SubagentChildRunArtifactFinalizer::class),
         );
         $outcomeFactory = $this->createOutcomeFactory();
         $handoffRenderer = self::getContainer()->get(SubagentChildRunHandoffRenderer::class);

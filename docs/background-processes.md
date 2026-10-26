@@ -13,11 +13,11 @@ picker. Enter or Ctrl+B confirms; Escape cancels. In child live view, the shortc
 targets eligible work in that child's run rather than its parent's invocation.
 Questions, modal dialogs and completion overlays retain their keyboard handling.
 Without an eligible invocation, Ctrl+B keeps its editor cursor-left behavior.
-There is no model-facing background parameter or `bg_start` tool.
+Models can set `backgrounded: true` on these five tools to request background launch after startup. Omitted or false keeps foreground behavior. There is no `bg_start` tool.
 
 ## Code-mode scripts
 
-Ctrl+B detaches a ready top-level `code_mode` without replacing its PHP host, socket, workspace, stack or nested calls.
+`backgrounded: true` or Ctrl+B detaches a ready top-level `code_mode` without replacing its PHP host, socket, workspace, stack or nested calls.
 The card freezes at acknowledgment; results and saved diagnostics arrive as agent notifications, not human input or another call result.
 
 Detachment preserves the 1,800-second default deadline and 3,600-second maximum.

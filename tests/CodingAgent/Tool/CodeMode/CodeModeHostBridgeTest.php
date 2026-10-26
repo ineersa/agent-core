@@ -367,6 +367,7 @@ PHP);
             self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
+            self::getContainer()->get('agent.command.bus'),
         );
 
         $result = $accessor->with(
@@ -449,6 +450,7 @@ PHP);
             self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
+            self::getContainer()->get('agent.command.bus'),
         );
 
         $result = $this->runScript($bridge, "return tool('code_mode', ['script' => 'return 1;']);");
@@ -668,6 +670,7 @@ PHP);
             self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
+            self::getContainer()->get('agent.command.bus'),
         );
 
         $result = $this->runScript($bridge, 'return "path-php-ok";');
@@ -812,6 +815,18 @@ PHP);
         $this->runScript($bridge, 'for ($i=0; $i<160; ++$i) fwrite(STDOUT, str_repeat("O",8192)); echo "\\xff"; return 42;');
     }
 
+    public function testBackgroundLaunchWithoutRegisteredOwnerIsRefusedBeforeStartingScript(): void
+    {
+        $marker = $this->tmpDir.'/must-not-run';
+        try {
+            $this->bridge()->execute('file_put_contents('.var_export($marker, true).', "ran");', backgrounded: true);
+            $this->fail('Background launch needs an owner-qualified invocation.');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('top-level code_mode', $exception->getMessage());
+        }
+        $this->assertFileDoesNotExist($marker);
+    }
+
     private function bridge(): CodeModeHostBridge
     {
         $bridge = self::getContainer()->get('test.code_mode_host_bridge');
@@ -870,6 +885,7 @@ PHP);
             self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
+            self::getContainer()->get('agent.command.bus'),
         );
     }
 

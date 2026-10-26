@@ -45,6 +45,7 @@ final class ProcessStore
         $entity->command = (string) ($fields['command'] ?? '');
         $entity->toolCallId = $fields['tool_call_id'] ?? null;
         $entity->deadlineNanoseconds = $fields['deadline_nanoseconds'] ?? null;
+        $entity->backgroundRequested = (bool) ($fields['background_requested'] ?? false);
         $entity->logPath = (string) ($fields['log_path'] ?? '');
         $entity->statusPath = (string) ($fields['status_path'] ?? '');
         $entity->startedAt = $fields['started_at'] instanceof \DateTimeImmutable

@@ -42,7 +42,7 @@ use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
  *   - command (required): the shell command string
  *   - timeout (optional int): explicit timeout in seconds
  *
- * No model-controlled run_in_background parameter.
+ * backgrounded (optional bool): request detachment after startup.
  *
  * ## Safety note: raw shell execution
  *
@@ -63,7 +63,7 @@ final class BashTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'bash';
 
-    public const string DESCRIPTION_TEMPLATE = 'Execute a shell command. Commands time out after %d seconds by default. Provide the timeout argument with an explicit higher value when a command needs more time. The user can move a running Bash tool to background with Ctrl+B.';
+    public const string DESCRIPTION_TEMPLATE = 'Execute a shell command. By default, wait for completion. Set backgrounded=true to continue other work; you will be notified when the command finishes. Do not poll for completion. Commands time out after %d seconds by default. Provide the timeout argument with an explicit higher value when a command needs more time.';
 
     public function __construct(
         private readonly BackgroundProcessManager $manager,
@@ -110,7 +110,10 @@ final class BashTool implements HatfieldToolProviderInterface
             // Only direct model tools are targets, including child-run tools. Direct !shell has no
             // producing step; code-mode nested calls have a deeper context.
             $toolCallId = null !== $context?->stepId() && 1 === $this->contextAccessor->depth() ? $context->toolCallId() : null;
-            $startResult = $this->manager->start($command, $sessionId, $toolCallId, $deadline);
+            if ($arguments->backgrounded && null === $toolCallId) {
+                throw new ToolCallException('Background launch requires a top-level Bash tool invocation.', retryable: false);
+            }
+            $startResult = $this->manager->start($command, $sessionId, $toolCallId, $deadline, backgroundRequested: $arguments->backgrounded);
             $pid = $startResult->pid;
             $dbId = $startResult->id;
             $logPath = $startResult->logPath;
@@ -230,7 +233,7 @@ final class BashTool implements HatfieldToolProviderInterface
             ),
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
-            promptLine: 'bash command [timeout=N] — execute a shell command with foreground supervision and optional timeout',
+            promptLine: 'bash command [timeout=N] [backgrounded=true|false] — execute a shell command',
             promptGuidelines: [
                 \sprintf(
                     'Bash commands time out after %d seconds by default. Always provide the timeout argument with an explicit higher value when a command needs more time, up to the %d-second maximum.',
@@ -238,7 +241,7 @@ final class BashTool implements HatfieldToolProviderInterface
                     $this->config->maxTimeoutSeconds,
                 ),
                 'For file operations such as reading, writing, editing, or viewing files, prefer the dedicated read/write/edit/view_image tools instead of bash cat/echo/editor pipelines.',
-                'The user controls backgrounding; there is no run_in_background argument. Backgrounded commands report completion automatically, so do not poll; use bg_status with the returned PID only to inspect progress or stop the process when needed.',
+                'Set backgrounded=true when you can continue other work without the command\'s result. The default, false, waits for completion. Background commands notify you when they finish; do not poll for completion. Use bg_status with the returned PID to inspect output or stop the command. Background launch is supported for direct bash calls, not calls inside code_mode.',
                 'Output is capped to prevent excessively large responses. Very large output may be truncated and saved to a file for inspection.',
             ],
         );

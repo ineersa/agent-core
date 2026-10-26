@@ -24,7 +24,7 @@ final class SubagentToolHandler
 {
     public const string NAME = 'subagent';
 
-    public const string DESCRIPTION = 'Launch one interactive foreground subagent with "agent" and "task". Submit independent subagent, fork, or other tool calls together for concurrent execution. The call waits for its child and returns the full handoff inline. Responses over 50,000 characters return a notice and artifact references instead. Use agent_retrieve for omitted handoffs or extra detail.';
+    public const string DESCRIPTION = 'Launch one subagent with agent and task. By default, wait for completion and return its handoff. Set backgrounded=true to continue other work while the subagent runs; you will be notified when it finishes. Do not poll for completion. Responses over 50,000 characters return artifact references instead. Use agent_retrieve for omitted handoffs or additional detail.';
 
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 
