@@ -115,25 +115,30 @@ final class ExtensionManager
      * Require project then user extension Composer autoloaders when present.
      *
      * Physical-root suffixes let distinct roots load identical package sets;
-     * aliases of one root share a loader. Refresh maps in place after Composer
-     * installs another package, without changing host/project/user priority.
+     * aliases of one root share a loader. Rebuild active loaders after Composer
+     * installs packages to discard cached misses and restore host/project/user priority.
      */
     public function loadAutoloaders(): void
     {
-        foreach ($this->extensionAutoloadPaths() as $autoloadPath) {
-            if (!is_file($autoloadPath)) {
-                continue;
-            }
+        $autoloadPaths = array_filter($this->extensionAutoloadPaths(), is_file(...));
+        $registered = ClassLoader::getRegisteredLoaders();
+        // Remove both roots before registering either one: a project installed
+        // during setup must still precede an already-loaded user root.
+        foreach ($autoloadPaths as $autoloadPath) {
+            ($registered[\dirname($autoloadPath)] ?? null)?->unregister();
+        }
 
+        foreach ($autoloadPaths as $autoloadPath) {
             $vendor = \dirname($autoloadPath);
-            $loader = ClassLoader::getRegisteredLoaders()[$vendor] ?? null;
+            $loader = $registered[$vendor] ?? null;
             if (null === $loader) {
                 // Installer sets prepend-autoloader=false: host libraries win.
                 require_once $autoloadPath;
                 continue;
             }
-            // Composer's init class caches its loader, so requiring autoload.php
-            // again cannot discover packages installed during this wizard.
+            // Composer's init class retains its loader, including negative lookups.
+            // A fresh public ClassLoader clears misses that map setters cannot.
+            $loader = new ClassLoader($vendor);
             foreach (require $vendor.'/composer/autoload_psr4.php' as $prefix => $paths) {
                 $loader->setPsr4($prefix, $paths);
             }
@@ -141,6 +146,7 @@ final class ExtensionManager
                 $loader->add($prefix, $paths);
             }
             $loader->addClassMap(require $vendor.'/composer/autoload_classmap.php');
+            $loader->register(false);
         }
     }
 

@@ -8,8 +8,10 @@ use Composer\InstalledVersions;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\HatfieldExt\FileRewind\FileRewindExtension;
+use Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Yaml\Yaml;
 
 #[Group('tui-e2e-replay')]
@@ -18,7 +20,7 @@ final class ExtensionsSetupCommandTest extends TestCase
     public function testRegisteredCommandInstallsConfiguresAndExitsThroughRealTerminalInput(): void
     {
         // This journey uniquely needs real Composer and PHAR-owned autoloaders:
-        // source dev mappings conceal stale loaders. Two physical roots and four
+        // source dev mappings conceal stale loaders. Two physical roots and five
         // offline installs can exceed 10s in total; each readiness cap is finite,
         // observes terminal/file state, and is not an elapsed synchronization delay.
         $root = ProjectDir::get();
@@ -38,7 +40,14 @@ final class ExtensionsSetupCommandTest extends TestCase
                     $versions[$name] = $version;
                 }
             }
-            $manifest = json_encode([
+            $older = $temporary.'/older-file-rewind';
+            (new Filesystem())->mirror($root.'/.hatfield/extensions/file-rewind', $older);
+            $olderManifest = json_decode(file_get_contents($older.'/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
+            $olderManifest['version'] = '0.0.41';
+            file_put_contents($older.'/composer.json', json_encode($olderManifest, \JSON_THROW_ON_ERROR));
+            $configuration = $older.'/src/FileRewindConfiguration.php';
+            file_put_contents($configuration, str_replace('defaultValue(FileRewindConfig::DEFAULT_MAX_RETAINED_TURNS)', 'defaultValue(31)', file_get_contents($configuration)));
+            $manifest = [
                 'name' => 'test/extensions',
                 'repositories' => [
                     ['packagist.org' => false],
@@ -47,10 +56,14 @@ final class ExtensionsSetupCommandTest extends TestCase
                 ],
                 'minimum-stability' => 'dev',
                 'prefer-stable' => true,
-            ], \JSON_THROW_ON_ERROR);
+            ];
             foreach ([$home, $project] as $directory) {
                 mkdir($directory.'/.hatfield/extensions', recursive: true);
-                file_put_contents($directory.'/.hatfield/extensions/composer.json', $manifest);
+                $scoped = $manifest;
+                if ($home === $directory) {
+                    array_unshift($scoped['repositories'], ['type' => 'path', 'url' => $older]);
+                }
+                file_put_contents($directory.'/.hatfield/extensions/composer.json', json_encode($scoped, \JSON_THROW_ON_ERROR));
             }
             $user = [
                 'ai' => ['providers' => [
@@ -66,7 +79,7 @@ final class ExtensionsSetupCommandTest extends TestCase
             $initial = [
                 'custom_kept' => true,
                 'ai' => ['providers' => ['restored' => ['enabled' => false], 'project_only' => ['models' => ['model' => []]]]],
-                'extensions' => ['settings' => ['observational_memory' => ['semantic' => null]]],
+                'extensions' => ['enabled' => [TaskWorkflowExtension::class], 'settings' => ['observational_memory' => ['semantic' => null]]],
             ];
             file_put_contents($path, Yaml::dump($initial, 8));
             $start = static fn (string $cwd): TmuxPane => $tmux->startDetached(
@@ -86,6 +99,11 @@ final class ExtensionsSetupCommandTest extends TestCase
             $tmux->waitForCaptureContains($pane, 'Scope: Project', 10);
             $send('Down', 'Down', 'Down', 'Down', 'Enter', 'Down', 'Enter');
             $tmux->waitForCaptureContains($pane, 'Enabled for parent', 10);
+            $send('Escape');
+            $tmux->waitForCaptureContains($pane, 'Scope: Project', 3);
+            $send('Down', 'Down', 'Enter', 'Down', 'Enter');
+            $tmux->waitForCaptureContains($pane, 'max_retained_turns', 10);
+            $this->assertMatchesRegularExpression('/max_retained_turns\s+31\b/', $tmux->capturePlain($pane), 'The disabled user copy has a distinguishable older schema.');
             $this->assertSame($user, Yaml::parseFile($userPath));
             $homeManifest = json_decode(file_get_contents($home.'/.hatfield/extensions/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
             $send('C-d');
@@ -95,6 +113,7 @@ final class ExtensionsSetupCommandTest extends TestCase
             $tmux->waitForCaptureContains($pane, 'Scope: Project', 10);
             $send('Down', 'Down', 'Enter', 'Down', 'Enter');
             $tmux->waitForCaptureContains($pane, 'max_retained_turns', 10);
+            $this->assertMatchesRegularExpression('/max_retained_turns\s+100\b/', $tmux->capturePlain($pane), 'The first project loader must outrank the already-loaded user loader.');
             $this->assertSame($initial, Yaml::parseFile($path), 'Installation does not save settings.');
             $send('Enter', 'Down', 'Enter', 'Down', 'Enter', 'Down', 'Enter', 'Down', 'Enter', 'BSpace', 'BSpace', 'BSpace');
             $tmux->sendLiteral($pane, '7');
@@ -107,10 +126,15 @@ final class ExtensionsSetupCommandTest extends TestCase
             $this->assertContains(FileRewindExtension::class, $saved['agents']['extensions']['always_on']);
             $projectManifest = json_decode(file_get_contents($project.'/.hatfield/extensions/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
             $this->assertNotSame($homeManifest['config']['autoloader-suffix'], $projectManifest['config']['autoloader-suffix']);
-            // A second package unavailable from either the PHAR or user root must
-            // configure in this SAME process, rather than requiring a restart.
+            // Restart with File Rewind installed and Task Workflow enabled but
+            // missing: console startup caches the latter's failed class lookup.
+            $send('C-d');
+            $tmux->waitUntilPaneExits($pane, 3);
+            $pane = $start($project);
+            $tmux->waitForCaptureContains($pane, 'Scope: Project', 10);
             $send('Down', 'Down', 'Down', 'Enter', 'Down', 'Enter');
             $tmux->waitForCaptureContains($pane, 'task_root', 10);
+            $this->assertArrayNotHasKey(TaskWorkflowExtension::class, require $project.'/.hatfield/extensions/vendor/composer/autoload_classmap.php', 'Unoptimized PSR lookup must recover from the startup miss without restarting.');
             $send('Escape');
             $tmux->waitForCaptureContains($pane, 'Scope: Project', 3);
             $send('Down', 'Down', 'Down', 'Down', 'Enter', 'Down', 'Enter');
