@@ -14,20 +14,16 @@ targets eligible work in that child's run rather than its parent's invocation.
 Questions, modal dialogs and completion overlays retain their keyboard handling.
 Without an eligible invocation, Ctrl+B keeps its editor cursor-left behavior.
 There is no model-facing background parameter or `bg_start` tool.
-After backgrounding, open `/bg` to inspect or stop work. `bg_status` covers Bash jobs only.
 
 ## Code-mode scripts
 
-Ctrl+B detaches a ready top-level `code_mode`, retaining its PHP process, socket,
-workspace, stack and synchronous nested `tool()` calls. One acknowledgment freezes
-the card; values, errors and saved diagnostics arrive as an attributed agent
-notification, never human input or a second original-call result.
+Ctrl+B detaches a ready top-level `code_mode` without replacing its PHP host, socket, workspace, stack or nested calls.
+The card freezes at acknowledgment; results and saved diagnostics arrive as agent notifications, not human input or another call result.
 
 Detachment preserves the 1,800-second default deadline and 3,600-second maximum.
 Hosts occupy tool consumers; saturation queues all tools, including inspection. No control worker is reserved.
 
-`/bg` includes root and child-owned scripts. Cooperative stop targets one invocation,
-not its parent or siblings; `stopping` lasts until terminal evidence is available.
+Cooperative stop targets one invocation, not its parent or siblings; `stopping` lasts until terminal evidence arrives.
 Controller restart or shutdown fences old hosts and parks unresolved delivery.
 Explicit `/repair` recovers outcomes without rerunning scripts or clearing fences. It cannot restore a lost PHP stack.
 
