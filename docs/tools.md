@@ -105,14 +105,11 @@ Nested tool calls receive the remaining script budget as cooperative ToolContext
 metadata. The host can enforce that budget only while it is polling the script; a
 nested handler that blocks synchronously can still overrun until it returns.
 
-For script detachment, worker occupancy, stopping and recovery, see
-[code-mode backgrounding](background-processes.md#code-mode-scripts).
-
 ## Background work
 
 There is no `bg_start` tool or model-selected background flag. The user chooses
 backgrounding with Ctrl+B and inspects or stops root-owned work through `/bg`.
-`bg_status` inspects or stops Bash jobs only. See [background processes](background-processes.md).
+`bg_status` inspects or stops Bash jobs only. See [code-mode backgrounding](background-processes.md#code-mode-scripts) for script occupancy, stopping and recovery.
 
 ## Child agents
 

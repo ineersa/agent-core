@@ -1014,9 +1014,10 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $resumeEvents = [];
         $next = $state;
         $resumesOwner = array_any($effects, static fn (object $effect): bool => $effect instanceof AdvanceRun && $effect->runId() === $runId);
-        if ($resumesOwner && \in_array($state->status, [RunStatus::Completed, RunStatus::Failed], true) && !\in_array(false, $state->pendingToolCalls, true)) {
+        if ($resumesOwner && !$mailboxContinuation && \in_array($state->status, [RunStatus::Completed, RunStatus::Failed], true) && !\in_array(false, $state->pendingToolCalls, true)) {
             // Explicit repair may resume an already-consumed receipt. There is
             // no new user message and the old physical-host fence stays set.
+            // Pending receipts authorize revival only when actually consumed.
             $resumeEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => ['kind' => 'continue', 'reason' => 'deferred_continuation']]]);
             $next = $this->retainedReplay($runId, [...$events, ...$resumeEvents])->with(['version' => $state->version + 1]);
         }

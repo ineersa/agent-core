@@ -18,24 +18,18 @@ After backgrounding, open `/bg` to inspect or stop work. `bg_status` covers Bash
 
 ## Code-mode scripts
 
-Ctrl+B backgrounds a ready, top-level `code_mode` invocation as a whole, including
-any blocked nested `tool()` call. The same PHP process, socket, workspace and script
-stack continue; nested tools stay synchronous. The original call receives one
-acknowledgment, and its card freezes as backgrounded. The eventual result arrives
-as an attributed agent notification, not human input or a second original-call result.
-Structured values, errors and saved diagnostics remain available through completion.
+Ctrl+B detaches a ready top-level `code_mode`, retaining its PHP process, socket,
+workspace, stack and synchronous nested `tool()` calls. One acknowledgment freezes
+the card; values, errors and saved diagnostics arrive as an attributed agent
+notification, never human input or a second original-call result.
 
-The default deadline is 1,800 seconds, with a 3,600-second maximum. Detachment does
-not extend it. Each host still occupies one tool consumer. Multiple hosts can run
-when consumers are available; when all are occupied, ordinary tool calls queue,
-including model-issued inspection tools. There is no reserved control worker.
+Detachment preserves the 1,800-second default deadline and 3,600-second maximum.
+Hosts occupy tool consumers; saturation queues all tools, including inspection. No control worker is reserved.
 
-Use `/bg` to inspect root-owned scripts, including scripts owned by child agents.
-Confirmed stop targets that exact invocation cooperatively, without cancelling
-its parent or other scripts. It remains `stopping` until terminal state is observed.
+`/bg` includes root and child-owned scripts. Cooperative stop targets one invocation,
+not its parent or siblings; `stopping` lasts until terminal evidence is available.
 Controller restart or shutdown fences old hosts and parks unresolved delivery.
-Use explicit `/repair` to recover retained outcomes without rerunning the script
-or clearing its old interruption fence. Recovery does not preserve a lost PHP stack.
+Explicit `/repair` recovers outcomes without rerunning scripts or clearing fences. It cannot restore a lost PHP stack.
 
 ## Child invocations
 

@@ -28,6 +28,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -46,6 +47,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\History\HistorySelectionService;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
@@ -57,9 +59,12 @@ use Symfony\Component\Uid\Uuid;
 
 final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCase
 {
-    public function testSelectedHistoryDefersCompletionUntilExplicitTipContinuation(): void
+    #[TestWith([false], 'return to tip')]
+    #[TestWith([true], 'edited prompt behind tip')]
+    public function testSelectedHistoryDefersCompletionUntilExplicitTipContinuation(bool $edit): void
     {
         $container = self::getContainer();
+        $container->get('messenger.transport.llm')->reset();
         $run = $container->get(HatfieldSessionStore::class)->createSession('selected background completion');
         $call = new DeferredToolCompletionCorrelation(Uuid::v7()->toRfc4122(), $run, 2, 'step', 1, 'key', 'host', 'code_mode', [], 0);
         $state = new RunState($run, RunStatus::Running);
@@ -91,17 +96,25 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $this->assertCount(1, $container->get(CommandStoreInterface::class)->pending($run));
         $this->assertTrue($container->get(SessionRunEventStore::class)->hasForwardTail($run, 1));
         $this->assertSame([], $container->get(AdvanceRunHandler::class)->handle(new AdvanceRun($run, 1, 'step', 1, 'running-advance'), $context->requireLoaded($run)->with(['status' => RunStatus::Running]))->events);
-        $selection->selectEntry($run, 2, 'tip', 'assistant');
-        $this->assertNull($container->get(SessionRepairService::class)->repair($run, true, 'explicit-tip-continuation')->refusalReason);
-        $advances = array_values(array_filter($container->get('messenger.transport.run_control')->getSent(), static fn ($envelope): bool => $envelope->getMessage() instanceof AdvanceRun && 2 === $envelope->getMessage()->turnNo()));
-        $this->assertCount(1, $advances);
-        $processor->process('advance', $advances[0]->getMessage());
+        $this->assertNull($container->get(SessionRepairService::class)->repair($run, true, 'selected-repair')->refusalReason);
+        $transport = $container->get('messenger.transport.run_control');
+        $processor->process('advance', array_find(array_reverse($transport->getSent()), static fn ($envelope): bool => $envelope->getMessage() instanceof AdvanceRun)->getMessage());
+        $this->assertSame(RunStatus::Completed, $context->requireLoaded($run)->status);
+        $this->assertNull($context->requireLoaded($run)->currentOperation);
+        if ($edit) {
+            $processor->process('command', new ApplyCommand($run, 1, 'edit', 1, 'edited', 'follow_up', ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Edited prompt']]]]));
+        } else {
+            $selection->selectEntry($run, 2, 'tip', 'assistant');
+            $this->assertNull($container->get(SessionRepairService::class)->repair($run, true, 'explicit-tip-continuation')->refusalReason);
+        }
+        $processor->process('advance', array_find(array_reverse($transport->getSent()), static fn ($envelope): bool => $envelope->getMessage() instanceof AdvanceRun)->getMessage());
         $this->assertSame([], $container->get(CommandStoreInterface::class)->pending($run));
         $live = $context->requireLoaded($run);
-        $replay = $container->get(RunStateRebuilderInterface::class)->rebuildAtPosition($state, $run, $live->turnNo)->rebuiltState;
-        $this->assertEquals($live->messages, $replay->messages);
-        $this->assertEquals($live->messages, $container->get(RunStateReducer::class)->replay($state, $container->get(SessionRunEventStore::class)->allFor($run))->messages);
-        $this->assertGreaterThan(2, $live->turnNo);
+        $this->assertCount(1, $container->get('messenger.transport.llm')->getSent());
+        $this->assertCount($edit ? 1 : 0, array_filter($container->get(SessionRunEventStore::class)->allFor($run), static fn (RunEvent $event): bool => RunEventTypeEnum::HistoryTailDiscarded->value === $event->type));
+        $this->assertEquals($live->messages, $container->get(RunStateRebuilderInterface::class)->rebuildAtPosition($state, $run, $live->turnNo)->rebuiltState->messages);
+        $this->assertEquals($live->messages, $container->get(RunStateReducer::class)->replay($state, $container->get(HistoryReplayFilter::class)->filter($container->get(SessionRunEventStore::class)->allFor($run)))->messages);
+        $this->assertGreaterThan($edit ? 1 : 2, $live->turnNo);
     }
 
     #[DataProvider('controllerLossCases')]
