@@ -24,6 +24,14 @@ use Symfony\Component\Messenger\MessageBusInterface;
  */
 final class ExtensionAgentJobRegistryTest extends TestCase
 {
+    public function testHasHandlersTracksRegisteredCapability(): void
+    {
+        $registry = new ExtensionAgentJobRegistry();
+        $this->assertFalse($registry->hasHandlers());
+        $registry->register('ext.job', $this->noopHandler());
+        $this->assertTrue($registry->hasHandlers());
+    }
+
     public function testRegisterRejectsDuplicateHandlerIds(): void
     {
         $registry = new ExtensionAgentJobRegistry();

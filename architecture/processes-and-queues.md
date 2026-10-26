@@ -55,6 +55,20 @@ sequenceDiagram
 Launching pools is not proof that a provider request or extension job will succeed.
 The controller owns the lock and process lifecycle; run control owns transitions.
 
+The controller omits `extension_agent` when console extension loading registered
+no agent-job handlers. Extension setup and activation require the existing
+restart workflow; an empty queue does not determine worker capability.
+
+The controller omits `mcp` when merged configuration has no enabled servers and
+the session has no persisted MCP catalog to invalidate. Invalid configuration
+retains the worker so optional MCP failure reporting still runs. Start and attach
+recheck the requirement. Explicit MCP refresh starts an omitted worker before
+dispatch, so servers added during a session remain discoverable. Once launched,
+that worker keeps normal supervision, restart limits and STDIO client ownership;
+refresh does not duplicate it or bypass restart backoff. Empty sessions enqueue
+no MCP initialization. Broker connection budgeting reserves capacity for later
+activation. Scheduler and other worker counts are unchanged.
+
 ## Bus routing
 
 ```mermaid

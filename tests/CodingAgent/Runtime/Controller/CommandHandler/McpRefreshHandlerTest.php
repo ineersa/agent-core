@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Mcp\Catalog\SessionFileMcpToolCatalogStore;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\Mcp\Message\McpRefreshCatalogCommand;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\McpRefreshHandler;
@@ -13,6 +15,8 @@ use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -22,11 +26,23 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(McpRefreshHandler::class)]
 final class McpRefreshHandlerTest extends TestCase
 {
+    private string $directory;
+
+    protected function setUp(): void
+    {
+        $this->directory = TestDirectoryIsolation::createProjectTempDir('mcp-refresh');
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->directory);
+    }
+
     public function testMcpRefreshDispatchesRefreshCatalogCommand(): void
     {
         $bus = new TestMessageBus();
         $handler = new McpRefreshHandler(
-            new McpSessionLifecycleDispatcher($bus, new TestLogger()),
+            $this->dispatcher($bus),
             new TestLogger(),
         );
 
@@ -50,7 +66,7 @@ final class McpRefreshHandlerTest extends TestCase
     {
         $bus = new TestMessageBus();
         $handler = new McpRefreshHandler(
-            new McpSessionLifecycleDispatcher($bus, new TestLogger()),
+            $this->dispatcher($bus),
             new TestLogger(),
         );
 
@@ -74,7 +90,7 @@ final class McpRefreshHandlerTest extends TestCase
     {
         $bus = new TestMessageBus();
         $handler = new McpRefreshHandler(
-            new McpSessionLifecycleDispatcher($bus, new TestLogger()),
+            $this->dispatcher($bus),
             new TestLogger(),
         );
 
@@ -84,5 +100,15 @@ final class McpRefreshHandlerTest extends TestCase
         ));
 
         $this->assertSame([], $bus->messages);
+    }
+
+    private function dispatcher(TestMessageBus $bus): McpSessionLifecycleDispatcher
+    {
+        return new McpSessionLifecycleDispatcher(
+            $bus,
+            new TestLogger(),
+            TestMcpConfigLoaderFactory::create(new SettingsPathResolver($this->directory), $this->directory),
+            new SessionFileMcpToolCatalogStore($this->directory),
+        );
     }
 }

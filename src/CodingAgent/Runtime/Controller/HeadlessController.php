@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
+use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
+use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
@@ -62,6 +64,10 @@ final class HeadlessController
 
     private bool $shuttingDown = false;
 
+    // Once launched, MCP remains owned by normal supervision, including backoff
+    // and abandonment. Refresh must not bypass that policy or duplicate clients.
+    private bool $mcpConsumerLaunched = false;
+
     /**
      * Session identifier from HATFIELD_SESSION_ID env var.
      * Used to scope orphan cleanup to only this session's consumers.
@@ -82,6 +88,8 @@ final class HeadlessController
         /** Project-scoped factory (not FrameworkBundle default LockFactory). */
         private readonly LockFactory $sessionOwnerLockFactory,
         private readonly string $runtimeCwd,
+        private readonly McpSessionLifecycleDispatcher $mcpLifecycle,
+        private readonly ExtensionAgentJobRegistry $extensionAgentJobRegistry,
         /**
          * Optional override for parallel tool messenger consumers.
          * Values <= 0 use tools.execution.max_parallelism from settings.
@@ -180,12 +188,15 @@ final class HeadlessController
             // should use Scheduler scheduled tasks, not ad-hoc TUI tick process
             // spawning.
             $this->consumerSupervisor->launch('scheduler_default');
-            $this->consumerSupervisor->launch('mcp');
+            if ($this->mcpLifecycle->requiresConsumer($this->sessionId)) {
+                $this->launchMcpConsumer();
+            }
             // Dedicated extension-agent worker: isolated from llm/tool/run_control so
             // extension Observer/Reflector jobs do not starve main run execution.
-            // Unconditional for now (MVP) — even when no extension registers handlers,
-            // an idle consumer is cheap relative to wiring conditional launch.
-            $this->consumerSupervisor->launch('extension_agent');
+            // Console extension loading completes before controller startup.
+            if ($this->extensionAgentJobRegistry->hasHandlers()) {
+                $this->consumerSupervisor->launch('extension_agent');
+            }
         } catch (\Throwable $exception) {
             $deadline = microtime(true) + 5.0;
             $this->consumerSupervisor->shutdownUntil($deadline);
@@ -311,6 +322,17 @@ final class HeadlessController
         // Command bus dispatch is non-blocking — messages are routed to
         // async Doctrine transports.
         try {
+            // Explicit refresh reloads mcp.json, including servers added after
+            // runtime.ready. Start the existing supervised owner before enqueueing.
+            if ('mcp_refresh' === $command->type && '' !== ($command->runId ?? '')) {
+                $this->launchMcpConsumer();
+            }
+            // Start/attach also initialize MCP. Recheck configuration at that
+            // boundary and retain an owner to invalidate a persisted old catalog.
+            if (!$this->mcpConsumerLaunched && \in_array($command->type, ['start_run', 'resume'], true)
+                && $this->mcpLifecycle->requiresConsumer($command->runId ?? $this->sessionId)) {
+                $this->launchMcpConsumer();
+            }
             $emit = $this->emitter->emit(...);
             $event = new ControllerCommandEvent($command, $emit, $this->sessionId);
             $this->dispatcher->dispatch($event);
@@ -331,6 +353,16 @@ final class HeadlessController
             ]);
             $this->emitCommandRejected($command, $e->getMessage());
         }
+    }
+
+    private function launchMcpConsumer(): void
+    {
+        if ($this->mcpConsumerLaunched) {
+            return;
+        }
+
+        $this->consumerSupervisor->launch('mcp');
+        $this->mcpConsumerLaunched = true;
     }
 
     private function decodeCommand(string $line): ?RuntimeCommand
