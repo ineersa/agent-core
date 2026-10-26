@@ -11,8 +11,8 @@ use Ineersa\Tui\Transcript\TranscriptMountedWidget;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\AbstractWidget;
-use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
+use Symfony\Component\Tui\Widget\ParentInterface;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 require dirname(__DIR__, 4).'/vendor/autoload.php';
@@ -134,7 +134,7 @@ function joinedWidgetText(AbstractWidget $root): string
         if ($widget instanceof MarkdownWidget || $widget instanceof TextWidget) {
             $parts[] = $widget->getText();
         }
-        if ($widget instanceof ContainerWidget) {
+        if ($widget instanceof ParentInterface) {
             foreach ($widget->all() as $child) {
                 $stack[] = $child;
             }
@@ -153,7 +153,7 @@ function countMarkdownWidgets(AbstractWidget $root): int
         if ($widget instanceof MarkdownWidget) {
             ++$count;
         }
-        if ($widget instanceof ContainerWidget) {
+        if ($widget instanceof ParentInterface) {
             foreach ($widget->all() as $child) {
                 $stack[] = $child;
             }
