@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
@@ -215,8 +217,7 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
         $capCfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: $defaultCap, docCap: $docCap ?? $defaultCap);
         $cap = new OutputCapToolResultProcessor(
             new OutputCap($capCfg, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger()),
-            AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
+            AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
 
         return new ToolExecutor(
             defaultMode: 'sequential',

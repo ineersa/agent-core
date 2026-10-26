@@ -37,11 +37,11 @@ final class CodeModeArgumentsDTOTest extends TestCase
         ];
         yield 'timeout below minimum' => [
             new CodeModeArgumentsDTO(script: 'return 1;', timeout_seconds: 0),
-            '"timeout_seconds" argument must be an integer between 1 and 300',
+            '"timeout_seconds" argument must be an integer between 1 and 3600',
         ];
         yield 'timeout above maximum' => [
-            new CodeModeArgumentsDTO(script: 'return 1;', timeout_seconds: 301),
-            '"timeout_seconds" argument must be an integer between 1 and 300',
+            new CodeModeArgumentsDTO(script: 'return 1;', timeout_seconds: 3601),
+            '"timeout_seconds" argument must be an integer between 1 and 3600',
         ];
         yield 'memory below minimum' => [
             new CodeModeArgumentsDTO(script: 'return 1;', memory_limit_mb: 0),

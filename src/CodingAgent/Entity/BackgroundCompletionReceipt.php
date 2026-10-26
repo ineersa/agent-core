@@ -38,4 +38,10 @@ final class BackgroundCompletionReceipt
 
     #[ORM\Column(length: 32, enumType: BackgroundCompletionDispositionEnum::class)]
     public BackgroundCompletionDispositionEnum $disposition;
+
+    #[ORM\Column(name: 'deferred_id', length: 36, nullable: true)]
+    public ?string $deferredId = null;
+
+    #[ORM\Column(name: 'invocation_reference_json', type: Types::TEXT, nullable: true)]
+    public ?string $invocationReferenceJson = null;
 }

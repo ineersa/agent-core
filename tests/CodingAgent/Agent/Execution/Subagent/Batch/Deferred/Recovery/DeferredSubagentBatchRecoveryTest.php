@@ -204,7 +204,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         /** @var DeferredSubagentBatchRepository $batchRepo */
         $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $sessionId = 'parent-batch-worker-'.bin2hex(random_bytes(2));
+        $sessionId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('batch worker recovery');
         $otherParent = 'parent-batch-other-'.bin2hex(random_bytes(2));
         $deadline = new \DateTimeImmutable('+300 seconds');
 
@@ -389,8 +389,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: (string) getcwd()),
             entityManager: $this->createStub(EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
         $resolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
         $path = $resolver->eventsPath($parentRunId, $artifactId);
         if (!is_dir(\dirname($path))) {

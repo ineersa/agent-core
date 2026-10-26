@@ -173,6 +173,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         $router = new CommandRouter([]);
         $mailbox = new CommandMailboxPolicy($store, $router);
         $handler = new \Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler(
+            deferred: new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $mailbox,
             eventFactory: new EventFactory(),
         );

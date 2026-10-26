@@ -160,8 +160,7 @@ final class SubagentLiveScenarioHarness
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $entityManager,
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
 
         $context = new TuiRuntimeContext(
             tui: $tui,

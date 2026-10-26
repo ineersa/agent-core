@@ -150,7 +150,7 @@ final class CompactRunHandlerTest extends TestCase
         );
         $guard = $this->createStub(PreLlmCompactionGuardInterface::class);
         $guard->method('shouldCompactBeforeLlmStep')->willReturn(true);
-        $advance = new AdvanceRunHandler(
+        $advance = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             new CommandMailboxPolicy(new InMemoryCommandStore(), new CommandRouter([])),
             new EventFactory(),
             preLlmCompactionGuard: $guard,

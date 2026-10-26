@@ -60,7 +60,7 @@ final class RunStateModelIdentityTest extends TestCase
         $this->assertNull($state->parentRunId);
 
         $commandStore = new InMemoryCommandStore();
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter([]),
@@ -202,7 +202,7 @@ final class RunStateModelIdentityTest extends TestCase
     {
         $guard = $this->createStub(PreLlmCompactionGuardInterface::class);
         $guard->method('shouldCompactBeforeLlmStep')->willReturn(true);
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: new CommandMailboxPolicy(new InMemoryCommandStore(), new CommandRouter([])),
             eventFactory: new EventFactory(),
             preLlmCompactionGuard: $guard,
@@ -246,7 +246,7 @@ final class RunStateModelIdentityTest extends TestCase
     {
         $runId = 'run-model-missing';
         $state = new RunState(runId: $runId, status: RunStatus::Running, model: null);
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
                 commandRouter: new CommandRouter([]),

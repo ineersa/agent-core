@@ -156,6 +156,8 @@ final class BackgroundProcessCompletionPoller
                     $receipt->destinationRunId, $receipt->identity,
                     $receipt->destinationRunId === $receipt->sourceRunId ? $receipt->text : $receipt->forwardedText,
                     $receipt->sourceRunId,
+                    $receipt->deferredId,
+                    $receipt->invocation,
                 ));
             }
         } catch (\Throwable $exception) {

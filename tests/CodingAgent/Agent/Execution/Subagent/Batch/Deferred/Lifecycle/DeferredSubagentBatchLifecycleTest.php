@@ -60,6 +60,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\RunPresentationReader;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -226,7 +227,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $parent = 'parent-batch-single-nat-'.$scenario;
+        $parent = self::getContainer()->get(HatfieldSessionStore::class)->createSession('batch natural '.$scenario);
         $tool = 'tool-batch-single-nat-'.$scenario;
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $inputStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface::class);
@@ -423,7 +424,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     ): void {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $parent = 'parent-batch-single-int-'.$tag;
+        $parent = self::getContainer()->get(HatfieldSessionStore::class)->createSession('batch interruption '.$tag);
         $tool = 'tool-batch-single-int-'.$tag;
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
@@ -703,7 +704,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $parent = 'parent-batch-reserved-pc';
+        $parent = self::getContainer()->get(HatfieldSessionStore::class)->createSession('batch reserved cancellation');
         $tool = 'tool-batch-reserved-pc';
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
@@ -832,7 +833,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $parent = 'parent-batch-fork-once';
+        $parent = self::getContainer()->get(HatfieldSessionStore::class)->createSession('batch fork');
         $tool = 'tool-batch-fork-once';
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
@@ -950,7 +951,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $parent = 'parent-batch-agent-resume-once';
+        $parent = self::getContainer()->get(HatfieldSessionStore::class)->createSession('batch resume');
         $tool = 'tool-batch-agent-resume-once';
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
@@ -1096,7 +1097,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $parent = 'parent-delayed-'.$mode.'-'.($kind ?? 'natural');
+        $parent = self::getContainer()->get(HatfieldSessionStore::class)->createSession('delayed '.$mode.' '.($kind ?? 'natural'));
         $tool = 'call';
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $child = $factory->childIdentity($parent, $tool, 1);

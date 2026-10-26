@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\ChildBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
@@ -183,7 +184,6 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         $this->manager->start($this->command, 'visible', 'second');
         $client = $this->createMock(AgentSessionClient::class);
         $client->expects($this->never())->method('send');
-        $client->expects($this->once())->method('backgroundWork')->with('visible')->willReturn(new BackgroundWorkSnapshotDTO([], []));
         $state = new TuiSessionState('visible');
         $state->subagentLiveCatalog->ingestSnapshot(new SubagentProgressSnapshotDTO('running', 'scout', 'artifact', 'child', 'Inspect', 'test/model', 'off'));
         $harness = $this->mount('visible', $client, $state);
@@ -241,10 +241,28 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         $harness->stopInputLoop();
     }
 
-    private function mount(string $runId, AgentSessionClient $client, ?TuiSessionState $state = null): VirtualTuiHarness
+    public function testCodeModePickerRoutesTheCapturedInvocation(): void
+    {
+        $this->manager->start($this->command, 'visible', 'bash-call');
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())->method('send')->with('visible', $this->callback(
+            static fn (UserCommand $command): bool => 'background_code_mode' === $command->type
+                && ['deferred_id' => 'invocation', 'tool_call_id' => 'host'] === $command->payload,
+        ));
+        $harness = $this->mount('visible', $client, snapshot: new BackgroundWorkSnapshotDTO([], [], [new ChildBackgroundCandidateDTO('invocation', 'host', 'code_mode host')]));
+        $harness->sendInput("\x02");
+        $this->assertTrue($harness->screen()->hasInputOverlay());
+        $harness->sendInput("\x1b[B");
+        $harness->sendInput("\x02");
+        $this->assertFalse($harness->screen()->hasInputOverlay());
+        $harness->stopInputLoop();
+    }
+
+    private function mount(string $runId, AgentSessionClient $client, ?TuiSessionState $state = null, ?BackgroundWorkSnapshotDTO $snapshot = null): VirtualTuiHarness
     {
         $runtimeClient = self::getContainer()->get(JsonlProcessAgentSessionClient::class);
         $client->method('foregroundBash')->willReturnCallback($runtimeClient->foregroundBash(...));
+        $client->method('backgroundWork')->willReturn($snapshot ?? new BackgroundWorkSnapshotDTO([], []));
         $harness = new VirtualTuiHarness(sessionId: $runId);
         $state ??= new TuiSessionState($runId);
         $context = $this->context = $this->buildTuiContext()

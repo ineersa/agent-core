@@ -18,6 +18,8 @@ Pipeline/compaction/history cases (`RunStarted`, `WaitingHuman`, `HistoryPositio
 
 Ordering constraints are enforced at each event write/commit call site; there is no separate `LifecycleOrderValidator`. Example: a standalone shell worker writes `tool_execution_*` then `AgentEnd`.
 
+`ToolCallAcknowledged` resolves a caller wait without claiming physical execution ended. Its payload uses the existing tool-result codec.
+
 ## Maintenance
 
 `ContextRefreshed` records generated instruction messages on session attach. Replay

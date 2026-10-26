@@ -34,6 +34,7 @@ final readonly class ToolProjectionSubscriber implements EventSubscriberInterfac
             // Tool execution
             RuntimeEventTypeEnum::ToolExecutionStarted->value => 'onToolExecutionStarted',
             RuntimeEventTypeEnum::ToolExecutionOutputDelta->value => 'onToolExecutionOutputDelta',
+            RuntimeEventTypeEnum::ToolCallAcknowledged->value => 'onToolExecutionCompleted',
             RuntimeEventTypeEnum::ToolExecutionCompleted->value => 'onToolExecutionCompleted',
             RuntimeEventTypeEnum::ToolExecutionFailed->value => 'onToolExecutionFailed',
             RuntimeEventTypeEnum::ToolExecutionCancelled->value => 'onToolExecutionCancelled',

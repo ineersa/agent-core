@@ -11,6 +11,11 @@ final readonly class DeferredToolCompletionMetadataDTO
         public string $deferredId,
         public ToolPayloadReferenceDTO $reference,
         public string $status,
+        public ?\DateTimeImmutable $readyAt = null,
+        public ?\DateTimeImmutable $backgroundedAt = null,
+        public ?ToolPayloadReferenceDTO $acceptedResultReference = null,
+        public ?string $interruptionReason = null,
+        public bool $continuationRequired = false,
     ) {
     }
 }

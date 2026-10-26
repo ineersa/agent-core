@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
+use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -26,6 +27,20 @@ use PHPUnit\Framework\TestCase;
  */
 final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
 {
+    public function testDiscardPreparesEssentialHooksWithoutAfterTurnObservers(): void
+    {
+        $subscriber = $this->createMockForIntersectionOfInterfaces([EssentialAfterTurnHookInterface::class, HookSubscriberInterface::class]);
+        $subscriber->expects($this->once())->method('prepareAfterTurnCommit')->willReturn([]);
+        $subscriber->expects($this->never())->method('handleAfterTurnCommit');
+        $state = new RunState('discard', RunStatus::Running);
+        $context = new TestActiveRunContext();
+        $context->loadRecovered($state);
+        $events = new InMemoryEventStore();
+        $commit = new RunCommit($context, $events, new TestLogger(), TestTransitionFinalizerFactory::create($events,
+            new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())), new HookDispatcher([$subscriber]));
+        $commit->commit($state, $state, [new RunEvent('discard', 0, 1, 'history_tail_discarded', [])], dispatchAfterTurnHooks: false);
+    }
+
     public function testAfterTurnCommitHookReceivesPersistedSequencesNotInputZero(): void
     {
         $captured = null;

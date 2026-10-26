@@ -594,7 +594,7 @@ final class TuiBootstrapAssemblerTest extends IsolatedKernelTestCase
         try {
             $store = new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
                 new \Ineersa\CodingAgent\Config\AppConfig(new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'), new \Ineersa\CodingAgent\Config\LoggingConfig(), cwd: $directory),
-                static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class), new \Symfony\Component\EventDispatcher\EventDispatcher());
+                static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class), new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
             $runId = $store->createSession('Original catalog prompt');
             $initializer = new \Ineersa\Tui\Application\SessionInitializer($store, new \Ineersa\Tui\Transcript\TranscriptBlockFactory());
             $state = $initializer->initialize($runId, new \Ineersa\CodingAgent\Runtime\Contract\StartRunRequest('Startup follow-up', cwd: $directory));

@@ -113,7 +113,10 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         }
         $store = null === $runId ? $this : $this->withRunPayloads($runId);
 
-        return $store->prepareVerifiedChanges($actions, $transition);
+        // Reuse one short publication guard across every touched body. The
+        // returned SQL action executes later, after this storage lock releases.
+        return null === $runId ? $store->prepareVerifiedChanges($actions, $transition)
+            : $store->payloads->withStorage($runId, static fn (): \Closure => $store->prepareVerifiedChanges($actions, $transition));
     }
 
     public function delete(string $runId, int $turnNo, string $stepId): void
@@ -163,6 +166,7 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         $calls = [];
         $results = [];
         $validatedBodies = [];
+        $deferredSettlements = [];
         foreach ($actions as $action) {
             $key = $this->encodeJson([$action->runId, $action->turnNo, $action->stepId]);
             if (!\array_key_exists($key, $records)) {
@@ -228,6 +232,7 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
                         $schedule->completedIds[$result->toolCallId] = true;
                     }
                     $results[$key][$result->toolCallId] = $result;
+                    $deferredSettlements[] = [$action->runId, $action->turnNo, $action->stepId, $result->toolCallId];
                 }
                 if (null !== $action->revisedCallId) {
                     $id = $action->revisedCallId;
@@ -250,7 +255,7 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
             $headers[$key] = $this->encodeHeader($action->runId, $action->turnNo, $action->stepId, $schedule, $transition->identity);
         }
 
-        return function () use ($headers, $records, $callWrites, $resultWrites): void {
+        return function () use ($headers, $records, $callWrites, $resultWrites, $deferredSettlements): void {
             foreach ($headers as $batchKey => $row) {
                 $key = ['run_id' => $row['run_id'], 'turn_no' => $row['turn_no'], 'step_id' => $row['step_id']];
                 $changes = array_diff_key($row, $key);
@@ -277,6 +282,14 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
                 foreach ($resultWrites[$batchKey] ?? [] as $resultRow) {
                     $this->connection->insert('tool_batch_result', $resultRow);
                 }
+            }
+            foreach ($deferredSettlements as [$runId, $turnNo, $stepId, $toolCallId]) {
+                // Early code_mode registrations stay pending until this
+                // verified batch-result admission commits.
+                $this->connection->executeStatement(
+                    "UPDATE tool_deferred_completion SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE run_id = ? AND turn_no = ? AND step_id = ? AND tool_call_id = ? AND status = 'pending' AND backgrounded_at IS NULL AND accepted_result_reference_json IS NOT NULL",
+                    [$runId, $turnNo, $stepId, $toolCallId],
+                );
             }
         };
     }
@@ -308,7 +321,8 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         // One run-scoped read protects shared IDs in surviving batches. The
         // owner lock prevents new references until these deletions finish.
         $survivors = array_fill_keys($this->connection->fetchFirstColumn('SELECT DISTINCT tool_call_id FROM tool_batch_call WHERE run_id = ?', [$runId]), true);
-        $safeIds = array_diff(array_unique($callIds), array_keys($survivors));
+        $retained = array_fill_keys($this->connection->fetchFirstColumn('SELECT DISTINCT tool_call_id FROM tool_deferred_completion WHERE run_id = ? AND accepted_result_reference_json IS NOT NULL', [$runId]), true);
+        $safeIds = array_diff(array_unique($callIds), array_keys($survivors), array_keys($retained));
         if ([] === $safeIds) {
             return;
         }

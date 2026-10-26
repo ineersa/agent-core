@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
 
 use function Symfony\Component\String\u;
 
@@ -47,11 +48,40 @@ use function Symfony\Component\String\u;
  */
 final class HatfieldSessionStore
 {
+    /** @var array<string, bool> Authority is valid only while this storage lock is held. */
+    private array $storageLocks = [];
+
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly EntityManagerInterface $entityManager,
         private readonly EventDispatcherInterface $dispatcher,
+        private readonly LockFactory $lockFactory,
     ) {
+    }
+
+    public function withStorage(string $sessionId, callable $write): mixed
+    {
+        $sessionId = (string) ($this->parsePositiveSessionId($sessionId) ?? $sessionId);
+        if (isset($this->storageLocks[$sessionId])) {
+            if (!$this->storageLocks[$sessionId]) {
+                throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
+            }
+
+            return $write();
+        }
+        $lock = $this->lockFactory->createLock('hatfield-tool-storage-'.hash('sha256', $this->getSessionDir($sessionId)));
+        $lock->acquire(true);
+        try {
+            if (!$this->exists($sessionId)) {
+                throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
+            }
+            $this->storageLocks[$sessionId] = true;
+
+            return $write();
+        } finally {
+            unset($this->storageLocks[$sessionId]);
+            $lock->release();
+        }
     }
 
     /**
@@ -220,31 +250,7 @@ final class HatfieldSessionStore
      */
     public function deleteSession(string $sessionId): void
     {
-        $id = $this->parsePositiveSessionId($sessionId);
-        if (null === $id || !$this->getRepository()->existsById($id)) {
-            throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
-        }
-
-        $entity = $this->entityManager->find(HatfieldSession::class, $id);
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
-        }
-
-        // Scope deletion to the DB-issued identity, including numeric aliases.
-        $sessionId = (string) $id;
-        $sessionDir = $this->getSessionDir($sessionId);
-        $shutdown = new ControllerSessionShutdownEvent($sessionId, permanentDeletion: true);
-
-        $connection = $this->entityManager->getConnection();
-        $connection->transactional(function () use ($shutdown, $entity): void {
-            // Permanent-deletion listeners remove pending SQL work before other
-            // shutdown listeners dispose child ownership evidence. Ordinary shutdown retains it.
-            $this->dispatcher->dispatch($shutdown);
-            $this->entityManager->remove($entity);
-            $this->entityManager->flush();
-        });
-
-        (new Filesystem())->remove(array_unique([$sessionDir, ...$shutdown->payloadDirectories]));
+        $this->withStorage($sessionId, fn () => $this->deleteStoredSession($sessionId));
     }
 
     /**
@@ -344,6 +350,38 @@ final class HatfieldSessionStore
         @chmod($attachments, 0o700);
 
         return $attachments;
+    }
+
+    private function deleteStoredSession(string $sessionId): void
+    {
+        $id = $this->parsePositiveSessionId($sessionId);
+        if (null === $id || !$this->getRepository()->existsById($id)) {
+            throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
+        }
+
+        $entity = $this->entityManager->find(HatfieldSession::class, $id);
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('Session "%s" not found.', $sessionId));
+        }
+
+        // Scope deletion to the DB-issued identity, including numeric aliases.
+        $sessionId = (string) $id;
+        $sessionDir = $this->getSessionDir($sessionId);
+        $shutdown = new ControllerSessionShutdownEvent($sessionId, permanentDeletion: true);
+
+        $connection = $this->entityManager->getConnection();
+        $connection->transactional(function () use ($shutdown, $entity): void {
+            // Permanent-deletion listeners remove pending SQL work before other
+            // shutdown listeners dispose child ownership evidence. Ordinary shutdown retains it.
+            $this->dispatcher->dispatch($shutdown);
+            $this->entityManager->remove($entity);
+            $this->entityManager->flush();
+        });
+
+        // A reentrant deletion invalidates the held publication scope only
+        // after SQL commits. Failed deletion must leave its authority intact.
+        $this->storageLocks[$sessionId] = false;
+        (new Filesystem())->remove(array_unique([$sessionDir, ...$shutdown->payloadDirectories]));
     }
 
     /**

@@ -85,6 +85,11 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         return new DeferredToolCompletionMetadataDTO($deferredId, $reference, $row['status']);
     }
 
+    public function runRequiresContinuation(string $runId): bool
+    {
+        return false;
+    }
+
     public function status(string $deferredId): ?string
     {
         return $this->byDeferredId[$deferredId]['status'] ?? null;
@@ -95,5 +100,11 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         if (isset($this->byDeferredId[$deferredId])) {
             $this->byDeferredId[$deferredId]['status'] = 'completed';
         }
+    }
+
+    // Native host state is exercised with the real repository, not this core fake.
+    public function acceptResultReference(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO
+    {
+        throw new \LogicException('Native result retention requires the persistent repository.');
     }
 }

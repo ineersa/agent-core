@@ -65,7 +65,7 @@ final class HistoryTailDiscardServiceTest extends IsolatedKernelTestCase
             HistoryEventStoreFactory::create($sessionStore, $events),
             new NullLogger(),
             self::getContainer()->get(ActiveRunContextInterface::class),
-            self::getContainer()->get(BackgroundCompletionReceiptRepository::class),
+            self::getContainer()->get(BackgroundCompletionReceiptRepository::class), self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class), self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
         );
         $state = new RunState(
             runId: $runId,
@@ -99,7 +99,7 @@ final class HistoryTailDiscardServiceTest extends IsolatedKernelTestCase
             HistoryEventStoreFactory::create($sessionStore, $events),
             new NullLogger(),
             self::getContainer()->get(ActiveRunContextInterface::class),
-            self::getContainer()->get(BackgroundCompletionReceiptRepository::class),
+            self::getContainer()->get(BackgroundCompletionReceiptRepository::class), self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class), self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
         );
         $state = new RunState(
             runId: $runId,
@@ -122,7 +122,7 @@ final class HistoryTailDiscardServiceTest extends IsolatedKernelTestCase
             $this->event($runId, 2, 4, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 4]),
             $this->event($runId, 3, 100, RunEventTypeEnum::HistoryPositionSet->value, ['position_turn_no' => 100]),
         ]);
-        $service = new HistoryTailDiscardService($store, new NullLogger(), self::getContainer()->get(ActiveRunContextInterface::class), self::getContainer()->get(BackgroundCompletionReceiptRepository::class));
+        $service = new HistoryTailDiscardService($store, new NullLogger(), self::getContainer()->get(ActiveRunContextInterface::class), self::getContainer()->get(BackgroundCompletionReceiptRepository::class), self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class), self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class));
         $state = new RunState(runId: $runId, status: RunStatus::Completed, version: 1, turnNo: 100, lastSeq: 3);
         $this->assertSame(100, $service->prepareForwardTailDiscard($runId, $state)?->payload['after_turn_no']);
         $this->assertNull($service->prepareForwardTailDiscard($runId, $state->with(['turnNo' => 99])));
@@ -137,7 +137,7 @@ final class HistoryTailDiscardServiceTest extends IsolatedKernelTestCase
             HistoryEventStoreFactory::create($sessionStore),
             new NullLogger(),
             self::getContainer()->get(ActiveRunContextInterface::class),
-            self::getContainer()->get(BackgroundCompletionReceiptRepository::class),
+            self::getContainer()->get(BackgroundCompletionReceiptRepository::class), self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class), self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
         );
 
         $this->assertTrue($service->isContextMutatingMessage(new AdvanceRun(
@@ -179,8 +179,7 @@ final class HistoryTailDiscardServiceTest extends IsolatedKernelTestCase
                 cwd: $this->tempDir,
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
     }
 
     /**

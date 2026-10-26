@@ -13,6 +13,11 @@ final class ParentSessionToolBatchRunStoragePaths implements ToolBatchRunStorage
     {
     }
 
+    public function withStorage(string $runId, callable $write): mixed
+    {
+        return $this->hatfieldSessionStore->withStorage($runId, $write);
+    }
+
     public function resolveToolBatchesDirectory(string $runId): string
     {
         return $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$runId.'/runtime/tool-batches';

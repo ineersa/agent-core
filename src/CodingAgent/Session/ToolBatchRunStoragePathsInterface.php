@@ -10,4 +10,6 @@ namespace Ineersa\CodingAgent\Session;
 interface ToolBatchRunStoragePathsInterface
 {
     public function resolveToolBatchesDirectory(string $runId): string;
+
+    public function withStorage(string $runId, callable $write): mixed;
 }

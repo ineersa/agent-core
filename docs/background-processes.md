@@ -7,14 +7,25 @@ description: Background process tracking, logs, stop behavior, and related setti
 
 Long-running shell work can detach into tracked background processes so the conversation loop stays responsive.
 
-Press **Ctrl+B** while a `bash`, `subagent`, `fork` or `agent_resume` tool runs to move it to background.
+Press **Ctrl+B** while a `bash`, `code_mode`, `subagent`, `fork` or `agent_resume` tool runs to move it to background.
 If several eligible invocations are running in the visible session, choose one in the
 picker. Enter or Ctrl+B confirms; Escape cancels. In child live view, the shortcut
-targets that child's Bash tool rather than its parent's invocation.
+targets eligible work in that child's run rather than its parent's invocation.
 Questions, modal dialogs and completion overlays retain their keyboard handling.
 Without an eligible invocation, Ctrl+B keeps its editor cursor-left behavior.
 There is no model-facing background parameter or `bg_start` tool.
-After backgrounding, open `/bg` to inspect or stop jobs yourself, or ask the agent to use `bg_status`.
+
+## Code-mode scripts
+
+Ctrl+B detaches a ready top-level `code_mode` without replacing its PHP host, socket, workspace, stack or nested calls.
+The card freezes at acknowledgment; results and saved diagnostics arrive as agent notifications, not human input or another call result.
+
+Detachment preserves the 1,800-second default deadline and 3,600-second maximum.
+Hosts occupy tool consumers; saturation queues all tools, including inspection. No control worker is reserved.
+
+Cooperative stop targets one invocation, not its parent or siblings; `stopping` lasts until terminal evidence arrives.
+Controller restart or shutdown fences old hosts and parks unresolved delivery.
+Explicit `/repair` recovers outcomes without rerunning scripts or clearing fences. It cannot restore a lost PHP stack.
 
 ## Child invocations
 
@@ -34,8 +45,8 @@ handoff. The parent can explicitly use `agent_resume` if more child work is need
 
 ## Background work picker: `/bg`
 
-Run `/bg` from the main view. It lists detached child invocations and accepted unfinished
-Bash jobs owned by the root session, including its children. Entries identify the owning
+Run `/bg` from the main view. It lists detached child invocations, code-mode scripts and
+accepted unfinished Bash jobs owned by the root session, including its children. Entries identify the owning
 agent and run. Bash entries also show command, PID and elapsed seconds; jobs in termination
 grace appear as `stopping`. `bg_status` remains a Bash-only tool scoped to its current run.
 Select work and press Enter to open a Yes/No cancellation confirmation, defaulting to No.

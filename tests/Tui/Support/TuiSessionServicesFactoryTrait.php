@@ -110,8 +110,7 @@ trait TuiSessionServicesFactoryTrait
         $sessionStore = new HatfieldSessionStore(
             $appConfig,
             $this->createStub(EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
         $modelService = new ModelSelectionService(
             $appConfig,
             new ModelResolver($appConfig, $sessionStore, new NullLogger()),
