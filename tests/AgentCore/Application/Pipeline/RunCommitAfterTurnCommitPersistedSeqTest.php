@@ -29,21 +29,9 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
 {
     public function testDiscardPreparesEssentialHooksWithoutAfterTurnObservers(): void
     {
-        $subscriber = new class implements EssentialAfterTurnHookInterface, HookSubscriberInterface {
-            public int $prepared = 0;
-
-            public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
-            {
-                ++$this->prepared;
-
-                return [];
-            }
-
-            public function handleAfterTurnCommit(AfterTurnCommitHookContext $context): AfterTurnCommitHookContext
-            {
-                throw new \LogicException('Maintenance must not dispatch ordinary after-turn observers.');
-            }
-        };
+        $subscriber = $this->createMockForIntersectionOfInterfaces([EssentialAfterTurnHookInterface::class, HookSubscriberInterface::class]);
+        $subscriber->expects($this->once())->method('prepareAfterTurnCommit')->willReturn([]);
+        $subscriber->expects($this->never())->method('handleAfterTurnCommit');
         $state = new RunState('discard', RunStatus::Running);
         $context = new TestActiveRunContext();
         $context->loadRecovered($state);
@@ -51,7 +39,6 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
         $commit = new RunCommit($context, $events, new TestLogger(), TestTransitionFinalizerFactory::create($events,
             new StepDispatcher(new TestMessageBus(), new TestMessageBus(), new TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher())), new HookDispatcher([$subscriber]));
         $commit->commit($state, $state, [new RunEvent('discard', 0, 1, 'history_tail_discarded', [])], dispatchAfterTurnHooks: false);
-        $this->assertSame(1, $subscriber->prepared);
     }
 
     public function testAfterTurnCommitHookReceivesPersistedSequencesNotInputZero(): void

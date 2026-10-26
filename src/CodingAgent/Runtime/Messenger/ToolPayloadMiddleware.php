@@ -242,10 +242,11 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
                 if (!$accepted instanceof ToolCallResult) {
                     throw new ToolPayloadException('Accepted deferred body is not a tool result.');
                 }
+                $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $accepted->result['details'] ?? null);
                 $delivery = new DeliverBackgroundCompletionDTO(
                     $metadata->reference->runId,
                     $metadata->deferredId,
-                    $this->backgroundCompletionText($accepted),
+                    (new AgentMessageNormalizer())->toolMessage($accepted, $notifications)->content[0]['text'],
                     $metadata->reference->runId,
                     $metadata->deferredId,
                     $metadata->reference,
@@ -280,13 +281,6 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
         }
 
         return $metadata;
-    }
-
-    private function backgroundCompletionText(ToolCallResult $message): string
-    {
-        $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $message->result['details'] ?? null);
-
-        return (new AgentMessageNormalizer())->toolMessage($message, $notifications)->content[0]['text'];
     }
 
     private function deferredMetadata(string $deferredId): DeferredToolCompletionMetadataDTO
