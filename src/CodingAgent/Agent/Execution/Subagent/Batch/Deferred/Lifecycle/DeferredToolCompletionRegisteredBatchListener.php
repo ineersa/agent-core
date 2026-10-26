@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
+use Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\MonotonicClock;
@@ -55,6 +56,12 @@ final readonly class DeferredToolCompletionRegisteredBatchListener
             }
 
             return;
+        }
+
+        if (true === ($correlation->arguments['backgrounded'] ?? false)) {
+            // Registration must precede owner admission; the owner rechecks
+            // terminal races before acknowledging this exact invocation.
+            $this->commandBus->dispatch(new BackgroundChildInvocationDTO($correlation->runId, $batch->lifecycleId, $correlation->toolCallId));
         }
 
         // Schedule timeout interruption

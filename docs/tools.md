@@ -27,7 +27,7 @@ servers. Tool availability does not bypass approval policy.
 | `agent_steer` | Send short guidance to one active direct child | Parent-only. Exactly one child handle. Does not resume terminal children. |
 | `notify_parent` | Send a short notice to the child's recorded parent | Child policy must allow it. Receipt confirms source persistence, not attention. |
 | `agent_retrieve` | Read child handoffs, metadata, or bounded history | Retrieves existing artifacts; does not launch work. |
-| `fork` | Launch a child with inherited conversation context | Blocks for a handoff. Not a Git worktree creation tool. |
+| `fork` | Launch a child with inherited conversation context | Waits for a handoff by default. Not a Git worktree creation tool. |
 
 Tool argument schemas supplied to the model are the authoritative call format.
 The catalog above explains purpose rather than duplicating every argument.
@@ -107,8 +107,9 @@ nested handler that blocks synchronously can still overrun until it returns.
 
 ## Background work
 
-There is no `bg_start` tool or model-selected background flag. The user chooses
-backgrounding with Ctrl+B and inspects or stops root-owned work through `/bg`.
+`bash`, `subagent`, `fork`, `agent_resume` and `code_mode` accept optional boolean `backgrounded` (default false). True requests an acknowledgement after startup and later completion delivery through the existing background lifecycle. Fast terminal results may win the acknowledgement race. There is no `bg_start` tool. The user can also choose
+backgrounding with Ctrl+B and inspect or stop root-owned work through `/bg`.
+Background launch of Bash and code mode requires a direct tool invocation, not a nested `tool()` call. Deferred child tools remain unsupported inside code mode.
 `bg_status` inspects or stops Bash jobs only. See [code-mode backgrounding](background-processes.md#code-mode-scripts) for script occupancy, stopping and recovery.
 
 ## Child agents

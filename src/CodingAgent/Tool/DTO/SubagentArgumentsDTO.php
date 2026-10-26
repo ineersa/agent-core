@@ -16,6 +16,8 @@ final readonly class SubagentArgumentsDTO
         #[Schema(description: 'Task text.')]
         #[Assert\NotBlank(normalizer: 'trim', message: 'Subagent requires a non-empty "task" string.')]
         public string $task,
+        #[Schema(description: 'Run in the background so you can continue other work without waiting for completion. Default false.')]
+        public bool $backgrounded = false,
     ) {
     }
 }

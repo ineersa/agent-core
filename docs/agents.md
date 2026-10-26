@@ -6,9 +6,9 @@ description: Agent definitions, discovery, subagent execution, retrieval, and li
 # Agent Definitions
 
 Named child-agent roles live in Markdown files with YAML frontmatter. The
-model-visible `subagent` tool launches one foreground child per call. Submit independent
+model-visible `subagent` tool launches one child per call. Submit independent
 calls together for concurrent execution through the normal tool scheduler.
-Launches start in the foreground. Use Ctrl+B to background a running child invocation; there is no model-selected background launch flag. The separate model-visible `fork` tool is shipped (see below).
+Launches wait in the foreground by default. Set `backgrounded: true` for an acknowledgement and a later handoff, or use Ctrl+B while a child invocation runs. The separate model-visible `fork` tool is shipped (see below).
 
 Settings keys: [settings-agents.md](settings-agents.md). Sessions/artifacts: [session-storage.md](session-storage.md).
 
@@ -72,9 +72,9 @@ Bundled starters (`scout`, `reviewer`, `researcher`, `architect`, `browser`) ins
 hatfield agents:init
 ```
 
-## Foreground `subagent` tool
+## `subagent` tool
 
-- Required arguments: `agent` and `task`. Each call waits for one child and returns its full handoff inline unless the response exceeds 50,000 characters. There is no `tasks` argument.
+- Required arguments: `agent` and `task`. Optional boolean `backgrounded` defaults to false. By default each call waits for one child and returns its full handoff inline unless the response exceeds 50,000 characters. There is no `tasks` argument.
 - Submit independent `subagent`, `fork`, Bash, or other tool calls together for concurrent execution, subject to available worker capacity and configured tool parallelism. Wait for prerequisites before submitting dependent work.
 - Concurrent writers must respect file and worktree ownership. Never assign concurrent writers to the same worktree.
 - Responses over 50,000 characters omit inline handoffs and return a notice with artifact references. The full handoffs remain available through `agent_retrieve`.
@@ -188,8 +188,8 @@ default `tool` transport (see unmarked repository `docs/tool-execution.md`).
 | Model/thinking | Definition `model`/`thinking` when set | explicit args → `forks.model` / `forks.thinking_level` → parent |
 | Concurrency | Independent single-child tool calls use normal parallel scheduling | Prefer ≤3 concurrent forks; never same worktree |
 
-Arguments: required `task`; optional `model`, `thinking`. Blocks until the fork completes
-and returns a dense handoff through deferred tool completion.
+Arguments: required `task`; optional `model`, `thinking`, `backgrounded` (default false).
+By default the call waits until the fork completes and returns a dense handoff through deferred tool completion. Set `backgrounded: true` for an acknowledgement and a later handoff. `agent_resume` accepts the same background launch option.
 
 To continue an eligible terminal fork in the same parent session, use `agent_resume` with the fork artifact/run id and a focused follow-up. Do not launch a duplicate `fork` when the existing child context still applies.
 

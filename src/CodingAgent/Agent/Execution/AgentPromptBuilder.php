@@ -140,7 +140,7 @@ final readonly class AgentPromptBuilder
             role: 'user-context',
             content: [[
                 'type' => 'text',
-                'text' => $this->buildInteractiveForegroundContract(
+                'text' => $this->buildInteractiveContract(
                     artifactId: $artifactId,
                 ),
             ]],
@@ -158,24 +158,21 @@ final readonly class AgentPromptBuilder
         return $messages;
     }
 
-    private function buildInteractiveForegroundContract(
+    private function buildInteractiveContract(
         string $artifactId,
     ): string {
         return <<<EOT
-You are a foreground child agent running inside a parent agent's tool call.
+You are a child agent working on a task assigned by a parent agent.
 
 Artifact ID: {$artifactId}
 
-## Interactive foreground contract
-
-- You are an interactive foreground child agent. You may use ask_human and tool
-  approval flows when clarification or approval is truly necessary to complete the task.
-- Return a dense, complete handoff when finished. Prefer concrete file paths, class names,
-  and code snippets over vague descriptions.
-- Do not block on optional questions; ask only when the task cannot proceed safely without input.
-- Your handoff will be returned to the parent LLM as the tool result.
-- Be concise. Prefer concrete file paths, class names, and code snippets
-  over vague descriptions.
+- Stay within the assigned scope.
+- When notify_parent is available, use it for blockers, questions, or findings
+  the parent needs before you finish.
+- Use ask_human only when it is available and human input is necessary to proceed.
+  Do not block on optional questions.
+- Finish with a concise handoff: results, relevant file paths, validation performed,
+  and any remaining blockers.
 EOT;
     }
 }
