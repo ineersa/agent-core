@@ -59,17 +59,6 @@ The controller omits `extension_agent` when console extension loading registered
 no agent-job handlers. Extension setup and activation require the existing
 restart workflow; an empty queue does not determine worker capability.
 
-The controller omits `mcp` when merged configuration has no enabled servers and
-the session has no nonempty persisted MCP catalog to invalidate. A catalog with
-`servers: []` is already invalidated and does not require a worker. Invalid configuration
-retains the worker so optional MCP failure reporting still runs. Start and attach
-recheck the requirement. Explicit MCP refresh starts an omitted worker before
-dispatch, so servers added during a session remain discoverable. Once launched,
-that worker keeps normal supervision, restart limits and STDIO client ownership;
-refresh does not duplicate it or bypass restart backoff. Empty sessions enqueue
-no MCP initialization. Broker connection budgeting reserves capacity for later
-activation. Scheduler and other worker counts are unchanged.
-
 ## Bus routing
 
 ```mermaid

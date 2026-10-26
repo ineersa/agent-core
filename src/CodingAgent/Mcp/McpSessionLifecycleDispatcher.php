@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Mcp;
 
-use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
-use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Mcp\Message\McpInitializeSessionCommand;
 use Ineersa\CodingAgent\Mcp\Message\McpRefreshCatalogCommand;
 use Psr\Log\LoggerInterface;
@@ -27,29 +25,7 @@ final readonly class McpSessionLifecycleDispatcher
     public function __construct(
         private MessageBusInterface $commandBus,
         private LoggerInterface $logger,
-        private McpConfigLoader $configLoader,
-        private McpToolCatalogStoreInterface $catalogStore,
     ) {
-    }
-
-    /** Nonempty old catalogs need invalidation even when configuration is now empty. */
-    public function requiresConsumer(string $runId): bool
-    {
-        try {
-            return [] !== $this->configLoader->load()->servers || [] !== ($this->catalogStore->read($runId)->servers ?? []);
-        } catch (\Throwable $exception) {
-            // Preserve optional MCP degradation: the worker publishes a failed
-            // catalog rather than preventing controller startup on invalid config.
-            $this->logger->warning('MCP startup configuration unavailable; retaining consumer', [
-                'component' => 'mcp',
-                'event_type' => 'mcp.startup_config_unavailable',
-                'run_id' => $runId,
-                'session_id' => $runId,
-                'error_class' => $exception::class,
-            ]);
-
-            return true;
-        }
     }
 
     /**
@@ -60,12 +36,6 @@ final readonly class McpSessionLifecycleDispatcher
      */
     public function dispatchInitialize(string $runId, string $reason): void
     {
-        // No configured capability and no old catalog to invalidate means no
-        // lifecycle work. Do not enqueue initialization for an omitted consumer.
-        if (!$this->requiresConsumer($runId)) {
-            return;
-        }
-
         $correlationId = bin2hex(random_bytes(12));
 
         try {
