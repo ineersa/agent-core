@@ -15,6 +15,8 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
 
+use function Amp\delay;
+
 /**
  * Durable, ORM-backed manager for background processes.
  *
@@ -767,7 +769,7 @@ final class BackgroundProcessManager
 
         // Poll until cooperative exit or grace deadline, then KILL if still alive.
         // Wrapper trap writes .status before /proc fully disappears; treat that as done.
-        // ponytail: 50ms poll loop (matches ProcessLifecycle::resolvePgid); waitpid/eventfd if stop latency becomes a hot path
+        // Yield through the grace period so sibling tools and lease renewal remain runnable.
         $statusPath = $entity->statusPath;
         if ($graceSeconds > 0) {
             $deadlineNs = hrtime(true) + ($graceSeconds * 1_000_000_000);
@@ -778,7 +780,7 @@ final class BackgroundProcessManager
                 if (!$this->lifecycle->isAlive($pid)) {
                     break;
                 }
-                usleep(50_000);
+                delay(0.05);
             }
         }
 

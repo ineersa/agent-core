@@ -15,6 +15,8 @@ use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
+use function Amp\delay;
+
 /**
  * Execute a shell command with foreground supervision via BackgroundProcessManager.
  *
@@ -211,8 +213,8 @@ final class BashTool implements HatfieldToolProviderInterface
                     );
                 }
 
-                // 5. Sleep before next poll
-                usleep($this->config->pollIntervalMicros);
+                // Yield during supervision so sibling invocations and lease timers progress.
+                delay($this->config->pollIntervalMicros / 1_000_000);
             }
         });
     }

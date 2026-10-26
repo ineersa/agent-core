@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 
+use Amp\Process\Process;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Process\ExecutableFinder;
+
+use function Amp\ByteStream\buffer;
+use function Amp\delay;
 
 /**
  * OS and filesystem operations for background process lifecycle.
@@ -47,8 +52,8 @@ final class ProcessLifecycle
     public function launchProcess(string $command, string $pidFile, string $logFile, string $statusFile): array
     {
         // Preflight: verify setsid is available before attempting launch.
-        exec('command -v setsid', $_, $rc);
-        if (0 !== $rc) {
+        $setsid = (new ExecutableFinder())->find('setsid');
+        if (null === $setsid) {
             throw new \RuntimeException('setsid is required but not found on this platform.');
         }
 
@@ -77,11 +82,11 @@ final class ProcessLifecycle
         // stdout to the log: EOF acknowledges readiness without polling a file.
         // Keep the command in its own bash -c so heredocs/exit cannot consume
         // or bypass the supervisor's wait/status-writing code.
-        $launcher = 'setsid -f bash -c '.escapeshellarg($shellCode);
-
-        $output = [];
-        $exitCode = -1;
-        exec($launcher, $output, $exitCode);
+        $launcher = Process::start([$setsid, '-f', 'bash', '-c', $shellCode]);
+        // Reading launch-pipe EOF cooperatively preserves the wrapper readiness
+        // boundary without blocking every other invocation in this process.
+        $output = preg_split('/\R/', trim(buffer($launcher->getStdout())));
+        $exitCode = $launcher->join();
 
         if (0 !== $exitCode || [] === $output) {
             throw new \RuntimeException('Failed to launch background process: setsid returned exit code '.$exitCode.'. (pid file: '.$pidFile.')');
@@ -235,15 +240,17 @@ final class ProcessLifecycle
     public function resolvePgid(int $pid): ?int
     {
         for ($attempt = 0; $attempt < 5; ++$attempt) {
-            $pgidStr = @shell_exec(\sprintf('ps -o pgid= -p %d 2>/dev/null', $pid));
-            if (\is_string($pgidStr) && '' !== trim($pgidStr)) {
+            $process = Process::start(['ps', '-o', 'pgid=', '-p', (string) $pid]);
+            $pgidStr = buffer($process->getStdout());
+            $process->join();
+            if ('' !== trim($pgidStr)) {
                 $pgid = (int) trim($pgidStr);
                 if ($pgid > 0) {
                     return $pgid;
                 }
             }
             if ($attempt < 4) {
-                usleep(50_000);
+                delay(0.05);
             }
         }
 
