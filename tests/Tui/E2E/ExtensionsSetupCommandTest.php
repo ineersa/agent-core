@@ -202,6 +202,17 @@ final class ExtensionsSetupCommandTest extends TestCase
             $send('C-d');
             $tmux->waitUntilPaneExits($pane, 3);
             $this->assertFalse($tmux->paneExists($pane));
+
+            // Copying an installation preserves its generated bootstrap class.
+            // Both physical roots must still load before setup can repair a suffix.
+            $copied = $temporary.'/copied-project';
+            (new Filesystem())->mirror($home.'/.hatfield/extensions', $copied.'/.hatfield/extensions');
+            file_put_contents($copied.'/.hatfield/settings.yaml', Yaml::dump($initial, 8));
+            $pane = $start($copied);
+            $tmux->waitForCaptureContains($pane, 'Scope: Project', 10);
+            $send('C-d');
+            $tmux->waitUntilPaneExits($pane, 3);
+            $this->assertFalse($tmux->paneExists($pane));
         } finally {
             if (null !== $pane && $tmux->paneExists($pane)) {
                 $tmux->sendKey($pane, 'C-d');

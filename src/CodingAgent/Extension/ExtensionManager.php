@@ -132,9 +132,14 @@ final class ExtensionManager
             $vendor = \dirname($autoloadPath);
             $loader = $registered[$vendor] ?? null;
             if (null === $loader) {
-                // Installer sets prepend-autoloader=false: host libraries win.
-                require_once $autoloadPath;
-                continue;
+                // Copied roots retain the same generated bootstrap class. Do not
+                // redeclare it; their own metadata can still build a distinct loader.
+                preg_match('/\b(ComposerAutoloaderInit\w+)::getLoader\(/', file_get_contents($autoloadPath), $bootstrap);
+                if (!isset($bootstrap[1]) || !class_exists($bootstrap[1], false)) {
+                    // Installer sets prepend-autoloader=false: host libraries win.
+                    require_once $autoloadPath;
+                    continue;
+                }
             }
             // Composer's init class retains its loader, including negative lookups.
             // A fresh public ClassLoader clears misses that map setters cannot.
