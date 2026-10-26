@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Event\OnFlushEventArgs;
+use Doctrine\ORM\Events;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
@@ -29,7 +32,9 @@ use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
+use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
@@ -584,6 +589,9 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->assertStringContainsString('Commands time out after 2 seconds by default.', $def->description);
         $this->assertStringContainsString('Provide the timeout argument with an explicit higher value', $def->description);
+        $this->assertStringContainsString('backgrounded=true', $def->description);
+        $this->assertStringContainsString('Do not poll for completion.', $def->description);
+        $this->assertStringContainsString('[backgrounded=true|false]', $def->promptLine);
 
         // Prompt guidelines must describe timeout selection, model-selected
         // backgrounding, and no-poll completion.
@@ -641,7 +649,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $store = self::getContainer()->get(ProcessStore::class);
-        $em = self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
 
         $staleLogPath = $this->tmpDir.'/stale-composer.log';
         file_put_contents($staleLogPath, self::COMPOSER_MARKER."\n");
@@ -740,6 +748,64 @@ final class BashToolTest extends IsolatedKernelTestCase
             $this->assertStringContainsString('top-level Bash', $exception->getMessage());
         }
         $this->assertSame([], $this->recordsForSession(self::TEST_SESSION));
+    }
+
+    public function testBackgroundRequestFailureStopsOnlyTheStartedInvocation(): void
+    {
+        $this->createManager();
+        $fifo = $this->tmpDir.'/request-failure-release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $endpoint = fopen($fifo, 'r+b');
+        $this->assertIsResource($endpoint);
+        $command = 'IFS= read -r release < '.escapeshellarg($fifo);
+        $sibling = $this->manager->start($command, self::TEST_SESSION, 'sibling');
+        $failure = new \RuntimeException('background request flush failed');
+        $listener = new class($failure) {
+            public ?BackgroundProcess $target = null;
+
+            public function __construct(private readonly \RuntimeException $failure)
+            {
+            }
+
+            public function onFlush(OnFlushEventArgs $event): void
+            {
+                if (null !== $this->target) {
+                    return;
+                }
+                foreach ($event->getObjectManager()->getUnitOfWork()->getScheduledEntityUpdates() as $entity) {
+                    if ($entity instanceof BackgroundProcess && $entity->backgroundRequested) {
+                        $this->target = $entity;
+                        throw $this->failure;
+                    }
+                }
+            }
+        };
+        $events = self::getContainer()->get(EntityManagerInterface::class)->getEventManager();
+        $events->addEventListener([Events::onFlush], $listener);
+        try {
+            try {
+                $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO($command, backgrounded: true)));
+                $this->fail('A failed background request must not return an acknowledgement.');
+            } catch (\RuntimeException $exception) {
+                $this->assertSame($failure, $exception);
+            }
+            $this->assertNotNull($listener->target);
+            $target = $this->manager->findByRecordId($listener->target->id, self::TEST_SESSION);
+            $this->assertNotNull($target);
+            $this->assertNotSame($sibling->id, $target->id);
+            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $target->status);
+            $this->assertNotNull($target->finishedAt);
+            $this->assertNull($target->backgroundedAt);
+            $this->assertNotNull($target->completionNotifiedAt);
+            $other = $this->manager->findByRecordId($sibling->id, self::TEST_SESSION);
+            $this->assertNotNull($other);
+            $this->assertSame(BackgroundProcessStatusEnum::Running, $other->status);
+            $this->assertNull($other->finishedAt);
+        } finally {
+            $events->removeEventListener([Events::onFlush], $listener);
+            $this->manager->shutdownCleanup();
+            fclose($endpoint);
+        }
     }
 
     #[TestWith([false], 'manual request')]
@@ -967,7 +1033,7 @@ final class BashToolTest extends IsolatedKernelTestCase
     }
 
     /**
-     * @return list<\Ineersa\CodingAgent\Entity\BackgroundProcess>
+     * @return list<BackgroundProcess>
      */
     private function recordsForSession(string $sessionId): array
     {

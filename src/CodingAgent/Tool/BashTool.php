@@ -63,7 +63,7 @@ final class BashTool implements HatfieldToolProviderInterface
 {
     public const string NAME = 'bash';
 
-    public const string DESCRIPTION_TEMPLATE = 'Execute a shell command. Commands time out after %d seconds by default. Provide the timeout argument with an explicit higher value when a command needs more time. The user can move a running Bash tool to background with Ctrl+B.';
+    public const string DESCRIPTION_TEMPLATE = 'Execute a shell command. By default, wait for completion. Set backgrounded=true to continue other work; you will be notified when the command finishes. Do not poll for completion. Commands time out after %d seconds by default. Provide the timeout argument with an explicit higher value when a command needs more time.';
 
     public function __construct(
         private readonly BackgroundProcessManager $manager,
@@ -119,7 +119,13 @@ final class BashTool implements HatfieldToolProviderInterface
             $logPath = $startResult->logPath;
 
             if ($arguments->backgrounded) {
-                $this->manager->requestBackground($sessionId ?? '', $dbId, $toolCallId ?? '');
+                try {
+                    $this->manager->requestBackground($sessionId ?? '', $dbId, $toolCallId ?? '');
+                } catch (\Throwable $exception) {
+                    // Startup already succeeded; do not orphan this invocation before supervision begins.
+                    $this->manager->stopByRecordId($dbId, $sessionId);
+                    throw $exception;
+                }
             }
 
             $this->logger->info('bash_tool.started', [
@@ -237,7 +243,7 @@ final class BashTool implements HatfieldToolProviderInterface
             ),
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
-            promptLine: 'bash command [timeout=N] — execute a shell command with foreground supervision and optional timeout',
+            promptLine: 'bash command [timeout=N] [backgrounded=true|false] — execute a shell command',
             promptGuidelines: [
                 \sprintf(
                     'Bash commands time out after %d seconds by default. Always provide the timeout argument with an explicit higher value when a command needs more time, up to the %d-second maximum.',
