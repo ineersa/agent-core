@@ -3,6 +3,11 @@
     "type": "project",
     "license": "MIT",
     "description": "Monorepo for the agent-core ecosystem, consolidated into a single modular monolith.",
+    "suggest": {
+        "ineersa/hatfield-ext-file-rewind": "File Rewind",
+        "ineersa/hatfield-ext-task-workflow": "Task Workflow",
+        "ineersa/hatfield-ext-observational-memory": "Observational Memory"
+    },
     "repositories": [
         {
             "type": "vcs",

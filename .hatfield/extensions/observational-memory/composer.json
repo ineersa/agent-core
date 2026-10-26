@@ -3,6 +3,11 @@
     "description": "Observational memory extension for Hatfield (OM SQLite storage + async Observer pipeline)",
     "type": "hatfield-extension",
     "license": "MIT",
+    "extra": {
+        "hatfield": {
+            "extension": "Ineersa\\HatfieldExt\\ObservationalMemory\\ObservationalMemoryExtension"
+        }
+    },
     "require": {
         "php": ">=8.5",
         "ext-mbstring": "*",
@@ -18,6 +23,7 @@
         "symfony/ai-store": "^0.15",
         "symfony/ai-vektor-store": "^0.15",
         "symfony/clock": "^8.0",
+        "symfony/config": "^8.1",
         "symfony/filesystem": "^8.0",
         "symfony/http-client": "^8.0",
         "symfony/lock": "^8.0"

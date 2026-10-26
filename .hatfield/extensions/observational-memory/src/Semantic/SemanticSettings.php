@@ -6,6 +6,13 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Semantic;
 
 final readonly class SemanticSettings
 {
+    public const int DEFAULT_CHUNK_BYTES = 1200;
+    public const int DEFAULT_OVERLAP_BYTES = 192;
+    public const int DEFAULT_MAX_LINES = 80;
+    public const int DEFAULT_EMBEDDING_BATCH_SIZE = 4;
+    public const int DEFAULT_RERANKER_BATCH_SIZE = 8;
+    public const int DEFAULT_DOCUMENT_CHARACTERS = 768;
+
     public function __construct(
         public string $embeddingUrl,
         public string $embeddingModel,
@@ -43,8 +50,8 @@ final readonly class SemanticSettings
             }
             $minScore = (float) $value;
         }
-        $bytes = self::positive($embedding, 'chunk_bytes', 1200);
-        $overlap = $embedding['overlap_bytes'] ?? 192;
+        $bytes = self::positive($embedding, 'chunk_bytes', self::DEFAULT_CHUNK_BYTES);
+        $overlap = $embedding['overlap_bytes'] ?? self::DEFAULT_OVERLAP_BYTES;
         if (!\is_int($overlap) || $overlap < 0 || $overlap >= $bytes || $bytes < 4) {
             throw new \InvalidArgumentException('chunk_bytes must be at least 4; overlap_bytes must be nonnegative and smaller than chunk_bytes.');
         }
@@ -52,12 +59,12 @@ final readonly class SemanticSettings
         return new self(
             self::url($embedding), self::text($embedding, 'model_id'),
             self::text($embedding, 'query_prefix', ''), $bytes, $overlap,
-            self::positive($embedding, 'max_lines', 80),
-            self::positive($embedding, 'batch_size', 4),
+            self::positive($embedding, 'max_lines', self::DEFAULT_MAX_LINES),
+            self::positive($embedding, 'batch_size', self::DEFAULT_EMBEDDING_BATCH_SIZE),
             null === $reranker ? null : self::url($reranker),
             null === $reranker ? null : self::text($reranker, 'model_id'),
-            self::positive($reranker ?? [], 'batch_size', 8),
-            self::positive($reranker ?? [], 'document_characters', 768),
+            self::positive($reranker ?? [], 'batch_size', self::DEFAULT_RERANKER_BATCH_SIZE),
+            self::positive($reranker ?? [], 'document_characters', self::DEFAULT_DOCUMENT_CHARACTERS),
             $minScore,
         );
     }

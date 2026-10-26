@@ -5,16 +5,22 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\FileRewind;
 
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\Config\Definition\ConfigurationInterface;
 
-final class FileRewindExtension implements HatfieldExtensionInterface, TuiExtensionInterface
+final class FileRewindExtension implements ConfigurableExtensionInterface, TuiExtensionInterface
 {
     private ?FileRewindService $service = null;
     private ?FileRewindPickerController $picker = null;
+
+    public function getConfiguration(): ConfigurationInterface
+    {
+        return new FileRewindConfiguration();
+    }
 
     public function register(ExtensionApiInterface $api): void
     {

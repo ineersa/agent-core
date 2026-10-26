@@ -85,7 +85,7 @@ final class FileRewindExtensionIntegrationTest extends TestCase
             ),
         );
 
-        $diagnostics = (new ExtensionManager($appConfig, $bridge, new NullLogger(), new \Symfony\Component\EventDispatcher\EventDispatcher()))->loadExtensions();
+        $diagnostics = (new ExtensionManager($appConfig, $bridge, new NullLogger(), new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($appConfig->cwd, $appConfig->cwd.'/home')))->loadExtensions();
 
         $this->assertSame([], $diagnostics, implode('; ', $diagnostics));
         $this->assertTrue($slashCatalog->has('rewind'));

@@ -6,8 +6,9 @@ namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard;
 
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier\SafeGuardClassifier;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
+use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Symfony\Component\Config\Definition\ConfigurationInterface;
 
 /**
  * SafeGuard bundled extension for Hatfield.
@@ -31,8 +32,13 @@ use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
  * @see SafeGuardToolCallHook
  * @see SafeGuardClassifier
  */
-final readonly class SafeGuardExtension implements HatfieldExtensionInterface
+final readonly class SafeGuardExtension implements ConfigurableExtensionInterface
 {
+    public function getConfiguration(): ConfigurationInterface
+    {
+        return new SafeGuardConfiguration();
+    }
+
     public function register(ExtensionApiInterface $api): void
     {
         $settings = $api->getSettings('safe_guard');
