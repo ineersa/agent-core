@@ -21,6 +21,7 @@ use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\StreamingMarkdownTranscriptWidget;
 use Ineersa\Tui\Transcript\ThemeStyleSheetFactory;
 use Ineersa\Tui\Transcript\ToolExchangeTranscriptWidget;
+use Ineersa\Tui\Transcript\TranscriptBodyPreviewWidget;
 use Ineersa\Tui\Transcript\TranscriptMountedWidget;
 use Ineersa\Tui\Transcript\TranscriptVisualNode;
 use Ineersa\Tui\Transcript\TranscriptVisualProjector;
@@ -781,7 +782,12 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
 
     private function streamingMarkdown(StreamingMarkdownTranscriptWidget $widget): ?MarkdownWidget
     {
-        return (new \ReflectionProperty($widget, 'markdown'))->getValue($widget);
+        $body = $widget->all()[0] ?? null;
+        if ($body instanceof TranscriptBodyPreviewWidget) {
+            $body = $body->all()[0] ?? null;
+        }
+
+        return $body instanceof MarkdownWidget ? $body : null;
     }
 
     private function findMarkdownWidgets(TranscriptMountedWidget $transcript): array

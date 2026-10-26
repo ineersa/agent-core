@@ -38,7 +38,7 @@ final class StreamingMarkdownTranscriptWidget extends ContainerWidget implements
         }
 
         $previous = $this->node;
-        if (null !== $previous && $previous->sameSources($node) && null !== $this->markdown) {
+        if (null !== $previous && $previous->sameSources($node)) {
             return;
         }
 

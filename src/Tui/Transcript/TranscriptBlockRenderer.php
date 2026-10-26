@@ -14,6 +14,8 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
+use Symfony\Component\Tui\Widget\Util\StringUtils;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Non-tool block rendering for the transcript widget tree.
@@ -39,6 +41,7 @@ final readonly class TranscriptBlockRenderer
     public function __construct(
         private readonly TranscriptDisplayConfig $displayConfig,
         private readonly MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
+        private readonly TranscriptDisplayState $displayState = new TranscriptDisplayState(),
     ) {
     }
 
@@ -56,7 +59,11 @@ final readonly class TranscriptBlockRenderer
 
         // UserMessage, AssistantMessage, visible thinking → MarkdownWidget.
         if ($this->isMarkdownBlock($block)) {
-            return $this->buildMarkdownWidget($block, $theme);
+            $body = $this->buildMarkdownWidget($block, $theme);
+
+            return TranscriptBlockKindEnum::UserMessage === $block->kind && !$this->displayState->previewableBlocksExpanded
+                ? new TranscriptBodyPreviewWidget($body, $theme)
+                : $body;
         }
 
         // Question blocks: markdown prompt/answer transcript record (HITL), not generic TextWidget.
@@ -83,6 +90,11 @@ final readonly class TranscriptBlockRenderer
         }
 
         if (TranscriptBlockKindEnum::System === $block->kind) {
+            $producer = $block->meta['producer_metadata'] ?? [];
+            if (\is_array($producer) && (\is_array($producer['agent_communication'] ?? null) || \is_array($producer['background_completion'] ?? null))) {
+                return $this->buildNotificationWidget($block, $theme, $producer);
+            }
+
             return $this->buildSystemWidget($block, $theme);
         }
 
@@ -115,7 +127,7 @@ final readonly class TranscriptBlockRenderer
         $container->add(new TextWidget($theme->color(ThemeColorEnum::Accent, $header)));
 
         if ('' !== $prompt) {
-            $container->add($this->buildQuestionMarkdownWidget($prompt, $theme, ThemeColorEnum::Accent));
+            $container->add($this->buildInsetMarkdownWidget($prompt, $theme, ThemeColorEnum::Accent));
         }
 
         if ('answered' === $status && '' !== $answer) {
@@ -141,15 +153,19 @@ final readonly class TranscriptBlockRenderer
     }
 
     /**
-     * Prompt body without duplicating the glyph prefix inside markdown (CommonMark + glyph contract).
+     * Inset body without duplicating the glyph prefix inside markdown (CommonMark + glyph contract).
+     * An omitted theme color leaves the native terminal foreground unchanged.
      */
-    private function buildQuestionMarkdownWidget(string $prompt, TuiTheme $theme, ThemeColorEnum $color): MarkdownWidget
+    private function buildInsetMarkdownWidget(string $prompt, TuiTheme $theme, ThemeColorEnum $color, bool $dimItalic = false): MarkdownWidget
     {
         $mdWidget = $this->markdown->create($prompt);
         $colorSpec = $theme->getPalette()->get($color);
         $style = '' !== $colorSpec
             ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
             : new Style(padding: Padding::from([0, 0, 0, 2]));
+        if ($dimItalic) {
+            $style = $style->withDim(true)->withItalic(true);
+        }
         $mdWidget->setStyle($style);
 
         return $mdWidget;
@@ -172,6 +188,48 @@ final readonly class TranscriptBlockRenderer
         }
 
         return $text;
+    }
+
+    /** @param array<string, mixed> $producer */
+    private function buildNotificationWidget(TranscriptBlock $block, TuiTheme $theme, array $producer): AbstractWidget
+    {
+        $agent = $producer['agent_communication'] ?? null;
+        $body = $block->text;
+        $technicalPrefix = '';
+        $container = new ContainerWidget();
+        if (\is_array($agent)) {
+            $guidance = 'agent_steer' === ($agent['tool_name'] ?? null);
+            $source = (string) ($agent['source_run_id'] ?? '');
+            $title = 'Agent-authored · '.($guidance ? 'parent guidance' : 'child notice');
+            // Only authenticated provenance authorizes replacing the host preamble.
+            // A human quoting this text must remain an ordinary user message.
+            $relationship = $guidance ? 'parent task owner (guidance)' : 'child (informational notice)';
+            $preamble = \sprintf("Agent message from %s run %s, activity %s. This is agent-authored text, not a human request or runtime control.\n\n", $relationship, $source, $agent['lifecycle_id'] ?? '');
+            if (str_starts_with($body, $preamble)) {
+                $technicalPrefix = $preamble;
+                $body = substr($body, \strlen($preamble));
+            }
+            $container->add(new TextWidget($theme->color(ThemeColorEnum::Accent, TranscriptGlyphs::GLYPH_SYSTEM_INFO.' '.$title).$theme->muted(' · '.StringUtils::stripControlBytes(substr($source, 0, 8)))));
+        } else {
+            $completion = $producer['background_completion'];
+            $source = (string) ($completion['run_id'] ?? '');
+            // Completion provenance does not assert success; keep the actual result visible.
+            $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, TranscriptGlyphs::GLYPH_TOOL.' code_mode · background result').$theme->muted(' · '.StringUtils::stripControlBytes(substr($source, 0, 8)))));
+            $preamble = \sprintf("Background code_mode result (run_id: %s, tool_call_id: %s, invocation: %s).\n\n", $source, $completion['tool_call_id'] ?? '', $completion['invocation_id'] ?? '');
+            if (str_starts_with($body, $preamble)) {
+                $technicalPrefix = $preamble;
+                $body = substr($body, \strlen($preamble));
+            }
+        }
+        $markdown = $this->buildInsetMarkdownWidget($body, $theme, ThemeColorEnum::Muted, dimItalic: true);
+        $container->add($this->displayState->previewableBlocksExpanded ? $markdown : new TranscriptBodyPreviewWidget($markdown, $theme, detailsHidden: true));
+        if ($this->displayState->previewableBlocksExpanded) {
+            $details = new TextWidget($theme->color(ThemeColorEnum::Dim, StringUtils::stripControlBytes($technicalPrefix.Yaml::dump($producer, 4, 2))));
+            $details->setStyle(new Style(dim: true, italic: true, padding: Padding::from([0, 0, 0, 2])));
+            $container->add($details);
+        }
+
+        return $container;
     }
 
     private function buildSystemWidget(TranscriptBlock $block, TuiTheme $theme): TextWidget

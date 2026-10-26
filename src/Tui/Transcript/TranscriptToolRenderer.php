@@ -13,6 +13,7 @@ use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
+use Symfony\Component\Tui\Widget\Util\StringUtils;
 
 /**
  * Compact tool-call/result/exchange card rendering for the transcript widget tree.
@@ -67,6 +68,10 @@ final readonly class TranscriptToolRenderer
 
     public function buildToolCallWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
+        if ($this->isCommunicationTool($block)) {
+            return $this->buildCompactLifecycleWidget($block, null, $theme);
+        }
+
         $arguments = $block->meta['arguments'] ?? null;
         if (!\is_array($arguments)) {
             $arguments = [];
@@ -104,6 +109,10 @@ final readonly class TranscriptToolRenderer
 
     public function buildToolResultWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
+        if ($this->isCommunicationTool($block) || true === ($block->meta['backgrounded'] ?? false)) {
+            return $this->buildCompactLifecycleWidget($block, $block, $theme);
+        }
+
         if ($this->isViewImageToolName($block->meta['tool_name'] ?? null)
             && !$this->toolResultFacts->toolResultIsUnsuccessful($block)) {
             return $this->buildViewImageToolResultWidget($block, $theme);
@@ -136,6 +145,10 @@ final readonly class TranscriptToolRenderer
 
     public function buildToolExchangeWidget(TranscriptBlock $callBlock, TranscriptBlock $resultBlock, TuiTheme $theme): AbstractWidget
     {
+        if ($this->isCommunicationTool($callBlock) || true === ($resultBlock->meta['backgrounded'] ?? false)) {
+            return $this->buildCompactLifecycleWidget($callBlock, $resultBlock, $theme);
+        }
+
         if ($this->isViewImageToolName($callBlock->meta['tool_name'] ?? null)
             && !$this->toolResultFacts->toolResultIsUnsuccessful($resultBlock)) {
             return $this->buildViewImageToolExchangeWidget($callBlock, $resultBlock, $theme);
@@ -159,6 +172,81 @@ final readonly class TranscriptToolRenderer
         }
 
         return $this->buildGenericToolExchangeWidget($callBlock, $resultBlock, $theme, $arguments);
+    }
+
+    private function isCommunicationTool(TranscriptBlock $block): bool
+    {
+        return \in_array($block->meta['tool_name'] ?? null, ['agent_steer', 'notify_parent'], true);
+    }
+
+    private function buildCompactLifecycleWidget(TranscriptBlock $call, ?TranscriptBlock $result, TuiTheme $theme): AbstractWidget
+    {
+        $name = (string) ($call->meta['tool_name'] ?? 'tool');
+        $arguments = $call->meta['arguments'] ?? [];
+        if (!\is_array($arguments)) {
+            $arguments = [];
+        }
+        $communication = $this->isCommunicationTool($call);
+        $status = 'pending';
+        $color = ThemeColorEnum::Working;
+        if (null !== $result) {
+            if ($this->toolResultFacts->toolResultIsUnsuccessful($result)) {
+                $status = true === ($result->meta['cancelled'] ?? false) ? 'cancelled' : ($communication ? 'refused' : 'failed');
+                $color = ThemeColorEnum::Error;
+            } elseif (true === ($result->meta['backgrounded'] ?? false)) {
+                // This frozen acknowledgment is not a live process-status monitor.
+                $status = 'backgrounded';
+                $color = ThemeColorEnum::Muted;
+            } elseif (!$result->streaming) {
+                // These tools only complete successfully after source persistence.
+                $status = $communication ? 'accepted' : 'completed';
+                $color = $communication ? ThemeColorEnum::Muted : ThemeColorEnum::Success;
+            }
+        }
+        $target = '';
+        if ($communication) {
+            $target = ' → '.('notify_parent' === $name ? 'parent' : 'child');
+            $id = $arguments['agent_run_id'] ?? $arguments['artifact_id'] ?? '';
+            if (\is_string($id) && '' !== $id) {
+                $target .= ' '.substr(str_starts_with($id, 'agent_') ? substr($id, 6) : $id, 0, 8);
+            }
+        }
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($theme->color(ThemeColorEnum::ToolTitle, TranscriptGlyphs::GLYPH_TOOL.' '.$name).$theme->color(ThemeColorEnum::Muted, StringUtils::stripControlBytes($target)).$theme->color($color, ' · '.$status)));
+        $content = new ContainerWidget();
+        $contentStyle = new Style(dim: true, italic: true);
+        $bodyColor = $theme->getPalette()->get(ThemeColorEnum::Muted);
+        if ('' !== $bodyColor) {
+            $contentStyle = $contentStyle->withColor($bodyColor);
+        }
+        $content->setStyle($contentStyle);
+        $container->add($content);
+        if ($this->displayState->previewableBlocksExpanded) {
+            $argumentsWidget = $this->buildToolArgumentsWidget($name, $arguments, $theme);
+            if (null !== $argumentsWidget) {
+                $content->add($argumentsWidget);
+            }
+            if (null !== $result) {
+                $body = $this->buildToolResultBodyWidget($result, $theme, ThemeColorEnum::ToolOutput, prependBlankLine: false);
+                if (null !== $body) {
+                    $content->add($body);
+                }
+            }
+        } else {
+            $text = $arguments['text'] ?? $arguments['command'] ?? $arguments['script'] ?? '';
+            if (null !== $result && ($this->toolResultFacts->toolResultIsUnsuccessful($result) || ($communication && [] === $arguments))) {
+                $text = $this->toolResultFacts->toolResultBodyText($result)."\n\n".(\is_string($text) ? $text : '');
+            }
+            if (\is_string($text) && '' !== $text) {
+                $body = new TextWidget(StringUtils::stripControlBytes(StringUtils::sanitizeUtf8($text)));
+                $body->setStyle(new Style(padding: Padding::from([0, 0, 0, 2])));
+                $content->add(new TranscriptBodyPreviewWidget($body, $theme, detailsHidden: true));
+            } else {
+                $content->add(new TextWidget($theme->color(ThemeColorEnum::Dim, '  Ctrl+O for details')));
+            }
+        }
+
+        return $container;
     }
 
     private function isSkillReadToolCall(TranscriptBlock $block): bool
