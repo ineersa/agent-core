@@ -188,7 +188,13 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         }
     }
 
-    #[DataProvider('interruptions')]
+    #[TestWith(['stopped', true, true], 'stop retained terminal after controller loss')]
+    #[TestWith(['stopped'], 'stopped')]
+    #[TestWith(['cancelled'], 'cancelled')]
+    #[TestWith(['history_discarded'], 'history_discarded')]
+    #[TestWith(['stopped', true], 'controller loss then stopped')]
+    #[TestWith(['cancelled', true], 'controller loss then cancelled')]
+    #[TestWith(['history_discarded', true], 'controller loss then history_discarded')]
     public function testCapturedInterruptionRemainsInvocationStickyAfterParentProgress(string $reason, bool $lost = false, bool $terminal = false): void
     {
         $container = self::getContainer();
@@ -258,15 +264,6 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $this->admit($run, $retired->postCommitActions);
         $this->assertSame('completed', $repository->status($first->deferredId));
         $this->assertTrue($token->isCancellationRequested());
-    }
-
-    public static function interruptions(): iterable
-    {
-        yield 'stop retained terminal after controller loss' => ['stopped', true, true];
-        foreach (['stopped', 'cancelled', 'history_discarded'] as $reason) {
-            yield $reason => [$reason];
-            yield 'controller loss then '.$reason => [$reason, true];
-        }
     }
 
     #[TestWith([true], 'ACK wins')]

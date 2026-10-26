@@ -114,6 +114,8 @@ final class RuntimeEventEmitterTest extends TestCase
 
     public function testDisconnectReleasesPendingOutputAndInvokesOwnedShutdown(): void
     {
+        // Finish this test's stop even when an earlier await suspended the loop.
+        \Amp\async(static fn () => null)->await();
         [$writer, $reader] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, \STREAM_IPPROTO_IP);
         $emitter = $this->createEmitter();
         $reflection = new \ReflectionClass($emitter);
@@ -131,6 +133,7 @@ final class RuntimeEventEmitterTest extends TestCase
             $this->assertNull($reflection->getProperty('writeWatcher')->getValue($emitter));
         } finally {
             $emitter->shutdown();
+            EventLoop::run();
             fclose($writer);
         }
     }
@@ -162,8 +165,7 @@ final class RuntimeEventEmitterTest extends TestCase
             $reflection->getProperty('pendingBytes')->setValue($emitter, \strlen($pending[0]['line']));
             $emitter->whenDrained($after);
             $emitter->shutdown(microtime(true) + 1, new RuntimeEvent(RuntimeEventTypeEnum::ProtocolError->value, '', 0, ['error' => 'broker died', 'fatal' => true]));
-            // Shutdown has finished writing; collect bytes not yet read by the
-            // watcher directly, without requiring another event-loop callback.
+            // Collect remaining bytes after the writer finishes, without another loop tick.
             $wire .= stream_get_contents($reader);
             $lines = explode("\n", trim($wire));
             $this->assertCount(2, $lines);
