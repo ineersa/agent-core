@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Setup;
 
+use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
@@ -32,10 +33,15 @@ final class SettingsTextInputWidget extends SelectListWidget
     public function __construct(string $initial = '', string $prompt = '> ')
     {
         parent::__construct([]);
-        $this->line = new Line($initial);
+        $this->line = new Line($initial, \strlen($initial));
         $this->prompt = $prompt;
         $this->setKeybindings(new Keybindings([
             'delete_char_backward' => [Key::BACKSPACE, 'shift+backspace'],
+            'cursor_left' => [Key::LEFT, 'ctrl+b'],
+            'cursor_right' => [Key::RIGHT, 'ctrl+f'],
+            'cursor_start' => [Key::HOME, 'ctrl+a'],
+            'cursor_end' => [Key::END, 'ctrl+e'],
+            'delete_char_forward' => [Key::DELETE],
         ]));
     }
 
@@ -68,13 +74,17 @@ final class SettingsTextInputWidget extends SelectListWidget
             return;
         }
 
-        // Backspace / delete
-        if ($kb->matches($data, 'delete_char_backward')) {
-            $text = $this->line->getText();
-            if ('' !== $text) {
-                $this->line->setText(mb_substr($text, 0, -1));
-                $this->invalidate();
-            }
+        $edited = match (true) {
+            $kb->matches($data, 'delete_char_backward') => $this->line->deleteCharBackward(),
+            $kb->matches($data, 'delete_char_forward') => $this->line->deleteCharForward(),
+            $kb->matches($data, 'cursor_left') => $this->line->moveCursorLeft(),
+            $kb->matches($data, 'cursor_right') => $this->line->moveCursorRight(),
+            $kb->matches($data, 'cursor_start') => $this->line->moveCursorToStart(),
+            $kb->matches($data, 'cursor_end') => $this->line->moveCursorToEnd(),
+            default => null,
+        };
+        if (null !== $edited) {
+            $this->invalidate();
 
             return;
         }
@@ -92,6 +102,11 @@ final class SettingsTextInputWidget extends SelectListWidget
      */
     public function render(RenderContext $context): array
     {
-        return [$this->prompt.$this->line->getText().'█'];
+        $width = max(0, $context->getColumns() - AnsiUtils::visibleWidth($this->prompt));
+        $before = substr($this->line->getText(), 0, $this->line->getCursor());
+        $after = substr($this->line->getText(), $this->line->getCursor());
+        $offset = max(0, AnsiUtils::visibleWidth($before) - $width + 1);
+
+        return [AnsiUtils::truncateToWidth($this->prompt.AnsiUtils::sliceByColumn($before.'█'.$after, $offset, $width, true), $context->getColumns(), '')];
     }
 }

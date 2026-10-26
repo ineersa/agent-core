@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
@@ -133,7 +134,7 @@ final class ExtensionManagerTest extends TestCase
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -189,7 +190,7 @@ PHP;
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(1, $bridge->getRegistrations());
@@ -205,7 +206,7 @@ PHP;
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new TestLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -242,7 +243,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new TestLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -343,7 +344,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new TestLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         // Both good extensions should have registered their tools
@@ -372,7 +373,7 @@ PHP
             extensions: ['Ineersa\\Hatfield\\ExtensionApi\\ExtensionApiInterface']
         );
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -436,7 +437,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         // Verify tool registration
@@ -507,7 +508,7 @@ PHP
         $logger = new NullLogger();
         $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, $dispatcher);
+        $manager = new ExtensionManager($config, $bridge, $logger, $dispatcher, new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'));
         $manager->loadExtensions();
 
         // Autoload the generated fixture class before asserting on its static state.
@@ -561,6 +562,7 @@ PHP;
                 new InMemoryExtensionApiBridge(),
                 $logger,
                 new \Symfony\Component\EventDispatcher\EventDispatcher(),
+                new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'),
             );
             $diagnostics = $manager->loadExtensions();
             $this->assertCount(1, $diagnostics);
@@ -621,6 +623,7 @@ PHP);
             new InMemoryExtensionApiBridge(),
             new TestLogger(),
             new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'),
         );
         $manager->loadExtensions();
 
@@ -671,6 +674,7 @@ PHP);
             new InMemoryExtensionApiBridge(),
             new TestLogger(),
             new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            new SettingsPathResolver($this->extensionsDir, $this->extensionsDir.'/home'),
         );
         $manager->loadExtensions();
 
