@@ -40,6 +40,11 @@ final class ExtensionAgentJobRegistry
         return $this->handlers[$handlerId]['handler'] ?? null;
     }
 
+    public function hasHandlers(): bool
+    {
+        return [] !== $this->handlers;
+    }
+
     public function ownerClass(string $handlerId): ?string
     {
         return $this->handlers[$handlerId]['owner'] ?? null;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
+use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
@@ -82,6 +83,7 @@ final class HeadlessController
         /** Project-scoped factory (not FrameworkBundle default LockFactory). */
         private readonly LockFactory $sessionOwnerLockFactory,
         private readonly string $runtimeCwd,
+        private readonly ExtensionAgentJobRegistry $extensionAgentJobRegistry,
         /**
          * Optional override for parallel tool messenger consumers.
          * Values <= 0 use tools.execution.max_parallelism from settings.
@@ -183,9 +185,10 @@ final class HeadlessController
             $this->consumerSupervisor->launch('mcp');
             // Dedicated extension-agent worker: isolated from llm/tool/run_control so
             // extension Observer/Reflector jobs do not starve main run execution.
-            // Unconditional for now (MVP) — even when no extension registers handlers,
-            // an idle consumer is cheap relative to wiring conditional launch.
-            $this->consumerSupervisor->launch('extension_agent');
+            // Console extension loading completes before controller startup.
+            if ($this->extensionAgentJobRegistry->hasHandlers()) {
+                $this->consumerSupervisor->launch('extension_agent');
+            }
         } catch (\Throwable $exception) {
             $deadline = microtime(true) + 5.0;
             $this->consumerSupervisor->shutdownUntil($deadline);
