@@ -16,7 +16,6 @@ use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
@@ -365,7 +364,7 @@ PHP);
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
             self::getContainer()->get(OutputCap::class),
-            self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
         );
@@ -447,7 +446,7 @@ PHP);
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
             self::getContainer()->get(OutputCap::class),
-            self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
         );
@@ -666,7 +665,7 @@ PHP);
             },
             new RuntimeProcessConfig($locator, $this->tmpDir),
             self::getContainer()->get(OutputCap::class),
-            self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
         );
@@ -868,7 +867,7 @@ PHP);
             $locator,
             self::getContainer()->get(RuntimeProcessConfig::class),
             $outputCap ?? self::getContainer()->get(OutputCap::class),
-            self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
+            self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
         );

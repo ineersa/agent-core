@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
@@ -14,8 +13,6 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
-use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
@@ -380,75 +377,5 @@ final class DeferredCompletionFailingOnceMessageBus implements MessageBusInterfa
         }
 
         return new Envelope($message, [new HandledStamp(null, 'test')]);
-    }
-}
-
-final class MarkCompletedFailsOnceRepository implements DeferredToolCompletionRepositoryInterface
-{
-    public function __construct(
-        private readonly DeferredToolCompletionRepositoryInterface $inner,
-        private int $failuresRemaining = 1,
-    ) {
-    }
-
-    public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
-    {
-        return $this->inner->registerPending($correlation);
-    }
-
-    public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
-    {
-        return $this->inner->findByRunAndToolCall($runId, $toolCallId);
-    }
-
-    public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation
-    {
-        return $this->inner->findByDeferredId($deferredId);
-    }
-
-    public function runRequiresContinuation(string $runId): bool
-    {
-        return $this->inner->runRequiresContinuation($runId);
-    }
-
-    public function status(string $deferredId): ?string
-    {
-        return $this->inner->status($deferredId);
-    }
-
-    public function statusForRunAndToolCall(string $runId, string $toolCallId): ?string
-    {
-        return $this->inner->statusForRunAndToolCall($runId, $toolCallId);
-    }
-
-    public function findMetadataByDeferredId(string $deferredId): ?DeferredToolCompletionMetadataDTO
-    {
-        return $this->inner->findMetadataByDeferredId($deferredId);
-    }
-
-    public function markCompleted(string $deferredId): void
-    {
-        if ($this->failuresRemaining > 0) {
-            --$this->failuresRemaining;
-
-            throw new \RuntimeException('mark failed');
-        }
-
-        $this->inner->markCompleted($deferredId);
-    }
-
-    public function markReady(string $deferredId): void
-    {
-        $this->inner->markReady($deferredId);
-    }
-
-    public function markBackgrounded(string $deferredId, \DateTimeImmutable $acceptedAt): void
-    {
-        $this->inner->markBackgrounded($deferredId, $acceptedAt);
-    }
-
-    public function acceptResultReference(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO
-    {
-        return $this->inner->acceptResultReference($deferredId, $reference);
     }
 }

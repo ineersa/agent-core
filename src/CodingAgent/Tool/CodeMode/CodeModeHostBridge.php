@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
@@ -17,6 +16,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\OutputCap;
@@ -57,7 +57,7 @@ final readonly class CodeModeHostBridge
         private ContainerInterface $toolboxLocator,
         private RuntimeProcessConfig $runtimeProcessConfig,
         private OutputCap $outputCap,
-        private DeferredToolCompletionRepositoryInterface $deferred,
+        private DeferredToolCompletionRepository $deferred,
         private ToolBatchStoreInterface $batches,
         private ToolPayloadStoreInterface $payloads,
         private Filesystem $filesystem = new Filesystem(),

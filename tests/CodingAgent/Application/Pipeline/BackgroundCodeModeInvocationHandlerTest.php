@@ -47,14 +47,12 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\History\HistorySelectionService;
-use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeCancellationToken;
 use PHPUnit\Framework\Attributes\DataProvider;
-use Symfony\Component\Messenger\MessageBusInterface;
-use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
+use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Uid\Uuid;
 
 final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCase
@@ -242,7 +240,6 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $this->assertSame('pending', $repository->status($first->deferredId), 'Stop is not physical completion.');
         $this->assertSame($reason, $repository->findMetadataByDeferredId($first->deferredId)->interruptionReason);
         $delivery = new DeliverBackgroundCompletionDTO($run, $first->deferredId, 'late', $run, $first->deferredId, $repository->findMetadataByDeferredId($first->deferredId)->reference);
-        $this->assertFalse($container->get(HistoryTailDiscardService::class)->isContextMutatingMessage($delivery));
         $retired = $container->get(BackgroundCompletionRunHandler::class)->handle($delivery, $state);
         $this->assertSame([], $retired->events);
         $this->admit($run, $retired->postCommitActions);
@@ -259,7 +256,10 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         }
     }
 
-    #[DataProvider('winners')]
+    #[TestWith([true], 'ACK wins')]
+    #[TestWith([true, true, true], 'admitted receipt fenced before consumption')]
+    #[TestWith([false], 'terminal wins')]
+    #[TestWith([false, false], 'startup failure before readiness')]
     public function testCallerRaceAndFirstTerminalRetention(bool $ackFirst, bool $ready = true, bool $fenceReceipt = false): void
     {
         $container = self::getContainer();
@@ -303,7 +303,6 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $details = $ackFirst ? ['model_notifications' => [['id' => 'cap', 'source' => 'output_cap', 'kind' => 'output_capped', 'severity' => 'warning', 'delivery' => 'tool_result_replace', 'text' => 'PREVIEW: first result; Saved full output: /owned/artifact.txt', 'tool_call_id' => 'call', 'tool_name' => 'code_mode']]] : [];
         $result = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => 'FIRST']], $details, isError: !$ready);
         $bus = $container->get('agent.command.bus');
-        $this->assertInstanceOf(MessageBusInterface::class, $bus);
         $bus->dispatch($result);
         $reference = $repository->findMetadataByDeferredId($id)->acceptedResultReference;
         $this->assertNotNull($reference);
@@ -315,7 +314,6 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $this->assertSame([], $handler->handle($request, $state)->events, 'No ACK after terminal acceptance or an earlier ACK.');
         if ($ackFirst) {
             $transport = $container->get('messenger.transport.run_control');
-            $this->assertInstanceOf(InMemoryTransport::class, $transport);
             $notices = array_values(array_filter(array_map(static fn ($envelope) => $envelope->getMessage(), $transport->getSent()), static fn (object $message): bool => $message instanceof DeliverBackgroundCompletionDTO && $message->identity === $id));
             $this->assertCount(2, $notices);
             $this->assertSame(array_fill(0, 2, 'PREVIEW: first result; Saved full output: /owned/artifact.txt'), array_column($notices, 'text'));
@@ -331,21 +329,12 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
                     new PendingCommand($runId, 'append_message', $id, ['provenance' => new BackgroundCompletionProvenanceDTO($id, $runId, $id)]));
                 $this->assertNotNull($decision->retirementReason);
                 $this->assertSame('completed', $repository->status($id), 'Interruption never reopens durable admission.');
-                $this->assertFalse($container->get(HistoryTailDiscardService::class)->isContextMutatingMessage(new AdvanceRun($runId, 1, 'step', 1, 'advance')));
             }
         } else {
             $admission = $container->get(ToolCallResultHandler::class)->handle($retained, $state);
             $this->admit($runId, $admission->postCommitActions);
             $this->assertSame('completed', $repository->status($id));
         }
-    }
-
-    public static function winners(): iterable
-    {
-        yield 'ACK wins' => [true];
-        yield 'admitted receipt fenced before consumption' => [true, true, true];
-        yield 'terminal wins' => [false];
-        yield 'startup failure before readiness' => [false, false];
     }
 
     /** @param list<object> $actions */

@@ -39,12 +39,6 @@ interface DeferredToolCompletionRepositoryInterface
     /** Old successor tokens require an explicit owner continuation after loss. */
     public function runRequiresContinuation(string $runId): bool;
 
-    /** Live host IPC is ready for caller acknowledgement. */
-    public function markReady(string $deferredId): void;
-
-    /** Caller wait detached; host may still be running. */
-    public function markBackgrounded(string $deferredId, \DateTimeImmutable $acceptedAt): void;
-
     /** First immutable processed result wins; later publications are no-ops when equal. */
     public function acceptResultReference(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO;
 }

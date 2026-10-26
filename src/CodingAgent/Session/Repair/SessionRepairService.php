@@ -977,17 +977,10 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 if (!$correlation instanceof DeferredToolCompletionCorrelation) {
                     throw new \UnexpectedValueException('Retained deferred invocation is not a correlation.');
                 }
-                $found = false;
-                foreach ($sourceEvents as $event) {
-                    if ($event->turnNo !== $correlation->turnNo || ($event->payload['step_id'] ?? null) !== $correlation->stepId) {
-                        continue;
-                    }
-                    foreach ($event->payload['assistant_message']['tool_calls'] ?? [] as $call) {
-                        if (($call['id'] ?? null) === $correlation->toolCallId && ($call['name'] ?? null) === $correlation->toolName && ($call['arguments'] ?? null) === $correlation->arguments) {
-                            $found = true;
-                        }
-                    }
-                }
+                $found = array_any($sourceEvents, static fn (RunEvent $event): bool => $event->turnNo === $correlation->turnNo && ($event->payload['step_id'] ?? null) === $correlation->stepId
+                    && array_any($event->payload['assistant_message']['tool_calls'] ?? [], static fn (array $call): bool => ($call['id'] ?? null) === $correlation->toolCallId
+                        && ($call['name'] ?? null) === $correlation->toolName
+                        && ($call['arguments'] ?? null) === $correlation->arguments));
                 if (!$found) {
                     return $this->refusalResult($runId, 'Retained deferred invocation has no matching canonical call.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
                 }
