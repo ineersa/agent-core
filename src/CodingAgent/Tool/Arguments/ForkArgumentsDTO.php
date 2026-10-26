@@ -26,7 +26,7 @@ final class ForkArgumentsDTO
         #[Schema(description: 'Optional reasoning/thinking level.')]
         #[Assert\Choice(choices: ModelResolver::LEVELS, message: 'fork thinking must be one of: {{ choices }}.')]
         public readonly ?string $thinking = null,
-        #[Schema(description: 'Request background launch after startup; returns an acknowledgement and delivers the result later. Default false.')]
+        #[Schema(description: 'Run in the background so you can continue other work without waiting for completion. Default false.')]
         public readonly bool $backgrounded = false,
     ) {
     }

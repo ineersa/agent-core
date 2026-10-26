@@ -245,7 +245,7 @@ final class BashTool implements HatfieldToolProviderInterface
                     $this->config->maxTimeoutSeconds,
                 ),
                 'For file operations such as reading, writing, editing, or viewing files, prefer the dedicated read/write/edit/view_image tools instead of bash cat/echo/editor pipelines.',
-                'Set backgrounded=true to request background launch. Default false waits for completion; the user can also press Ctrl+B. Backgrounded commands report completion automatically, so do not poll; use bg_status with the returned PID only to inspect progress or stop the process when needed.',
+                'Set backgrounded=true when you can continue other work without the command\'s result. The default, false, waits for completion. Background commands notify you when they finish; do not poll for completion. Use bg_status with the returned PID to inspect output or stop the command. Background launch is supported for direct bash calls, not calls inside code_mode.',
                 'Output is capped to prevent excessively large responses. Very large output may be truncated and saved to a file for inspection.',
             ],
         );

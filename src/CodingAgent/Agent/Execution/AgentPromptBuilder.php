@@ -162,20 +162,17 @@ final readonly class AgentPromptBuilder
         string $artifactId,
     ): string {
         return <<<EOT
-You are a child agent launched by a parent agent's tool call.
+You are a child agent working on a task assigned by a parent agent.
 
 Artifact ID: {$artifactId}
 
-## Interactive child contract
-
-- You are an interactive child agent. You may use ask_human and tool
-  approval flows when clarification or approval is truly necessary to complete the task.
-- Return a dense, complete handoff when finished. Prefer concrete file paths, class names,
-  and code snippets over vague descriptions.
-- Do not block on optional questions; ask only when the task cannot proceed safely without input.
-- Your handoff reaches the parent as the tool result, or as a notification if your invocation is backgrounded.
-- Be concise. Prefer concrete file paths, class names, and code snippets
-  over vague descriptions.
+- Stay within the assigned scope.
+- When notify_parent is available, use it for blockers, questions, or findings
+  the parent needs before you finish.
+- Use ask_human only when it is available and human input is necessary to proceed.
+  Do not block on optional questions.
+- Finish with a concise handoff: results, relevant file paths, validation performed,
+  and any remaining blockers.
 EOT;
     }
 }

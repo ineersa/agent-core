@@ -585,16 +585,16 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('Commands time out after 2 seconds by default.', $def->description);
         $this->assertStringContainsString('Provide the timeout argument with an explicit higher value', $def->description);
 
-        // Prompt guidelines must describe timeout selection, user-owned
+        // Prompt guidelines must describe timeout selection, model-selected
         // backgrounding, and no-poll completion.
         $guidelinesText = implode(' ', $def->promptGuidelines);
         $this->assertStringContainsStringIgnoringCase('time out after 2 seconds by default', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('always provide the timeout argument with an explicit higher value', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('3600-second maximum', $guidelinesText);
-        $this->assertStringContainsStringIgnoringCase('user', $guidelinesText);
+        $this->assertStringContainsString('direct bash calls, not calls inside code_mode', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('bg_status', $guidelinesText);
         $this->assertStringContainsString('backgrounded=true', $guidelinesText);
-        $this->assertStringContainsStringIgnoringCase('report completion automatically', $guidelinesText);
+        $this->assertStringContainsString('notify you when they finish', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('do not poll', $guidelinesText);
     }
 

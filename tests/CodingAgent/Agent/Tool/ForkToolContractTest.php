@@ -51,6 +51,7 @@ final class ForkToolContractTest extends TestCase
             ForkToolHandler::DESCRIPTION,
             $definition->description,
         );
+        $this->assertStringContainsString('you will be notified when it finishes. Do not poll for completion.', $definition->description);
         $this->assertSame(ModelResolver::LEVELS, $args['properties']['thinking']['enum']);
     }
 

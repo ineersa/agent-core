@@ -79,6 +79,7 @@ final class RegistryBackedToolboxTest extends TestCase
     {
         $schema = NativeToolSchemaProbe::schemaFactory()->buildParameters($handler, '__invoke');
         $this->assertSame('boolean', $schema['properties']['backgrounded']['type']);
+        $this->assertSame('Run in the background so you can continue other work without waiting for completion. Default false.', $schema['properties']['backgrounded']['description']);
         $this->assertNotContains('backgrounded', $schema['required'] ?? []);
         $serializer = AttributeSerializerValidatorTestFactory::denormalizer();
         $this->assertFalse($serializer->denormalize($arguments, $dto)->backgrounded);
