@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
@@ -29,6 +30,7 @@ use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Process\Exception\ProcessStartFailedException;
 use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeException;
 use Symfony\Component\Process\ExecutableFinder;
@@ -60,6 +62,7 @@ final readonly class CodeModeHostBridge
         private DeferredToolCompletionRepository $deferred,
         private ToolBatchStoreInterface $batches,
         private ToolPayloadStoreInterface $payloads,
+        private MessageBusInterface $commandBus,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -69,13 +72,17 @@ final readonly class CodeModeHostBridge
         string $script,
         int $timeoutSeconds = CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS,
         int $memoryLimitMb = CodeModeArgumentsDTO::DEFAULT_MEMORY_LIMIT_MB,
+        bool $backgrounded = false,
     ): mixed {
-        return $this->toolRuntime->run(function () use ($script, $timeoutSeconds, $memoryLimitMb): mixed {
+        return $this->toolRuntime->run(function () use ($script, $timeoutSeconds, $memoryLimitMb, $backgrounded): mixed {
             $parentContext = $this->contextAccessor->current();
             $cancelToken = $parentContext?->cancellationToken() ?? new NullCancellationToken();
             $timeoutSeconds = $this->resolveScriptWallSeconds($timeoutSeconds, $parentContext?->timeoutSeconds());
             $memoryLimit = $this->formatMemoryLimit($memoryLimitMb);
             $deferredId = $this->registerOuterDeferred($parentContext);
+            if ($backgrounded && null === $deferredId) {
+                throw new ToolCallException('Background launch requires a top-level code_mode invocation.', retryable: false);
+            }
             if (null !== $deferredId) {
                 $cancelToken = new CodeModeCancellationToken($cancelToken, $this->deferred, $deferredId);
             }
@@ -93,6 +100,9 @@ final readonly class CodeModeHostBridge
                 $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
                 if (null !== $deferredId) {
                     $this->deferred->markReady($deferredId);
+                    if ($backgrounded) {
+                        $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($parentContext->runId(), $deferredId, $parentContext->toolCallId()));
+                    }
                 }
 
                 $result = $this->serve($connection, $process, $parentContext, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);

@@ -20,6 +20,7 @@ final class AgentResumeToolDefinitionBuilderTest extends TestCase
 
         $this->assertSame(AgentResumeToolHandler::NAME, $definition->name);
         $this->assertStringContainsString('subagent or fork', $definition->description);
+        $this->assertStringContainsString('you will be notified when it finishes. Do not poll for completion.', $definition->description);
         $this->assertStringContainsString('subagent or fork', $definition->promptLine);
         $this->assertStringNotContainsString('checkout ownership', implode("\n", $definition->promptGuidelines));
     }

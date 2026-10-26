@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Doctrine\DBAL\Exception as DbalException;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Event\OnFlushEventArgs;
+use Doctrine\ORM\Events;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
@@ -29,6 +33,7 @@ use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
+use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
@@ -57,6 +62,7 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
@@ -583,17 +589,20 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->assertStringContainsString('Commands time out after 2 seconds by default.', $def->description);
         $this->assertStringContainsString('Provide the timeout argument with an explicit higher value', $def->description);
+        $this->assertStringContainsString('backgrounded=true', $def->description);
+        $this->assertStringContainsString('Do not poll for completion.', $def->description);
+        $this->assertStringContainsString('[backgrounded=true|false]', $def->promptLine);
 
-        // Prompt guidelines must describe timeout selection, user-owned
+        // Prompt guidelines must describe timeout selection, model-selected
         // backgrounding, and no-poll completion.
         $guidelinesText = implode(' ', $def->promptGuidelines);
         $this->assertStringContainsStringIgnoringCase('time out after 2 seconds by default', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('always provide the timeout argument with an explicit higher value', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('3600-second maximum', $guidelinesText);
-        $this->assertStringContainsStringIgnoringCase('user', $guidelinesText);
+        $this->assertStringContainsString('direct bash calls, not calls inside code_mode', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('bg_status', $guidelinesText);
-        $this->assertStringContainsStringIgnoringCase('no run_in_background', $guidelinesText);
-        $this->assertStringContainsStringIgnoringCase('report completion automatically', $guidelinesText);
+        $this->assertStringContainsString('backgrounded=true', $guidelinesText);
+        $this->assertStringContainsString('notify you when they finish', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('do not poll', $guidelinesText);
     }
 
@@ -640,7 +649,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $store = self::getContainer()->get(ProcessStore::class);
-        $em = self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
 
         $staleLogPath = $this->tmpDir.'/stale-composer.log';
         file_put_contents($staleLogPath, self::COMPOSER_MARKER."\n");
@@ -729,7 +738,105 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertNotSame($byId[$staleId]->logPath, $current->logPath);
     }
 
-    public function testRequestedDetachmentKeepsSameProcessAndPollerNotifiesOnce(): void
+    public function testNestedBackgroundLaunchIsRefusedBeforeStartingProcess(): void
+    {
+        $this->createManager();
+        try {
+            $this->withContext(self::TEST_SESSION, fn (): mixed => $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO('echo must-not-run', backgrounded: true))));
+            $this->fail('Nested Bash cannot detach independently of its script.');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('top-level Bash', $exception->getMessage());
+        }
+        $this->assertSame([], $this->recordsForSession(self::TEST_SESSION));
+    }
+
+    #[TestWith([false], 'foreground')]
+    #[TestWith([true], 'background')]
+    public function testPersistentStartupWriteFailureStopsOnlyTheLaunchedProcess(bool $backgrounded): void
+    {
+        $this->createManager();
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        $this->assertIsResource($server);
+        $address = 'tcp://'.stream_socket_get_name($server, false);
+        $script = '$socket = stream_socket_client('.var_export($address, true).'); fwrite($socket, "ready\n"); fread($socket, 1);';
+        $command = 'exec '.escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg($script);
+        $sibling = $this->manager->start($command, self::TEST_SESSION, 'sibling');
+        $siblingPeer = stream_socket_accept($server, 1);
+        $this->assertIsResource($siblingPeer);
+        stream_set_timeout($siblingPeer, 1);
+        $this->assertSame("ready\n", fgets($siblingPeer));
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $connection = $em->getConnection();
+        $failure = $target = $peer = null;
+        $attempts = 0;
+        $listener = new class(static function (OnFlushEventArgs $event) use ($server, $connection, $backgrounded, &$failure, &$target, &$peer, &$attempts): void {
+            ++$attempts;
+            if (null === $target) {
+                $target = array_values($event->getObjectManager()->getUnitOfWork()->getScheduledEntityInsertions())[0];
+                self::assertInstanceOf(BackgroundProcess::class, $target);
+                self::assertSame($backgrounded, $target->backgroundRequested);
+                self::assertNull($target->backgroundedAt);
+                $peer = stream_socket_accept($server, 1);
+                self::assertIsResource($peer);
+                stream_set_timeout($peer, 1);
+                self::assertSame("ready\n", fgets($peer));
+            }
+            // Keep SQLite read-only until finally; any cleanup write must fail as well.
+            $connection->executeStatement('PRAGMA query_only = ON');
+            try {
+                $connection->executeStatement('UPDATE background_process SET background_requested = background_requested WHERE id = -1');
+            } catch (DbalException $exception) {
+                $failure = $exception;
+                throw $exception;
+            }
+        }) {
+            public function __construct(private readonly \Closure $failWrite)
+            {
+            }
+
+            public function onFlush(OnFlushEventArgs $event): void
+            {
+                ($this->failWrite)($event);
+            }
+        };
+        $events = $em->getEventManager();
+        $events->addEventListener([Events::onFlush], $listener);
+        $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger());
+        try {
+            try {
+                $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO($command, backgrounded: $backgrounded)));
+                $this->fail('A failed startup write must not return a tool result.');
+            } catch (DbalException $exception) {
+                $this->assertSame($failure, $exception);
+                $this->assertStringContainsString('readonly', $exception->getMessage());
+            }
+            $this->assertSame(1, $attempts, 'Cleanup must not attempt another flush.');
+            $this->assertSame(1, (int) $connection->fetchOne('PRAGMA query_only'));
+            $this->assertIsResource($peer);
+            // EOF proves the blocked command exited, without relying on process-exit timing.
+            $this->assertSame('', fread($peer, 1));
+            $this->assertTrue(feof($peer));
+            $this->assertTrue($lifecycle->isAlive($sibling->pid));
+            $this->assertCount(1, $this->recordsForSession(self::TEST_SESSION));
+        } finally {
+            $events->removeEventListener([Events::onFlush], $listener);
+            $connection->executeStatement('PRAGMA query_only = OFF');
+            $em->clear();
+            if ($target instanceof BackgroundProcess) {
+                $lifecycle->sendKill($target->pid, $target->pgid);
+            }
+            $this->manager->shutdownCleanup();
+            foreach ([$peer, $siblingPeer, $server] as $stream) {
+                if (\is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
+        }
+    }
+
+    #[TestWith([false], 'manual request')]
+    #[TestWith([true], 'model launch')]
+    public function testRequestedDetachmentKeepsSameProcessAndPollerNotifiesOnce(bool $backgrounded): void
     {
         $this->createManager();
         $session = self::getContainer()->get(HatfieldSessionStore::class)->createSession('Bash detachment');
@@ -740,13 +847,15 @@ final class BashToolTest extends IsolatedKernelTestCase
         $token = $this->createStub(CancellationTokenInterface::class);
         $selected = null;
         $originalDeadline = null;
-        $token->method('isCancellationRequested')->willReturnCallback(function () use ($session, &$selected, &$originalDeadline): bool {
+        $token->method('isCancellationRequested')->willReturnCallback(function () use ($session, $backgrounded, &$selected, &$originalDeadline): bool {
             if (null === $selected) {
-                $records = $this->manager->foregroundTools($session);
+                $records = $backgrounded ? $this->recordsForSession($session) : $this->manager->foregroundTools($session);
                 if ([] !== $records) {
                     $selected = $records[0];
                     $originalDeadline = $selected->deadlineNanoseconds;
-                    $this->assertTrue($this->manager->requestBackground($session, $selected->id, 'tc_bash'));
+                    if (!$backgrounded) {
+                        $this->assertTrue($this->manager->requestBackground($session, $selected->id, 'tc_bash'));
+                    }
                 }
             }
 
@@ -754,7 +863,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         });
 
         try {
-            $arguments = ['command' => 'printf "started\\n"; IFS= read -r release < '.escapeshellarg($fifo).'; printf "finished\\n"'];
+            $arguments = ['command' => 'printf "started\\n"; IFS= read -r release < '.escapeshellarg($fifo).'; printf "finished\\n"', 'backgrounded' => $backgrounded];
             $registry = new ToolRegistry();
             $registry->registerTool(name: 'bash', description: 'bash', handler: $this->makeBashTool(), promptLine: 'bash');
             $executor = new ToolExecutor(
@@ -950,7 +1059,7 @@ final class BashToolTest extends IsolatedKernelTestCase
     }
 
     /**
-     * @return list<\Ineersa\CodingAgent\Entity\BackgroundProcess>
+     * @return list<BackgroundProcess>
      */
     private function recordsForSession(string $sessionId): array
     {

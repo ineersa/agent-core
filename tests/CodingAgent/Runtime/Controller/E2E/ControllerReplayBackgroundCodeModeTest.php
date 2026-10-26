@@ -26,7 +26,8 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
     // release is the rendezvous; bounded waits are failure caps, not scheduling.
     #[TestWith([false], 'natural return')]
     #[TestWith([true], 'targeted stop')]
-    public function testTwoRetainedHostsSaturateTheExistingPoolUntilOneReturns(bool $stop): void
+    #[TestWith([false, true], 'model launch')]
+    public function testTwoRetainedHostsSaturateTheExistingPoolUntilOneReturns(bool $stop, bool $modelLaunch = false): void
     {
         $releases = [];
         try {
@@ -48,16 +49,21 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
                 if ('one' === $id) {
                     $this->runId = $this->indexByType($started)['run.started'][0]['runId'];
                 }
+                if ($modelLaunch) {
+                    $ack = $this->collectEventsUntil('tool_call.acknowledged', 5);
+                }
                 $this->waitForFile($id.'.ready');
                 $identities[$id] = json_decode(file_get_contents($this->tempDir.'/'.$id.'.before'), true, 32, \JSON_THROW_ON_ERROR);
                 $this->assertFileExists($identities[$id]['socket']);
                 $snapshot = json_decode(trim($this->query($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
                 $this->assertSame('llama_cpp_test/test', $snapshot['sessionModel'], 'The controller and query retain metadata seeded before numeric session assignment.');
-                $candidate = array_values(array_filter($snapshot['codeMode'], static fn (array $c): bool => $id === $c['toolCallId']))[0];
-                $invocations[$id] = $candidate['lifecycleId'];
-                $this->writeCommand(['v' => 1, 'id' => 'detach-'.$id, 'type' => 'background_code_mode', 'runId' => $this->runId,
-                    'payload' => ['deferred_id' => $candidate['lifecycleId'], 'tool_call_id' => $id]]);
-                $ack = $this->collectEventsUntil('tool_call.acknowledged', 5);
+                $candidate = array_values(array_filter($snapshot[$modelLaunch ? 'work' : 'codeMode'], static fn (array $c): bool => $id === $c['toolCallId']))[0];
+                $invocations[$id] = $candidate[$modelLaunch ? 'id' : 'lifecycleId'];
+                if (!$modelLaunch) {
+                    $this->writeCommand(['v' => 1, 'id' => 'detach-'.$id, 'type' => 'background_code_mode', 'runId' => $this->runId,
+                        'payload' => ['deferred_id' => $candidate['lifecycleId'], 'tool_call_id' => $id]]);
+                    $ack = $this->collectEventsUntil('tool_call.acknowledged', 5);
+                }
                 $this->assertSame($id, $this->indexByType($ack)['tool_call.acknowledged'][0]['payload']['tool_call_id']);
             }
             foreach (['pid', 'socket', 'workspace'] as $field) {
@@ -123,7 +129,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             $prefix = var_export($this->tempDir.'/'.$id, true);
             $command = ': > '.escapeshellarg($this->tempDir.'/'.$id.'.ready').'; IFS= read -r release < '.escapeshellarg($this->tempDir.'/release-'.$id).'; printf '.escapeshellarg('NESTED_'.$id);
             $script = '$identity = ["pid" => getmypid(), "workspace" => __DIR__, "socket" => __DIR__."/s.sock", "local" => '.var_export($id, true).']; file_put_contents('.$prefix.'.".before", json_encode($identity)); $nested = tool("bash", '.var_export(['command' => $command], true).'); file_put_contents('.$prefix.'.".after", json_encode(["identity" => ["pid" => getmypid(), "workspace" => __DIR__, "socket" => __DIR__."/s.sock", "local" => $identity["local"]], "nested" => $nested])); return $identity["local"];';
-            $calls[] = [$id, 'code_mode', ['script' => $script]];
+            $calls[] = [$id, 'code_mode', ['script' => $script, 'backgrounded' => 'model launch' === $this->dataName()]];
         }
         array_push($calls, ['free', 'read', ['path' => 'free.txt']], null, null, null);
         $fixtures = [];

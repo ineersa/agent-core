@@ -83,6 +83,13 @@ final class AgentPromptBuilderTest extends TestCase
         $this->assertStringNotContainsString('<tool name="bash">', $result['systemPrompt']);
         $this->assertStringNotContainsString('CHILD_BASH_GUIDE_UNIQUE', $result['systemPrompt']);
         $this->assertStringNotContainsString('- subagent:', $result['systemPrompt']);
+
+        $contract = (string) $result['messages'][1]->content[0]['text'];
+        $this->assertStringContainsString('Artifact ID: agent_x', $contract);
+        $this->assertStringContainsString('When notify_parent is available', $contract);
+        $this->assertStringContainsString('Use ask_human only when it is available', $contract);
+        $this->assertStringContainsString('Finish with a concise handoff', $contract);
+        $this->assertStringNotContainsString('backgrounded', $contract);
     }
 
     public function testBuildInjectsSkillsContextBeforeContractAndTask(): void

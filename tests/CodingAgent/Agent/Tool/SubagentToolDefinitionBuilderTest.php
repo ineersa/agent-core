@@ -18,7 +18,7 @@ final class SubagentToolDefinitionBuilderTest extends IsolatedKernelTestCase
 
         $this->assertNull($def->timeoutSeconds);
         $this->assertSame($handler, $def->handler);
-        $this->assertStringContainsString('full handoff inline', $def->description);
+        $this->assertStringContainsString('wait for completion and return its handoff', $def->description);
     }
 
     public function testGuidanceUsesIndependentSingleChildCallsAndSerializesDependencies(): void
@@ -28,15 +28,15 @@ final class SubagentToolDefinitionBuilderTest extends IsolatedKernelTestCase
 
         $this->assertNull($def->parametersJsonSchema);
         $this->assertSame(ToolExecutionMode::Parallel, $def->executionMode);
-        $this->assertStringContainsString('one interactive foreground subagent with "agent" and "task"', $def->description);
+        $this->assertStringContainsString('one subagent with agent and task', $def->description);
         $this->assertStringNotContainsString('"tasks"', $def->description);
-        $this->assertStringContainsString('full handoff inline', $def->description);
+        $this->assertStringContainsString('you will be notified when it finishes. Do not poll for completion.', $def->description);
         $this->assertStringContainsString('agent_retrieve', $def->description);
 
         $this->assertSame([
             'Use {"agent":"...","task":"..."} for one child. Submit separate independent tool calls together to run them concurrently, like Bash or fork calls. Wait for prerequisites before submitting dependent work.',
             'Concurrent writers must not target the same worktree or file. Preserve worktree ownership when delegating.',
-            'Success includes the full handoff inline. Responses over 50,000 characters return a notice and artifact references instead. Use agent_retrieve with the Artifact: ID for omitted handoffs, failures, metadata, or history.',
+            'Foreground calls return the handoff inline; background calls deliver it automatically. Responses over 50,000 characters return artifact references instead. Use agent_retrieve with the Artifact: ID for omitted handoffs, failures, metadata, or history.',
         ], $def->promptGuidelines);
     }
 }
