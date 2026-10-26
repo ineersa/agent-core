@@ -169,7 +169,7 @@ final class BackgroundProcessManager
      *
      * @throws \RuntimeException on storage/launch failure
      */
-    public function start(string $command, ?string $sessionId = null, ?string $toolCallId = null, ?int $deadlineNanoseconds = null): StartResult
+    public function start(string $command, ?string $sessionId = null, ?string $toolCallId = null, ?int $deadlineNanoseconds = null, bool $backgroundRequested = false): StartResult
     {
         // Ensure storage directory exists
         $bgDir = $this->lifecycle->ensureStorageDir();
@@ -187,18 +187,25 @@ final class BackgroundProcessManager
         $pid = $launchResult['pid'];
         $pgid = $launchResult['pgid'];
 
-        // Persist entity with auto-increment DB id
-        $dbId = $this->store->insertRecord([
-            'pid' => $pid,
-            'pgid' => $pgid,
-            'session_id' => $sessionId ?? '',
-            'command' => $command,
-            'tool_call_id' => $toolCallId,
-            'deadline_nanoseconds' => $deadlineNanoseconds,
-            'log_path' => $logFile,
-            'status_path' => $statusFile,
-            'started_at' => $now,
-        ]);
+        // Persist launch intent with the initial row; acknowledgement still belongs to the supervisor.
+        try {
+            $dbId = $this->store->insertRecord([
+                'pid' => $pid,
+                'pgid' => $pgid,
+                'session_id' => $sessionId ?? '',
+                'command' => $command,
+                'tool_call_id' => $toolCallId,
+                'deadline_nanoseconds' => $deadlineNanoseconds,
+                'background_requested' => $backgroundRequested,
+                'log_path' => $logFile,
+                'status_path' => $statusFile,
+                'started_at' => $now,
+            ]);
+        } catch (\Throwable $exception) {
+            // No durable row exists. Abort the captured launch without depending on a working database.
+            $this->lifecycle->sendKill($pid, $pgid);
+            throw $exception;
+        }
 
         // Track for instance-scoped shutdown only after the durable row exists.
         // Ownership is the immutable record ID, never the reusable OS PID.

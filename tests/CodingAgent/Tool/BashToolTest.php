@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Doctrine\DBAL\Exception as DbalException;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Event\OnFlushEventArgs;
 use Doctrine\ORM\Events;
@@ -34,7 +35,6 @@ use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
-use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
@@ -750,61 +750,87 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertSame([], $this->recordsForSession(self::TEST_SESSION));
     }
 
-    public function testBackgroundRequestFailureStopsOnlyTheStartedInvocation(): void
+    #[TestWith([false], 'foreground')]
+    #[TestWith([true], 'background')]
+    public function testPersistentStartupWriteFailureStopsOnlyTheLaunchedProcess(bool $backgrounded): void
     {
         $this->createManager();
-        $fifo = $this->tmpDir.'/request-failure-release';
-        $this->assertTrue(posix_mkfifo($fifo, 0600));
-        $endpoint = fopen($fifo, 'r+b');
-        $this->assertIsResource($endpoint);
-        $command = 'IFS= read -r release < '.escapeshellarg($fifo);
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        $this->assertIsResource($server);
+        $address = 'tcp://'.stream_socket_get_name($server, false);
+        $script = '$socket = stream_socket_client('.var_export($address, true).'); fwrite($socket, "ready\n"); fread($socket, 1);';
+        $command = 'exec '.escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg($script);
         $sibling = $this->manager->start($command, self::TEST_SESSION, 'sibling');
-        $failure = new \RuntimeException('background request flush failed');
-        $listener = new class($failure) {
-            public ?BackgroundProcess $target = null;
-
-            public function __construct(private readonly \RuntimeException $failure)
+        $siblingPeer = stream_socket_accept($server, 1);
+        $this->assertIsResource($siblingPeer);
+        stream_set_timeout($siblingPeer, 1);
+        $this->assertSame("ready\n", fgets($siblingPeer));
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $connection = $em->getConnection();
+        $failure = $target = $peer = null;
+        $attempts = 0;
+        $listener = new class(static function (OnFlushEventArgs $event) use ($server, $connection, $backgrounded, &$failure, &$target, &$peer, &$attempts): void {
+            ++$attempts;
+            if (null === $target) {
+                $target = array_values($event->getObjectManager()->getUnitOfWork()->getScheduledEntityInsertions())[0];
+                self::assertInstanceOf(BackgroundProcess::class, $target);
+                self::assertSame($backgrounded, $target->backgroundRequested);
+                self::assertNull($target->backgroundedAt);
+                $peer = stream_socket_accept($server, 1);
+                self::assertIsResource($peer);
+                stream_set_timeout($peer, 1);
+                self::assertSame("ready\n", fgets($peer));
+            }
+            // Keep SQLite read-only until finally; any cleanup write must fail as well.
+            $connection->executeStatement('PRAGMA query_only = ON');
+            try {
+                $connection->executeStatement('UPDATE background_process SET background_requested = background_requested WHERE id = -1');
+            } catch (DbalException $exception) {
+                $failure = $exception;
+                throw $exception;
+            }
+        }) {
+            public function __construct(private readonly \Closure $failWrite)
             {
             }
 
             public function onFlush(OnFlushEventArgs $event): void
             {
-                if (null !== $this->target) {
-                    return;
-                }
-                foreach ($event->getObjectManager()->getUnitOfWork()->getScheduledEntityUpdates() as $entity) {
-                    if ($entity instanceof BackgroundProcess && $entity->backgroundRequested) {
-                        $this->target = $entity;
-                        throw $this->failure;
-                    }
-                }
+                ($this->failWrite)($event);
             }
         };
-        $events = self::getContainer()->get(EntityManagerInterface::class)->getEventManager();
+        $events = $em->getEventManager();
         $events->addEventListener([Events::onFlush], $listener);
+        $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger());
         try {
             try {
-                $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO($command, backgrounded: true)));
-                $this->fail('A failed background request must not return an acknowledgement.');
-            } catch (\RuntimeException $exception) {
+                $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO($command, backgrounded: $backgrounded)));
+                $this->fail('A failed startup write must not return a tool result.');
+            } catch (DbalException $exception) {
                 $this->assertSame($failure, $exception);
+                $this->assertStringContainsString('readonly', $exception->getMessage());
             }
-            $this->assertNotNull($listener->target);
-            $target = $this->manager->findByRecordId($listener->target->id, self::TEST_SESSION);
-            $this->assertNotNull($target);
-            $this->assertNotSame($sibling->id, $target->id);
-            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $target->status);
-            $this->assertNotNull($target->finishedAt);
-            $this->assertNull($target->backgroundedAt);
-            $this->assertNotNull($target->completionNotifiedAt);
-            $other = $this->manager->findByRecordId($sibling->id, self::TEST_SESSION);
-            $this->assertNotNull($other);
-            $this->assertSame(BackgroundProcessStatusEnum::Running, $other->status);
-            $this->assertNull($other->finishedAt);
+            $this->assertSame(1, $attempts, 'Cleanup must not attempt another flush.');
+            $this->assertSame(1, (int) $connection->fetchOne('PRAGMA query_only'));
+            $this->assertIsResource($peer);
+            // EOF proves the blocked command exited, without relying on process-exit timing.
+            $this->assertSame('', fread($peer, 1));
+            $this->assertTrue(feof($peer));
+            $this->assertTrue($lifecycle->isAlive($sibling->pid));
+            $this->assertCount(1, $this->recordsForSession(self::TEST_SESSION));
         } finally {
             $events->removeEventListener([Events::onFlush], $listener);
+            $connection->executeStatement('PRAGMA query_only = OFF');
+            $em->clear();
+            if ($target instanceof BackgroundProcess) {
+                $lifecycle->sendKill($target->pid, $target->pgid);
+            }
             $this->manager->shutdownCleanup();
-            fclose($endpoint);
+            foreach ([$peer, $siblingPeer, $server] as $stream) {
+                if (\is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
         }
     }
 

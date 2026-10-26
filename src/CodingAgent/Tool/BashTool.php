@@ -113,20 +113,10 @@ final class BashTool implements HatfieldToolProviderInterface
             if ($arguments->backgrounded && null === $toolCallId) {
                 throw new ToolCallException('Background launch requires a top-level Bash tool invocation.', retryable: false);
             }
-            $startResult = $this->manager->start($command, $sessionId, $toolCallId, $deadline);
+            $startResult = $this->manager->start($command, $sessionId, $toolCallId, $deadline, backgroundRequested: $arguments->backgrounded);
             $pid = $startResult->pid;
             $dbId = $startResult->id;
             $logPath = $startResult->logPath;
-
-            if ($arguments->backgrounded) {
-                try {
-                    $this->manager->requestBackground($sessionId ?? '', $dbId, $toolCallId ?? '');
-                } catch (\Throwable $exception) {
-                    // Startup already succeeded; do not orphan this invocation before supervision begins.
-                    $this->manager->stopByRecordId($dbId, $sessionId);
-                    throw $exception;
-                }
-            }
 
             $this->logger->info('bash_tool.started', [
                 'component' => 'tool.bash',
