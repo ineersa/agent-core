@@ -21,6 +21,35 @@ use Symfony\Component\Yaml\Yaml;
 #[Group('controller-replay')]
 final class HeadlessControllerTest extends ControllerReplayE2eTestCase
 {
+    #[DataProvider('absentRunIds')]
+    public function testMissingOrEmptyRunIdDoesNotActivateMcp(?string $runId): void
+    {
+        $this->spawnController();
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $identity = null === $runId ? [] : ['runId' => $runId];
+
+        $this->writeCommand(['v' => 1, 'id' => 'resume-empty', 'type' => 'resume', 'payload' => []] + $identity);
+        $error = $this->waitForEvent('protocol.error', 8.0);
+        $this->assertSame('resume requires runId', $error['payload']['error'] ?? null);
+        $this->assertLaunchCount('mcp', 0);
+
+        // start_run accepts the same absent identity and allocates a session.
+        $this->writeCommand(['v' => 1, 'id' => 'start-empty', 'type' => 'start_run', 'payload' => ['prompt' => 'Reply with ready.']] + $identity);
+        $events = $this->collectEventsUntil('run.completed', 8.0);
+        $byType = $this->indexByType($events);
+        $this->assertStartRunAcked($events, 'start-empty');
+        $this->assertArrayHasKey('run.completed', $byType, $this->collectDiagnostics($events));
+        $this->assertMatchesRegularExpression('/^\d+$/', $byType['run.completed'][0]['runId']);
+        $this->assertLaunchCount('mcp', 0);
+    }
+
+    /** @return iterable<string, array{?string}> */
+    public static function absentRunIds(): iterable
+    {
+        yield 'missing' => [null];
+        yield 'empty' => [''];
+    }
+
     public function testAbsentRolesStayOmittedAndLateRefreshStartsOnePersistentMcpOwner(): void
     {
         $this->spawnController();
@@ -95,7 +124,15 @@ final class HeadlessControllerTest extends ControllerReplayE2eTestCase
 
     protected function replayFixtures(): array
     {
-        return [];
+        return [[
+            'fixture_source' => 'synthetic',
+            'synthetic_reason' => 'Complete the server-allocated start_run identity regression without provider I/O.',
+            'model' => 'llama_cpp_test/test',
+            'provider_id' => 'llama_cpp_test',
+            'reasoning' => 'off',
+            'stop_reason' => 'stop',
+            'deltas' => [['type' => 'text', 'content' => 'ready']],
+        ]];
     }
 
     private function refreshMcp(string $id): void

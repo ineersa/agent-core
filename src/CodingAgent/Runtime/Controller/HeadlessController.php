@@ -329,9 +329,16 @@ final class HeadlessController
             }
             // Start/attach also initialize MCP. Recheck configuration at that
             // boundary and retain an owner to invalidate a persisted old catalog.
-            if (!$this->mcpConsumerLaunched && \in_array($command->type, ['start_run', 'resume'], true)
-                && $this->mcpLifecycle->requiresConsumer($command->runId ?? $this->sessionId)) {
-                $this->launchMcpConsumer();
+            if (!$this->mcpConsumerLaunched && \in_array($command->type, ['start_run', 'resume'], true)) {
+                $runId = trim($command->runId ?? '');
+                if ('' === $runId && 'start_run' === $command->type) {
+                    $runId = $this->sessionId;
+                }
+                // Empty resume is rejected by its handler. Empty start_run is
+                // valid and allocates a session; it must not probe catalog('').
+                if ('' !== $runId && $this->mcpLifecycle->requiresConsumer($runId)) {
+                    $this->launchMcpConsumer();
+                }
             }
             $emit = $this->emitter->emit(...);
             $event = new ControllerCommandEvent($command, $emit, $this->sessionId);
