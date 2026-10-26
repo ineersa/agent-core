@@ -11,11 +11,14 @@ use Symfony\Component\Process\Process;
 #[Group('controller-replay')]
 final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTestCase
 {
+    private string $databasePath;
+
     protected function tearDown(): void
     {
         parent::tearDown();
         foreach (['', '-wal', '-shm'] as $suffix) {
-            @unlink($this->projectDir.'/var/test/app_test-replay-'.$this->sessionId.'.sqlite'.$suffix);
+            @unlink($this->projectDir.'/var/test/'.$this->databasePath.$suffix);
+            $this->assertFileDoesNotExist($this->projectDir.'/var/test/'.$this->databasePath.$suffix);
         }
     }
 
@@ -33,6 +36,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
                 $this->assertIsResource($releases[$id]);
             }
             $this->sessionId = trim($this->query()->getOutput());
+            $this->assertStringContainsString('replay-e2e-', $this->databasePath, 'Database identity stays per-case after session identity becomes numeric.');
             file_put_contents($this->tempDir.'/free.txt', 'CAPACITY_RETURNED');
             $this->spawnController();
             $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
@@ -48,6 +52,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
                 $identities[$id] = json_decode(file_get_contents($this->tempDir.'/'.$id.'.before'), true, 32, \JSON_THROW_ON_ERROR);
                 $this->assertFileExists($identities[$id]['socket']);
                 $snapshot = json_decode(trim($this->query($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
+                $this->assertSame('llama_cpp_test/test', $snapshot['sessionModel'], 'The controller and query retain metadata seeded before numeric session assignment.');
                 $candidate = array_values(array_filter($snapshot['codeMode'], static fn (array $c): bool => $id === $c['toolCallId']))[0];
                 $invocations[$id] = $candidate['lifecycleId'];
                 $this->writeCommand(['v' => 1, 'id' => 'detach-'.$id, 'type' => 'background_code_mode', 'runId' => $this->runId,
@@ -112,6 +117,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
 
     protected function replayFixtures(): array
     {
+        $this->databasePath = 'app_test-replay-'.$this->sessionId.'.sqlite';
         $calls = [];
         foreach (['one', 'two'] as $id) {
             $prefix = var_export($this->tempDir.'/'.$id, true);
@@ -139,6 +145,11 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
         return "tools:\n  execution:\n    max_parallelism: 2\n  code_mode:\n    enabled: true\n";
     }
 
+    protected function replayExtraEnv(): array
+    {
+        return ['HATFIELD_TEST_DATABASE_PATH' => $this->databasePath];
+    }
+
     private function waitForFile(string $name): void
     {
         $deadline = microtime(true) + 3;
@@ -155,7 +166,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
         if (null !== $runId) {
             array_push($args, $runId, 'code_mode');
         }
-        $process = new Process($args, $this->tempDir, array_merge($this->controllerSubprocessEnv(), ['APP_ENV' => 'test', 'APP_DEBUG' => '1', 'HATFIELD_CWD' => $this->tempDir, 'HOME' => $this->tempDir, 'HATFIELD_SESSION_ID' => false, 'HATFIELD_TEST_DATABASE_PATH' => 'app_test-replay-'.$this->sessionId.'.sqlite']));
+        $process = new Process($args, $this->tempDir, array_merge($this->controllerSubprocessEnv(), $this->replayExtraEnv(), ['APP_ENV' => 'test', 'APP_DEBUG' => '1', 'HATFIELD_CWD' => $this->tempDir, 'HOME' => $this->tempDir, 'HATFIELD_SESSION_ID' => false]));
         $process->setTimeout(3);
         $process->mustRun();
 

@@ -75,6 +75,7 @@ final readonly class CommandMailboxPolicy
         $eventSpecs = [];
         $effects = [];
         $shouldContinue = false;
+        $hasDeferred = false;
 
         foreach ($pendingCommands as $pendingCommand) {
             $metadata = [];
@@ -98,6 +99,7 @@ final readonly class CommandMailboxPolicy
             // A deferred decision leaves the row and its original continuation
             // untouched. Only an applied or rejected event settles the mailbox.
             if ($defer) {
+                $hasDeferred = true;
                 continue;
             }
             if (\in_array($pendingCommand->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
@@ -189,6 +191,7 @@ final readonly class CommandMailboxPolicy
             $eventSpecs,
             $shouldContinue,
             $effects,
+            $hasDeferred,
         );
     }
 

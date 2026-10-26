@@ -5,10 +5,17 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
+use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator;
+use Ineersa\AgentCore\Application\Pipeline\RunCommit;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
@@ -39,7 +46,10 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\History\HistorySelectionService;
 use Ineersa\CodingAgent\Session\History\HistoryTailDiscardService;
+use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
+use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeCancellationToken;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -49,6 +59,53 @@ use Symfony\Component\Uid\Uuid;
 
 final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCase
 {
+    public function testSelectedHistoryDefersCompletionUntilExplicitTipContinuation(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('selected background completion');
+        $call = new DeferredToolCompletionCorrelation(Uuid::v7()->toRfc4122(), $run, 2, 'step', 1, 'key', 'host', 'code_mode', [], 0);
+        $state = new RunState($run, RunStatus::Running);
+        $events = [RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['messages' => []]])];
+        foreach ([1, 2] as $turn) {
+            $events[] = RunEvent::forAppend($run, $turn, 'turn_advanced', ['turn_no' => $turn, 'step_id' => 'step']);
+            $events[] = RunEvent::forAppend($run, $turn, 'llm_step_completed', ['step_id' => 'step', 'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Answer '.$turn]], 'tool_calls' => 2 === $turn ? [['id' => 'host', 'name' => 'code_mode', 'arguments' => []]] : []]]);
+            if (2 === $turn) {
+                $events[] = RunEvent::forAppend($run, $turn, 'tool_call_acknowledged', $container->get(ToolExecutionEndPayloadCodec::class)->toEventPayload(ToolCallResultFactory::fromDeferredCorrelationAndCompletion($call, [['type' => 'text', 'text' => 'backgrounded']])));
+                $events[] = RunEvent::forAppend($run, $turn, 'llm_step_completed', ['step_id' => 'final', 'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Final answer']]]]);
+            }
+            $events[] = RunEvent::forAppend($run, $turn, 'agent_end', ['reason' => 'completed']);
+        }
+        $container->get(ActiveRunContextInterface::class)->loadRecovered($state);
+        $container->get(RunCommit::class)->commit($state, $container->get(RunStateReducer::class)->replay($state, $events), $events, dispatchAfterTurnHooks: false);
+        TestToolBatchRegistration::registerDeferredInvocation($container->get(ToolBatchStoreInterface::class), $call);
+        $deferred = $container->get(DeferredToolCompletionRepository::class);
+        $deferred->registerPending($call);
+        $deferred->markReady($call->deferredId);
+        $deferred->markBackgrounded($call->deferredId, new \DateTimeImmutable());
+        $selection = $container->get(HistorySelectionService::class);
+        $selection->selectEntry($run, 1, 'earlier', 'assistant');
+        $this->assertNull($deferred->findMetadataByDeferredId($call->deferredId)->interruptionReason);
+        $processor = $container->get(RunMessageProcessor::class);
+        $processor->process('background_completion', new DeliverBackgroundCompletionDTO($run, $call->deferredId, 'LATE', $run, $call->deferredId, $deferred->findMetadataByDeferredId($call->deferredId)->reference));
+        $processor->process('advance', new AdvanceRun($run, 1, 'step', 1, 'selected-advance'));
+        $context = $container->get(ActiveRunContextInterface::class);
+        $this->assertSame(1, $context->requireLoaded($run)->turnNo);
+        $this->assertCount(1, $container->get(CommandStoreInterface::class)->pending($run));
+        $this->assertTrue($container->get(SessionRunEventStore::class)->hasForwardTail($run, 1));
+        $this->assertSame([], $container->get(AdvanceRunHandler::class)->handle(new AdvanceRun($run, 1, 'step', 1, 'running-advance'), $context->requireLoaded($run)->with(['status' => RunStatus::Running]))->events);
+        $selection->selectEntry($run, 2, 'tip', 'assistant');
+        $this->assertNull($container->get(SessionRepairService::class)->repair($run, true, 'explicit-tip-continuation')->refusalReason);
+        $advances = array_values(array_filter($container->get('messenger.transport.run_control')->getSent(), static fn ($envelope): bool => $envelope->getMessage() instanceof AdvanceRun && 2 === $envelope->getMessage()->turnNo()));
+        $this->assertCount(1, $advances);
+        $processor->process('advance', $advances[0]->getMessage());
+        $this->assertSame([], $container->get(CommandStoreInterface::class)->pending($run));
+        $live = $context->requireLoaded($run);
+        $replay = $container->get(RunStateRebuilderInterface::class)->rebuildAtPosition($state, $run, $live->turnNo)->rebuiltState;
+        $this->assertEquals($live->messages, $replay->messages);
+        $this->assertEquals($live->messages, $container->get(RunStateReducer::class)->replay($state, $container->get(SessionRunEventStore::class)->allFor($run))->messages);
+        $this->assertGreaterThan(2, $live->turnNo);
+    }
+
     #[DataProvider('controllerLossCases')]
     public function testControllerLossParksOnlyOutstandingWork(string $phase): void
     {
@@ -97,7 +154,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         if (!$outstanding) {
             return;
         }
-        $advance = $container->get(\Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler::class)->handle(new AdvanceRun($run, 1, 'step', 1, 'old-successor'), $state->with(['pendingToolCalls' => []]));
+        $advance = $container->get(AdvanceRunHandler::class)->handle(new AdvanceRun($run, 1, 'step', 1, 'old-successor'), $state->with(['pendingToolCalls' => []]));
         $this->assertSame([], $advance->events, 'An old successor cannot wake even with an empty mailbox.');
         $this->assertSame([], $advance->postCommitEffects);
         // Authorization participates in the same metadata transaction; rollback

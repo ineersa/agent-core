@@ -12,12 +12,13 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionProvenanceDTO;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
+use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final readonly class BackgroundCompletionConsumptionPolicy implements CommandConsumptionPolicyInterface
 {
-    public function __construct(private BackgroundCompletionReceiptRepository $receipts, private ValidatorInterface $validator, private DeferredToolCompletionRepositoryInterface $deferred)
+    public function __construct(private BackgroundCompletionReceiptRepository $receipts, private ValidatorInterface $validator, private DeferredToolCompletionRepositoryInterface $deferred, private SessionRunEventStore $events)
     {
     }
 
@@ -50,7 +51,9 @@ final readonly class BackgroundCompletionConsumptionPolicy implements CommandCon
             return new CommandConsumptionDecisionDTO('Background completion already consumed or transferred.');
         }
         $interrupted = $this->interrupted($receipt->deferredId);
-        if (!$interrupted && $this->parked($receipt->deferredId)) {
+        // Receipt admission is passive. Do not launch a divergent turn from a
+        // selected prefix; explicit continuation at the tip can drain it later.
+        if (!$interrupted && ($this->parked($receipt->deferredId) || $this->events->hasForwardTail($state->runId, $state->turnNo))) {
             return new CommandConsumptionDecisionDTO(defer: true);
         }
         $forward = !$interrupted && null !== $state->parentRunId && ($state->status->isTerminal() || RunStatus::Cancelling === $state->status);
