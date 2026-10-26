@@ -61,7 +61,11 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
 {
     #[TestWith([false], 'return to tip')]
     #[TestWith([true], 'edited prompt behind tip')]
-    public function testSelectedHistoryDefersCompletionUntilExplicitTipContinuation(bool $edit): void
+    #[TestWith([false, false], 'lost host return to tip')]
+    #[TestWith([true, false], 'lost host edited prompt')]
+    #[TestWith([false, true], 'retained terminal return to tip')]
+    #[TestWith([true, true], 'retained terminal edited prompt')]
+    public function testSelectedHistoryDefersCompletionUntilExplicitTipContinuation(bool $edit, ?bool $retained = null): void
     {
         $container = self::getContainer();
         $container->get('messenger.transport.llm')->reset();
@@ -89,7 +93,21 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $selection->selectEntry($run, 1, 'earlier', 'assistant');
         $this->assertNull($deferred->findMetadataByDeferredId($call->deferredId)->interruptionReason);
         $processor = $container->get(RunMessageProcessor::class);
-        $processor->process('background_completion', new DeliverBackgroundCompletionDTO($run, $call->deferredId, 'LATE', $run, $call->deferredId, $deferred->findMetadataByDeferredId($call->deferredId)->reference));
+        $transport = $container->get('messenger.transport.run_control');
+        $delivery = new DeliverBackgroundCompletionDTO($run, $call->deferredId, 'LATE', $run, $call->deferredId, $deferred->findMetadataByDeferredId($call->deferredId)->reference);
+        if (null !== $retained) {
+            if ($retained) {
+                $container->get(ToolPayloadStoreInterface::class)->publishFirstResult(ToolCallResultFactory::fromDeferredCorrelationAndCompletion($call, [['type' => 'text', 'text' => 'LATE']]), $deferred->findMetadataByDeferredId($call->deferredId)->reference);
+            }
+            $container->get(CodeModeBackgroundCoordinationHandler::class)->controllerStarting(new \Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent($run));
+            $this->assertSame([], $container->get(CommandStoreInterface::class)->pending($run));
+            $this->assertSame(0, $container->get(\Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository::class)->count(['deferredId' => $call->deferredId]));
+            $this->assertNull($container->get(SessionRepairService::class)->repair($run, true, 'no-receipt-repair')->refusalReason);
+            $this->assertSame(RunStatus::Completed, $container->get(ActiveRunContextInterface::class)->requireLoaded($run)->status);
+            $delivery = array_find($transport->getSent(), static fn ($envelope): bool => $envelope->getMessage() instanceof DeliverBackgroundCompletionDTO && $envelope->getMessage()->identity === $call->deferredId)->getMessage();
+            $this->assertStringContainsString($retained ? 'LATE' : 'interrupted by controller loss', $delivery->text);
+        }
+        $processor->process('background_completion', $delivery);
         $processor->process('advance', new AdvanceRun($run, 1, 'step', 1, 'selected-advance'));
         $context = $container->get(ActiveRunContextInterface::class);
         $this->assertSame(1, $context->requireLoaded($run)->turnNo);
@@ -97,7 +115,6 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $this->assertTrue($container->get(SessionRunEventStore::class)->hasForwardTail($run, 1));
         $this->assertSame([], $container->get(AdvanceRunHandler::class)->handle(new AdvanceRun($run, 1, 'step', 1, 'running-advance'), $context->requireLoaded($run)->with(['status' => RunStatus::Running]))->events);
         $this->assertNull($container->get(SessionRepairService::class)->repair($run, true, 'selected-repair')->refusalReason);
-        $transport = $container->get('messenger.transport.run_control');
         $processor->process('advance', array_find(array_reverse($transport->getSent()), static fn ($envelope): bool => $envelope->getMessage() instanceof AdvanceRun)->getMessage());
         $this->assertSame(RunStatus::Completed, $context->requireLoaded($run)->status);
         $this->assertNull($context->requireLoaded($run)->currentOperation);

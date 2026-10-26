@@ -991,6 +991,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                     throw new \UnexpectedValueException('Retained processed terminal is not a tool result.');
                 }
                 $effects[] = $result;
+                $mailboxContinuation = $mailboxContinuation || ($requiresContinuation && null !== $metadata->backgroundedAt);
             }
             if ($sourceParked && \is_array($sourceEvents)) {
                 $sourceState = $sourceRun === $runId ? $state : $this->retainedReplay($sourceRun, $sourceEvents);
@@ -1017,7 +1018,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         if ($resumesOwner && !$mailboxContinuation && \in_array($state->status, [RunStatus::Completed, RunStatus::Failed], true) && !\in_array(false, $state->pendingToolCalls, true)) {
             // Explicit repair may resume an already-consumed receipt. There is
             // no new user message and the old physical-host fence stays set.
-            // Pending receipts authorize revival only when actually consumed.
+            // Recovered background results and pending receipts revive only on consumption.
             $resumeEvents = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, [['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => ['kind' => 'continue', 'reason' => 'deferred_continuation']]]);
             $next = $this->retainedReplay($runId, [...$events, ...$resumeEvents])->with(['version' => $state->version + 1]);
         }
