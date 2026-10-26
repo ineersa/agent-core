@@ -3086,14 +3086,15 @@
         },
         {
             "name": "ineersa/hatfield-extension-api",
-            "version": "dev-task/memory-07",
+            "version": "dev-task/2026-10-15-add-a-setup-command-for-hatfield-provided-extensions",
             "dist": {
                 "type": "path",
                 "url": ".hatfield/extensions/extension-api",
-                "reference": "62f8ef900debdba4631a997defba54015b1796f6"
+                "reference": "4087c404f7b73f12543c7512b563ea60983dab1d"
             },
             "require": {
                 "php": ">=8.3",
+                "symfony/config": "^8.1",
                 "symfony/tui": "^8.0"
             },
             "type": "library",

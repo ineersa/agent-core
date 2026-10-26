@@ -3,11 +3,17 @@
     "description": "Task workflow extension for Hatfield (native port of pi task-workflow).",
     "type": "hatfield-extension",
     "license": "MIT",
+    "extra": {
+        "hatfield": {
+            "extension": "Ineersa\\HatfieldExt\\TaskWorkflow\\TaskWorkflowExtension"
+        }
+    },
     "require": {
         "php": ">=8.3",
         "helgesverre/toon": "^3.1",
         "ineersa/hatfield-extension-api": "@dev",
         "psr/log": "^3.0",
+        "symfony/config": "^8.1",
         "symfony/filesystem": "^7.3|^8.0",
         "symfony/yaml": "^7.3|^8.0"
     },

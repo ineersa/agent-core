@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use Composer\Autoload\ClassLoader;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedExtensionItemDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
@@ -21,8 +23,13 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  *  1. Read the list of enabled extension class names from merged Hatfield
  *     settings (extensions.enabled), which follows the standard precedence:
  *     built-in defaults < home settings < project settings.
- *  2. Require the project-local extension Composer autoloader when the
- *     extensions directory exists: `<cwd>/.hatfield/extensions/vendor/autoload.php`.
+ *  2. Require extension Composer autoloaders when present:
+ *     project `<cwd>/.hatfield/extensions/vendor/autoload.php`, then user
+ *     `~/.hatfield/extensions/vendor/autoload.php`. Project registers first so
+ *     project packages win collisions. Installer-pinned autoloader-suffix values
+ *     keep project/user ComposerAutoloaderInit class names distinct when both
+ *     roots share the same package set. Both keep prepend-autoloader=false so
+ *     host libraries remain highest priority. Identical resolved paths load once.
  *  3. For each enabled class name, verify the class exists, instantiate it,
  *     inject logger when LoggerAwareInterface, confirm HatfieldExtensionInterface,
  *     call register($api), and if EventSubscriberInterface register on the host
@@ -48,6 +55,7 @@ final class ExtensionManager
         private readonly ExtensionApiInterface $extensionApi,
         private readonly LoggerInterface $logger,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly SettingsPathResolver $pathResolver,
     ) {
     }
 
@@ -98,9 +106,53 @@ final class ExtensionManager
             return [];
         }
 
-        $this->requireExtensionAutoload();
+        $this->loadAutoloaders();
 
         return $this->loadEach($enabled);
+    }
+
+    /**
+     * Require project then user extension Composer autoloaders when present.
+     *
+     * Physical-root suffixes let distinct roots load identical package sets;
+     * aliases of one root share a loader. Rebuild active loaders after Composer
+     * installs packages to discard cached misses and restore host/project/user priority.
+     */
+    public function loadAutoloaders(): void
+    {
+        $autoloadPaths = array_filter($this->extensionAutoloadPaths(), is_file(...));
+        $registered = ClassLoader::getRegisteredLoaders();
+        // Remove both roots before registering either one: a project installed
+        // during setup must still precede an already-loaded user root.
+        foreach ($autoloadPaths as $autoloadPath) {
+            ($registered[\dirname($autoloadPath)] ?? null)?->unregister();
+        }
+
+        foreach ($autoloadPaths as $autoloadPath) {
+            $vendor = \dirname($autoloadPath);
+            $loader = $registered[$vendor] ?? null;
+            if (null === $loader) {
+                // Copied roots retain the same generated bootstrap class. Do not
+                // redeclare it; their own metadata can still build a distinct loader.
+                preg_match('/\b(ComposerAutoloaderInit\w+)::getLoader\(/', file_get_contents($autoloadPath), $bootstrap);
+                if (!isset($bootstrap[1]) || !class_exists($bootstrap[1], false)) {
+                    // Installer sets prepend-autoloader=false: host libraries win.
+                    require_once $autoloadPath;
+                    continue;
+                }
+            }
+            // Composer's init class retains its loader, including negative lookups.
+            // A fresh public ClassLoader clears misses that map setters cannot.
+            $loader = new ClassLoader($vendor);
+            foreach (require $vendor.'/composer/autoload_psr4.php' as $prefix => $paths) {
+                $loader->setPsr4($prefix, $paths);
+            }
+            foreach (require $vendor.'/composer/autoload_namespaces.php' as $prefix => $paths) {
+                $loader->add($prefix, $paths);
+            }
+            $loader->addClassMap(require $vendor.'/composer/autoload_classmap.php');
+            $loader->register(false);
+        }
     }
 
     /**
@@ -130,25 +182,35 @@ final class ExtensionManager
     }
 
     /**
-     * Require the project-local extension Composer autoloader if present.
-     *
-     * This loads extension packages installed via Composer in the
-     * project-local .hatfield/extensions/ environment. It is safe to call
-     * when the autoload file does not exist — it is simply a no-op.
+     * @return list<string>
      */
-    private function requireExtensionAutoload(): void
+    private function extensionAutoloadPaths(): array
     {
-        $autoloadPath = $this->config->cwd.'/.hatfield/extensions/vendor/autoload.php';
+        $paths = [];
+        $seen = [];
 
-        if (!is_file($autoloadPath)) {
-            return;
+        $project = rtrim($this->config->cwd, '/').'/.hatfield/extensions/vendor/autoload.php';
+        $resolvedProject = $this->resolveExistingPath($project) ?? $project;
+        $paths[] = $resolvedProject;
+        $seen[$resolvedProject] = true;
+
+        $homeDir = $this->pathResolver->getHomeDir();
+        if ('' !== $homeDir) {
+            $user = rtrim($homeDir, '/').'/.hatfield/extensions/vendor/autoload.php';
+            $resolvedUser = $this->resolveExistingPath($user) ?? $user;
+            if (!isset($seen[$resolvedUser])) {
+                $paths[] = $resolvedUser;
+            }
         }
 
-        // Registers via spl_autoload_register(). Keep extensions Composer
-        // config.prepend-autoloader=false so this does not shadow the host
-        // app's Symfony packages (for example symfony/tui) after load.
-        // require_once avoids double-loading during test isolation.
-        require_once $autoloadPath;
+        return $paths;
+    }
+
+    private function resolveExistingPath(string $path): ?string
+    {
+        $resolved = realpath($path);
+
+        return false === $resolved ? null : $resolved;
     }
 
     /**

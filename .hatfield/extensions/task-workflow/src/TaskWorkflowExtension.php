@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\TaskWorkflow;
 
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Assets\TaskWorkflowSkillInstaller;
 use Ineersa\HatfieldExt\TaskWorkflow\Command\TasksCommandHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Pr\PrManager;
 use Ineersa\HatfieldExt\TaskWorkflow\Prompt\WorkflowPrompt;
+use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowConfiguration;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskStatusEnum;
@@ -25,8 +26,9 @@ use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\Config\Definition\ConfigurationInterface;
 
-final class TaskWorkflowExtension implements HatfieldExtensionInterface, LoggerAwareInterface
+final class TaskWorkflowExtension implements ConfigurableExtensionInterface, LoggerAwareInterface
 {
     private LoggerInterface $logger;
 
@@ -38,6 +40,11 @@ final class TaskWorkflowExtension implements HatfieldExtensionInterface, LoggerA
     public function setLogger(LoggerInterface $logger): void
     {
         $this->logger = $logger;
+    }
+
+    public function getConfiguration(): ConfigurationInterface
+    {
+        return new TaskWorkflowConfiguration();
     }
 
     public function register(ExtensionApiInterface $api): void

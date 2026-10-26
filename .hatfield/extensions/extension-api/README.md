@@ -7,7 +7,7 @@ Public Composer contracts for Hatfield project extensions.
 | Package | `ineersa/hatfield-extension-api` |
 | Namespace | `Ineersa\Hatfield\ExtensionApi\` |
 | PHP | `>=8.3` |
-| Requires | `symfony/tui: ^8.0` |
+| Requires | `symfony/tui: ^8.0`, `symfony/config: ^8.1` |
 
 This package is the stable surface extensions depend on. Host Hatfield provides a concrete `ExtensionApiInterface` implementation at runtime; extensions should depend only on these contracts, not on CodingAgent, AgentCore, the in-repo TUI layer (`Ineersa\Tui\*`), Symfony DI, Symfony AI, settings internals, tool registry, runtime adapters, or packaging code.
 
@@ -20,6 +20,8 @@ This package is the stable surface extensions depend on. Host Hatfield provides 
 **Approved Symfony TUI dependency:** generic TUI contracts intentionally depend on **Symfony TUI public widget types** (`Symfony\Component\Tui\Widget\AbstractWidget`, events, input) so extensions can mount their own overlays without Hatfield adding feature-shaped runtime ports. That is part of the public UI extension API — not a leak of Hatfield internals.
 
 Feature-specific UX (for example file rewind) stays in `.hatfield/extensions/<name>/` and must not add feature-shaped types to this package.
+
+Extensions may implement `ConfigurableExtensionInterface::getConfiguration()` to expose their own native Symfony Config `ConfigurationInterface` without runtime registration. The tree root names the `extensions.settings` key; native node types, `info`, defaults, and validation describe the editable settings. Set the native node attribute `hatfield.model_picker` to `true` for a configured generation-model picker. Packages identify their extension entry class in `composer.json` under `extra.hatfield.extension`; configuration fields and validation stay in the extension.
 
 ## Install
 

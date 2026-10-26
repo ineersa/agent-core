@@ -3,10 +3,16 @@
     "description": "File rewind extension for Hatfield (hidden-git checkpoints, /rewind picker)",
     "type": "hatfield-extension",
     "license": "MIT",
+    "extra": {
+        "hatfield": {
+            "extension": "Ineersa\\HatfieldExt\\FileRewind\\FileRewindExtension"
+        }
+    },
     "require": {
         "php": ">=8.3",
         "ineersa/hatfield-extension-api": "@dev",
         "psr/log": "^3.0",
+        "symfony/config": "^8.1",
         "symfony/tui": "^8.0"
     },
     "autoload": {

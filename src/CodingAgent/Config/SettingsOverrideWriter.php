@@ -29,14 +29,28 @@ final class SettingsOverrideWriter
      */
     public function set(SettingsLayerEnum $layer, string $cwd, string $dottedPath, mixed $value): void
     {
+        $this->setMany($layer, $cwd, [$dottedPath => $value]);
+    }
+
+    /**
+     * @param array<string, mixed> $values dotted paths to write together
+     * @param list<string>         $remove dotted paths to remove before applying values
+     */
+    public function setMany(SettingsLayerEnum $layer, string $cwd, array $values, array $remove = []): void
+    {
         $this->assertWritableLayer($layer);
-        $propertyPath = $this->requirePropertyPath($dottedPath);
         $filePath = $this->layerPath($layer, $cwd);
         $settings = $this->readSettings($filePath);
+        foreach ($remove as $path) {
+            $settings = $this->withoutOverride($settings, $path);
+        }
         // PropertyAccessor can silently coerce list intermediates into mixed arrays;
         // refuse non-mappings so scalar/null/list parents fail with a clear mapping error.
-        $this->assertIntermediateParentsAreMappings($settings, $dottedPath, $filePath);
-        $this->propertyAccessor->setValue($settings, $propertyPath, $value);
+        foreach ($values as $dottedPath => $value) {
+            $propertyPath = $this->requirePropertyPath($dottedPath);
+            $this->assertIntermediateParentsAreMappings($settings, $dottedPath, $filePath);
+            $this->propertyAccessor->setValue($settings, $propertyPath, $value);
+        }
         $this->writeSettings($filePath, $settings);
     }
 
@@ -71,6 +85,20 @@ final class SettingsOverrideWriter
         $this->writeSettings($filePath, $settings);
 
         return true;
+    }
+
+    /**
+     * Prepare an override removal without writing, for validate-before-save callers.
+     *
+     * @param array<string, mixed> $settings
+     *
+     * @return array<string, mixed>
+     */
+    public function withoutOverride(array $settings, string $dottedPath): array
+    {
+        $this->requirePropertyPath($dottedPath);
+
+        return $this->removeWithEmptyParentPrune($settings, explode('.', $dottedPath));
     }
 
     /**
