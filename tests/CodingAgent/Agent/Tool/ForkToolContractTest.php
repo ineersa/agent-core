@@ -48,7 +48,7 @@ final class ForkToolContractTest extends TestCase
         $this->assertSame(1, $args['properties']['task']['minLength']);
         $this->assertNotContains('model', $args['required']);
         $this->assertSame(
-            'Launch an isolated fork child with inherited parent conversation context. Blocks until completion and returns a dense handoff.',
+            ForkToolHandler::DESCRIPTION,
             $definition->description,
         );
         $this->assertSame(ModelResolver::LEVELS, $args['properties']['thinking']['enum']);

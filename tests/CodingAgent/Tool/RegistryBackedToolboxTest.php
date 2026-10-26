@@ -5,11 +5,22 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsDTO;
+use Ineersa\CodingAgent\Agent\Tool\AgentResumeToolHandler;
+use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
+use Ineersa\CodingAgent\Agent\Tool\SubagentToolHandler;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
+use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
+use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
+use Ineersa\CodingAgent\Tool\Arguments\ForkArgumentsDTO;
 use Ineersa\CodingAgent\Tool\Arguments\ViewImageArgumentsDTO;
+use Ineersa\CodingAgent\Tool\BashTool;
+use Ineersa\CodingAgent\Tool\CodeModeTool;
+use Ineersa\CodingAgent\Tool\DTO\AgentResumeArgumentsDTO;
+use Ineersa\CodingAgent\Tool\DTO\SubagentArgumentsDTO;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -18,6 +29,7 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
@@ -57,6 +69,32 @@ use Symfony\Component\Validator\ValidatorBuilder;
  */
 final class RegistryBackedToolboxTest extends TestCase
 {
+    #[TestWith([BashTool::class, BashArgumentsDTO::class, ['command' => 'true']])]
+    #[TestWith([CodeModeTool::class, CodeModeArgumentsDTO::class, ['script' => 'return 1;']])]
+    #[TestWith([SubagentToolHandler::class, SubagentArgumentsDTO::class, ['agent' => 'scout', 'task' => 'inspect']])]
+    #[TestWith([ForkToolHandler::class, ForkArgumentsDTO::class, ['task' => 'inspect']])]
+    #[TestWith([AgentResumeToolHandler::class, AgentResumeArgumentsDTO::class, ['task' => 'inspect', 'artifact_id' => 'agent_test']])]
+    /** @param class-string $handler @param class-string $dto @param array<string, mixed> $arguments */
+    public function testBackgroundLaunchSchemaAndStrictArguments(string $handler, string $dto, array $arguments): void
+    {
+        $schema = NativeToolSchemaProbe::schemaFactory()->buildParameters($handler, '__invoke');
+        $this->assertSame('boolean', $schema['properties']['backgrounded']['type']);
+        $this->assertNotContains('backgrounded', $schema['required'] ?? []);
+        $serializer = AttributeSerializerValidatorTestFactory::denormalizer();
+        $this->assertFalse($serializer->denormalize($arguments, $dto)->backgrounded);
+        foreach ([false, true] as $value) {
+            $this->assertSame($value, $serializer->denormalize([...$arguments, 'backgrounded' => $value], $dto)->backgrounded);
+        }
+        foreach (['true', 1, null, []] as $invalid) {
+            try {
+                $serializer->denormalize([...$arguments, 'backgrounded' => $invalid], $dto);
+                $this->fail('Non-boolean backgrounded must be rejected.');
+            } catch (NotNormalizableValueException $exception) {
+                $this->assertStringContainsString('backgrounded', $exception->getMessage());
+            }
+        }
+    }
+
     /* ───────── getTools() ───────── */
 
     public function testGetToolsReturnsEmptyForEmptyRegistry(): void

@@ -27,6 +27,8 @@ final class BashArgumentsDTO
         #[Assert\Range(min: 1, minMessage: 'The "timeout" argument must be a positive integer.')]
         #[BashTimeoutMax]
         public readonly ?int $timeout = null,
+        #[Schema(description: 'Request background launch after startup; returns an acknowledgement and delivers the result later. Default false.')]
+        public readonly bool $backgrounded = false,
     ) {
     }
 }

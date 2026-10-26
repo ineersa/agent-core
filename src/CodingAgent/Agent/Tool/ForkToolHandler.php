@@ -17,7 +17,7 @@ final class ForkToolHandler
 {
     public const string NAME = 'fork';
 
-    public const string DESCRIPTION = 'Launch an isolated fork child with inherited parent conversation context. Blocks until completion and returns a dense handoff.';
+    public const string DESCRIPTION = 'Launch an isolated fork child with inherited parent conversation context. By default waits for completion and returns a dense handoff. Set backgrounded=true for an acknowledgement and a later handoff.';
 
     private const string EXECUTION_SERVICE_LOCATOR_KEY = 'execution';
 

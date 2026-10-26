@@ -28,7 +28,7 @@ final class SubagentToolDefinitionBuilderTest extends IsolatedKernelTestCase
 
         $this->assertNull($def->parametersJsonSchema);
         $this->assertSame(ToolExecutionMode::Parallel, $def->executionMode);
-        $this->assertStringContainsString('one interactive foreground subagent with "agent" and "task"', $def->description);
+        $this->assertStringContainsString('one interactive subagent with "agent" and "task"', $def->description);
         $this->assertStringNotContainsString('"tasks"', $def->description);
         $this->assertStringContainsString('full handoff inline', $def->description);
         $this->assertStringContainsString('agent_retrieve', $def->description);

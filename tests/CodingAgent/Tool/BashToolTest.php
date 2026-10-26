@@ -57,6 +57,7 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
@@ -592,7 +593,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsStringIgnoringCase('3600-second maximum', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('user', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('bg_status', $guidelinesText);
-        $this->assertStringContainsStringIgnoringCase('no run_in_background', $guidelinesText);
+        $this->assertStringContainsString('backgrounded=true', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('report completion automatically', $guidelinesText);
         $this->assertStringContainsStringIgnoringCase('do not poll', $guidelinesText);
     }
@@ -729,7 +730,21 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertNotSame($byId[$staleId]->logPath, $current->logPath);
     }
 
-    public function testRequestedDetachmentKeepsSameProcessAndPollerNotifiesOnce(): void
+    public function testNestedBackgroundLaunchIsRefusedBeforeStartingProcess(): void
+    {
+        $this->createManager();
+        try {
+            $this->withContext(self::TEST_SESSION, fn (): mixed => $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO('echo must-not-run', backgrounded: true))));
+            $this->fail('Nested Bash cannot detach independently of its script.');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('top-level Bash', $exception->getMessage());
+        }
+        $this->assertSame([], $this->recordsForSession(self::TEST_SESSION));
+    }
+
+    #[TestWith([false], 'manual request')]
+    #[TestWith([true], 'model launch')]
+    public function testRequestedDetachmentKeepsSameProcessAndPollerNotifiesOnce(bool $backgrounded): void
     {
         $this->createManager();
         $session = self::getContainer()->get(HatfieldSessionStore::class)->createSession('Bash detachment');
@@ -740,13 +755,15 @@ final class BashToolTest extends IsolatedKernelTestCase
         $token = $this->createStub(CancellationTokenInterface::class);
         $selected = null;
         $originalDeadline = null;
-        $token->method('isCancellationRequested')->willReturnCallback(function () use ($session, &$selected, &$originalDeadline): bool {
+        $token->method('isCancellationRequested')->willReturnCallback(function () use ($session, $backgrounded, &$selected, &$originalDeadline): bool {
             if (null === $selected) {
-                $records = $this->manager->foregroundTools($session);
+                $records = $backgrounded ? $this->recordsForSession($session) : $this->manager->foregroundTools($session);
                 if ([] !== $records) {
                     $selected = $records[0];
                     $originalDeadline = $selected->deadlineNanoseconds;
-                    $this->assertTrue($this->manager->requestBackground($session, $selected->id, 'tc_bash'));
+                    if (!$backgrounded) {
+                        $this->assertTrue($this->manager->requestBackground($session, $selected->id, 'tc_bash'));
+                    }
                 }
             }
 
@@ -754,7 +771,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         });
 
         try {
-            $arguments = ['command' => 'printf "started\\n"; IFS= read -r release < '.escapeshellarg($fifo).'; printf "finished\\n"'];
+            $arguments = ['command' => 'printf "started\\n"; IFS= read -r release < '.escapeshellarg($fifo).'; printf "finished\\n"', 'backgrounded' => $backgrounded];
             $registry = new ToolRegistry();
             $registry->registerTool(name: 'bash', description: 'bash', handler: $this->makeBashTool(), promptLine: 'bash');
             $executor = new ToolExecutor(

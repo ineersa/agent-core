@@ -42,7 +42,7 @@ use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
  *   - command (required): the shell command string
  *   - timeout (optional int): explicit timeout in seconds
  *
- * No model-controlled run_in_background parameter.
+ * backgrounded (optional bool): request detachment after startup.
  *
  * ## Safety note: raw shell execution
  *
@@ -110,10 +110,17 @@ final class BashTool implements HatfieldToolProviderInterface
             // Only direct model tools are targets, including child-run tools. Direct !shell has no
             // producing step; code-mode nested calls have a deeper context.
             $toolCallId = null !== $context?->stepId() && 1 === $this->contextAccessor->depth() ? $context->toolCallId() : null;
+            if ($arguments->backgrounded && null === $toolCallId) {
+                throw new ToolCallException('Background launch requires a top-level Bash tool invocation.', retryable: false);
+            }
             $startResult = $this->manager->start($command, $sessionId, $toolCallId, $deadline);
             $pid = $startResult->pid;
             $dbId = $startResult->id;
             $logPath = $startResult->logPath;
+
+            if ($arguments->backgrounded) {
+                $this->manager->requestBackground($sessionId ?? '', $dbId, $toolCallId ?? '');
+            }
 
             $this->logger->info('bash_tool.started', [
                 'component' => 'tool.bash',
@@ -238,7 +245,7 @@ final class BashTool implements HatfieldToolProviderInterface
                     $this->config->maxTimeoutSeconds,
                 ),
                 'For file operations such as reading, writing, editing, or viewing files, prefer the dedicated read/write/edit/view_image tools instead of bash cat/echo/editor pipelines.',
-                'The user controls backgrounding; there is no run_in_background argument. Backgrounded commands report completion automatically, so do not poll; use bg_status with the returned PID only to inspect progress or stop the process when needed.',
+                'Set backgrounded=true to request background launch. Default false waits for completion; the user can also press Ctrl+B. Backgrounded commands report completion automatically, so do not poll; use bg_status with the returned PID only to inspect progress or stop the process when needed.',
                 'Output is capped to prevent excessively large responses. Very large output may be truncated and saved to a file for inspection.',
             ],
         );

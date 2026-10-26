@@ -43,6 +43,8 @@ final class CodeModeArgumentsDTO
             notInRangeMessage: 'The "memory_limit_mb" argument must be an integer between {{ min }} and {{ max }}.',
         )]
         public readonly int $memory_limit_mb = self::DEFAULT_MEMORY_LIMIT_MB,
+        #[Schema(description: 'Request background launch after startup; returns an acknowledgement and delivers the result later. Default false.')]
+        public readonly bool $backgrounded = false,
     ) {
     }
 }

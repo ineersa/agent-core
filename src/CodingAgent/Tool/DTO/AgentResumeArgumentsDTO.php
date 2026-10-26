@@ -18,6 +18,8 @@ final readonly class AgentResumeArgumentsDTO
         public ?string $artifact_id = null,
         #[Schema(description: 'Child AgentCore run id.')]
         public ?string $agent_run_id = null,
+        #[Schema(description: 'Request background launch after startup; returns an acknowledgement and delivers the result later. Default false.')]
+        public bool $backgrounded = false,
     ) {
     }
 }

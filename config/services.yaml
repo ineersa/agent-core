@@ -872,6 +872,7 @@ services:
   # code_mode: definition provider is tagged; toolbox resolves only at nested invoke time.
   Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge:
     arguments:
+      $commandBus: '@agent.command.bus'
       $toolboxLocator: !service_locator
         toolbox: '@Ineersa\CodingAgent\Tool\RegistryBackedToolbox'
 
