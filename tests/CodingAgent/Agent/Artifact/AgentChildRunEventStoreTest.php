@@ -51,8 +51,7 @@ final class AgentChildRunEventStoreTest extends TestCase
                 cwd: $this->projectDir,
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
 
         $this->pathResolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
     }

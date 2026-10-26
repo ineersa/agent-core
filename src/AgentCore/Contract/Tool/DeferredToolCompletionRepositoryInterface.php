@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Contract\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 
 /**
  * Cross-process durable store for deferred tool executions.
@@ -34,4 +35,10 @@ interface DeferredToolCompletionRepositoryInterface
     public function status(string $deferredId): ?string;
 
     public function markCompleted(string $deferredId): void;
+
+    /** Old successor tokens require an explicit owner continuation after loss. */
+    public function runRequiresContinuation(string $runId): bool;
+
+    /** First immutable processed result wins; later publications are no-ops when equal. */
+    public function acceptResultReference(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO;
 }

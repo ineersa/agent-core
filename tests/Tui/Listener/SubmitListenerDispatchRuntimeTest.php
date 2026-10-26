@@ -489,8 +489,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 cwd: $this->tempCwd,
             ),
             entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
 
         $this->client->expects($this->once())
             ->method('start')
@@ -552,8 +551,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
         $modelService = new \Ineersa\CodingAgent\Config\ModelSelectionService(
             $appConfig,
             new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $sessionStore, new NullLogger()),
@@ -844,8 +842,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 cwd: $this->tempCwd,
             ),
             entityManager: $em,
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
 
         $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
         $this->assertNotFalse($png);

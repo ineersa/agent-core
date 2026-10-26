@@ -61,6 +61,7 @@ final class RuntimeEventTranslator
             // Tool execution
             RunEventTypeEnum::ToolExecutionStart->value => $this->onToolExecutionStarted(...),
             RunEventTypeEnum::ToolExecutionUpdate->value => $this->onToolExecutionUpdate(...),
+            RunEventTypeEnum::ToolCallAcknowledged->value => $this->onToolExecutionEnded(...),
             RunEventTypeEnum::ToolExecutionEnd->value => $this->onToolExecutionEnded(...),
             // Model notification
             RunEventTypeEnum::ModelNotification->value => $this->onModelNotification(...),
@@ -355,6 +356,7 @@ final class RuntimeEventTranslator
         $isUserCancelled = $isError && 'cancelled' === ($typedResult->error['type'] ?? null);
 
         $type = match (true) {
+            $runEvent->type === RunEventTypeEnum::ToolCallAcknowledged->value => RuntimeEventTypeEnum::ToolCallAcknowledged->value,
             $isUserCancelled => RuntimeEventTypeEnum::ToolExecutionCancelled->value,
             $isError => RuntimeEventTypeEnum::ToolExecutionFailed->value,
             default => RuntimeEventTypeEnum::ToolExecutionCompleted->value,
@@ -499,6 +501,12 @@ final class RuntimeEventTranslator
                 'idempotency_key' => $idempotencyKey,
             ];
             $metadata = \is_array($messagePayload) ? ($messagePayload['metadata'] ?? null) : null;
+            if (\is_array($metadata) && \is_array($metadata['background_completion'] ?? null)) {
+                $origin = $metadata['background_completion'];
+                $notification = new ModelNotificationDTO($origin['identity'], 'code_mode', 'completion', 'info', 'message', $text, ['background_completion' => $origin]);
+
+                return new RuntimeEvent(RuntimeEventTypeEnum::ModelNotification->value, $runEvent->runId, $runEvent->seq, ModelNotificationCodec::toEventSpecs($this->normalizer, [$notification])[0]['payload']);
+            }
             if ('append_message' === $kind && 'agent_communication' === ($messagePayload['role'] ?? null)
                 && \is_array($metadata) && \is_array($metadata['agent_communication'] ?? null)) {
                 // System transcript blocks are presentation, not system-role
@@ -545,6 +553,9 @@ final class RuntimeEventTranslator
         // Authored agent traffic is not pending human input. Its applied
         // message becomes an attributed model notification instead.
         if (\is_array($p['agent_communication'] ?? null)) {
+            return null;
+        }
+        if (isset($p['background_completion']['deferred_id'])) {
             return null;
         }
 

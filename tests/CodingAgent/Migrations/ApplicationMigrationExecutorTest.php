@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Migrations;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Schema\Schema;
+use DoctrineMigrations\Version20261021034317;
+use DoctrineMigrations\Version20261022235428;
 use Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -565,6 +568,17 @@ SQL);
     public function testDefaultStartupExecutorDropsLegacyReasoningBaselineWhilePreservingSessionIdentity(): void
     {
         $connection = $this->createSqliteConnection($this->isolatedDir.'/legacy-reasoning-baseline.sqlite');
+        // The recorded baseline includes these tables, even though this fixture
+        // otherwise needs only the legacy session schema.
+        foreach ([new Version20261021034317($connection, new NullLogger()), new Version20261022235428($connection, new NullLogger())] as $migration) {
+            $migration->up(new Schema());
+            foreach ($migration->getSql() as $query) {
+                $sql = $query->getStatement();
+                if (str_starts_with($sql, 'CREATE TABLE background_completion_receipt ') || str_starts_with($sql, 'CREATE TABLE tool_deferred_completion ')) {
+                    $connection->executeStatement($sql);
+                }
+            }
+        }
         $now = '2026-10-22 00:00:00';
         $providerCacheKey = UuidV7::v7()->toRfc4122();
         $connection->executeStatement(<<<'SQL'

@@ -60,10 +60,13 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
             throw new ValidationFailedException($message, $errors);
         }
         $receipt = $this->receipts->receipt($message->identity);
+        if ($this->consumption->parked($message->deferredId) && !$this->consumption->interrupted($message->deferredId)) {
+            return new HandlerResult();
+        }
         if (null !== $receipt) {
             if (BackgroundCompletionDispositionEnum::Pending === $receipt->disposition
                 && $receipt->destinationRunId === $state->runId
-                && null !== $state->parentRunId && $state->status->isTerminal()) {
+                && ($this->consumption->interrupted($receipt->deferredId) || (null !== $state->parentRunId && $state->status->isTerminal()))) {
                 return $this->retireTerminalPending($receipt, $state);
             }
             // A consumed child admission remains consumed even if the original
@@ -78,6 +81,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 $receipt->identity, $receipt->sourceRunId, $receipt->acceptedDestinationRunId,
                 $receipt->destinationRunId, $receipt->rootRunId, $receipt->text,
                 $receipt->forwardedText, BackgroundCompletionDispositionEnum::Pending,
+                $receipt->deferredId, $receipt->invocation,
             );
         } else {
             if (null !== $message->sourceRunId && $message->sourceRunId !== $state->runId) {
@@ -94,13 +98,19 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 "Background completion from child owner %s (agent_id: %s, run_id: %s). The child was not resumed.\n\n%s",
                 $owner->agentName, $owner->artifactId, $state->runId, $message->text,
             );
-            $forward = null !== $state->parentRunId && ($state->status->isTerminal() || RunStatus::Cancelling === $state->status);
+            $interrupted = $this->consumption->interrupted($message->deferredId);
+            $forward = !$interrupted && null !== $state->parentRunId && ($state->status->isTerminal() || RunStatus::Cancelling === $state->status);
             $destination = $forward ? $rootRunId : $state->runId;
             $receipt = new BackgroundCompletionReceiptDTO(
                 $message->identity, $state->runId, $destination, $destination,
                 $rootRunId, $message->text, $forwardedText,
-                $forward ? BackgroundCompletionDispositionEnum::Forwarding : BackgroundCompletionDispositionEnum::Pending,
+                $interrupted ? BackgroundCompletionDispositionEnum::Consumed : ($forward ? BackgroundCompletionDispositionEnum::Forwarding : BackgroundCompletionDispositionEnum::Pending),
+                $message->deferredId,
+                $message->invocation,
             );
+            if ($interrupted) {
+                return new HandlerResult(postCommitActions: [new DispatchLocalMetadataMessageDTO(new RecordBackgroundCompletionDTO($receipt))]);
+            }
             if ($forward) {
                 // The durable obligation precedes the best-effort send. Native
                 // completion polling retries it until root mailbox admission.
@@ -112,12 +122,20 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         }
 
         $text = $state->runId === $receipt->sourceRunId ? $receipt->text : $receipt->forwardedText;
-        $payload = $this->normalizer->normalize(new AgentMessage('user', [['type' => 'text', 'text' => $text]]), context: [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
+        if (null !== $receipt->deferredId) {
+            $text = \sprintf("Background code_mode result (run_id: %s, tool_call_id: %s, invocation: %s).\n\n%s", $receipt->sourceRunId, $receipt->invocation?->toolCallId, $receipt->deferredId, $text);
+        }
+        $metadata = null === $receipt->deferredId ? [] : ['background_completion' => ['identity' => $receipt->identity, 'run_id' => $receipt->sourceRunId, 'tool_call_id' => $receipt->invocation?->toolCallId, 'invocation_id' => $receipt->deferredId]];
+        $payload = $this->normalizer->normalize(new AgentMessage('user', [['type' => 'text', 'text' => $text]], metadata: $metadata), context: [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
         $result = $this->commands->handle(new ApplyCommand(
             $state->runId, $state->turnNo, $receipt->identity, 1, $receipt->identity,
             CoreCommandKind::AppendMessage, [
                 'message' => $payload,
-                'provenance' => new BackgroundCompletionProvenanceDTO($receipt->identity, $receipt->sourceRunId),
+                'provenance' => new BackgroundCompletionProvenanceDTO(
+                    $receipt->identity,
+                    $receipt->sourceRunId,
+                    $receipt->deferredId,
+                ),
             ],
         ), $state);
         if (!array_any($result->postCommitActions, static fn (object $action): bool => $action instanceof EnqueueCommandDTO)) {
@@ -131,6 +149,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
             [...$event->payload, 'background_completion' => [
                 'identity' => $receipt->identity,
                 'source_run_id' => $receipt->sourceRunId,
+                'deferred_id' => $receipt->deferredId,
                 'accepted_destination_run_id' => $receipt->acceptedDestinationRunId,
                 'destination_run_id' => $receipt->destinationRunId,
             ]], $event->createdAt,
@@ -176,6 +195,13 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
 
     private function forward(BackgroundCompletionReceiptDTO $receipt): DeliverBackgroundCompletionDTO
     {
-        return new DeliverBackgroundCompletionDTO($receipt->destinationRunId, $receipt->identity, $receipt->forwardedText, $receipt->sourceRunId);
+        return new DeliverBackgroundCompletionDTO(
+            $receipt->destinationRunId,
+            $receipt->identity,
+            $receipt->forwardedText,
+            $receipt->sourceRunId,
+            $receipt->deferredId,
+            $receipt->invocation,
+        );
     }
 }

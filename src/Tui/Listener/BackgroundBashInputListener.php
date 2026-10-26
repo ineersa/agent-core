@@ -72,6 +72,9 @@ final readonly class BackgroundBashInputListener implements TuiListenerRegistrar
                     'command' => new UserCommand('background_child', payload: ['lifecycle_id' => $candidate->lifecycleId, 'tool_call_id' => $candidate->toolCallId]),
                 ];
             }
+            foreach ($context->client->backgroundWork($runId)->codeMode as $candidate) {
+                $candidates[] = ['label' => $candidate->label, 'command' => new UserCommand('background_code_mode', payload: ['deferred_id' => $candidate->lifecycleId, 'tool_call_id' => $candidate->toolCallId])];
+            }
             if ([] === $candidates) {
                 return;
             }

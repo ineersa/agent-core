@@ -31,7 +31,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
 {
-    public function testScopeReusesRealNumericParentResolutionWithoutCachingAcrossOperations(): void
+    public function testScopeReusesPathsButRevalidatesWriteAuthority(): void
     {
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('scoped bodies');
@@ -45,7 +45,7 @@ final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
             $references[] = $scoped->publish(new ExecuteToolCall($run, 1, 'tools', 1, 'key-'.$i, 'call-'.$i, 'echo', ['text' => 'hello'], $i));
         }
         $this->assertSame(1, $paths->calls);
-        $this->assertSame(1, $this->parentCounts($sql));
+        $this->assertSame(13, $this->parentCounts($sql), 'One path resolution plus authoritative existence on every publication.');
         $sql->records = [];
         foreach ($references as $i => $reference) {
             $this->assertSame('call-'.$i, $scoped->read($reference)->toolCallId);
@@ -59,7 +59,7 @@ final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
         $this->assertSame(0, $this->parentCounts($sql));
         $store->forRun($run);
         $this->assertSame(2, $paths->calls);
-        $this->assertSame(1, $this->parentCounts($sql));
+        $this->assertSame(0, $this->parentCounts($sql));
     }
 
     public function testScopeRetainsDifferentDataKindsForTheSameCallAndRejectsChangedBytes(): void

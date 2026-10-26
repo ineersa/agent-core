@@ -95,7 +95,7 @@ final class SessionHistoryProviderTest extends PerMethodIsolatedKernelTestCase
         $this->assertFileExists(getcwd().'/.hatfield/sessions/'.$runId.'/events.jsonl');
         // Discard both the event-store instance and ORM identity map. Nothing from the streamed result feeds the next request.
         $em->clear();
-        $sessions = new HatfieldSessionStore($container->get(AppConfig::class), $em, new EventDispatcher());
+        $sessions = new HatfieldSessionStore($container->get(AppConfig::class), $em, new EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $cold = new SessionRunEventStore($sessions, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(), new LockFactory(new FlockStore()), new NullLogger(), new FileRunSequenceAllocator(), presentations: HistoryEventStoreFactory::presentationFactory());
         $history = (new SessionHistoryProvider($cold, $container->get(RunHistoryIndex::class)))->forSession($runId);
         $this->assertSame('Read both fixtures', $history->entries[0]->text);

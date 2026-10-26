@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
@@ -29,6 +31,8 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
     public function __construct(
         private OutputCap $outputCap,
         private NormalizerInterface $normalizer,
+        private ToolPayloadStoreInterface $payloads,
+        private DeferredToolCompletionRepositoryInterface $deferred,
     ) {
     }
 
@@ -54,7 +58,9 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             $notice = '[Output capped: '.$bytes.' bytes > '.OutputCap::STREAM_BYTE_LIMIT."-byte safety limit]\nSaved full output: ".$savedPath;
             $capResult = new OutputCapResult($savedPath, null, null, null, $notice, $bytes);
         } else {
-            $capResult = $this->outputCap->capIfNeeded($text, \is_string($runId) ? $runId : null, $path);
+            $retain = 'code_mode' === $toolCall->toolName && \is_string($runId) && null !== $this->deferred->findByRunAndToolCall($runId, $toolCall->toolCallId);
+            $capResult = $this->outputCap->capIfNeeded($text, \is_string($runId) ? $runId : null, $path,
+                $retain ? fn (callable $write): string => $this->payloads->saveAttachment($runId, $toolCall->toolCallId, $write) : null);
         }
         if (null === $capResult) {
             return $result;

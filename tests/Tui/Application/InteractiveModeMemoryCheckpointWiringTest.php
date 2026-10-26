@@ -243,8 +243,7 @@ final class InteractiveModeMemoryCheckpointWiringTest extends TestCase
         $sessionStore = new HatfieldSessionStore(
             $appConfig,
             $this->createStub(EntityManagerInterface::class),
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
         $historyProvider = $this->createStub(HistoryProviderInterface::class);
         $sessionInit = new SessionInitializer(
             sessionStore: $sessionStore,

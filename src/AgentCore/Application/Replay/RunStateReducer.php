@@ -97,6 +97,7 @@ final readonly class RunStateReducer
             RunEventTypeEnum::LlmStepFailed->value => $this->applyLlmStepFailed($payload, $state),
             RunEventTypeEnum::LlmStepAborted->value => $state->with(['currentOperation' => null]),
             RunEventTypeEnum::ToolExecutionStart->value => $this->applyToolExecutionStart($payload, $pendingToolCalls, $state),
+            RunEventTypeEnum::ToolCallAcknowledged->value,
             RunEventTypeEnum::ToolExecutionEnd->value => $this->applyToolExecutionEnd($payload, $pendingToolCalls, $state, $completedToolResultsByCallId),
             RunEventTypeEnum::ToolBatchCommitted->value => $this->applyToolBatchCommitted($state, $pendingToolCalls, $messages, $completedToolResultsByCallId),
             RunEventTypeEnum::WaitingHuman->value => $this->applyWaitingHuman($event->payload, $state),
@@ -281,7 +282,20 @@ final readonly class RunStateReducer
             return $state->with($changes);
         }
 
-        // steer / follow_up / append_message: append message to prompt context.
+        // Only explicit deferred repair can revive an idle terminal owner without
+        // a message. Historical generic continue commands remain unsupported.
+        if ('continue' === $kind) {
+            return 'deferred_continuation' === ($payload['reason'] ?? null)
+                && \in_array($state->status, [RunStatus::Completed, RunStatus::Failed], true)
+                && null === $state->currentOperation
+                && !\in_array(false, $state->pendingToolCalls, true)
+                && [] === $state->pendingShellToolCalls
+                && [] === $state->pendingHumanInputRequests
+                ? $state->with(['status' => RunStatus::Running, 'errorMessage' => null])
+                : $state;
+        }
+
+        // Message commands append prompt context.
         // These lifecycle advances abandon any outstanding human-input queue so a
         // later response cannot target a superseded question behind a new wait.
         if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {

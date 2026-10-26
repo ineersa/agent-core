@@ -19,7 +19,6 @@ final class ExplicitSessionStoreFactory
         return new HatfieldSessionStore(
             new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $cwd),
             $entityManager,
-            new EventDispatcher(),
-        );
+            new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
     }
 }

@@ -10,7 +10,10 @@ use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -21,6 +24,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
@@ -30,9 +34,12 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\TestActiveRunContext;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionReceiptDTO;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Runtime\Contract\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -68,6 +75,143 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
     {
         TestDirectoryIsolation::removeDirectory($this->projectDir);
         parent::tearDown();
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('deferredRepairs')]
+    public function testDeferredRepairReusesProcessedEvidenceWithoutExecutingTools(bool $retained, bool $completed, bool $valid, ?RunStatus $liveStatus = null, bool $accepted = false, bool $backgrounded = false, ?string $interruption = null): void
+    {
+        $live = null !== $liveStatus;
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('retained repair');
+        $call = new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(\Symfony\Component\Uid\Uuid::v7()->toRfc4122(), $run, 1, 'step', 2, 'exact-key', 'host', 'code_mode', ['script' => 'return 1;'], 0);
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::registerDeferredInvocation($container->get(ToolBatchStoreInterface::class), $call);
+        $deferred = $container->get(\Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository::class);
+        $deferred->registerPending($call);
+        if ($backgrounded) {
+            $deferred->markReady($call->deferredId);
+            $deferred->markBackgrounded($call->deferredId, new \DateTimeImmutable());
+        }
+        $terminal = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromDeferredCorrelationAndCompletion($call, [['type' => 'text', 'text' => 'FIRST']], [], false);
+        if ($retained) {
+            $payloads = $container->get(ToolPayloadStoreInterface::class);
+            $invocation = $deferred->findMetadataByDeferredId($call->deferredId)->reference;
+            $reference = $payloads->publishFirstResult($terminal, $invocation);
+            $em = $container->get(\Doctrine\ORM\EntityManagerInterface::class);
+            $connection = $em->getConnection();
+            $connection->beginTransaction();
+            $deferred->acceptResultReference($call->deferredId, $reference);
+            $connection->rollBack();
+            $em->clear();
+            $this->assertNull($connection->fetchOne('SELECT accepted_result_reference_json FROM tool_deferred_completion WHERE deferred_id = ?', [$call->deferredId]));
+            $this->assertEquals($reference, $deferred->findMetadataByDeferredId($call->deferredId)->acceptedResultReference, 'First immutable reference survives failed SQL admission.');
+            $changed = new ToolCallResult($run, 1, 'step', 2, 'exact-key', 'host', 0, ['tool_name' => 'code_mode', 'content' => [['type' => 'text', 'text' => 'SECOND']]]);
+            $this->assertEquals($reference, $payloads->publishFirstResult($changed, $invocation));
+            if ($accepted) {
+                $deferred->acceptResultReference($call->deferredId, $reference);
+            }
+        }
+        if ($completed) {
+            $deferred->markCompleted($call->deferredId);
+            if ($live) {
+                // Seed the durable admission cut, with its AdvanceRun send lost.
+                $identity = 'receipt-'.$call->deferredId;
+                $container->get(BackgroundCompletionReceiptRepository::class)->record(new BackgroundCompletionReceiptDTO($identity, $run, $run, $run, $run, 'FIRST', 'FIRST', BackgroundCompletionDispositionEnum::Pending, $call->deferredId, $invocation));
+                $container->get(CommandStoreInterface::class)->enqueue(new PendingCommand($run, 'append_message', $identity, ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'FIRST']]]]));
+            }
+        }
+        if (!$live) {
+            $deferred->interrupt($call->deferredId, 'controller_lost');
+            $deferred->requireContinuation($call->deferredId, true);
+        }
+        if (null !== $interruption) {
+            $deferred->interrupt($call->deferredId, $interruption);
+        }
+        $specs = [
+            ['type' => RunEventTypeEnum::RunStarted->value, 'payload' => ['messages' => []]],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => 'step']],
+            ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => ['step_id' => $valid ? 'step' : 'foreign', 'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [['id' => 'host', 'name' => 'code_mode', 'arguments' => $call->arguments, 'order_index' => 0]]]]],
+        ];
+        if ($completed || $backgrounded) {
+            $specs[] = ['type' => RunEventTypeEnum::ToolCallAcknowledged->value, 'payload' => $container->get(ToolExecutionEndPayloadCodec::class)->toEventPayload($terminal)];
+        }
+        if (!$live || ($completed && !$backgrounded) || true === $liveStatus?->isTerminal()) {
+            $specs[] = ['type' => RunEventTypeEnum::AgentEnd->value, 'payload' => ['reason' => $live && RunStatus::Failed !== $liveStatus ? 'completed' : 'failed']];
+        }
+        $this->persistRunEvents($run, (new EventFactory())->eventsFromSpecs($run, 1, 1, $specs));
+        $store = new TestActiveRunContext();
+        $store->loadRecovered(new RunState($run, $completed && $live && !$backgrounded ? RunStatus::Completed : ($liveStatus ?? RunStatus::Failed), version: 1, turnNo: 1, lastSeq: \count($specs), activeStepId: 'step', pendingToolCalls: $completed || $backgrounded ? [] : ['host' => false], currentOperation: $backgrounded && RunStatus::Running === $liveStatus ? new CurrentOperationDTO(2, 'unrelated', 1, 'other-key') : null));
+        $bus = new TestMessageBus();
+        $service = $this->createService($store, commandBus: $bus);
+        $dry = $service->repair($run, false, \Symfony\Component\Uid\Uuid::v7()->toRfc4122());
+        $this->assertSame($valid ? null : SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $dry->refusalReason);
+        $this->assertSame([], $bus->messages);
+        $applied = $service->repair($run, true, \Symfony\Component\Uid\Uuid::v7()->toRfc4122());
+        if (null !== $interruption) {
+            $this->assertSame([], $bus->messages, 'Controller-loss evidence cannot authorize delivery after cancellation or history discard.');
+            $this->assertFalse($deferred->runRequiresContinuation($run));
+            $this->assertSame($interruption, $deferred->findMetadataByDeferredId($call->deferredId)->interruptionReason);
+            $this->assertSame(RunStatus::Failed, $store->requireLoaded($run)->status);
+
+            return;
+        }
+        if (!$valid) {
+            $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $applied->refusalReason);
+            $this->assertSame([], $bus->messages);
+            $this->assertTrue($deferred->runRequiresContinuation($run));
+
+            return;
+        }
+        $this->assertNull($applied->refusalReason);
+        $results = array_values(array_filter($bus->messages, static fn (object $message): bool => $message instanceof ToolCallResult));
+        $this->assertCount(!$completed && ($retained || !$live) ? 1 : 0, $results);
+        $metadata = $deferred->findMetadataByDeferredId($call->deferredId);
+        $this->assertSame($completed ? 'completed' : 'pending', $metadata->status, 'Transport dispatch is not durable result admission.');
+        $this->assertSame($live ? null : 'controller_lost', $metadata->interruptionReason);
+        if ([] !== $results) {
+            if ($retained) {
+                $this->assertEquals($terminal, $results[0]);
+            } else {
+                $this->assertTrue($results[0]->isError);
+                $this->assertFalse($results[0]->error['retryable']);
+            }
+            $this->assertSame(2, $results[0]->attempt());
+            $this->assertSame('exact-key', $results[0]->idempotencyKey());
+        }
+        if ($live) {
+            $advances = array_values(array_filter($bus->messages, static fn (object $message): bool => $message instanceof AdvanceRun));
+            $this->assertCount($completed && !$backgrounded ? 1 : 0, $advances);
+            $this->assertSame([...$results, ...$advances], $bus->messages, 'Repair only redrives processed evidence or an idle admitted mailbox, never the host, processors or an unrelated LLM operation.');
+            if (!$completed) {
+                $this->assertSame($liveStatus, $store->requireLoaded($run)->status, 'Ordinary result redelivery leaves continuation to result/mailbox admission.');
+            }
+            $this->assertFalse($metadata->continuationRequired);
+            $this->assertCount($backgrounded || $completed ? 1 : 0, array_filter($this->readEvents($run), static fn (array $event): bool => RunEventTypeEnum::ToolCallAcknowledged->value === $event['type']));
+        } elseif ($completed) {
+            $this->assertSame(RunStatus::Running, $store->requireLoaded($run)->status);
+            $events = $this->readEvents($run);
+            $last = $events[array_key_last($events)];
+            $this->assertSame('continue', $last['payload']['kind']);
+            $runtime = $container->get(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator::class)->translate(new RunEvent($run, $last['seq'], 1, $last['type'], $last['payload']));
+            $this->assertNotSame('user.message_submitted', $runtime?->type);
+        }
+    }
+
+    public static function deferredRepairs(): iterable
+    {
+        foreach (['stopped', 'cancelled', 'history_discarded'] as $reason) {
+            yield 'controller loss then '.$reason => [true, false, true, null, false, true, $reason];
+        }
+        yield 'live host without terminal evidence is not rerun or failed' => [false, false, true, RunStatus::Running];
+        yield 'parent failure does not invent a terminal for a live host' => [false, false, true, RunStatus::Failed];
+        yield 'live controller repairs first reference after SQL rollback' => [true, false, true, RunStatus::Running];
+        yield 'live controller repairs accepted result while another LLM operation runs' => [true, false, true, RunStatus::Running, true, true];
+        yield 'live controller redrives background result without prematurely reviving completed owner' => [true, false, true, RunStatus::Completed, true, true];
+        yield 'admitted receipt with lost advance explicitly resumes idle owner' => [true, true, true, RunStatus::Running];
+        yield 'admitted receipt never duplicates unrelated LLM operation' => [true, true, true, RunStatus::Running, false, true];
+        yield 'first processed result after parent failure' => [true, false, true];
+        yield 'lost host without terminal evidence' => [false, false, true];
+        yield 'completed caller stays completed' => [true, true, true];
+        yield 'canonical invocation mismatch refuses authorization' => [true, false, false];
     }
 
     public function testNoRepairNeededWhenSessionIsCleanlyTerminal(): void
@@ -123,6 +267,11 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
                         'name' => 'bash',
                         'arguments' => ['command' => 'castor test'],
                         'order_index' => 0,
+                    ], [
+                        'id' => 'background-host',
+                        'name' => 'code_mode',
+                        'arguments' => [],
+                        'order_index' => 1,
                     ]],
                 ],
             ]],
@@ -132,6 +281,10 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
                 'order_index' => 0,
                 'mode' => 'parallel',
             ]],
+            ['type' => RunEventTypeEnum::ToolCallAcknowledged->value, 'payload' => static::getContainer()->get(ToolExecutionEndPayloadCodec::class)->toEventPayload(new ToolCallResult(
+                $runId, $turnNo, $stepId, 1, 'host-key', 'background-host', 1,
+                ['content' => [['type' => 'text', 'text' => 'HOST_ACK']], 'backgrounded' => true],
+            ))],
             ['type' => RunEventTypeEnum::AgentEnd->value, 'payload' => [
                 'reason' => 'failed',
                 'error' => 'Handling ToolCallResult failed: Tool batch snapshot write failed.',
@@ -145,7 +298,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
             status: RunStatus::Failed,
             version: 1,
             turnNo: $turnNo,
-            lastSeq: 5,
+            lastSeq: 6,
             activeStepId: $stepId,
             model: 'test-model',
         ));
@@ -168,12 +321,13 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $this->assertSame(1, $this->countEvents($events, RunEventTypeEnum::AgentEnd->value));
 
         $messages = $this->replayMessages($runId);
-        $this->assertCount(2, $messages);
+        $this->assertCount(3, $messages);
         $this->assertSame('assistant', $messages[0]->role);
-        $this->assertSame('tool', $messages[1]->role);
-        $this->assertSame($toolCallId, $messages[1]->toolCallId);
-        $this->assertTrue($messages[1]->isError);
-        $this->assertStringContainsString('run failed before the result was committed', (string) ($messages[1]->content[0]['text'] ?? ''));
+        $toolMessages = array_column(\array_slice($messages, 1), null, 'toolCallId');
+        $this->assertSame('HOST_ACK', $toolMessages['background-host']->content[0]['text']);
+        $this->assertFalse($toolMessages['background-host']->isError);
+        $this->assertTrue($toolMessages[$toolCallId]->isError);
+        $this->assertStringContainsString('run failed before the result was committed', (string) ($toolMessages[$toolCallId]->content[0]['text'] ?? ''));
         $this->assertReplayStatus($runId, RunStatus::Failed);
 
         $lineCountAfterFirst = \count($this->readRawLines($runId));
@@ -928,8 +1082,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
 
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);
@@ -963,9 +1116,12 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
                 eventStore: $eventStore,
                 logger: new NullLogger(),
                 finalizer: \Ineersa\AgentCore\Tests\Support\TestTransitionFinalizerFactory::create($eventStore, new StepDispatcher($commandBus, $dispatcherBus, new TestLogger(), events: $dispatcherEvents), locks: $locks),
-                actionValidator: new \Ineersa\AgentCore\Application\Handler\CoordinationActionValidator(),
+                actionValidator: self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\CoordinationActionValidator::class),
             ),
             deferredBatches: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
+            deferred: self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository::class),
+            payloads: self::getContainer()->get(ToolPayloadStoreInterface::class),
+            receipts: self::getContainer()->get(BackgroundCompletionReceiptRepository::class),
         );
     }
 
@@ -1029,8 +1185,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);
         $eventStore = new SessionRunEventStore(
@@ -1057,8 +1212,7 @@ final class SessionRepairServiceTest extends IsolatedKernelTestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new LockFactory(new FlockStore()));
         $lockDir = $this->projectDir.'/.hatfield/locks';
         TestDirectoryIsolation::ensureDirectory($lockDir);
         $eventStore = new SessionRunEventStore(

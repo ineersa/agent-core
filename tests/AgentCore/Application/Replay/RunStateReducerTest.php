@@ -14,6 +14,28 @@ use PHPUnit\Framework\TestCase;
 
 final class RunStateReducerTest extends TestCase
 {
+    public function testOnlyExplicitDeferredContinuationResumesIdleTerminalOwners(): void
+    {
+        $reducer = $this->reducer();
+        $resume = new RunEvent('repair', 2, 0, 'agent_command_applied', ['kind' => 'continue', 'reason' => 'deferred_continuation']);
+        foreach ([RunStatus::Completed, RunStatus::Failed] as $status) {
+            $terminal = new RunEvent('repair', 1, 0, 'agent_end', ['reason' => $status->value]);
+            $result = $reducer->replay(RunState::queued('repair'), [$terminal, $resume]);
+            $this->assertSame(RunStatus::Running, $result->status);
+            $this->assertNull($result->errorMessage);
+            $this->assertSame([], $result->messages);
+            $unsupported = $reducer->replay(RunState::queued('repair'), [$terminal, new RunEvent('repair', 2, 0, 'agent_command_applied', ['kind' => 'continue'])]);
+            $this->assertSame($status, $unsupported->status);
+        }
+        foreach ([
+            [new RunEvent('repair', 1, 0, 'waiting_human', ['question_id' => 'question']), RunStatus::WaitingHuman],
+            [new RunEvent('repair', 1, 0, 'agent_end', ['reason' => 'cancelled']), RunStatus::Cancelled],
+            [new RunEvent('repair', 1, 0, 'run_started', []), RunStatus::Running],
+        ] as [$event, $status]) {
+            $this->assertSame($status, $reducer->replay(RunState::queued('repair'), [$event, $resume])->status);
+        }
+    }
+
     public function testStreamingReplayReleasesProcessedRecordsAndKeepsActualSequence(): void
     {
         $events = (static function (): \Generator {

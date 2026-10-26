@@ -99,7 +99,7 @@ and `ask_human` before the handler runs. Those tools need native deferred owners
 flow that this bridge cannot complete. Script return values and nested tool results must be JSON-compatible scalars
 or arrays. Closures, resources, objects, non-finite floats, invalid UTF-8, and
 cyclic graphs fail instead of becoming empty or substituted data. Each script
-accepts optional `timeout_seconds` (default 60, max 300) and `memory_limit_mb`
+accepts optional `timeout_seconds` (default 1800, max 3600) and `memory_limit_mb`
 (default 256, max 1024). The remaining parent tool budget wins when smaller.
 Nested tool calls receive the remaining script budget as cooperative ToolContext
 metadata. The host can enforce that budget only while it is polling the script; a
@@ -107,9 +107,9 @@ nested handler that blocks synchronously can still overrun until it returns.
 
 ## Background work
 
-There is no `bg_start` tool or model-selected background flag. A long-running `bash`
-call can offer backgrounding, and the user chooses. Accepted jobs can then be
-inspected or stopped through `bg_status`. See [background processes](background-processes.md).
+There is no `bg_start` tool or model-selected background flag. The user chooses
+backgrounding with Ctrl+B and inspects or stops root-owned work through `/bg`.
+`bg_status` inspects or stops Bash jobs only. See [code-mode backgrounding](background-processes.md#code-mode-scripts) for script occupancy, stopping and recovery.
 
 ## Child agents
 

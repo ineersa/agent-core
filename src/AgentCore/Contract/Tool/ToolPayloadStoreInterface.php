@@ -22,6 +22,14 @@ interface ToolPayloadStoreInterface
 
     public function publish(ExecuteToolCall|ExecuteShellToolCall|ToolCallResult $message): ToolPayloadReferenceDTO;
 
+    public function withStorage(string $runId, callable $write): mixed;
+
+    public function publishFirstResult(ToolCallResult $message, ToolPayloadReferenceDTO $invocation): ToolPayloadReferenceDTO;
+
+    public function findFirstResult(ToolPayloadReferenceDTO $invocation): ?ToolPayloadReferenceDTO;
+
+    public function saveAttachment(string $runId, string $toolCallId, callable $write): string;
+
     public function read(ToolPayloadReferenceDTO $reference): ExecuteToolCall|ExecuteShellToolCall|ToolCallResult|DeferredToolCompletionCorrelation;
 
     public function publishCorrelation(DeferredToolCompletionCorrelation $correlation): ToolPayloadReferenceDTO;

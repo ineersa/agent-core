@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
@@ -53,7 +55,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         // Cap set low so our test text triggers capping.
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 50);
         $outputCap = $this->outputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
 
         $rawSentinel = 'RAW_SENTINEL_'.bin2hex(random_bytes(8));
         $largeText = str_repeat('A', 300).$rawSentinel;
@@ -133,8 +135,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     {
         $processor = new OutputCapToolResultProcessor(
             $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 10)),
-            \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-        );
+            \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
         $result = new ToolResult('call-run', 'bash', [['type' => 'text', 'text' => str_repeat('x', 20)]], [], false);
         $explicit = new ToolCall('call-run', 'bash', [], 0, runId: 'explicit-run', context: ['run_id' => 'context-run']);
         $processed = $processor->process($result, $explicit);
@@ -162,7 +163,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         // cap artefact is rendered tool output text (plain content; read the original path for follow-up inspection).
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 50);
         $outputCap = $this->outputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
 
         $largeText = str_repeat('B', 300).'GENERIC_SENTINEL_'.bin2hex(random_bytes(8));
 
@@ -206,7 +207,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 5000, docCap: 5000);
         $outputCap = $this->outputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
 
         $smallText = 'Small result text';
 
@@ -245,7 +246,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 5000);
         $outputCap = $this->outputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
 
         $result = new ToolResult(
             toolCallId: 'call-3',
@@ -276,7 +277,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         // not defaultCap (20k), even though the tool call has no path argument.
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
         $outputCap = $this->outputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
 
         $handoff = str_repeat('H', 25000)."\n## Result\n";
         $this->assertGreaterThan(20000, u($handoff)->length());
@@ -309,7 +310,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
         $outputCap = $this->outputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
 
         $handoff = str_repeat('S', 30000);
         $result = new ToolResult(
@@ -339,7 +340,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         // Thesis: non-report tools without a path still cap at defaultCap.
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
         $outputCap = $this->outputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
 
         $large = str_repeat('B', 25000);
         $result = new ToolResult(
@@ -370,7 +371,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
         $outputCap = $this->outputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
 
         $body = str_repeat('C', 25000)."\ncode_mode diagnostics\nstdout:\nout";
         $this->assertGreaterThan(20000, u($body)->length());

@@ -247,8 +247,7 @@ class ModelPickerControllerTest extends TestCase
                 cwd: $this->tempDir,
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
-        );
+            dispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
         $sessionMetaStore = $hatfieldSessionStore;
 
         return new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore, new NullLogger()), $homeWriter, $sessionMetaStore);

@@ -32,7 +32,7 @@ final class AdvanceRunHandlerTest extends TestCase
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -81,7 +81,7 @@ final class AdvanceRunHandlerTest extends TestCase
     {
         $runId = 'run-advance-redelivery';
         $commandStore = new InMemoryCommandStore();
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: new CommandMailboxPolicy($commandStore, new CommandRouter([])),
             eventFactory: new EventFactory(),
         );
@@ -145,7 +145,7 @@ final class AdvanceRunHandlerTest extends TestCase
             commandRouter: new CommandRouter([]),
         );
 
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -201,7 +201,7 @@ final class AdvanceRunHandlerTest extends TestCase
             commandRouter: new CommandRouter([]),
         );
 
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -251,7 +251,7 @@ final class AdvanceRunHandlerTest extends TestCase
             commandRouter: new CommandRouter([]),
         );
 
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -293,7 +293,7 @@ final class AdvanceRunHandlerTest extends TestCase
             commandRouter: new CommandRouter([]),
         );
 
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -328,7 +328,7 @@ final class AdvanceRunHandlerTest extends TestCase
             commandRouter: new CommandRouter([]),
         );
 
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -367,7 +367,7 @@ final class AdvanceRunHandlerTest extends TestCase
             commandRouter: new CommandRouter([]),
         );
 
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -409,7 +409,7 @@ final class AdvanceRunHandlerTest extends TestCase
             commandStore: $commandStore,
             commandRouter: new CommandRouter([]),
         );
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -471,7 +471,7 @@ final class AdvanceRunHandlerTest extends TestCase
             commandRouter: new CommandRouter([]),
         );
 
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -559,7 +559,7 @@ final class AdvanceRunHandlerTest extends TestCase
             commandRouter: new CommandRouter([]),
         );
 
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -605,7 +605,7 @@ final class AdvanceRunHandlerTest extends TestCase
         );
         $commandBus = new TestMessageBus();
 
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -670,7 +670,7 @@ final class AdvanceRunHandlerTest extends TestCase
             commandRouter: new CommandRouter([]),
         );
 
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -717,7 +717,7 @@ final class AdvanceRunHandlerTest extends TestCase
         );
         $commandBus = new TestMessageBus();
 
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );
@@ -759,7 +759,7 @@ final class AdvanceRunHandlerTest extends TestCase
             commandRouter: new CommandRouter([]),
         );
 
-        $handler = new AdvanceRunHandler(
+        $handler = new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
         );

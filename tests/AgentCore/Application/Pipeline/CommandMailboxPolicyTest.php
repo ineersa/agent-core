@@ -17,6 +17,8 @@ use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
+use Ineersa\AgentCore\Contract\CommandConsumptionPolicyInterface;
+use Ineersa\AgentCore\Domain\Command\DTO\CommandConsumptionDecisionDTO;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -57,9 +59,11 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->deleteDirectory($this->basePath);
     }
 
-    public function testTurnStartDrainsAllQueuedSteersFifoWithOneLlmContinuation(): void
+    public function testTurnStartAppliesSteersFifoAndContinuesWhileAnotherCommandIsDeferred(): void
     {
-        $fixture = $this->createFixture();
+        $policy = $this->createStub(CommandConsumptionPolicyInterface::class);
+        $policy->method('prepare')->willReturnCallback(static fn (RunState $state, PendingCommand $command): ?CommandConsumptionDecisionDTO => 'deferred' === $command->idempotencyKey ? new CommandConsumptionDecisionDTO(defer: true) : null);
+        $fixture = $this->createFixture(consumption: $policy);
         $runId = 'run-mailbox-steer-turn-start';
 
         $fixture->activeRunContext->createNew($runId);
@@ -68,6 +72,7 @@ final class CommandMailboxPolicyTest extends TestCase
         // Two distinct steers durably queued before the turn-start boundary snapshot.
         $fixture->orchestrator->onApplyCommand($this->steerCommand($runId, 'steer-1', 'first steer'));
         $fixture->orchestrator->onApplyCommand($this->steerCommand($runId, 'steer-2', 'second steer'));
+        $fixture->orchestrator->onApplyCommand($this->steerCommand($runId, 'deferred', 'later steer'));
 
         $fixture->orchestrator->onAdvanceRun(new AdvanceRun(
             runId: $runId,
@@ -107,7 +112,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $this->assertSame(['steer-1', 'steer-2'], $appliedSteerKeys);
 
-        $this->assertSame([], $fixture->commandStore->pending($runId));
+        $this->assertSame(['deferred'], array_column($fixture->commandStore->pending($runId), 'idempotencyKey'));
 
         $llmSteps = array_values(array_filter(
             $fixture->executionBus->messages,
@@ -415,7 +420,7 @@ final class CommandMailboxPolicyTest extends TestCase
         return $state->turnNo;
     }
 
-    private function createFixture(int $maxPendingCommands = 100): CommandMailboxFixture
+    private function createFixture(int $maxPendingCommands = 100, ?CommandConsumptionPolicyInterface $consumption = null): CommandMailboxFixture
     {
         $activeRunContext = new TestActiveRunContext();
         $eventStore = new InMemoryEventStore();
@@ -428,6 +433,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
+            consumptionPolicies: null === $consumption ? [] : [$consumption],
         );
         $toolBatchCollector = new ToolBatchCollector($batchStore = new TestToolBatchStore());
         $stepDispatcher = new StepDispatcher($commandBus, $executionBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), events: new \Symfony\Component\EventDispatcher\EventDispatcher());
@@ -463,7 +469,7 @@ final class CommandMailboxPolicyTest extends TestCase
                     messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                     maxPendingCommands: $maxPendingCommands,
                 ),
-                new AdvanceRunHandler(
+                new AdvanceRunHandler(new \Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository(),
                     commandMailboxPolicy: $commandMailboxPolicy,
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                 ),

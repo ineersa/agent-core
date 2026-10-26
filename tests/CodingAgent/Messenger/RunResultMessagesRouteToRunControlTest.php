@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -38,6 +39,12 @@ final class RunResultMessagesRouteToRunControlTest extends IsolatedKernelTestCas
     public function testDispatchEnqueuesOnRunControlTransport(object $message): void
     {
         if ($message instanceof ToolCallResult) {
+            $message = new ToolCallResult(
+                runId: self::getContainer()->get(HatfieldSessionStore::class)->createSession('run-result routing'),
+                turnNo: $message->turnNo(), stepId: $message->stepId(), attempt: $message->attempt(),
+                idempotencyKey: $message->idempotencyKey(), toolCallId: $message->toolCallId,
+                orderIndex: $message->orderIndex, result: $message->result,
+            );
             $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
             TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $message->runId(), $message->turnNo(), $message->stepId(), [
                 new ExecuteToolCall(

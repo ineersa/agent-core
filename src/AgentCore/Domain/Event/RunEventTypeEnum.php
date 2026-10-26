@@ -16,6 +16,7 @@ enum RunEventTypeEnum: string
     case ToolExecutionStart = 'tool_execution_start';
     case ToolExecutionUpdate = 'tool_execution_update';
     case ToolExecutionEnd = 'tool_execution_end';
+    case ToolCallAcknowledged = 'tool_call_acknowledged';
     case AgentEnd = 'agent_end';
 
     // ── Pipeline events ──────────────────────────────────────────────────

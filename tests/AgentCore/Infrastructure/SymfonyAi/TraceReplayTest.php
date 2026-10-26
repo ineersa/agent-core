@@ -175,8 +175,7 @@ final class TraceReplayTest extends PerMethodIsolatedKernelTestCase
         $this->sessionMetaStore = new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->isolatedCwd()),
             entityManager: $this->entityManager,
-            dispatcher: new EventDispatcher(),
-        );
+            dispatcher: new EventDispatcher(), lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
     }
 
     /** @return array<string, mixed> */

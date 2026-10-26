@@ -66,7 +66,8 @@ final class CodeModeTool implements HatfieldToolProviderInterface
                 'Call tool(string $name, array $arguments = []) to invoke existing tools by their registered runtime names, including MCP tools. Use return for the final value.',
                 'tool() returns values as-is. Strings stay strings. Use json_decode(), toon_decode(), and toon_encode() for explicit format conversion. Nested tool failures throw RuntimeException and can be caught.',
                 'Raw PHP filesystem and process functions are available. They bypass toolbox hooks and approvals; use tool() when you need audited tool behavior.',
-                'Use timeout_seconds (default 60, max 300) and memory_limit_mb (default 256, max 1024) to set execution budgets. The remaining parent tool budget still applies.',
+                'Use timeout_seconds (default 1800, max 3600) and memory_limit_mb (default 256, max 1024) to set execution budgets. The remaining parent tool budget still applies.',
+                'The user can press Ctrl+B to background a ready top-level script as a whole, including blocked synchronous nested calls, and use /bg for exact-invocation cooperative stop. There is no background argument. Detachment preserves the host and deadline but still occupies a tool consumer; other tools queue when the pool is full. Late outcomes arrive as attributed agent notifications. Controller loss parks unresolved delivery for explicit /repair without rerunning the script.',
                 'Use echo or stderr for diagnostics. stdout/stderr accompany the returned value and then follow ordinary output capping with saved-output recovery.',
             ],
         );
