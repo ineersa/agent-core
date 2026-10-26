@@ -20,7 +20,7 @@ final class ExtensionsSetupCommandTest extends TestCase
     public function testRegisteredCommandInstallsConfiguresAndExitsThroughRealTerminalInput(): void
     {
         // This journey uniquely needs real Composer and PHAR-owned autoloaders:
-        // source dev mappings conceal stale loaders. Two physical roots and five
+        // source dev mappings conceal stale loaders. Multiple physical roots and
         // offline installs can exceed 10s in total; each readiness cap is finite,
         // observes terminal/file state, and is not an elapsed synchronization delay.
         $root = ProjectDir::get();
@@ -213,6 +213,40 @@ final class ExtensionsSetupCommandTest extends TestCase
             $send('C-d');
             $tmux->waitUntilPaneExits($pane, 3);
             $this->assertFalse($tmux->paneExists($pane));
+
+            // Startup declares the enabled old user entry before project install.
+            // Unlike the disabled-version case, reordering loaders cannot replace it.
+            $entry = $older.'/src/FileRewindExtension.php';
+            file_put_contents($entry, str_replace('ConfigurableExtensionInterface', 'HatfieldExtensionInterface', file_get_contents($entry)));
+            $enabledUser = Yaml::parseFile($userPath);
+            $enabledUser['extensions']['enabled'] = [FileRewindExtension::class];
+            file_put_contents($userPath, Yaml::dump($enabledUser, 8));
+            $enabled = $temporary.'/enabled-project';
+            mkdir($enabled.'/.hatfield/extensions', recursive: true);
+            file_put_contents($enabled.'/.hatfield/extensions/composer.json', json_encode($manifest, \JSON_THROW_ON_ERROR));
+            $enabledPath = $enabled.'/.hatfield/settings.yaml';
+            file_put_contents($enabledPath, Yaml::dump(['custom_kept' => true]));
+            $pane = $start($enabled);
+            $tmux->waitForCaptureContains($pane, 'Scope: Project', 10);
+            $send('Down', 'Down', 'Enter', 'Down', 'Enter');
+            $tmux->waitForCaptureContains($pane, 'Restart extensions:setup', 10);
+            $this->assertFileExists($enabled.'/.hatfield/extensions/vendor/autoload.php');
+            $this->assertSame(['custom_kept' => true], Yaml::parseFile($enabledPath), 'The restart refusal cannot save configuration or enablement.');
+            $this->assertSame($enabledUser, Yaml::parseFile($userPath));
+            $send('C-d');
+            $tmux->waitUntilPaneExits($pane, 3);
+            $pane = $start($enabled);
+            $tmux->waitForCaptureContains($pane, 'Scope: Project', 10);
+            $send('Down', 'Down', 'Enter');
+            $tmux->waitForCaptureContains($pane, 'max_retained_turns', 3);
+            $this->assertMatchesRegularExpression('/max_retained_turns\s+100\b/', $tmux->capturePlain($pane));
+            $send('Down', 'Down', 'Down', 'Down', 'Enter', 'BSpace', 'BSpace', 'BSpace');
+            $tmux->sendLiteral($pane, '9');
+            $send('Enter', 'Down', 'Down', 'Enter');
+            $tmux->waitForCallback($pane, static fn (): bool => 9 === (Yaml::parseFile($enabledPath)['extensions']['settings']['file_rewind']['max_retained_turns'] ?? null), 5, 'configured project release after restart');
+            $this->assertTrue(Yaml::parseFile($enabledPath)['custom_kept']);
+            $send('C-d');
+            $tmux->waitUntilPaneExits($pane, 3);
         } finally {
             if (null !== $pane && $tmux->paneExists($pane)) {
                 $tmux->sendKey($pane, 'C-d');

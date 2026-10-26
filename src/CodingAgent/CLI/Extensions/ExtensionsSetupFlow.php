@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI\Extensions;
 
+use Composer\Autoload\ClassLoader;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -21,6 +22,7 @@ use Symfony\Component\Config\Definition\NodeInterface;
 use Symfony\Component\Config\Definition\Processor;
 use Symfony\Component\Config\Definition\PrototypedArrayNode;
 use Symfony\Component\Config\Definition\StringNode;
+use Symfony\Component\Filesystem\Path;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Yaml\Yaml;
 
@@ -78,6 +80,21 @@ final class ExtensionsSetupFlow
             $this->manager->loadAutoloaders();
         }
         $class = $row['class'];
+        if (null !== $class && class_exists($class, false)) {
+            // Reordering loaders cannot replace a class already declared at startup.
+            $declared = (new \ReflectionClass($class))->getFileName();
+            foreach (ClassLoader::getRegisteredLoaders() as $autoload) {
+                $resolved = $autoload->findFile($class);
+                if (false === $resolved) {
+                    continue;
+                }
+                $canonical = realpath($resolved);
+                if ($declared !== (false !== $canonical ? $canonical : Path::canonicalize($resolved))) {
+                    throw new \RuntimeException('Restart extensions:setup to configure the installed package. This process already loaded another copy of its extension class; settings were not changed.');
+                }
+                break;
+            }
+        }
         if (null === $class || !is_a($class, ConfigurableExtensionInterface::class, true)) {
             throw new \RuntimeException('This package does not provide configuration. Install a provider-capable release; settings were not changed.');
         }
