@@ -44,4 +44,8 @@ final class BackgroundCompletionReceipt
 
     #[ORM\Column(name: 'invocation_reference_json', type: Types::TEXT, nullable: true)]
     public ?string $invocationReferenceJson = null;
+
+    /** @var array<string, mixed> */
+    #[ORM\Column(type: Types::JSON, options: ['default' => '[]'])]
+    public array $origin = [];
 }

@@ -71,13 +71,16 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
         }
 
         foreach ($userMessages as $userMsg) {
-            // Initial prompts are ordinary user text; never reclassify by content.
+            // A user role does not establish human authorship. Preserve host
+            // provenance without classifying initial prompts by their content.
+            $metadata = \is_array($userMsg['metadata'] ?? null) ? $userMsg['metadata'] : [];
             $state->addBlock(new TranscriptBlock(
                 id: (string) ($userMsg['message_id'] ?? ''),
                 kind: TranscriptBlockKindEnum::UserMessage,
                 runId: $event->runId(),
                 seq: $state->nextSeq(),
                 text: (string) ($userMsg['text'] ?? ''),
+                meta: [] === $metadata ? [] : ['producer_metadata' => $metadata],
             ));
         }
     }
@@ -101,7 +104,7 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
                     runId: $runId,
                     seq: $seq,
                     text: $reminderBody,
-                    meta: ['severity' => 'warning'],
+                    meta: ['severity' => 'warning', 'producer_metadata' => $metadata],
                 );
             }
         }
@@ -112,6 +115,7 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
             runId: $runId,
             seq: $seq,
             text: $text,
+            meta: [] === $metadata ? [] : ['producer_metadata' => $metadata],
         );
     }
 

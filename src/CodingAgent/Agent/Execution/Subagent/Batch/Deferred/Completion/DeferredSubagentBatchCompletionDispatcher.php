@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DTO\DeferredSubagentCompletionSourceDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
@@ -76,6 +77,7 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
         $this->dispatchCompletion(
             $batch->lifecycleId, $batch->parentRunId, $batch->parentToolCallId,
             $batch->projectionVersion, $source->presentation, $source->isError, $source->errorEnvelope,
+            $publication->identity,
         );
 
         return true;
@@ -84,7 +86,7 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
     /**
      * @param array{error: array<string, mixed>, details: array<string, mixed>}|null $errorEnvelope
      */
-    public function dispatchCompletion(
+    private function dispatchCompletion(
         string $lifecycleId,
         string $parentRunId,
         string $parentToolCallId,
@@ -92,6 +94,7 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
         string $presentation,
         bool $isError,
         ?array $errorEnvelope,
+        ChildRunIdentityDTO $identity,
     ): void {
         $deferredStatus = $this->deferredToolCompletionRepository->status($lifecycleId);
         if (null === $deferredStatus) {
@@ -124,8 +127,19 @@ final readonly class DeferredSubagentBatchCompletionDispatcher
 
         $batch = $this->batchRepository->findByLifecycleId($lifecycleId);
         if (null !== $batch?->backgroundedAt) {
+            // Resume can rebind the live child row after artifact publication.
+            // Retried handoffs retain the frozen invocation's child identity.
             $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
                 $parentRunId, 'background-child-result-'.$lifecycleId, $presentation,
+                origin: [
+                    'kind' => 'subagent',
+                    'tool_call_id' => $parentToolCallId,
+                    'lifecycle_id' => $lifecycleId,
+                    'children' => [[
+                        'run_id' => $identity->childRunId,
+                        'artifact_id' => $identity->artifactId,
+                    ]],
+                ],
             ));
             $this->markTerminalEnqueued($lifecycleId, $parentRunId, $parentToolCallId, $expectedProjectionVersion);
 
