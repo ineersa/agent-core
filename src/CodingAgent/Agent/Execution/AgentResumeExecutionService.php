@@ -149,6 +149,7 @@ final class AgentResumeExecutionService
                     new AgentMessage(
                         role: 'user',
                         content: [['type' => 'text', 'text' => trim($task->task)]],
+                        metadata: ['agent_task' => ['artifact_id' => $entry->artifactId]],
                     ),
                 );
             } catch (\Throwable $followUpFailure) {
