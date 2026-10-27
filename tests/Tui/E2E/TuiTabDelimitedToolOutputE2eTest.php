@@ -11,9 +11,9 @@ use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Transcript\TranscriptBodyPreviewWidget;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptLinePreviewService;
-use Ineersa\Tui\Transcript\TranscriptToolResultPreviewWidget;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -58,7 +58,7 @@ final class TuiTabDelimitedToolOutputE2eTest extends TestCase
     {
         $body = $this->longGhChecksOutput();
         $displayState = new TranscriptDisplayState(previewableBlocksExpanded: true);
-        $widget = new TranscriptToolResultPreviewWidget(
+        $widget = new TranscriptBodyPreviewWidget(
             body: $body,
             lineLimit: 4,
             fromEnd: true,

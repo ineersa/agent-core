@@ -38,7 +38,10 @@ final class StreamingMarkdownTranscriptWidget extends ContainerWidget implements
         }
 
         $previous = $this->node;
-        if (null !== $previous && $previous->sameSources($node) && null !== $this->markdown) {
+        // Wrapped previews and hidden thinking have no direct $markdown reference.
+        // They still retain their native child tree when sources and presentation
+        // revision are unchanged; rebuilding here would churn history on tail tokens.
+        if (null !== $previous && $previous->sameSources($node)) {
             return;
         }
 
