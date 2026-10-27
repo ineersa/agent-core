@@ -81,6 +81,25 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringContainsString($this->tmpDir, $result);
     }
 
+    public function testBackgroundWaitingGuidanceDistinguishesMainFromChildren(): void
+    {
+        $builder = $this->createBuilder();
+        $main = $builder->build();
+        $child = $builder->buildChildHarnessFragment([]);
+
+        $this->assertStringContainsString('<background_coordination>', $main);
+        $this->assertStringContainsString('only to the main agent, not to child agents or forks', $main);
+        $this->assertStringContainsString('finish the current turn and let its automatic notification continue you', $main);
+        $this->assertStringContainsString('Do not run sleeps, dummy commands, or repeated status checks just to keep the turn open', $main);
+        $this->assertStringContainsString('do not claim completion while required results are pending', $main);
+        $this->assertStringNotContainsString('<background_coordination>', $child);
+        $this->assertStringNotContainsString('finish the current turn and let its automatic notification continue you', $child);
+        $this->assertStringContainsString('Your final response delivers a handoff and ends this activity', $child);
+        $this->assertStringContainsString('Keep the activity open until your assignment is complete or genuinely blocked', $child);
+        $this->assertStringContainsString('Prefer foreground tool calls when their results are needed', $child);
+        $this->assertStringContainsString('does not apply to you, including when inherited in fork context', $child);
+    }
+
     public function testBuiltInTemplateDoesNotContainHardcodedToolUsageBlock(): void
     {
         // The built-in SYSTEM.md must NOT hardcode tool usage details.
