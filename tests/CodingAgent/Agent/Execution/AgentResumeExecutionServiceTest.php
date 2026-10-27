@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
@@ -53,6 +54,7 @@ use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
 use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\DTO\AgentResumeArgumentsDTO;
+use Ineersa\Tui\Tests\Support\AgentTaskPresentationAssertionsTrait;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -65,6 +67,8 @@ use Symfony\Component\Serializer\SerializerInterface;
 #[CoversClass(AgentResumeExecutionService::class)]
 final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 {
+    use AgentTaskPresentationAssertionsTrait;
+
     public function testRejectsUnknownArtifact(): void
     {
         $this->expectException(ToolCallException::class);
@@ -92,11 +96,12 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             kind: AgentArtifactKindEnum::Fork,
         );
         $identity = new ChildRunIdentityDTO($parent, $childRunId, $artifactId, 'fork', 'implement slice', AgentArtifactKindEnum::Fork);
+        $inheritedHuman = 'Inherited requirement: preserve ownership'.str_repeat("\nInherited human detail.", 9)."\nInherited human final line.";
         $state = new RunState(
             runId: $childRunId,
             status: RunStatus::Completed,
             messages: [
-                new AgentMessage('user', [['type' => 'text', 'text' => 'Inherited requirement: preserve ownership']]),
+                new AgentMessage('user', [['type' => 'text', 'text' => $inheritedHuman]]),
                 new AgentMessage('assistant', [['type' => 'text', 'text' => 'Implementation handoff']]),
             ],
         );
@@ -122,6 +127,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame($childRunId, $command->runId());
         $followUpText = $command->payload['message']['content'][0]['text'];
         $this->assertSame('Address review: fix ownership wording', $followUpText);
+        $this->assertSame('user', $command->payload['message']['role']);
+        $this->assertSame(['agent_task' => ['artifact_id' => $artifactId]], $command->payload['message']['metadata']);
 
         $entry = $this->registry()->get($parent, $artifactId);
         $this->assertNotNull($entry);
@@ -142,6 +149,11 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $state = $continued->state;
         $this->assertSame($originalMessages, \array_slice($state->messages, 0, 2));
         $this->assertSame($followUpText, $state->messages[2]->content[0]['text']);
+        $this->assertSame([], $state->messages[0]->metadata);
+        $this->assertAgentTaskPresentation([
+            new RunEvent($childRunId, 0, 0, 'run_started', ['payload' => ['messages' => array_map(static fn (AgentMessage $message): array => $message->toArray(), $originalMessages)]]),
+            ...new EventFactory()->eventsFromSpecs($childRunId, 0, 1, $continued->eventSpecs),
+        ], $artifactId, $followUpText, $followUpText, $inheritedHuman);
         // Model execution is outside this proof. Finalize its deterministic review-fix result.
         $state = $state->with([
             'messages' => [...$state->messages, new AgentMessage('assistant', [['type' => 'text', 'text' => 'Review-fix handoff']])],

@@ -10,6 +10,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 final readonly class BackgroundCompletionReceiptDTO
 {
+    /** @param array<string, mixed> $origin Host-recorded producer identities, retained with the first admission. */
     public function __construct(
         #[Assert\NotBlank] public string $identity,
         #[Assert\NotBlank] public string $sourceRunId,
@@ -21,6 +22,7 @@ final readonly class BackgroundCompletionReceiptDTO
         public BackgroundCompletionDispositionEnum $disposition,
         #[Assert\NotBlank(allowNull: true)] public ?string $deferredId = null,
         public ?ToolPayloadReferenceDTO $invocation = null,
+        public array $origin = [],
     ) {
     }
 }

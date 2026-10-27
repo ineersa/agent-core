@@ -792,10 +792,10 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     /**
      * Test thesis: a provenance-marked system_reminder user.message_submitted
      * with exact complete wrapper projects through UserMessageProjectionSubscriber
-     * and renders as ⚠ warning system guidance — not ordinary ❯ Markdown user text.
+     * and renders as a one-row automatic reminder, not ordinary ❯ Markdown user text.
      */
     #[Test]
-    public function testSystemReminderUserMessageRendersAsWarningSystemBlock(): void
+    public function testSystemReminderUserMessageRendersAsAutomaticMessage(): void
     {
         $inner = 'Context is nearly exhausted. Finish now with a concise final answer.';
         $wrapped = "<system-reminder>\n{$inner}\n</system-reminder>";
@@ -824,8 +824,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        $this->assertStringContainsString('⚠', $text, 'Warning system glyph missing');
-        $this->assertStringContainsString($inner, $text, 'Reminder prose missing');
+        $this->assertStringContainsString('ℹ System reminder: '.$inner.' Ctrl+O', $text, 'Automatic reminder preview missing');
         $this->assertStringNotContainsString('❯', $text, 'User glyph must not appear for system-reminder');
         $this->assertStringNotContainsString('<system-reminder>', $text, 'Opening wrapper tag must not render');
         $this->assertStringNotContainsString('</system-reminder>', $text, 'Closing wrapper tag must not render');

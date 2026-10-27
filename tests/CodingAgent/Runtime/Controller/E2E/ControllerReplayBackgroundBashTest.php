@@ -104,6 +104,16 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
             );
             $this->assertCount(1, array_filter($canonical, static fn (array $event): bool => 'agent_command_applied' === ($event['type'] ?? '')
                 && 'append_message' === ($event['payload']['kind'] ?? null)), 'Existing poller must append the completion exactly once.');
+            $applied = array_find($canonical, static fn (array $event): bool => 'agent_command_applied' === $event['type'] && 'append_message' === ($event['payload']['kind'] ?? null));
+            $origin = $applied['payload']['message']['metadata']['background_completion'];
+            $this->assertSame('bash', $origin['kind']);
+            $this->assertSame($this->runId, $origin['run_id']);
+            $this->assertSame(self::CALL_ID, $origin['tool_call_id']);
+            $this->assertSame($candidate['id'], $origin['process_id']);
+            $this->assertSame($candidate['pid'], $origin['pid']);
+            $notification = array_find($completedByType[RuntimeEventTypeEnum::ModelNotification->value] ?? [], static fn (array $event): bool => isset($event['payload']['metadata']['background_completion']));
+            $this->assertSame($origin, $notification['payload']['metadata']['background_completion']);
+            $this->assertSame($applied['payload']['text'], $notification['payload']['text']);
         } finally {
             fclose($release);
         }

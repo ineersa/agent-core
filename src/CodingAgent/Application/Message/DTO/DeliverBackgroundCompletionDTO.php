@@ -10,6 +10,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 final readonly class DeliverBackgroundCompletionDTO extends AbstractAgentBusMessage
 {
+    /** @param array<string, mixed> $origin Host-recorded producer identities, retained with the first admission. */
     public function __construct(
         string $runId,
         #[Assert\NotBlank, Assert\Length(max: 255)] public string $identity,
@@ -17,6 +18,7 @@ final readonly class DeliverBackgroundCompletionDTO extends AbstractAgentBusMess
         #[Assert\NotBlank(allowNull: true)] public ?string $sourceRunId = null,
         #[Assert\NotBlank(allowNull: true)] public ?string $deferredId = null,
         public ?ToolPayloadReferenceDTO $invocation = null,
+        public array $origin = [],
     ) {
         parent::__construct($runId, 0, $identity, 1, $identity);
     }

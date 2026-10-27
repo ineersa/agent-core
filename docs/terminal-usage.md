@@ -35,8 +35,11 @@ or the current overlay before normal run cancellation applies.
 ## Read tool activity
 
 Tool calls and their results appear in the transcript. Press Ctrl+O to expand or
-collapse tool-result and diff previews for the current session. This does not change
-your saved settings.
+collapse tool-result and diff previews and automatic messages for the current
+session. Automatic messages use a non-human glyph and a one-line preview. Expand
+them to read their full text and source details. Human messages always appear in
+full. Automatic messages do not appear in the pending steering queue. This does
+not change your saved settings.
 
 The agent can read and edit files and execute commands with your local permissions.
 Inspect changes before committing them. Approval policy can block a call or ask you

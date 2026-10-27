@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
+use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
+use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
@@ -14,6 +16,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -27,6 +30,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
@@ -34,6 +38,7 @@ use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
+use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
@@ -49,6 +54,7 @@ use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\DTO\AgentResumeArgumentsDTO;
+use Ineersa\Tui\Tests\Support\AgentTaskPresentationAssertionsTrait;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
@@ -58,6 +64,8 @@ use Symfony\AI\Platform\ProviderInterface;
 #[Group('db')]
 final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
 {
+    use AgentTaskPresentationAssertionsTrait;
+
     public function testNativeSnapshotSurvivesPersistedForkAndColdChildReplayWithoutParentControls(): void
     {
         $container = self::getContainer();
@@ -79,7 +87,8 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             return \Ineersa\CodingAgent\Tests\Support\ChatGPTNativeReplayFixture::response(1 === \count($frames));
         });
         $adapter = $this->forkProviderAdapter($this->httpProvider($http));
-        $messages = [new AgentMessage('user', [['type' => 'text', 'text' => 'Read both fixtures']])];
+        $inheritedHuman = 'Read both fixtures'.str_repeat("\nInherited human detail.", 9)."\nInherited human final line.";
+        $messages = [new AgentMessage('user', [['type' => 'text', 'text' => $inheritedHuman]])];
         $native = $adapter->invoke(new ModelInvocationRequest('', new ModelInvocationInput(runId: $parent, messages: $messages)));
         $this->assertNull($native->error);
         $this->assertNotNull($native->assistantMessage);
@@ -94,33 +103,41 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $this->assertSame('high', $frames[1]['reasoning']['effort']);
         $this->assertCount(0, array_filter($frames[1]['input'], static fn (array $item): bool => 'configuration_update' === ($item['type'] ?? null)));
         $snapshot = new ToolLaunchContextDTO(kind: ToolLaunchContextDTO::KIND_FORK, producingRunId: $parent, producingTurnNo: 2, producingModel: 'openai-codex/gpt-5.5', forkMessages: $messages);
-        $started = null;
-        $runner = $this->createMock(AgentRunnerInterface::class);
-        $runner->expects($this->once())->method('start')->willReturnCallback(static function (StartRunInput $input) use (&$started): string {
-            $started = $input;
-
-            return $input->runId;
-        });
+        $commandBus = new TestMessageBus();
+        $runner = new AgentRunner($commandBus, $container->get(\Symfony\Component\Serializer\SerializerInterface::class));
         $container->set(AgentRunnerInterface::class, $runner);
         $compaction = $this->createStub(CompactionServiceInterface::class);
         $compaction->method('compactMessages')->willReturnCallback(static fn (string $runId, int $turnNo, array $history): MessageSnapshotCompactionResult => MessageSnapshotCompactionResult::structuralNoOp($history));
         $container->set(CompactionServiceInterface::class, $compaction);
         $fork = $container->get(ForkExecutionService::class);
         $launch = $this->withToolContext($parent, 'native-fork', static fn () => $fork->execute($parent, 'Continue independently', $snapshot, modelOverride: 'openai-codex/gpt-5.5', reasoningOverride: 'low'), launchContext: $snapshot);
-        $this->assertNotNull($started);
+        $this->assertCount(1, $commandBus->messages);
+        $command = $commandBus->messages[0];
+        $this->assertInstanceOf(StartRun::class, $command);
+        $started = $command->payload;
+        $inherited = array_values(array_filter($started->messages, static fn (AgentMessage $message): bool => 'user' === $message->role));
+        $this->assertSame($messages[0], $inherited[0]);
+        $this->assertSame([], $inherited[0]->metadata);
+        $snapshot = array_values(array_filter($started->messages, static fn (AgentMessage $message): bool => !\in_array($message->role, ['system', 'user-context'], true)));
+        $this->assertSame($messages, \array_slice($snapshot, 0, -1), 'Inherited messages keep their identity and metadata.');
         $child = $container->get(DeferredSubagentChildRepository::class)->findOrderedByBatchLifecycleId($launch->deferredId)[0];
         $childId = $child->childRunId;
         $key = $container->get(DeferredSubagentChildRepository::class)->findProviderCacheKey($childId);
         $this->assertNotNull($key);
         $store = $container->get(AgentChildRunEventStoreFactory::class)->create($parent, $childId, $child->artifactId);
-        $metadata = $container->get(\Symfony\Component\Serializer\SerializerInterface::class)->normalize($started->metadata);
-        PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childId, 0, 'run_started', ['payload' => ['metadata' => $metadata, 'messages' => array_map(static fn (AgentMessage $message): array => $message->toArray(), $started->messages)]]));
+        $assignment = $inherited[array_key_last($inherited)];
+        $this->assertSame(['agent_task' => ['artifact_id' => $child->artifactId]], $assignment->metadata);
+        $this->assertSame(new ForkTaskPromptBuilder()->buildTaskUserMessage('Continue independently'), $assignment->content[0]['text']);
+        $start = $container->get(StartRunHandler::class)->handle($command, RunState::queued($childId));
+        $canonical = PreparedEventStoreSeeder::append($store, $start->events[0]);
+        $this->assertAgentTaskPresentation([$canonical], $child->artifactId, $assignment->content[0]['text'], 'Continue independently', $inheritedHuman);
         $em->clear();
         $cold = $container->get(AgentChildRunEventStoreFactory::class)->create($parent, $childId, $child->artifactId);
         $coordinator = $container->get(\Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator::class);
         $replay = new \Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService($cold, $coordinator);
         $state = $replay->rebuildIfStale(RunState::queued($childId), $childId)->rebuiltState;
         $this->assertNotNull($state);
+        $this->assertSame($assignment->metadata, $state->messages[array_key_last($state->messages)]->metadata);
         foreach ([0, 1] as $restart) {
             $em->clear();
             $result = $this->forkProviderAdapter($this->httpProvider($http))->invoke(new ModelInvocationRequest('', new ModelInvocationInput(runId: $childId, messages: $state->messages)));

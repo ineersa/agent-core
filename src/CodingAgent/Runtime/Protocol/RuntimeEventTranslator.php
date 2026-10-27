@@ -503,7 +503,7 @@ final class RuntimeEventTranslator
             $metadata = \is_array($messagePayload) ? ($messagePayload['metadata'] ?? null) : null;
             if (\is_array($metadata) && \is_array($metadata['background_completion'] ?? null)) {
                 $origin = $metadata['background_completion'];
-                $notification = new ModelNotificationDTO($origin['identity'], 'code_mode', 'completion', 'info', 'message', $text, ['background_completion' => $origin]);
+                $notification = new ModelNotificationDTO($origin['identity'], 'background_completion', 'completion', 'info', 'message', $text, ['background_completion' => $origin]);
 
                 return new RuntimeEvent(RuntimeEventTypeEnum::ModelNotification->value, $runEvent->runId, $runEvent->seq, ModelNotificationCodec::toEventSpecs($this->normalizer, [$notification])[0]['payload']);
             }
@@ -550,12 +550,17 @@ final class RuntimeEventTranslator
         $p = $runEvent->payload;
         $kind = (string) ($p['kind'] ?? '');
 
-        // Authored agent traffic is not pending human input. Its applied
-        // message becomes an attributed model notification instead.
-        if (\is_array($p['agent_communication'] ?? null)) {
-            return null;
-        }
-        if (isset($p['background_completion']['deferred_id'])) {
+        // Automatic traffic remains in the mailbox, not the human steering
+        // display. Read only host provenance, never the message role or text.
+        $metadata = $p['message']['metadata'] ?? [];
+        if (\is_array($p['agent_communication'] ?? null)
+            || \is_array($p['background_completion'] ?? null)
+            || (\is_array($metadata) && (
+                \is_array($metadata['agent_communication'] ?? null)
+                || \is_array($metadata['background_completion'] ?? null)
+                || \is_array($metadata['agent_task'] ?? null)
+                || true === ($metadata['system_reminder'] ?? null)
+            ))) {
             return null;
         }
 
@@ -710,7 +715,7 @@ final class RuntimeEventTranslator
      * Only role===user messages with non-empty text are included; system and
      * context messages are intentionally skipped to avoid leaking full prompts.
      *
-     * @return list<array{message_id: string, text: string}>
+     * @return list<array{message_id: string, text: string, metadata?: array<string, mixed>}>
      */
     private function extractUserMessages(RunEvent $runEvent): array
     {
@@ -732,6 +737,9 @@ final class RuntimeEventTranslator
                     'message_id' => \sprintf('initial_%s_%d', $runEvent->runId, \count($userMessages)),
                     'text' => $text,
                 ];
+                if (\is_array($msg['metadata'] ?? null) && [] !== $msg['metadata']) {
+                    $userMessages[array_key_last($userMessages)]['metadata'] = $msg['metadata'];
+                }
             }
         }
 

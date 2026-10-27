@@ -82,6 +82,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 $receipt->destinationRunId, $receipt->rootRunId, $receipt->text,
                 $receipt->forwardedText, BackgroundCompletionDispositionEnum::Pending,
                 $receipt->deferredId, $receipt->invocation,
+                $receipt->origin,
             );
         } else {
             if (null !== $message->sourceRunId && $message->sourceRunId !== $state->runId) {
@@ -107,6 +108,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 $interrupted ? BackgroundCompletionDispositionEnum::Consumed : ($forward ? BackgroundCompletionDispositionEnum::Forwarding : BackgroundCompletionDispositionEnum::Pending),
                 $message->deferredId,
                 $message->invocation,
+                $message->origin,
             );
             if ($interrupted) {
                 return new HandlerResult(postCommitActions: [new DispatchLocalMetadataMessageDTO(new RecordBackgroundCompletionDTO($receipt))]);
@@ -125,7 +127,16 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         if (null !== $receipt->deferredId) {
             $text = \sprintf("Background code_mode result (run_id: %s, tool_call_id: %s, invocation: %s).\n\n%s", $receipt->sourceRunId, $receipt->invocation?->toolCallId, $receipt->deferredId, $text);
         }
-        $metadata = null === $receipt->deferredId ? [] : ['background_completion' => ['identity' => $receipt->identity, 'run_id' => $receipt->sourceRunId, 'tool_call_id' => $receipt->invocation?->toolCallId, 'invocation_id' => $receipt->deferredId]];
+        // The first retained admission owns attribution. Forwarding changes the
+        // recipient, not the producer, and retries cannot replace this mapping.
+        $metadata = ['background_completion' => [
+            'kind' => null === $receipt->deferredId ? 'completion' : 'code_mode',
+            ...$receipt->origin,
+            'identity' => $receipt->identity,
+            'run_id' => $receipt->sourceRunId,
+            'tool_call_id' => $receipt->origin['tool_call_id'] ?? $receipt->invocation?->toolCallId,
+            'invocation_id' => $receipt->deferredId,
+        ]];
         $payload = $this->normalizer->normalize(new AgentMessage('user', [['type' => 'text', 'text' => $text]], metadata: $metadata), context: [AbstractObjectNormalizer::SKIP_NULL_VALUES => true]);
         $result = $this->commands->handle(new ApplyCommand(
             $state->runId, $state->turnNo, $receipt->identity, 1, $receipt->identity,
@@ -202,6 +213,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
             $receipt->sourceRunId,
             $receipt->deferredId,
             $receipt->invocation,
+            $receipt->origin,
         );
     }
 }
