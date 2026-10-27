@@ -66,7 +66,7 @@ final readonly class TranscriptBlockWidgetFactory
             $this->viewImageFormatter,
             $this->toolResultFacts,
         );
-        $this->blockRenderer = new TranscriptBlockRenderer($this->displayConfig, $this->markdown, $this->displayState);
+        $this->blockRenderer = new TranscriptBlockRenderer($this->displayConfig, $this->displayState, $this->linePreviewService, $this->markdown);
     }
 
     public function displayState(): TranscriptDisplayState

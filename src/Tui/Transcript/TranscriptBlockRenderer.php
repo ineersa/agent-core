@@ -40,8 +40,9 @@ final readonly class TranscriptBlockRenderer
 {
     public function __construct(
         private readonly TranscriptDisplayConfig $displayConfig,
+        private readonly TranscriptDisplayState $displayState,
+        private readonly TranscriptLinePreviewService $linePreviewService,
         private readonly MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
-        private readonly TranscriptDisplayState $displayState = new TranscriptDisplayState(),
     ) {
     }
 
@@ -57,13 +58,9 @@ final readonly class TranscriptBlockRenderer
             return new TextWidget($theme->color(ThemeColorEnum::ThinkingText, $line));
         }
 
-        // UserMessage, AssistantMessage, visible thinking → MarkdownWidget.
+        // Message bodies and local command Markdown share the same rendering path.
         if ($this->isMarkdownBlock($block)) {
-            $body = $this->buildMarkdownWidget($block, $theme);
-
-            return TranscriptBlockKindEnum::UserMessage === $block->kind && !$this->displayState->previewableBlocksExpanded
-                ? new TranscriptBodyPreviewWidget($body, $theme)
-                : $body;
+            return $this->buildMarkdownWidget($block, $theme);
         }
 
         // Question blocks: markdown prompt/answer transcript record (HITL), not generic TextWidget.
@@ -71,31 +68,14 @@ final readonly class TranscriptBlockRenderer
             return $this->buildQuestionWidget($block, $theme);
         }
 
-        // Local slash-command Markdown (e.g. /settings-show) reuses MarkdownWidget.
-        // Avoid prefixFor()/colorFor() which intentionally do not handle System.
-        if (TranscriptBlockKindEnum::System === $block->kind && 'markdown' === ($block->meta['style'] ?? null)) {
-            $mdWidget = $this->markdown->create($block->text);
-            $colorSpec = $theme->getPalette()->get(ThemeColorEnum::SystemMessage);
-            $style = '' !== $colorSpec
-                ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
-                : new Style(padding: Padding::from([0, 0, 0, 2]));
-            $mdWidget->setStyle($style);
-
-            return $mdWidget;
-        }
-
-        // Structured /hotkeys table — semantic widget, not pre-rendered ANSI text.
-        if (TranscriptBlockKindEnum::System === $block->kind && 'hotkey-table' === ($block->meta['style'] ?? null)) {
-            return $this->buildHotkeyTableWidget($block);
-        }
-
         if (TranscriptBlockKindEnum::System === $block->kind) {
             $producer = $block->meta['producer_metadata'] ?? [];
-            if (\is_array($producer) && (\is_array($producer['agent_communication'] ?? null) || \is_array($producer['background_completion'] ?? null))) {
-                return $this->buildNotificationWidget($block, $theme, $producer);
-            }
 
-            return $this->buildSystemWidget($block, $theme);
+            return match (true) {
+                'hotkey-table' === ($block->meta['style'] ?? null) => $this->buildHotkeyTableWidget($block),
+                \is_array($producer) && (\is_array($producer['agent_communication'] ?? null) || \is_array($producer['background_completion'] ?? null)) => $this->buildNotificationWidget($block, $theme, $producer),
+                default => $this->buildSystemWidget($block, $theme),
+            };
         }
 
         // All remaining kinds → existing TextWidget path.
@@ -222,7 +202,14 @@ final readonly class TranscriptBlockRenderer
             }
         }
         $markdown = $this->buildInsetMarkdownWidget($body, $theme, ThemeColorEnum::Muted, dimItalic: true);
-        $container->add($this->displayState->previewableBlocksExpanded ? $markdown : new TranscriptBodyPreviewWidget($markdown, $theme, detailsHidden: true));
+        $container->add(new TranscriptBodyPreviewWidget(
+            $markdown,
+            $this->displayState,
+            $this->linePreviewService,
+            $theme,
+            detailsHidden: true,
+            expandHint: '  ... Ctrl+O to expand',
+        ));
         if ($this->displayState->previewableBlocksExpanded) {
             $details = new TextWidget($theme->color(ThemeColorEnum::Dim, StringUtils::stripControlBytes($technicalPrefix.Yaml::dump($producer, 4, 2))));
             $details->setStyle(new Style(dim: true, italic: true, padding: Padding::from([0, 0, 0, 2])));
@@ -411,18 +398,17 @@ final readonly class TranscriptBlockRenderer
      * Left padding on the widget replaces the flat renderer's two leading spaces because
      * CommonMark strips leading whitespace from paragraph text.
      */
-    private function buildMarkdownWidget(TranscriptBlock $block, TuiTheme $theme): MarkdownWidget
+    private function buildMarkdownWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
-        $prefix = trim($this->prefixFor($block));
-        $color = $this->colorFor($block);
+        // Local command Markdown has no message glyph or streaming suffix.
+        $system = TranscriptBlockKindEnum::System === $block->kind;
+        $prefix = $system ? '' : trim($this->prefixFor($block));
+        $color = $system ? ThemeColorEnum::SystemMessage : $this->colorFor($block);
         $displayText = $this->displayTextFor($block);
         $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
-        $text = \sprintf('%s %s%s', $prefix, $displayText, $suffix);
-        $mdWidget = $this->markdown->create($text);
-        $colorSpec = $theme->getPalette()->get($color);
-        $style = '' !== $colorSpec
-            ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
-            : new Style(padding: Padding::from([0, 0, 0, 2]));
+        $text = $system ? $block->text : \sprintf('%s %s%s', $prefix, $displayText, $suffix);
+        $mdWidget = $this->buildInsetMarkdownWidget($text, $theme, $color);
+        $style = $mdWidget->getStyle();
 
         if ($this->isThinkingBlock($block)) {
             $style = $this->applyThinkingStyle($style);
@@ -432,7 +418,9 @@ final readonly class TranscriptBlockRenderer
 
         $mdWidget->setStyle($style);
 
-        return $mdWidget;
+        return TranscriptBlockKindEnum::UserMessage === $block->kind
+            ? new TranscriptBodyPreviewWidget($mdWidget, $this->displayState, $this->linePreviewService, $theme, expandHint: '  ... Ctrl+O to expand')
+            : $mdWidget;
     }
 
     /**
@@ -455,7 +443,7 @@ final readonly class TranscriptBlockRenderer
 
     private function isMarkdownBlock(TranscriptBlock $block): bool
     {
-        return \in_array($block->kind, [
+        return (TranscriptBlockKindEnum::System === $block->kind && 'markdown' === ($block->meta['style'] ?? null)) || \in_array($block->kind, [
             TranscriptBlockKindEnum::UserMessage,
             TranscriptBlockKindEnum::AssistantMessage,
             TranscriptBlockKindEnum::AssistantThinking,

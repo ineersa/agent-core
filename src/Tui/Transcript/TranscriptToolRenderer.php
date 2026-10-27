@@ -28,6 +28,8 @@ use Symfony\Component\Tui\Widget\Util\StringUtils;
  */
 final readonly class TranscriptToolRenderer
 {
+    private const int COLLAPSED_RESULT_LINE_LIMIT = 4;
+
     public function __construct(
         private readonly TranscriptDisplayConfig $displayConfig,
         private readonly TranscriptDisplayState $displayState,
@@ -221,28 +223,33 @@ final readonly class TranscriptToolRenderer
         }
         $content->setStyle($contentStyle);
         $container->add($content);
-        if ($this->displayState->previewableBlocksExpanded) {
-            $argumentsWidget = $this->buildToolArgumentsWidget($name, $arguments, $theme);
-            if (null !== $argumentsWidget) {
-                $content->add($argumentsWidget);
-            }
-            if (null !== $result) {
-                $body = $this->buildToolResultBodyWidget($result, $theme, ThemeColorEnum::ToolOutput, prependBlankLine: false);
-                if (null !== $body) {
-                    $content->add($body);
-                }
-            }
-        } else {
+        if (!$this->displayState->previewableBlocksExpanded) {
             $text = $arguments['text'] ?? $arguments['command'] ?? $arguments['script'] ?? '';
             if (null !== $result && ($this->toolResultFacts->toolResultIsUnsuccessful($result) || ($communication && [] === $arguments))) {
                 $text = $this->toolResultFacts->toolResultBodyText($result)."\n\n".(\is_string($text) ? $text : '');
             }
-            if (\is_string($text) && '' !== $text) {
-                $body = new TextWidget(StringUtils::stripControlBytes(StringUtils::sanitizeUtf8($text)));
-                $body->setStyle(new Style(padding: Padding::from([0, 0, 0, 2])));
-                $content->add(new TranscriptBodyPreviewWidget($body, $theme, detailsHidden: true));
-            } else {
-                $content->add(new TextWidget($theme->color(ThemeColorEnum::Dim, '  Ctrl+O for details')));
+            $body = new TextWidget(StringUtils::stripControlBytes(StringUtils::sanitizeUtf8(\is_string($text) ? $text : '')));
+            $body->setStyle(new Style(padding: Padding::from([0, 0, 0, 2])));
+            $content->add(new TranscriptBodyPreviewWidget(
+                $body,
+                $this->displayState,
+                $this->linePreviewService,
+                $theme,
+                detailsHidden: true,
+                expandHint: '  ... Ctrl+O to expand',
+            ));
+
+            return $container;
+        }
+
+        // Expanded lifecycle cards use the same full argument/result builders as other tools.
+        $bodies = [
+            $this->buildToolArgumentsWidget($name, $arguments, $theme),
+            null === $result ? null : $this->buildToolResultBodyWidget($result, $theme, ThemeColorEnum::ToolOutput, prependBlankLine: false),
+        ];
+        foreach ($bodies as $body) {
+            if (null !== $body) {
+                $content->add($body);
             }
         }
 
@@ -623,7 +630,7 @@ final readonly class TranscriptToolRenderer
         TuiTheme $theme,
         ThemeColorEnum $color,
         bool $prependBlankLine,
-    ): ?TranscriptToolResultPreviewWidget {
+    ): ?TranscriptBodyPreviewWidget {
         $body = $this->toolResultFacts->toolResultBodyText($resultBlock);
         if ('' === $body) {
             return null;
@@ -636,7 +643,7 @@ final readonly class TranscriptToolRenderer
             return null;
         }
 
-        return new TranscriptToolResultPreviewWidget(
+        return new TranscriptBodyPreviewWidget(
             body: $body,
             lineLimit: $this->collapsedResultPreviewLineLimit(),
             fromEnd: $this->isBashToolName($toolName),
@@ -799,6 +806,6 @@ final readonly class TranscriptToolRenderer
             return $configured;
         }
 
-        return min($configured, TranscriptToolResultPreviewWidget::COLLAPSED_LINE_LIMIT);
+        return min($configured, self::COLLAPSED_RESULT_LINE_LIMIT);
     }
 }
