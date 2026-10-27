@@ -92,6 +92,8 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringContainsString('finish the current turn and let its automatic notification continue you', $main);
         $this->assertStringContainsString('Do not run sleeps, dummy commands, or repeated status checks just to keep the turn open', $main);
         $this->assertStringContainsString('do not claim completion while required results are pending', $main);
+        $this->assertStringContainsString('Do not read or tail background log files merely to check completion', $main);
+        $this->assertStringContainsString('concrete decision, diagnosis, or user-requested progress check', $main);
         $this->assertStringNotContainsString('<background_coordination>', $child);
         $this->assertStringNotContainsString('finish the current turn and let its automatic notification continue you', $child);
         $this->assertStringContainsString('Your final response delivers a handoff and ends this activity', $child);
