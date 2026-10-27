@@ -134,6 +134,13 @@ lifetime. A yielding foreground tool still occupies a slot. At full capacity,
 other tools wait for admission. Synchronous filesystem, database and CPU work can
 still block sibling Fibers; concurrency does not make every tool non-blocking.
 
+The shared tool process drains and recycles after 256 admitted messages to bound
+retained Doctrine state under continuous backlog. It also stops admitting work
+when a completed handler leaves the shared EntityManager closed. Active handlers
+drain before the supervisor replaces the process. Services are not reset beneath
+active Fibers. A failed flush can still invalidate a sibling's managed entities;
+recycling does not recover those changes or guarantee exactly-once tool effects.
+
 ### Tool execution
 
 There is **no** global tool timeout. Blocking tools own their deadlines

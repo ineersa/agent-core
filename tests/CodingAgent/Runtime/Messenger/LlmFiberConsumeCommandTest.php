@@ -6,11 +6,14 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
 use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\AmpRetryClock;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\DTO\RuntimeConfigDTO;
+use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Runtime\Messenger\FiberMessageExecutionStrategy;
 use Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeCommand;
 use Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber;
@@ -20,6 +23,7 @@ use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\SqliteQueue\Client;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Psr\Container\ContainerInterface;
@@ -31,6 +35,7 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
+use Symfony\Component\Messenger\Event\WorkerRunningEvent;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\RoutableMessageBus;
@@ -46,6 +51,97 @@ use function Amp\async;
  */
 final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
 {
+    public function testToolConsumerBoundsCompletedProcessRetentionAndDrainsManagedSibling(): void
+    {
+        $manager = self::getContainer()->get(EntityManagerInterface::class);
+        $store = self::getContainer()->get(ProcessStore::class);
+        $release = new DeferredFuture();
+        $entered = new DeferredFuture();
+        $held = null;
+        $calls = 0;
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use ($manager, &$held, $release): void {
+            if (256 === $event->getEnvelope()->getMessage()->id) {
+                self::assertInstanceOf(BackgroundProcess::class, $held);
+                self::assertTrue($manager->contains($held), 'A completing must not detach B across its yield.');
+                $release->complete();
+            }
+        });
+        $acknowledged = $this->runDoctrineConsumer(300, 2, $dispatcher, static function (int $id) use ($store, $manager, $release, $entered, &$held, &$calls): void {
+            ++$calls;
+            $record = $store->insertRecord(['pid' => $id, 'session_id' => 'orm-retention', 'started_at' => new \DateTimeImmutable()]);
+            $entity = $store->fetchByRecordId($record);
+            self::assertInstanceOf(BackgroundProcess::class, $entity);
+            if (255 === $id) {
+                $held = $entity;
+                $entered->complete();
+                $release->getFuture()->await();
+                self::assertTrue($manager->contains($entity));
+                $entity->command = 'SIBLING_WRITE';
+            } elseif (256 === $id) {
+                $entered->getFuture()->await();
+            }
+            $entity->finishedAt = new \DateTimeImmutable();
+            $store->flush();
+        });
+        $this->assertSame(256, $calls);
+        $this->assertSame(256, $acknowledged);
+        $this->assertCount(256, $manager->getUnitOfWork()->getIdentityMap()[BackgroundProcess::class]);
+        $this->assertSame('SIBLING_WRITE', $manager->getConnection()->fetchOne('SELECT command FROM background_process WHERE id = ?', [$held->id]));
+    }
+
+    public function testCaughtFlushFailureDrainsWithoutResettingActiveSiblingThenManagerCanBeReplaced(): void
+    {
+        $manager = self::getContainer()->get(EntityManagerInterface::class);
+        $registry = self::getContainer()->get(ManagerRegistry::class);
+        $store = self::getContainer()->get(ProcessStore::class);
+        $connection = $manager->getConnection();
+        $connection->executeStatement("CREATE TEMP TRIGGER reject_tool_record BEFORE INSERT ON background_process WHEN NEW.pid = 2 BEGIN SELECT RAISE(ABORT, 'tool flush failure'); END");
+        $release = new DeferredFuture();
+        $entered = new DeferredFuture();
+        $failures = [];
+        $calls = [];
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use ($release): void {
+            if (2 === $event->getEnvelope()->getMessage()->id) {
+                $release->complete();
+            }
+        });
+        try {
+            $acknowledged = $this->runDoctrineConsumer(3, 2, $dispatcher, static function (int $id) use ($manager, $store, $entered, $release, &$failures, &$calls): void {
+                $calls[] = $id;
+                try {
+                    if (1 === $id) {
+                        $record = $store->insertRecord(['pid' => 1, 'started_at' => new \DateTimeImmutable()]);
+                        $held = $store->fetchByRecordId($record);
+                        $entered->complete();
+                        $release->getFuture()->await();
+                        self::assertFalse($manager->isOpen(), 'Do not replace the failed manager underneath the active sibling.');
+                        self::assertFalse($manager->contains($held), 'Doctrine itself detached state on failed flush; it cannot be rescued silently.');
+                    } else {
+                        $entered->getFuture()->await();
+                    }
+                    $store->insertRecord(['pid' => $id, 'started_at' => new \DateTimeImmutable()]);
+                } catch (\Doctrine\DBAL\Exception|\Doctrine\ORM\Exception\EntityManagerClosed $exception) {
+                    // Model ToolExecutor converting ORM failure into a handled tool error.
+                    $failures[$id] = $exception::class;
+                }
+            });
+            $this->assertSame([1, 2], $calls, 'A poisoned consumer must not admit subsequent work.');
+            $this->assertSame(2, $acknowledged);
+            $this->assertCount(2, $failures);
+            $this->assertFalse($manager->isOpen());
+        } finally {
+            $connection->executeStatement('DROP TRIGGER reject_tool_record');
+            // Test cleanup also verifies Doctrine's actual native-lazy reference behavior.
+            // Production replaces the drained process, not its active services.
+            $registry->resetManager();
+        }
+        $this->assertSame($manager, $registry->getManager());
+        $this->assertTrue($manager->isOpen());
+        $this->assertGreaterThan(0, $store->insertRecord(['pid' => 3, 'started_at' => new \DateTimeImmutable()]));
+    }
+
     public function testSharedConsumerRenewsActiveLeasesAndDrainsBeforeSettlingOnStop(): void
     {
         // Real broker expiry and native Worker settlement cannot be proved by an
@@ -102,7 +198,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             $buses = new ServiceLocator(['default' => static fn () => $bus]);
             $config = clone self::getContainer()->get(AppConfig::class);
             $config->runtime = new RuntimeConfigDTO(toolConcurrency: 2);
-            $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $config, $logger);
+            $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $config, self::getContainer()->get(EntityManagerInterface::class), $logger);
             $input = new ArrayInput(['--transport' => 'tool', '--keepalive' => 1]);
             $input->bind($command->getDefinition());
             $running = async(static fn () => $command->run($input, new BufferedOutput()));
@@ -292,6 +388,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             $receivers,
             $dispatcher,
             $appConfig,
+            self::getContainer()->get(EntityManagerInterface::class),
         );
 
         $output = new BufferedOutput();
@@ -308,5 +405,77 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             \sprintf('Fiber concurrency %d', $concurrency),
             $output->fetch(),
         );
+    }
+
+    private function runDoctrineConsumer(int $messages, int $concurrency, EventDispatcher $dispatcher, \Closure $handle): int
+    {
+        $receiver = new class($messages) implements ReceiverInterface {
+            public int $acknowledged = 0;
+            private int $next = 1;
+
+            public function __construct(private int $messages)
+            {
+            }
+
+            public function get(): iterable
+            {
+                if ($this->next <= $this->messages) {
+                    yield new Envelope((object) ['id' => $this->next++]);
+                }
+            }
+
+            public function ack(Envelope $envelope): void
+            {
+                ++$this->acknowledged;
+            }
+
+            public function reject(Envelope $envelope): void
+            {
+                self::fail('Unexpected rejection');
+            }
+        };
+        $bus = new class($handle) implements MessageBusInterface {
+            public function __construct(private \Closure $handle)
+            {
+            }
+
+            public function dispatch(object $message, array $stamps = []): Envelope
+            {
+                $envelope = Envelope::wrap($message, $stamps);
+                ($this->handle)($envelope->getMessage()->id);
+
+                return $envelope;
+            }
+        };
+        // Finite-source safety: a missing recycle policy must fail assertions,
+        // not leave a test consumer running after its source is exhausted.
+        $dispatcher->addListener(WorkerRunningEvent::class, static function (WorkerRunningEvent $event): void {
+            if ($event->isWorkerIdle()) {
+                $event->getWorker()->stop();
+            }
+        });
+        $config = clone self::getContainer()->get(AppConfig::class);
+        $config->runtime = new RuntimeConfigDTO(toolConcurrency: $concurrency);
+        $receivers = new ServiceLocator(['tool' => static fn () => $receiver, 'agent' => static fn () => new class implements ReceiverInterface {
+            public function get(): iterable
+            {
+                return [];
+            }
+
+            public function ack(Envelope $envelope): void
+            {
+            }
+
+            public function reject(Envelope $envelope): void
+            {
+            }
+        }]);
+        $buses = new ServiceLocator(['default' => static fn () => $bus]);
+        $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $config, self::getContainer()->get(EntityManagerInterface::class));
+        $input = new ArrayInput(['--transport' => 'tool']);
+        $input->bind($command->getDefinition());
+        $this->assertSame(0, $command->run($input, new BufferedOutput()));
+
+        return $receiver->acknowledged;
     }
 }
