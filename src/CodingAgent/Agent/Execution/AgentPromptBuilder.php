@@ -153,6 +153,7 @@ final readonly class AgentPromptBuilder
                 'type' => 'text',
                 'text' => $task,
             ]],
+            metadata: ['agent_task' => ['artifact_id' => $artifactId]],
         );
 
         return $messages;

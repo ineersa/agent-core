@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionReceiptDTO;
+use Symfony\Component\Serializer\Encoder\DecoderInterface;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -19,7 +20,7 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
 {
     public function __construct(
         ManagerRegistry $registry,
-        private SerializerInterface $serializer,
+        private SerializerInterface&DecoderInterface $serializer,
         private ValidatorInterface $validator,
     ) {
         parent::__construct($registry, BackgroundCompletionReceipt::class);
@@ -82,6 +83,7 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
             'disposition' => $receipt->disposition->value,
             'deferred_id' => $receipt->deferredId,
             'invocation_reference_json' => null === $receipt->invocation ? null : $this->serializer->serialize($receipt->invocation, 'json'),
+            'origin' => $this->serializer->serialize($receipt->origin, 'json'),
         ]);
     }
 
@@ -114,6 +116,7 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
             BackgroundCompletionDispositionEnum::from((string) $row['disposition']),
             isset($row['deferred_id']) && '' !== $row['deferred_id'] ? (string) $row['deferred_id'] : null,
             $invocation,
+            $this->serializer->decode((string) $row['origin'], 'json'),
         );
     }
 }

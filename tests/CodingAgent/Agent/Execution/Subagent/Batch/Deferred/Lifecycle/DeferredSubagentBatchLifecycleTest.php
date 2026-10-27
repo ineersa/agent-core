@@ -32,10 +32,12 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchChildOutcomeFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchCompletionDispatcher;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchTerminalCompletionService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DTO\DeferredSubagentCompletionSourceDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\DeferredSubagentBatchInterruptionCompletionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\DeferredSubagentBatchInterruptionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\DeferredSubagentBatchParentCancelHookSubscriber;
@@ -1201,7 +1203,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     #[TestWith(['fork'])]
     #[TestWith(['agent_resume'])]
     #[TestWith(['subagent', true])]
-    public function testModelLaunchAcknowledgesRegisteredChildAndDeliversLateHandoff(string $toolName, bool $terminalFirst = false): void
+    #[TestWith(['fork', false, true])]
+    public function testModelLaunchAcknowledgesRegisteredChildAndDeliversLateHandoff(string $toolName, bool $terminalFirst = false, bool $rebound = false): void
     {
         $container = self::getContainer();
         $parent = $container->get(HatfieldSessionStore::class)->createSession('model child launch');
@@ -1238,11 +1241,29 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame('completed', $container->get(DeferredToolCompletionRepositoryInterface::class)->status($id));
         $late = new TestMessageBus();
         $dispatcher = new DeferredSubagentBatchCompletionDispatcher($container->get(DeferredToolCompletionRepositoryInterface::class), $repo, $late, new TestLogger(), $container->get(ToolLaunchInputStoreInterface::class), $container->get(SubagentChildRunArtifactFinalizer::class));
-        $dispatcher->dispatchCompletion($id, $parent, 'call', $repo->findByLifecycleId($id)->projectionVersion, 'HANDOFF', false, null);
+        $kind = 'fork' === $toolName ? AgentArtifactKindEnum::Fork : AgentArtifactKindEnum::Subagent;
+        $container->get(AgentArtifactRegistry::class)->create($parent, $child['artifactId'], $child['childRunId'], 'scout', $kind);
+        $outcome = new ChildRunTerminalOutcomeDTO(new ChildRunIdentityDTO($parent, $child['childRunId'], $child['artifactId'], 'scout', 'inspect', $kind), AgentArtifactStatusEnum::Completed, summary: 'HANDOFF');
+        if ($rebound) {
+            $repo->freezeCompletionSource($id, new DeferredSubagentCompletionSourceDTO(
+                $container->get(SubagentChildRunArtifactFinalizer::class)->preparePublication($outcome, $id), 'HANDOFF', false, null,
+            ), $repo->findByLifecycleId($id)->projectionVersion);
+            $repo->reserveBatch($id.'-resume', $parent, 2, 'resumed-call', 0, new \DateTimeImmutable('+600 seconds'), new DeferredSubagentBatchChildIntentDTO(1, $child['childRunId'], $child['artifactId'], 'scout', 'new task', 'deepseek/deepseek-v4-flash', 'medium'));
+            $this->assertSame([], $repo->findByLifecycleId($id)->children);
+        }
+        $dispatcher->dispatchSingleCompletion(
+            $repo->findByLifecycleId($id),
+            $outcome,
+            $rebound ? 'Newer resume body' : 'HANDOFF', false, null,
+        );
         $this->assertCount(1, $late->messages);
         $this->assertInstanceOf(DeliverBackgroundCompletionDTO::class, $late->messages[0]);
         $this->assertSame('HANDOFF', $late->messages[0]->text);
         $this->assertSame($parent, $late->messages[0]->runId());
+        $this->assertSame([
+            'kind' => 'subagent', 'tool_call_id' => 'call', 'lifecycle_id' => $id,
+            'children' => [['run_id' => $child['childRunId'], 'artifact_id' => $child['artifactId']]],
+        ], $late->messages[0]->origin);
     }
 
     /**

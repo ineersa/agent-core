@@ -75,6 +75,7 @@ final class ForkChildLaunchInputBuilder
         $composed = $this->messageComposer->compose(
             inheritedMessages: $inherited,
             task: $task->task,
+            artifactId: $identity->artifactId,
             allowedToolNames: $allowedTools,
             agentsMd: $this->extractUserContextFromMessages($inherited, 'agents_context'),
             skillsContext: $this->extractSkillsContext($inherited),
