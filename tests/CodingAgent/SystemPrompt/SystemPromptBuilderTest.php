@@ -88,18 +88,25 @@ final class SystemPromptBuilderTest extends TestCase
         $child = $builder->buildChildHarnessFragment([]);
 
         $this->assertStringContainsString('<background_coordination>', $main);
-        $this->assertStringContainsString('only to the main agent, not to child agents or forks', $main);
-        $this->assertStringContainsString('finish the current turn and let its automatic notification continue you', $main);
-        $this->assertStringContainsString('Do not run sleeps, dummy commands, or repeated status checks just to keep the turn open', $main);
-        $this->assertStringContainsString('do not claim completion while required results are pending', $main);
-        $this->assertStringContainsString('Do not read or tail background log files merely to check completion', $main);
+        $this->assertStringNotContainsString('{background_coordination}', $main);
+        $this->assertStringContainsString('Otherwise, end your turn. Background work continues', $main);
+        $this->assertStringContainsString('Do not use sleeps, dummy commands, or repeated status checks to wait for completion', $main);
+        $this->assertStringContainsString('Do not read or tail background logs merely to check completion', $main);
         $this->assertStringContainsString('concrete decision, diagnosis, or user-requested progress check', $main);
         $this->assertStringNotContainsString('<background_coordination>', $child);
-        $this->assertStringNotContainsString('finish the current turn and let its automatic notification continue you', $child);
-        $this->assertStringContainsString('Your final response delivers a handoff and ends this activity', $child);
-        $this->assertStringContainsString('Keep the activity open until your assignment is complete or genuinely blocked', $child);
-        $this->assertStringContainsString('Prefer foreground tool calls when their results are needed', $child);
-        $this->assertStringContainsString('does not apply to you, including when inherited in fork context', $child);
+        $this->assertStringNotContainsString('Otherwise, end your turn', $child);
+        $this->assertStringNotContainsString('Do not use sleeps', $child);
+        $this->assertStringContainsString('You are operating as a child agent', $child);
+    }
+
+    public function testProjectTemplateCanUseBackgroundCoordinationVariable(): void
+    {
+        file_put_contents($this->tmpDir.'/.hatfield/SYSTEM.md', 'Custom prompt: {background_coordination}');
+
+        $result = $this->createBuilder()->build();
+
+        $this->assertStringStartsWith('Custom prompt: After starting background work', $result);
+        $this->assertStringNotContainsString('{background_coordination}', $result);
     }
 
     public function testBuiltInTemplateDoesNotContainHardcodedToolUsageBlock(): void
