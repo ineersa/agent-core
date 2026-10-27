@@ -198,8 +198,8 @@ final readonly class TranscriptToolRenderer
                 $status = 'backgrounded';
                 $color = ThemeColorEnum::Muted;
             } elseif (!$result->streaming) {
-                // These tools only complete successfully after source persistence.
-                $status = $communication ? 'accepted' : 'completed';
+                // Source persistence does not confirm recipient delivery or attention.
+                $status = $communication ? 'source persisted' : 'completed';
                 $color = $communication ? ThemeColorEnum::Muted : ThemeColorEnum::Success;
             }
         }
