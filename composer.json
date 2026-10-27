@@ -89,7 +89,8 @@
         "ineersa/symfony-ai-openai-chatgpt-platform": "0.2.1",
         "ineersa/sqlite-queue": "dev-main#a19d6e7684772be355f8db961cb2200e21ed5cd9",
         "fabpot/amphp-sqlite3": "dev-development#2cf3d23e6a4645133954052d7356c19c30a2a7d8",
-        "amphp/http-tunnel": "^2.0"
+        "amphp/http-tunnel": "^2.0",
+        "amphp/process": "^2.1"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",

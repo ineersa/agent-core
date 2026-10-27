@@ -353,6 +353,8 @@ runtime:
     # Distinct from tools.execution.max_parallelism and the Amp HTTP host
     # connection pool (maxHostConnections=6).
     llm_concurrency: 10
+    # Shared tool/agent consumer admission, independent of per-batch tool policy.
+    tool_concurrency: 16
 
 # ---------------------------------------------------------------------------
 # Agent definitions

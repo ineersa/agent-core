@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Deterministic real-process proof that two independent native parallel bash
- * tool calls overlap on the existing tool consumer pool.
+ * tool calls overlap in one shared Fiber consumer.
  *
  * Each bash child writes an entered marker, then blocks on its own FIFO.
  * Readiness requires both entered markers and a live bash child process before
@@ -64,16 +64,16 @@ final class ControllerReplayParallelToolOverlapTest extends ControllerReplayE2eT
         parent::tearDown();
     }
 
-    public function testTwoIndependentNativeBashCallsOverlapOnToolWorkers(): void
+    public function testTwoIndependentNativeBashCallsOverlapInOneSharedConsumer(): void
     {
         $this->spawnController();
         $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
-        $toolConsumers = $this->waitForControllerToolConsumers(2, 3.0);
+        $toolConsumers = $this->waitForControllerToolConsumers(1, 3.0);
         $this->assertCount(
-            2,
+            1,
             $toolConsumers,
-            'Expected two messenger:consume tool descendants. got: '.json_encode($toolConsumers),
+            'Expected one shared Fiber tool consumer. got: '.json_encode($toolConsumers),
         );
 
         $startCmdId = 'cmd_start_'.uniqid('', true);
@@ -180,6 +180,8 @@ final class ControllerReplayParallelToolOverlapTest extends ControllerReplayE2eT
     protected function extraSettingsYaml(): string
     {
         return <<<'YAML'
+runtime:
+    tool_concurrency: 2
 tools:
     execution:
         max_parallelism: 2
@@ -282,7 +284,7 @@ YAML;
         }
 
         $this->fail(\sprintf(
-            'Both bash workers did not enter barriers with live children before timeout. a=%s b=%s live=%d',
+            'Both bash handlers did not enter barriers with live children before timeout. a=%s b=%s live=%d',
             is_file($this->enteredMarkerA) ? trim((string) file_get_contents($this->enteredMarkerA)) : 'missing',
             is_file($this->enteredMarkerB) ? trim((string) file_get_contents($this->enteredMarkerB)) : 'missing',
             $this->countLiveOwnedBarrierBashProcesses(),
@@ -362,7 +364,7 @@ YAML;
         foreach ($this->discoverControllerProcessTreePids($rootPid) as $pid) {
             $cmdline = (string) @file_get_contents("/proc/{$pid}/cmdline");
             $cmd = str_replace("\0", ' ', $cmdline);
-            if (!preg_match('/messenger:consume\s+tool(\s|$)/', $cmd)) {
+            if (!str_contains($cmd, 'hatfield:messenger:consume-llm') || !preg_match('/--transport=tool(\s|$)/', $cmd)) {
                 continue;
             }
             $matched[] = ['pid' => $pid, 'cmd' => trim($cmd)];

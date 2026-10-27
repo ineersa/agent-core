@@ -4,26 +4,41 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
+use Amp\DeferredFuture;
+use Amp\TimeoutCancellation;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\AmpRetryClock;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\DTO\RuntimeConfigDTO;
 use Ineersa\CodingAgent\Runtime\Messenger\FiberMessageExecutionStrategy;
 use Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeCommand;
 use Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
+use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
+use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
+use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\SqliteQueue\Client;
+use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\RoutableMessageBus;
 use Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface;
+use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 use Symfony\Contracts\Service\ServiceProviderInterface;
+
+use function Amp\async;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeCommand
@@ -31,6 +46,111 @@ use Symfony\Contracts\Service\ServiceProviderInterface;
  */
 final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
 {
+    public function testSharedConsumerRenewsActiveLeasesAndDrainsBeforeSettlingOnStop(): void
+    {
+        // Real broker expiry and native Worker settlement cannot be proved by an
+        // in-memory receiver. The 8s cancellation is a safety cap, not a delay.
+        $directory = TestDirectoryIsolation::createProjectTempDir('fiber-leases');
+        $console = \dirname(__DIR__, 4).'/bin/console';
+        $executable = $this->createStub(AppExecutableLocator::class);
+        $executable->method('path')->willReturn($console);
+        $executable->method('command')->willReturn([\PHP_BINARY, __DIR__.'/Fixtures/short-lease-broker.php', $console]);
+        $logger = new TestLogger();
+        $broker = new SessionSqliteQueueBrokerSupervisor($logger, new RuntimeProcessConfig($executable, $directory));
+        $paths = SessionSqliteQueuePaths::forSession($directory.'/.hatfield/sessions', 'leases');
+        $release = new DeferredFuture();
+        $entered = new DeferredFuture();
+        $calls = [];
+        $handled = [];
+        $client = null;
+        $tool = null;
+        $agent = null;
+        $command = null;
+        $running = null;
+        $cancel = new TimeoutCancellation(8);
+
+        try {
+            $broker->start($paths);
+            $factory = new TransportFactory();
+            $tool = $factory->createTransport('sqlite-queue://tool?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $agent = $factory->createTransport('sqlite-queue://agent?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $tool->send(new Envelope((object) ['label' => 'tool']));
+            $agent->send(new Envelope((object) ['label' => 'agent']));
+            $bus = new class($release, $entered, $calls) implements MessageBusInterface {
+                /** @param list<string> $calls */
+                public function __construct(private DeferredFuture $release, private DeferredFuture $entered, private array &$calls)
+                {
+                }
+
+                public function dispatch(object $message, array $stamps = []): Envelope
+                {
+                    $envelope = Envelope::wrap($message, $stamps);
+                    $this->calls[] = $envelope->getMessage()->label;
+                    if (2 === \count($this->calls)) {
+                        $this->entered->complete();
+                    }
+                    $this->release->getFuture()->await();
+
+                    return $envelope;
+                }
+            };
+            $receivers = new ServiceLocator(['tool' => static fn () => $tool, 'agent' => static fn () => $agent]);
+            $dispatcher = new EventDispatcher();
+            $dispatcher->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use (&$handled): void {
+                $handled[] = $event->getReceiverName();
+            });
+            $buses = new ServiceLocator(['default' => static fn () => $bus]);
+            $config = clone self::getContainer()->get(AppConfig::class);
+            $config->runtime = new RuntimeConfigDTO(toolConcurrency: 2);
+            $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $config, $logger);
+            $input = new ArrayInput(['--transport' => 'tool', '--keepalive' => 1]);
+            $input->bind($command->getDefinition());
+            $running = async(static fn () => $command->run($input, new BufferedOutput()));
+            $entered->getFuture()->await($cancel);
+
+            // This unrenewed receipt is claimed AFTER both handlers entered.
+            // Broker WAIT wakes at its expiry, hence after both original leases.
+            $client = Client::connect($paths->endpointPath);
+            $client->send('expiry', 'clock');
+            $clock = $client->receive('expiry');
+            $this->assertNotNull($clock);
+            $command->handleSignal(\SIGTERM);
+            $this->assertFalse($running->isComplete(), 'Stop must drain suspended handlers, not abandon them.');
+            $this->assertTrue($client->wait('expiry', 4_000, $cancel));
+            $this->assertNull($client->receive('tool'), 'Renewed tool receipt must not be reclaimable after its original lease.');
+            $this->assertNull($client->receive('agent'), 'Renewed agent receipt must not be reclaimable after its original lease.');
+            $this->assertTrue($broker->supervise(), 'The expiry witness must come from the live broker.');
+            $this->assertNotEmpty(array_filter($logger->records, static fn (array $record): bool => 'Renewing Fiber execution leases via Revolt timer.' === $record['message']));
+
+            $tool->send(new Envelope((object) ['label' => 'after-stop']));
+            $this->assertSame([], $handled, 'Neither blocked handler has settled early.');
+            $release->complete();
+            $this->assertSame(0, $running->await($cancel));
+            $this->assertEqualsCanonicalizing(['tool', 'agent'], $calls);
+            $this->assertEqualsCanonicalizing(['tool', 'agent'], $handled);
+            $queued = $client->receive('tool');
+            $this->assertNotNull($queued, 'Stopping must leave newly queued work for a replacement consumer.');
+            $this->assertStringContainsString('after-stop', $queued->body);
+            $client->acknowledge($queued->receipt);
+            $this->assertNull($client->receive('tool'), 'Drained tool delivery must be acknowledged.');
+            $this->assertNull($client->receive('agent'), 'Drained agent delivery must be acknowledged.');
+        } finally {
+            if (!$release->isComplete()) {
+                $release->complete();
+            }
+            $command?->handleSignal(\SIGTERM);
+            try {
+                $running?->await(new TimeoutCancellation(3));
+            } finally {
+                $tool?->close();
+                $agent?->close();
+                $client?->close();
+                $broker->shutdownUntil(microtime(true) + 5.0);
+                TestDirectoryIsolation::removeDirectory($directory);
+            }
+        }
+    }
+
     public function testCompiledContainerRegistersFiberLlmConsumeCommandAndWaitSubscriber(): void
     {
         $container = self::getContainer();

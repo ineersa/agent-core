@@ -39,6 +39,12 @@ Tool requests and outcomes cross the broker as bounded `ToolPayloadMessage` refe
 
 Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`) back onto `agent.command.bus` → `run_control`. Provider/request/stream retries for one LLM invocation are owned by `LlmRequestRetryExecutor` inside `LlmPlatformAdapter` (settings: `ai.http.max_retries`, default five). After that budget is exhausted the result is terminal (`retryable: false`). A failed result send is logged as intentional degradation and requires explicit repair. No generic worker claims or sealed result store remain. Failed `run_control` deliveries reset the default Doctrine connection and manager after Messenger decides retry eligibility but before permanent-failure terminalization, so redelivery and `agent_end` persistence never reuse failed transaction state. `WorkerFailedEventSubscriber` handles permanent owner failures under `RunLockManager` and commits the terminal transition through `RunCommit`, including normal sequence/state publication and post-commit cleanup hooks. A failed load, lock, append, or publication is logged without an alternate canonical writer.
 
+The controller runs one Fiber execution consumer for `tool` and `agent` together.
+The agent transport remains a durable routing destination, not a separate process.
+`runtime.tool_concurrency` limits shared admission; `tools.execution.max_parallelism`
+still limits each batch. Run-lock reentrancy and release callbacks belong to the
+calling Fiber, not every invocation in the process.
+
 ## Dispatch ownership (producers)
 
 - `StartRun` — `AgentRunner::start()`

@@ -49,6 +49,8 @@ abstract class ControllerE2eTestCase extends TestCase
      * Set from the first run.started seen during a collection window, or from $this->runId when known.
      */
     protected ?string $parentRunIdForCollection = null;
+    /** @var list<array<string, mixed>> */
+    private array $pendingEvents = [];
 
     // ── Lifecycle ──
 
@@ -76,6 +78,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $this->pipes = [];
         $this->trackedControllerPids = [];
         $this->stdoutBuf = '';
+        $this->pendingEvents = [];
         $this->stderrBuf = '';
         $this->runId = '';
         $this->parentRunIdForCollection = null;
@@ -330,14 +333,16 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $this->drainStderr();
 
+        $events = $this->pendingEvents;
+        $this->pendingEvents = [];
         $chunk = stream_get_contents($this->pipes[1]);
         if (false === $chunk || '' === $chunk) {
-            return [];
+            return $events;
         }
 
         $this->stdoutBuf .= $chunk;
 
-        return $this->parseBuffer($this->stdoutBuf);
+        return array_merge($events, $this->parseBuffer($this->stdoutBuf));
     }
 
     protected function drainStderr(): void
@@ -415,7 +420,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $deadline = microtime(true) + $timeout;
 
         while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
+            foreach ($this->consumeEvents() as $event) {
                 if (($event['type'] ?? '') === $type) {
                     return $event;
                 }
@@ -456,7 +461,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
 
         while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
+            foreach ($this->consumeEvents() as $event) {
                 $events[] = $event;
                 $this->noteParentRunIdFromEvent($event);
 
@@ -1038,6 +1043,16 @@ YAML;
             if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
                 @posix_kill($pid, \SIGKILL);
             }
+        }
+    }
+
+    /** @return \Generator<int, array<string, mixed>> */
+    private function consumeEvents(): \Generator
+    {
+        $this->pendingEvents = $this->readEvents();
+        // Remove only yielded frames. Returning early leaves the tail queued.
+        while ([] !== $this->pendingEvents) {
+            yield array_shift($this->pendingEvents);
         }
     }
 

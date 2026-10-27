@@ -19,6 +19,8 @@ final readonly class RuntimeConfigDTO
 {
     public const int DEFAULT_LLM_CONCURRENCY = 10;
 
+    public const int DEFAULT_TOOL_CONCURRENCY = 16;
+
     /**
      * @param int $llmConcurrency Same-process Fiber admission limit for the
      *                            single llm consumer (`hatfield:messenger:consume-llm`)
@@ -28,6 +30,10 @@ final readonly class RuntimeConfigDTO
             message: 'runtime.llm_concurrency must be a positive integer.',
         )]
         public int $llmConcurrency = self::DEFAULT_LLM_CONCURRENCY,
+        #[Assert\Positive(
+            message: 'runtime.tool_concurrency must be a positive integer.',
+        )]
+        public int $toolConcurrency = self::DEFAULT_TOOL_CONCURRENCY,
     ) {
     }
 }

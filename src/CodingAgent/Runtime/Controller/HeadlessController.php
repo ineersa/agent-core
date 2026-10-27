@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
@@ -77,18 +76,12 @@ final class HeadlessController
         private readonly SessionSqliteQueueBrokerSupervisor $brokerSupervisor,
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
-        private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly RuntimeEventEmitter $emitter,
         /** Project-scoped factory (not FrameworkBundle default LockFactory). */
         private readonly LockFactory $sessionOwnerLockFactory,
         private readonly string $runtimeCwd,
         private readonly ExtensionAgentJobRegistry $extensionAgentJobRegistry,
-        /**
-         * Optional override for parallel tool messenger consumers.
-         * Values <= 0 use tools.execution.max_parallelism from settings.
-         */
-        private readonly int $toolWorkerCount = 0,
         /**
          * Optional background process completion poller for sending
          * follow-up notifications when a backgrounded process finishes.
@@ -158,21 +151,15 @@ final class HeadlessController
         // run_control/llm queues under load.
         try {
             $this->consumerSupervisor->launch('run_control');
-            // One llm consumer: FiberMessageExecutionStrategy admits up to 4
-            // overlapping ExecuteLlmStep handlers in that process. Parent turns
-            // and parallel subagent children share the llm transport.
+            // Admission is configured independently for the llm and tool roles.
             $this->consumerSupervisor->launch('llm');
-            // tool consumers: N parallel workers for concurrent tool execution.
-            // N defaults to tools.execution.max_parallelism.
-            $this->consumerSupervisor->launchMultiple('tool', $this->resolveToolWorkerCount());
-            // One agent consumer: parent subagent tool orchestration/polling is isolated
-            // from generic tool workers so child tool calls are not starved.
-            $this->consumerSupervisor->launch('agent');
+            // One shared Fiber worker consumes both tool and durable agent queues.
+            // Deferred child launch releases admission before the child finishes.
+            $this->consumerSupervisor->launch('tool');
             // - run_control consumes StartRun, ApplyCommand, run results, and
             //   AdvanceRun/CompactRun transitions as the single state owner
             // - llm consumes ExecuteLlmStep (ASYNC-04)
-            // - tool consumes ExecuteToolCall (generic tools; not subagent)
-            // - agent consumes ExecuteToolCall when toolName=subagent (AGENT-07)
+            // - tool consumes generic tools and child launch/resume execution
             // - mcp consumes McpInitializeSessionCommand, McpRefreshCatalogCommand,
             //   McpDisconnectSessionCommand, and McpCallToolCommand (MCP-05).
             //   Exactly ONE mcp consumer per session — serialized MCP calls and
@@ -586,7 +573,7 @@ final class HeadlessController
         $paths = SessionSqliteQueueEnv::pathsFromEnvironment($this->sessionId);
         $requiredConnections = SessionSqliteQueueBrokerTopology::requiredConnections(
             1,
-            $this->resolveToolWorkerCount(),
+            1,
         );
         $this->brokerSupervisor->start($paths, $requiredConnections);
 
@@ -598,17 +585,5 @@ final class HeadlessController
         if ($advertisedConnections < $requiredConnections) {
             throw new \RuntimeException(\sprintf('Session sqlite-queue broker for session "%s" advertised max_connections=%d below topology requirement %d.', $this->sessionId, $advertisedConnections, $requiredConnections));
         }
-    }
-
-    /**
-     * Resolve the tool consumer pool size once from either the constructor
-     * override or tools.execution.max_parallelism. The same value sizes the
-     * broker connection budget and launches the tool workers.
-     */
-    private function resolveToolWorkerCount(): int
-    {
-        return $this->toolWorkerCount > 0
-            ? $this->toolWorkerCount
-            : max(1, $this->toolExecutionSettings->maxParallelism());
     }
 }

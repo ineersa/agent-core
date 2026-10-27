@@ -2,6 +2,7 @@ tui:
     theme: oh-p-dark
 runtime:
     llm_concurrency: 10
+    tool_concurrency: 16
 tools:
     code_mode:
         enabled: true

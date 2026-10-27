@@ -125,7 +125,7 @@ YAML;
         foreach ($this->discoverControllerProcessTreePids($rootPid) as $pid) {
             $cmdline = (string) @file_get_contents("/proc/{$pid}/cmdline");
             $cmd = str_replace("\0", ' ', $cmdline);
-            if (!str_contains($cmd, 'hatfield:messenger:consume-llm')) {
+            if (!str_contains($cmd, 'hatfield:messenger:consume-llm') || !str_contains($cmd, '--transport=llm')) {
                 continue;
             }
             $matched[] = ['pid' => $pid, 'cmd' => trim($cmd)];

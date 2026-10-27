@@ -121,8 +121,18 @@ Parent reminders are off by default. Fork and subagent reminders remain on by de
 | Key | Meaning | Default |
 |---|---|---|
 | `runtime.llm_concurrency` | Same-process Fiber admission limit for the single llm consumer | `10` |
+| `runtime.tool_concurrency` | Shared Fiber admission limit for tools and agent launch/resume in one consumer process | `16` |
 
-Distinct from `tools.execution.max_parallelism` and from the Amp HTTP host connection pool.
+Both values must be positive integers. `tools.execution.max_parallelism` remains the
+per-batch admission limit (default `4`), not a worker count. The Amp HTTP host
+connection pool is independent of both runtime limits.
+
+The shared tool consumer reads both `tool` and `agent` queues, including retained
+agent messages after a controller restart. Child launch releases its slot once
+deferred completion is registered; it does not hold the slot for the child's
+lifetime. A yielding foreground tool still occupies a slot. At full capacity,
+other tools wait for admission. Synchronous filesystem, database and CPU work can
+still block sibling Fibers; concurrency does not make every tool non-blocking.
 
 ### Tool execution
 
