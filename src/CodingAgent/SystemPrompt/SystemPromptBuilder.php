@@ -34,6 +34,7 @@ use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
  *   {registered_guidelines} — permanent tool guidelines grouped by owning tool
  *     as <tool name="..."> blocks (registration order; tools with no guidelines
  *     emit no group)
+ *   {background_coordination} — main-agent background waiting guidance
  *   {appends_part} — rendered append template content
  *   {date} — current date (Y-m-d)
  *   {cwd} — current working directory
@@ -46,6 +47,14 @@ use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
  */
 final readonly class SystemPromptBuilder
 {
+    private const string BACKGROUND_COORDINATION = <<<'PROMPT'
+After starting background work, continue with independent work if any remains. Otherwise, end your turn. Background work continues, and its notifications will resume the conversation. Do not use sleeps, dummy commands, or repeated status checks to wait for completion.
+
+Do not read or tail background logs merely to check completion or fetch results that will arrive automatically. Inspect in-flight output when needed for a concrete decision, diagnosis, or user-requested progress check.
+
+Act on child notices when they require a decision or correction, and send steering when needed. Otherwise, continue independent work or end your turn rather than inventing work or repeating progress updates.
+PROMPT;
+
     private string $projectDir;
 
     public function __construct(
@@ -249,6 +258,7 @@ final readonly class SystemPromptBuilder
         return [
             'available_tools_list' => $this->buildToolsList(),
             'registered_guidelines' => $this->buildGuidelines(),
+            'background_coordination' => self::BACKGROUND_COORDINATION,
             'appends_part' => $appendsContent,
             'date' => date('Y-m-d'),
             'cwd' => $cwd,

@@ -12,6 +12,10 @@ Use any provided tools as needed to complete the user's request.
 {registered_guidelines}
 </guidelines>
 
+<background_coordination>
+{background_coordination}
+</background_coordination>
+
 <context_channels>
 Project/repository instructions may appear in an initial user-context message with `<project_context>` and `<project_instructions path="...">` blocks.
 Available skills may appear in tagged reminder messages with `<available_skills>`; use them instead of guessing.
