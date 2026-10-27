@@ -49,7 +49,11 @@ final class PreviewExpansionInputListener implements TuiListenerRegistrar
                         : $state->transcript,
                 );
 
-                $tui->requestRender();
+                // Reconciliation updates every widget, but an overflowing frame
+                // that shrinks uses ScreenWriter's viewport-only redraw and keeps
+                // old expanded rows in terminal scrollback. Repaint the complete
+                // frame through the native API for this global layout change.
+                $tui->requestRender(force: true);
             },
             priority: InputPriority::PREVIEW_EXPANSION,
         );
