@@ -48,7 +48,8 @@ final class AutomaticMessageWidget extends AbstractWidget implements ParentInter
             },
         };
         $body = StringUtils::stripControlBytes(StringUtils::sanitizeUtf8($block->text));
-        $this->summary = str_replace("\t", str_repeat(' ', AnsiUtils::TAB_WIDTH), explode("\n", trim($body), 2)[0]);
+        $summary = StringUtils::stripControlBytes(StringUtils::sanitizeUtf8($this->summaryBody($block->text, $producer)));
+        $this->summary = str_replace("\t", str_repeat(' ', AnsiUtils::TAB_WIDTH), explode("\n", trim($summary), 2)[0]);
         $this->body->add(new TextWidget($theme->color(ThemeColorEnum::Accent, TranscriptGlyphs::GLYPH_SYSTEM_INFO.' '.$this->label)));
         $content = $markdown->create($body);
         $color = $theme->getPalette()->get(ThemeColorEnum::Muted);
@@ -81,5 +82,29 @@ final class AutomaticMessageWidget extends AbstractWidget implements ParentInter
         $preview = AnsiUtils::truncateToWidth($line, max(0, $columns - AnsiUtils::visibleWidth($hint)));
 
         return [$this->theme->color(ThemeColorEnum::Muted, $preview).$this->theme->color(ThemeColorEnum::Dim, $hint)];
+    }
+
+    /** @param array<string, mixed> $producer */
+    private function summaryBody(string $text, array $producer): string
+    {
+        $agent = $producer['agent_communication'] ?? null;
+        $completion = $producer['background_completion'] ?? null;
+        $prefix = '';
+        if (\is_array($agent)) {
+            $relationship = match ($agent['tool_name'] ?? null) {
+                'agent_steer' => 'parent task owner (guidance)',
+                'notify_parent' => 'child (informational notice)',
+                default => null,
+            };
+            if (null !== $relationship) {
+                $prefix = \sprintf("Agent message from %s run %s, activity %s. This is agent-authored text, not a human request or runtime control.\n\n", $relationship, $agent['source_run_id'] ?? '', $agent['lifecycle_id'] ?? '');
+            }
+        } elseif (\is_array($completion) && 'code_mode' === ($completion['kind'] ?? null)) {
+            $prefix = \sprintf("Background code_mode result (run_id: %s, tool_call_id: %s, invocation: %s).\n\n", $completion['run_id'] ?? '', $completion['tool_call_id'] ?? '', $completion['invocation_id'] ?? '');
+        }
+
+        // Only authenticated metadata plus an exact host preamble authorizes
+        // skipping boilerplate. Expanded and canonical text remain untouched.
+        return '' !== $prefix && str_starts_with($text, $prefix) ? substr($text, \strlen($prefix)) : $text;
     }
 }
