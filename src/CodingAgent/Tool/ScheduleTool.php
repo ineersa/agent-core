@@ -88,7 +88,7 @@ final readonly class ScheduleTool implements HatfieldToolProviderInterface
     {
         return new ToolDefinitionDTO(
             name: 'schedule',
-            description: 'Create, list, or cancel recurring Bash or code-mode work in this live session. Results arrive as automatic notifications. Nothing runs after Hatfield closes.',
+            description: 'Create, list, or cancel recurring Bash or code-mode work in the main agent\'s live session. Available only to the main agent. Results arrive as automatic notifications. Nothing runs after Hatfield closes.',
             handler: $this,
             promptLine: 'schedule action [tool, arguments, every, for_seconds, id] — create, list, or cancel live-session recurring work',
             promptGuidelines: [

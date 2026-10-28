@@ -77,7 +77,14 @@ final readonly class ExecuteSessionScheduleHandler
             $definition->runId,
             'schedule:'.$message->invocationId,
             \sprintf("Scheduled %s result [%s]:\n%s", $definition->tool, $definition->id, $text),
-            origin: ['schedule_id' => $definition->id, 'tool_name' => $definition->tool, 'tool_call_id' => $message->invocationId],
+            origin: [
+                'schedule_id' => $definition->id,
+                'tool_name' => $definition->tool,
+                'tool_call_id' => $message->invocationId,
+                // Preserve the executor's cancellation outcome across delayed delivery,
+                // even if another command has since continued the owner.
+                'cancelled' => \is_array($result->details) && (true === ($result->details['cancelled'] ?? false) || true === ($result->details['stale_due_to_cancel'] ?? false)),
+            ],
         ));
         $this->results->releaseCompleted($definition->runId, $message->invocationId, $definition->tool, null);
     }
