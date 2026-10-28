@@ -26,6 +26,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
@@ -426,6 +427,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             self::getContainer()->get(StackToolExecutionContextAccessor::class),
             $agentsConfig ?? self::getContainer()->get(AgentsConfig::class),
             $logger,
+            self::getContainer()->get(ChildInvocationLifecycleService::class),
         );
     }
 

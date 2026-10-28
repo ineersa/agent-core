@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\BackgroundProcess;
 
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
+use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Container\ContainerInterface;
@@ -26,7 +28,7 @@ final readonly class BashWorkerLifecycleSubscriber implements EventSubscriberInt
 
     public static function getSubscribedServices(): array
     {
-        return [BackgroundProcessManager::class, BashRegistrationClient::class, CodeModeLifecycleService::class, ToolPayloadMiddleware::class, 'coding_agent.bash_scheduler_client' => BashRegistrationClient::class];
+        return [BackgroundProcessManager::class, BashRegistrationClient::class, CodeModeLifecycleService::class, ChildInvocationLifecycleService::class, DeferredToolCompletionRepository::class, ToolPayloadMiddleware::class, 'coding_agent.bash_scheduler_client' => BashRegistrationClient::class];
     }
 
     public function onStarted(WorkerStartedEvent $event): void
@@ -42,6 +44,8 @@ final readonly class BashWorkerLifecycleSubscriber implements EventSubscriberInt
         }
         $this->container->get(BackgroundProcessManager::class)->useLifecycleOwner($this->container->get(BashRegistrationClient::class));
         $this->container->get(CodeModeLifecycleService::class)->useOwner($this->container->get(BashRegistrationClient::class));
+        $this->container->get(ChildInvocationLifecycleService::class)->useOwner($this->container->get(BashRegistrationClient::class));
+        $this->container->get(DeferredToolCompletionRepository::class)->useOwner($this->container->get(BashRegistrationClient::class));
         $this->container->get(ToolPayloadMiddleware::class)->useRemoteResultOwner();
     }
 }

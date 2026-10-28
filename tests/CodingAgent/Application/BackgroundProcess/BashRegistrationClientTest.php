@@ -12,6 +12,9 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashLifecycleFailureSubscriber;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
@@ -28,10 +31,18 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCom
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\RegisterBashProcessHandler;
 use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RegisterCodeModeInvocationDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\ReserveChildInvocationDTO;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleHandler;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleHandler;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
+use Ineersa\CodingAgent\Application\Pipeline\RegisterDeferredInvocationHandler;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Messenger\FiberMessageExecutionStrategy;
 use Ineersa\CodingAgent\Runtime\Messenger\RunControlDoctrineFailureResetSubscriber;
@@ -74,6 +85,153 @@ use function Amp\delay;
 
 final class BashRegistrationClientTest extends IsolatedKernelTestCase
 {
+    /** @return iterable<string, array{bool}> */
+    public static function childLaunchOutcomes(): iterable
+    {
+        yield 'success' => [true];
+        yield 'failure' => [false];
+    }
+
+    #[DataProvider('childLaunchOutcomes')]
+    public function testChildMutationRedeliveryReplaysOnlyCommittedMetadata(bool $success): void
+    {
+        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher) use ($success): void {
+            $repository = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+            $handler = new ChildInvocationLifecycleHandler(new ChildInvocationLifecycleService($repository), $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
+            $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $replies = (new TransportFactory())->createTransport('sqlite-queue://bash_registration_reply_tool?endpoint='.rawurlencode($paths->endpointPath), [], new Serializer(self::getContainer()->get(SerializerInterface::class)));
+            try {
+                $tool = $success ? 'success' : 'failure';
+                $factory = new DeferredSubagentBatchIdentityFactory();
+                $id = $factory->batchLifecycleId($owner, $tool);
+                $child = $factory->childIdentity($owner, $tool, 1);
+                $intent = new DeferredSubagentBatchChildIntentDTO(1, $child['childRunId'], $child['artifactId'], 'scout', 'task', 'model', 'medium');
+                $commands = [new ReserveChildInvocationDTO($id, $owner, 1, $tool, 0, new \DateTimeImmutable('+1 minute'), $intent, 'model', str_repeat('b', 32), str_repeat('c', 32), BashRequesterRoleEnum::Tool)];
+                $commands[] = $success
+                    ? new RecordChildLaunchSuccessDTO($owner, $tool, $id, new \DateTimeImmutable(), str_repeat('b', 32), str_repeat('d', 32), BashRequesterRoleEnum::Tool)
+                    : new RecordChildLaunchFailureDTO($owner, $tool, $id, str_repeat('b', 32), str_repeat('d', 32), BashRequesterRoleEnum::Tool);
+                foreach ($commands as $command) {
+                    $requests->send(new Envelope($command));
+                    $delivery = iterator_to_array($requests->get())[0];
+                    $handler($delivery->getMessage());
+                    $first = iterator_to_array($replies->get())[0];
+                    $replies->ack($first);
+                    $committed = $repository->findByLifecycleId($id);
+                    // Losing the reply leaves the same request leased. Native
+                    // redelivery repeats metadata, never a launch callback.
+                    $requests->wait(3000, new TimeoutCancellation(8));
+                    $redelivery = iterator_to_array($requests->get())[0];
+                    $handler($redelivery->getMessage());
+                    $second = iterator_to_array($replies->get())[0];
+                    $this->assertSame($id, $second->getMessage()->deferredId);
+                    $this->assertEquals($committed, $repository->findByLifecycleId($id));
+                    $replies->ack($second);
+                    $requests->ack($redelivery);
+                }
+            } finally {
+                $requests->close();
+                $replies->close();
+            }
+        });
+    }
+
+    public function testGenericDeferredRegistrationRedeliveryKeepsTheCommittedChildIdentity(): void
+    {
+        // Native lease redelivery is the external contract; WAIT observes broker
+        // eligibility and the test future deadline is only a failure cap.
+        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher): void {
+            $invocation = new DeferredToolCompletionCorrelation('canonical-child', $owner, 1, 'step', 1, 'key', 'call', 'subagent', [], 0);
+            TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(ToolBatchStoreInterface::class), $invocation);
+            $repository = self::getContainer()->get(DeferredToolCompletionRepository::class);
+            $handler = new RegisterDeferredInvocationHandler($repository, $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
+            $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $replies = (new TransportFactory())->createTransport('sqlite-queue://bash_registration_reply_tool?endpoint='.rawurlencode($paths->endpointPath), [], new Serializer(self::getContainer()->get(SerializerInterface::class)));
+            try {
+                foreach ([new RegisterDeferredInvocationDTO($invocation, str_repeat('b', 32), str_repeat('c', 32), BashRequesterRoleEnum::Tool)] as $command) {
+                    $requests->send(new Envelope($command));
+                    $delivery = iterator_to_array($requests->get())[0];
+                    $handler($delivery->getMessage());
+                    $first = iterator_to_array($replies->get())[0];
+                    $this->assertSame($invocation->deferredId, $first->getMessage()->deferredId);
+                    $replies->ack($first);
+                    $ready = $repository->findMetadataByDeferredId($invocation->deferredId)?->readyAt;
+                    $requests->wait(3000, new TimeoutCancellation(8));
+                    $redelivery = iterator_to_array($requests->get())[0];
+                    $handler($redelivery->getMessage());
+                    $second = iterator_to_array($replies->get())[0];
+                    $this->assertSame($invocation->deferredId, $second->getMessage()->deferredId);
+                    $this->assertEquals($ready, $repository->findMetadataByDeferredId($invocation->deferredId)?->readyAt);
+                    $replies->ack($second);
+                    $requests->ack($redelivery);
+                }
+            } finally {
+                $requests->close();
+                $replies->close();
+            }
+        });
+    }
+
+    public function testSixteenChildReservationsAndLaunchSuccessRepliesUseTheToolPump(): void
+    {
+        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher): void {
+            $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $sender = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $sent = 0;
+            $saturated = new DeferredFuture();
+            $events = new EventDispatcher();
+            $events->addListener(MessageSentToTransportsEvent::class, static function () use (&$sent, $saturated): void {
+                if (16 === ++$sent) {
+                    $saturated->complete();
+                }
+            });
+            $locator = new SendersLocator([ReserveChildInvocationDTO::class => ['run_control'], RecordChildLaunchSuccessDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
+            $client = new BashRegistrationClient(new MessageBus([new SendMessageMiddleware(new SerializedBrokerSendersLocator($locator), $events)]), $paths->endpointPath, $owner, self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(ValidatorInterface::class));
+            $lifecycle = new ChildInvocationLifecycleService(self::getContainer()->get(DeferredSubagentBatchRepository::class));
+            $handler = new ChildInvocationLifecycleHandler($lifecycle, $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
+            $ownerTask = async(static function () use ($saturated, $requests, $handler): void {
+                $saturated->getFuture()->await(new TimeoutCancellation(8));
+                for ($handled = 0; $handled < 32;) {
+                    foreach ($requests->get() as $delivery) {
+                        $handler($delivery->getMessage());
+                        $requests->ack($delivery);
+                        ++$handled;
+                    }
+                    if ($handled < 32) {
+                        $requests->wait(3000, new TimeoutCancellation(8));
+                    }
+                }
+            });
+            try {
+                $tasks = [];
+                for ($i = 0; $i < 16; ++$i) {
+                    $tasks[] = async(static function () use ($client, $owner, $i): string {
+                        $factory = new DeferredSubagentBatchIdentityFactory();
+                        $tool = 'child-call-'.$i;
+                        $id = $factory->batchLifecycleId($owner, $tool);
+                        $child = $factory->childIdentity($owner, $tool, 1);
+                        $intent = new DeferredSubagentBatchChildIntentDTO(1, $child['childRunId'], $child['artifactId'], 'scout', 'task', 'model', 'medium');
+                        $batch = $client->reserveChild($id, $owner, 1, $tool, 0, new \DateTimeImmutable('+1 minute'), $intent, 'model');
+                        $client->recordChildLaunchSuccess($owner, $tool, $id, new \DateTimeImmutable());
+
+                        return $batch->lifecycleId;
+                    });
+                }
+                foreach ($tasks as $i => $task) {
+                    $id = $task->await(new TimeoutCancellation(8));
+                    $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByLifecycleId($id);
+                    $this->assertNotNull($batch);
+                    $this->assertSame('child-call-'.$i, $batch->parentToolCallId);
+                    $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batch->launchStatus);
+                }
+                $ownerTask->await(new TimeoutCancellation(8));
+                $this->assertSame(32, $sent);
+            } finally {
+                $requests->close();
+                $sender->close();
+            }
+        });
+    }
+
     public function testCodeModeRegistrationAndReadinessShareTheIndependentToolReplyPump(): void
     {
         $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher): void {

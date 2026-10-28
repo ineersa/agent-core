@@ -44,6 +44,19 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->store = $store;
     }
 
+    public function testCatalogAndExistenceReadsDoNotPopulateTheIdentityMap(): void
+    {
+        $id = $this->store->createSession('Snapshot catalog');
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $entityManager->clear();
+        for ($round = 0; $round < 128; ++$round) {
+            $sessions = $this->store->listSessions();
+            $this->assertContains($id, array_column($sessions, 'sessionId'));
+            $this->assertTrue($this->store->exists($id));
+            $this->assertSame([], $entityManager->getUnitOfWork()->getIdentityMap());
+        }
+    }
+
     public function testCreateSessionCreatesDirectoryAndMetadata(): void
     {
         $sessionId = $this->store->createSession('Hello');

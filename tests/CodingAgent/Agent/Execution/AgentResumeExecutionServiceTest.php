@@ -40,6 +40,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredS
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunArtifactFinalizer;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
@@ -702,6 +703,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: $contextAccessor,
             agentsConfig: new AgentsConfig(),
             logger: $logger ?? new NullLogger(),
+            childLifecycle: self::getContainer()->get(ChildInvocationLifecycleService::class),
         );
 
         return $contextAccessor->with(

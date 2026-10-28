@@ -104,6 +104,10 @@ framework:
                 dsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 
         routing:
+            Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO: run_control
+            Ineersa\CodingAgent\Application\Message\DTO\ReserveChildInvocationDTO: run_control
+            Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO: run_control
+            Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO: run_control
             Ineersa\CodingAgent\Application\Message\DTO\RegisterCodeModeInvocationDTO: run_control
             Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO: run_control
             Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessCommandDTO: run_control

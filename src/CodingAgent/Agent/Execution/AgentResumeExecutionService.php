@@ -20,6 +20,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
@@ -49,6 +50,7 @@ final class AgentResumeExecutionService
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly AgentsConfig $agentsConfig,
         private readonly LoggerInterface $logger,
+        private readonly ChildInvocationLifecycleService $childLifecycle,
     ) {
     }
 
@@ -99,7 +101,7 @@ final class AgentResumeExecutionService
             throw new ToolCallException('agent_resume batch launch previously failed for this tool call.', retryable: false);
         }
         if (null !== $existing && DeferredSubagentBatchLaunchStatusEnum::Launched === $existing->launchStatus) {
-            $this->batchRepository->reserveBatch(
+            $this->childLifecycle->reserveBatch(
                 lifecycleId: $lifecycleId,
                 parentRunId: $parentRunId,
                 parentTurnNo: $toolContext->turnNo(),
@@ -113,7 +115,7 @@ final class AgentResumeExecutionService
             return new DeferredToolCompletionOutcome($lifecycleId);
         }
 
-        $this->batchRepository->reserveBatch(
+        $this->childLifecycle->reserveBatch(
             lifecycleId: $lifecycleId,
             parentRunId: $parentRunId,
             parentTurnNo: $toolContext->turnNo(),
@@ -178,7 +180,7 @@ final class AgentResumeExecutionService
             $failureBatchIndex = 1;
 
             try {
-                $this->batchRepository->applyLaunchFailurePreparation(
+                $this->childLifecycle->applyLaunchFailurePreparation(
                     $parentRunId,
                     $toolCallId,
                     $lifecycleId,
@@ -204,7 +206,7 @@ final class AgentResumeExecutionService
         }
 
         try {
-            $this->batchRepository->applyLaunchSuccessState(
+            $this->childLifecycle->applyLaunchSuccessState(
                 $parentRunId,
                 $toolCallId,
                 $lifecycleId,

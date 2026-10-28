@@ -9,6 +9,8 @@ use Amp\DeferredCancellation;
 use Amp\DeferredFuture;
 use Amp\Future;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipRequestDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessCommandDTO;
@@ -18,7 +20,11 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationResult
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RegisterCodeModeInvocationDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\ReserveChildInvocationDTO;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Transport\Serialization\Serializer;
@@ -71,6 +77,12 @@ final class BashRegistrationClient
         return $this->request(new BashProcessCommandDTO($recordId, $runId, $action, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->process;
     }
 
+    public function registerDeferred(DeferredToolCompletionCorrelation $invocation): string
+    {
+        return $this->request(new RegisterDeferredInvocationDTO($invocation, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->deferredId
+            ?? throw new \UnexpectedValueException('Missing deferred registration identity.');
+    }
+
     public function registerCodeMode(DeferredToolCompletionCorrelation $invocation): string
     {
         return $this->request(new RegisterCodeModeInvocationDTO($invocation, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->deferredId
@@ -85,13 +97,29 @@ final class BashRegistrationClient
         }
     }
 
+    public function reserveChild(string $lifecycleId, string $parentRunId, int $parentTurnNo, string $parentToolCallId, int $parentOrderIndex, \DateTimeImmutable $deadlineAt, DeferredSubagentBatchChildIntentDTO $childIntent, ?string $parentModel): DeferredSubagentBatchProjectionDTO
+    {
+        return $this->request(new ReserveChildInvocationDTO($lifecycleId, $parentRunId, $parentTurnNo, $parentToolCallId, $parentOrderIndex, $deadlineAt, $childIntent, $parentModel, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->childBatch
+            ?? throw new \UnexpectedValueException('Missing child reservation result.');
+    }
+
+    public function recordChildLaunchSuccess(string $parentRunId, string $parentToolCallId, string $lifecycleId, \DateTimeImmutable $startedAt): void
+    {
+        $this->request(new RecordChildLaunchSuccessDTO($parentRunId, $parentToolCallId, $lifecycleId, $startedAt, $this->incarnation, bin2hex(random_bytes(16)), $this->role));
+    }
+
+    public function recordChildLaunchFailure(string $parentRunId, string $parentToolCallId, string $lifecycleId): void
+    {
+        $this->request(new RecordChildLaunchFailureDTO($parentRunId, $parentToolCallId, $lifecycleId, $this->incarnation, bin2hex(random_bytes(16)), $this->role));
+    }
+
     private function changeOwnership(BashOwnershipRequestDTO $request, BashOwnershipActionEnum $action): BashOwnershipStatusEnum
     {
         return $this->request(new BashOwnershipCommandDTO($request, $action, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->ownership
             ?? throw new \UnexpectedValueException('Missing Bash ownership result.');
     }
 
-    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO|RegisterCodeModeInvocationDTO|ReadyCodeModeInvocationDTO $command): BashRegistrationReplyDTO
+    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO|RegisterCodeModeInvocationDTO|ReadyCodeModeInvocationDTO|ReserveChildInvocationDTO|RecordChildLaunchSuccessDTO|RecordChildLaunchFailureDTO|RegisterDeferredInvocationDTO $command): BashRegistrationReplyDTO
     {
         $errors = $this->validator->validate($command);
         if (0 !== \count($errors)) {

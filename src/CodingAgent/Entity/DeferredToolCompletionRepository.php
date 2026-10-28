@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -27,6 +28,8 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  */
 final class DeferredToolCompletionRepository extends ServiceEntityRepository implements DeferredToolCompletionRepositoryInterface
 {
+    private ?BashRegistrationClient $owner = null;
+
     public function __construct(
         ManagerRegistry $registry,
         private readonly ToolPayloadStoreInterface $payloads,
@@ -36,6 +39,11 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         private readonly ValidatorInterface $validator,
     ) {
         parent::__construct($registry, DeferredToolCompletion::class);
+    }
+
+    public function useOwner(BashRegistrationClient $owner): void
+    {
+        $this->owner = $owner;
     }
 
     /** @param list<string> $runIds
@@ -50,6 +58,13 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
     {
+        if (null !== $this->owner) {
+            // Do not hold the run/storage locks while the owner acquires them.
+            $id = $this->owner->registerDeferred($correlation);
+
+            return $this->findByDeferredId($id) ?? throw new ToolPayloadException('Committed deferred registration is missing.');
+        }
+
         return $this->locks->synchronized($correlation->runId, fn () => $this->payloads->withStorage($correlation->runId, fn () => $this->registerLocked($correlation)));
     }
 
