@@ -76,7 +76,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             $client = new BashRegistrationClient($bus, $paths->endpointPath, $owner, self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(ValidatorInterface::class));
             $results = [];
             $toolBus = new MessageBus([new HandleMessageMiddleware(new HandlersLocator([\stdClass::class => [function (\stdClass $message) use ($client, $owner, &$results): void {
-                $results[] = $client->register($this->request($owner, $message->id), new TimeoutCancellation(8));
+                $results[] = $client->register($this->request($owner, $message->id));
             }]]))]);
             $strategy = new FiberMessageExecutionStrategy($toolBus, 16);
             $handled = 0;
@@ -211,7 +211,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             });
             try {
                 try {
-                    $client->register($this->request($owner, 1), new TimeoutCancellation(8));
+                    $client->register($this->request($owner, 1));
                     $this->fail('A terminal owner error must not report successful registration.');
                 } catch (\RuntimeException $error) {
                     $this->assertStringContainsString('committed outcome is unknown', $error->getMessage());
@@ -243,10 +243,29 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         $handler = new RegisterBashProcessHandler($registration, $publisher, $locks, $validator, $owner);
         try {
             $broker->start($paths);
-            $proof($paths, $owner, $handler, $publisher);
+            // Bound the proof at its test-owned future, not through a client API.
+            // On failure, broker teardown below releases transport waiters.
+            $proofTask = async($proof, $paths, $owner, $handler, $publisher);
+            try {
+                $proofTask->await(new TimeoutCancellation(8));
+            } finally {
+                // The await already reports failure; a late transport error
+                // during broker teardown must not become an unhandled future.
+                $proofTask->ignore();
+            }
         } finally {
             $publisher->reset();
             $broker->shutdownUntil(microtime(true) + 5.0);
+            if (isset($proofTask) && !$proofTask->isComplete()) {
+                try {
+                    // Broker disconnect releases blocked client waiters. Join
+                    // their finally blocks before PHPUnit destroys the kernel.
+                    $proofTask->await(new TimeoutCancellation(1));
+                } catch (\Throwable $error) {
+                    // The original proof deadline already failed the test.
+                    fwrite(\STDERR, 'Expected interrupted proof cleanup: '.$error->getMessage()."\n");
+                }
+            }
             TestDirectoryIsolation::removeDirectory($directory);
         }
     }

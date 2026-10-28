@@ -43,16 +43,16 @@ final class BashRegistrationClient
         $this->incarnation = bin2hex(random_bytes(16));
     }
 
-    public function register(RegisterBashProcessDTO $registration, ?Cancellation $cancellation = null): BashRegistrationResultDTO
+    public function register(RegisterBashProcessDTO $registration): BashRegistrationResultDTO
     {
         $command = new RegisterBashProcessCommandDTO($registration, $this->incarnation, bin2hex(random_bytes(16)));
 
-        return $this->request($command, $cancellation)->result ?? throw new \UnexpectedValueException('Missing Bash registration result.');
+        return $this->request($command)->result ?? throw new \UnexpectedValueException('Missing Bash registration result.');
     }
 
-    public function accept(BashOwnershipRequestDTO $request, ?Cancellation $cancellation = null): BashOwnershipStatusEnum
+    public function accept(BashOwnershipRequestDTO $request): BashOwnershipStatusEnum
     {
-        return $this->changeOwnership($request, BashOwnershipActionEnum::Accept, $cancellation);
+        return $this->changeOwnership($request, BashOwnershipActionEnum::Accept);
     }
 
     public function retire(BashOwnershipRequestDTO $request): BashOwnershipStatusEnum
@@ -60,13 +60,13 @@ final class BashRegistrationClient
         return $this->changeOwnership($request, BashOwnershipActionEnum::Retire);
     }
 
-    private function changeOwnership(BashOwnershipRequestDTO $request, BashOwnershipActionEnum $action, ?Cancellation $cancellation = null): BashOwnershipStatusEnum
+    private function changeOwnership(BashOwnershipRequestDTO $request, BashOwnershipActionEnum $action): BashOwnershipStatusEnum
     {
-        return $this->request(new BashOwnershipCommandDTO($request, $action, $this->incarnation, bin2hex(random_bytes(16))), $cancellation)->ownership
+        return $this->request(new BashOwnershipCommandDTO($request, $action, $this->incarnation, bin2hex(random_bytes(16))))->ownership
             ?? throw new \UnexpectedValueException('Missing Bash ownership result.');
     }
 
-    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO $command, ?Cancellation $cancellation): BashRegistrationReplyDTO
+    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO $command): BashRegistrationReplyDTO
     {
         $errors = $this->validator->validate($command);
         if (0 !== \count($errors)) {
@@ -87,7 +87,7 @@ final class BashRegistrationClient
             // a shell. Callers may retry only this stable metadata operation.
             $this->commandBus->dispatch($command);
 
-            $reply = $waiter->getFuture()->await($cancellation);
+            $reply = $waiter->getFuture()->await();
             if ($reply->failed) {
                 throw new \RuntimeException('Bash lifecycle request exhausted owner retries; committed outcome is unknown.');
             }

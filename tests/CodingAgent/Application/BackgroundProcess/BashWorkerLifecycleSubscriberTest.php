@@ -57,6 +57,9 @@ final class BashWorkerLifecycleSubscriberTest extends TestCase
             $this->assertFalse($result['user_stop']);
             $this->assertTrue($result['notified']);
             $this->assertStringContainsString('BACKGROUND_SURVIVED', $result['text']);
+            if ('lost' === $scenario) {
+                $this->assertTrue($result['acceptance_redelivered'], 'The original committed acceptance must redeliver before the unknown-outcome response.');
+            }
         } finally {
             if ($process->isRunning()) {
                 $process->wait();

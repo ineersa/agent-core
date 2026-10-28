@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 require dirname(__DIR__, 5).'/vendor/autoload.php';
 
-use Amp\CancelledException;
 use Amp\DeferredCancellation;
 use Amp\DeferredFuture;
 use Amp\Process\Process;
@@ -15,6 +14,7 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashLifecycleFailureSubscriber;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashOwnershipActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashOwnershipService;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashOwnershipStatusEnum;
@@ -39,6 +39,7 @@ use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueEnv;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
+use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
@@ -49,7 +50,9 @@ use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BackgroundProcessProvisionalCleanupTask;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Psr\Log\NullLogger;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
 use Symfony\Component\Messenger\MessageBus;
@@ -111,19 +114,17 @@ if ('worker' === $mode || 'replacement' === $mode) {
         }
         if ('lost' === $scenario) {
             $identity = $container->get(EntityManagerInterface::class)->getConnection()->fetchOne('SELECT identity FROM bash_registration_receipt WHERE record_id = ?', [$result->id]);
-            $cancellation = new DeferredCancellation();
-            $cancelTask = async(static function () use ($cancellation): void {
-                getStdin()->read();
-                $cancellation->cancel();
-            });
             try {
-                $container->get(BashRegistrationClient::class)->accept(new BashOwnershipRequestDTO($identity, $runId), $cancellation->getCancellation());
+                $container->get(BashRegistrationClient::class)->accept(new BashOwnershipRequestDTO($identity, $runId));
                 throw new RuntimeException('Dropped acceptance reply unexpectedly resolved.');
-            } catch (CancelledException $error) {
-                // Parent cancelled only after the acceptance transaction committed.
-                fwrite(\STDERR, "Acceptance reply lost after commit.\n");
+            } catch (RuntimeException $error) {
+                if (!str_contains($error->getMessage(), 'committed outcome is unknown')) {
+                    throw $error;
+                }
+                // The owner committed acceptance but lost the normal reply.
+                // Its simulated terminal publication failure reports uncertainty.
+                fwrite(\STDERR, 'Acceptance reply lost after commit and redelivery: '.$error->getMessage()."\n");
             }
-            $cancelTask->await();
         } elseif (!in_array($scenario, ['foreground', 'maintenance', 'maintenance-race'], true)) {
             $manager->markBackgroundedForRecord($result->id, $runId);
         }
@@ -144,7 +145,25 @@ if ('worker' === $mode || 'replacement' === $mode) {
 $owner = $container->get(HatfieldSessionStore::class)->createSession('worker ownership');
 $transportSession = 'transport' === $scenario ? 'controller-test' : $owner;
 $paths = SessionSqliteQueuePaths::forSession($directory.'/.hatfield/sessions', $transportSession);
-$broker = new SessionSqliteQueueBrokerSupervisor(new NullLogger(), new RuntimeProcessConfig(new SourceTreeExecutableLocator(dirname(__DIR__, 5)), $directory));
+$executable = new SourceTreeExecutableLocator(dirname(__DIR__, 5));
+if ('lost' === $scenario) {
+    $executable = new class($executable) implements AppExecutableLocator {
+        public function __construct(private readonly AppExecutableLocator $inner)
+        {
+        }
+
+        public function path(): string
+        {
+            return $this->inner->path();
+        }
+
+        public function command(): array
+        {
+            return [\PHP_BINARY, dirname(__DIR__, 3).'/Runtime/Messenger/Fixtures/short-lease-broker.php', $this->path()];
+        }
+    };
+}
+$broker = new SessionSqliteQueueBrokerSupervisor(new NullLogger(), new RuntimeProcessConfig($executable, $directory));
 $broker->start($paths);
 $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
 $serializer = $container->get(SerializerInterface::class);
@@ -156,6 +175,8 @@ $ownership = new ChangeBashOwnershipHandler($container->get(BashOwnershipService
 $stop = new DeferredCancellation();
 $worker = null;
 $maintenanceTask = null;
+$lostCorrelation = null;
+$acceptanceRedelivered = false;
 $maintain = static function () use ($container, $manager, $owner): void {
     $task = new BackgroundProcessProvisionalCleanupTask($manager, $container->get(ProcessStore::class), $container->get(ProcessLifecycle::class), new NullLogger(), $container->get(OwnedRunIdsProvider::class), $owner);
     $task();
@@ -171,7 +192,7 @@ $finish = static function () use ($container): string {
 
     return $row['status_path'];
 };
-$ownerTask = async(static function () use ($requests, $registration, $ownership, $publisher, $transportSession, $stop, $scenario, $container, $maintain, $finish, &$maintenanceTask, &$worker): void {
+$ownerTask = async(static function () use ($requests, $registration, $ownership, $publisher, $transportSession, $stop, $scenario, $container, $maintain, $finish, &$maintenanceTask, &$lostCorrelation, &$acceptanceRedelivered): void {
     while (!$stop->getCancellation()->isRequested()) {
         $requests->wait(1000, $stop->getCancellation());
         foreach ($requests->get() as $delivery) {
@@ -196,10 +217,23 @@ $ownerTask = async(static function () use ($requests, $registration, $ownership,
                     $started->getFuture()->await();
                     $publisher->publish(new BashRegistrationReplyDTO($transportSession, $command->incarnation, $command->correlation, ownership: $status));
                 } elseif ('lost' === $scenario && BashOwnershipActionEnum::Accept === $command->action) {
-                    $container->get(BashOwnershipService::class)->accept($command->request);
-                    // Drop the response after the actual commit. This barrier
-                    // cancels the waiter, never the metadata operation.
-                    $worker->getStdin()->write("cancel\n");
+                    if (BashOwnershipStatusEnum::Accepted !== $container->get(BashOwnershipService::class)->accept($command->request)) {
+                        throw new RuntimeException('Acceptance did not survive metadata redelivery.');
+                    }
+                    if (null === $lostCorrelation) {
+                        // Lose the normal reply after commit and leave the native
+                        // delivery leased. Broker eligibility, not a delay, resumes it.
+                        $lostCorrelation = $command->correlation;
+                        continue;
+                    }
+                    if ($lostCorrelation !== $command->correlation) {
+                        throw new RuntimeException('Expected the original acceptance request to redeliver.');
+                    }
+                    $acceptanceRedelivered = true;
+                    // Inject terminal publication failure after real redelivery;
+                    // use the production unknown-outcome response, not cancellation.
+                    $failure = new BashLifecycleFailureSubscriber(new ServiceLocator([BashRegistrationReplyPublisher::class => static fn () => $publisher]), $transportSession);
+                    $failure->onFailed(new WorkerMessageFailedEvent($delivery, 'run_control', new RuntimeException('Simulated acceptance-reply publication failure.')));
                 } else {
                     $ownership($command);
                 }
@@ -294,7 +328,7 @@ try {
     (new ReflectionMethod($poller, 'poll'))->invoke($poller);
     (new ReflectionMethod($poller, 'poll'))->invoke($poller);
     $record = $store->fetchByRecordId($launch['id']);
-    file_put_contents($marker, json_encode(['notifications' => count($bus->messages), 'text' => $bus->messages[0]->text ?? null, 'exit' => $record->exitCode, 'user_stop' => $record->stoppedByUser, 'notified' => null !== $record->completionNotifiedAt], \JSON_THROW_ON_ERROR));
+    file_put_contents($marker, json_encode(['notifications' => count($bus->messages), 'text' => $bus->messages[0]->text ?? null, 'exit' => $record->exitCode, 'user_stop' => $record->stoppedByUser, 'notified' => null !== $record->completionNotifiedAt, 'acceptance_redelivered' => $acceptanceRedelivered], \JSON_THROW_ON_ERROR));
 } finally {
     $stop->cancel();
     try {
