@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
+use Ineersa\CodingAgent\Session\DTO\SessionModelMetadataDTO;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Filesystem\Filesystem;
@@ -148,6 +149,17 @@ final class HatfieldSessionStore
     public function findSession(string $sessionId): ?HatfieldSession
     {
         return $this->fetchEntityOrNull($sessionId);
+    }
+
+    public function findModelMetadata(string $sessionId): ?SessionModelMetadataDTO
+    {
+        $id = $this->parsePositiveSessionId($sessionId);
+        if (null === $id) {
+            return null;
+        }
+        $row = $this->entityManager->getConnection()->fetchAssociative('SELECT model, reasoning, provider_cache_key FROM hatfield_session WHERE id = ?', [$id]);
+
+        return false === $row ? null : new SessionModelMetadataDTO($row['model'], $row['reasoning'], $row['provider_cache_key']);
     }
 
     /**
