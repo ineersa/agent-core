@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionLimitException;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\SubscriptionPolicyException;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Validation\ProviderErrorMetadataValidator;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\ContentFilterException;
@@ -70,6 +71,20 @@ final class LlmProviderErrorClassifier
         }
         if (null !== $statusCode) {
             $userMessage = \sprintf('HTTP %d: %s', $statusCode, $userMessage);
+        }
+
+        $providerError = [];
+        foreach (['code', 'type', 'param'] as $field) {
+            $providerError[$field] = $error['response_error_'.$field] ?? null;
+            unset($error['response_error_'.$field]);
+        }
+        $details = [];
+        foreach (ProviderErrorMetadataValidator::validate($providerError) as $field => $value) {
+            $error['response_error_'.$field] = $value;
+            $details[] = $field.'='.$value;
+        }
+        if ([] !== $details) {
+            $userMessage .= ' ('.implode(', ', $details).')';
         }
 
         $result = array_replace($error, [

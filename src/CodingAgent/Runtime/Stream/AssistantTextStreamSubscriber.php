@@ -11,11 +11,12 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Result\Stream\Delta\MessageComplete;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Result\Stream\Delta\MessageStart;
+use Symfony\AI\Platform\Result\Stream\Delta\CommentaryDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
- * Maps TextDelta streaming deltas to assistant text transient events.
+ * Maps text and commentary deltas to assistant text transient events.
  *
  * Native message boundaries split commentary from answers. Signed completions
  * replace streamed text and supply terminal-only messages without duplication.
@@ -51,6 +52,7 @@ final class AssistantTextStreamSubscriber implements EventSubscriberInterface
             LlmStreamDispatchObserver::EVENT_END => 'onStreamTerminal',
             LlmStreamDispatchObserver::EVENT_ERROR => 'onStreamTerminal',
             TextDelta::class => 'onTextDelta',
+            CommentaryDelta::class => 'onTextDelta',
             MessageStart::class => 'onMessageStart',
             MessageComplete::class => 'onMessageComplete',
         ];
@@ -122,8 +124,8 @@ final class AssistantTextStreamSubscriber implements EventSubscriberInterface
         }
 
         $delta = $event->delta;
-        \assert($delta instanceof TextDelta);
-        $text = $delta->getText();
+        \assert($delta instanceof TextDelta || $delta instanceof CommentaryDelta);
+        $text = $delta instanceof TextDelta ? $delta->getText() : $delta->getCommentary();
 
         if (null !== $state['activeMessage'] && '' === $text) {
             $event->handled = true;

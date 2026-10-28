@@ -10,6 +10,9 @@ use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Result\Stream\Delta\MessageComplete;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Result\Stream\Delta\MessageStart;
 use Symfony\AI\Platform\Message\Content\Thinking;
+use Symfony\AI\Platform\Result\Stream\Delta\CommentaryComplete;
+use Symfony\AI\Platform\Result\Stream\Delta\CommentaryDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\CommentaryStart;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
@@ -18,6 +21,23 @@ use Symfony\AI\Platform\Result\ToolCall;
 
 final class AssistantStreamMessageBuilderTest extends TestCase
 {
+    public function testNativeCommentaryKeepsPartialTextAndReplaysExactlyOnce(): void
+    {
+        $builder = new AssistantStreamMessageBuilder();
+        $header = ['type' => 'message', 'id' => 'comment', 'role' => 'assistant', 'phase' => 'commentary'];
+        $builder->accumulate(new MessageStart($header, 0));
+        $builder->accumulate(new CommentaryStart());
+        $builder->accumulate(new CommentaryDelta('Checking'));
+        $this->assertSame('Checking', $builder->getAssistantMessage()?->asText());
+        $builder->accumulate(new CommentaryComplete('Checking'));
+        $native = MessageItem::toText($header + ['content' => [['type' => 'output_text', 'text' => 'Checking']]]);
+        $builder->accumulate(new MessageComplete($native, 0));
+        $this->assertSame([$native], $builder->getAssistantMessage()?->getContent());
+        $this->assertSame($header + ['content' => [['type' => 'output_text', 'text' => 'Checking']]], MessageItem::fromText($native));
+        $builder->accumulate(new TextDelta('Final'));
+        $this->assertSame('CheckingFinal', $builder->getAssistantMessage()?->asText());
+    }
+
     public function testIncrementalSnapshotsDoNotRetainDeltasOrMutateEarlierMessages(): void
     {
         $builder = new AssistantStreamMessageBuilder();

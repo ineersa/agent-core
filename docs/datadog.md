@@ -349,6 +349,12 @@ the response request ID when available. For non-JSON HTTP errors, it also includ
 The existing diagnostic sanitizer redacts common credential patterns before truncation.
 JSON error bodies retain structural metadata only.
 
+Unmapped ChatGPT provider errors retain `response_error_code`,
+`response_error_type`, and `response_error_param` even when no raw HTTP response
+is available. Stream warnings and final `llm.request.failed` warnings carry these
+fields; retry reasons and visible failures include the same identifiers. Each
+field is restricted to an ASCII identifier of at most 128 bytes. Invalid fields
+are omitted, and provider free-text messages are not copied into these diagnostics.
 
 ## Related
 
