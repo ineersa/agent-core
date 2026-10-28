@@ -659,7 +659,10 @@ function distribution_resolve_canonical_phar_for_static(
 }
 
 /**
- * Expected messenger transports launched after runtime.ready.
+ * Expected messenger transports for the isolated, extension-free smoke fixture.
+ *
+ * No extension-agent handlers are registered here, so HeadlessController omits
+ * extension_agent. Registered-handler worker execution is covered separately.
  *
  * runtime.ready is emitted AFTER consumers are launched (HeadlessController::run),
  * so topology verification must wait until these transports appear.
@@ -675,7 +678,6 @@ function distribution_expected_messenger_transports(): array
         'agent',
         'scheduler_default',
         'mcp',
-        'extension_agent',
     ];
 }
 
