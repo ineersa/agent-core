@@ -8,13 +8,44 @@ use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
+use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
+use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
+use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
+use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchPreparationService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener;
+use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
+use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
+use Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashLifecycleFailureSubscriber;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
@@ -41,9 +72,13 @@ use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleHandler;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Application\Pipeline\RegisterDeferredInvocationHandler;
+use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Repository\RunRelationshipReader;
 use Ineersa\CodingAgent\Runtime\Messenger\FiberMessageExecutionStrategy;
 use Ineersa\CodingAgent\Runtime\Messenger\RunControlDoctrineFailureResetSubscriber;
 use Ineersa\CodingAgent\Runtime\Messenger\SerializedBrokerSendersLocator;
@@ -53,11 +88,13 @@ use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
+use Ineersa\CodingAgent\Tests\Support\StubRunRelationshipReader;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
+use Ineersa\CodingAgent\Tool\DTO\AgentResumeArgumentsDTO;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\DependencyInjection\ServiceLocator;
@@ -85,6 +122,111 @@ use function Amp\delay;
 
 final class BashRegistrationClientTest extends IsolatedKernelTestCase
 {
+    /** @return iterable<string, array{bool, bool}> */
+    public static function childCallerModes(): iterable
+    {
+        yield 'resume with lost success reply' => [true, false];
+        yield 'launch with lost success reply' => [false, false];
+        yield 'interruption while awaiting reservation' => [false, true];
+    }
+
+    #[DataProvider('childCallerModes')]
+    public function testChildCallerDoesNotRepeatExternalActionWhileMetadataReplyIsPending(bool $resume, bool $interrupt): void
+    {
+        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner) use ($resume, $interrupt): void {
+            $repository = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+            $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+            $child = 'resume-lost-reply-child';
+            $artifact = 'agent_resume_lost_reply';
+            $registry->create($owner, $artifact, $child, 'scout', AgentArtifactKindEnum::Subagent);
+            $registry->update($owner, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done');
+            $runner = $this->createMock(AgentRunnerInterface::class);
+            $runner->expects($resume ? $this->once() : $this->never())->method('followUp')->with($child, $this->anything());
+            $runner->expects(!$resume && !$interrupt ? $this->once() : $this->never())->method('start');
+            $status = $this->createStub(RunOperationalStatusReaderInterface::class);
+            $status->method('findOperationalStatus')->willReturn(new RunOperationalStatusDTO(RunStatus::Completed, 1));
+            $events = $this->createStub(EventStoreInterface::class);
+            $events->method('latestSequenceFor')->willReturn(1);
+            $serializer = self::getContainer()->get(SerializerInterface::class);
+            $dropSuccess = true;
+            $failing = $this->createStub(SerializerInterface::class);
+            $failing->method('serialize')->willReturnCallback(static function (mixed $data, string $format, array $context = []) use ($serializer, &$dropSuccess, $interrupt, $repository): string {
+                if ($interrupt && $data instanceof BashRegistrationReplyDTO && null !== $data->childBatch) {
+                    $batch = $data->childBatch;
+                    // The reservation is committed, but its caller still awaits
+                    // this reply. Commit owner interruption before releasing it.
+                    $repository->persistInterruptionIntent($batch->lifecycleId, DeferredSubagentInterruptionKindEnum::ParentCancelled, new \DateTimeImmutable(), $batch->projectionVersion);
+                }
+                if ($data instanceof BashRegistrationReplyDTO && null === $data->childBatch && $dropSuccess) {
+                    $dropSuccess = false;
+                    throw new \RuntimeException('Lost committed child success reply');
+                }
+
+                return $serializer->serialize($data, $format, $context);
+            });
+            $publisher = new BashRegistrationReplyPublisher($paths->endpointPath, $owner, $failing);
+            $handler = new ChildInvocationLifecycleHandler(new ChildInvocationLifecycleService($repository), $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
+            $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $sender = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $locator = new SendersLocator([ReserveChildInvocationDTO::class => ['run_control'], RecordChildLaunchSuccessDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
+            $client = new BashRegistrationClient(new MessageBus([new SendMessageMiddleware(new SerializedBrokerSendersLocator($locator))]), $paths->endpointPath, $owner, $serializer, self::getContainer()->get(ValidatorInterface::class));
+            $remote = new ChildInvocationLifecycleService($repository);
+            $remote->useOwner($client);
+            $context = new StackToolExecutionContextAccessor();
+            $service = new AgentResumeExecutionService($registry, $repository, self::getContainer()->get(DeferredSubagentChildRepository::class), new DeferredSubagentBatchIdentityFactory(), $runner, $status, $events, self::getContainer()->get(RunLockManager::class), StubRunRelationshipReader::topLevel($owner), new AgentDepthGuard(), $context, new AgentsConfig(), new TestLogger(), $remote);
+            $artifactLifecycle = self::getContainer()->get(ChildRunArtifactLifecycleService::class);
+            $runtime = new DeferredSubagentBatchRuntimeStartService($runner, $artifactLifecycle, new ChildRunBatchLaunchService($runner, $artifactLifecycle, self::getContainer()->get(SubagentChildRunBatchLifecycleListener::class), new TestLogger()), self::getContainer()->get(ChildRunBatchLifecyclePolicyDTO::class), new TestLogger());
+            $definitionPolicy = new SubagentLaunchDefinitionPolicyService(new AgentDefinitionCatalog([new AgentDefinitionDTO(name: 'scout', description: 'Test child', tools: ['read'], instructions: 'Test.')]), new AgentDepthGuard(), self::getContainer()->get(AgentToolPolicyResolver::class), self::getContainer()->get(RunRelationshipReader::class));
+            $inputFactory = self::getContainer()->get(SubagentChildLaunchInputFactory::class);
+            $forkBuilder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
+            $preparation = new SubagentLaunchPreparationService($definitionPolicy, $artifactLifecycle, $inputFactory, $forkBuilder, self::getContainer()->get(ForkToolPolicyResolver::class));
+            $batchPreparation = new DeferredSubagentBatchPreparationService($preparation, new DeferredSubagentBatchIdentityFactory(), $artifactLifecycle, $inputFactory, $forkBuilder);
+            $launch = new DeferredSubagentBatchLaunchService($batchPreparation, $repository, $runtime, $context, new AgentsConfig(), new TestLogger(), $remote);
+            self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(new RunState($owner, RunStatus::Running));
+            $lost = new DeferredFuture();
+            $ownerTask = async(function () use ($requests, $handler, $lost, $interrupt): void {
+                $expected = $interrupt ? 1 : 2;
+                for ($handled = 0; $handled < $expected;) {
+                    foreach ($requests->get() as $delivery) {
+                        try {
+                            $handler($delivery->getMessage());
+                        } catch (\RuntimeException $error) {
+                            $this->assertSame('Lost committed child success reply', $error->getMessage());
+                            $lost->complete();
+                            // Leave the committed success request leased. The
+                            // broker, not another caller invocation, redelivers it.
+                            continue;
+                        }
+                        $requests->ack($delivery);
+                        ++$handled;
+                    }
+                    if ($handled < $expected) {
+                        $requests->wait(3000, new TimeoutCancellation(8));
+                    }
+                }
+            });
+            $caller = async(static fn () => $context->with(new ToolContext(runId: $owner, turnNo: 1, toolCallId: 'resume-lost', toolName: $resume ? 'agent_resume' : 'subagent', cancellationToken: new NullCancellationToken(), timeoutSeconds: 30, parentModel: 'test/model', launchContext: new ToolLaunchContextDTO(kind: ToolLaunchContextDTO::KIND_SUBAGENT, producingRunId: $owner, producingTurnNo: 1, producingModel: 'test/model', agentsContext: 'AGENTS')), static fn () => $resume ? $service->resume($owner, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')) : $launch->launch($owner, 'scout', 'continue')));
+            try {
+                if (!$interrupt) {
+                    \Amp\Future\awaitFirst([$caller, $lost->getFuture()], new TimeoutCancellation(8));
+                    $this->assertFalse($caller->isComplete());
+                }
+                $outcome = $caller->await(new TimeoutCancellation(8));
+                $ownerTask->await(new TimeoutCancellation(8));
+                $batch = $repository->findByLifecycleId($outcome->deferredId);
+                $this->assertSame($interrupt ? DeferredSubagentBatchLaunchStatusEnum::Reserved : DeferredSubagentBatchLaunchStatusEnum::Launched, $batch?->launchStatus);
+                $this->assertSame($interrupt, $dropSuccess);
+                $this->assertSame($interrupt ? DeferredSubagentInterruptionKindEnum::ParentCancelled : null, $batch?->interruptionKind);
+            } finally {
+                $caller->ignore();
+                $ownerTask->ignore();
+                $publisher->reset();
+                $requests->close();
+                $sender->close();
+            }
+        });
+    }
+
     /** @return iterable<string, array{bool}> */
     public static function childLaunchOutcomes(): iterable
     {
