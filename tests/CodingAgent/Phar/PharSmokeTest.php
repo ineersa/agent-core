@@ -97,6 +97,20 @@ final class PharSmokeTest extends TestCase
         $this->assertStringContainsString('commit', $output);
     }
 
+    public function testExtensionFreeTopologyRequiresAllCoreConsumers(): void
+    {
+        require_once \dirname(__DIR__, 3).'/.castor/distribution.php';
+
+        $this->assertSame([
+            'run_control',
+            'llm',
+            'tool',
+            'agent',
+            'scheduler_default',
+            'mcp',
+        ], distribution_expected_messenger_transports());
+    }
+
     public function testPharControllerStartsPackagedBrokerAndActualWorker(): void
     {
         [, $pharPath] = $this->resolveArtifactCommand();
