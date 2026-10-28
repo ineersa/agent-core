@@ -107,7 +107,7 @@ final class AgentMessageConverter
      * When the previous active source ended mid consecutive tool-result batch,
      * append rebuilds only that trailing open batch plus the suffix so deferred
      * synthetic image UserMessages keep correct ordering. Closed turns skip that
-     * path entirely. Ordinary appends keep bag identity via MessageBag::add(). Open trailing
+     * path entirely. Ordinary appends replace the immutable bag while retaining message instances. Open trailing
      * tool-image batches may rebuild the deferred tail. Current request
      * shapers rebuild messages rather than mutating the supplied bag.
      *
@@ -320,7 +320,7 @@ final class AgentMessageConverter
             $newMessages = $this->convertAgentMessages($suffixConverted);
 
             foreach ($newMessages as $message) {
-                $this->activeBag->add($message);
+                $this->activeBag = $this->activeBag->with($message);
             }
 
             $this->idMap = $idMap;
@@ -346,7 +346,7 @@ final class AgentMessageConverter
         $rebuiltTail = $this->convertAgentMessages($rebuildConverted);
         $bag = new MessageBag(...\array_slice($this->activeBag->getMessages(), 0, $stableBagCount));
         foreach ($rebuiltTail as $message) {
-            $bag->add($message);
+            $bag = $bag->with($message);
         }
 
         $this->activeBag = $bag;

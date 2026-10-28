@@ -12,6 +12,9 @@ use Symfony\AI\Platform\Message\Content\ContentInterface;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Result\Stream\AssistantMessageStreamListener;
+use Symfony\AI\Platform\Result\Stream\Delta\CommentaryComplete;
+use Symfony\AI\Platform\Result\Stream\Delta\CommentaryDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\CommentaryStart;
 use Symfony\AI\Platform\Result\Stream\Delta\DeltaInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
@@ -73,10 +76,15 @@ final class AssistantStreamMessageBuilder
 
             return;
         }
-        if ($delta instanceof TextDelta && null !== $this->activeMessage) {
+        // Native signed message completions own commentary replay too. Do not
+        // retain a second framework Commentary part for the same provider item.
+        if (null !== $this->activeMessage && ($delta instanceof CommentaryStart || $delta instanceof CommentaryComplete)) {
+            return;
+        }
+        if (($delta instanceof TextDelta || $delta instanceof CommentaryDelta) && null !== $this->activeMessage) {
             $text = $this->parts[$this->activeMessage];
             \assert($text instanceof Text);
-            $this->parts[$this->activeMessage] = new Text($text->getText().$delta->getText());
+            $this->parts[$this->activeMessage] = new Text($text->getText().($delta instanceof TextDelta ? $delta->getText() : $delta->getCommentary()));
 
             return;
         }
