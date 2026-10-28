@@ -17,11 +17,11 @@ There are no WebSockets, cached continuation, SSE fallback, or inline authentica
 Hatfield uses the public GitHub Composer repository:
 
 - Package: `ineersa/symfony-ai-openai-chatgpt-platform`.
-- Release: `0.2.1`, tagged `v0.2.1`.
+- Release: `0.2.2`, tagged `v0.2.2`.
 - Source: [ChatGPT platform repository](https://github.com/ineersa/symfony-ai-openai-chatgpt-platform).
 - Native-control removal: [pull request 5](https://github.com/ineersa/symfony-ai-openai-chatgpt-platform/pull/5).
 
-Composer locks the release to commit `896c598b354253103166049e99fed7590656b6a8`. No local package mirror or absolute path repository is required.
+Composer locks the release to commit `ff7cb836b7e9e28df396d4426c7a62292afe4ec3`. No local package mirror or absolute path repository is required.
 
 ## Manual validation
 
