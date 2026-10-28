@@ -17,6 +17,48 @@ use Symfony\Component\Yaml\Yaml;
 #[Group('tui-e2e-replay')]
 final class ExtensionsSetupCommandTest extends TestCase
 {
+    public function testFailureDiagnosticsRetainOwnedPaneEvidence(): void
+    {
+        $temporary = TestDirectoryIsolation::createProjectTempDir('extension-setup-diagnostics');
+        $tmux = new TmuxHarness();
+        $tmux->setSnapshotDir($temporary);
+        $stderr = $temporary.'/stderr.log';
+        $pane = null;
+        try {
+            $pane = $tmux->startDetached('exec '.escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg(
+                'fwrite(STDERR, "synthetic startup diagnostic\n"); fwrite(STDOUT, "diagnostics ready pid=".getmypid()."\n"); fread(STDIN, 1);'
+            ).' 2>'.escapeshellarg($stderr), prefix: 'extension-setup-diagnostics');
+            $tmux->waitForCaptureContains($pane, 'diagnostics ready', 3);
+            $tmux->saveFailureDiagnostics($pane, $stderr);
+
+            $reports = (string) getenv('HATFIELD_QA_REPORTS_DIR');
+            if (!str_starts_with($reports, '/')) {
+                $reports = ProjectDir::get().'/'.$reports;
+            }
+            $diagnostics = $reports.'/diagnostics/'.basename($temporary);
+            $this->assertSame("synthetic startup diagnostic\n", file_get_contents($diagnostics.'/stderr.log'));
+            $this->assertStringContainsString('diagnostics ready', file_get_contents($diagnostics.'/failure.txt'));
+            $this->assertCount(1, glob($diagnostics.'/failure-*.ansi'));
+            $processes = json_decode(file_get_contents($diagnostics.'/processes.json'), true, flags: \JSON_THROW_ON_ERROR);
+            $this->assertSame($pane->paneId, $processes['pane']);
+            $pid = $tmux->panePid($pane);
+            $this->assertSame($pid, $processes['pane_pid']);
+            $this->assertStringContainsString('pid='.$pid.' dead=0', $processes['pane_state']);
+            $this->assertIsBool($processes['pane_proc_readable']);
+            $this->assertIsArray($processes['processes']);
+        } finally {
+            try {
+                if (null !== $pane && $tmux->paneExists($pane)) {
+                    $tmux->sendKey($pane, 'C-d');
+                    $tmux->waitUntilPaneExits($pane, 3);
+                }
+            } finally {
+                $tmux->killAll();
+                TestDirectoryIsolation::removeDirectory($temporary);
+            }
+        }
+    }
+
     public function testRegisteredCommandInstallsConfiguresAndExitsThroughRealTerminalInput(): void
     {
         // This journey uniquely needs real Composer and PHAR-owned autoloaders:
@@ -26,7 +68,10 @@ final class ExtensionsSetupCommandTest extends TestCase
         $root = ProjectDir::get();
         $temporary = TestDirectoryIsolation::createProjectTempDir('extension-setup-command');
         $tmux = new TmuxHarness();
+        $tmux->setSnapshotDir($temporary);
+        $stderr = $temporary.'/stderr.log';
         $pane = null;
+        $failure = null;
         try {
             $home = $temporary.'/home';
             $project = $temporary.'/project';
@@ -85,7 +130,7 @@ final class ExtensionsSetupCommandTest extends TestCase
             $start = static fn (string $cwd): TmuxPane => $tmux->startDetached(
                 'env HOME='.escapeshellarg($home).' COMPOSER_HOME='.escapeshellarg($temporary.'/composer')
                 .' COMPOSER_CACHE_DIR='.escapeshellarg($temporary.'/composer-cache').' APP_ENV=prod APP_DEBUG=0 HATFIELD_CWD='.escapeshellarg($cwd)
-                .' '.escapeshellarg(\PHP_BINARY).' '.escapeshellarg($phar).' extensions:setup',
+                .' '.escapeshellarg(\PHP_BINARY).' '.escapeshellarg($phar).' extensions:setup 2>>'.escapeshellarg($stderr),
                 prefix: 'extension-setup-command', width: 80, height: 45, cwd: $cwd,
             );
             $send = static function (string ...$keys) use ($tmux, &$pane): void {
@@ -247,13 +292,39 @@ final class ExtensionsSetupCommandTest extends TestCase
             $this->assertTrue(Yaml::parseFile($enabledPath)['custom_kept']);
             $send('C-d');
             $tmux->waitUntilPaneExits($pane, 3);
-        } finally {
-            if (null !== $pane && $tmux->paneExists($pane)) {
-                $tmux->sendKey($pane, 'C-d');
-                $tmux->waitUntilPaneExits($pane, 3);
+        } catch (\Throwable $exception) {
+            $failure = $exception;
+            if (null !== $pane) {
+                try {
+                    $tmux->saveFailureDiagnostics($pane, $stderr);
+                } catch (\Throwable $diagnosticsFailure) {
+                    fwrite(\STDERR, 'Extension setup diagnostics failed: '.$diagnosticsFailure->getMessage().\PHP_EOL);
+                }
             }
-            $tmux->killAll();
-            TestDirectoryIsolation::removeDirectory($temporary);
+
+            throw $exception;
+        } finally {
+            $cleanupFailure = null;
+            foreach ([
+                static function () use ($tmux, $pane): void {
+                    if (null !== $pane && $tmux->paneExists($pane)) {
+                        $tmux->sendKey($pane, 'C-d');
+                        $tmux->waitUntilPaneExits($pane, 3);
+                    }
+                },
+                static fn () => $tmux->killAll(),
+                static fn () => TestDirectoryIsolation::removeDirectory($temporary),
+            ] as $cleanup) {
+                try {
+                    $cleanup();
+                } catch (\Throwable $exception) {
+                    $cleanupFailure ??= $exception;
+                    fwrite(\STDERR, 'Extension setup cleanup failed: '.$exception->getMessage().\PHP_EOL);
+                }
+            }
+            if (null === $failure && null !== $cleanupFailure) {
+                throw $cleanupFailure;
+            }
         }
     }
 }
