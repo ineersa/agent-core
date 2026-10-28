@@ -27,7 +27,7 @@ final class StopBashHandlerTest extends IsolatedKernelTestCase
             $process->logPath = $directory.'/log';
             $process->statusPath = $directory.'/status';
             BackgroundProcessFixture::finish($process, 0, new \DateTimeImmutable());
-            $process->markBackgrounded(new \DateTimeImmutable());
+            $process->backgroundedAt = new \DateTimeImmutable();
             $manager->persist($process);
             $manager->flush();
             $handler = self::getContainer()->get(StopBashHandler::class);
