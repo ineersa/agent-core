@@ -92,6 +92,13 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         });
     }
 
+    public function findMetadataByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionMetadataDTO
+    {
+        $id = $this->getEntityManager()->getConnection()->fetchOne('SELECT deferred_id FROM tool_deferred_completion WHERE run_id = ? AND tool_call_id = ?', [$runId, $toolCallId]);
+
+        return false !== $id ? $this->findMetadataByDeferredId($id) : null;
+    }
+
     public function findMetadataByDeferredId(string $deferredId): ?DeferredToolCompletionMetadataDTO
     {
         $row = $this->getEntityManager()->getConnection()->fetchAssociative('SELECT * FROM tool_deferred_completion WHERE deferred_id = ?', [$deferredId]);

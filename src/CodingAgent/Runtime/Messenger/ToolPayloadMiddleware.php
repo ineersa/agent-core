@@ -39,19 +39,26 @@ use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /** Seal before send_message; resolve only after owner initialization on consumption. */
-final readonly class ToolPayloadMiddleware implements MiddlewareInterface
+final class ToolPayloadMiddleware implements MiddlewareInterface
 {
+    private bool $remoteResultOwner = false;
+
     public function __construct(
-        private ToolPayloadStoreInterface $payloads,
-        private ToolPayloadAdmission $admission,
-        private DeferredToolCompletionRepositoryInterface $deferred,
-        private RunLockManager $locks,
-        private ValidatorInterface $validator,
-        private MessageBusInterface $commandBus,
-        private LoggerInterface $logger,
-        private CompleteDeferredToolCallHandler $deferredHandler,
-        private DenormalizerInterface $serializer,
+        private readonly ToolPayloadStoreInterface $payloads,
+        private readonly ToolPayloadAdmission $admission,
+        private readonly DeferredToolCompletionRepositoryInterface $deferred,
+        private readonly RunLockManager $locks,
+        private readonly ValidatorInterface $validator,
+        private readonly MessageBusInterface $commandBus,
+        private readonly LoggerInterface $logger,
+        private readonly CompleteDeferredToolCallHandler $deferredHandler,
+        private readonly DenormalizerInterface $serializer,
     ) {
+    }
+
+    public function useRemoteResultOwner(): void
+    {
+        $this->remoteResultOwner = true;
     }
 
     public function handle(Envelope $envelope, StackInterface $stack): Envelope
@@ -69,6 +76,13 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
             }
             $this->validate($message);
             $body = $this->locks->synchronized($message->runId(), function () use ($message, $received): ExecuteToolCall|ExecuteShellToolCall|ToolCallResult|CompleteDeferredToolCall|null {
+                if ('run_control' === $received->getTransportName() && null === $message->deferredId && 'result' === $message->reference->kind && 'code_mode' === $message->reference->toolName) {
+                    $reference = $this->acceptCodeModeResult($message->reference);
+                    if (null === $reference) {
+                        return null;
+                    }
+                    $message = new ToolPayloadMessage($reference);
+                }
                 if ('result' === $message->reference->kind && 'code_mode' === $message->reference->toolName && $this->deferred->runRequiresContinuation($message->runId())) {
                     return null;
                 }
@@ -222,55 +236,68 @@ final readonly class ToolPayloadMiddleware implements MiddlewareInterface
                 return [null, null];
             }
             $metadata = $this->findEarlyDeferredRegistration($message);
-            if (\in_array($metadata?->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true) && (null !== $metadata->backgroundedAt || 'history_discarded' === $metadata->interruptionReason)) {
-                $this->deferred->markCompleted($metadata->deferredId);
+            if (null !== $metadata) {
+                // Seal the first immutable result here, but leave SQL acceptance
+                // to the owner receiver in tool workers. Owner-local repair and
+                // serialized in-process execution use the same decision directly.
+                $reference = $this->payloads->publishFirstResult($message, $metadata->reference);
 
-                return [null, null];
-            }
-            if (null === $metadata?->backgroundedAt && 'controller_lost' !== $metadata?->interruptionReason && !$this->admission->canPublish($message)) {
-                return [null, null];
-            }
-            if (null === $metadata) {
-                return [null, $this->payloads->publish($message)];
-            }
-            $reference = $this->deferred->acceptResultReference($metadata->deferredId, $metadata->acceptedResultReference ?? $this->payloads->publishFirstResult($message, $metadata->reference));
-            if ($metadata->continuationRequired) {
-                return [null, null];
-            }
-            if (null !== $metadata->backgroundedAt) {
-                $accepted = $this->payloads->read($reference);
-                if (!$accepted instanceof ToolCallResult) {
-                    throw new ToolPayloadException('Accepted deferred body is not a tool result.');
-                }
-                $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $accepted->result['details'] ?? null);
-                $delivery = new DeliverBackgroundCompletionDTO(
-                    $metadata->reference->runId,
-                    $metadata->deferredId,
-                    (new AgentMessageNormalizer())->toolMessage($accepted, $notifications)->content[0]['text'],
-                    $metadata->reference->runId,
-                    $metadata->deferredId,
-                    $metadata->reference,
-                );
-                $this->locks->afterRelease($message->runId(), function () use ($delivery): void {
-                    $this->commandBus->dispatch($delivery);
-                });
-
-                return [null, null];
+                return [null, $this->remoteResultOwner ? $reference : $this->acceptCodeModeResult($reference, false)];
             }
 
-            // Foreground admission stays an ordinary ToolCallResult so batch
-            // finalization owns settlement. Retain the accepted reference only.
-            return [null, $reference];
+            return [null, $this->admission->canPublish($message) ? $this->payloads->publish($message) : null];
         }));
+    }
+
+    private function acceptCodeModeResult(ToolPayloadReferenceDTO $incoming, bool $owner = true): ?ToolPayloadReferenceDTO
+    {
+        $metadata = $this->deferred->findMetadataByRunAndToolCall($incoming->runId, $incoming->toolCallId);
+        if (null === $metadata) {
+            return $incoming;
+        }
+        $this->assertDeferredReference($metadata, $incoming);
+        if ('completed' === $metadata->status) {
+            return null;
+        }
+        if (\in_array($metadata->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true) && (null !== $metadata->backgroundedAt || 'history_discarded' === $metadata->interruptionReason)) {
+            $this->deferred->markCompleted($metadata->deferredId);
+
+            return null;
+        }
+        if (null === $metadata->backgroundedAt && 'controller_lost' !== $metadata->interruptionReason && !$this->admission->accepts($incoming, $owner)) {
+            return null;
+        }
+        $reference = $this->deferred->acceptResultReference($metadata->deferredId, $metadata->acceptedResultReference ?? $incoming);
+        if ($metadata->continuationRequired) {
+            return null;
+        }
+        if (null !== $metadata->backgroundedAt) {
+            $accepted = $this->payloads->read($reference);
+            if (!$accepted instanceof ToolCallResult) {
+                throw new ToolPayloadException('Accepted deferred body is not a tool result.');
+            }
+            $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $accepted->result['details'] ?? null);
+            $delivery = new DeliverBackgroundCompletionDTO(
+                $metadata->reference->runId,
+                $metadata->deferredId,
+                (new AgentMessageNormalizer())->toolMessage($accepted, $notifications)->content[0]['text'],
+                $metadata->reference->runId,
+                $metadata->deferredId,
+                $metadata->reference,
+            );
+            $this->locks->afterRelease($incoming->runId, function () use ($delivery): void {
+                $this->commandBus->dispatch($delivery);
+            });
+
+            return null;
+        }
+
+        return $reference;
     }
 
     private function findEarlyDeferredRegistration(ToolCallResult $message): ?DeferredToolCompletionMetadataDTO
     {
-        $correlation = $this->deferred->findByRunAndToolCall($message->runId(), $message->toolCallId);
-        if (null === $correlation) {
-            return null;
-        }
-        $metadata = $this->deferred->findMetadataByDeferredId($correlation->deferredId);
+        $metadata = $this->deferred->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
         if (null === $metadata || 'pending' !== $metadata->status || 'code_mode' !== $metadata->reference->toolName) {
             return null;
         }

@@ -85,6 +85,13 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         return new DeferredToolCompletionMetadataDTO($deferredId, $reference, $row['status']);
     }
 
+    public function findMetadataByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionMetadataDTO
+    {
+        $id = $this->byRunToolCall[$runId.'|'.$toolCallId] ?? null;
+
+        return null !== $id ? $this->findMetadataByDeferredId($id) : null;
+    }
+
     public function runRequiresContinuation(string $runId): bool
     {
         return false;
