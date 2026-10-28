@@ -704,7 +704,8 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
         ];
         $second = $this->converter->toMessageBagForTarget($appended, 'openai/gpt-test');
 
-        $this->assertSame($first, $second);
+        $this->assertNotSame($first, $second);
+        $this->assertCount(2, $first->getMessages());
         $this->assertSame($prefixUser, $second->getMessages()[0]);
         $this->assertSame($prefixAssistant, $second->getMessages()[1]);
         $this->assertSame('next', $second->getMessages()[2]->asText());
