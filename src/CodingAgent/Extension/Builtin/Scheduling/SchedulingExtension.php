@@ -23,8 +23,12 @@ use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validation;
 
-/** Optional, live-controller recurring work. No host scheduling policy lives here. */
+/** Optional, live-controller recurring work using public host capabilities. */
 final class SchedulingExtension implements HatfieldExtensionInterface, TuiExtensionInterface, ContextualExtensionToolHandlerInterface, AfterSessionStartHookInterface, RecurringJobSourceInterface, ExtensionAgentJobHandlerInterface
 {
     private const string HANDLER = 'scheduling.execute';
@@ -33,30 +37,60 @@ final class SchedulingExtension implements HatfieldExtensionInterface, TuiExtens
 
     public function __invoke(array $arguments, ToolInvocationContextDTO $context): mixed
     {
-        $action = $arguments['action'] ?? null;
-        if (!\in_array($action, ['create', 'list', 'cancel'], true)) {
-            throw new \InvalidArgumentException('Choose create, list or cancel.');
+        $validator = Validation::createValidator();
+        $violations = $validator->validate($arguments, new Assert\Collection([
+            'action' => [new Assert\NotBlank(), new Assert\Choice(choices: ['create', 'list', 'cancel'])],
+            'tool' => new Assert\Optional(new Assert\Choice(choices: ['bash', 'code_mode'])),
+            'arguments' => new Assert\Optional(new Assert\Sequentially([
+                new Assert\NotNull(),
+                new Assert\Type('array'),
+                new Assert\Callback(static function (array $input, ExecutionContextInterface $context): void {
+                    if ([] !== $input && array_is_list($input)) {
+                        $context->buildViolation('Expected an arguments object.')->addViolation();
+                    }
+                    if (true === ($input['backgrounded'] ?? false)) {
+                        $context->buildViolation('Scheduled work cannot detach.')->atPath('[backgrounded]')->addViolation();
+                    }
+                }),
+            ])),
+            'every' => new Assert\Optional(new Assert\Sequentially([new Assert\Type('string'), new Assert\NotBlank(normalizer: 'trim')])),
+            'for_seconds' => new Assert\Optional(new Assert\Sequentially([new Assert\Type('integer'), new Assert\Positive()])),
+            'id' => new Assert\Optional(new Assert\Sequentially([new Assert\Type('string'), new Assert\NotBlank(normalizer: 'trim')])),
+        ]));
+        if (0 !== $violations->count()) {
+            throw new ValidationFailedException($arguments, $violations);
+        }
+        $action = $arguments['action'];
+        $required = match ($action) {
+            'create' => ['tool', 'every'],
+            'cancel' => ['id'],
+            default => [],
+        };
+        foreach ($required as $field) {
+            $violations->addAll($validator->startContext()->atPath('['.$field.']')->validate($arguments[$field] ?? null, new Assert\NotBlank())->getViolations());
+        }
+        if (0 !== $violations->count()) {
+            throw new ValidationFailedException($arguments, $violations);
         }
         $controllerId = $this->schedules->controllerId($context->runId);
         if (null === $controllerId) {
             throw new \RuntimeException('Scheduling requires a live main controller.');
         }
         if ('cancel' === $action) {
-            if (!\is_string($arguments['id'] ?? null) || '' === trim($arguments['id'])) {
-                throw new \InvalidArgumentException('Cancel requires a schedule id.');
-            }
             $this->schedules->cancel($context->runId, $arguments['id']);
         } elseif ('create' === $action) {
             $tool = $arguments['tool'] ?? null;
             $input = $arguments['arguments'] ?? [];
             $every = $arguments['every'] ?? null;
             $lifetime = $arguments['for_seconds'] ?? null;
-            if (!\in_array($tool, ['bash', 'code_mode'], true) || !\is_array($input) || ([] !== $input && array_is_list($input)) || !\is_string($every) || '' === trim($every) || (null !== $lifetime && (!\is_int($lifetime) || $lifetime <= 0)) || true === ($input['backgrounded'] ?? false)) {
-                throw new \InvalidArgumentException('Create requires Bash/code_mode, an arguments object, an interval, optional positive for_seconds, and no backgrounded=true.');
-            }
             $now = new \DateTimeImmutable();
-            $definition = new SessionScheduleDTO(bin2hex(random_bytes(16)), $context->runId, $context->runId, $controllerId, $tool, $input, $every, $now, null === $lifetime ? null : $now->modify('+'.$lifetime.' seconds'), 0);
-            $this->schedules->recurring($definition)->getTrigger()->getNextRunDate($now);
+            $definition = new SessionScheduleDTO(bin2hex(random_bytes(16)), $context->runId, $controllerId, $tool, $input, $every, $now, null === $lifetime ? null : $now->modify('+'.$lifetime.' seconds'));
+            try {
+                $this->schedules->recurring($definition)->getTrigger()->getNextRunDate($now);
+            } catch (\InvalidArgumentException $exception) {
+                $violations = $validator->startContext()->atPath('[every]')->validate(false, new Assert\IsTrue(message: $exception->getMessage()))->getViolations();
+                throw new ValidationFailedException($arguments, $violations);
+            }
             $this->schedules->save($definition);
         }
 

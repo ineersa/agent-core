@@ -33,6 +33,9 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validation;
 
 /**
  * Bridges public ExtensionApiInterface calls to the internal ToolRegistry.
@@ -78,6 +81,15 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function notifyOwner(OwnerNotificationDTO $notification): void
     {
         $this->toolInvoker->assertOwner($notification->runId);
+        $violations = Validation::createValidator()->validate([
+            'identity' => $notification->identity, 'text' => $notification->text,
+        ], new Assert\Collection([
+            'identity' => new Assert\NotBlank(normalizer: 'trim'),
+            'text' => new Assert\NotBlank(normalizer: 'trim'),
+        ]));
+        if (0 !== $violations->count()) {
+            throw new ValidationFailedException($notification, $violations);
+        }
         $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
             $notification->runId, $notification->identity, $notification->text,
             origin: ['interrupted' => $notification->interrupted, 'retire_on_owner_cancel' => true],

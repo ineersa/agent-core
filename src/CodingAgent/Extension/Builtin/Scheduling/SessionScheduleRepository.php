@@ -25,7 +25,7 @@ final readonly class SessionScheduleRepository
         /** @var array<string, SessionScheduleDTO> $definitions */
         $definitions = \is_array($value) ? $value : [];
 
-        return array_filter($definitions, fn (SessionScheduleDTO $definition): bool => $definition->controllerId === $this->controllerId($definition->controllerRunId));
+        return array_filter($definitions, fn (SessionScheduleDTO $definition): bool => $definition->controllerId === $this->controllerId($definition->runId));
     }
 
     public function controllerId(string $runId): ?string

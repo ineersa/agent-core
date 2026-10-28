@@ -25,6 +25,9 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationResultDTO;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\DependencyInjection\Attribute\AutowireServiceClosure;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validation;
 
 /** Standalone invocations retain native policy, cancellation and result processing. */
 final readonly class ExtensionToolInvoker implements RegisteredToolInvokerInterface
@@ -44,8 +47,15 @@ final readonly class ExtensionToolInvoker implements RegisteredToolInvokerInterf
     public function assertOwner(string $runId): void
     {
         $owner = $this->context->current()?->runId() ?? $this->controllerId;
-        if ('' === $owner || $runId !== $owner || null === $this->status->findOperationalStatus($runId)) {
-            throw new \InvalidArgumentException('Extension invocation requires the current owner session.');
+        $violations = Validation::createValidator()->validate([
+            'runId' => $runId, 'owner' => $owner, 'status' => $this->status->findOperationalStatus($runId),
+        ], new Assert\Collection([
+            'runId' => [new Assert\NotBlank(normalizer: 'trim'), new Assert\EqualTo($owner)],
+            'owner' => new Assert\NotBlank(normalizer: 'trim'),
+            'status' => new Assert\NotNull(),
+        ]));
+        if (0 !== $violations->count()) {
+            throw new ValidationFailedException($runId, $violations);
         }
     }
 
@@ -55,8 +65,17 @@ final readonly class ExtensionToolInvoker implements RegisteredToolInvokerInterf
         if (RunStatus::Failed === $this->status->findOperationalStatus($request->runId)?->status) {
             throw new \RuntimeException('Standalone invocation requires an owner that has not failed.');
         }
-        if ('' === trim($request->invocationId) || true === ($request->arguments['backgrounded'] ?? false)) {
-            throw new \InvalidArgumentException('Standalone invocation requires an identity and cannot detach.');
+        $violations = Validation::createValidator()->validate([
+            'invocationId' => $request->invocationId,
+            'toolName' => $request->toolName,
+            'backgrounded' => $request->arguments['backgrounded'] ?? false,
+        ], new Assert\Collection([
+            'invocationId' => new Assert\NotBlank(normalizer: 'trim'),
+            'toolName' => new Assert\NotBlank(normalizer: 'trim'),
+            'backgrounded' => new Assert\NotIdenticalTo(true),
+        ]));
+        if (0 !== $violations->count()) {
+            throw new ValidationFailedException($request, $violations);
         }
         if (CodeModeUnsupportedTools::contains($request->toolName)) {
             $text = 'Standalone invocation cannot launch deferred work or request human input.';
