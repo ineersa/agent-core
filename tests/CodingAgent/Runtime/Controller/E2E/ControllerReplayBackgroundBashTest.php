@@ -9,6 +9,8 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\Process;
 
 #[Group('controller-replay')]
@@ -212,7 +214,7 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
             $this->writeCommand(['v' => 1, 'id' => 'during-grace', 'type' => 'cancel', 'runId' => $this->runId, 'payload' => []]);
             $events = $this->collectEventsUntil(null, 2, static fn (array $event): bool => 'command.ack' === ($event['type'] ?? '') && 'during-grace' === ($event['payload']['commandId'] ?? null));
             $this->assertTrue($this->foundAck($events, 'during-grace'), $this->collectDiagnostics($events));
-            $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger());
+            $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger(), new LockFactory(new FlockStore()));
             $this->assertTrue($lifecycle->isAlive($candidate['pid']), 'Acknowledgment arrives while native termination is still in grace, not after KILL or zombie exit.');
             if ($interruptedStop) {
                 $deadline = microtime(true) + 5;

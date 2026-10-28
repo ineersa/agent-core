@@ -70,6 +70,8 @@ use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Validator\ConstraintValidatorFactory;
@@ -801,7 +803,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         };
         $events = $em->getEventManager();
         $events->addEventListener([Events::onFlush], $listener);
-        $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         try {
             try {
                 $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO($command, backgrounded: $backgrounded)));
@@ -1039,7 +1041,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         /** @var ProcessStore $store */
         $store = self::getContainer()->get(ProcessStore::class);
-        $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->bgConfig, new NullLogger());
         $this->managerCreated = true;
     }

@@ -8,6 +8,7 @@ use Amp\Process\Process;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Process\ExecutableFinder;
 
 use function Amp\ByteStream\buffer;
@@ -27,6 +28,7 @@ final class ProcessLifecycle
     public function __construct(
         private readonly BackgroundProcessConfig $config,
         private readonly LoggerInterface $logger,
+        private readonly LockFactory $lockFactory,
     ) {
     }
 
@@ -369,6 +371,34 @@ final class ProcessLifecycle
      *              an existing sidecar cannot be removed
      */
     public function deleteExactRecordSidecars(string $logPath, string $statusPath): bool
+    {
+        return $this->withSidecarLock($statusPath, fn (): bool => $this->deleteLockedRecordSidecars($logPath, $statusPath));
+    }
+
+    /**
+     * Keep completion evidence stable from the owner decision through signalling.
+     * Maintenance must not erase that evidence while a remote reply is in flight.
+     *
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    public function withSidecarLock(string $statusPath, callable $operation): mixed
+    {
+        $lock = $this->lockFactory->createLock('bash.sidecars.'.hash('sha256', $statusPath), autoRelease: false);
+        while (!$lock->acquire()) {
+            delay(0.02);
+        }
+        try {
+            return $operation();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function deleteLockedRecordSidecars(string $logPath, string $statusPath): bool
     {
         if (!str_ends_with($logPath, '.log')) {
             return false;

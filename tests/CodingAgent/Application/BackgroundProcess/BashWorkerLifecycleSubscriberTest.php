@@ -20,6 +20,9 @@ final class BashWorkerLifecycleSubscriberTest extends TestCase
     #[TestWith(['lost'])]
     #[TestWith(['foreground'])]
     #[TestWith(['session-stop'])]
+    #[TestWith(['registration-failure'], 'registration-failure')]
+    #[TestWith(['maintenance'], 'maintenance')]
+    #[TestWith(['maintenance-race'], 'maintenance-race')]
     public function testProductionShutdownOwnershipAndCompletion(string $scenario): void
     {
         $directory = TestDirectoryIsolation::createProjectTempDir('bash-ownership-worker');
@@ -32,6 +35,11 @@ final class BashWorkerLifecycleSubscriberTest extends TestCase
         try {
             $process->mustRun();
             $result = json_decode((string) file_get_contents($marker), true, flags: \JSON_THROW_ON_ERROR);
+            if (\in_array($scenario, ['maintenance', 'maintenance-race'], true)) {
+                $this->assertTrue($result['survived']);
+
+                return;
+            }
             if ('session-stop' === $scenario) {
                 $this->assertTrue($result['removed']);
 

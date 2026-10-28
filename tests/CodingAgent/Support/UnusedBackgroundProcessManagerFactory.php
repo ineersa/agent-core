@@ -12,6 +12,8 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /** Constructor dependency for protocol tests that never query native processes. */
 final class UnusedBackgroundProcessManagerFactory
@@ -23,7 +25,7 @@ final class UnusedBackgroundProcessManagerFactory
 
         return new BackgroundProcessManager(
             new ProcessStore($entityManager, new BackgroundProcessRepository($registry), $logger),
-            new ProcessLifecycle($config, $logger),
+            new ProcessLifecycle($config, $logger, new LockFactory(new FlockStore())),
             $config,
             $logger,
         );

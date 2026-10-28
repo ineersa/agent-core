@@ -252,7 +252,7 @@ final class BackgroundProcessManager
             } else {
                 // Only an authoritative retirement grants permission to kill.
                 // Unknown outcomes retain ownership for shutdown reconciliation.
-                $this->reapOwnedLaunches();
+                $this->reapOwnedLaunches($filePrefix);
             }
             throw $exception;
         }
@@ -942,33 +942,41 @@ final class BackgroundProcessManager
         return $count;
     }
 
-    private function reapOwnedLaunches(): int
+    private function reapOwnedLaunches(?string $onlyIdentity = null): int
     {
         $count = 0;
         foreach ($this->ownedLaunches as $identity => $launch) {
+            if (null !== $onlyIdentity && $identity !== $onlyIdentity) {
+                continue;
+            }
             try {
-                $status = $this->ownerClient?->retire(new BashOwnershipRequestDTO($identity, $launch['owner']));
-                if (BashOwnershipStatusEnum::Retired === $status) {
-                    // Infrastructure retirement is not a user stop and must not
-                    // suppress completion delivery by marking it notified.
-                    // A completed wrapper's PID may already have been reused.
-                    // Its immutable sidecar is stronger evidence than liveness.
-                    if (null !== $this->lifecycle->readStatusFile($launch['status']) || !$this->lifecycle->isAlive($launch['pid'])) {
-                        unset($this->ownedLaunches[$identity]);
-                        continue;
+                $count += $this->lifecycle->withSidecarLock($launch['status'], function () use ($identity, $launch): int {
+                    $status = $this->ownerClient?->retire(new BashOwnershipRequestDTO($identity, $launch['owner']));
+                    if (BashOwnershipStatusEnum::Retired === $status) {
+                        // Infrastructure retirement is not a user stop and must not
+                        // suppress completion delivery by marking it notified.
+                        // Hold the sidecar lock across the owner round trip: deletion
+                        // after its reply cannot erase evidence before signalling.
+                        if (null !== $this->lifecycle->readStatusFile($launch['status']) || !$this->lifecycle->isAlive($launch['pid'])) {
+                            return 0;
+                        }
+                        $this->lifecycle->sendTerm($launch['pid'], $launch['pgid']);
+                        $deadline = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+                        while (null === $this->lifecycle->readStatusFile($launch['status']) && $this->lifecycle->isAlive($launch['pid']) && hrtime(true) < $deadline) {
+                            delay(0.05);
+                        }
+                        if (null === $this->lifecycle->readStatusFile($launch['status']) && $this->lifecycle->isAlive($launch['pid'])) {
+                            $this->lifecycle->sendKill($launch['pid'], $launch['pgid']);
+                        }
+
+                        return 1;
                     }
-                    $this->lifecycle->sendTerm($launch['pid'], $launch['pgid']);
-                    $deadline = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
-                    while (null === $this->lifecycle->readStatusFile($launch['status']) && $this->lifecycle->isAlive($launch['pid']) && hrtime(true) < $deadline) {
-                        delay(0.05);
+                    if (!\in_array($status, [BashOwnershipStatusEnum::Accepted, BashOwnershipStatusEnum::ProcessMissing, BashOwnershipStatusEnum::ProcessFinished], true)) {
+                        throw new \RuntimeException('Bash retirement refused: '.($status->value ?? 'no_owner'));
                     }
-                    if (null === $this->lifecycle->readStatusFile($launch['status']) && $this->lifecycle->isAlive($launch['pid'])) {
-                        $this->lifecycle->sendKill($launch['pid'], $launch['pgid']);
-                    }
-                    ++$count;
-                } elseif (BashOwnershipStatusEnum::Accepted !== $status) {
-                    throw new \RuntimeException('Bash retirement refused: '.($status->value ?? 'no_owner'));
-                }
+
+                    return 0;
+                });
                 unset($this->ownedLaunches[$identity]);
             } catch (\Throwable $error) {
                 $this->logger->error('background_process.retirement_unknown', [

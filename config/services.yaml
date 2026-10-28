@@ -670,6 +670,21 @@ services:
     arguments:
       - '@hatfield.controller.session_owner.lock_store'
 
+  hatfield.bash.sidecar_lock_store:
+    class: Symfony\Component\Lock\Store\FlockStore
+    arguments:
+      - '%app.cwd%/.hatfield/locks/bash-sidecars'
+
+  hatfield.bash.sidecar_lock_factory:
+    class: Symfony\Component\Lock\LockFactory
+    arguments:
+      - '@hatfield.bash.sidecar_lock_store'
+
+  Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle:
+    arguments:
+      # Share sidecar locks across worker/cache/install identities in this project.
+      $lockFactory: '@hatfield.bash.sidecar_lock_factory'
+
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
       $dispatcher: '@event_dispatcher'

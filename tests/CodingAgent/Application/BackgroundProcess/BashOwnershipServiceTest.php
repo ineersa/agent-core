@@ -100,7 +100,32 @@ final class BashOwnershipServiceTest extends IsolatedKernelTestCase
         $ownership = new BashOwnershipRequestDTO($request->identity, $owner);
         $this->assertSame(BashOwnershipStatusEnum::ProcessFinished, $this->service()->accept($ownership));
         $this->assertNull($connection->fetchOne('SELECT backgrounded_at FROM background_process WHERE id = ?', [$result->recordId]));
-        $this->assertSame(BashOwnershipStatusEnum::Retired, $this->service()->retire($ownership));
+        $this->assertSame($stopped ? BashOwnershipStatusEnum::Retired : BashOwnershipStatusEnum::ProcessFinished, $this->service()->retire($ownership));
+    }
+
+    #[TestWith([false, false])]
+    #[TestWith([false, true])]
+    #[TestWith([true, false])]
+    #[TestWith([true, true])]
+    public function testRetirementRelinquishesFinishedOrRemovedLaunches(bool $removed, bool $retiredBeforeCompletion): void
+    {
+        $owner = self::getContainer()->get(HatfieldSessionStore::class)->createSession();
+        $request = $this->registration($owner);
+        $result = self::getContainer()->get(BashRegistrationService::class)->register($request);
+        $service = $this->service();
+        $ownership = new BashOwnershipRequestDTO($request->identity, $owner);
+        if ($retiredBeforeCompletion) {
+            $this->assertSame(BashOwnershipStatusEnum::Retired, $service->retire($ownership));
+        }
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        $connection->executeStatement("UPDATE background_process SET finished_at = '2026-10-28 00:00:01' WHERE id = ?", [$result->recordId]);
+        if ($removed) {
+            self::getContainer()->get(ProcessStore::class)->deleteById($result->recordId);
+        }
+        $expected = $removed ? BashOwnershipStatusEnum::ProcessMissing : BashOwnershipStatusEnum::ProcessFinished;
+        $this->assertSame($expected, $service->retire($ownership), 'A fence must not authorize signals after completion or maintenance.');
+        $this->assertSame($expected, $service->retire($ownership), 'Repeated retirement cannot restore signal permission.');
+        $this->assertSame(BashOwnershipStatusEnum::Retired, $service->accept($ownership));
     }
 
     private function service(): BashOwnershipService

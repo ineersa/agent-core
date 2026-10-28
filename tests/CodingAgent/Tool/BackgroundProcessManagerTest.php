@@ -16,6 +16,8 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BackgroundProcessManager
@@ -622,7 +624,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             $this->assertSame([], $grace->getValue($this->manager));
         } finally {
             // The removed row cannot supervise this test-owned group anymore.
-            (new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger()))->sendKill($process->pid, $record->pgid);
+            (new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger(), new LockFactory(new FlockStore())))->sendKill($process->pid, $record->pgid);
         }
     }
 
@@ -689,7 +691,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         // ProcessStore uses the container's EntityManager — no manual ORM setup.
         $store = static::getContainer()->get(ProcessStore::class);
-        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
         $this->logger = new TestLogger();
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, $this->logger);
     }
@@ -703,7 +705,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         );
 
         $store = static::getContainer()->get(ProcessStore::class);
-        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
 
         return new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
     }

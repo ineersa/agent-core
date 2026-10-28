@@ -23,6 +23,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Scheduler\Attribute\AsPeriodicTask;
 use Symfony\Component\Uid\Uuid;
 
@@ -53,7 +55,7 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
         $config = new BackgroundProcessConfig(storageDir: $this->tmpDir);
         $this->store = static::getContainer()->get(ProcessStore::class);
         $this->logger = new TestLogger();
-        $this->lifecycle = new ProcessLifecycle($config, $this->logger);
+        $this->lifecycle = new ProcessLifecycle($config, $this->logger, new LockFactory(new FlockStore()));
         $this->manager = new BackgroundProcessManager(
             $this->store,
             $this->lifecycle,
@@ -404,7 +406,7 @@ PHP);
     private function rebuildTask(string $storageDir): void
     {
         $config = new BackgroundProcessConfig(storageDir: $storageDir);
-        $this->lifecycle = new ProcessLifecycle($config, $this->logger);
+        $this->lifecycle = new ProcessLifecycle($config, $this->logger, new LockFactory(new FlockStore()));
         $this->manager = new BackgroundProcessManager(
             $this->store,
             $this->lifecycle,

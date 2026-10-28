@@ -51,7 +51,12 @@ final readonly class BashOwnershipService
 
                 // Acceptance is an ownership transfer, not a worker-local flag.
                 // Retirement can never revoke it, including after a lost reply.
-                return (bool) $fence['accepted'] ? BashOwnershipStatusEnum::Accepted : BashOwnershipStatusEnum::Retired;
+                if ((bool) $fence['accepted']) {
+                    return BashOwnershipStatusEnum::Accepted;
+                }
+                if ($accept) {
+                    return BashOwnershipStatusEnum::Retired;
+                }
             }
             $receipt = $connection->fetchAssociative('SELECT * FROM bash_registration_receipt WHERE identity = ?', [$request->identity]);
             if (false !== $receipt && (string) $receipt['owner_session_id'] !== $request->ownerSessionId) {
@@ -67,14 +72,28 @@ final readonly class BashOwnershipService
                         ? BashOwnershipStatusEnum::ProcessMissing : BashOwnershipStatusEnum::ProcessFinished;
                 }
             }
-            $fence = new BashLaunchOwnership();
-            $fence->identity = $request->identity;
-            $fence->owner = $this->entityManager->getReference(HatfieldSession::class, (int) $request->ownerSessionId);
-            $fence->accepted = $accept;
-            $this->entityManager->persist($fence);
+            if (false === $fence) {
+                $fence = new BashLaunchOwnership();
+                $fence->identity = $request->identity;
+                $fence->owner = $this->entityManager->getReference(HatfieldSession::class, (int) $request->ownerSessionId);
+                $fence->accepted = $accept;
+                $this->entityManager->persist($fence);
+            }
 
             // Retirement records no user-stop cause and acknowledges no completion.
             // Its tombstone also refuses registration which has not arrived yet.
+            // A fence is not lasting signal permission: maintenance may remove
+            // completed rows while the originating worker remains alive.
+            if (!$accept && false !== $receipt) {
+                $process = $connection->fetchAssociative('SELECT finished_at FROM background_process WHERE id = ?', [$receipt['record_id']]);
+                if (false === $process) {
+                    return BashOwnershipStatusEnum::ProcessMissing;
+                }
+                if (null !== $process['finished_at']) {
+                    return BashOwnershipStatusEnum::ProcessFinished;
+                }
+            }
+
             return $accept ? BashOwnershipStatusEnum::Accepted : BashOwnershipStatusEnum::Retired;
         }));
     }

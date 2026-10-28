@@ -20,6 +20,8 @@ use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Thesis: controller lifecycle events remove accepted process state only for
@@ -44,7 +46,7 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $config = new BackgroundProcessConfig(storageDir: $this->tmpDir, stopGraceSeconds: 0);
         $logger = new TestLogger();
         $this->store = static::getContainer()->get(ProcessStore::class);
-        $this->lifecycle = new ProcessLifecycle($config, $logger);
+        $this->lifecycle = new ProcessLifecycle($config, $logger, new LockFactory(new FlockStore()));
         $this->manager = new BackgroundProcessManager($this->store, $this->lifecycle, $config, $logger);
         $listener = new BackgroundProcessControllerSessionLifecycleListener(
             static::getContainer()->get(BackgroundProcessCompletionPoller::class),

@@ -71,7 +71,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         // ProcessStore comes from the container (real Doctrine schema, no manual ORM).
         $store = static::getContainer()->get(ProcessStore::class);
-        $lifecycle = new ProcessLifecycle($this->config, new NullLogger());
+        $lifecycle = new ProcessLifecycle($this->config, new NullLogger(), new LockFactory(new FlockStore()));
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->config, new NullLogger());
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->tool = new BgStatusTool(

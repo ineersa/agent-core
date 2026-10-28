@@ -6,6 +6,7 @@ require dirname(__DIR__, 5).'/vendor/autoload.php';
 
 use Amp\CancelledException;
 use Amp\DeferredCancellation;
+use Amp\DeferredFuture;
 use Amp\Process\Process;
 use Amp\TimeoutCancellation;
 use DAMA\DoctrineTestBundle\Doctrine\DBAL\StaticDriver;
@@ -13,16 +14,20 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashOwnershipActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashOwnershipService;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashOwnershipStatusEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationReplyPublisher;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationService;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationStatusEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashWorkerLifecycleSubscriber;
 use Ineersa\CodingAgent\Application\BackgroundProcess\ChangeBashOwnershipHandler;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipRequestDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationReplyDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationResultDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\RegisterBashProcessHandler;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
@@ -41,6 +46,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
+use Ineersa\CodingAgent\Tool\BackgroundProcessProvisionalCleanupTask;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Envelope;
@@ -84,8 +90,25 @@ if ('worker' === $mode || 'replacement' === $mode) {
             return;
         }
         $socket = 'tcp://'.$address;
-        $work = '$s=stream_socket_client('.var_export($socket, true).'); fwrite($s,"ready\n"); fgets($s); echo "BACKGROUND_SURVIVED\n"; fclose($s);';
+        $work = '$s=stream_socket_client('.var_export($socket, true).'); fwrite($s,"ready\n"); fgets($s); echo "BACKGROUND_SURVIVED\n"; fwrite($s,"done\n"); fclose($s);';
         $result = $manager->start(escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg($work), $runId, 'background-survival', backgroundRequested: true);
+        if ('registration-failure' === $scenario) {
+            try {
+                $manager->start('exit 0', $runId, 'refused-registration');
+                throw new LogicException('Second registration unexpectedly succeeded.');
+            } catch (RuntimeException $error) {
+                if (!str_contains($error->getMessage(), 'Bash registration refused: input_conflict')) {
+                    throw $error;
+                }
+                fwrite(\STDERR, 'Expected registration refusal: '.$error->getMessage()."\n");
+            }
+            $record = $container->get(ProcessStore::class)->fetchByRecordId($result->id);
+            $lifecycle = $container->get(ProcessLifecycle::class);
+            if (null !== $lifecycle->readStatusFile($record->statusPath) || !$lifecycle->isAlive($result->pid)) {
+                fwrite(\STDERR, "Sibling foreground launch was terminated by another registration failure.\n");
+                throw new RuntimeException('Sibling foreground launch was terminated by another registration failure.');
+            }
+        }
         if ('lost' === $scenario) {
             $identity = $container->get(EntityManagerInterface::class)->getConnection()->fetchOne('SELECT identity FROM bash_registration_receipt WHERE record_id = ?', [$result->id]);
             $cancellation = new DeferredCancellation();
@@ -101,7 +124,7 @@ if ('worker' === $mode || 'replacement' === $mode) {
                 fwrite(\STDERR, "Acceptance reply lost after commit.\n");
             }
             $cancelTask->await();
-        } elseif ('foreground' !== $scenario) {
+        } elseif (!in_array($scenario, ['foreground', 'maintenance', 'maintenance-race'], true)) {
             $manager->markBackgroundedForRecord($result->id, $runId);
         }
         file_put_contents($marker.'.launch', json_encode(['id' => $result->id, 'pid' => $result->pid], \JSON_THROW_ON_ERROR));
@@ -132,15 +155,47 @@ $registration = new RegisterBashProcessHandler(new BashRegistrationService($cont
 $ownership = new ChangeBashOwnershipHandler($container->get(BashOwnershipService::class), $publisher, $locks, $validator, $transportSession);
 $stop = new DeferredCancellation();
 $worker = null;
-$ownerTask = async(static function () use ($requests, $registration, $ownership, $stop, $scenario, $container, &$worker): void {
+$maintenanceTask = null;
+$maintain = static function () use ($container, $manager, $owner): void {
+    $task = new BackgroundProcessProvisionalCleanupTask($manager, $container->get(ProcessStore::class), $container->get(ProcessLifecycle::class), new NullLogger(), $container->get(OwnedRunIdsProvider::class), $owner);
+    $task();
+};
+$finish = static function () use ($container): string {
+    $connection = $container->get(EntityManagerInterface::class)->getConnection();
+    $row = $connection->fetchAssociative('SELECT id, status_path FROM background_process');
+    // Model a stale cached PID safely: the test-owned socket-held process stays
+    // alive while durable completion is aged for real scheduled maintenance.
+    // No OS PID reuse or unrelated process is involved.
+    $connection->executeStatement("UPDATE background_process SET finished_at = '2020-01-01 00:00:00', exit_code = 0 WHERE id = ?", [$row['id']]);
+    file_put_contents($row['status_path'], "0\n");
+
+    return $row['status_path'];
+};
+$ownerTask = async(static function () use ($requests, $registration, $ownership, $publisher, $transportSession, $stop, $scenario, $container, $maintain, $finish, &$maintenanceTask, &$worker): void {
     while (!$stop->getCancellation()->isRequested()) {
         $requests->wait(1000, $stop->getCancellation());
         foreach ($requests->get() as $delivery) {
             $command = $delivery->getMessage();
             if ($command instanceof RegisterBashProcessCommandDTO) {
-                $registration($command);
+                if ('registration-failure' === $scenario && 'refused-registration' === $command->registration->toolCallId) {
+                    $publisher->publish(new BashRegistrationReplyDTO($transportSession, $command->incarnation, $command->correlation, new BashRegistrationResultDTO(BashRegistrationStatusEnum::InputConflict)));
+                } else {
+                    $registration($command);
+                }
             } elseif ($command instanceof BashOwnershipCommandDTO) {
-                if ('lost' === $scenario && BashOwnershipActionEnum::Accept === $command->action) {
+                if ('maintenance-race' === $scenario && BashOwnershipActionEnum::Retire === $command->action) {
+                    $status = $container->get(BashOwnershipService::class)->retire($command->request);
+                    $finish();
+                    $started = new DeferredFuture();
+                    $maintenanceTask = async(static function () use ($maintain, $started): void {
+                        $started->complete();
+                        $maintain();
+                    });
+                    // Run deletion to its lock boundary before publishing the
+                    // already-decided reply. No timing window chooses the order.
+                    $started->getFuture()->await();
+                    $publisher->publish(new BashRegistrationReplyDTO($transportSession, $command->incarnation, $command->correlation, ownership: $status));
+                } elseif ('lost' === $scenario && BashOwnershipActionEnum::Accept === $command->action) {
                     $container->get(BashOwnershipService::class)->accept($command->request);
                     // Drop the response after the actual commit. This barrier
                     // cancels the waiter, never the metadata operation.
@@ -169,8 +224,13 @@ try {
     if (null === $socket || "ready\n" !== $socket->read($cancel)) {
         throw new RuntimeException('Workload did not become ready.');
     }
-    if ("ready\n" !== $worker->getStdout()->read($cancel)) {
-        throw new RuntimeException('Worker did not reach its exit barrier.');
+    $workerReady = $worker->getStdout()->read($cancel);
+    if ("ready\n" !== $workerReady) {
+        throw new RuntimeException('Worker did not reach its exit barrier: '.$workerReady.buffer($worker->getStdout(), $cancel).$stderr->await($cancel));
+    }
+    if ('maintenance' === $scenario) {
+        $finish();
+        $maintain();
     }
     $worker->getStdin()->write("exit\n");
     if (0 !== $workerExit->await($cancel)) {
@@ -178,6 +238,22 @@ try {
     }
     $launch = json_decode(file_get_contents($marker.'.launch'), true, flags: \JSON_THROW_ON_ERROR);
     $lifecycle = $container->get(ProcessLifecycle::class);
+    if (in_array($scenario, ['maintenance', 'maintenance-race'], true)) {
+        $maintenanceTask?->await($cancel);
+        if (!$lifecycle->isAlive($launch['pid'])) {
+            throw new RuntimeException('Retirement signalled a live cached PID after completion maintenance.');
+        }
+        if (null !== $container->get(ProcessStore::class)->fetchByRecordId($launch['id'])) {
+            throw new RuntimeException('Real maintenance did not remove the completed row.');
+        }
+        $socket->write("release\n");
+        if ("done\n" !== buffer($socket, $cancel)) {
+            throw new RuntimeException('Preserved cached process did not complete after barrier release.');
+        }
+        file_put_contents($marker, json_encode(['survived' => true], \JSON_THROW_ON_ERROR));
+
+        return;
+    }
     if ('foreground' !== $scenario && !$lifecycle->isAlive($launch['pid'])) {
         throw new RuntimeException('Accepted job died with its worker.');
     }

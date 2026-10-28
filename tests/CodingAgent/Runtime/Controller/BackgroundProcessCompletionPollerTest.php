@@ -47,6 +47,8 @@ use Revolt\EventLoop;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\DependencyInjection\ServiceLocator;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -107,7 +109,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
         $poller = null;
         $logger = $this->createStub(LoggerInterface::class);
         $logger->method('info')->willReturnCallback(static function (string $message) use (&$poller): void {
@@ -170,7 +172,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
         $owner = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
         $other = new Kernel('test', true);
         $other->boot();
@@ -229,7 +231,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -264,7 +266,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->commandBus = new MessageBus([new SendMessageMiddleware($locator)]);
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
-        $poller = $this->createPoller($store, new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger()), $config, new NullLogger()));
+        $poller = $this->createPoller($store, new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore())), $config, new NullLogger()));
         $poll = new \ReflectionMethod($poller, 'poll');
         $pending = new DeferredFuture();
         $release = new DeferredFuture();
@@ -352,7 +354,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -388,7 +390,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -415,7 +417,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -436,7 +438,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         // Construct with empty string — must be normalized to null
@@ -494,7 +496,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager, 'test-regression-run');
@@ -546,7 +548,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -592,7 +594,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager, 'test-poller-run');
@@ -612,7 +614,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
         $owner = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
         $fifo = $this->tmpDir.'/timeout-cleanup';
         $this->assertTrue(posix_mkfifo($fifo, 0600));
@@ -703,7 +705,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $config = new BackgroundProcessConfig(storageDir: $this->tmpDir, stopGraceSeconds: 0);
-        $manager = new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger()), $config, new NullLogger());
+        $manager = new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore())), $config, new NullLogger());
         $process = $manager->start('sleep 10', 'test-poller-run', 'zero-grace-call', hrtime(true) - 1);
         try {
             $manager->markBackgroundedForRecord($process->id, 'test-poller-run');
