@@ -26,6 +26,7 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\SqliteQueue\Client;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
+use PHPUnit\Framework\Assert;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -431,7 +432,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
 
             public function reject(Envelope $envelope): void
             {
-                self::fail('Unexpected rejection');
+                Assert::fail('Unexpected rejection');
             }
         };
         $bus = new class($handle) implements MessageBusInterface {

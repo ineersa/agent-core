@@ -494,8 +494,7 @@ final class HeadlessController
         // Parent JsonlProcessAgentSessionClient stop budget is 7s. Share one
         // deadline across consumers and broker so sequential 5s+5s grace cannot
         // outlive that parent SIGKILL.
-        $this->consumerSupervisor->shutdownUntil($deadline);
-        $this->brokerSupervisor->shutdownUntil($deadline);
+        $this->consumerSupervisor->shutdownUntil($deadline, keepRunControl: true);
 
         try {
             $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
@@ -507,6 +506,8 @@ final class HeadlessController
                 'exception' => $exception,
             ]);
         } finally {
+            $this->consumerSupervisor->shutdownUntil($deadline);
+            $this->brokerSupervisor->shutdownUntil($deadline);
             // Release only after consumers and lifecycle listeners finish so a
             // replacement controller cannot race against cleanup.
             $this->releaseSessionOwnerLock();

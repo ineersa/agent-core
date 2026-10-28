@@ -43,6 +43,9 @@ final class SessionSqliteQueueBrokerTopology
 
     public const int CONNECTIONS_PER_NON_CONSUMER_PROCESS = self::BROKER_TRANSPORTS;
 
+    /** Owner reply publisher plus the sole tool requester's operations and WAIT. */
+    public const int BASH_REGISTRATION_REPLY_CONNECTIONS = 3;
+
     private function __construct()
     {
     }
@@ -63,7 +66,7 @@ final class SessionSqliteQueueBrokerTopology
         }
 
         $consumerProcesses = $llmWorkers + $toolWorkers + self::FIXED_BROKER_CONSUMERS;
-        $nonConsumerConnections = self::NON_CONSUMER_BROKER_PROCESSES * self::CONNECTIONS_PER_NON_CONSUMER_PROCESS;
+        $nonConsumerConnections = (self::NON_CONSUMER_BROKER_PROCESSES * self::CONNECTIONS_PER_NON_CONSUMER_PROCESS) + self::BASH_REGISTRATION_REPLY_CONNECTIONS;
         $maxConsumerProcesses = intdiv(\PHP_INT_MAX - $nonConsumerConnections, self::CONNECTIONS_PER_BROKER_CONSUMER_PROCESS);
         if ($consumerProcesses > $maxConsumerProcesses) {
             throw new \InvalidArgumentException(\sprintf('Broker connection budget overflows for llmWorkers=%d toolWorkers=%d.', $llmWorkers, $toolWorkers));

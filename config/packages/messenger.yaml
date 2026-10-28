@@ -104,6 +104,8 @@ framework:
                 dsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 
         routing:
+            Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipCommandDTO: run_control
+            Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO: run_control
             # ToolPayloadMiddleware selects tool/agent/mcp/run_control through
             # TransportNamesStamp. Inline tool messages have no fallback route.
             Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO: run_control

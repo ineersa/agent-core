@@ -118,6 +118,34 @@ final class ProcessStore
         return $this->repository->findFreshById($id);
     }
 
+    public function sessionForRecord(int $id): ?string
+    {
+        $session = $this->entityManager->getConnection()->fetchOne('SELECT session_id FROM background_process WHERE id = ?', [$id]);
+
+        return false === $session ? null : (string) $session;
+    }
+
+    /** Resolve the retained session, not the controller's transport identity. */
+    public function ownerSessionForRun(string $runId): ?string
+    {
+        $connection = $this->entityManager->getConnection();
+        $seen = [];
+        while ('' !== $runId && !isset($seen[$runId])) {
+            $seen[$runId] = true;
+            $session = $connection->fetchOne('SELECT id FROM hatfield_session WHERE CAST(id AS TEXT) = ?', [$runId]);
+            if (false !== $session) {
+                return (string) $session;
+            }
+            $parent = $connection->fetchOne('SELECT parent_run_id FROM run_operational_state WHERE run_id = ?', [$runId]);
+            if (!\is_string($parent)) {
+                return null;
+            }
+            $runId = $parent;
+        }
+
+        return null;
+    }
+
     /**
      * Check whether a row exists for the given PID.
      *

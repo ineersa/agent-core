@@ -275,11 +275,14 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
      * Sequential Process::stop(grace) per child would delay the last consumer
      * by N×grace and orphan the tail of a large pool under parent timeout.
      */
-    public function shutdownUntil(float $deadline): void
+    public function shutdownUntil(float $deadline, bool $keepRunControl = false): void
     {
         $this->shuttingDown = true;
 
-        if ([] === $this->consumers) {
+        // Tools may need committed lifecycle replies while draining. Keep the
+        // owner alive until execution shutdown and session cleanup complete.
+        $stopping = array_filter($this->consumers, fn (string $key): bool => !$keepRunControl || 'run_control' !== $this->extractTransportName($key), \ARRAY_FILTER_USE_KEY);
+        if ([] === $stopping) {
             return;
         }
 
@@ -292,7 +295,7 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         ]);
 
         // Phase 1: signal every running tracked child before any wait.
-        foreach ($this->consumers as $key => $process) {
+        foreach ($stopping as $key => $process) {
             if (!$process->isRunning()) {
                 continue;
             }
@@ -314,7 +317,7 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         // Phase 2: one shared grace deadline for the whole tracked set.
         while (microtime(true) < $deadline) {
             $anyRunning = false;
-            foreach ($this->consumers as $process) {
+            foreach ($stopping as $process) {
                 if ($process->isRunning()) {
                     $anyRunning = true;
                     break;
@@ -327,7 +330,7 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         }
 
         // Phase 3: escalate only survivors (Process::stop(0) => immediate SIGKILL path).
-        foreach ($this->consumers as $key => $process) {
+        foreach ($stopping as $key => $process) {
             if (!$process->isRunning()) {
                 continue;
             }
@@ -349,7 +352,9 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
             'count' => \count($this->consumers),
         ]);
 
-        $this->consumers = [];
+        foreach ($stopping as $key => $process) {
+            unset($this->consumers[$key]);
+        }
     }
 
     /**

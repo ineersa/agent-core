@@ -205,7 +205,11 @@ final class BashTool implements HatfieldToolProviderInterface
                 }
 
                 if ($record->backgroundRequested) {
-                    $this->manager->markBackgroundedForRecord($dbId, $sessionId);
+                    if (!$this->manager->tryMarkBackgroundedForRecord($dbId, $sessionId)) {
+                        // Completion won the owner's transaction. Re-read it on
+                        // the next pass instead of issuing a background ACK.
+                        continue;
+                    }
 
                     return \sprintf(
                         "Command moved to background.\nPID: %d\nLog: %s\n\nYou will be notified when the process finishes. Use bg_status log pid=%d to inspect output or bg_status stop pid=%d to stop it.",

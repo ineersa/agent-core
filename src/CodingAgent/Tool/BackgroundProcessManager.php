@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashOwnershipStatusEnum;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationStatusEnum;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipRequestDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
@@ -82,6 +87,12 @@ final class BackgroundProcessManager
      */
     private array $ownedRecordIds = [];
 
+    private ?BashRegistrationClient $ownerClient = null;
+    /** @var array<string, array{pid: int, pgid: ?int, status: string, owner: string}> */
+    private array $ownedLaunches = [];
+    /** @var array<int, string> */
+    private array $launchIdentities = [];
+
     /** @var array<int, int> Immutable record ID to monotonic TERM grace deadline. */
     private array $timeoutGraceDeadlines = [];
 
@@ -111,11 +122,9 @@ final class BackgroundProcessManager
      *
      * Safe to call multiple times — idempotent.
      *
-     * This does NOT conflict with Symfony Messenger workers:
-     * BackgroundProcessManager is only constructed in the
-     * controller/in-process agent paths, never inside
-     * messenger:consume worker processes. Each agent process
-     * registers exactly one shutdown function.
+     * Tool workers also construct this manager. Their owner-backed retirement
+     * decision fences delayed acceptance before foreground cleanup signals.
+     * Accepted jobs belong to the controller, not the retiring worker.
      */
     public function registerShutdownHandler(): void
     {
@@ -128,6 +137,11 @@ final class BackgroundProcessManager
         register_shutdown_function(function (): void {
             $this->shutdownCleanup();
         });
+    }
+
+    public function useLifecycleOwner(BashRegistrationClient $client): void
+    {
+        $this->ownerClient = $client;
     }
 
     // ─── Public lifecycle API ─────────────────────────────────────────
@@ -173,11 +187,18 @@ final class BackgroundProcessManager
      */
     public function start(string $command, ?string $sessionId = null, ?string $toolCallId = null, ?int $deadlineNanoseconds = null, bool $backgroundRequested = false): StartResult
     {
+        $owner = null;
+        if (null !== $this->ownerClient) {
+            $owner = $this->store->ownerSessionForRun($sessionId ?? '');
+            if (null === $owner) {
+                throw new \RuntimeException('Bash launch has no retained owning session.');
+            }
+        }
         // Ensure storage directory exists
         $bgDir = $this->lifecycle->ensureStorageDir();
 
         // Generate unique file prefix and file paths
-        $filePrefix = bin2hex(random_bytes(8));
+        $filePrefix = bin2hex(random_bytes(16));
         $pidFile = $bgDir.'/'.$filePrefix.'.pid';
         $statusFile = $bgDir.'/'.$filePrefix.'.status';
         $logFile = $bgDir.'/'.$filePrefix.'.log';
@@ -191,21 +212,48 @@ final class BackgroundProcessManager
 
         // Persist launch intent with the initial row; acknowledgement still belongs to the supervisor.
         try {
-            $dbId = $this->store->insertRecord([
-                'pid' => $pid,
-                'pgid' => $pgid,
-                'session_id' => $sessionId ?? '',
-                'command' => $command,
-                'tool_call_id' => $toolCallId,
-                'deadline_nanoseconds' => $deadlineNanoseconds,
-                'background_requested' => $backgroundRequested,
-                'log_path' => $logFile,
-                'status_path' => $statusFile,
-                'started_at' => $now,
-            ]);
+            if (null !== $this->ownerClient) {
+                // Remember the captured launch before publication. A send failure
+                // does not tell us whether registration committed remotely.
+                $this->ownedLaunches[$filePrefix] = ['pid' => $pid, 'pgid' => $pgid, 'status' => $statusFile, 'owner' => $owner];
+                $result = $this->ownerClient->register(new RegisterBashProcessDTO(
+                    $filePrefix, $owner, $sessionId ?? '', $pid, $pgid,
+                    $command, $toolCallId, $deadlineNanoseconds, $backgroundRequested,
+                    $logFile, $statusFile, $now,
+                ));
+                if (BashRegistrationStatusEnum::Registered === $result->status && !$result->processExists) {
+                    // Provisional cleanup already retired this completed launch.
+                    // Its old PID is no longer safe to signal after reply loss.
+                    unset($this->ownedLaunches[$filePrefix]);
+                }
+                if (BashRegistrationStatusEnum::Registered !== $result->status || !$result->processExists || null === $result->recordId) {
+                    throw new \RuntimeException('Bash registration refused: '.$result->status->value.([] !== $result->invalidFields ? ' ('.implode(', ', $result->invalidFields).')' : ''));
+                }
+                $dbId = $result->recordId;
+                $this->launchIdentities[$dbId] = $filePrefix;
+            } else {
+                $dbId = $this->store->insertRecord([
+                    'pid' => $pid,
+                    'pgid' => $pgid,
+                    'session_id' => $sessionId ?? '',
+                    'command' => $command,
+                    'tool_call_id' => $toolCallId,
+                    'deadline_nanoseconds' => $deadlineNanoseconds,
+                    'background_requested' => $backgroundRequested,
+                    'log_path' => $logFile,
+                    'status_path' => $statusFile,
+                    'started_at' => $now,
+                ]);
+            }
         } catch (\Throwable $exception) {
-            // No durable row exists. Abort the captured launch without depending on a working database.
-            $this->lifecycle->sendKill($pid, $pgid);
+            if (null === $this->ownerClient) {
+                // Local insert failures have a known outcome.
+                $this->lifecycle->sendKill($pid, $pgid);
+            } else {
+                // Only an authoritative retirement grants permission to kill.
+                // Unknown outcomes retain ownership for shutdown reconciliation.
+                $this->reapOwnedLaunches();
+            }
             throw $exception;
         }
 
@@ -542,6 +590,13 @@ final class BackgroundProcessManager
      */
     public function markBackgroundedForRecord(int $recordId, ?string $sessionId = null): void
     {
+        if (null !== $this->ownerClient && isset($this->launchIdentities[$recordId])) {
+            if (!$this->tryMarkBackgroundedForRecord($recordId, $sessionId)) {
+                throw new \RuntimeException('Bash process finished before background acceptance.');
+            }
+
+            return;
+        }
         $entity = $this->store->fetchByRecordId($recordId);
 
         if (null === $entity) {
@@ -562,6 +617,30 @@ final class BackgroundProcessManager
             'record_id' => $recordId,
             'process_session_id' => $sessionId ?? '',
         ]);
+    }
+
+    /** A completion committed before acceptance belongs to the foreground result. */
+    public function tryMarkBackgroundedForRecord(int $recordId, ?string $sessionId = null): bool
+    {
+        if (null === $this->ownerClient || !isset($this->launchIdentities[$recordId])) {
+            $this->markBackgroundedForRecord($recordId, $sessionId);
+
+            return true;
+        }
+        $recordSession = $this->store->sessionForRecord($recordId);
+        if (null === $recordSession || (null !== $sessionId && $recordSession !== $sessionId)) {
+            throw new \RuntimeException('Bash background acceptance record/session mismatch.');
+        }
+        $identity = $this->launchIdentities[$recordId];
+        $status = $this->ownerClient->accept(new BashOwnershipRequestDTO($identity, $this->ownedLaunches[$identity]['owner']));
+        if (BashOwnershipStatusEnum::ProcessFinished === $status) {
+            return false;
+        }
+        if (BashOwnershipStatusEnum::Accepted !== $status) {
+            throw new \RuntimeException('Bash background acceptance refused: '.$status->value);
+        }
+
+        return true;
     }
 
     /**
@@ -835,8 +914,12 @@ final class BackgroundProcessManager
      */
     private function reapOwnedProcesses(): int
     {
-        $count = 0;
+        $count = $this->reapOwnedLaunches();
         foreach (array_keys($this->ownedRecordIds) as $recordId) {
+            if (isset($this->launchIdentities[$recordId])) {
+                unset($this->ownedRecordIds[$recordId]);
+                continue;
+            }
             try {
                 $entity = $this->store->fetchByRecordId($recordId);
                 if (null !== $entity) {
@@ -852,6 +935,48 @@ final class BackgroundProcessManager
                     'event_type' => 'background_process.shutdown_cleanup_error',
                     'record_id' => $recordId,
                     'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $count;
+    }
+
+    private function reapOwnedLaunches(): int
+    {
+        $count = 0;
+        foreach ($this->ownedLaunches as $identity => $launch) {
+            try {
+                $status = $this->ownerClient?->retire(new BashOwnershipRequestDTO($identity, $launch['owner']));
+                if (BashOwnershipStatusEnum::Retired === $status) {
+                    // Infrastructure retirement is not a user stop and must not
+                    // suppress completion delivery by marking it notified.
+                    // A completed wrapper's PID may already have been reused.
+                    // Its immutable sidecar is stronger evidence than liveness.
+                    if (null !== $this->lifecycle->readStatusFile($launch['status']) || !$this->lifecycle->isAlive($launch['pid'])) {
+                        unset($this->ownedLaunches[$identity]);
+                        continue;
+                    }
+                    $this->lifecycle->sendTerm($launch['pid'], $launch['pgid']);
+                    $deadline = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+                    while (null === $this->lifecycle->readStatusFile($launch['status']) && $this->lifecycle->isAlive($launch['pid']) && hrtime(true) < $deadline) {
+                        delay(0.05);
+                    }
+                    if (null === $this->lifecycle->readStatusFile($launch['status']) && $this->lifecycle->isAlive($launch['pid'])) {
+                        $this->lifecycle->sendKill($launch['pid'], $launch['pgid']);
+                    }
+                    ++$count;
+                } elseif (BashOwnershipStatusEnum::Accepted !== $status) {
+                    throw new \RuntimeException('Bash retirement refused: '.($status->value ?? 'no_owner'));
+                }
+                unset($this->ownedLaunches[$identity]);
+            } catch (\Throwable $error) {
+                $this->logger->error('background_process.retirement_unknown', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.retirement_unknown',
+                    'session_id' => $launch['owner'],
+                    'run_id' => $launch['owner'],
+                    'exception' => $error,
                 ]);
             }
         }
