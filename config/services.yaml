@@ -222,6 +222,10 @@ services:
     arguments:
       $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
+  Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleHandler:
+    arguments:
+      $sessionId: '%env(HATFIELD_SESSION_ID)%'
+
   coding_agent.bash_scheduler_client:
     class: Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient
     arguments:

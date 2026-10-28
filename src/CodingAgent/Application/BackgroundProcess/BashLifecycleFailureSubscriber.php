@@ -8,6 +8,8 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipCommandDT
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationReplyDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\RegisterCodeModeInvocationDTO;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
@@ -37,7 +39,7 @@ final readonly class BashLifecycleFailureSubscriber implements EventSubscriberIn
             return;
         }
         $command = $event->getEnvelope()->getMessage();
-        if (!$command instanceof RegisterBashProcessCommandDTO && !$command instanceof BashOwnershipCommandDTO && !$command instanceof BashProcessCommandDTO) {
+        if (!$command instanceof RegisterBashProcessCommandDTO && !$command instanceof BashOwnershipCommandDTO && !$command instanceof BashProcessCommandDTO && !$command instanceof RegisterCodeModeInvocationDTO && !$command instanceof ReadyCodeModeInvocationDTO) {
             return;
         }
         $this->container->get(BashRegistrationReplyPublisher::class)->publish(new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, failed: true, role: $command->role));

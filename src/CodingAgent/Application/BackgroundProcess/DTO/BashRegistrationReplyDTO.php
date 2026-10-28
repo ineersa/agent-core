@@ -24,6 +24,8 @@ final readonly class BashRegistrationReplyDTO
         public bool $failed = false,
         public BashRequesterRoleEnum $role = BashRequesterRoleEnum::Tool,
         public ?BashProcessSnapshotDTO $process = null,
+        #[Assert\Length(min: 1, max: 128)]
+        public ?string $deferredId = null,
     ) {
     }
 }

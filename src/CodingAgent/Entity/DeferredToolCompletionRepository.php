@@ -56,60 +56,69 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
     public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
     {
         return $this->locks->synchronized($runId, function () use ($runId, $toolCallId): ?DeferredToolCompletionCorrelation {
-            $entity = $this->findFreshOneBy(['runId' => $runId, 'toolCallId' => $toolCallId]);
+            $id = $this->getEntityManager()->getConnection()->fetchOne('SELECT deferred_id FROM tool_deferred_completion WHERE run_id = ? AND tool_call_id = ?', [$runId, $toolCallId]);
 
-            return $entity instanceof DeferredToolCompletion && 'pending' === $entity->status ? $this->toCorrelation($entity) : null;
+            return false !== $id ? $this->findByDeferredId($id) : null;
         });
     }
 
     public function statusForRunAndToolCall(string $runId, string $toolCallId): ?string
     {
-        $entity = $this->findFreshOneBy(['runId' => $runId, 'toolCallId' => $toolCallId]);
+        $status = $this->getEntityManager()->getConnection()->fetchOne('SELECT status FROM tool_deferred_completion WHERE run_id = ? AND tool_call_id = ?', [$runId, $toolCallId]);
 
-        return $entity instanceof DeferredToolCompletion ? $entity->status : null;
+        return false !== $status ? $status : null;
     }
 
     public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation
     {
-        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
-        if (!$entity instanceof DeferredToolCompletion) {
+        $metadata = $this->findMetadataByDeferredId($deferredId);
+        if (null === $metadata) {
             return null;
         }
 
-        return $this->locks->synchronized($entity->runId, function () use ($deferredId): ?DeferredToolCompletionCorrelation {
-            $fresh = $this->findFreshOneBy(['deferredId' => $deferredId]);
+        return $this->locks->synchronized($metadata->reference->runId, function () use ($deferredId): ?DeferredToolCompletionCorrelation {
+            $fresh = $this->findMetadataByDeferredId($deferredId);
+            if (null === $fresh || 'pending' !== $fresh->status) {
+                return null;
+            }
+            $correlation = $this->payloads->readCorrelation($fresh->reference);
+            $reference = $fresh->reference;
+            if ([$correlation->deferredId, $correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->toolCallId, $correlation->attempt, $correlation->idempotencyKey]
+                !== [$deferredId, $reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId, $reference->attempt, $reference->idempotencyKey]) {
+                throw new ToolPayloadException('Deferred correlation reference does not match its index.');
+            }
 
-            return $fresh instanceof DeferredToolCompletion && 'pending' === $fresh->status ? $this->toCorrelation($fresh) : null;
+            return $correlation;
         });
     }
 
     public function findMetadataByDeferredId(string $deferredId): ?DeferredToolCompletionMetadataDTO
     {
-        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
-        if (!$entity instanceof DeferredToolCompletion) {
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative('SELECT * FROM tool_deferred_completion WHERE deferred_id = ?', [$deferredId]);
+        if (false === $row) {
             return null;
         }
-        $reference = $this->serializer->deserialize($entity->bodyReferenceJson, ToolPayloadReferenceDTO::class, 'json');
+        $reference = $this->serializer->deserialize($row['body_reference_json'], ToolPayloadReferenceDTO::class, 'json');
         $this->validateReference($reference);
         $identity = [$reference->runId, $reference->turnNo, $reference->stepId, $reference->toolCallId, $reference->attempt, $reference->idempotencyKey, $reference->orderIndex, $reference->toolName];
-        $storedIdentity = [$entity->runId, $entity->turnNo, $entity->stepId, $entity->toolCallId, $entity->attempt, $entity->idempotencyKey, $entity->orderIndex, $entity->toolName];
-        if ('correlation' !== $reference->kind || $identity !== $storedIdentity || !\in_array($entity->status, ['pending', 'completed'], true)) {
+        $storedIdentity = [$row['run_id'], $row['turn_no'], $row['step_id'], $row['tool_call_id'], $row['attempt'], $row['idempotency_key'], $row['order_index'], $row['tool_name']];
+        if ('correlation' !== $reference->kind || $identity !== $storedIdentity || !\in_array($row['status'], ['pending', 'completed'], true)) {
             throw new ToolPayloadException('Deferred correlation reference does not match its index.');
         }
 
         $accepted = null;
-        if (null !== $entity->acceptedResultReferenceJson) {
-            $accepted = $this->serializer->deserialize($entity->acceptedResultReferenceJson, ToolPayloadReferenceDTO::class, 'json');
+        if (null !== $row['accepted_result_reference_json']) {
+            $accepted = $this->serializer->deserialize($row['accepted_result_reference_json'], ToolPayloadReferenceDTO::class, 'json');
             $this->validateReference($accepted);
             if ('result' !== $accepted->kind || [$accepted->runId, $accepted->turnNo, $accepted->stepId, $accepted->toolCallId, $accepted->attempt, $accepted->idempotencyKey, $accepted->orderIndex]
-                !== [$entity->runId, $entity->turnNo, $entity->stepId, $entity->toolCallId, $entity->attempt, $entity->idempotencyKey, $entity->orderIndex]) {
+                !== [$row['run_id'], $row['turn_no'], $row['step_id'], $row['tool_call_id'], $row['attempt'], $row['idempotency_key'], $row['order_index']]) {
                 throw new ToolPayloadException('Deferred accepted result reference does not match its index.');
             }
         }
 
-        $accepted ??= 'pending' === $entity->status ? $this->payloads->findFirstResult($reference) : null;
+        $accepted ??= 'pending' === $row['status'] ? $this->payloads->findFirstResult($reference) : null;
 
-        return new DeferredToolCompletionMetadataDTO($entity->deferredId, $reference, $entity->status, $entity->readyAt, $entity->backgroundedAt, $accepted, $entity->interruptionReason, $entity->continuationRequired);
+        return new DeferredToolCompletionMetadataDTO($row['deferred_id'], $reference, $row['status'], null !== $row['ready_at'] ? new \DateTimeImmutable($row['ready_at']) : null, null !== $row['backgrounded_at'] ? new \DateTimeImmutable($row['backgrounded_at']) : null, $accepted, $row['interruption_reason'], (bool) $row['continuation_required']);
     }
 
     /** @return list<string> */
@@ -161,9 +170,9 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
     public function status(string $deferredId): ?string
     {
-        $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
+        $status = $this->getEntityManager()->getConnection()->fetchOne('SELECT status FROM tool_deferred_completion WHERE deferred_id = ?', [$deferredId]);
 
-        return $entity instanceof DeferredToolCompletion ? $entity->status : null;
+        return false !== $status ? $status : null;
     }
 
     public function markCompleted(string $deferredId): void

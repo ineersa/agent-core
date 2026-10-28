@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
+use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
@@ -67,6 +68,7 @@ final readonly class CodeModeHostBridge
         private ToolBatchStoreInterface $batches,
         private ToolPayloadStoreInterface $payloads,
         private MessageBusInterface $commandBus,
+        private CodeModeLifecycleService $lifecycle,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -103,7 +105,7 @@ final readonly class CodeModeHostBridge
                 $process = $this->startProcess($workspace, $cancelToken, $memoryLimit, $capture);
                 $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
                 if (null !== $deferredId) {
-                    $this->deferred->markReady($deferredId);
+                    $this->lifecycle->ready($parentContext->runId(), $deferredId);
                     if ($backgrounded) {
                         $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($parentContext->runId(), $deferredId, $parentContext->toolCallId()));
                     }
@@ -141,7 +143,8 @@ final readonly class CodeModeHostBridge
             return null;
         }
         $deferredId = UuidV7::v7()->toRfc4122();
-        $registered = $this->deferred->registerPending(new DeferredToolCompletionCorrelation(
+
+        return $this->lifecycle->register(new DeferredToolCompletionCorrelation(
             deferredId: $deferredId,
             runId: $call->runId(),
             turnNo: $call->turnNo(),
@@ -159,8 +162,6 @@ final readonly class CodeModeHostBridge
             argSchema: $call->argSchema,
             toolsRef: $call->toolsRef,
         ));
-
-        return $registered->deferredId;
     }
 
     /**

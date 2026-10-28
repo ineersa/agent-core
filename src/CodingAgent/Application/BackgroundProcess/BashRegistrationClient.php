@@ -8,6 +8,7 @@ use Amp\Cancellation;
 use Amp\DeferredCancellation;
 use Amp\DeferredFuture;
 use Amp\Future;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipRequestDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessCommandDTO;
@@ -16,6 +17,8 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationReplyD
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationResultDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\RegisterCodeModeInvocationDTO;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Transport\Serialization\Serializer;
@@ -68,13 +71,27 @@ final class BashRegistrationClient
         return $this->request(new BashProcessCommandDTO($recordId, $runId, $action, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->process;
     }
 
+    public function registerCodeMode(DeferredToolCompletionCorrelation $invocation): string
+    {
+        return $this->request(new RegisterCodeModeInvocationDTO($invocation, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->deferredId
+            ?? throw new \UnexpectedValueException('Missing code-mode registration identity.');
+    }
+
+    public function readyCodeMode(string $runId, string $deferredId): void
+    {
+        $reply = $this->request(new ReadyCodeModeInvocationDTO($runId, $deferredId, $this->incarnation, bin2hex(random_bytes(16)), $this->role));
+        if ($reply->deferredId !== $deferredId) {
+            throw new \UnexpectedValueException('Code-mode readiness identity mismatch.');
+        }
+    }
+
     private function changeOwnership(BashOwnershipRequestDTO $request, BashOwnershipActionEnum $action): BashOwnershipStatusEnum
     {
         return $this->request(new BashOwnershipCommandDTO($request, $action, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->ownership
             ?? throw new \UnexpectedValueException('Missing Bash ownership result.');
     }
 
-    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO $command): BashRegistrationReplyDTO
+    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO|RegisterCodeModeInvocationDTO|ReadyCodeModeInvocationDTO $command): BashRegistrationReplyDTO
     {
         $errors = $this->validator->validate($command);
         if (0 !== \count($errors)) {
