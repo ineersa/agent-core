@@ -26,6 +26,21 @@ final class LlmProviderErrorClassifierTest extends TestCase
         $this->classifier = new LlmProviderErrorClassifier();
     }
 
+    public function testRejectsUntrustedProviderMetadataBeforePresentation(): void
+    {
+        $result = (new LlmProviderErrorClassifier())->classify([
+            'type' => BadRequestException::class,
+            'message' => 'Request rejected.',
+            'response_error_code' => "unsafe\033[31m",
+            'response_error_type' => str_repeat('x', 129),
+            'response_error_param' => ['private prompt'],
+        ]);
+        $this->assertArrayNotHasKey('response_error_code', $result);
+        $this->assertArrayNotHasKey('response_error_type', $result);
+        $this->assertArrayNotHasKey('response_error_param', $result);
+        $this->assertSame('Request rejected.', $result['user_message']);
+    }
+
     #[DataProvider('permanentExceptionProvider')]
     public function testLocalAndCancelledFailuresRemainNonRetryable(string $type, string $category): void
     {
