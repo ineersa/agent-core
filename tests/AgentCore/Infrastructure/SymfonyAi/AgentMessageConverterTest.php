@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\OpenResponsesContract;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\AI\Platform\Message\AssistantMessage;
@@ -442,6 +443,65 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
         $this->assertDoesNotMatchRegularExpression('/[|]/', $remapped);
         $this->assertLessThanOrEqual(40, \strlen($remapped));
         $this->assertSame($remapped, $bag->getMessages()[1]->getToolCall()->getId());
+    }
+
+    public function testEmptyNativeTextSurvivesForeignModelConversion(): void
+    {
+        $item = ['type' => 'message', 'id' => 'msg_empty', 'role' => 'assistant', 'content' => []];
+        $signed = MessageItem::toText($item);
+        $message = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => '', 'text_signature' => $signed->getSignature()]],
+            metadata: ['source_model' => 'openai-codex/gpt-6-astra'],
+        );
+
+        foreach (['openai-codex/gpt-6-astra', 'openai-codex/gpt-6.1-sol'] as $target) {
+            $bag = $this->converter->toMessageBagForTarget([$message], $target);
+            $this->assertCount(1, $bag->getMessages());
+            $assistant = $bag->getMessages()[0];
+            $this->assertInstanceOf(AssistantMessage::class, $assistant);
+            $this->assertCount(1, $assistant->getContent());
+            $text = $assistant->getContent()[0];
+            $this->assertInstanceOf(Text::class, $text);
+            $this->assertSame('', $text->getText());
+            if ('openai-codex/gpt-6-astra' === $target) {
+                $this->assertSame($item, MessageItem::fromText($text));
+            } else {
+                $this->assertNull($text->getSignature());
+            }
+        }
+        $this->assertSame($signed->getSignature(), $message->content[0]['text_signature']);
+    }
+
+    public function testAssistantWithoutPartsIsOmittedButToolOnlyAssistantIsKept(): void
+    {
+        $bag = $this->converter->toMessageBagForTarget([
+            new AgentMessage(role: 'assistant', content: []),
+            new AgentMessage(role: 'assistant', content: [], metadata: [
+                'tool_calls' => [['id' => 'call_empty', 'name' => 'bash', 'arguments' => []]],
+            ]),
+        ], 'openai-codex/gpt-6.1-sol');
+
+        $this->assertCount(1, $bag->getMessages());
+        $this->assertSame('call_empty', $bag->getMessages()[0]->getToolCalls()[0]->getId());
+    }
+
+    public function testOrderedEmptyTextRemainsBeforeToolCall(): void
+    {
+        $message = new AgentMessage(role: 'assistant', content: [
+            ['type' => 'text', 'text' => ''],
+            ['type' => 'tool_call', 'tool_call_index' => 0],
+        ], metadata: [
+            'tool_calls' => [['id' => 'call_empty', 'name' => 'bash', 'arguments' => []]],
+        ]);
+        $bag = $this->converter->toMessageBagForTarget([$message], 'openai-codex/gpt-6.1-sol');
+        $content = $bag->getMessages()[0]->getContent();
+
+        $this->assertCount(2, $content);
+        $this->assertInstanceOf(Text::class, $content[0]);
+        $this->assertSame('', $content[0]->getText());
+        $this->assertInstanceOf(ToolCall::class, $content[1]);
+        $this->assertSame('call_empty', $content[1]->getId());
     }
 
     public function testQualifiedModelIdentityControlsNativeReplayWithBareCatalogModel(): void
