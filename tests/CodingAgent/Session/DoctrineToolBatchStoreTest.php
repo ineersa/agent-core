@@ -472,6 +472,6 @@ final class DoctrineToolBatchStoreTest extends IsolatedKernelTestCase
 
     private function parentCounts(TestLogger $sql): int
     {
-        return \count(array_filter($sql->records, static fn (array $r): bool => str_contains(strtolower($r['context']['sql'] ?? ''), 'hatfield_session') && str_contains(strtolower($r['context']['sql'] ?? ''), 'count')));
+        return \count(array_filter($sql->records, static fn (array $r): bool => str_contains(strtolower($r['context']['sql'] ?? ''), 'from hatfield_session')));
     }
 }
