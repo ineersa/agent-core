@@ -7,13 +7,22 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\Persistence\ManagerRegistry;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\AmpRetryClock;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\DTO\RuntimeConfigDTO;
-use Ineersa\CodingAgent\Entity\BackgroundProcess;
+use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
+use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Messenger\FiberMessageExecutionStrategy;
 use Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeCommand;
 use Ineersa\CodingAgent\Runtime\Messenger\LlmFiberConsumeWaitSubscriber;
@@ -21,7 +30,7 @@ use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
-use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -53,95 +62,60 @@ use function Amp\async;
  */
 final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
 {
-    public function testToolConsumerBoundsCompletedProcessRetentionAndDrainsManagedSibling(): void
+    public function testToolConsumerRetainsOnlySnapshotsBeyondFormerRecycleBoundary(): void
     {
         $manager = self::getContainer()->get(EntityManagerInterface::class);
         $store = self::getContainer()->get(ProcessStore::class);
+        $sessions = self::getContainer()->get(HatfieldSessionStore::class);
+        $parent = $sessions->createSession('Mixed worker snapshots');
+        $sessions->updateMetadata($parent, ['reasoning' => 'high']);
+        $record = $store->insertRecord(['pid' => 1, 'session_id' => $parent, 'tool_call_id' => 'shell', 'started_at' => new \DateTimeImmutable()]);
+        $batches = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $batches->reserveBatch('mixed-batch', $parent, 1, 'child-call', 0, new \DateTimeImmutable('+1 minute'), new DeferredSubagentBatchChildIntentDTO(1, 'mixed-child', 'agent_mixed', 'scout', 'task', 'test/model', 'medium'));
+        $children = self::getContainer()->get(DeferredSubagentChildRepository::class);
+        $deferred = self::getContainer()->get(DeferredToolCompletionRepository::class);
+        $invocation = new DeferredToolCompletionCorrelation('mixed-code', $parent, 1, 'step', 1, 'key', 'code-call', 'code_mode', [], 0);
+        TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(ToolBatchStoreInterface::class), $invocation);
+        $deferred->registerPending($invocation);
+        $models = self::getContainer()->get(ModelResolver::class);
+        $relationships = self::getContainer()->get(RunOperationalProjectionRepository::class);
+        $relationships->replace(new RunState($parent, RunStatus::Running));
+        $manager->clear();
         $release = new DeferredFuture();
-        $entered = new DeferredFuture();
         $held = null;
         $calls = 0;
         $dispatcher = new EventDispatcher();
-        $dispatcher->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use ($manager, &$held, $release): void {
-            if (256 === $event->getEnvelope()->getMessage()->id) {
-                self::assertInstanceOf(BackgroundProcess::class, $held);
-                self::assertTrue($manager->contains($held), 'A completing must not detach B across its yield.');
+        $dispatcher->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use ($manager, $release): void {
+            if (300 === $event->getEnvelope()->getMessage()->id) {
+                self::assertSame([], $manager->getUnitOfWork()->getIdentityMap());
                 $release->complete();
             }
         });
-        $acknowledged = $this->runDoctrineConsumer(300, 2, $dispatcher, static function (int $id) use ($store, $manager, $release, $entered, &$held, &$calls): void {
+        $acknowledged = $this->runSnapshotConsumer(300, 16, $dispatcher, static function (int $id) use ($store, $manager, $sessions, $parent, $record, $batches, $children, $deferred, $models, $relationships, $release, &$held, &$calls): void {
             ++$calls;
-            $record = $store->insertRecord(['pid' => $id, 'session_id' => 'orm-retention', 'started_at' => new \DateTimeImmutable()]);
-            $entity = BackgroundProcessFixture::record(self::getContainer(), $record);
-            self::assertInstanceOf(BackgroundProcess::class, $entity);
-            if (255 === $id) {
-                $held = $entity;
-                $entered->complete();
+            $processes = $store->fetchForegroundTools($parent);
+            self::assertSame($record, $processes[0]->id);
+            self::assertNotNull($batches->findByLifecycleId('mixed-batch'));
+            self::assertNotNull($children->findByChildRunId('mixed-child'));
+            self::assertNull($deferred->statusForRunAndToolCall($parent, 'no-deferred'));
+            self::assertSame('pending', $deferred->findMetadataByDeferredId('mixed-code')?->status);
+            self::assertSame('mixed-code', $deferred->findByRunAndToolCall($parent, 'code-call')?->deferredId);
+            self::assertTrue($sessions->exists($parent));
+            self::assertContains($parent, array_column($sessions->listSessions(), 'sessionId'));
+            self::assertSame('high', $sessions->findModelMetadata($parent)?->reasoning);
+            self::assertSame('high', $models->resolveInitialReasoning(null, $parent));
+            self::assertNotNull($relationships->findRelationship($parent));
+            if (1 === $id) {
+                $held = $children->findByChildRunId('mixed-child');
                 $release->getFuture()->await();
-                self::assertTrue($manager->contains($entity));
-                $entity->command = 'SIBLING_WRITE';
-            } elseif (256 === $id) {
-                $entered->getFuture()->await();
+                self::assertSame('mixed-child', $held?->childRunId);
             }
-            $entity->finishedAt = new \DateTimeImmutable();
-            self::getContainer()->get(EntityManagerInterface::class)->flush();
+            self::assertSame([], $manager->getUnitOfWork()->getIdentityMap());
         });
-        $this->assertSame(256, $calls);
-        $this->assertSame(256, $acknowledged);
-        $this->assertCount(256, $manager->getUnitOfWork()->getIdentityMap()[BackgroundProcess::class]);
-        $this->assertSame('SIBLING_WRITE', $manager->getConnection()->fetchOne('SELECT command FROM background_process WHERE id = ?', [$held->id]));
-    }
-
-    public function testCaughtFlushFailureDrainsWithoutResettingActiveSiblingThenManagerCanBeReplaced(): void
-    {
-        $manager = self::getContainer()->get(EntityManagerInterface::class);
-        $registry = self::getContainer()->get(ManagerRegistry::class);
-        $store = self::getContainer()->get(ProcessStore::class);
-        $connection = $manager->getConnection();
-        $connection->executeStatement("CREATE TEMP TRIGGER reject_tool_record BEFORE INSERT ON background_process WHEN NEW.pid = 2 BEGIN SELECT RAISE(ABORT, 'tool flush failure'); END");
-        $release = new DeferredFuture();
-        $entered = new DeferredFuture();
-        $failures = [];
-        $calls = [];
-        $dispatcher = new EventDispatcher();
-        $dispatcher->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use ($release): void {
-            if (2 === $event->getEnvelope()->getMessage()->id) {
-                $release->complete();
-            }
-        });
-        try {
-            $acknowledged = $this->runDoctrineConsumer(3, 2, $dispatcher, static function (int $id) use ($manager, $store, $entered, $release, &$failures, &$calls): void {
-                $calls[] = $id;
-                try {
-                    if (1 === $id) {
-                        $record = $store->insertRecord(['pid' => 1, 'started_at' => new \DateTimeImmutable()]);
-                        $held = BackgroundProcessFixture::record(self::getContainer(), $record);
-                        $entered->complete();
-                        $release->getFuture()->await();
-                        self::assertFalse($manager->isOpen(), 'Do not replace the failed manager underneath the active sibling.');
-                        self::assertFalse($manager->contains($held), 'Doctrine itself detached state on failed flush; it cannot be rescued silently.');
-                    } else {
-                        $entered->getFuture()->await();
-                    }
-                    $store->insertRecord(['pid' => $id, 'started_at' => new \DateTimeImmutable()]);
-                } catch (\Doctrine\DBAL\Exception|\Doctrine\ORM\Exception\EntityManagerClosed $exception) {
-                    // Model ToolExecutor converting ORM failure into a handled tool error.
-                    $failures[$id] = $exception::class;
-                }
-            });
-            $this->assertSame([1, 2], $calls, 'A poisoned consumer must not admit subsequent work.');
-            $this->assertSame(2, $acknowledged);
-            $this->assertCount(2, $failures);
-            $this->assertFalse($manager->isOpen());
-        } finally {
-            $connection->executeStatement('DROP TRIGGER reject_tool_record');
-            // Test cleanup also verifies Doctrine's actual native-lazy reference behavior.
-            // Production replaces the drained process, not its active services.
-            $registry->resetManager();
-        }
-        $this->assertSame($manager, $registry->getManager());
-        $this->assertTrue($manager->isOpen());
-        $this->assertGreaterThan(0, $store->insertRecord(['pid' => 3, 'started_at' => new \DateTimeImmutable()]));
+        $this->assertSame(300, $calls);
+        $this->assertSame(300, $acknowledged);
+        $this->assertNotNull($held);
+        $this->assertSame([], $manager->getUnitOfWork()->getIdentityMap());
     }
 
     public function testSharedConsumerRenewsActiveLeasesAndDrainsBeforeSettlingOnStop(): void
@@ -200,8 +174,10 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             $buses = new ServiceLocator(['default' => static fn () => $bus]);
             $config = clone self::getContainer()->get(AppConfig::class);
             $config->runtime = new RuntimeConfigDTO(toolConcurrency: 2);
-            $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $config, self::getContainer()->get(EntityManagerInterface::class), $logger);
-            $input = new ArrayInput(['--transport' => 'tool', '--keepalive' => 1]);
+            $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $config, $logger);
+            // Earlier kernels in this PHPUnit process are outside the worker's
+            // lease/drain contract; do not let their retained memory stop it.
+            $input = new ArrayInput(['--transport' => 'tool', '--keepalive' => 1, '--memory-limit' => (string) (memory_get_usage(true) + 64 * 1024 * 1024)]);
             $input->bind($command->getDefinition());
             $running = async(static fn () => $command->run($input, new BufferedOutput()));
             $entered->getFuture()->await($cancel);
@@ -390,7 +366,6 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             $receivers,
             $dispatcher,
             $appConfig,
-            self::getContainer()->get(EntityManagerInterface::class),
         );
 
         $output = new BufferedOutput();
@@ -409,7 +384,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         );
     }
 
-    private function runDoctrineConsumer(int $messages, int $concurrency, EventDispatcher $dispatcher, \Closure $handle): int
+    private function runSnapshotConsumer(int $messages, int $concurrency, EventDispatcher $dispatcher, \Closure $handle): int
     {
         $receiver = new class($messages) implements ReceiverInterface {
             public int $acknowledged = 0;
@@ -449,8 +424,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
                 return $envelope;
             }
         };
-        // Finite-source safety: a missing recycle policy must fail assertions,
-        // not leave a test consumer running after its source is exhausted.
+        // Source exhaustion stops admission, then drains the held sibling.
         $dispatcher->addListener(WorkerRunningEvent::class, static function (WorkerRunningEvent $event): void {
             if ($event->isWorkerIdle()) {
                 $event->getWorker()->stop();
@@ -473,8 +447,10 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             }
         }]);
         $buses = new ServiceLocator(['default' => static fn () => $bus]);
-        $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $config, self::getContainer()->get(EntityManagerInterface::class));
-        $input = new ArrayInput(['--transport' => 'tool']);
+        $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $config);
+        // PHPUnit's earlier kernels can already exceed the production limit.
+        // This proof measures the identity map, not the suite process's RSS.
+        $input = new ArrayInput(['--transport' => 'tool', '--memory-limit' => (string) (memory_get_usage(true) + 64 * 1024 * 1024)]);
         $input->bind($command->getDefinition());
         $this->assertSame(0, $command->run($input, new BufferedOutput()));
 

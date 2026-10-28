@@ -134,12 +134,12 @@ lifetime. A yielding foreground tool still occupies a slot. At full capacity,
 other tools wait for admission. Synchronous filesystem, database and CPU work can
 still block sibling Fibers; concurrency does not make every tool non-blocking.
 
-The shared tool process drains and recycles after 256 admitted messages to bound
-retained Doctrine state under continuous backlog. It also stops admitting work
-when a completed handler leaves the shared EntityManager closed. Active handlers
-drain before the supervisor replaces the process. Services are not reset beneath
-active Fibers. A failed flush can still invalidate a sibling's managed entities;
-recycling does not recover those changes or guarantee exactly-once tool effects.
+The shared tool process sends Bash, code-mode and child lifecycle metadata writes
+to `run_control` and reads scalar snapshots. It does not retain managed entities
+across tool waits or recycle after a fixed number of messages. Services are not
+reset beneath active Fibers. The normal worker memory limit remains in effect.
+Metadata redelivery does not repeat an external launch or resume action; it does
+not guarantee exactly-once external tool effects.
 
 ### Tool execution
 

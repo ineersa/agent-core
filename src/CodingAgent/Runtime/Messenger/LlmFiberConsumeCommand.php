@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Messenger;
 
-use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -20,10 +18,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\SignalRegistry\SignalRegistry;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\EventDispatcher\ScopedEventDispatcher;
-use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
-use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
 use Symfony\Component\Messenger\EventListener\StopWorkerOnMemoryLimitListener;
-use Symfony\Component\Messenger\EventListener\StopWorkerOnMessageLimitListener;
 use Symfony\Component\Messenger\RoutableMessageBus;
 use Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface;
 use Symfony\Component\Messenger\Worker;
@@ -61,7 +56,6 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         private readonly ContainerInterface $receiverLocator,
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly AppConfig $appConfig,
-        private readonly EntityManagerInterface $entityManager,
         private readonly ?LoggerInterface $logger = null,
     ) {
         parent::__construct();
@@ -143,32 +137,6 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
             self::memoryLimitBytes($memoryLimit),
             $this->logger,
         ));
-        if ('tool' === $transport) {
-            // Bound retained ORM state even under continuous backlog. Native
-            // stop drains active Fibers; the supervisor recycles exit-0 workers.
-            // Never clear/reset here: siblings may hold managed entities at a yield.
-            $eventDispatcher->addSubscriber(new StopWorkerOnMessageLimitListener(256, $this->logger));
-            $stopOnClosedManager = function (WorkerMessageHandledEvent|WorkerMessageFailedEvent $event): void {
-                // ToolExecutor can turn a failed flush into a handled tool error.
-                // A closed shared manager can also invalidate active siblings;
-                // draining does not promise to rescue their in-memory changes.
-                if (!$this->entityManager->isOpen()) {
-                    $message = $event->getEnvelope()->getMessage();
-                    $runId = $message instanceof AbstractAgentBusMessage ? $message->runId() : null;
-                    $this->logger?->warning('runtime.tool_consumer_doctrine_closed', [
-                        'run_id' => $runId,
-                        'session_id' => $runId,
-                        'component' => 'messenger.worker',
-                        'event_type' => 'tool_consumer.doctrine_closed',
-                        'receiver' => $event->getReceiverName(),
-                    ]);
-                    $this->worker?->stop();
-                }
-            };
-            $eventDispatcher->addListener(WorkerMessageHandledEvent::class, $stopOnClosedManager);
-            $eventDispatcher->addListener(WorkerMessageFailedEvent::class, $stopOnClosedManager);
-        }
-
         $io = new SymfonyStyle($input, $output);
         $io->success(\sprintf('Consuming messages from transports "%s" with Fiber concurrency %d.', implode(', ', $transportNames), $concurrency));
         $io->comment('Per-message service reset is disabled for overlapping handlers.');

@@ -332,41 +332,45 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             $handler = new ChildInvocationLifecycleHandler($lifecycle, $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
             $ownerTask = async(static function () use ($saturated, $requests, $handler): void {
                 $saturated->getFuture()->await(new TimeoutCancellation(8));
-                for ($handled = 0; $handled < 32;) {
+                for ($handled = 0; $handled < 288;) {
                     foreach ($requests->get() as $delivery) {
                         $handler($delivery->getMessage());
                         $requests->ack($delivery);
                         ++$handled;
                     }
-                    if ($handled < 32) {
+                    if ($handled < 288) {
                         $requests->wait(3000, new TimeoutCancellation(8));
                     }
                 }
             });
             try {
-                $tasks = [];
-                for ($i = 0; $i < 16; ++$i) {
-                    $tasks[] = async(static function () use ($client, $owner, $i): string {
-                        $factory = new DeferredSubagentBatchIdentityFactory();
-                        $tool = 'child-call-'.$i;
-                        $id = $factory->batchLifecycleId($owner, $tool);
-                        $child = $factory->childIdentity($owner, $tool, 1);
-                        $intent = new DeferredSubagentBatchChildIntentDTO(1, $child['childRunId'], $child['artifactId'], 'scout', 'task', 'model', 'medium');
-                        $batch = $client->reserveChild($id, $owner, 1, $tool, 0, new \DateTimeImmutable('+1 minute'), $intent, 'model');
-                        $client->recordChildLaunchSuccess($owner, $tool, $id, new \DateTimeImmutable());
+                $pending = new \ReflectionProperty($client, 'pending');
+                for ($round = 0; $round < 9; ++$round) {
+                    $tasks = [];
+                    for ($i = 0; $i < 16; ++$i) {
+                        $tasks[] = async(static function () use ($client, $owner, $i): string {
+                            $factory = new DeferredSubagentBatchIdentityFactory();
+                            $tool = 'child-call-'.$i;
+                            $id = $factory->batchLifecycleId($owner, $tool);
+                            $child = $factory->childIdentity($owner, $tool, 1);
+                            $intent = new DeferredSubagentBatchChildIntentDTO(1, $child['childRunId'], $child['artifactId'], 'scout', 'task', 'model', 'medium');
+                            $batch = $client->reserveChild($id, $owner, 1, $tool, 0, new \DateTimeImmutable('+1 minute'), $intent, 'model');
+                            $client->recordChildLaunchSuccess($owner, $tool, $id, new \DateTimeImmutable());
 
-                        return $batch->lifecycleId;
-                    });
-                }
-                foreach ($tasks as $i => $task) {
-                    $id = $task->await(new TimeoutCancellation(8));
-                    $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByLifecycleId($id);
-                    $this->assertNotNull($batch);
-                    $this->assertSame('child-call-'.$i, $batch->parentToolCallId);
-                    $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batch->launchStatus);
+                            return $batch->lifecycleId;
+                        });
+                    }
+                    foreach ($tasks as $i => $task) {
+                        $id = $task->await(new TimeoutCancellation(8));
+                        $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByLifecycleId($id);
+                        $this->assertNotNull($batch);
+                        $this->assertSame('child-call-'.$i, $batch->parentToolCallId);
+                        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batch->launchStatus);
+                    }
+                    $this->assertSame([], $pending->getValue($client), 'Completed metadata replies must release their waiters.');
                 }
                 $ownerTask->await(new TimeoutCancellation(8));
-                $this->assertSame(32, $sent);
+                $this->assertSame(288, $sent);
             } finally {
                 $requests->close();
                 $sender->close();
