@@ -4,18 +4,24 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\RequestBashBackgroundHandler;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\ChildBackgroundCandidateDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\Tui\Listener\BackgroundBashInputListener;
 use Ineersa\Tui\Listener\SubagentLiveToggleInputListener;
@@ -30,8 +36,11 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Messenger\Stamp\ReceivedStamp;
+use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
 {
@@ -95,6 +104,14 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         });
         $harness = $this->mount('visible', $client);
         $harness->sendInput($sequence);
+        $this->assertFalse($this->manager->findByRecordId($process->id)?->backgroundRequested, 'Controller enqueue does not commit owner intent.');
+        $transport = self::getContainer()->get('messenger.transport.run_control');
+        $this->assertInstanceOf(InMemoryTransport::class, $transport);
+        $queued = iterator_to_array($transport->get());
+        $this->assertCount(1, $queued);
+        $this->assertInstanceOf(RequestBashBackgroundDTO::class, $queued[0]->getMessage());
+        self::getContainer()->get('agent.command.bus')->dispatch($queued[0]->with(new ReceivedStamp('run_control')));
+        $transport->ack($queued[0]);
         $this->assertTrue($this->manager->findByRecordId($process->id)?->backgroundRequested);
         $this->assertFalse($this->manager->findByRecordId($foreign->id)?->backgroundRequested);
         $harness->stopInputLoop();
@@ -236,7 +253,21 @@ final class BackgroundBashInputListenerTest extends IsolatedKernelTestCase
         $this->manager->stopByRecordId($first->id, 'visible');
         $harness->sendInput("\x1b[B");
         $harness->sendInput("\r");
-        $this->assertSame(['protocol.error'], $errors);
+        $this->assertSame([], $errors, 'The owner classifies stale selections after controller enqueue.');
+        $container = self::getContainer();
+        $transport = $container->get('messenger.transport.run_control');
+        $this->assertInstanceOf(InMemoryTransport::class, $transport);
+        $queued = iterator_to_array($transport->get());
+        $this->assertCount(1, $queued);
+        $request = $queued[0]->getMessage();
+        $this->assertInstanceOf(RequestBashBackgroundDTO::class, $request);
+        $sink = new InMemoryRuntimeEventSink();
+        $handler = new RequestBashBackgroundHandler($container->get(ProcessStore::class), $container->get(ProcessLifecycle::class), $container->get(RunLockManager::class), $container->get(ValidatorInterface::class), $sink);
+        $handler($request);
+        $transport->ack($queued[0]);
+        $events = iterator_to_array($sink->drain('visible'));
+        $this->assertCount(1, $events);
+        $this->assertSame('protocol.error', $events[0]->type);
         $this->assertFalse($this->manager->findByRecordId($second->id)?->backgroundRequested);
         $harness->stopInputLoop();
     }
