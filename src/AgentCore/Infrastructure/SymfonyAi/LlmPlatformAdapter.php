@@ -25,6 +25,8 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryExecutor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Retry\LlmRequestRetryPolicy;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Exception\ProviderErrorExceptionInterface;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Validation\ProviderErrorMetadataValidator;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\FinishReason\FinishReason;
 use Symfony\AI\Platform\FinishReason\FinishReasonCase;
@@ -608,6 +610,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $context = [
             'event_type' => 'llm.provider.stream_error',
             'run_id' => $runId,
+            'session_id' => $runId,
+            'component' => 'llm_platform',
             'step_id' => $stepId,
             'error_type' => $exception::class,
             'error_message' => mb_substr($exception->getMessage(), 0, 500),
@@ -620,6 +624,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $context[$key] = $value;
             }
         }
+
+        $context = array_replace($context, $this->extractExceptionDiagnostics($exception));
 
         // Merge request summary (privacy-safe structural metadata).
         foreach ($requestSummary as $key => $value) {
@@ -698,9 +704,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
             if (isset($data['error']) && \is_array($data['error'])) {
                 $error = $data['error'];
-                $diag['response_error_code'] = isset($error['code']) && '' !== $error['code'] ? $error['code'] : null;
-                $diag['response_error_type'] = $error['type'] ?? null;
-                $diag['response_error_param'] = $error['param'] ?? null;
+                foreach (ProviderErrorMetadataValidator::validate($error) as $key => $value) {
+                    $diag['response_error_'.$key] = $value;
+                }
             }
         } else {
             $diag['response_body_is_json'] = false;
@@ -713,6 +719,24 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
 
         return $diag;
+    }
+
+    /** @return array<string, int|string> */
+    private function extractExceptionDiagnostics(\Throwable $exception): array
+    {
+        if (!$exception instanceof ProviderErrorExceptionInterface) {
+            return [];
+        }
+
+        $diagnostics = [];
+        foreach (ProviderErrorMetadataValidator::validate($exception->getProviderError()) as $key => $value) {
+            $diagnostics['response_error_'.$key] = $value;
+        }
+        if (null !== $exception->getStatusCode()) {
+            $diagnostics['http_status_code'] = $exception->getStatusCode();
+        }
+
+        return $diagnostics;
     }
 
     /**
@@ -769,6 +793,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 }
             }
         }
+
+        $error = array_replace($error, $this->extractExceptionDiagnostics($exception));
 
         // Include request summary.
         foreach ($requestSummary as $key => $value) {
