@@ -12,10 +12,11 @@ use Symfony\Component\Messenger\Transport\Serialization\Serializer;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
-/** One durable session queue, not an abandoned queue for each worker incarnation. */
+/** Bounded role queues, never one queue per worker incarnation. */
 final class BashRegistrationReplyPublisher implements ResetInterface
 {
-    private ?Transport $transport = null;
+    /** @var array<string, Transport> */
+    private array $transports = [];
 
     public function __construct(
         private readonly string $endpoint,
@@ -31,16 +32,18 @@ final class BashRegistrationReplyPublisher implements ResetInterface
         }
         // Deliberately propagate publication failure: the request must remain
         // retryable even when its metadata transaction has already committed.
-        $this->transport ??= (new TransportFactory())->createTransport(
-            'sqlite-queue://bash_registration_reply?endpoint='.rawurlencode($this->endpoint),
+        $transport = $this->transports[$reply->role->value] ??= (new TransportFactory())->createTransport(
+            'sqlite-queue://'.$reply->role->queue().'?endpoint='.rawurlencode($this->endpoint),
             [], new Serializer($this->serializer),
         );
-        $this->transport->send(new Envelope($reply));
+        $transport->send(new Envelope($reply));
     }
 
     public function reset(): void
     {
-        $this->transport?->close();
-        $this->transport = null;
+        foreach ($this->transports as $transport) {
+            $transport->close();
+        }
+        $this->transports = [];
     }
 }

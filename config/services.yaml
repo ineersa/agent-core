@@ -214,6 +214,18 @@ services:
     arguments:
       $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
+  Ineersa\CodingAgent\Application\BackgroundProcess\DecideBashProcessHandler:
+    arguments:
+      $sessionId: '%env(HATFIELD_SESSION_ID)%'
+
+  coding_agent.bash_controller_client:
+    class: Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient
+    arguments:
+      $commandBus: '@agent.command.bus'
+      $endpoint: '%env(HATFIELD_SQLITE_QUEUE_ENDPOINT)%'
+      $sessionId: '%env(HATFIELD_SESSION_ID)%'
+      $role: !php/enum Ineersa\CodingAgent\Application\BackgroundProcess\BashRequesterRoleEnum::Controller
+
   Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient:
     arguments:
       $commandBus: '@agent.command.bus'
@@ -691,6 +703,7 @@ services:
 
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
+      $bashControllerClient: '@coding_agent.bash_controller_client'
       $dispatcher: '@event_dispatcher'
       # Canonical project CWD for single-owner session lock key (not process getcwd()).
       $runtimeCwd: '%app.cwd%'

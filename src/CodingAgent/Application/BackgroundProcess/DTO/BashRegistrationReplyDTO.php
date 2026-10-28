@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Application\BackgroundProcess\DTO;
 
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashOwnershipStatusEnum;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashRequesterRoleEnum;
 use Symfony\Component\Validator\Constraints as Assert;
 
 final readonly class BashRegistrationReplyDTO
@@ -21,6 +22,8 @@ final readonly class BashRegistrationReplyDTO
         public ?BashRegistrationResultDTO $result = null,
         public ?BashOwnershipStatusEnum $ownership = null,
         public bool $failed = false,
+        public BashRequesterRoleEnum $role = BashRequesterRoleEnum::Tool,
+        public ?BashProcessSnapshotDTO $process = null,
     ) {
     }
 }

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
@@ -349,6 +351,56 @@ final class ProcessStore
                 $finishing[$id]->status = BackgroundProcessStatusEnum::Stopped;
             }
             $this->entityManager->flush();
+        });
+    }
+
+    public function isAcceptedRecord(int $recordId, string $runId): bool
+    {
+        return false !== $this->entityManager->getConnection()->fetchOne('SELECT id FROM background_process WHERE id = ? AND session_id = ? AND backgrounded_at IS NOT NULL', [$recordId, $runId]);
+    }
+
+    public function acceptedRecordId(string $runId, int $pid): ?int
+    {
+        $id = $this->entityManager->getConnection()->fetchOne('SELECT id FROM background_process WHERE session_id = ? AND pid = ? AND backgrounded_at IS NOT NULL ORDER BY id DESC LIMIT 1', [$runId, $pid]);
+
+        return false === $id ? null : (int) $id;
+    }
+
+    public function decide(int $recordId, string $runId, BashProcessActionEnum $action, ProcessLifecycle $lifecycle): ?BashProcessSnapshotDTO
+    {
+        return $this->entityManager->getConnection()->transactional(function () use ($recordId, $runId, $action, $lifecycle): ?BashProcessSnapshotDTO {
+            $connection = $this->entityManager->getConnection();
+            $row = $connection->fetchAssociative('SELECT * FROM background_process WHERE id = ? AND session_id = ?', [$recordId, $runId]);
+            if (false === $row) {
+                return null;
+            }
+            $status = BackgroundProcessStatusEnum::from((string) $row['status']);
+            $finished = null !== $row['finished_at'];
+            $now = Clock::get()->now()->format('Y-m-d H:i:s');
+            $signalRequired = false;
+            if (!$finished) {
+                $exitCode = $lifecycle->readStatusFile((string) $row['status_path']);
+                $gone = null === $exitCode && !$lifecycle->isAlive((int) $row['pid']);
+                $settledStop = BashProcessActionEnum::SettleStop === $action && (bool) $row['stopped_by_user'];
+                if (null !== $exitCode || $gone || $settledStop) {
+                    $finished = true;
+                    if (BackgroundProcessStatusEnum::Stopped !== $status) {
+                        $status = null !== $exitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean;
+                    }
+                    $connection->executeStatement('UPDATE background_process SET finished_at = ?, exit_code = ?, status = ?, updated_at = ? WHERE id = ?', [$now, $exitCode, $status->value, $now, $recordId]);
+                } elseif (BashProcessActionEnum::Stop === $action) {
+                    // A committed intent is not proof that native TERM occurred.
+                    // Reconstruct the same obligation after reply loss; only the
+                    // requester's single resolved Future resumes native execution.
+                    $status = BackgroundProcessStatusEnum::Stopped;
+                    $signalRequired = true;
+                    if (!(bool) $row['stopped_by_user']) {
+                        $connection->executeStatement('UPDATE background_process SET stopped_by_user = 1, status = ?, completion_notified_at = COALESCE(completion_notified_at, ?), updated_at = ? WHERE id = ?', [$status->value, $now, $now, $recordId]);
+                    }
+                }
+            }
+
+            return new BashProcessSnapshotDTO($recordId, $runId, (int) $row['pid'], null === $row['pgid'] ? null : (int) $row['pgid'], (string) $row['status_path'], $finished, $status, $signalRequired);
         });
     }
 }

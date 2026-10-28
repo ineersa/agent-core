@@ -33,11 +33,10 @@ final readonly class StopBashHandler
         $available = false;
         $stopped = false;
         if (0 === \count($this->validator->validate($request))) {
-            $process = $this->processes->findByRecordId($request->recordId, $request->runId);
-            $available = null !== $process && null !== $process->backgroundedAt;
+            $available = $this->processes->isAcceptedRecord($request->recordId, $request->runId);
             if ($available) {
                 // The controller retains native supervision after the client returns.
-                // Persistence decisions move with the owner cutover, not into the TUI.
+                // The owner commits suppression before granting signal permission.
                 $stopped = !$this->processes->stopByRecordId($request->recordId, $request->runId, waitForExit: false)->alreadyFinished;
             }
         }

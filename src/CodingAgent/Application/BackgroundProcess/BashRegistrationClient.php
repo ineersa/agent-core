@@ -10,6 +10,8 @@ use Amp\DeferredFuture;
 use Amp\Future;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipRequestDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessCommandDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationReplyDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationResultDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO;
@@ -23,7 +25,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 use function Amp\async;
 
-/** Sole tool-process requester. Never consumes replies through tool admission slots. */
+/** One requester per fixed role. Reply progress is independent of tool admission. */
 final class BashRegistrationClient
 {
     private readonly string $incarnation;
@@ -39,13 +41,14 @@ final class BashRegistrationClient
         private readonly string $sessionId,
         private readonly SerializerInterface $serializer,
         private readonly ValidatorInterface $validator,
+        private readonly BashRequesterRoleEnum $role = BashRequesterRoleEnum::Tool,
     ) {
         $this->incarnation = bin2hex(random_bytes(16));
     }
 
     public function register(RegisterBashProcessDTO $registration): BashRegistrationResultDTO
     {
-        $command = new RegisterBashProcessCommandDTO($registration, $this->incarnation, bin2hex(random_bytes(16)));
+        $command = new RegisterBashProcessCommandDTO($registration, $this->incarnation, bin2hex(random_bytes(16)), $this->role);
 
         return $this->request($command)->result ?? throw new \UnexpectedValueException('Missing Bash registration result.');
     }
@@ -60,13 +63,18 @@ final class BashRegistrationClient
         return $this->changeOwnership($request, BashOwnershipActionEnum::Retire);
     }
 
+    public function decide(int $recordId, string $runId, BashProcessActionEnum $action): ?BashProcessSnapshotDTO
+    {
+        return $this->request(new BashProcessCommandDTO($recordId, $runId, $action, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->process;
+    }
+
     private function changeOwnership(BashOwnershipRequestDTO $request, BashOwnershipActionEnum $action): BashOwnershipStatusEnum
     {
-        return $this->request(new BashOwnershipCommandDTO($request, $action, $this->incarnation, bin2hex(random_bytes(16))))->ownership
+        return $this->request(new BashOwnershipCommandDTO($request, $action, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->ownership
             ?? throw new \UnexpectedValueException('Missing Bash ownership result.');
     }
 
-    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO $command): BashRegistrationReplyDTO
+    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO $command): BashRegistrationReplyDTO
     {
         $errors = $this->validator->validate($command);
         if (0 !== \count($errors)) {
@@ -107,7 +115,7 @@ final class BashRegistrationClient
         $transport = null;
         try {
             $transport = (new TransportFactory())->createTransport(
-                'sqlite-queue://bash_registration_reply?endpoint='.rawurlencode($this->endpoint),
+                'sqlite-queue://'.$this->role->queue().'?endpoint='.rawurlencode($this->endpoint),
                 [], new Serializer($this->serializer),
             );
             while ([] !== $this->pending) {
@@ -125,7 +133,7 @@ final class BashRegistrationClient
                     throw new \UnexpectedValueException('Unexpected Bash registration reply type.');
                 }
                 $errors = $this->validator->validate($reply);
-                if (0 !== \count($errors) || $reply->sessionId !== $this->sessionId) {
+                if (0 !== \count($errors) || $reply->sessionId !== $this->sessionId || $reply->role !== $this->role) {
                     throw new \UnexpectedValueException('Invalid Bash registration reply identity.');
                 }
                 // Replacement workers discard replies for their dead predecessor;

@@ -10,15 +10,20 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashLifecycleFailureSubscriber;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationReplyPublisher;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationService;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationStatusEnum;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashRequesterRoleEnum;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DecideBashProcessHandler;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationReplyDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationResultDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\RegisterBashProcessHandler;
+use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Runtime\Messenger\FiberMessageExecutionStrategy;
 use Ineersa\CodingAgent\Runtime\Messenger\RunControlDoctrineFailureResetSubscriber;
 use Ineersa\CodingAgent\Runtime\Messenger\SerializedBrokerSendersLocator;
@@ -29,10 +34,15 @@ use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\MessageSentToTransportsEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
@@ -49,9 +59,225 @@ use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 use function Amp\async;
+use function Amp\delay;
 
 final class BashRegistrationClientTest extends IsolatedKernelTestCase
 {
+    /** @return iterable<string, array{bool}> */
+    public static function stopRequesterModes(): iterable
+    {
+        yield 'live waiter with lost reply' => [false];
+        yield 'orphaned request without requester continuation' => [true];
+    }
+
+    #[DataProvider('stopRequesterModes')]
+    public function testControllerAdoptsCommittedStopWhileFirstReplyIsLost(bool $orphaned): void
+    {
+        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner) use ($orphaned): void {
+            $directory = TestDirectoryIsolation::createProjectTempDir('bash-stop-adoption');
+            $config = new BackgroundProcessConfig(storageDir: $directory, stopGraceSeconds: 5);
+            $logger = new TestLogger();
+            $store = self::getContainer()->get(ProcessStore::class);
+            $lifecycle = new ProcessLifecycle($config, $logger, new LockFactory(new FlockStore()));
+            $manager = new BackgroundProcessManager($store, $lifecycle, $config, $logger);
+            $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $sender = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $locator = new SendersLocator([BashProcessCommandDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
+            $bus = new MessageBus([new SendMessageMiddleware(new SerializedBrokerSendersLocator($locator))]);
+            $serializer = self::getContainer()->get(SerializerInterface::class);
+            $validator = self::getContainer()->get(ValidatorInterface::class);
+            $lost = new DeferredFuture();
+            $allowReplay = new DeferredFuture();
+            $dropFirst = true;
+            $failingSerializer = $this->createStub(SerializerInterface::class);
+            $failingSerializer->method('serialize')->willReturnCallback(static function (mixed $data, string $format, array $context = []) use ($serializer, &$dropFirst): string {
+                if ($data instanceof BashRegistrationReplyDTO && BashRequesterRoleEnum::Tool === $data->role && $dropFirst) {
+                    $dropFirst = false;
+                    throw new \RuntimeException('injected first stop reply loss');
+                }
+
+                return $serializer->serialize($data, $format, $context);
+            });
+            $failingSerializer->method('deserialize')->willReturnCallback($serializer->deserialize(...));
+            $publisher = new BashRegistrationReplyPublisher($paths->endpointPath, $owner, $failingSerializer);
+            $handler = new DecideBashProcessHandler($store, $lifecycle, self::getContainer()->get(RunLockManager::class), $publisher, $validator, $owner);
+            $client = new BashRegistrationClient($bus, $paths->endpointPath, $owner, $serializer, $validator);
+            $adopter = new BackgroundProcessManager($store, $lifecycle, $config, $logger);
+            $adopter->useProcessOwner(new BashRegistrationClient($bus, $paths->endpointPath, $owner, $serializer, $validator, BashRequesterRoleEnum::Controller));
+            $pipes = [];
+            foreach (['work', 'term-release', 'peer'] as $name) {
+                $this->assertTrue(posix_mkfifo($directory.'/'.$name, 0600));
+                $pipes[$name] = fopen($directory.'/'.$name, 'r+b');
+                $this->assertIsResource($pipes[$name]);
+            }
+            try {
+                $trap = ': > '.escapeshellarg($directory.'/term').'; IFS= read -r release < '.escapeshellarg($directory.'/term-release').'; exit 0';
+                $target = $manager->start('trap '.escapeshellarg($trap).' TERM; : > '.escapeshellarg($directory.'/ready').'; IFS= read -r work < '.escapeshellarg($directory.'/work'), $owner);
+                $manager->markBackgroundedForRecord($target->id, $owner);
+                $statusPath = $store->decide($target->id, $owner, BashProcessActionEnum::Observe, $lifecycle)->statusPath;
+                $peer = $manager->start(': > '.escapeshellarg($directory.'/peer-ready').'; IFS= read -r peer < '.escapeshellarg($directory.'/peer'), $owner);
+                $manager->markBackgroundedForRecord($peer->id, $owner);
+                $deadline = hrtime(true) + 3_000_000_000;
+                while ((!is_file($directory.'/ready') || !is_file($directory.'/peer-ready')) && hrtime(true) < $deadline) {
+                    $this->assertTrue($lifecycle->isAlive($target->pid));
+                    $this->assertTrue($lifecycle->isAlive($peer->pid));
+                    delay(0.01);
+                }
+                $this->assertFileExists($directory.'/ready');
+                $this->assertFileExists($directory.'/peer-ready');
+                $ownerTask = async(static function () use ($requests, $handler, $lost, $allowReplay, $logger): void {
+                    $firstCorrelation = null;
+                    while (true) {
+                        $requests->wait(1000, new TimeoutCancellation(8));
+                        foreach ($requests->get() as $delivery) {
+                            $command = $delivery->getMessage();
+                            if ($command->correlation === $firstCorrelation && !$allowReplay->isComplete()) {
+                                continue; // Keep the request retryable while adoption runs.
+                            }
+                            try {
+                                $handler($command);
+                            } catch (\RuntimeException $error) {
+                                if ('injected first stop reply loss' !== $error->getMessage()) {
+                                    throw $error;
+                                }
+                                $logger->info('test.intentional_first_reply_loss');
+                                $firstCorrelation = $command->correlation;
+                                $lost->complete();
+                                continue;
+                            }
+                            $requests->ack($delivery);
+                            if ($command->correlation === $firstCorrelation) {
+                                return;
+                            }
+                        }
+                    }
+                });
+                $continuations = 0;
+                $requester = null;
+                if ($orphaned) {
+                    // Model the durable boundary after a requester has vanished:
+                    // there is deliberately no waiter or native continuation.
+                    $bus->dispatch(new BashProcessCommandDTO($target->id, $owner, BashProcessActionEnum::Stop, str_repeat('a', 32), str_repeat('b', 32), BashRequesterRoleEnum::Tool));
+                } else {
+                    $requester = async(static function () use ($client, $target, $owner, &$continuations): mixed {
+                        $result = $client->decide($target->id, $owner, BashProcessActionEnum::Stop);
+                        ++$continuations;
+
+                        return $result;
+                    });
+                }
+                $lost->getFuture()->await(new TimeoutCancellation(8));
+                $this->assertFalse($requester?->isComplete() ?? false);
+                $this->assertFileDoesNotExist($directory.'/term', 'Metadata alone never signals.');
+                $adopter->refreshEntities($store->fetchBackgrounded($owner));
+                $deadline = hrtime(true) + 3_000_000_000;
+                while (!is_file($directory.'/term') && hrtime(true) < $deadline) {
+                    $this->assertTrue($lifecycle->isAlive($target->pid));
+                    delay(0.01);
+                }
+                $this->assertFileExists($directory.'/term', 'Adoption issues TERM before starting its own grace.');
+                $this->assertTrue($lifecycle->isAlive($target->pid), 'The trap holds the target inside normal graceful cleanup.');
+                $this->assertTrue($lifecycle->isAlive($peer->pid), 'The unrelated sibling remains held.');
+                $this->assertFalse($requester?->isComplete() ?? false, 'Adoption cannot depend on first-reply redelivery or requester continuation.');
+                fwrite($pipes['term-release'], "exit\n");
+                fflush($pipes['term-release']);
+                $deadline = hrtime(true) + 3_000_000_000;
+                while (null === $lifecycle->readStatusFile($statusPath) && hrtime(true) < $deadline) {
+                    delay(0.01);
+                }
+                $this->assertSame(0, $lifecycle->readStatusFile($statusPath), 'The target exits through TERM cleanup, not KILL.');
+                $allowReplay->complete();
+                if (null !== $requester) {
+                    $this->assertTrue($requester->await(new TimeoutCancellation(8))->finished);
+                }
+                $ownerTask->await(new TimeoutCancellation(8));
+                $this->assertSame($orphaned ? 0 : 1, $continuations);
+                $row = self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchAssociative('SELECT * FROM background_process WHERE id = ?', [$target->id]);
+                $this->assertSame(1, (int) $row['stopped_by_user']);
+                $this->assertNotNull($row['completion_notified_at']);
+                $this->assertTrue($lifecycle->isAlive($peer->pid));
+            } finally {
+                if (isset($ownerTask)) {
+                    $ownerTask->ignore();
+                }
+                if (isset($requester)) {
+                    $requester->ignore();
+                }
+                foreach ($pipes as $pipe) {
+                    fwrite($pipe, "cleanup\n");
+                    fclose($pipe);
+                }
+                $manager->shutdownCleanup();
+                $requests->close();
+                $sender->close();
+                $publisher->reset();
+                TestDirectoryIsolation::removeDirectory($directory);
+            }
+        });
+    }
+
+    public function testSimultaneousRolesReceiveOnlyTheirRepliesAndOwnerProcessDecisions(): void
+    {
+        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $handler, BashRegistrationReplyPublisher $publisher): void {
+            $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $sender = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
+            $bothSent = new DeferredFuture();
+            $sent = 0;
+            $events = new EventDispatcher();
+            $events->addListener(MessageSentToTransportsEvent::class, static function (MessageSentToTransportsEvent $event) use (&$sent, $bothSent, $publisher, $owner): void {
+                $command = $event->getEnvelope()->getMessage();
+                if ($command instanceof RegisterBashProcessCommandDTO) {
+                    // A stale incarnation is discarded only within its own role.
+                    $publisher->publish(new BashRegistrationReplyDTO($owner, str_repeat('f', 32), $command->correlation, new BashRegistrationResultDTO(BashRegistrationStatusEnum::SessionMissing), role: $command->role));
+                    if (2 === ++$sent) {
+                        $bothSent->complete();
+                    }
+                }
+            });
+            $locator = new SendersLocator([RegisterBashProcessCommandDTO::class => ['run_control'], BashProcessCommandDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
+            $bus = new MessageBus([new SendMessageMiddleware(new SerializedBrokerSendersLocator($locator), $events)]);
+            $serializer = self::getContainer()->get(SerializerInterface::class);
+            $validator = self::getContainer()->get(ValidatorInterface::class);
+            $decisions = new DecideBashProcessHandler(self::getContainer()->get(ProcessStore::class), self::getContainer()->get(ProcessLifecycle::class), self::getContainer()->get(RunLockManager::class), $publisher, $validator, $owner);
+            $ownerEvents = new EventDispatcher();
+            $worker = new Worker(['run_control' => $requests], new MessageBus([new HandleMessageMiddleware(new HandlersLocator([RegisterBashProcessCommandDTO::class => [$handler], BashProcessCommandDTO::class => [$decisions]]))]), $ownerEvents);
+            $handled = 0;
+            $ownerEvents->addListener(WorkerMessageHandledEvent::class, static function () use (&$handled, $worker): void {
+                if (4 === ++$handled) {
+                    $worker->stop();
+                }
+            });
+            $ownerTask = async(static function () use ($bothSent, $worker): void {
+                $bothSent->getFuture()->await(new TimeoutCancellation(8));
+                $worker->run(['sleep' => 0]);
+            });
+            $tasks = [];
+            try {
+                foreach ([BashRequesterRoleEnum::Tool, BashRequesterRoleEnum::Controller] as $i => $role) {
+                    $client = new BashRegistrationClient($bus, $paths->endpointPath, $owner, $serializer, $validator, $role);
+                    $tasks[] = async(function () use ($client, $owner, $i): int {
+                        $registered = $client->register($this->request($owner, $i + 1));
+                        $this->assertSame(BashRegistrationStatusEnum::Registered, $registered->status);
+                        $snapshot = $client->decide($registered->recordId, $owner, BashProcessActionEnum::Stop);
+                        $this->assertTrue($snapshot->finished, 'The fixture registers no real process.');
+                        $this->assertFalse($snapshot->signalRequired);
+
+                        return $snapshot->id;
+                    });
+                }
+                $ids = array_map(static fn ($task): int => $task->await(new TimeoutCancellation(8)), $tasks);
+                $ownerTask->await(new TimeoutCancellation(8));
+                $this->assertNotSame($ids[0], $ids[1]);
+                $this->assertSame(4, $handled);
+                $this->assertSame([], iterator_to_array($requests->get()));
+            } finally {
+                $worker->stop();
+                $requests->close();
+                $sender->close();
+            }
+        });
+    }
+
     public function testSixteenOccupiedToolSlotsReceiveCommittedRepliesWithoutAdmissionSlots(): void
     {
         $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $handler, BashRegistrationReplyPublisher $publisher): void {
@@ -126,7 +352,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $handler, BashRegistrationReplyPublisher $publisher): void {
             $factory = new TransportFactory();
             $requests = $factory->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
-            $replies = $factory->createTransport('sqlite-queue://bash_registration_reply?endpoint='.rawurlencode($paths->endpointPath), [], new Serializer(self::getContainer()->get(SerializerInterface::class)));
+            $replies = $factory->createTransport('sqlite-queue://bash_registration_reply_tool?endpoint='.rawurlencode($paths->endpointPath), [], new Serializer(self::getContainer()->get(SerializerInterface::class)));
             $cancel = new TimeoutCancellation(8);
             try {
                 $request = new RegisterBashProcessCommandDTO($this->request($owner, 1), str_repeat('b', 32), str_repeat('c', 32));
@@ -191,13 +417,23 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         });
     }
 
-    public function testExhaustedOwnerRequestReportsUnknownOutcomeInsteadOfLeavingWaiterPending(): void
+    /** @return iterable<string, array{BashRequesterRoleEnum, bool}> */
+    public static function requesterRoles(): iterable
     {
-        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $handler, BashRegistrationReplyPublisher $publisher): void {
+        yield 'tool registration' => [BashRequesterRoleEnum::Tool, false];
+        yield 'controller registration' => [BashRequesterRoleEnum::Controller, false];
+        yield 'tool stop' => [BashRequesterRoleEnum::Tool, true];
+        yield 'controller stop' => [BashRequesterRoleEnum::Controller, true];
+    }
+
+    #[DataProvider('requesterRoles')]
+    public function testExhaustedOwnerRequestReportsUnknownOutcomeInsteadOfLeavingWaiterPending(BashRequesterRoleEnum $role, bool $decision): void
+    {
+        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $handler, BashRegistrationReplyPublisher $publisher) use ($role, $decision): void {
             $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
             $sender = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
-            $locator = new SendersLocator([RegisterBashProcessCommandDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
-            $client = new BashRegistrationClient(new MessageBus([new SendMessageMiddleware($locator)]), $paths->endpointPath, $owner, self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(ValidatorInterface::class));
+            $locator = new SendersLocator([RegisterBashProcessCommandDTO::class => ['run_control'], BashProcessCommandDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
+            $client = new BashRegistrationClient(new MessageBus([new SendMessageMiddleware($locator)]), $paths->endpointPath, $owner, self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(ValidatorInterface::class), $role);
             $subscriber = new BashLifecycleFailureSubscriber(new ServiceLocator([BashRegistrationReplyPublisher::class => static fn () => $publisher]), $owner);
             $ownerTask = async(static function () use ($requests, $subscriber): void {
                 $requests->wait(3000, new TimeoutCancellation(8));
@@ -211,8 +447,12 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             });
             try {
                 try {
-                    $client->register($this->request($owner, 1));
-                    $this->fail('A terminal owner error must not report successful registration.');
+                    if ($decision) {
+                        $client->decide(1, $owner, BashProcessActionEnum::Stop);
+                    } else {
+                        $client->register($this->request($owner, 1));
+                    }
+                    $this->fail('A terminal owner error must not report a successful lifecycle decision.');
                 } catch (\RuntimeException $error) {
                     $this->assertStringContainsString('committed outcome is unknown', $error->getMessage());
                 }

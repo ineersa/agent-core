@@ -32,7 +32,7 @@ final readonly class RegisterBashProcessHandler
         // This is metadata, not a RunState command: it deliberately does not
         // initialize/replay a run. The operation owns its transaction and lock.
         $result = $this->registration->register($command->registration);
-        $reply = new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, $result);
+        $reply = new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, $result, role: $command->role);
         $this->locks->afterRelease($command->registration->ownerSessionId, fn () => $this->replies->publish($reply));
     }
 }

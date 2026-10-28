@@ -352,24 +352,24 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $result = $this->manager->start('echo "completed"', self::TEST_SESSION);
         $this->waitUntilFinished($result->pid);
 
-        $events = static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getEventManager();
-        $listener = new class {
-            public function onFlush(): void
-            {
-                throw new \RuntimeException('cleanup flush failed');
-            }
-        };
-        $events->addEventListener([\Doctrine\ORM\Events::onFlush], $listener);
+        $connection = static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getConnection();
+        // Restore the unobserved state so cleanup must commit terminal evidence.
+        // A real database refusal replaces the former ORM-flush-only injection.
+        $connection->executeStatement('UPDATE background_process SET finished_at = NULL WHERE id = ?', [$result->id]);
+        $connection->executeStatement("CREATE TRIGGER fail_cleanup BEFORE UPDATE ON background_process BEGIN SELECT RAISE(ABORT, 'cleanup write failed'); END");
         try {
             $this->assertSame(0, $this->manager->shutdownCleanup());
-            $this->assertShutdownCleanupErrors(['cleanup flush failed']);
+            $errors = array_values(array_filter($this->logger->records, static fn (array $record): bool => 'background_process.shutdown_cleanup_error' === $record['message']));
+            $this->assertCount(1, $errors);
+            $error = (string) $errors[0]['context']['error'];
+            $this->assertStringContainsString('cleanup write failed', $error);
         } finally {
-            $events->removeEventListener([\Doctrine\ORM\Events::onFlush], $listener);
+            $connection->executeStatement('DROP TRIGGER fail_cleanup');
         }
 
         $this->assertSame(1, $this->manager->shutdownCleanup());
         $this->assertSame(0, $this->manager->shutdownCleanup());
-        $this->assertShutdownCleanupErrors(['cleanup flush failed']);
+        $this->assertShutdownCleanupErrors([$error]);
     }
 
     /* ── Session scoping ── */

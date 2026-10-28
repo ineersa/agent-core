@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashOwnershipStatusEnum;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationStatusEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipRequestDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
@@ -47,7 +49,7 @@ use function Amp\delay;
  * Session ownership: user-facing list(), readLogTail(), and
  * stop() operations require an owning session and expose only rows explicitly
  * accepted as background work. Instance shutdown resolves owned record IDs
- * directly and stops them through stopProcessEntity().
+ * directly and stops them through stopProcessRecord().
  *
  * Shutdown handling:
  * Call registerShutdownHandler() from production wiring (services.yaml)
@@ -90,6 +92,7 @@ final class BackgroundProcessManager
     private array $ownedRecordIds = [];
 
     private ?BashRegistrationClient $ownerClient = null;
+    private ?BashRegistrationClient $processOwnerClient = null;
     /** @var array<string, array{pid: int, pgid: ?int, status: string, owner: string}> */
     private array $ownedLaunches = [];
     /** @var array<int, string> */
@@ -141,9 +144,15 @@ final class BackgroundProcessManager
         });
     }
 
+    public function useProcessOwner(BashRegistrationClient $client): void
+    {
+        $this->processOwnerClient = $client;
+    }
+
     public function useLifecycleOwner(BashRegistrationClient $client): void
     {
         $this->ownerClient = $client;
+        $this->processOwnerClient = $client;
     }
 
     // ─── Public lifecycle API ─────────────────────────────────────────
@@ -511,6 +520,11 @@ final class BackgroundProcessManager
         return $this->lifecycle->readLogTail($entity->logPath, $maxChars, null !== $entity->finishedAt);
     }
 
+    public function isAcceptedRecord(int $recordId, string $runId): bool
+    {
+        return $this->store->isAcceptedRecord($recordId, $runId);
+    }
+
     /**
      * Stop a background process: TERM → grace → KILL.
      *
@@ -518,10 +532,6 @@ final class BackgroundProcessManager
      * (kill -TERM -<PGID>) when a PGID is available.  Falls back
      * to single-PID signalling only when the PGID could not be
      * determined — a rare race window immediately after process launch.
-     *
-     * @param int    $pid       Process PID to stop. Must be > 0.
-     * @param string $sessionId owning run. Only an accepted background process
-     *                          in that run can be stopped.
      *
      * @throws \RuntimeException when process not found or PID is invalid
      */
@@ -533,13 +543,13 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('Invalid PID %d for stop.', $pid));
         }
 
-        $entity = $this->store->fetchBackgroundedByPid($sessionId, $pid);
+        $recordId = $this->store->acceptedRecordId($sessionId, $pid);
 
-        if (null === $entity) {
+        if (null === $recordId) {
             throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
-        return $this->stopProcessEntity($entity);
+        return $this->stopProcessRecord($recordId, $sessionId);
     }
 
     /**
@@ -654,17 +664,12 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('Invalid record ID %d for stop.', $recordId));
         }
 
-        $entity = $this->store->fetchByRecordId($recordId);
-
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('No background process found with record ID %d.', $recordId));
-        }
-
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+        $runId = $this->store->sessionForRecord($recordId);
+        if (null === $runId || (null !== $sessionId && $runId !== $sessionId)) {
             throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
         }
 
-        return $this->stopProcessEntity($entity, $waitForExit);
+        return $this->stopProcessRecord($recordId, $runId, $waitForExit);
     }
 
     /**
@@ -731,6 +736,7 @@ final class BackgroundProcessManager
 
         $refreshed = [];
         $toTerminate = [];
+        $toAdopt = [];
         foreach ($entities as $entity) {
             try {
                 $this->resolveEntityStatus($entity);
@@ -743,9 +749,9 @@ final class BackgroundProcessManager
                     if (!isset($this->timeoutGraceDeadlines[$entity->id])) {
                         $entity->status = BackgroundProcessStatusEnum::Stopped;
                         if ($entity->stoppedByUser) {
-                            // TERM was requested already. Adopt bounded grace
-                            // without signaling cleanup subprocesses a second time.
-                            $this->timeoutGraceDeadlines[$entity->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+                            // Committed intent is not evidence TERM occurred:
+                            // the requester may have died before receiving its reply.
+                            $toAdopt[] = ['id' => $entity->id, 'run' => $entity->sessionId];
                         } else {
                             $toTerminate[] = $entity;
                         }
@@ -767,6 +773,19 @@ final class BackgroundProcessManager
         }
         if ([] !== $refreshed) {
             $this->store->flush();
+        }
+        foreach ($toAdopt as $target) {
+            // Recheck immutable identity and terminal evidence under the sidecar
+            // lock, then begin grace only after this manager has issued TERM.
+            try {
+                $this->stopProcessRecord($target['id'], $target['run'], waitForExit: false);
+            } catch (\Throwable $error) {
+                $record = array_find($refreshed, static fn (BackgroundProcess $candidate): bool => $candidate->id === $target['id']);
+                if (null === $onError || null === $record) {
+                    throw $error;
+                }
+                $onError($record, $error);
+            }
         }
         // Never wait for grace: all due processes receive TERM after the same
         // refresh flush, and later passes observe exit or escalate to KILL.
@@ -812,94 +831,79 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Shared stop lifecycle for a resolved background-process entity.
+     * Native stop supervision retains only immutable snapshots across yields.
      */
-    private function stopProcessEntity(BackgroundProcess $entity, bool $waitForExit = true): StopResult
+    private function stopProcessRecord(int $recordId, string $runId, bool $waitForExit = true): StopResult
     {
-        unset($this->timeoutGraceDeadlines[$entity->id]);
-        $pid = $entity->pid;
-
-        // Refresh status before acting — the process may have finished
-        // since the last list() call (status file written, /proc gone).
-        $this->resolveEntityStatus($entity);
-        $this->store->flush();
-
-        if (null !== $entity->finishedAt) {
-            return new StopResult(
-                pgid: $entity->pgid,
-                alreadyFinished: true,
-                signalSent: 'none',
-            );
+        $identity = $this->processDecision($recordId, $runId, BashProcessActionEnum::Observe);
+        if (null === $identity) {
+            throw new \RuntimeException('Background process is no longer available.');
         }
 
-        $pgid = $entity->pgid;
-        $graceSeconds = $this->config->stopGraceSeconds;
-
-        // Persist explicit stop intent before TERM: an independent completion
-        // poller can observe native exit while this caller is still in grace.
-        $entity->status = BackgroundProcessStatusEnum::Stopped;
-        $entity->stoppedByUser = true;
-        $entity->markCompletionNotified(Clock::get()->now());
-        $this->store->flush();
-
-        // TERM signal — target process group (negative PGID)
-        $signalSent = 'term';
-        $this->lifecycle->sendTerm($pid, $pgid);
-        if (!$waitForExit) {
-            return new StopResult(pgid: $pgid, alreadyFinished: false, signalSent: $signalSent);
-        }
-
-        // Poll until cooperative exit or grace deadline, then KILL if still alive.
-        // Wrapper trap writes .status before /proc fully disappears; treat that as done.
-        // Yield through the grace period so sibling tools and lease renewal remain runnable.
-        $statusPath = $entity->statusPath;
-        if ($graceSeconds > 0) {
-            $deadlineNs = hrtime(true) + ($graceSeconds * 1_000_000_000);
-            while (hrtime(true) < $deadlineNs) {
-                if (null !== $this->lifecycle->readStatusFile($statusPath)) {
-                    break;
-                }
-                if (!$this->lifecycle->isAlive($pid)) {
-                    break;
-                }
-                delay(0.05);
+        // Maintenance must not delete completion evidence between the owner
+        // decision and native signalling. Owner decisions do not take this lock.
+        return $this->lifecycle->withSidecarLock($identity->statusPath, function () use ($recordId, $runId, $waitForExit): StopResult {
+            $process = $this->processDecision($recordId, $runId, BashProcessActionEnum::Stop);
+            if (null === $process) {
+                throw new \RuntimeException('Background process is no longer available.');
             }
-        }
+            if ($process->finished || !$process->signalRequired) {
+                unset($this->timeoutGraceDeadlines[$recordId]);
 
-        // Prefer status-file proof of cooperative exit over /proc residual.
-        $cooperativelyExited = null !== $this->lifecycle->readStatusFile($statusPath);
-        if (!$cooperativelyExited && $this->lifecycle->isAlive($pid)) {
-            $signalSent = 'term+kill';
-            $this->lifecycle->sendKill($pid, $pgid);
-        }
+                return new StopResult(pgid: $process->pgid, alreadyFinished: $process->finished, signalSent: 'none');
+            }
+            $pid = $process->pid;
+            $pgid = $process->pgid;
+            $statusPath = $process->statusPath;
+            $graceSeconds = $this->config->stopGraceSeconds;
+            $signalSent = 'none';
+            if (!isset($this->timeoutGraceDeadlines[$recordId])) {
+                $this->lifecycle->sendTerm($pid, $pgid);
+                $signalSent = 'term';
+                $this->timeoutGraceDeadlines[$recordId] = hrtime(true) + $graceSeconds * 1_000_000_000;
+            }
+            if (!$waitForExit) {
+                return new StopResult(pgid: $pgid, alreadyFinished: false, signalSent: $signalSent);
+            }
+            if ($graceSeconds > 0) {
+                $deadlineNs = $this->timeoutGraceDeadlines[$recordId];
+                while (hrtime(true) < $deadlineNs) {
+                    if (null !== $this->lifecycle->readStatusFile($statusPath) || !$this->lifecycle->isAlive($pid)) {
+                        break;
+                    }
+                    delay(0.05);
+                }
+            }
+            if (null === $this->lifecycle->readStatusFile($statusPath) && $this->lifecycle->isAlive($pid)) {
+                $signalSent = 'term+kill';
+                $this->lifecycle->sendKill($pid, $pgid);
+            }
+            $this->logger->info('background_process.stopped', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.stopped',
+                'run_id' => $runId,
+                'record_id' => $recordId,
+                'process_pid' => $pid,
+                'process_pgid' => $pgid,
+                'signal_sent' => $signalSent,
+                'grace_seconds' => $graceSeconds,
+            ]);
+            // Preserve the wrapper's real exit code; only an absent marker gets -1.
+            if ('' !== $statusPath) {
+                $this->lifecycle->writeStopMarker($statusPath);
+            }
+            $this->processDecision($recordId, $runId, BashProcessActionEnum::SettleStop);
+            unset($this->timeoutGraceDeadlines[$recordId]);
 
-        $this->logger->info('background_process.stopped', [
-            'component' => 'tool.background_process',
-            'event_type' => 'background_process.stopped',
-            'process_pid' => $pid,
-            'process_pgid' => $pgid,
-            'signal_sent' => $signalSent,
-            'grace_seconds' => $graceSeconds,
-        ]);
+            return new StopResult(pgid: $pgid, alreadyFinished: false, signalSent: $signalSent);
+        });
+    }
 
-        $now = Clock::get()->now();
-        $entity->markStopped($now);
-
-        // Write -1 to the status file only when the wrapper did not
-        // already write a real exit code (KILL path). When TERM succeeds
-        // the wrapper's trap handler writes the child's real exit code
-        // before exiting; overwriting would corrupt forensic evidence.
-        if ('' !== $statusPath) {
-            $this->lifecycle->writeStopMarker($statusPath);
-        }
-
-        $this->store->flush();
-
-        return new StopResult(
-            pgid: $pgid,
-            alreadyFinished: false,
-            signalSent: $signalSent,
-        );
+    private function processDecision(int $recordId, string $runId, BashProcessActionEnum $action): ?BashProcessSnapshotDTO
+    {
+        return null !== $this->processOwnerClient
+            ? $this->processOwnerClient->decide($recordId, $runId, $action)
+            : $this->store->decide($recordId, $runId, $action, $this->lifecycle);
     }
 
     /**
@@ -917,15 +921,15 @@ final class BackgroundProcessManager
                 continue;
             }
             try {
-                $entity = $this->store->fetchByRecordId($recordId);
-                if (null !== $entity) {
-                    $this->stopProcessEntity($entity);
+                $runId = $this->store->sessionForRecord($recordId);
+                if (null !== $runId) {
+                    $this->stopProcessRecord($recordId, $runId);
                     ++$count;
                 }
                 // Missing rows were already removed by session/provisional cleanup.
                 // Keep ownership on failure so a later cleanup can retry.
                 unset($this->ownedRecordIds[$recordId]);
-            } catch (\RuntimeException $e) {
+            } catch (\Throwable $e) {
                 $this->logger->warning('background_process.shutdown_cleanup_error', [
                     'component' => 'tool.background_process',
                     'event_type' => 'background_process.shutdown_cleanup_error',

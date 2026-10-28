@@ -32,7 +32,7 @@ final readonly class ChangeBashOwnershipHandler
         $status = BashOwnershipActionEnum::Accept === $command->action
             ? $this->ownership->accept($command->request)
             : $this->ownership->retire($command->request);
-        $reply = new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, ownership: $status);
+        $reply = new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, ownership: $status, role: $command->role);
         $this->locks->afterRelease($command->request->ownerSessionId, fn () => $this->replies->publish($reply));
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Application\BackgroundProcess;
 
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipCommandDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationReplyDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO;
 use Psr\Container\ContainerInterface;
@@ -36,9 +37,9 @@ final readonly class BashLifecycleFailureSubscriber implements EventSubscriberIn
             return;
         }
         $command = $event->getEnvelope()->getMessage();
-        if (!$command instanceof RegisterBashProcessCommandDTO && !$command instanceof BashOwnershipCommandDTO) {
+        if (!$command instanceof RegisterBashProcessCommandDTO && !$command instanceof BashOwnershipCommandDTO && !$command instanceof BashProcessCommandDTO) {
             return;
         }
-        $this->container->get(BashRegistrationReplyPublisher::class)->publish(new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, failed: true));
+        $this->container->get(BashRegistrationReplyPublisher::class)->publish(new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, failed: true, role: $command->role));
     }
 }
