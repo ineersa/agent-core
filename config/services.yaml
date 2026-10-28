@@ -975,6 +975,7 @@ services:
     arguments:
       $providers:
         Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider'
+        Ineersa\CodingAgent\Tool\Schema\ScheduleArgumentsSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\ScheduleArgumentsSchemaProvider'
 
   # Same default chain as Describer(null) plus the provider-aware describer.
   # The chain members are vendor classes outside the autowire resource, so

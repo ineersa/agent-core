@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Arguments;
 
+use Ineersa\CodingAgent\Tool\Schema\ScheduleArgumentsSchemaProvider;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -16,7 +17,7 @@ final readonly class ScheduleArgumentsDTO
         #[Assert\Choice(choices: ['bash', 'code_mode'])]
         #[Assert\When(expression: 'this.action === "create"', constraints: [new Assert\NotBlank()])]
         public ?string $tool = null,
-        #[Schema(description: 'Existing Bash or code_mode arguments. backgrounded=true is not supported: scheduled work is already asynchronous.')]
+        #[Schema(description: 'Existing Bash or code_mode arguments. backgrounded=true is not supported: scheduled work is already asynchronous.', provider: ScheduleArgumentsSchemaProvider::class)]
         public array $arguments = [],
         #[Schema(description: 'Symfony interval: seconds as a string, ISO 8601 duration, or relative interval such as "5 minutes".')]
         #[Assert\When(expression: 'this.action === "create"', constraints: [new Assert\NotBlank()])]
