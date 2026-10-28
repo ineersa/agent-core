@@ -78,12 +78,31 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
         $after = $this->childRepository->findByChildRunId($childRunId);
         $this->assertNotNull($after);
         $this->assertSame(17, $after->childEventCursor);
-        $this->assertSame(17, $managed->childEventCursor);
+        $this->assertSame(0, $managed->childEventCursor);
         $this->assertTrue($this->entityManager->contains($managed));
 
         $ordered = $this->childRepository->findOrderedByBatchLifecycleId($lifecycle);
         $this->assertCount(1, $ordered);
         $this->assertSame(17, $ordered[0]->childEventCursor);
+    }
+
+    #[Test]
+    public function childSnapshotsDoNotPopulateTheIdentityMap(): void
+    {
+        [$lifecycle, $childRunId] = $this->reserveOneChild('parent-child-snapshot', 'tool-child-snapshot');
+        $this->entityManager->clear();
+
+        for ($round = 0; $round < 128; ++$round) {
+            $child = $this->childRepository->findByChildRunId($childRunId);
+            $this->assertNotNull($child);
+            $this->assertEquals([$child], $this->childRepository->findOrderedByBatchLifecycleId($lifecycle));
+            $this->assertNotNull($this->childRepository->findProviderCacheKey($childRunId));
+            $this->assertSame([], $this->entityManager->getUnitOfWork()->getIdentityMap());
+        }
+
+        $this->assertNull($this->childRepository->findByChildRunId('missing-child'));
+        $this->assertSame([], $this->childRepository->findOrderedByBatchLifecycleId('missing-lifecycle'));
+        $this->assertNull($this->childRepository->findProviderCacheKey('missing-child'));
     }
 
     #[Test]

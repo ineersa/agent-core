@@ -40,12 +40,11 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
 
     public function findByParentRunAndToolCall(string $parentRunId, string $parentToolCallId): ?DeferredSubagentBatchProjectionDTO
     {
-        $row = $this->findFreshOneBy([
-            'parentRunId' => $parentRunId,
-            'parentToolCallId' => $parentToolCallId,
-        ]);
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
+            'SELECT * FROM deferred_subagent_batch WHERE parent_run_id = ? AND parent_tool_call_id = ?', [$parentRunId, $parentToolCallId],
+        );
 
-        return $row instanceof DeferredSubagentBatch ? $this->toDto($row) : null;
+        return false === $row ? null : $this->snapshot($row);
     }
 
     public function findEntityByLifecycleId(string $lifecycleId): ?DeferredSubagentBatch
@@ -264,9 +263,11 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
 
     public function findByLifecycleId(string $lifecycleId): ?DeferredSubagentBatchProjectionDTO
     {
-        $row = $this->findFreshOneBy(['lifecycleId' => $lifecycleId]);
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
+            'SELECT * FROM deferred_subagent_batch WHERE lifecycle_id = ?', [$lifecycleId],
+        );
 
-        return $row instanceof DeferredSubagentBatch ? $this->toDto($row) : null;
+        return false === $row ? null : $this->snapshot($row);
     }
 
     public function reserveBatch(
@@ -633,31 +634,36 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         return $row instanceof DeferredSubagentBatch ? $row : null;
     }
 
-    private function toDto(DeferredSubagentBatch $row): DeferredSubagentBatchProjectionDTO
+    /** @param array<string, mixed> $row */
+    private function snapshot(array $row): DeferredSubagentBatchProjectionDTO
     {
         return new DeferredSubagentBatchProjectionDTO(
-            lifecycleId: $row->lifecycleId,
-            parentRunId: $row->parentRunId,
-            parentTurnNo: $row->parentTurnNo,
-            parentToolCallId: $row->parentToolCallId,
-            parentOrderIndex: $row->parentOrderIndex,
-            launchStatus: $row->launchStatus,
-            aggregateProgressRevision: $row->aggregateProgressRevision,
-            deliveredProgressRevision: $row->deliveredProgressRevision,
-            terminalCompletionEnqueuedAt: $row->terminalCompletionEnqueuedAt,
-            startedAt: $row->startedAt,
-            deadlineAt: $row->deadlineAt,
-            createdAt: $row->createdAt,
-            projectionVersion: $row->projectionVersion,
-            children: $this->childRepository->findOrderedByBatchLifecycleId($row->lifecycleId),
-            interruptionKind: $row->interruptionKind,
-            interruptionRequestedAt: $row->interruptionRequestedAt,
-            interruptionProgressEnqueuedAt: $row->interruptionProgressEnqueuedAt,
-            parentModel: $row->parentModel,
-            backgroundedAt: $row->backgroundedAt,
-            completionSource: null === $row->completionSource ? null : $this->serializer->deserialize(
-                $row->completionSource, DeferredSubagentCompletionSourceDTO::class, 'json',
-            ),
+            lifecycleId: $row['lifecycle_id'],
+            parentRunId: $row['parent_run_id'],
+            parentTurnNo: (int) $row['parent_turn_no'],
+            parentToolCallId: $row['parent_tool_call_id'],
+            parentOrderIndex: (int) $row['parent_order_index'],
+            launchStatus: DeferredSubagentBatchLaunchStatusEnum::from($row['launch_status']),
+            aggregateProgressRevision: (int) $row['aggregate_progress_revision'],
+            deliveredProgressRevision: (int) $row['delivered_progress_revision'],
+            terminalCompletionEnqueuedAt: null === $row['terminal_completion_enqueued_at'] ? null : new \DateTimeImmutable($row['terminal_completion_enqueued_at']),
+            startedAt: null === $row['started_at'] ? null : new \DateTimeImmutable($row['started_at']),
+            deadlineAt: null === $row['deadline_at'] ? null : new \DateTimeImmutable($row['deadline_at']),
+            createdAt: new \DateTimeImmutable($row['created_at']),
+            projectionVersion: (int) $row['projection_version'],
+            children: $this->childRepository->findOrderedByBatchLifecycleId($row['lifecycle_id']),
+            interruptionKind: null === $row['interruption_kind'] ? null : DeferredSubagentInterruptionKindEnum::from($row['interruption_kind']),
+            interruptionRequestedAt: null === $row['interruption_requested_at'] ? null : new \DateTimeImmutable($row['interruption_requested_at']),
+            interruptionProgressEnqueuedAt: null === $row['interruption_progress_enqueued_at'] ? null : new \DateTimeImmutable($row['interruption_progress_enqueued_at']),
+            parentModel: $row['parent_model'],
+            backgroundedAt: null === $row['backgrounded_at'] ? null : new \DateTimeImmutable($row['backgrounded_at']),
+            completionSource: null === $row['completion_source'] ? null : $this->serializer->deserialize($row['completion_source'], DeferredSubagentCompletionSourceDTO::class, 'json'),
         );
+    }
+
+    private function toDto(DeferredSubagentBatch $row): DeferredSubagentBatchProjectionDTO
+    {
+        return $this->findByLifecycleId($row->lifecycleId)
+            ?? throw new \RuntimeException('Deferred subagent batch disappeared before snapshot hydration.');
     }
 }
