@@ -482,10 +482,10 @@ final class AgentMessageConverter
     {
         $textContent = $this->contentToText($message->content);
         $imageRefParts = $this->extractImageRefParts($message->content);
-        $hasText = false;
+        $hasSignedText = false;
         foreach ($message->content as $part) {
-            if ('text' === ($part['type'] ?? null) && \is_string($part['text'] ?? null)) {
-                $hasText = true;
+            if ('text' === ($part['type'] ?? null) && \is_string($part['text_signature'] ?? null)) {
+                $hasSignedText = true;
                 break;
             }
         }
@@ -501,7 +501,7 @@ final class AgentMessageConverter
         // thinking-only responses to errors.
         if ('assistant' === $message->role
             && '' === $textContent
-            && !$hasText
+            && !$hasSignedText
             && [] === ($message->metadata['tool_calls'] ?? [])
             && null !== $message->details
             && \is_string($message->details['thinking'] ?? null)

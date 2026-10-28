@@ -16,6 +16,7 @@ use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Contract\ChatGPTContract;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\OpenResponsesContract;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
+use Symfony\AI\Platform\Contract;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Image;
 use Symfony\AI\Platform\Message\Content\Text;
@@ -23,6 +24,7 @@ use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\ToolCallMessage;
 use Symfony\AI\Platform\Message\UserMessage;
+use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\DependencyInjection\ServicesResetterInterface;
@@ -171,6 +173,26 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
             $bag->getMessages(),
             'Thinking-only assistant message must be filtered from provider request.',
         );
+    }
+
+    public function testLegacyUnsignedEmptyTextWithThinkingIsOmittedFromDefaultContract(): void
+    {
+        $message = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => '']],
+            details: ['thinking' => 'Legacy reasoning without a final response'],
+            metadata: ['source_model' => 'generic/deepseek'],
+        );
+        $messages = [$message, new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Continue']])];
+        $payload = Contract::create()->createRequestPayload(
+            new Model('deepseek'),
+            $this->converter->toMessageBagForTarget($messages, 'generic/deepseek'),
+            [],
+        );
+
+        $this->assertSame([['role' => 'user', 'content' => 'Continue']], $payload['messages']);
+        $this->assertSame('', $message->content[0]['text']);
+        $this->assertSame('Legacy reasoning without a final response', $message->details['thinking']);
     }
 
     /**

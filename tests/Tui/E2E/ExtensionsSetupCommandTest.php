@@ -17,6 +17,22 @@ use Symfony\Component\Yaml\Yaml;
 #[Group('tui-e2e-replay')]
 final class ExtensionsSetupCommandTest extends TestCase
 {
+    public function testFixtureIsRetainedUntilShutdownSucceeds(): void
+    {
+        $temporary = TestDirectoryIsolation::createProjectTempDir('extension-setup-retention');
+        try {
+            file_put_contents($temporary.'/stderr.log', 'synthetic shutdown evidence');
+            $this->removeFixtureAfterShutdown($temporary, new \RuntimeException('synthetic shutdown refusal'));
+            $this->assertDirectoryExists($temporary);
+            $this->assertSame('synthetic shutdown evidence', file_get_contents($temporary.'/stderr.log'));
+
+            $this->removeFixtureAfterShutdown($temporary, null);
+            $this->assertDirectoryDoesNotExist($temporary);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($temporary);
+        }
+    }
+
     public function testFailureDiagnosticsRetainOwnedPaneEvidence(): void
     {
         $temporary = TestDirectoryIsolation::createProjectTempDir('extension-setup-diagnostics');
@@ -313,7 +329,6 @@ final class ExtensionsSetupCommandTest extends TestCase
                     }
                 },
                 static fn () => $tmux->killAll(),
-                static fn () => TestDirectoryIsolation::removeDirectory($temporary),
             ] as $cleanup) {
                 try {
                     $cleanup();
@@ -322,9 +337,25 @@ final class ExtensionsSetupCommandTest extends TestCase
                     fwrite(\STDERR, 'Extension setup cleanup failed: '.$exception->getMessage().\PHP_EOL);
                 }
             }
+            try {
+                $this->removeFixtureAfterShutdown($temporary, $cleanupFailure);
+            } catch (\Throwable $exception) {
+                $cleanupFailure ??= $exception;
+                fwrite(\STDERR, 'Extension setup fixture cleanup failed: '.$exception->getMessage().\PHP_EOL);
+            }
             if (null === $failure && null !== $cleanupFailure) {
                 throw $cleanupFailure;
             }
         }
+    }
+
+    private function removeFixtureAfterShutdown(string $temporary, ?\Throwable $shutdownFailure): void
+    {
+        if (null !== $shutdownFailure) {
+            fwrite(\STDERR, 'Retaining extension setup fixture after failed shutdown: '.$temporary.\PHP_EOL);
+
+            return;
+        }
+        TestDirectoryIsolation::removeDirectory($temporary);
     }
 }
