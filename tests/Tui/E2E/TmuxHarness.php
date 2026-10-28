@@ -260,6 +260,34 @@ final class TmuxHarness
         file_put_contents($path, $ansi);
     }
 
+    public function saveFailureDiagnostics(TmuxPane $pane, string $stderrPath): void
+    {
+        $this->saveAnsiSnapshot($pane, 'failure');
+        file_put_contents($this->snapshotDir.'/failure.txt', $this->capturePlain($pane));
+        if (is_file($stderrPath)) {
+            copy($stderrPath, $this->snapshotDir.'/stderr.log');
+        }
+        $pid = $this->panePid($pane);
+        $processes = [];
+        foreach ($this->ownedPaneProcessSnapshot($pid) as $ownedPid) {
+            $processes[$ownedPid] = [
+                'status' => @file_get_contents('/proc/'.$ownedPid.'/status'),
+                'wait_channel' => @file_get_contents('/proc/'.$ownedPid.'/wchan'),
+            ];
+        }
+        file_put_contents($this->snapshotDir.'/processes.json', json_encode([
+            'session' => $pane->session,
+            'pane' => $pane->paneId,
+            'pane_pid' => $pid,
+            'pane_state' => $this->runTmux(\sprintf(
+                'tmux display-message -p -t %s "pid=#{pane_pid} dead=#{pane_dead} command=#{pane_current_command}"',
+                escapeshellarg($pane->paneId),
+            ), self::TMUX_CMD_TIMEOUT),
+            'pane_proc_readable' => is_readable('/proc/'.$pid.'/status'),
+            'processes' => $processes,
+        ], \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR));
+    }
+
     // ── send keys ──────────────────────────────────────────
 
     /**
