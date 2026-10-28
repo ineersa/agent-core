@@ -23,6 +23,14 @@ Hatfield uses the public GitHub Composer repository:
 
 Composer locks the release to commit `7cedd29f374b1bb55f17ee71a60ea2b106f3953b`. Symfony AI dependencies use package-specific `^1.0@beta` allowances. No local package mirror or absolute path repository is required.
 
+### Temporary OpenResponses override
+
+The host's Composer `package` repository pins `symfony/ai-open-responses-platform` to `329058c0848808733badac76e7e163da0fea577e` in [ineersa/ai](https://github.com/ineersa/ai/tree/fix/openresponses-empty-assistant-content-package). This package-only commit has the original `1.0.0-BETA1` source, `78bbb8d721e68979958513c042f66eeb592b7ef4`, as its immediate parent and adds only the empty-assistant normalizer fix and its tests. Explicit empty text remains replayable after foreign-model signatures are stripped; assistants without serializable items are omitted instead of emitting `content: null`.
+
+The override copies the split package's Composer metadata at that exact commit and exposes version `1.0.0-BETA1`. A regular VCS repository cannot identify this split package because the repository's default branch identifies the monorepo as `symfony/ai`. No local paths or changes to the provider package are needed.
+
+After an upstream release includes [Symfony AI pull request 2859](https://github.com/symfony/ai/pull/2859), remove this `package` repository, including its duplicated metadata. Update `symfony/ai-open-responses-platform` to a release containing the fix, adjusting its version constraint if necessary, and regenerate the lock file through Composer. Retain the cross-model replay regression tests.
+
 ## Manual validation
 
 These commands create a new ChatGPT grant in the separate auth file. They do not migrate the old grant. Login and provider inference require the user's participation; automated tests use synthetic credentials and mocked streams.

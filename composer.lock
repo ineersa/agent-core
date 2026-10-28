@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "7b8c83683f5eb0ade962b414923c624f",
+    "content-hash": "53c4e19513fe9bf4159a8d1306952a78",
     "packages": [
         {
             "name": "amphp/amp",
@@ -5620,17 +5620,11 @@
         },
         {
             "name": "symfony/ai-open-responses-platform",
-            "version": "v1.0.0-BETA1",
+            "version": "1.0.0-BETA1",
             "source": {
                 "type": "git",
-                "url": "https://github.com/symfony/ai-open-responses-platform.git",
-                "reference": "78bbb8d721e68979958513c042f66eeb592b7ef4"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/symfony/ai-open-responses-platform/zipball/78bbb8d721e68979958513c042f66eeb592b7ef4",
-                "reference": "78bbb8d721e68979958513c042f66eeb592b7ef4",
-                "shasum": ""
+                "url": "https://github.com/ineersa/ai.git",
+                "reference": "329058c0848808733badac76e7e163da0fea577e"
             },
             "require": {
                 "php": ">=8.2",
@@ -5646,8 +5640,8 @@
             "type": "symfony-ai-platform",
             "extra": {
                 "thanks": {
-                    "url": "https://github.com/symfony/ai",
-                    "name": "symfony/ai"
+                    "name": "symfony/ai",
+                    "url": "https://github.com/symfony/ai"
                 }
             },
             "autoload": {
@@ -5655,7 +5649,12 @@
                     "Symfony\\AI\\Platform\\Bridge\\OpenResponses\\": ""
                 }
             },
-            "notification-url": "https://packagist.org/downloads/",
+            "autoload-dev": {
+                "psr-4": {
+                    "Symfony\\AI\\PHPStan\\": "../../../../../.phpstan/",
+                    "Symfony\\AI\\Platform\\Bridge\\OpenResponses\\Tests\\": "Tests/"
+                }
+            },
             "license": [
                 "MIT"
             ],
@@ -5675,33 +5674,11 @@
             ],
             "description": "Open Responses platform bridge for Symfony AI",
             "keywords": [
-                "Bridge",
                 "ai",
+                "bridge",
                 "open-responses",
                 "platform"
-            ],
-            "support": {
-                "source": "https://github.com/symfony/ai-open-responses-platform/tree/v1.0.0-BETA1"
-            },
-            "funding": [
-                {
-                    "url": "https://symfony.com/sponsor",
-                    "type": "custom"
-                },
-                {
-                    "url": "https://github.com/fabpot",
-                    "type": "github"
-                },
-                {
-                    "url": "https://github.com/nicolas-grekas",
-                    "type": "github"
-                },
-                {
-                    "url": "https://tidelift.com/funding/github/packagist/symfony/symfony",
-                    "type": "tidelift"
-                }
-            ],
-            "time": "2026-10-26T14:03:07+00:00"
+            ]
         },
         {
             "name": "symfony/ai-platform",
@@ -14565,6 +14542,6 @@
         "ext-xml": "*",
         "ext-zstd": "*"
     },
-    "platform-dev": {},
+    "platform-dev": [],
     "plugin-api-version": "2.6.0"
 }
