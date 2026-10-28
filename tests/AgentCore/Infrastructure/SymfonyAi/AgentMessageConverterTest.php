@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Contract\ChatGPTContract;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\OpenResponsesContract;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
@@ -471,6 +472,48 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
             }
         }
         $this->assertSame($signed->getSignature(), $message->content[0]['text_signature']);
+    }
+
+    public function testEmptyNativeTextProducesValidCrossModelResponsesPayload(): void
+    {
+        $item = ['type' => 'message', 'id' => 'msg_empty', 'role' => 'assistant', 'phase' => 'final_answer', 'content' => []];
+        $messages = [
+            new AgentMessage(role: 'assistant', content: []),
+            new AgentMessage(role: 'assistant', content: [
+                ['type' => 'text', 'text' => '', 'text_signature' => MessageItem::toText($item)->getSignature()],
+                ['type' => 'tool_call', 'tool_call_index' => 0],
+            ], metadata: [
+                'source_model' => 'openai-codex/gpt-6-astra',
+                'tool_calls' => [['id' => 'call_empty', 'name' => 'bash', 'arguments' => ['command' => 'pwd']]],
+            ]),
+            new AgentMessage(role: 'tool', content: [['type' => 'text', 'text' => '/synthetic']], toolCallId: 'call_empty', toolName: 'bash'),
+        ];
+        $source = serialize($messages);
+
+        foreach (['openai-codex/gpt-6-astra', 'openai-codex/gpt-6.1-sol'] as $target) {
+            $payload = ChatGPTContract::create()->createRequestPayload(
+                new ResponsesModel('gpt-6.1-sol'),
+                $this->converter->toMessageBagForTarget($messages, $target),
+                [],
+            );
+
+            $this->assertCount(3, $payload['input']);
+            if ('openai-codex/gpt-6-astra' === $target) {
+                $this->assertSame($item, $payload['input'][0]);
+            } else {
+                $this->assertSame([['type' => 'output_text', 'text' => '', 'annotations' => []]], $payload['input'][0]['content']);
+            }
+            $this->assertSame('function_call', $payload['input'][1]['type']);
+            $this->assertSame('bash', $payload['input'][1]['name']);
+            $this->assertSame('function_call_output', $payload['input'][2]['type']);
+            $this->assertSame($payload['input'][1]['call_id'], $payload['input'][2]['call_id']);
+            foreach ($payload['input'] as $input) {
+                if ('message' === $input['type']) {
+                    $this->assertNotNull($input['content']);
+                }
+            }
+        }
+        $this->assertSame($source, serialize($messages));
     }
 
     public function testAssistantWithoutPartsIsOmittedButToolOnlyAssistantIsKept(): void
