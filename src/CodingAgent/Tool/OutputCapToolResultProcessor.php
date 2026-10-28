@@ -58,7 +58,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             $notice = '[Output capped: '.$bytes.' bytes > '.OutputCap::STREAM_BYTE_LIMIT."-byte safety limit]\nSaved full output: ".$savedPath;
             $capResult = new OutputCapResult($savedPath, null, null, null, $notice, $bytes);
         } else {
-            $retain = 'code_mode' === $toolCall->toolName && \is_string($runId) && null !== $this->deferred->findByRunAndToolCall($runId, $toolCall->toolCallId);
+            $retain = \is_string($runId) && (true === ($toolCall->context['retain_output'] ?? false) || ('code_mode' === $toolCall->toolName && null !== $this->deferred->findByRunAndToolCall($runId, $toolCall->toolCallId)));
             $capResult = $this->outputCap->capIfNeeded($text, \is_string($runId) ? $runId : null, $path,
                 $retain ? fn (callable $write): string => $this->payloads->saveAttachment($runId, $toolCall->toolCallId, $write) : null);
         }

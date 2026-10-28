@@ -359,6 +359,14 @@ services:
       $enabled: '%app.session_resource_sampler.enabled%'
       $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
+  hatfield.session_schedules.cache:
+    class: Symfony\Component\Cache\Adapter\FilesystemAdapter
+    arguments: ['session-schedules', 0, '%app.cwd%/.hatfield/cache']
+
+  Ineersa\CodingAgent\Scheduling\SessionScheduleRepository:
+    arguments:
+      $cache: '@hatfield.session_schedules.cache'
+
   # OutputCapConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\OutputCapConfig:
     factory: ['Ineersa\CodingAgent\Config\OutputCapConfig', 'fromAppConfig']

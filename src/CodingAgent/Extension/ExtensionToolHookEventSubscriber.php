@@ -244,26 +244,32 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         ToolCallDecisionDTO $decision,
         ToolCallContextDTO $context,
     ): void {
-        if (true === ($context->metadata['noninteractive_child_run'] ?? false)) {
-            $reason = $decision->reason ?? 'approval_denied_noninteractive_child';
+        if (true === ($context->metadata['noninteractive_execution'] ?? false) || true === ($context->metadata['noninteractive_child_run'] ?? false)) {
+            $noninteractiveExecution = true === ($context->metadata['noninteractive_execution'] ?? false);
+            $reason = $decision->reason ?? ($noninteractiveExecution ? 'approval_denied_noninteractive' : 'approval_denied_noninteractive_child');
             $event->setResult(new ToolResult($toolCall, array_replace(
                 [
                     'denied' => true,
                     'reason' => $reason,
                     'message' => \sprintf(
-                        'Tool "%s" was denied: human approval is not available for noninteractive child subagent runs.',
+                        $noninteractiveExecution
+                            ? 'Tool "%s" was denied: human approval is not available for this noninteractive execution.'
+                            : 'Tool "%s" was denied: human approval is not available for noninteractive child subagent runs.',
                         $toolCall->getName(),
                     ),
                     'auto_denied' => true,
-                    'noninteractive_child_run' => true,
+                    'noninteractive_child_run' => true === ($context->metadata['noninteractive_child_run'] ?? false),
+                    'noninteractive_execution' => $noninteractiveExecution,
                 ],
                 $decision->details,
             )));
 
-            $this->logger?->info('tool.approval_denied_noninteractive_child', [
+            $eventType = $noninteractiveExecution ? 'tool.approval_denied_noninteractive' : 'tool.approval_denied_noninteractive_child';
+            $this->logger?->info($eventType, [
                 'run_id' => $context->runId ?? '',
+                'session_id' => $context->runId ?? '',
                 'component' => 'extension.tool_hook_subscriber',
-                'event_type' => 'tool.approval_denied_noninteractive_child',
+                'event_type' => $eventType,
                 'tool_call_id' => $toolCall->getId(),
                 'tool_name' => $toolCall->getName(),
                 'hook_class' => $hook::class,
@@ -495,6 +501,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
             metadata: [
                 'signature' => $toolCall->getSignature(),
                 'timeout_seconds' => $current?->timeoutSeconds(),
+                'noninteractive_execution' => false === $current?->allowsHumanInput(),
                 'noninteractive_child_run' => null !== $this->noninteractiveChildProbe
                     && $this->noninteractiveChildProbe->isNoninteractiveChildRun($current?->runId()),
                 'step_id' => $this->ambientStepId(),

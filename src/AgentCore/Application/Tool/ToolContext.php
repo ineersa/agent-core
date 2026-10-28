@@ -25,7 +25,19 @@ final readonly class ToolContext
         private ?string $stepId = null,
         private ?string $parentModel = null,
         private ?ToolLaunchContextDTO $launchContext = null,
+        private bool $allowsHumanInput = true,
+        private bool $retainOutput = false,
     ) {
+    }
+
+    public function allowsHumanInput(): bool
+    {
+        return $this->allowsHumanInput;
+    }
+
+    public function retainOutput(): bool
+    {
+        return $this->retainOutput;
     }
 
     public function runId(): string
