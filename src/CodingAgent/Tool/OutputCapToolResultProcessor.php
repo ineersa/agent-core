@@ -50,15 +50,30 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         );
 
         $runId = $toolCall->runId ?? ($toolCall->context['run_id'] ?? null);
+        $retain = \is_string($runId) && (true === ($toolCall->context['retain_output'] ?? false) || ('code_mode' === $toolCall->toolName && null !== $this->deferred->findByRunAndToolCall($runId, $toolCall->toolCallId)));
         $raw = \is_array($result->details) ? ($result->details['raw_result'] ?? null) : null;
         $captured = 'read' === $toolCall->toolName && \is_array($raw) ? ($raw['output_cap'] ?? null) : null;
         if (\is_array($captured) && \is_string($captured['saved_path'] ?? null) && \is_int($captured['byte_count'] ?? null)) {
             $savedPath = $captured['saved_path'];
+            if ($retain) {
+                $savedPath = $this->payloads->saveAttachment($runId, $toolCall->toolCallId, static function ($destination) use ($savedPath): void {
+                    $source = fopen($savedPath, 'rb');
+                    if (false === $source) {
+                        throw new \RuntimeException('Failed to open captured tool output.');
+                    }
+                    try {
+                        if (false === stream_copy_to_stream($source, $destination)) {
+                            throw new \RuntimeException('Failed to retain captured tool output.');
+                        }
+                    } finally {
+                        fclose($source);
+                    }
+                });
+            }
             $bytes = $captured['byte_count'];
             $notice = '[Output capped: '.$bytes.' bytes > '.OutputCap::STREAM_BYTE_LIMIT."-byte safety limit]\nSaved full output: ".$savedPath;
             $capResult = new OutputCapResult($savedPath, null, null, null, $notice, $bytes);
         } else {
-            $retain = \is_string($runId) && (true === ($toolCall->context['retain_output'] ?? false) || ('code_mode' === $toolCall->toolName && null !== $this->deferred->findByRunAndToolCall($runId, $toolCall->toolCallId)));
             $capResult = $this->outputCap->capIfNeeded($text, \is_string($runId) ? $runId : null, $path,
                 $retain ? fn (callable $write): string => $this->payloads->saveAttachment($runId, $toolCall->toolCallId, $write) : null);
         }

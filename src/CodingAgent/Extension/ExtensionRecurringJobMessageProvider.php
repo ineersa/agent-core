@@ -20,7 +20,9 @@ final readonly class ExtensionRecurringJobMessageProvider implements MessageProv
 
     public function getId(): string
     {
-        return $this->sourceId.':'.$this->job->id;
+        // Symfony includes this identity in the recurrence ID, but its trigger
+        // string omits date bounds and cannot identify changed callback data.
+        return $this->sourceId.':'.$this->job->id.':'.hash('sha256', serialize([$this->runId, $this->job]));
     }
 
     public function getMessages(MessageContext $context): iterable

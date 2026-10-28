@@ -49,8 +49,13 @@ final class ExtensionRecurringJobRegistry
                     throw new \RuntimeException('Recurring job handler must belong to its registered source extension.');
                 }
                 $recurring = RecurringMessage::every($job->every, new ExtensionRecurringJobMessageProvider($id, $job, $this->runId), $job->from, $job->until ?? new \DateTimeImmutable('3000-01-01'));
-                $current[$id.':'.$job->id] = $recurring->getId();
-                if (!isset($this->registered[$id.':'.$job->id])) {
+                $key = $id.':'.$job->id;
+                $current[$key] = $recurring->getId();
+                $installed = $this->registered[$key] ?? null;
+                if ($installed !== $recurring->getId()) {
+                    if (null !== $installed) {
+                        $this->schedule()->removeById($installed);
+                    }
                     $this->schedule()->add($recurring);
                 }
             }

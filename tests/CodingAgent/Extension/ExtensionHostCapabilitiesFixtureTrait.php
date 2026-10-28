@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\CodingAgent\Extension\ExtensionToolInvoker;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
@@ -26,6 +27,7 @@ trait ExtensionHostCapabilitiesFixtureTrait
             $this->createStub(ToolPayloadStoreInterface::class),
             $this->createStub(DenormalizerInterface::class),
             '',
+            $this->createStub(ToolSetResolverInterface::class),
         );
     }
 }

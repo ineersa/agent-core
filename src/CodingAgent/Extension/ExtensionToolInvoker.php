@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
@@ -41,6 +42,7 @@ final readonly class ExtensionToolInvoker implements RegisteredToolInvokerInterf
         private ToolPayloadStoreInterface $payloads,
         private DenormalizerInterface $serializer,
         #[Autowire('%env(HATFIELD_SESSION_ID)%')] private string $controllerId,
+        private ToolSetResolverInterface $toolSets,
     ) {
     }
 
@@ -90,10 +92,12 @@ final readonly class ExtensionToolInvoker implements RegisteredToolInvokerInterf
             }
         }
         $token = new RunCancellationToken($this->status, $request->runId);
+        $timeout = $this->toolSets->resolve('registered', $turn, $request->runId)->timeoutSeconds[$request->toolName] ?? null;
         // A standalone call has no canonical caller batch. Nested restrictions
         // prevent launching deferred child work that would require that batch.
-        $result = $this->context->with(new ToolContext($request->runId, $turn, $request->invocationId, $request->toolName, $token, null, allowsHumanInput: false, retainOutput: $request->retainOutput), fn () => ($this->executor)()->execute(new ToolCall(
+        $result = $this->context->with(new ToolContext($request->runId, $turn, $request->invocationId, $request->toolName, $token, $timeout, allowsHumanInput: false, retainOutput: $request->retainOutput), fn () => ($this->executor)()->execute(new ToolCall(
             $request->invocationId, $request->toolName, $request->arguments, 0, $request->runId,
+            timeoutSeconds: $timeout,
             context: ['turn_no' => $turn, 'tools_ref' => 'registered', 'allows_human_input' => false,
                 'retain_output' => $request->retainOutput, 'cancel_token' => $token],
         )));
