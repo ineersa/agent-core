@@ -129,7 +129,7 @@ PHP);
             $this->assertIsResource($running, 'The owned command must reach its initial IPC barrier.');
             stream_set_timeout($running, 3);
             $this->assertStringStartsWith('running:', (string) fgets($running));
-            $owner->refreshEntities($this->store->fetchAllUnfinished(['accepted-cleanup']));
+            $owner->refreshRecords($this->store->unfinishedSnapshots(['accepted-cleanup']));
             $cleanup = stream_socket_accept($server, 3);
             $this->assertIsResource($cleanup, 'TERM must start the cleanup subprocess.');
             stream_set_timeout($cleanup, 3);

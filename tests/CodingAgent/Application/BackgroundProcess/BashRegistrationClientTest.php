@@ -111,7 +111,9 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                 $this->assertIsResource($pipes[$name]);
             }
             try {
-                $trap = ': > '.escapeshellarg($directory.'/term').'; IFS= read -r release < '.escapeshellarg($directory.'/term-release').'; exit 0';
+                // Group TERM and the wrapper's forwarded TERM can both reach
+                // the command. Once cleanup starts, one release must suffice.
+                $trap = 'trap "" TERM; : > '.escapeshellarg($directory.'/term').'; IFS= read -r release < '.escapeshellarg($directory.'/term-release').'; exit 0';
                 $target = $manager->start('trap '.escapeshellarg($trap).' TERM; : > '.escapeshellarg($directory.'/ready').'; IFS= read -r work < '.escapeshellarg($directory.'/work'), $owner);
                 $manager->markBackgroundedForRecord($target->id, $owner);
                 $statusPath = $store->decide($target->id, $owner, BashProcessActionEnum::Observe, $lifecycle)->statusPath;
@@ -169,7 +171,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                 $lost->getFuture()->await(new TimeoutCancellation(8));
                 $this->assertFalse($requester?->isComplete() ?? false);
                 $this->assertFileDoesNotExist($directory.'/term', 'Metadata alone never signals.');
-                $adopter->refreshEntities($store->fetchBackgrounded($owner));
+                $adopter->refreshRecords($store->backgroundSnapshots($owner));
                 $deadline = hrtime(true) + 3_000_000_000;
                 while (!is_file($directory.'/term') && hrtime(true) < $deadline) {
                     $this->assertTrue($lifecycle->isAlive($target->pid));

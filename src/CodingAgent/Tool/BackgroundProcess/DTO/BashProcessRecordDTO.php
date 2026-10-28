@@ -25,6 +25,7 @@ final readonly class BashProcessRecordDTO
         public bool $backgroundRequested,
         public ?\DateTimeImmutable $completionNotifiedAt,
         public BackgroundProcessStatusEnum $status,
+        public ?int $deadlineNanoseconds,
     ) {
     }
 }

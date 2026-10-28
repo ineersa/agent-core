@@ -19,7 +19,7 @@ use Symfony\Component\Clock\Clock;
 
 /**
  * Durable process snapshots and owner decisions use the existing DBAL connection.
- * Controller batch supervision and lifecycle cleanup still use ORM entities.
+ * Passive scheduler refresh and lifecycle cleanup still use ORM entities.
  * Schema is managed by Doctrine migrations.
  */
 final class ProcessStore
@@ -137,6 +137,24 @@ final class ProcessStore
         return false === $session ? null : (string) $session;
     }
 
+    /** Local acceptance runs only in the serialized in-process owner. */
+    public function acceptLocal(int $recordId, ?string $runId): bool
+    {
+        return $this->entityManager->getConnection()->transactional(function () use ($recordId, $runId): bool {
+            $connection = $this->entityManager->getConnection();
+            $row = $connection->fetchAssociative('SELECT session_id FROM background_process WHERE id = ?', [$recordId]);
+            if (false === $row || (null !== $runId && $row['session_id'] !== $runId)) {
+                return false;
+            }
+            // Local callers can expose a process after observing its completion.
+            // Preserve that contract without retaining an ORM identity-map alias.
+            $now = Clock::get()->now()->format('Y-m-d H:i:s');
+            $connection->executeStatement('UPDATE background_process SET backgrounded_at = COALESCE(backgrounded_at, ?), updated_at = ? WHERE id = ?', [$now, $now, $recordId]);
+
+            return true;
+        });
+    }
+
     /** Resolve the retained session, not the controller's transport identity. */
     public function ownerSessionForRun(string $runId): ?string
     {
@@ -214,6 +232,18 @@ final class ProcessStore
     public function fetchAllUnfinished(array $sessionIds): array
     {
         return $this->repository->findUnfinished($sessionIds);
+    }
+
+    /** @param list<string> $runIds
+     * @return list<BashProcessRecordDTO>
+     */
+    public function unfinishedSnapshots(array $runIds): array
+    {
+        if ([] === $runIds) {
+            return [];
+        }
+
+        return array_map($this->hydrateSnapshot(...), $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id IN (?) AND finished_at IS NULL ORDER BY id', [$runIds], [ArrayParameterType::STRING]));
     }
 
     /**
@@ -387,13 +417,18 @@ final class ProcessStore
             if (!$finished) {
                 $exitCode = $lifecycle->readStatusFile((string) $row['status_path']);
                 $gone = null === $exitCode && !$lifecycle->isAlive((int) $row['pid']);
-                $settledStop = BashProcessActionEnum::SettleStop === $action && (bool) $row['stopped_by_user'];
+                $settledStop = (BashProcessActionEnum::SettleStop === $action && (bool) $row['stopped_by_user'])
+                    || (BashProcessActionEnum::SettleTimeout === $action && BackgroundProcessStatusEnum::Stopped === $status);
                 if (null !== $exitCode || $gone || $settledStop) {
                     $finished = true;
                     if (BackgroundProcessStatusEnum::Stopped !== $status) {
                         $status = null !== $exitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean;
                     }
                     $connection->executeStatement('UPDATE background_process SET finished_at = ?, exit_code = ?, status = ?, updated_at = ? WHERE id = ?', [$now, $exitCode, $status->value, $now, $recordId]);
+                } elseif (BashProcessActionEnum::Timeout === $action && null !== $row['backgrounded_at'] && null !== $row['deadline_nanoseconds'] && hrtime(true) >= (int) $row['deadline_nanoseconds'] && !(bool) $row['stopped_by_user']) {
+                    $status = BackgroundProcessStatusEnum::Stopped;
+                    $signalRequired = true;
+                    $connection->executeStatement('UPDATE background_process SET status = ?, updated_at = ? WHERE id = ?', [$status->value, $now, $recordId]);
                 } elseif (BashProcessActionEnum::Stop === $action) {
                     // A committed intent is not proof that native TERM occurred.
                     // Reconstruct the same obligation after reply loss; only the
@@ -422,6 +457,7 @@ final class ProcessStore
             null === $row['tool_call_id'] ? null : (string) $row['tool_call_id'], (bool) $row['background_requested'],
             null === $row['completion_notified_at'] ? null : new \DateTimeImmutable((string) $row['completion_notified_at']),
             BackgroundProcessStatusEnum::from((string) $row['status']),
+            null === $row['deadline_nanoseconds'] ? null : (int) $row['deadline_nanoseconds'],
         );
     }
 }

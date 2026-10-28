@@ -456,23 +456,27 @@ final class BackgroundProcessManager
 
             return;
         }
-        $entity = $this->store->fetchByRecordId($recordId);
+        if (null !== $this->processOwnerClient) {
+            throw new \RuntimeException('Bash background acceptance requires this worker\'s registered launch identity.');
+        }
+        $record = $this->store->snapshot($recordId);
 
-        if (null === $entity) {
+        if (null === $record) {
             throw new \RuntimeException(\sprintf('Background process record with ID %d not found.', $recordId));
         }
 
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+        if (null !== $sessionId && $record->sessionId !== $sessionId) {
             throw new \RuntimeException(\sprintf('No background process with record ID %d for this session.', $recordId));
         }
 
-        $entity->markBackgrounded(Clock::get()->now());
-        $this->store->flush();
+        if (!$this->store->acceptLocal($recordId, $sessionId)) {
+            throw new \RuntimeException('Bash background acceptance record/session mismatch.');
+        }
 
         $this->logger->info('background_process.marked_backgrounded', [
             'component' => 'tool.background_process',
             'event_type' => 'background_process.marked_backgrounded',
-            'process_pid' => $entity->pid,
+            'process_pid' => $record->pid,
             'record_id' => $recordId,
             'process_session_id' => $sessionId ?? '',
         ]);
@@ -543,7 +547,7 @@ final class BackgroundProcessManager
      * Populate finished_at even when no list() call observes completion.
      *
      * Passive maintenance only: never signal a process. The owning controller
-     * enforces accepted-job deadlines through refreshEntities(); maintenance
+     * enforces accepted-job deadlines through refreshRecords(); maintenance
      * cannot share that owner's in-memory termination grace deadlines.
      *
      * Safe to call repeatedly — only queries unfinished entities, checks
@@ -564,123 +568,89 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Resolve prefetched records, then persist the refresh phase once.
-     * Newly requested timeout stops are durable before any TERM is sent.
+     * Native controller supervision uses snapshots; every durable transition
+     * rereads current authority in the owner before any signal is sent.
      *
-     * A caller may isolate individual resolution failures with onError. Flush
-     * failures still propagate, so no completion is delivered before persistence.
-     * Callers without onError retain fail-fast resolution.
+     * @param list<BashProcessRecordDTO>                            $records
+     * @param \Closure(BashProcessRecordDTO, \Throwable): void|null $onError
      *
-     * @param list<BackgroundProcess>                            $entities
-     * @param \Closure(BackgroundProcess, \Throwable): void|null $onError
-     *
-     * @return list<BackgroundProcess> Successfully refreshed records in input order
+     * @return list<BashProcessRecordDTO>
      */
-    public function refreshEntities(array $entities, ?\Closure $onError = null): array
+    public function refreshRecords(array $records, ?\Closure $onError = null): array
     {
-        // Acknowledging an explicit stop never releases controller supervision.
-        // Its caller may die during grace or only request a nonblocking stop.
         foreach (array_keys($this->timeoutGraceDeadlines) as $id) {
-            $record = $this->store->fetchByRecordId($id);
+            $record = $this->store->snapshot($id);
             if (null === $record || null !== $record->finishedAt) {
                 unset($this->timeoutGraceDeadlines[$id]);
             }
         }
-
         $refreshed = [];
-        $toTerminate = [];
-        $toAdopt = [];
-        foreach ($entities as $entity) {
+        foreach ($records as $record) {
             try {
-                $this->resolveEntityStatus($entity);
-                $deadlineExpired = null !== $entity->deadlineNanoseconds && hrtime(true) >= $entity->deadlineNanoseconds;
-                if (null !== $entity->finishedAt) {
-                    unset($this->timeoutGraceDeadlines[$entity->id]);
-                } elseif (null !== $entity->backgroundedAt && ($entity->stoppedByUser || $deadlineExpired)) {
-                    // The batch flush records the stop cause before TERM can
-                    // make cleanup exit. finishedAt still gates completion.
-                    if (!isset($this->timeoutGraceDeadlines[$entity->id])) {
-                        $entity->status = BackgroundProcessStatusEnum::Stopped;
-                        if ($entity->stoppedByUser) {
-                            // Committed intent is not evidence TERM occurred:
-                            // the requester may have died before receiving its reply.
-                            $toAdopt[] = ['id' => $entity->id, 'run' => $entity->sessionId];
-                        } else {
-                            $toTerminate[] = $entity;
+                $current = $this->processDecision($record->id, $record->sessionId, BashProcessActionEnum::Observe);
+                if (null === $current || $current->finished) {
+                    unset($this->timeoutGraceDeadlines[$record->id]);
+                } else {
+                    $snapshot = $this->store->snapshot($record->id);
+                    if (null !== $snapshot && null !== $snapshot->backgroundedAt) {
+                        if ($snapshot->stoppedByUser && !isset($this->timeoutGraceDeadlines[$record->id])) {
+                            $this->stopProcessRecord($record->id, $record->sessionId, waitForExit: false);
+                        } elseif (null !== $snapshot->deadlineNanoseconds && hrtime(true) >= $snapshot->deadlineNanoseconds) {
+                            $this->superviseTimeout($snapshot);
+                        }
+                        if (isset($this->timeoutGraceDeadlines[$record->id]) && hrtime(true) >= $this->timeoutGraceDeadlines[$record->id]) {
+                            $this->settleExpiredGrace($snapshot);
                         }
                     }
-                    if (isset($this->timeoutGraceDeadlines[$entity->id]) && hrtime(true) >= $this->timeoutGraceDeadlines[$entity->id]) {
-                        $this->lifecycle->sendKill($entity->pid, $entity->pgid);
-                        $entity->finish(null, Clock::get()->now());
-                        $this->lifecycle->writeStopMarker($entity->statusPath);
-                        unset($this->timeoutGraceDeadlines[$entity->id]);
-                    }
                 }
-                $refreshed[] = $entity;
-            } catch (\Throwable $e) {
-                if (null === $onError) {
-                    throw $e;
+                $snapshot = $this->store->snapshot($record->id);
+                if (null !== $snapshot) {
+                    $refreshed[] = $snapshot;
                 }
-                $onError($entity, $e);
-            }
-        }
-        if ([] !== $refreshed) {
-            $this->store->flush();
-        }
-        foreach ($toAdopt as $target) {
-            // Recheck immutable identity and terminal evidence under the sidecar
-            // lock, then begin grace only after this manager has issued TERM.
-            try {
-                $this->stopProcessRecord($target['id'], $target['run'], waitForExit: false);
             } catch (\Throwable $error) {
-                $record = array_find($refreshed, static fn (BackgroundProcess $candidate): bool => $candidate->id === $target['id']);
-                if (null === $onError || null === $record) {
+                if (null === $onError) {
                     throw $error;
                 }
                 $onError($record, $error);
             }
         }
-        // Never wait for grace: all due processes receive TERM after the same
-        // refresh flush, and later passes observe exit or escalate to KILL.
-        $stoppedAfterTerm = false;
-        foreach ($toTerminate as $entity) {
-            try {
-                // A separate caller may have requested an explicit stop since
-                // the candidate snapshot. Refresh its intent before signaling.
-                $current = $this->store->fetchByRecordId($entity->id);
-                if (null === $current || null !== $current->finishedAt || $current->stoppedByUser) {
-                    continue;
-                }
-                $this->lifecycle->sendTerm($entity->pid, $entity->pgid);
-                $this->timeoutGraceDeadlines[$entity->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
-                if (0 === $this->config->stopGraceSeconds) {
-                    $this->lifecycle->sendKill($entity->pid, $entity->pgid);
-                    $entity->markStopped(Clock::get()->now());
-                    $entity->stoppedByUser = false;
-                    $this->lifecycle->writeStopMarker($entity->statusPath);
-                    unset($this->timeoutGraceDeadlines[$entity->id]);
-                    $stoppedAfterTerm = true;
-                }
-                $this->logger->info('background_process.timed_out', [
-                    'component' => 'tool.background_process',
-                    'event_type' => 'background_process.timed_out',
-                    'run_id' => $entity->sessionId,
-                    'session_id' => $entity->sessionId,
-                    'record_id' => $entity->id,
-                ]);
-            } catch (\Throwable $e) {
-                if (null === $onError) {
-                    throw $e;
-                }
-                $onError($entity, $e);
-            }
-        }
-        // Zero-grace stops end after the cause was flushed but before delivery.
-        if ($stoppedAfterTerm) {
-            $this->store->flush();
-        }
 
         return $refreshed;
+    }
+
+    private function superviseTimeout(BashProcessRecordDTO $record): void
+    {
+        if (isset($this->timeoutGraceDeadlines[$record->id])) {
+            return;
+        }
+        $this->lifecycle->withSidecarLock($record->statusPath, function () use ($record): void {
+            $decision = $this->processDecision($record->id, $record->sessionId, BashProcessActionEnum::Timeout);
+            if (null === $decision || $decision->finished || !$decision->signalRequired) {
+                return;
+            }
+            $this->lifecycle->sendTerm($decision->pid, $decision->pgid);
+            $this->timeoutGraceDeadlines[$record->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+            $this->logger->info('background_process.timed_out', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.timed_out',
+                'run_id' => $record->sessionId,
+                'session_id' => $record->sessionId,
+                'record_id' => $record->id,
+            ]);
+        });
+    }
+
+    private function settleExpiredGrace(BashProcessRecordDTO $record): void
+    {
+        $this->lifecycle->withSidecarLock($record->statusPath, function () use ($record): void {
+            $decision = $this->processDecision($record->id, $record->sessionId, BashProcessActionEnum::Observe);
+            if (null !== $decision && !$decision->finished) {
+                $this->lifecycle->sendKill($decision->pid, $decision->pgid);
+                $this->lifecycle->writeStopMarker($decision->statusPath);
+                $this->processDecision($record->id, $record->sessionId, BashProcessActionEnum::SettleTimeout);
+            }
+            unset($this->timeoutGraceDeadlines[$record->id]);
+        });
     }
 
     /**

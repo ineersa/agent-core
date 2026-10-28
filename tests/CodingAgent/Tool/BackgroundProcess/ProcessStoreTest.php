@@ -18,6 +18,45 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 
 final class ProcessStoreTest extends IsolatedKernelTestCase
 {
+    public function testTimeoutDecisionPreservesCauseWithoutHydrationOrExplicitStopSuppression(): void
+    {
+        $directory = TestDirectoryIsolation::createProjectTempDir('bash-timeout-owner');
+        try {
+            $manager = self::getContainer()->get(EntityManagerInterface::class);
+            $process = new BackgroundProcess();
+            $process->sessionId = 'timeout-owner';
+            // Owner decisions never signal this live test process.
+            $process->pid = getmypid();
+            $process->statusPath = $directory.'/status';
+            $process->deadlineNanoseconds = hrtime(true) - 1;
+            $manager->persist($process);
+            $manager->flush();
+            $store = self::getContainer()->get(ProcessStore::class);
+            $lifecycle = self::getContainer()->get(ProcessLifecycle::class);
+            $before = $manager->getUnitOfWork()->size();
+            $this->assertFalse($store->decide($process->id, 'timeout-owner', BashProcessActionEnum::Timeout, $lifecycle)->signalRequired, 'Private foreground deadlines remain owned by their invocation.');
+            $this->assertFalse($store->acceptLocal($process->id, 'foreign'));
+            $this->assertTrue($store->acceptLocal($process->id, 'timeout-owner'));
+            $acceptedAt = $store->snapshot($process->id)->backgroundedAt;
+            for ($i = 0; $i < 20; ++$i) {
+                $this->assertTrue($store->acceptLocal($process->id, 'timeout-owner'));
+                $this->assertTrue($store->decide($process->id, 'timeout-owner', BashProcessActionEnum::Timeout, $lifecycle)->signalRequired);
+                $this->assertCount(1, $store->unfinishedSnapshots(['timeout-owner']));
+            }
+            $record = $store->snapshot($process->id);
+            $this->assertEquals($acceptedAt, $record->backgroundedAt);
+            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $record->status);
+            $this->assertFalse($record->stoppedByUser);
+            $this->assertNull($record->completionNotifiedAt);
+            file_put_contents($process->statusPath, '0');
+            $this->assertTrue($store->decide($process->id, 'timeout-owner', BashProcessActionEnum::Observe, $lifecycle)->finished);
+            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $store->snapshot($process->id)->status);
+            $this->assertSame($before, $manager->getUnitOfWork()->size());
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
     public function testStopCommitsSuppressionBeforeSignalAndRecognizesReplayWithoutHydration(): void
     {
         $directory = TestDirectoryIsolation::createProjectTempDir('bash-stop-decision');

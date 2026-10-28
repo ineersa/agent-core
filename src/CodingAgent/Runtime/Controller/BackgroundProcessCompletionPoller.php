@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
-use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -172,12 +171,10 @@ final class BackgroundProcessCompletionPoller
 
         $failed = [];
         try {
-            // Deadline/grace supervision still owns native controller actions.
-            // Its batch persistence is migrated separately from notification
-            // admission; never substitute a passive observation for a timeout.
-            $unfinished = $this->processStore->fetchAllUnfinished($sessionIds);
-            usort($unfinished, static fn (BackgroundProcess $left, BackgroundProcess $right): int => $left->id <=> $right->id);
-            $this->processManager->refreshEntities($unfinished, function (BackgroundProcess $process, \Throwable $exception) use (&$failed): void {
+            // Native supervision stays here; durable deadline and terminal
+            // decisions run in the owner before any process is signalled.
+            $unfinished = $this->processStore->unfinishedSnapshots($sessionIds);
+            $this->processManager->refreshRecords($unfinished, function (BashProcessRecordDTO $process, \Throwable $exception) use (&$failed): void {
                 $failed[$process->id] = true;
                 $this->logger->warning('bg_process_completion.refresh_failed', [
                     'component' => 'bg_process_completion.poller',

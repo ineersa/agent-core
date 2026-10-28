@@ -627,7 +627,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertNotNull($independent);
             $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status);
             $this->assertNull($independent->finishedAt);
-            $owner->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(['timeout-run']));
+            $owner->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots(['timeout-run']));
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $store->fetchByRecordId($process->id)?->status);
             $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status, 'Timeout must not refresh the suspended reader.');
             $this->assertSame(8, fwrite($release, "release\n"));
@@ -648,7 +648,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertSame(0, $persisted->exitCode);
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $persisted->status);
             $this->assertFalse($persisted->stoppedByUser);
-            $owner->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(['timeout-run']));
+            $owner->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots(['timeout-run']));
             $grace = new \ReflectionProperty($owner, 'timeoutGraceDeadlines');
             $this->assertSame([], $grace->getValue($owner));
             $poller = $this->createPoller($store, $owner, 'timeout-run');
@@ -712,7 +712,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     #[TestWith([1, false])]
     #[TestWith([100, false])]
     #[TestWith([3, true])]
-    public function testCandidateRefreshFlushesOnceBeforeSeparateDeliverySettlements(int $count, bool $complete): void
+    public function testCandidateRefreshUsesNoOrmFlushBeforeSeparateDeliverySettlements(int $count, bool $complete): void
     {
         $this->persistRefreshCandidates($count, $complete);
         $em = self::getContainer()->get(EntityManagerInterface::class);
@@ -754,15 +754,14 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         }
 
         $expectedDeliveries = $complete ? $count : 0;
-        $expectedFlushes = 0 === $count ? 0 : 1;
-        $this->assertSame($expectedFlushes, $counter->flushes);
-        $this->assertSame($expectedFlushes, $counter->changeDetectionPasses);
+        $this->assertSame(0, $counter->flushes);
+        $this->assertSame(0, $counter->changeDetectionPasses);
         $this->assertSame($expectedDeliveries, $published);
         $queries = array_filter($logger->records, static fn (array $record): bool => str_contains($record['context']['sql'] ?? '', 'session_id IN'));
         $this->assertCount(2, $queries);
         $causeReads = array_filter($logger->records, static fn (array $record): bool => str_starts_with($record['context']['sql'] ?? '', 'SELECT')
             && str_contains($record['context']['sql'], 'status = ?'));
-        $this->assertCount($complete && $count > 0 ? 1 : 0, $causeReads, 'Terminal causes use one batched read, not one read per candidate or delivery.');
+        $this->assertCount(0, $causeReads, 'Current cause is classified inside each owner operation, not an ORM flush.');
         $this->assertSame($expectedDeliveries, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM background_process WHERE completion_notified_at IS NOT NULL'));
         $this->assertSame($complete ? 0 : $count, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM background_process WHERE finished_at IS NULL'));
     }
@@ -802,28 +801,22 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertNotNull(self::getContainer()->get(ProcessStore::class)->snapshot($failed->id)?->completionNotifiedAt);
     }
 
-    public function testRefreshFlushFailureDefersEveryDeliveryUntilRetry(): void
+    public function testOwnerWriteFailureDefersDeliveryUntilRetry(): void
     {
         $processes = $this->persistRefreshCandidates(3, true);
-        $events = self::getContainer()->get(EntityManagerInterface::class)->getEventManager();
-        $listener = new class {
-            public function preFlush(): void
-            {
-                throw new \RuntimeException('refresh flush failed');
-            }
-        };
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $logger = new TestLogger();
         $poller = $this->createPoller(self::getContainer()->get(ProcessStore::class), self::getContainer()->get(BackgroundProcessManager::class), logger: $logger);
         $poll = new \ReflectionMethod($poller, 'poll');
-        $events->addEventListener([Events::preFlush], $listener);
+        $connection->executeStatement("CREATE TEMP TRIGGER reject_bash_refresh BEFORE UPDATE ON background_process BEGIN SELECT RAISE(ABORT, 'owner write refused'); END");
         try {
             $poll->invoke($poller);
         } finally {
-            $events->removeEventListener([Events::preFlush], $listener);
+            $connection->executeStatement('DROP TRIGGER reject_bash_refresh');
         }
         $this->assertSame([], $this->sentCommands);
-        $errors = array_filter($logger->records, static fn (array $record): bool => 'bg_process_completion.refresh_flush_failed' === $record['message']);
-        $this->assertCount(1, $errors);
+        $errors = array_filter($logger->records, static fn (array $record): bool => 'bg_process_completion.refresh_failed' === $record['message']);
+        $this->assertCount(3, $errors);
         $poll->invoke($poller);
         $this->assertCount(3, $this->sentCommands);
         foreach ($processes as $process) {

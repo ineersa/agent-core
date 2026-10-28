@@ -9,4 +9,6 @@ enum BashProcessActionEnum: string
     case Stop = 'stop';
     case Observe = 'observe';
     case SettleStop = 'settle_stop';
+    case Timeout = 'timeout';
+    case SettleTimeout = 'settle_timeout';
 }

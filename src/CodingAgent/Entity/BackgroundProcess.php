@@ -132,16 +132,6 @@ class BackgroundProcess
     }
 
     /**
-     * Mark this process as stopped by the user.
-     */
-    public function markStopped(\DateTimeImmutable $finishedAt): void
-    {
-        $this->stoppedByUser = true;
-        $this->finishedAt = $finishedAt;
-        $this->status = BackgroundProcessStatusEnum::Stopped;
-    }
-
-    /**
      * Mark this process as finished uncleanly (crash / SIGKILL / no status file).
      */
     public function markFinishedUnclean(\DateTimeImmutable $finishedAt): void
