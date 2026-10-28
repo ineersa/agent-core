@@ -196,12 +196,21 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function stopBackgroundProcess(string $runId, int $recordId): bool
     {
-        $process = $this->backgroundProcesses->findByRecordId($recordId, $runId);
-        if (null === $process || null === $process->backgroundedAt) {
+        if ('' === $runId || $recordId <= 0) {
             throw new BackgroundProcessUnavailableException('Background process is no longer available in this session.');
         }
 
-        return !$this->backgroundProcesses->stopByRecordId($recordId, $runId, waitForExit: false)->alreadyFinished;
+        $this->assertSessionNotFailed();
+        if (!$this->isProcessRunning()) {
+            throw new BackgroundProcessUnavailableException('Controller unavailable; background process was not stopped.');
+        }
+        $this->waitForRuntimeReady();
+        $command = new RuntimeCommand(uniqid('cmd_', true), 'stop_bash', $runId, ['record_id' => $recordId]);
+        // A transport failure is an unknown outcome, not permission to restart
+        // the session and repeat native signalling against another controller.
+        $this->writeCommand($command);
+
+        return $this->waitForBackgroundStopResult($command);
     }
 
     /**
@@ -859,6 +868,42 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         throw new RuntimeTransportException('Controller did not emit runtime.ready within '.$timeout.'s'."\n".$this->diagnosticOutput());
+    }
+
+    private function waitForBackgroundStopResult(RuntimeCommand $command): bool
+    {
+        $deadline = microtime(true) + 15;
+        while (microtime(true) < $deadline) {
+            $result = null;
+            foreach ($this->readEventBatch() as $event) {
+                if (($event->payload['commandId'] ?? null) === $command->id
+                    && (RuntimeEventTypeEnum::CommandRejected->value === $event->type
+                        || (RuntimeEventTypeEnum::BackgroundProcessStopCompleted->value === $event->type && $event->runId === $command->runId))) {
+                    $result = $event;
+                } else {
+                    $this->bufferEvent($event, 'read_events');
+                }
+            }
+            // Drain the complete read batch so a response cannot discard peer events.
+            $this->assertSessionNotFailed();
+            if (null !== $result) {
+                if (RuntimeEventTypeEnum::CommandRejected->value === $result->type) {
+                    throw new RuntimeTransportException('Controller rejected the background stop request.');
+                }
+                if (false === ($result->payload['available'] ?? null)) {
+                    throw new BackgroundProcessUnavailableException('Background process is no longer available in this session.');
+                }
+                if (true !== ($result->payload['available'] ?? null) || !\is_bool($result->payload['stopped'] ?? null)) {
+                    throw new RuntimeTransportException('Invalid controller background stop result.');
+                }
+
+                return $result->payload['stopped'];
+            }
+            $this->assertProcessStillRunning('waiting for bg_process.stop.completed');
+            usleep(10_000);
+        }
+
+        throw new RuntimeTransportException('Controller did not emit bg_process.stop.completed within 15s'."\n".$this->diagnosticOutput());
     }
 
     private function waitForRepairResult(string $commandId, string $runId): RepairResult

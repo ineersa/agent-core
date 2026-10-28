@@ -30,6 +30,21 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
         }
     }
 
+    public function testStopCommandReturnsCorrelatedUnavailableResultWithoutLaunchingWork(): void
+    {
+        $this->sessionId = trim($this->queryRuntime()->getOutput());
+        $this->spawnController();
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->writeCommand(['v' => 1, 'id' => 'stop-missing', 'type' => 'stop_bash', 'runId' => $this->sessionId,
+            'payload' => ['record_id' => 2147483647]]);
+        $events = $this->collectEventsUntil('bg_process.stop.completed', 5);
+        $result = $this->indexByType($events)['bg_process.stop.completed'][0] ?? null;
+        $this->assertNotNull($result, $this->collectDiagnostics($events));
+        $this->assertSame($this->sessionId, $result['runId']);
+        $this->assertSame(['commandId' => 'stop-missing', 'available' => false, 'stopped' => false], $result['payload']);
+        $this->assertFileDoesNotExist($this->tempDir.'/requests.jsonl');
+    }
+
     public function testSameProcessSurvivesAcknowledgementAndExistingPollerDeliversOneCompletion(): void
     {
         $this->assertTrue(posix_mkfifo($this->tempDir.'/release', 0600));
