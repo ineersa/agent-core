@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationReplyPubli
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationService;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationStatusEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRequesterRoleEnum;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashWorkerLifecycleSubscriber;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DecideBashProcessHandler;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationReplyDTO;
@@ -32,6 +33,7 @@ use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -47,6 +49,7 @@ use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\MessageSentToTransportsEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
+use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
@@ -231,7 +234,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                 if ($command instanceof RegisterBashProcessCommandDTO) {
                     // A stale incarnation is discarded only within its own role.
                     $publisher->publish(new BashRegistrationReplyDTO($owner, str_repeat('f', 32), $command->correlation, new BashRegistrationResultDTO(BashRegistrationStatusEnum::SessionMissing), role: $command->role));
-                    if (2 === ++$sent) {
+                    if (3 === ++$sent) {
                         $bothSent->complete();
                     }
                 }
@@ -245,7 +248,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             $worker = new Worker(['run_control' => $requests], new MessageBus([new HandleMessageMiddleware(new HandlersLocator([RegisterBashProcessCommandDTO::class => [$handler], BashProcessCommandDTO::class => [$decisions]]))]), $ownerEvents);
             $handled = 0;
             $ownerEvents->addListener(WorkerMessageHandledEvent::class, static function () use (&$handled, $worker): void {
-                if (4 === ++$handled) {
+                if (9 === ++$handled) {
                     $worker->stop();
                 }
             });
@@ -255,14 +258,26 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             });
             $tasks = [];
             try {
-                foreach ([BashRequesterRoleEnum::Tool, BashRequesterRoleEnum::Controller] as $i => $role) {
+                foreach (BashRequesterRoleEnum::cases() as $i => $role) {
                     $client = new BashRegistrationClient($bus, $paths->endpointPath, $owner, $serializer, $validator, $role);
-                    $tasks[] = async(function () use ($client, $owner, $i): int {
+                    $tasks[] = async(function () use ($client, $owner, $i, $role, $requests, $bus): int {
                         $registered = $client->register($this->request($owner, $i + 1));
                         $this->assertSame(BashRegistrationStatusEnum::Registered, $registered->status);
-                        $snapshot = $client->decide($registered->recordId, $owner, BashProcessActionEnum::Stop);
-                        $this->assertTrue($snapshot->finished, 'The fixture registers no real process.');
-                        $this->assertFalse($snapshot->signalRequired);
+                        if (BashRequesterRoleEnum::Scheduler === $role) {
+                            $manager = new BackgroundProcessManager(self::getContainer()->get(ProcessStore::class), self::getContainer()->get(ProcessLifecycle::class), new BackgroundProcessConfig(), new TestLogger());
+                            $subscriber = new BashWorkerLifecycleSubscriber(new ServiceLocator([
+                                BackgroundProcessManager::class => static fn () => $manager,
+                                'coding_agent.bash_scheduler_client' => static fn () => $client,
+                            ]));
+                            $subscriber->onStarted(new WorkerStartedEvent(new Worker(['scheduler_default' => $requests], $bus)));
+                            $snapshot = $manager->findByRecordId($registered->recordId, $owner);
+                            $this->assertNotNull($snapshot->finishedAt, 'Scheduler observations must reach the owner without native signalling.');
+                        } else {
+                            $snapshot = $client->decide($registered->recordId, $owner, BashProcessActionEnum::Stop);
+                            $this->assertTrue($snapshot->finished, 'The fixture registers no real process.');
+                            $this->assertFalse($snapshot->signalRequired);
+                        }
+                        $this->assertNotNull($client->decide($registered->recordId, $owner, BashProcessActionEnum::DeleteFinished));
 
                         return $snapshot->id;
                     });
@@ -270,7 +285,8 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                 $ids = array_map(static fn ($task): int => $task->await(new TimeoutCancellation(8)), $tasks);
                 $ownerTask->await(new TimeoutCancellation(8));
                 $this->assertNotSame($ids[0], $ids[1]);
-                $this->assertSame(4, $handled);
+                $this->assertCount(3, array_unique($ids));
+                $this->assertSame(9, $handled);
                 $this->assertSame([], iterator_to_array($requests->get()));
             } finally {
                 $worker->stop();
@@ -367,7 +383,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                 // Lose the committed response and leave the original request
                 // unacknowledged, as if its worker died before request settlement.
                 $replies->ack($first);
-                self::getContainer()->get(ProcessStore::class)->deleteById($outcome->result->recordId);
+                BackgroundProcessFixture::delete(self::getContainer(), $outcome->result->recordId);
                 $requests->wait(3000, $cancel);
                 $redelivery = iterator_to_array($requests->get())[0];
                 $handler($redelivery->getMessage());
@@ -376,7 +392,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                 $this->assertInstanceOf(BashRegistrationReplyDTO::class, $replayed);
                 $this->assertSame($outcome->result->recordId, $replayed->result->recordId);
                 $this->assertFalse($replayed->result->processExists);
-                $this->assertNull(self::getContainer()->get(ProcessStore::class)->fetchByRecordId($outcome->result->recordId));
+                $this->assertNull(BackgroundProcessFixture::record(self::getContainer(), $outcome->result->recordId));
                 $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
                 $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM bash_registration_receipt'));
                 $replies->ack($second);
@@ -426,6 +442,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         yield 'controller registration' => [BashRequesterRoleEnum::Controller, false];
         yield 'tool stop' => [BashRequesterRoleEnum::Tool, true];
         yield 'controller stop' => [BashRequesterRoleEnum::Controller, true];
+        yield 'scheduler observation' => [BashRequesterRoleEnum::Scheduler, true];
     }
 
     #[DataProvider('requesterRoles')]

@@ -13,8 +13,8 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationStatusEnum
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipRequestDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -37,7 +37,7 @@ final class BashOwnershipServiceTest extends IsolatedKernelTestCase
         $this->assertNotNull($row['backgrounded_at']);
         $this->assertSame(0, (int) $row['stopped_by_user']);
         $this->assertNull($row['completion_notified_at']);
-        self::getContainer()->get(ProcessStore::class)->deleteById($result->recordId);
+        BackgroundProcessFixture::delete(self::getContainer(), $result->recordId);
         $this->assertSame(BashOwnershipStatusEnum::Accepted, $service->retire($ownership));
         $this->assertSame($result->recordId, $registration->register($request)->recordId);
         $this->assertFalse($registration->register($request)->processExists);
@@ -120,7 +120,7 @@ final class BashOwnershipServiceTest extends IsolatedKernelTestCase
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $connection->executeStatement("UPDATE background_process SET finished_at = '2026-10-28 00:00:01' WHERE id = ?", [$result->recordId]);
         if ($removed) {
-            self::getContainer()->get(ProcessStore::class)->deleteById($result->recordId);
+            BackgroundProcessFixture::delete(self::getContainer(), $result->recordId);
         }
         $expected = $removed ? BashOwnershipStatusEnum::ProcessMissing : BashOwnershipStatusEnum::ProcessFinished;
         $this->assertSame($expected, $service->retire($ownership), 'A fence must not authorize signals after completion or maintenance.');

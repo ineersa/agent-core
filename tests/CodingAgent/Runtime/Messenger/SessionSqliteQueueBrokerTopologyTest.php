@@ -16,16 +16,16 @@ final class SessionSqliteQueueBrokerTopologyTest extends TestCase
     {
         // 32 tool + 4 llm + 3 fixed broker consumers = 39 processes × (6 ops + 1 notify).
         // Controller + scheduler_default = 2 processes × 6 ops for inherited DSNs/hooks.
-        // Tool/controller role replies add two publishers and two operations/WAIT pairs.
-        $this->assertSame(291, SessionSqliteQueueBrokerTopology::requiredConnections(4, 32));
+        // Tool/controller/scheduler replies add three publishers and three operations/WAIT pairs.
+        $this->assertSame(294, SessionSqliteQueueBrokerTopology::requiredConnections(4, 32));
         $this->assertSame(
             (39 * SessionSqliteQueueBrokerTopology::CONNECTIONS_PER_BROKER_CONSUMER_PROCESS)
             + (SessionSqliteQueueBrokerTopology::NON_CONSUMER_BROKER_PROCESSES * SessionSqliteQueueBrokerTopology::CONNECTIONS_PER_NON_CONSUMER_PROCESS)
             + SessionSqliteQueueBrokerTopology::BASH_REGISTRATION_REPLY_CONNECTIONS,
             SessionSqliteQueueBrokerTopology::requiredConnections(4, 32),
         );
-        $this->assertSame(95, SessionSqliteQueueBrokerTopology::requiredConnections(4, 4));
-        $this->assertSame(53, SessionSqliteQueueBrokerTopology::requiredConnections(1, 1));
+        $this->assertSame(98, SessionSqliteQueueBrokerTopology::requiredConnections(4, 4));
+        $this->assertSame(56, SessionSqliteQueueBrokerTopology::requiredConnections(1, 1));
     }
 
     public function testRequiredConnectionsRejectsNonPositivePools(): void

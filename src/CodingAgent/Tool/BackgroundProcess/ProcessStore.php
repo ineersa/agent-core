@@ -19,11 +19,13 @@ use Symfony\Component\Clock\Clock;
 
 /**
  * Durable process snapshots and owner decisions use the existing DBAL connection.
- * Passive scheduler refresh and lifecycle cleanup still use ORM entities.
+ * Runtime reads do not retain managed process entities.
  * Schema is managed by Doctrine migrations.
  */
 final class ProcessStore
 {
+    public const int PROVISIONAL_RETENTION_SECONDS = 300;
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly BackgroundProcessRepository $repository,
@@ -56,19 +58,9 @@ final class ProcessStore
             : new \DateTimeImmutable((string) ($fields['started_at'] ?? 'now'));
 
         $this->entityManager->persist($entity);
-        $this->flush();
+        $this->entityManager->flush();
 
         return $entity->id;
-    }
-
-    /**
-     * Fetch user-accepted background processes for one run.
-     *
-     * @return BackgroundProcess[]
-     */
-    public function fetchBackgrounded(string $sessionId): array
-    {
-        return $this->repository->findBackgrounded($sessionId);
     }
 
     /** @return list<ForegroundBashProcessDTO> */
@@ -116,18 +108,6 @@ final class ProcessStore
 
             return true;
         });
-    }
-
-    /**
-     * Fetch a single entity by auto-increment record ID.
-     *
-     * Unlike PID-based lookups (OS PIDs can be reused while rows are retained),
-     * this queries by the immutable auto-increment primary key.  Prefer
-     * this when the DB id is available (e.g. from StartResult::$id).
-     */
-    public function fetchByRecordId(int $id): ?BackgroundProcess
-    {
-        return $this->repository->findFreshById($id);
     }
 
     public function sessionForRecord(int $id): ?string
@@ -222,18 +202,6 @@ final class ProcessStore
         }
     }
 
-    /**
-     * Fetch all unfinished entities for the controller-owned runs.
-     *
-     * @param list<string> $sessionIds
-     *
-     * @return BackgroundProcess[]
-     */
-    public function fetchAllUnfinished(array $sessionIds): array
-    {
-        return $this->repository->findUnfinished($sessionIds);
-    }
-
     /** @param list<string> $runIds
      * @return list<BashProcessRecordDTO>
      */
@@ -252,102 +220,15 @@ final class ProcessStore
      *
      * @param list<string> $sessionIds Controller-owned runs
      *
-     * @return BackgroundProcess[]
+     * @return list<BashProcessRecordDTO>
      */
     public function fetchFinishedProvisionalBefore(\DateTimeImmutable $cutoff, array $sessionIds): array
     {
-        return $this->repository->findFinishedProvisionalBefore($cutoff, $sessionIds);
-    }
-
-    /**
-     * Delete a single entity by ID.
-     *
-     * @return bool True if the entity was deleted, false if not found
-     */
-    public function deleteById(int $id): bool
-    {
-        if (!$this->existsByRecordId($id)) {
-            $this->logger->warning('background_process.delete_not_found', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.delete_not_found',
-                'record_id' => $id,
-            ]);
-
-            return false;
+        if ([] === $sessionIds) {
+            return [];
         }
 
-        $entity = $this->repository->find($id);
-
-        if (null === $entity) {
-            $this->logger->warning('background_process.delete_not_found', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.delete_not_found',
-                'record_id' => $id,
-            ]);
-
-            return false;
-        }
-
-        $this->entityManager->remove($entity);
-        $this->flush();
-
-        return true;
-    }
-
-    /** @param list<int> $ids */
-    public function deleteByIds(array $ids): int
-    {
-        $deleted = 0;
-        foreach (array_chunk(array_values(array_unique($ids)), 400) as $chunk) {
-            $deleted += $this->entityManager->getConnection()->transactional(function () use ($chunk): int {
-                // Query the database even for managed entities: another process may
-                // already have deleted a row. Keep ORM removal/identity-map semantics.
-                $entities = $this->repository->findBy(['id' => $chunk]);
-                foreach ($entities as $entity) {
-                    $this->entityManager->remove($entity);
-                }
-                if ([] !== $entities) {
-                    $this->flush();
-                }
-
-                return \count($entities);
-            });
-        }
-
-        return $deleted;
-    }
-
-    /**
-     * Flush pending entity changes to the database.
-     */
-    public function flush(): void
-    {
-        $unitOfWork = $this->entityManager->getUnitOfWork();
-        $finishing = [];
-        foreach ($unitOfWork->getIdentityMap()[BackgroundProcess::class] ?? [] as $entity) {
-            if ($entity instanceof BackgroundProcess && null !== $entity->finishedAt
-                && BackgroundProcessStatusEnum::Stopped !== $entity->status
-                && null === ($unitOfWork->getOriginalEntityData($entity)['finishedAt'] ?? null)
-            ) {
-                $finishing[$entity->id] = $entity;
-            }
-        }
-        if ([] === $finishing) {
-            $this->entityManager->flush();
-
-            return;
-        }
-
-        // The configured BEGIN IMMEDIATE transaction excludes competing writers
-        // from this read through ORM flush. Refreshing before the transaction
-        // would leave the same race between observing the cause and writing it.
-        // Read only status so identity and unrelated pending fields stay intact.
-        $this->entityManager->getConnection()->transactional(function () use ($finishing): void {
-            foreach ($this->repository->findStoppedIds(array_keys($finishing)) as $id) {
-                $finishing[$id]->status = BackgroundProcessStatusEnum::Stopped;
-            }
-            $this->entityManager->flush();
-        });
+        return array_map($this->hydrateSnapshot(...), $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id IN (?) AND backgrounded_at IS NULL AND finished_at IS NOT NULL AND finished_at <= ? ORDER BY id', [$sessionIds, $cutoff->format('Y-m-d H:i:s')], [ArrayParameterType::STRING]));
     }
 
     public function snapshot(int $recordId): ?BashProcessRecordDTO
@@ -412,6 +293,17 @@ final class ProcessStore
             }
             $status = BackgroundProcessStatusEnum::from((string) $row['status']);
             $finished = null !== $row['finished_at'];
+            if (BashProcessActionEnum::DeleteFinished === $action || BashProcessActionEnum::DeleteProvisional === $action) {
+                // Cleanup can only retire an immutable finished row. Recheck
+                // scope and classification on metadata retry, never trust the
+                // maintenance candidate as authority to delete another job.
+                if (!$finished || (BashProcessActionEnum::DeleteProvisional === $action && (null !== $row['backgrounded_at'] || (string) $row['finished_at'] > Clock::get()->now()->modify('-'.self::PROVISIONAL_RETENTION_SECONDS.' seconds')->format('Y-m-d H:i:s')))) {
+                    return null;
+                }
+                $connection->delete('background_process', ['id' => $recordId, 'session_id' => $runId]);
+
+                return new BashProcessSnapshotDTO($recordId, $runId, (int) $row['pid'], null === $row['pgid'] ? null : (int) $row['pgid'], (string) $row['status_path'], true, $status, false);
+            }
             $now = Clock::get()->now()->format('Y-m-d H:i:s');
             $signalRequired = false;
             if (!$finished) {

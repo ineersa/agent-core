@@ -45,6 +45,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
@@ -666,10 +667,10 @@ final class BashToolTest extends IsolatedKernelTestCase
             'started_at' => new \DateTimeImmutable('-1 hour'),
         ]);
 
-        $staleEntity = $store->fetchByRecordId($staleId);
+        $staleEntity = BackgroundProcessFixture::record(self::getContainer(), $staleId);
         $this->assertNotNull($staleEntity);
-        $staleEntity->finish(0, new \DateTimeImmutable('-1 hour'));
-        $store->flush();
+        BackgroundProcessFixture::finish($staleEntity, 0, new \DateTimeImmutable('-1 hour'));
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
 
         $releasePipe = $this->tmpDir.'/pid-reuse-release-'.bin2hex(random_bytes(4)).'.fifo';
         $this->assertTrue(posix_mkfifo($releasePipe, 0o600), 'Release FIFO must be created');
@@ -687,14 +688,14 @@ final class BashToolTest extends IsolatedKernelTestCase
         $token = $this->createStub(CancellationTokenInterface::class);
         $released = false;
         $token->method('isCancellationRequested')
-            ->willReturnCallback(function () use ($store, $em, $staleId, $releaseEndpoint, &$released): bool {
+            ->willReturnCallback(function () use ($em, $staleId, $releaseEndpoint, &$released): bool {
                 $records = $this->recordsForSession(self::TEST_SESSION);
                 $current = $records[0] ?? null;
                 if ($released || null === $current || $current->id === $staleId) {
                     return false;
                 }
                 $released = true;
-                $stale = $store->fetchByRecordId($staleId);
+                $stale = BackgroundProcessFixture::record(self::getContainer(), $staleId);
                 if (null !== $stale) {
                     $stale->pid = $current->pid;
                     $em->flush();
@@ -855,7 +856,7 @@ final class BashToolTest extends IsolatedKernelTestCase
                 $records = $backgrounded ? $this->recordsForSession($session) : $this->manager->foregroundTools($session);
                 if ([] !== $records) {
                     $selected = $records[0];
-                    $originalDeadline = self::getContainer()->get(ProcessStore::class)->fetchByRecordId($selected->id)?->deadlineNanoseconds;
+                    $originalDeadline = BackgroundProcessFixture::record(self::getContainer(), $selected->id)?->deadlineNanoseconds;
                     if (!$backgrounded) {
                         $this->assertTrue($this->manager->requestBackground($session, $selected->id, 'tc_bash'));
                     }
@@ -899,7 +900,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             $record = $this->manager->findByRecordId($selected->id, $session);
             $this->assertNotNull($record);
             $this->assertSame($selected->pid, $record->pid);
-            $this->assertSame($originalDeadline, self::getContainer()->get(ProcessStore::class)->fetchByRecordId($record->id)?->deadlineNanoseconds);
+            $this->assertSame($originalDeadline, BackgroundProcessFixture::record(self::getContainer(), $record->id)?->deadlineNanoseconds);
             $this->assertNull($record->finishedAt);
             $this->assertNotNull($record->backgroundedAt);
             $this->assertCount(1, $this->recordsForSession($session));

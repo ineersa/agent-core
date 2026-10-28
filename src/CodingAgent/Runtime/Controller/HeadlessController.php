@@ -123,6 +123,9 @@ final class HeadlessController
 
         try {
             $this->startSessionBroker();
+            // Exclusive bootstrap ownership: old consumers have been retired,
+            // and no new run_control or execution consumer exists yet. Startup
+            // cleanup uses the same local metadata decisions as in-process mode.
             $this->dispatcher->dispatch(new ControllerSessionStartingEvent($this->sessionId));
         } catch (\Throwable $exception) {
             $this->brokerSupervisor->shutdownUntil(microtime(true) + 5.0);
@@ -200,8 +203,8 @@ final class HeadlessController
             throw $exception;
         }
 
-        // The owner is now live. Startup cleanup above remains owner-local until
-        // its separate cleanup cutover; ordinary stop metadata uses the controller role.
+        // Live stop and cleanup metadata now use the controller's reply role.
+        // Shutdown retains run_control until the lifecycle listener finishes.
         $this->backgroundProcesses->useProcessOwner($this->bashControllerClient);
 
         // Same event type/payload as before; emission now follows consumer launch.

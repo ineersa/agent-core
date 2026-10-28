@@ -118,32 +118,6 @@ class BackgroundProcess
     }
 
     /**
-     * Mark this process as finished with an optional exit code.
-     */
-    public function finish(?int $exitCode, \DateTimeImmutable $finishedAt): void
-    {
-        $this->exitCode = $exitCode;
-        $this->finishedAt = $finishedAt;
-        // TERM initiation records Stopped before signaling. A successful cleanup
-        // exit must not turn that durable stop cause into a successful command.
-        if (BackgroundProcessStatusEnum::Stopped !== $this->status) {
-            $this->status = BackgroundProcessStatusEnum::Finished;
-        }
-    }
-
-    /**
-     * Mark this process as finished uncleanly (crash / SIGKILL / no status file).
-     */
-    public function markFinishedUnclean(\DateTimeImmutable $finishedAt): void
-    {
-        $this->exitCode = null;
-        $this->finishedAt = $finishedAt;
-        if (BackgroundProcessStatusEnum::Stopped !== $this->status) {
-            $this->status = BackgroundProcessStatusEnum::FinishedUnclean;
-        }
-    }
-
-    /**
      * Mark this process as having been explicitly moved to background
      * by an explicit user background request.
      *

@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessControllerSessionLifecycleListener;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -52,7 +53,6 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
             static::getContainer()->get(BackgroundProcessCompletionPoller::class),
             $this->store,
             $this->manager,
-            $this->lifecycle,
             $logger,
         );
         $this->dispatcher = new EventDispatcher();
@@ -149,10 +149,10 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
             'status_path' => $statusPath,
             'started_at' => new \DateTimeImmutable(),
         ]);
-        $entity = $this->store->fetchByRecordId($id);
+        $entity = BackgroundProcessFixture::record(self::getContainer(), $id);
         $this->assertNotNull($entity);
-        $entity->finish(0, new \DateTimeImmutable());
-        $this->store->flush();
+        BackgroundProcessFixture::finish($entity, 0, new \DateTimeImmutable());
+        self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->flush();
         $this->manager->markBackgroundedForRecord($id, $sessionId);
 
         return ['id' => $id, 'log' => $logPath];

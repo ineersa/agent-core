@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
@@ -160,10 +161,10 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
             $process = $this->manager->start('IFS= read -r release < '.escapeshellarg($fifo), self::TEST_SESSION);
             $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
             $store = self::getContainer()->get(ProcessStore::class);
-            $entity = $store->fetchByRecordId($process->id);
+            $entity = BackgroundProcessFixture::record(self::getContainer(), $process->id);
             $this->assertNotNull($entity);
             $entity->status = BackgroundProcessStatusEnum::Stopped;
-            $store->flush();
+            self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->flush();
 
             $data = Toon::decode($this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list'))));
             $this->assertSame('stopping', $data['processes'][0]['status']);

@@ -21,6 +21,7 @@ use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueueBrokerSupervisor;
 use Ineersa\CodingAgent\Runtime\Messenger\SessionSqliteQueuePaths;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -71,7 +72,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         $acknowledged = $this->runDoctrineConsumer(300, 2, $dispatcher, static function (int $id) use ($store, $manager, $release, $entered, &$held, &$calls): void {
             ++$calls;
             $record = $store->insertRecord(['pid' => $id, 'session_id' => 'orm-retention', 'started_at' => new \DateTimeImmutable()]);
-            $entity = $store->fetchByRecordId($record);
+            $entity = BackgroundProcessFixture::record(self::getContainer(), $record);
             self::assertInstanceOf(BackgroundProcess::class, $entity);
             if (255 === $id) {
                 $held = $entity;
@@ -83,7 +84,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
                 $entered->getFuture()->await();
             }
             $entity->finishedAt = new \DateTimeImmutable();
-            $store->flush();
+            self::getContainer()->get(EntityManagerInterface::class)->flush();
         });
         $this->assertSame(256, $calls);
         $this->assertSame(256, $acknowledged);
@@ -114,7 +115,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
                 try {
                     if (1 === $id) {
                         $record = $store->insertRecord(['pid' => 1, 'started_at' => new \DateTimeImmutable()]);
-                        $held = $store->fetchByRecordId($record);
+                        $held = BackgroundProcessFixture::record(self::getContainer(), $record);
                         $entered->complete();
                         $release->getFuture()->await();
                         self::assertFalse($manager->isOpen(), 'Do not replace the failed manager underneath the active sibling.');

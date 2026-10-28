@@ -43,8 +43,8 @@ final class SessionSqliteQueueBrokerTopology
 
     public const int CONNECTIONS_PER_NON_CONSUMER_PROCESS = self::BROKER_TRANSPORTS;
 
-    /** Two role publishers, each with a requester's operations and WAIT socket. */
-    public const int BASH_REGISTRATION_REPLY_CONNECTIONS = 6;
+    /** Three role publishers, each with a requester's operations and WAIT socket. */
+    public const int BASH_REGISTRATION_REPLY_CONNECTIONS = 9;
 
     private function __construct()
     {

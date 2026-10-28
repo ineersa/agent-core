@@ -362,20 +362,6 @@ final class ProcessLifecycle
     // ─── Cleanup ─────────────────────────────────────────────────────
 
     /**
-     * Delete only the three exact sidecars belonging to one record. This
-     * intentionally does not scan the background directory: a row may clean up
-     * only its own .log/.status/.pid siblings after their paths are verified as
-     * direct children of it.
-     *
-     * @return bool false when paths are not the expected exact sibling set or
-     *              an existing sidecar cannot be removed
-     */
-    public function deleteExactRecordSidecars(string $logPath, string $statusPath): bool
-    {
-        return $this->withSidecarLock($statusPath, fn (): bool => $this->deleteLockedRecordSidecars($logPath, $statusPath));
-    }
-
-    /**
      * Keep completion evidence stable from the owner decision through signalling.
      * Maintenance must not erase that evidence while a remote reply is in flight.
      *
@@ -398,7 +384,14 @@ final class ProcessLifecycle
         }
     }
 
-    private function deleteLockedRecordSidecars(string $logPath, string $statusPath): bool
+    /**
+     * Delete only this record's exact .log/.status/.pid sibling set, after
+     * verifying it belongs directly to the configured storage directory.
+     * Caller must retain withSidecarLock() through metadata retirement.
+     *
+     * @return bool false for invalid paths or a sidecar removal failure
+     */
+    public function deleteLockedRecordSidecars(string $logPath, string $statusPath): bool
     {
         if (!str_ends_with($logPath, '.log')) {
             return false;

@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Kernel;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -63,7 +64,7 @@ final class BackgroundProcessProvisionalCleanupTaskTest extends IsolatedKernelTe
             $this->logger,
         );
         $this->task = new BackgroundProcessProvisionalCleanupTask(
-            $this->manager, $this->store, $this->lifecycle, $this->logger,
+            $this->manager, $this->store, $this->logger,
             static::getContainer()->get(OwnedRunIdsProvider::class), self::OWNER,
         );
     }
@@ -114,7 +115,7 @@ PHP);
             $otherStore = $container->get(ProcessStore::class);
             $maintenance = new BackgroundProcessManager($otherStore, $this->lifecycle, $config, $this->logger);
             $task = new BackgroundProcessProvisionalCleanupTask(
-                $maintenance, $otherStore, $this->lifecycle, $this->logger,
+                $maintenance, $otherStore, $this->logger,
                 $container->get(OwnedRunIdsProvider::class), 'accepted-cleanup',
             );
             $invoke = escapeshellarg(\PHP_BINARY).' '.escapeshellarg($script).' '.escapeshellarg($address);
@@ -135,7 +136,7 @@ PHP);
             stream_set_timeout($cleanup, 3);
             $ready = (string) fgets($cleanup);
             $this->assertStringStartsWith('cleanup:', $ready);
-            $record = $this->store->fetchByRecordId($process->id);
+            $record = BackgroundProcessFixture::record(self::getContainer(), $process->id);
             $this->assertNotNull($record);
             $this->assertSame($record->pgid, posix_getpgid((int) substr($ready, 8)));
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $record->status);
@@ -244,7 +245,7 @@ PHP);
 
         ($this->task)();
 
-        $record = $this->store->fetchByRecordId($private['id']);
+        $record = BackgroundProcessFixture::record(self::getContainer(), $private['id']);
         $this->assertNotNull($record);
         $this->assertSame(BackgroundProcessStatusEnum::Finished, $record->status);
         $this->assertEquals($this->now, $record->finishedAt);
@@ -255,6 +256,45 @@ PHP);
 
         $this->assertFalse($this->store->existsByRecordId($private['id']));
         $this->assertFileDoesNotExist($private['log']);
+    }
+
+    #[Test]
+    public function staleProvisionalCandidateCannotDeleteAcceptedOrForeignSidecars(): void
+    {
+        $paths = $this->createSidecars('stale-candidate');
+        $id = $this->createFinishedRecord($paths['log'], $paths['status'], $this->now->modify('-6 minutes'));
+        $candidate = $this->store->fetchFinishedProvisionalBefore($this->now, [self::OWNER])[0];
+        $this->assertSame($id, $candidate->id);
+        $this->assertTrue($this->store->acceptLocal($id, self::OWNER));
+        $this->assertFalse($this->manager->cleanupFinishedRecord($id, self::OWNER, provisional: true));
+        $this->assertFalse($this->manager->cleanupFinishedRecord($id, 'another-owner'));
+        $this->assertNotNull($this->store->snapshot($id));
+        $this->assertFileExists($paths['log']);
+        $this->assertFileExists($paths['status']);
+        $this->assertFileExists($paths['pid']);
+    }
+
+    #[Test]
+    public function ownerDeleteFailureLeavesFinishedMetadataRetryableAfterSidecarRemoval(): void
+    {
+        $paths = $this->createSidecars('retry-cleanup');
+        $id = $this->createFinishedRecord($paths['log'], $paths['status'], $this->now->modify('-6 minutes'));
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        $connection->executeStatement("CREATE TEMP TRIGGER refuse_maintenance BEFORE DELETE ON background_process BEGIN SELECT RAISE(ABORT, 'maintenance refused'); END");
+        try {
+            try {
+                $this->manager->cleanupFinishedRecord($id, self::OWNER, provisional: true);
+                $this->fail('Expected cleanup refusal from the owner transaction.');
+            } catch (\Doctrine\DBAL\Exception $exception) {
+                $this->assertStringContainsString('maintenance refused', $exception->getMessage());
+                $this->assertNotNull($this->store->snapshot($id));
+                $this->assertFileDoesNotExist($paths['status']);
+            }
+        } finally {
+            $connection->executeStatement('DROP TRIGGER refuse_maintenance');
+        }
+        $this->assertTrue($this->manager->cleanupFinishedRecord($id, self::OWNER, provisional: true));
+        $this->assertNull($this->store->snapshot($id));
     }
 
     #[Test]
@@ -297,16 +337,16 @@ PHP);
         $foreignFinished = $this->createRecord('foreign-finished', $this->now->modify('-6 minutes'), sessionId: 'other-controller');
         // Local PID absence must not finish a process owned by another controller.
         foreach ([$child, $foreign] as $paths) {
-            $record = $this->store->fetchByRecordId($paths['id']);
+            $record = BackgroundProcessFixture::record(self::getContainer(), $paths['id']);
             $this->assertNotNull($record);
             $record->pid = 2147483647;
         }
-        $this->store->flush();
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
 
         ($this->task)();
 
-        $this->assertSame(BackgroundProcessStatusEnum::FinishedUnclean, $this->store->fetchByRecordId($child['id'])?->status);
-        $record = $this->store->fetchByRecordId($foreign['id']);
+        $this->assertSame(BackgroundProcessStatusEnum::FinishedUnclean, BackgroundProcessFixture::record(self::getContainer(), $child['id'])?->status);
+        $record = BackgroundProcessFixture::record(self::getContainer(), $foreign['id']);
         $this->assertNotNull($record);
         $this->assertSame(BackgroundProcessStatusEnum::Running, $record->status);
         $this->assertNull($record->finishedAt);
@@ -323,12 +363,12 @@ PHP);
     {
         $old = $this->createRecord('unscoped', $this->now->modify('-6 minutes'));
         $private = $this->createRunningRecord('unscoped-running');
-        $record = $this->store->fetchByRecordId($private['id']);
+        $record = BackgroundProcessFixture::record(self::getContainer(), $private['id']);
         $this->assertNotNull($record);
         $record->pid = 2147483647;
-        $this->store->flush();
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
         $task = new BackgroundProcessProvisionalCleanupTask(
-            $this->manager, $this->store, $this->lifecycle, $this->logger,
+            $this->manager, $this->store, $this->logger,
             static::getContainer()->get(OwnedRunIdsProvider::class), $sessionId,
         );
 
@@ -336,7 +376,7 @@ PHP);
 
         $this->assertTrue($this->store->existsByRecordId($old['id']));
         $this->assertFileExists($old['log']);
-        $this->assertSame(BackgroundProcessStatusEnum::Running, $this->store->fetchByRecordId($private['id'])?->status);
+        $this->assertSame(BackgroundProcessStatusEnum::Running, BackgroundProcessFixture::record(self::getContainer(), $private['id'])?->status);
     }
 
     #[Test]
@@ -361,15 +401,15 @@ PHP);
     {
         $failed = $this->createRecord('failed-sidecar', $this->now->modify('-10 minutes'));
         $success = $this->createRecord('successful-sidecar', $this->now->modify('-10 minutes'));
-        $entity = $this->store->fetchByRecordId($failed['id']);
+        $entity = BackgroundProcessFixture::record(self::getContainer(), $failed['id']);
         $this->assertNotNull($entity);
         $entity->statusPath .= '.invalid';
-        $this->store->flush();
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
 
         ($this->task)();
 
-        $this->assertNotNull($this->store->fetchByRecordId($failed['id']));
-        $this->assertNull($this->store->fetchByRecordId($success['id']));
+        $this->assertNotNull(BackgroundProcessFixture::record(self::getContainer(), $failed['id']));
+        $this->assertNull(BackgroundProcessFixture::record(self::getContainer(), $success['id']));
         $this->assertFileExists($failed['log']);
         $this->assertFileExists($failed['status']);
         $records = array_values(array_filter($this->logger->records, static fn (array $row): bool => 'background_process.provisional_cleanup_completed' === $row['message']));
@@ -392,10 +432,10 @@ PHP);
             'status_path' => $paths['status'],
             'started_at' => $finishedAt->modify('-1 minute'),
         ]);
-        $entity = $this->store->fetchByRecordId($id);
+        $entity = BackgroundProcessFixture::record(self::getContainer(), $id);
         $this->assertNotNull($entity);
-        $entity->finish(0, $finishedAt);
-        $this->store->flush();
+        BackgroundProcessFixture::finish($entity, 0, $finishedAt);
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
         if ($accepted) {
             $this->manager->markBackgroundedForRecord($id, $sessionId);
         }
@@ -414,7 +454,7 @@ PHP);
             $this->logger,
         );
         $this->task = new BackgroundProcessProvisionalCleanupTask(
-            $this->manager, $this->store, $this->lifecycle, $this->logger,
+            $this->manager, $this->store, $this->logger,
             static::getContainer()->get(OwnedRunIdsProvider::class), self::OWNER,
         );
     }
@@ -430,10 +470,10 @@ PHP);
             'status_path' => $statusPath,
             'started_at' => $finishedAt->modify('-1 minute'),
         ]);
-        $entity = $this->store->fetchByRecordId($id);
+        $entity = BackgroundProcessFixture::record(self::getContainer(), $id);
         $this->assertNotNull($entity);
-        $entity->finish(0, $finishedAt);
-        $this->store->flush();
+        BackgroundProcessFixture::finish($entity, 0, $finishedAt);
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
 
         return $id;
     }

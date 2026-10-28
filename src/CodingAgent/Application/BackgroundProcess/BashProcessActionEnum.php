@@ -11,4 +11,6 @@ enum BashProcessActionEnum: string
     case SettleStop = 'settle_stop';
     case Timeout = 'timeout';
     case SettleTimeout = 'settle_timeout';
+    case DeleteFinished = 'delete_finished';
+    case DeleteProvisional = 'delete_provisional';
 }

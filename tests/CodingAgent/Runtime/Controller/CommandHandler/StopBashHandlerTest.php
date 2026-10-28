@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\StopBashHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
@@ -25,7 +26,7 @@ final class StopBashHandlerTest extends IsolatedKernelTestCase
             $process->pid = 2147483647;
             $process->logPath = $directory.'/log';
             $process->statusPath = $directory.'/status';
-            $process->finish(0, new \DateTimeImmutable());
+            BackgroundProcessFixture::finish($process, 0, new \DateTimeImmutable());
             $process->markBackgrounded(new \DateTimeImmutable());
             $manager->persist($process);
             $manager->flush();

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
+
 require dirname(__DIR__, 5).'/vendor/autoload.php';
 
 use Amp\DeferredCancellation;
@@ -109,7 +111,7 @@ if ('worker' === $mode || 'replacement' === $mode) {
                 }
                 fwrite(\STDERR, 'Expected registration refusal: '.$error->getMessage()."\n");
             }
-            $record = $container->get(ProcessStore::class)->fetchByRecordId($result->id);
+            $record = BackgroundProcessFixture::record($container, $result->id);
             $lifecycle = $container->get(ProcessLifecycle::class);
             if (null !== $lifecycle->readStatusFile($record->statusPath) || !$lifecycle->isAlive($result->pid)) {
                 fwrite(\STDERR, "Sibling foreground launch was terminated by another registration failure.\n");
@@ -182,7 +184,7 @@ $maintenanceTask = null;
 $lostCorrelation = null;
 $acceptanceRedelivered = false;
 $maintain = static function () use ($container, $manager, $owner): void {
-    $task = new BackgroundProcessProvisionalCleanupTask($manager, $container->get(ProcessStore::class), $container->get(ProcessLifecycle::class), new NullLogger(), $container->get(OwnedRunIdsProvider::class), $owner);
+    $task = new BackgroundProcessProvisionalCleanupTask($manager, $container->get(ProcessStore::class), new NullLogger(), $container->get(OwnedRunIdsProvider::class), $owner);
     $task();
 };
 $finish = static function () use ($container): string {
@@ -281,7 +283,7 @@ try {
         if (!$lifecycle->isAlive($launch['pid'])) {
             throw new RuntimeException('Retirement signalled a live cached PID after completion maintenance.');
         }
-        if (null !== $container->get(ProcessStore::class)->fetchByRecordId($launch['id'])) {
+        if (null !== BackgroundProcessFixture::record($container, $launch['id'])) {
             throw new RuntimeException('Real maintenance did not remove the completed row.');
         }
         $socket->write("release\n");
@@ -304,7 +306,7 @@ try {
         $container->get(BackgroundProcessControllerSessionLifecycleListener::class)->onSessionShutdown(new ControllerSessionShutdownEvent($owner));
         while (null !== $socket->read($cancel)) {
         }
-        file_put_contents($marker, json_encode(['removed' => null === $container->get(ProcessStore::class)->fetchByRecordId($launch['id'])], \JSON_THROW_ON_ERROR));
+        file_put_contents($marker, json_encode(['removed' => null === BackgroundProcessFixture::record($container, $launch['id'])], \JSON_THROW_ON_ERROR));
 
         return;
     }
@@ -314,7 +316,7 @@ try {
     while (null !== $socket->read($cancel)) {
     }
     $store = $container->get(ProcessStore::class);
-    $record = $store->fetchByRecordId($launch['id']);
+    $record = BackgroundProcessFixture::record($container, $launch['id']);
     if ('foreground' === $scenario) {
         $identity = $container->get(EntityManagerInterface::class)->getConnection()->fetchOne('SELECT identity FROM bash_registration_receipt WHERE record_id = ?', [$launch['id']]);
         if (BashOwnershipStatusEnum::Retired !== $container->get(BashOwnershipService::class)->accept(new BashOwnershipRequestDTO($identity, $owner))) {

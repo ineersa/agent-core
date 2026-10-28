@@ -34,6 +34,7 @@ use Ineersa\CodingAgent\Runtime\Messenger\SerializedBrokerSendersLocator;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Session\Event\RunOperationalProjectionControllerSessionLifecycleListener;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -139,7 +140,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $exit = 'failure' === $mode ? 7 : 0;
             $process = $manager->start('printf ready; read -r release < '.escapeshellarg($fifo).'; printf done; exit '.$exit, 'native-stop', 'call');
             $manager->markBackgroundedForRecord($process->id, 'native-stop');
-            $record = $store->fetchByRecordId($process->id);
+            $record = BackgroundProcessFixture::record(self::getContainer(), $process->id);
             $this->assertNotNull($record);
             $deadline = hrtime(true) + 2_000_000_000;
             while (!str_contains((string) file_get_contents($record->logPath), 'ready') && hrtime(true) < $deadline) {
@@ -615,7 +616,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $command = 'trap '.escapeshellarg($cleanup).' TERM; : > '.escapeshellarg($this->tmpDir.'/ready').'; while :; do sleep 0.05; done';
             $process = $owner->start($command, 'timeout-run', 'timeout-call', hrtime(true) - 1);
             $owner->markBackgroundedForRecord($process->id, 'timeout-run');
-            $record = $store->fetchByRecordId($process->id);
+            $record = BackgroundProcessFixture::record(self::getContainer(), $process->id);
             $this->assertNotNull($record);
             $deadline = hrtime(true) + 2_000_000_000;
             while (!is_file($this->tmpDir.'/ready') && hrtime(true) < $deadline) {
@@ -628,7 +629,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status);
             $this->assertNull($independent->finishedAt);
             $owner->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots(['timeout-run']));
-            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $store->fetchByRecordId($process->id)?->status);
+            $this->assertSame(BackgroundProcessStatusEnum::Stopped, BackgroundProcessFixture::record(self::getContainer(), $process->id)?->status);
             $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status, 'Timeout must not refresh the suspended reader.');
             $this->assertSame(8, fwrite($release, "release\n"));
             $deadline = hrtime(true) + 2_000_000_000;
@@ -673,7 +674,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $manager->markBackgroundedForRecord($process->id, 'test-poller-run');
             $poller = $this->createPoller($store, $manager);
             (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
-            $record = $store->fetchByRecordId($process->id);
+            $record = BackgroundProcessFixture::record(self::getContainer(), $process->id);
             $this->assertNotNull($record);
             $this->assertNotNull($record->finishedAt);
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $record->status);

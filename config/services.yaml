@@ -222,6 +222,14 @@ services:
     arguments:
       $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
+  coding_agent.bash_scheduler_client:
+    class: Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient
+    arguments:
+      $commandBus: '@agent.command.bus'
+      $endpoint: '%env(HATFIELD_SQLITE_QUEUE_ENDPOINT)%'
+      $sessionId: '%env(HATFIELD_SESSION_ID)%'
+      $role: !php/enum Ineersa\CodingAgent\Application\BackgroundProcess\BashRequesterRoleEnum::Scheduler
+
   coding_agent.bash_controller_client:
     class: Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient
     arguments:

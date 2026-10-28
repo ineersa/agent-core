@@ -13,8 +13,6 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
-use Ineersa\CodingAgent\Entity\BackgroundProcess;
-use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\ForegroundBashProcessDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
@@ -28,21 +26,21 @@ use Symfony\Component\Clock\Clock;
 use function Amp\delay;
 
 /**
- * Durable, ORM-backed manager for background processes.
+ * Native process supervision with owner-backed durable metadata.
  *
  * This is a facade that delegates database operations to ProcessStore
  * and OS/filesystem operations to ProcessLifecycle.
  *
  * Process lifecycle:
- *  1. start() persists a BackgroundProcess entity and launches the
- *     command in a new session/process group via setsid. A shell
+ *  1. start() launches the command in a new session/process group via setsid,
+ *     then registers its immutable launch identity with the metadata owner. A shell
  *     wrapper backgrounds the command as a distinct child process,
  *     redirects stdout/stderr to a log file, and records exit status
  *     to a status file on completion. The wrapper traps SIGTERM and
  *     forwards it to the child so TERM reaches the actual workload.
  *  2. The process runs independently — the PHP tool worker exits while
  *     the child continues in its own session.
- *  3. On subsequent accepted-background list() calls, resolveEntityStatus() checks
+ *  3. Subsequent accepted-background reads ask the metadata owner to observe
  *     liveness via /proc/<pid> on Linux or the status file.
  *  4. stop() sends SIGTERM to the process group (negative PGID), polls
  *     until exit or the configured grace deadline, then SIGKILL if still alive.
@@ -175,7 +173,7 @@ final class BackgroundProcessManager
      * signal with default disposition, while the wrapper survives long
      * enough to write the status sidecar.  When stop() sends SIGKILL
      * (after grace expires) the wrapper dies immediately and the status
-     * file is not written; resolveEntityStatus() marks that scenario as
+     * file is not written; the owner observation marks that scenario as
      * "finished (unclean)".
      *
      * setsid is required.  If setsid is not available or fails, this
@@ -238,10 +236,11 @@ final class BackgroundProcessManager
                     // Its old PID is no longer safe to signal after reply loss.
                     unset($this->ownedLaunches[$filePrefix]);
                 }
-                if (BashRegistrationStatusEnum::Registered !== $result->status || !$result->processExists || null === $result->recordId) {
+                if (BashRegistrationStatusEnum::Registered !== $result->status || !$result->processExists || null === $result->recordId || null === $result->logPath) {
                     throw new \RuntimeException('Bash registration refused: '.$result->status->value.([] !== $result->invalidFields ? ' ('.implode(', ', $result->invalidFields).')' : ''));
                 }
                 $dbId = $result->recordId;
+                $logFile = $result->logPath;
                 $this->launchIdentities[$dbId] = $filePrefix;
             } else {
                 $dbId = $this->store->insertRecord([
@@ -543,28 +542,50 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Refresh unfinished entities for controller-owned runs in one batch.
+     * Refresh unfinished snapshots for controller-owned runs.
      * Populate finished_at even when no list() call observes completion.
      *
      * Passive maintenance only: never signal a process. The owning controller
      * enforces accepted-job deadlines through refreshRecords(); maintenance
      * cannot share that owner's in-memory termination grace deadlines.
      *
-     * Safe to call repeatedly — only queries unfinished entities, checks
-     * status files and /proc/<pid>, and flushes any newly-resolved
-     * entities. Already-finished entities are skipped.
+     * Only the owner records observed completion. No deadline or signal
+     * decisions are made by this passive maintenance path.
      *
      * @param list<string> $sessionIds Controller-owned runs
      */
     public function refreshAllUnfinished(array $sessionIds): void
     {
-        $entities = $this->store->fetchAllUnfinished($sessionIds);
-        foreach ($entities as $entity) {
-            $this->resolveEntityStatus($entity);
+        foreach ($this->store->unfinishedSnapshots($sessionIds) as $record) {
+            $this->processDecision($record->id, $record->sessionId, BashProcessActionEnum::Observe);
         }
-        if ([] !== $entities) {
-            $this->store->flush();
+    }
+
+    /**
+     * Remove only finished metadata and its exact sidecars. Finished remote
+     * launches cannot accept background ownership. Local acceptance has no
+     * suspension between this locked recheck and deletion. Owner decisions do
+     * not acquire this sidecar lock, so waiting for the reply cannot deadlock.
+     */
+    public function cleanupFinishedRecord(int $recordId, string $runId, bool $provisional = false): bool
+    {
+        $record = $this->store->snapshot($recordId);
+        if (null === $record || $record->sessionId !== $runId) {
+            return false;
         }
+
+        return $this->lifecycle->withSidecarLock($record->statusPath, function () use ($recordId, $runId, $provisional): bool {
+            $record = $this->store->snapshot($recordId);
+            if (null === $record || $record->sessionId !== $runId || null === $record->finishedAt
+                || ($provisional && (null !== $record->backgroundedAt || $record->finishedAt > Clock::get()->now()->modify('-'.ProcessStore::PROVISIONAL_RETENTION_SECONDS.' seconds')))) {
+                return false;
+            }
+            if (!$this->lifecycle->deleteLockedRecordSidecars($record->logPath, $record->statusPath)) {
+                return false;
+            }
+
+            return null !== $this->processDecision($recordId, $runId, $provisional ? BashProcessActionEnum::DeleteProvisional : BashProcessActionEnum::DeleteFinished);
+        });
     }
 
     /**
@@ -816,54 +837,4 @@ final class BackgroundProcessManager
     }
 
     // ─── Private helpers ─────────────────────────────────────────────
-
-    /**
-     * Resolve the runtime status of a background process entity.
-     *
-     * Check order:
-     *  1. DB finished_at — already resolved, trust the persisted status.
-     *  2. Status file   — process finished normally, wrapper wrote exit code.
-     *  3. /proc/<pid>   — still alive, mark as Running.
-     *  4. None of above — process is gone without a status file
-     *     (crash / SIGKILL / unclean exit). Mark as FinishedUnclean.
-     *
-     * Mutates the entity in place; caller is responsible for flush.
-     */
-    private function resolveEntityStatus(BackgroundProcess $entity): void
-    {
-        // Already resolved in DB
-        if (null !== $entity->finishedAt) {
-            return;
-        }
-
-        $pid = $entity->pid;
-
-        // Check status file first (process may have finished normally)
-        $exitCode = $this->lifecycle->readStatusFile($entity->statusPath);
-        if (null !== $exitCode) {
-            $now = Clock::get()->now();
-            $entity->finish($exitCode, $now);
-
-            return;
-        }
-
-        // Check /proc/<pid> for liveness
-        if ($this->lifecycle->isAlive($pid)) {
-            if (BackgroundProcessStatusEnum::Stopped !== $entity->status) {
-                $entity->status = BackgroundProcessStatusEnum::Running;
-            }
-
-            return;
-        }
-
-        // Process is gone but no status file written (crash / SIGKILL / unclean exit)
-        $now = Clock::get()->now();
-        $entity->markFinishedUnclean($now);
-
-        $this->logger->info('background_process.finished_unclean', [
-            'component' => 'tool.background_process',
-            'event_type' => 'background_process.finished_unclean',
-            'process_pid' => $pid,
-        ]);
-    }
 }

@@ -9,6 +9,7 @@ enum BashRequesterRoleEnum: string
 {
     case Tool = 'tool';
     case Controller = 'controller';
+    case Scheduler = 'scheduler';
 
     public function queue(): string
     {

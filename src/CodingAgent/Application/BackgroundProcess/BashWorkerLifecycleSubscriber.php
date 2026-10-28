@@ -10,7 +10,7 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 use Symfony\Contracts\Service\ServiceSubscriberInterface;
 
-/** Only the tool requester uses the independent reply queue. Controllers never do. */
+/** Each requester process uses its own fixed reply role. */
 final readonly class BashWorkerLifecycleSubscriber implements EventSubscriberInterface, ServiceSubscriberInterface
 {
     public function __construct(private ContainerInterface $container)
@@ -24,12 +24,18 @@ final readonly class BashWorkerLifecycleSubscriber implements EventSubscriberInt
 
     public static function getSubscribedServices(): array
     {
-        return [BackgroundProcessManager::class, BashRegistrationClient::class];
+        return [BackgroundProcessManager::class, BashRegistrationClient::class, 'coding_agent.bash_scheduler_client' => BashRegistrationClient::class];
     }
 
     public function onStarted(WorkerStartedEvent $event): void
     {
-        if (!\in_array('tool', $event->getWorker()->getMetadata()->getTransportNames(), true)) {
+        $transports = $event->getWorker()->getMetadata()->getTransportNames();
+        if (\in_array('scheduler_default', $transports, true)) {
+            $this->container->get(BackgroundProcessManager::class)->useProcessOwner($this->container->get('coding_agent.bash_scheduler_client'));
+
+            return;
+        }
+        if (!\in_array('tool', $transports, true)) {
             return;
         }
         $this->container->get(BackgroundProcessManager::class)->useLifecycleOwner($this->container->get(BashRegistrationClient::class));
