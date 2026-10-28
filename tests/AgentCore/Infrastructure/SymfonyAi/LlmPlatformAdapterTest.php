@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
+use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
 use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
+use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
@@ -14,8 +16,11 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmStreamCancelledException;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\ProviderErrorMapper;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\ResultConverter;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
@@ -32,6 +37,70 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  */
 final class LlmPlatformAdapterTest extends TestCase
 {
+    #[DataProvider('providerErrorPaths')]
+    public function testUnmappedProviderMetadataReachesLogsRetriesAndWorkerFailure(bool $stream): void
+    {
+        $logger = new TestLogger();
+        $platform = $this->createMock(SymfonyPlatformInterface::class);
+        $throw = static function (): never {
+            ProviderErrorMapper::throwError([
+                'code' => 'string_above_max_length',
+                'type' => 'invalid_request_error',
+                'param' => 'input[3].call_id',
+                'message' => 'PRIVATE_PROVIDER_BODY_PROMPT',
+            ], 400);
+        };
+        $platform->expects($this->exactly(2))->method('invoke')->willReturnCallback(static function () use ($stream, $throw): DeferredResult {
+            if (!$stream) {
+                $throw();
+            }
+
+            return self::deferredStream(static function () use ($throw): \Generator {
+                yield new TextDelta('');
+                $throw();
+            });
+        });
+        $adapter = $this->createAdapter($platform, maxRetries: 1, logger: $logger);
+        $worker = new ExecuteLlmStepWorker(
+            new TestMessageBus(), $adapter, logger: $logger,
+        );
+        $result = $worker(new ExecuteLlmStep(
+            runId: 'provider-metadata-run', turnNo: 1, stepId: 'provider-metadata-step',
+            attempt: 0, idempotencyKey: 'provider-metadata-call',
+            toolsRef: 'provider-metadata-tools',
+        ));
+
+        $this->assertNotNull($result->error);
+        $this->assertSame('bad_request', $result->error['error_category']);
+        $this->assertFalse($result->error['retryable']);
+        $this->assertTrue($result->error['retry_exhausted']);
+        foreach (['code' => 'string_above_max_length', 'type' => 'invalid_request_error', 'param' => 'input[3].call_id'] as $field => $value) {
+            $this->assertSame($value, $result->error['response_error_'.$field]);
+            $this->assertStringContainsString($field.'='.$value, $result->error['user_message']);
+        }
+        $failed = array_values(array_filter($logger->records, static fn (array $record): bool => 'llm.request.failed' === $record['message']));
+        $this->assertCount(1, $failed);
+        $this->assertSame('input[3].call_id', $failed[0]['context']['response_error_param']);
+        $retry = array_values(array_filter($logger->records, static fn (array $record): bool => 'llm.request.retrying' === $record['message']));
+        $this->assertCount(1, $retry);
+        $this->assertStringContainsString('code=string_above_max_length', $retry[0]['context']['reason']);
+        $streamErrors = array_values(array_filter($logger->records, static fn (array $record): bool => 'llm.provider.stream_error' === $record['message']));
+        $this->assertCount($stream ? 2 : 0, $streamErrors);
+        if ($stream) {
+            $this->assertSame('string_above_max_length', $streamErrors[0]['context']['response_error_code']);
+            $this->assertSame('invalid_request_error', $streamErrors[0]['context']['response_error_type']);
+            $this->assertSame('input[3].call_id', $streamErrors[0]['context']['response_error_param']);
+        }
+        $this->assertStringNotContainsString('PRIVATE_PROVIDER_BODY_PROMPT', json_encode([$logger->records, $result->error], \JSON_THROW_ON_ERROR));
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function providerErrorPaths(): iterable
+    {
+        yield 'synchronous failure' => [false];
+        yield 'stream failure without raw HTTP response' => [true];
+    }
+
     public function testSynchronousUnknownExceptionUsesDefaultRetryWithoutMessageMatching(): void
     {
         $platform = $this->createStub(SymfonyPlatformInterface::class);
@@ -260,6 +329,7 @@ final class LlmPlatformAdapterTest extends TestCase
             'error' => [
                 'code' => 'not_found',
                 'type' => 'missing',
+                'param' => "input[3].\033[31mcall_id",
                 'message' => $secret,
             ],
             'error_description' => $secret,
@@ -282,6 +352,7 @@ final class LlmPlatformAdapterTest extends TestCase
         $this->assertSame(404, $diag['http_status_code']);
         $this->assertSame('not_found', $diag['response_error_code']);
         $this->assertSame('missing', $diag['response_error_type']);
+        $this->assertNull($diag['response_error_param']);
         $this->assertArrayNotHasKey('response_error_message', $diag);
         $this->assertTrue($diag['response_body_is_json']);
         $encoded = json_encode($diag);
