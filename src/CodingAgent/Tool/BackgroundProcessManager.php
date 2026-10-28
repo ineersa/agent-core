@@ -9,9 +9,11 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationStatusEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipRequestDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\ForegroundBashProcessDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -554,22 +556,16 @@ final class BackgroundProcessManager
             return false;
         }
 
-        $entity = $this->findByRecordId($recordId, $runId);
-        if (null === $entity || $entity->toolCallId !== $toolCallId || null !== $entity->finishedAt || null !== $entity->backgroundedAt) {
-            return false;
-        }
+        $request = new RequestBashBackgroundDTO($runId, $recordId, $toolCallId);
 
-        $entity->backgroundRequested = true;
-        $this->store->flush();
-
-        return true;
+        return $this->store->requestBackground($request, $this->lifecycle);
     }
 
     /**
      * Read-only selection snapshot. Native supervision and deadline enforcement
      * remain with the execution owner/poller, not TUI candidate discovery.
      *
-     * @return list<BackgroundProcess>
+     * @return list<ForegroundBashProcessDTO>
      */
     public function foregroundTools(string $runId): array
     {

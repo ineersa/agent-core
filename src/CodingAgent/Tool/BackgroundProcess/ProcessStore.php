@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\ForegroundBashProcessDTO;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Clock\Clock;
 
 /**
  * Doctrine ORM-backed durable store for background process records.
@@ -92,10 +95,51 @@ final class ProcessStore
         return $this->repository->findBackgrounded($sessionId);
     }
 
-    /** @return list<BackgroundProcess> */
+    /** @return list<ForegroundBashProcessDTO> */
     public function fetchForegroundTools(string $sessionId): array
     {
-        return $this->repository->findForegroundTools($sessionId);
+        $rows = $this->entityManager->getConnection()->fetchAllAssociative('SELECT id, pid, tool_call_id FROM background_process WHERE session_id = ? AND finished_at IS NULL AND tool_call_id IS NOT NULL AND backgrounded_at IS NULL AND background_requested = 0 ORDER BY id DESC', [$sessionId]);
+
+        return array_map(static fn (array $row): ForegroundBashProcessDTO => new ForegroundBashProcessDTO(
+            (int) $row['id'], (int) $row['pid'], (string) $row['tool_call_id'],
+        ), $rows);
+    }
+
+    /** Owner-local, monotone metadata decision. No process waits or ORM hydration. */
+    public function requestBackground(RequestBashBackgroundDTO $request, ProcessLifecycle $lifecycle): bool
+    {
+        if ('' === $request->runId || '' === $request->toolCallId || $request->recordId <= 0) {
+            return false;
+        }
+
+        return $this->entityManager->getConnection()->transactional(function () use ($request, $lifecycle): bool {
+            $connection = $this->entityManager->getConnection();
+            $row = $connection->fetchAssociative('SELECT * FROM background_process WHERE id = ? AND session_id = ? AND tool_call_id = ?', [$request->recordId, $request->runId, $request->toolCallId]);
+            if (false === $row) {
+                return false;
+            }
+            // Redelivery recognizes committed intent even if the foreground
+            // worker has since accepted the request or observed completion.
+            if ((bool) $row['background_requested']) {
+                return true;
+            }
+            if (null !== $row['finished_at'] || null !== $row['backgrounded_at']) {
+                return false;
+            }
+            $exitCode = $lifecycle->readStatusFile((string) $row['status_path']);
+            if (null !== $exitCode || !$lifecycle->isAlive((int) $row['pid'])) {
+                $status = BackgroundProcessStatusEnum::Stopped->value === $row['status']
+                    ? BackgroundProcessStatusEnum::Stopped
+                    : (null !== $exitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean);
+                $now = Clock::get()->now()->format('Y-m-d H:i:s');
+                $connection->executeStatement('UPDATE background_process SET finished_at = ?, exit_code = ?, status = ?, updated_at = ? WHERE id = ?', [$now, $exitCode, $status->value, $now, $request->recordId]);
+
+                return false;
+            }
+            $connection->executeStatement('UPDATE background_process SET background_requested = 1, updated_at = ? WHERE id = ?', [Clock::get()->now()->format('Y-m-d H:i:s'), $request->recordId]);
+
+            return true;
+        });
     }
 
     /**

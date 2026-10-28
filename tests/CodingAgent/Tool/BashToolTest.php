@@ -854,7 +854,7 @@ final class BashToolTest extends IsolatedKernelTestCase
                 $records = $backgrounded ? $this->recordsForSession($session) : $this->manager->foregroundTools($session);
                 if ([] !== $records) {
                     $selected = $records[0];
-                    $originalDeadline = $selected->deadlineNanoseconds;
+                    $originalDeadline = $this->manager->findByRecordId($selected->id, $session)?->deadlineNanoseconds;
                     if (!$backgrounded) {
                         $this->assertTrue($this->manager->requestBackground($session, $selected->id, 'tc_bash'));
                     }
@@ -917,7 +917,7 @@ final class BashToolTest extends IsolatedKernelTestCase
                 usleep(10_000);
             } while (hrtime(true) < $deadline);
             $this->assertNotNull($record?->finishedAt);
-            $this->assertSame(1, substr_count((string) file_get_contents($selected->logPath), "started\n"));
+            $this->assertSame(1, substr_count((string) file_get_contents($record->logPath), "started\n"));
             $bus = $this->createMock(MessageBusInterface::class);
             $bus->expects($this->once())->method('dispatch')->with($this->callback(
                 static fn (DeliverBackgroundCompletionDTO $message): bool => $session === $message->runId() && str_contains($message->text, 'finished'),

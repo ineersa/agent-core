@@ -159,23 +159,6 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
             ->getResult();
     }
 
-    /** @return list<BackgroundProcess> */
-    public function findForegroundTools(string $sessionId): array
-    {
-        return $this->createQueryBuilder('bp')
-            ->where('bp.sessionId = :sessionId')
-            ->andWhere('bp.finishedAt IS NULL')
-            ->andWhere('bp.toolCallId IS NOT NULL')
-            ->andWhere('bp.backgroundedAt IS NULL')
-            ->andWhere('bp.backgroundRequested = :requested')
-            ->setParameter('sessionId', $sessionId)
-            ->setParameter('requested', false)
-            ->orderBy('bp.id', 'DESC')
-            ->getQuery()
-            ->setHint(Query::HINT_REFRESH, true)
-            ->getResult();
-    }
-
     /**
      * Resolve a user-accepted background process by PID within one run.
      */
