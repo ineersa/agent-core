@@ -61,6 +61,10 @@ final class AgentPromptBuilderTest extends TestCase
         $this->assertStringNotContainsString('<available_agents>', $result['systemPrompt']);
         $this->assertStringNotContainsString('PARENT_ONLY_TOOL', $result['systemPrompt']);
         $this->assertStringNotContainsString('PARENT_SYSTEM_UNIQUE', $result['systemPrompt']);
+        $task = $result['messages'][array_key_last($result['messages'])];
+        $this->assertSame('user', $task->role);
+        $this->assertSame('Run task', $task->content[0]['text']);
+        $this->assertSame(['agent_task' => ['artifact_id' => 'agent_abc']], $task->metadata);
     }
 
     public function testBuildExcludesUnloadedToolsFromHarness(): void

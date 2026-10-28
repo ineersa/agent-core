@@ -32,6 +32,7 @@ final class BackgroundCompletionHandlerTest extends IsolatedKernelTestCase
         $handler($message);
         $receipts = self::getContainer()->get(BackgroundCompletionReceiptRepository::class);
         $this->assertNotNull($receipts->receipt($message->identity));
+        $this->assertSame($message->origin, $receipts->receipt($message->identity)->origin);
         $store = self::getContainer()->get(ProcessStore::class);
         $this->assertNotNull($store->snapshot($record->id)?->completionNotifiedAt);
         $commands = self::getContainer()->get(CommandStoreInterface::class);
@@ -97,6 +98,8 @@ final class BackgroundCompletionHandlerTest extends IsolatedKernelTestCase
         $em->persist($record);
         $em->flush();
 
-        return [new DeliverBackgroundCompletionDTO($runId, 'background-process-'.$record->id, 'Bash completed', processRecordId: $record->id, outputTail: 'completed'), $record];
+        // Forwarding and recovery use the seventh positional origin parameter.
+        // Native owner admission must preserve it alongside its process record.
+        return [new DeliverBackgroundCompletionDTO($runId, 'background-process-'.$record->id, 'Bash completed', null, null, null, ['kind' => 'bash', 'process_id' => $record->id], processRecordId: $record->id, outputTail: 'completed'), $record];
     }
 }

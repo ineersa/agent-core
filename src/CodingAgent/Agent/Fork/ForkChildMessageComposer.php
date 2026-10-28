@@ -25,6 +25,7 @@ final readonly class ForkChildMessageComposer
     public function compose(
         array $inheritedMessages,
         string $task,
+        string $artifactId,
         array $allowedToolNames,
         string $agentsMd,
         string $skillsContext,
@@ -58,12 +59,13 @@ final readonly class ForkChildMessageComposer
             $messages[] = $message;
         }
 
-        // Artifact ID stays parent-only (SubagentChildRunHandoffRenderer). The child
+        // Artifact identity stays in host metadata, not model-facing task text. The child
         // receives the fork operating contract + task handoff instructions; no separate agent_child_contract.
 
         $messages[] = new AgentMessage(
             role: 'user',
             content: [['type' => 'text', 'text' => $this->taskPromptBuilder->buildTaskUserMessage($task)]],
+            metadata: ['agent_task' => ['artifact_id' => $artifactId]],
         );
 
         return [

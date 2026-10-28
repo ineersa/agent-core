@@ -12,8 +12,11 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Contract\ChatGPTContract;
+use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
 use Symfony\AI\Platform\Bridge\OpenResponses\Contract\OpenResponsesContract;
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
+use Symfony\AI\Platform\Contract;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Image;
 use Symfony\AI\Platform\Message\Content\Text;
@@ -21,6 +24,7 @@ use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\ToolCallMessage;
 use Symfony\AI\Platform\Message\UserMessage;
+use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\DependencyInjection\ServicesResetterInterface;
@@ -169,6 +173,26 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
             $bag->getMessages(),
             'Thinking-only assistant message must be filtered from provider request.',
         );
+    }
+
+    public function testLegacyUnsignedEmptyTextWithThinkingIsOmittedFromDefaultContract(): void
+    {
+        $message = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => '']],
+            details: ['thinking' => 'Legacy reasoning without a final response'],
+            metadata: ['source_model' => 'generic/deepseek'],
+        );
+        $messages = [$message, new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Continue']])];
+        $payload = Contract::create()->createRequestPayload(
+            new Model('deepseek'),
+            $this->converter->toMessageBagForTarget($messages, 'generic/deepseek'),
+            [],
+        );
+
+        $this->assertSame([['role' => 'user', 'content' => 'Continue']], $payload['messages']);
+        $this->assertSame('', $message->content[0]['text']);
+        $this->assertSame('Legacy reasoning without a final response', $message->details['thinking']);
     }
 
     /**
@@ -444,6 +468,107 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
         $this->assertSame($remapped, $bag->getMessages()[1]->getToolCall()->getId());
     }
 
+    public function testEmptyNativeTextSurvivesForeignModelConversion(): void
+    {
+        $item = ['type' => 'message', 'id' => 'msg_empty', 'role' => 'assistant', 'content' => []];
+        $signed = MessageItem::toText($item);
+        $message = new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => '', 'text_signature' => $signed->getSignature()]],
+            metadata: ['source_model' => 'openai-codex/gpt-6-astra'],
+        );
+
+        foreach (['openai-codex/gpt-6-astra', 'openai-codex/gpt-6.1-sol'] as $target) {
+            $bag = $this->converter->toMessageBagForTarget([$message], $target);
+            $this->assertCount(1, $bag->getMessages());
+            $assistant = $bag->getMessages()[0];
+            $this->assertInstanceOf(AssistantMessage::class, $assistant);
+            $this->assertCount(1, $assistant->getContent());
+            $text = $assistant->getContent()[0];
+            $this->assertInstanceOf(Text::class, $text);
+            $this->assertSame('', $text->getText());
+            if ('openai-codex/gpt-6-astra' === $target) {
+                $this->assertSame($item, MessageItem::fromText($text));
+            } else {
+                $this->assertNull($text->getSignature());
+            }
+        }
+        $this->assertSame($signed->getSignature(), $message->content[0]['text_signature']);
+    }
+
+    public function testEmptyNativeTextProducesValidCrossModelResponsesPayload(): void
+    {
+        $item = ['type' => 'message', 'id' => 'msg_empty', 'role' => 'assistant', 'phase' => 'final_answer', 'content' => []];
+        $messages = [
+            new AgentMessage(role: 'assistant', content: []),
+            new AgentMessage(role: 'assistant', content: [
+                ['type' => 'text', 'text' => '', 'text_signature' => MessageItem::toText($item)->getSignature()],
+                ['type' => 'tool_call', 'tool_call_index' => 0],
+            ], metadata: [
+                'source_model' => 'openai-codex/gpt-6-astra',
+                'tool_calls' => [['id' => 'call_empty', 'name' => 'bash', 'arguments' => ['command' => 'pwd']]],
+            ]),
+            new AgentMessage(role: 'tool', content: [['type' => 'text', 'text' => '/synthetic']], toolCallId: 'call_empty', toolName: 'bash'),
+        ];
+        $source = serialize($messages);
+
+        foreach (['openai-codex/gpt-6-astra', 'openai-codex/gpt-6.1-sol'] as $target) {
+            $payload = ChatGPTContract::create()->createRequestPayload(
+                new ResponsesModel('gpt-6.1-sol'),
+                $this->converter->toMessageBagForTarget($messages, $target),
+                [],
+            );
+
+            $this->assertCount(3, $payload['input']);
+            if ('openai-codex/gpt-6-astra' === $target) {
+                $this->assertSame($item, $payload['input'][0]);
+            } else {
+                $this->assertSame([['type' => 'output_text', 'text' => '', 'annotations' => []]], $payload['input'][0]['content']);
+            }
+            $this->assertSame('function_call', $payload['input'][1]['type']);
+            $this->assertSame('bash', $payload['input'][1]['name']);
+            $this->assertSame('function_call_output', $payload['input'][2]['type']);
+            $this->assertSame($payload['input'][1]['call_id'], $payload['input'][2]['call_id']);
+            foreach ($payload['input'] as $input) {
+                if ('message' === $input['type']) {
+                    $this->assertNotNull($input['content']);
+                }
+            }
+        }
+        $this->assertSame($source, serialize($messages));
+    }
+
+    public function testAssistantWithoutPartsIsOmittedButToolOnlyAssistantIsKept(): void
+    {
+        $bag = $this->converter->toMessageBagForTarget([
+            new AgentMessage(role: 'assistant', content: []),
+            new AgentMessage(role: 'assistant', content: [], metadata: [
+                'tool_calls' => [['id' => 'call_empty', 'name' => 'bash', 'arguments' => []]],
+            ]),
+        ], 'openai-codex/gpt-6.1-sol');
+
+        $this->assertCount(1, $bag->getMessages());
+        $this->assertSame('call_empty', $bag->getMessages()[0]->getToolCalls()[0]->getId());
+    }
+
+    public function testOrderedEmptyTextRemainsBeforeToolCall(): void
+    {
+        $message = new AgentMessage(role: 'assistant', content: [
+            ['type' => 'text', 'text' => ''],
+            ['type' => 'tool_call', 'tool_call_index' => 0],
+        ], metadata: [
+            'tool_calls' => [['id' => 'call_empty', 'name' => 'bash', 'arguments' => []]],
+        ]);
+        $bag = $this->converter->toMessageBagForTarget([$message], 'openai-codex/gpt-6.1-sol');
+        $content = $bag->getMessages()[0]->getContent();
+
+        $this->assertCount(2, $content);
+        $this->assertInstanceOf(Text::class, $content[0]);
+        $this->assertSame('', $content[0]->getText());
+        $this->assertInstanceOf(ToolCall::class, $content[1]);
+        $this->assertSame('call_empty', $content[1]->getId());
+    }
+
     public function testQualifiedModelIdentityControlsNativeReplayWithBareCatalogModel(): void
     {
         $messages = [
@@ -644,7 +769,8 @@ final class AgentMessageConverterTest extends IsolatedKernelTestCase
         ];
         $second = $this->converter->toMessageBagForTarget($appended, 'openai/gpt-test');
 
-        $this->assertSame($first, $second);
+        $this->assertNotSame($first, $second);
+        $this->assertCount(2, $first->getMessages());
         $this->assertSame($prefixUser, $second->getMessages()[0]);
         $this->assertSame($prefixAssistant, $second->getMessages()[1]);
         $this->assertSame('next', $second->getMessages()[2]->asText());

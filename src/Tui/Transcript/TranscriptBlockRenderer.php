@@ -23,6 +23,8 @@ use Symfony\Component\Tui\Widget\TextWidget;
  * flat TextWidget fallback (glyphs, theme colors, fallback display text).
  *
  * User / assistant / visible thinking → {@see MarkdownWidget}.
+ * Host-tagged automatic messages → {@see AutomaticMessageWidget}, including
+ * child tasks whose model-facing role remains user.
  * Hidden thinking → compact placeholder from {@see TranscriptDisplayConfig} only,
  * not {@see TranscriptBlock::$collapsed}.
  * Question blocks → compact markdown prompt/answer transcript record (HITL).
@@ -38,6 +40,7 @@ final readonly class TranscriptBlockRenderer
 {
     public function __construct(
         private readonly TranscriptDisplayConfig $displayConfig,
+        private readonly TranscriptDisplayState $displayState,
         private readonly MarkdownRenderSupport $markdown = new MarkdownRenderSupport(),
     ) {
     }
@@ -47,6 +50,14 @@ final readonly class TranscriptBlockRenderer
      */
     public function buildWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
+        $producer = $block->meta['producer_metadata'] ?? [];
+        if (\is_array($producer) && (\is_array($producer['agent_communication'] ?? null)
+            || \is_array($producer['background_completion'] ?? null)
+            || \is_array($producer['agent_task'] ?? null)
+            || true === ($producer['system_reminder'] ?? null))) {
+            return new AutomaticMessageWidget($block, $this->displayState, $theme, $this->markdown);
+        }
+
         // Hidden thinking: compact placeholder; uses TranscriptDisplayConfig only, NOT TranscriptBlock::collapsed.
         if ($this->isThinkingBlock($block) && !$this->displayConfig->thinkingVisible) {
             $line = \sprintf('%s Thinking', TranscriptGlyphs::GLYPH_ASSISTANT_THINKING);
@@ -54,7 +65,7 @@ final readonly class TranscriptBlockRenderer
             return new TextWidget($theme->color(ThemeColorEnum::ThinkingText, $line));
         }
 
-        // UserMessage, AssistantMessage, visible thinking → MarkdownWidget.
+        // Message bodies and local command Markdown share the same rendering path.
         if ($this->isMarkdownBlock($block)) {
             return $this->buildMarkdownWidget($block, $theme);
         }
@@ -64,26 +75,11 @@ final readonly class TranscriptBlockRenderer
             return $this->buildQuestionWidget($block, $theme);
         }
 
-        // Local slash-command Markdown (e.g. /settings-show) reuses MarkdownWidget.
-        // Avoid prefixFor()/colorFor() which intentionally do not handle System.
-        if (TranscriptBlockKindEnum::System === $block->kind && 'markdown' === ($block->meta['style'] ?? null)) {
-            $mdWidget = $this->markdown->create($block->text);
-            $colorSpec = $theme->getPalette()->get(ThemeColorEnum::SystemMessage);
-            $style = '' !== $colorSpec
-                ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
-                : new Style(padding: Padding::from([0, 0, 0, 2]));
-            $mdWidget->setStyle($style);
-
-            return $mdWidget;
-        }
-
-        // Structured /hotkeys table — semantic widget, not pre-rendered ANSI text.
-        if (TranscriptBlockKindEnum::System === $block->kind && 'hotkey-table' === ($block->meta['style'] ?? null)) {
-            return $this->buildHotkeyTableWidget($block);
-        }
-
         if (TranscriptBlockKindEnum::System === $block->kind) {
-            return $this->buildSystemWidget($block, $theme);
+            return match (true) {
+                'hotkey-table' === ($block->meta['style'] ?? null) => $this->buildHotkeyTableWidget($block),
+                default => $this->buildSystemWidget($block, $theme),
+            };
         }
 
         // All remaining kinds → existing TextWidget path.
@@ -115,7 +111,7 @@ final readonly class TranscriptBlockRenderer
         $container->add(new TextWidget($theme->color(ThemeColorEnum::Accent, $header)));
 
         if ('' !== $prompt) {
-            $container->add($this->buildQuestionMarkdownWidget($prompt, $theme, ThemeColorEnum::Accent));
+            $container->add($this->buildInsetMarkdownWidget($prompt, $theme, ThemeColorEnum::Accent));
         }
 
         if ('answered' === $status && '' !== $answer) {
@@ -141,9 +137,10 @@ final readonly class TranscriptBlockRenderer
     }
 
     /**
-     * Prompt body without duplicating the glyph prefix inside markdown (CommonMark + glyph contract).
+     * Inset body without duplicating the glyph prefix inside markdown (CommonMark + glyph contract).
+     * An omitted theme color leaves the native terminal foreground unchanged.
      */
-    private function buildQuestionMarkdownWidget(string $prompt, TuiTheme $theme, ThemeColorEnum $color): MarkdownWidget
+    private function buildInsetMarkdownWidget(string $prompt, TuiTheme $theme, ThemeColorEnum $color): MarkdownWidget
     {
         $mdWidget = $this->markdown->create($prompt);
         $colorSpec = $theme->getPalette()->get($color);
@@ -353,18 +350,17 @@ final readonly class TranscriptBlockRenderer
      * Left padding on the widget replaces the flat renderer's two leading spaces because
      * CommonMark strips leading whitespace from paragraph text.
      */
-    private function buildMarkdownWidget(TranscriptBlock $block, TuiTheme $theme): MarkdownWidget
+    private function buildMarkdownWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
-        $prefix = trim($this->prefixFor($block));
-        $color = $this->colorFor($block);
+        // Local command Markdown has no message glyph or streaming suffix.
+        $system = TranscriptBlockKindEnum::System === $block->kind;
+        $prefix = $system ? '' : trim($this->prefixFor($block));
+        $color = $system ? ThemeColorEnum::SystemMessage : $this->colorFor($block);
         $displayText = $this->displayTextFor($block);
         $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
-        $text = \sprintf('%s %s%s', $prefix, $displayText, $suffix);
-        $mdWidget = $this->markdown->create($text);
-        $colorSpec = $theme->getPalette()->get($color);
-        $style = '' !== $colorSpec
-            ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
-            : new Style(padding: Padding::from([0, 0, 0, 2]));
+        $text = $system ? $block->text : \sprintf('%s %s%s', $prefix, $displayText, $suffix);
+        $mdWidget = $this->buildInsetMarkdownWidget($text, $theme, $color);
+        $style = $mdWidget->getStyle();
 
         if ($this->isThinkingBlock($block)) {
             $style = $this->applyThinkingStyle($style);
@@ -397,7 +393,7 @@ final readonly class TranscriptBlockRenderer
 
     private function isMarkdownBlock(TranscriptBlock $block): bool
     {
-        return \in_array($block->kind, [
+        return (TranscriptBlockKindEnum::System === $block->kind && 'markdown' === ($block->meta['style'] ?? null)) || \in_array($block->kind, [
             TranscriptBlockKindEnum::UserMessage,
             TranscriptBlockKindEnum::AssistantMessage,
             TranscriptBlockKindEnum::AssistantThinking,

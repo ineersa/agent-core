@@ -10,6 +10,73 @@
     },
     "repositories": [
         {
+            "type": "package",
+            "package": {
+                "name": "symfony/ai-open-responses-platform",
+                "description": "Open Responses platform bridge for Symfony AI",
+                "license": "MIT",
+                "type": "symfony-ai-platform",
+                "keywords": [
+                    "ai",
+                    "bridge",
+                    "open-responses",
+                    "platform"
+                ],
+                "authors": [
+                    {
+                        "name": "Christopher Hertel",
+                        "email": "mail@christopher-hertel.de"
+                    },
+                    {
+                        "name": "Oskar Stark",
+                        "email": "oskarstark@googlemail.com"
+                    },
+                    {
+                        "name": "Symfony Community",
+                        "homepage": "https://symfony.com/contributors"
+                    }
+                ],
+                "require": {
+                    "php": ">=8.2",
+                    "symfony/ai-platform": "^1.0",
+                    "symfony/http-client": "^7.3|^8.0"
+                },
+                "require-dev": {
+                    "phpstan/phpstan": "^2.1",
+                    "phpstan/phpstan-phpunit": "^2.0",
+                    "phpstan/phpstan-strict-rules": "^2.0",
+                    "phpunit/phpunit": "^11.5.53"
+                },
+                "minimum-stability": "dev",
+                "autoload": {
+                    "psr-4": {
+                        "Symfony\\AI\\Platform\\Bridge\\OpenResponses\\": ""
+                    }
+                },
+                "autoload-dev": {
+                    "psr-4": {
+                        "Symfony\\AI\\PHPStan\\": "../../../../../.phpstan/",
+                        "Symfony\\AI\\Platform\\Bridge\\OpenResponses\\Tests\\": "Tests/"
+                    }
+                },
+                "config": {
+                    "sort-packages": true
+                },
+                "extra": {
+                    "thanks": {
+                        "name": "symfony/ai",
+                        "url": "https://github.com/symfony/ai"
+                    }
+                },
+                "version": "1.0.0-BETA1",
+                "source": {
+                    "type": "git",
+                    "url": "https://github.com/ineersa/ai.git",
+                    "reference": "329058c0848808733badac76e7e163da0fea577e"
+                }
+            }
+        },
+        {
             "type": "vcs",
             "url": "https://github.com/ineersa/amp-sqlite3"
         },
@@ -59,13 +126,13 @@
         "doctrine/migrations": "^3.8",
         "symfony/lock": "8.2.*@dev",
         "helgesverre/toon": "^3.1",
-        "symfony/ai-agent": "^0.15",
-        "symfony/ai-platform": "^0.15",
+        "symfony/ai-agent": "^1.0@beta",
+        "symfony/ai-platform": "^1.0@beta",
         "symfony/validator": "8.2.*@dev",
         "symfony/uid": "8.2.*@dev",
         "symfony/tui": "8.2.x-dev",
-        "symfony/ai-generic-platform": "^0.15",
-        "symfony/ai-open-responses-platform": "^0.15",
+        "symfony/ai-generic-platform": "^1.0@beta",
+        "symfony/ai-open-responses-platform": "^1.0@beta",
         "monolog/monolog": "^3.10",
         "symfony/framework-bundle": "8.2.*@dev",
         "symfony/monolog-bundle": "^4.0",
@@ -82,11 +149,11 @@
         "amphp/http-client": "^5.3",
         "league/commonmark": "^2.8",
         "tempest/highlight": "^2.27",
-        "symfony/ai-store": "^0.15",
-        "symfony/ai-sqlite-store": "^0.15",
-        "symfony/ai-vektor-store": "^0.15",
+        "symfony/ai-store": "^1.0@beta",
+        "symfony/ai-sqlite-store": "^1.0@beta",
+        "symfony/ai-vektor-store": "^1.0@beta",
         "centamiv/vektor": "^2.0",
-        "ineersa/symfony-ai-openai-chatgpt-platform": "0.2.1",
+        "ineersa/symfony-ai-openai-chatgpt-platform": "0.3.0",
         "ineersa/sqlite-queue": "dev-main#a19d6e7684772be355f8db961cb2200e21ed5cd9",
         "fabpot/amphp-sqlite3": "dev-development#2cf3d23e6a4645133954052d7356c19c30a2a7d8",
         "amphp/http-tunnel": "^2.0",

@@ -235,6 +235,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $entity = $this->findProcess(10001);
         $this->assertNotNull($entity);
+        $this->assertSame(['kind' => 'bash', 'process_id' => $entity->id, 'pid' => 10001, 'tool_call_id' => $entity->toolCallId], $command->origin);
         $this->assertNotNull($entity->completionNotifiedAt);
     }
 

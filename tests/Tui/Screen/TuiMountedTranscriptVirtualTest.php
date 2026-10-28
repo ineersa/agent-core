@@ -781,7 +781,9 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
 
     private function streamingMarkdown(StreamingMarkdownTranscriptWidget $widget): ?MarkdownWidget
     {
-        return (new \ReflectionProperty($widget, 'markdown'))->getValue($widget);
+        $body = $widget->all()[0] ?? null;
+
+        return $body instanceof MarkdownWidget ? $body : null;
     }
 
     private function findMarkdownWidgets(TranscriptMountedWidget $transcript): array

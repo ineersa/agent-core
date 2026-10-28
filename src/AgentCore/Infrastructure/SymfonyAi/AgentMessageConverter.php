@@ -107,7 +107,7 @@ final class AgentMessageConverter
      * When the previous active source ended mid consecutive tool-result batch,
      * append rebuilds only that trailing open batch plus the suffix so deferred
      * synthetic image UserMessages keep correct ordering. Closed turns skip that
-     * path entirely. Ordinary appends keep bag identity via MessageBag::add(). Open trailing
+     * path entirely. Ordinary appends replace the immutable bag while retaining message instances. Open trailing
      * tool-image batches may rebuild the deferred tail. Current request
      * shapers rebuild messages rather than mutating the supplied bag.
      *
@@ -320,7 +320,7 @@ final class AgentMessageConverter
             $newMessages = $this->convertAgentMessages($suffixConverted);
 
             foreach ($newMessages as $message) {
-                $this->activeBag->add($message);
+                $this->activeBag = $this->activeBag->with($message);
             }
 
             $this->idMap = $idMap;
@@ -346,7 +346,7 @@ final class AgentMessageConverter
         $rebuiltTail = $this->convertAgentMessages($rebuildConverted);
         $bag = new MessageBag(...\array_slice($this->activeBag->getMessages(), 0, $stableBagCount));
         foreach ($rebuiltTail as $message) {
-            $bag->add($message);
+            $bag = $bag->with($message);
         }
 
         $this->activeBag = $bag;
@@ -516,6 +516,10 @@ final class AgentMessageConverter
             default => [Message::ofUser($this->userText($message, $textContent))],
         };
 
+        if (($converted[0] ?? null) instanceof AssistantMessage && [] === $converted[0]->getContent()) {
+            return [];
+        }
+
         // Apply metadata to the first message (typically the primary message)
         if ([] !== $message->metadata && isset($converted[0])) {
             $converted[0]->getMetadata()->set($message->metadata);
@@ -645,6 +649,7 @@ final class AgentMessageConverter
             : [];
         $hasOrderedThinkingParts = false;
         $hasOrderedToolParts = false;
+        $hasTextPart = false;
         $toolCalls = $this->assistantToolCalls($message);
         foreach ($message->content as $part) {
             if (!\is_array($part)) {
@@ -652,6 +657,9 @@ final class AgentMessageConverter
             }
             if ('tool_call' === ($part['type'] ?? null)) {
                 $hasOrderedToolParts = true;
+            }
+            if ('text' === ($part['type'] ?? null) && \is_string($part['text'] ?? null)) {
+                $hasTextPart = true;
             }
             if ('thinking' === ($part['type'] ?? null) || isset($part['text_signature'])) {
                 $hasOrderedThinkingParts = true;
@@ -675,7 +683,7 @@ final class AgentMessageConverter
                 if ('text' === $type) {
                     $text = $part['text'] ?? null;
                     $signature = \is_string($part['text_signature'] ?? null) ? $part['text_signature'] : null;
-                    if (\is_string($text) && ('' !== $text || null !== $signature)) {
+                    if (\is_string($text)) {
                         $contentParts[] = new Text($text, $signature);
                     }
                     continue;
@@ -720,7 +728,7 @@ final class AgentMessageConverter
                 );
             }
 
-            if ('' !== $textContent) {
+            if ('' !== $textContent || $hasTextPart) {
                 $contentParts[] = new Text($textContent);
             }
         }

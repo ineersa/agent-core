@@ -8,7 +8,7 @@ Keep `openai-codex` as the bundled provider identifier so existing model referen
 
 The Composer package owns public-client OAuth, dynamic registration, PKCE, cryptographic ID-token verification, issued-client-ID reauthorization, installation identity, protected storage, locked refresh, and remote disconnect. Hatfield supplies its application name, storage path, Lock factory, and HTTP client. ChatGPT credentials use `~/.hatfield/chatgpt-auth.json`; old credentials in `~/.hatfield/auth.json` are neither converted nor consumed. Grok retains its own grant and uses the new package's provider-neutral OAuth helpers.
 
-The package reuses Symfony AI OpenResponses 0.15 for serialization, SSE conversion, reasoning signatures, and typed errors. Requests use `https://api.openai.com/v1/responses`, full history, `store: false`, and `stream: true`. Local tools use developer `additional_tools` items without renaming dispatch functions. Unsupported fields and internal host markers are omitted. Paired tool identities and encrypted reasoning survive round trips.
+The package reuses Symfony AI OpenResponses 1.0.0-BETA1 for serialization, SSE conversion, reasoning signatures, and typed errors. Requests use `https://api.openai.com/v1/responses`, full history, `store: false`, and `stream: true`. Local tools use developer `additional_tools` items without renaming dispatch functions. Unsupported fields and internal host markers are omitted. Paired tool identities and encrypted reasoning survive round trips.
 
 There are no WebSockets, cached continuation, SSE fallback, or inline authentication replay. ChatGPT sends the selected reasoning level as request-level `reasoning.effort`. Effort changes can reduce prompt-cache reuse; native inline configuration updates are unsupported. ChatGPT generation uses a 300-second idle limit and no total deadline. Other providers retain their HTTP defaults. Completed tool calls remain dispatchable; interrupted argument streams do not become synthetic complete tools. `/usage` shows the ChatGPT usage-management link and session accounting, not a numerical subscription quota. z.ai quota presentation is unchanged. Permanent subscription limits are not retried.
 
@@ -17,11 +17,19 @@ There are no WebSockets, cached continuation, SSE fallback, or inline authentica
 Hatfield uses the public GitHub Composer repository:
 
 - Package: `ineersa/symfony-ai-openai-chatgpt-platform`.
-- Release: `0.2.1`, tagged `v0.2.1`.
+- Release: `0.3.0`, tagged `v0.3.0`.
 - Source: [ChatGPT platform repository](https://github.com/ineersa/symfony-ai-openai-chatgpt-platform).
 - Native-control removal: [pull request 5](https://github.com/ineersa/symfony-ai-openai-chatgpt-platform/pull/5).
 
-Composer locks the release to commit `896c598b354253103166049e99fed7590656b6a8`. No local package mirror or absolute path repository is required.
+Composer locks the release to commit `7cedd29f374b1bb55f17ee71a60ea2b106f3953b`. Symfony AI dependencies use package-specific `^1.0@beta` allowances. No local package mirror or absolute path repository is required.
+
+### Temporary OpenResponses override
+
+The host's Composer `package` repository pins `symfony/ai-open-responses-platform` to `329058c0848808733badac76e7e163da0fea577e` in [ineersa/ai](https://github.com/ineersa/ai/tree/fix/openresponses-empty-assistant-content-package). This package-only commit has the original `1.0.0-BETA1` source, `78bbb8d721e68979958513c042f66eeb592b7ef4`, as its immediate parent and adds only the empty-assistant normalizer fix and its tests. Explicit empty text remains replayable after foreign-model signatures are stripped; assistants without serializable items are omitted instead of emitting `content: null`.
+
+The override copies the split package's Composer metadata at that exact commit and exposes version `1.0.0-BETA1`. A regular VCS repository cannot identify this split package because the repository's default branch identifies the monorepo as `symfony/ai`. No local paths or changes to the provider package are needed.
+
+After an upstream release includes [Symfony AI pull request 2859](https://github.com/symfony/ai/pull/2859), remove this `package` repository, including its duplicated metadata. Update `symfony/ai-open-responses-platform` to a release containing the fix, adjusting its version constraint if necessary, and regenerate the lock file through Composer. Retain the cross-model replay regression tests.
 
 ## Manual validation
 

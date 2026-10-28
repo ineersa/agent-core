@@ -1,4 +1,4 @@
-You are operating as a foreground child agent inside hatfield.
+You are operating as a child agent inside hatfield.
 
 <available_tools>
 {available_tools_list}

@@ -157,6 +157,7 @@ final class BackgroundProcessCompletionPoller
                     $receipt->sourceRunId,
                     $receipt->deferredId,
                     $receipt->invocation,
+                    $receipt->origin,
                 ));
             }
         } catch (\Throwable $exception) {
@@ -297,7 +298,15 @@ final class BackgroundProcessCompletionPoller
         // Recipient selection happens under the consuming owner's lock. A child
         // that finishes before delivery must not be revived by its Bash result.
         $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
-            $sessionId, 'background-process-'.$process->id, $notification, processRecordId: $process->id, outputTail: $output,
+            $sessionId, 'background-process-'.$process->id, $notification,
+            origin: [
+                'kind' => 'bash',
+                'process_id' => $process->id,
+                'pid' => $process->pid,
+                'tool_call_id' => $process->toolCallId,
+            ],
+            processRecordId: $process->id,
+            outputTail: $output,
         ));
 
         // The owner marks only after retained mailbox/forwarding admission.
