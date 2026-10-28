@@ -33,6 +33,8 @@ use Symfony\Component\Filesystem\Filesystem;
 
 final class FileRewindExtensionIntegrationTest extends TestCase
 {
+    use ExtensionHostCapabilitiesFixtureTrait;
+
     public function testFileRewindExtensionRegistersRewindSlashCommand(): void
     {
         $slashCatalog = new SlashCommandCatalog();
@@ -83,6 +85,10 @@ final class FileRewindExtensionIntegrationTest extends TestCase
                 resources: new AppResourceLocator('' !== $appConfig->cwd ? $appConfig->cwd : '/tmp'),
                 filesystem: new Filesystem(),
             ),
+            toolInvoker: $this->unusedToolInvoker(),
+            children: $this->createStub(\Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface::class),
+            recurringJobs: new \Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), ''),
+            commandBus: $this->createStub(\Symfony\Component\Messenger\MessageBusInterface::class),
         );
 
         $diagnostics = (new ExtensionManager($appConfig, $bridge, new NullLogger(), new \Symfony\Component\EventDispatcher\EventDispatcher(), new SettingsPathResolver($appConfig->cwd, $appConfig->cwd.'/home')))->loadExtensions();

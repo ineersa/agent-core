@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Scheduling\DTO;
+namespace Ineersa\CodingAgent\Extension\Builtin\Scheduling\DTO;
 
 final readonly class SessionScheduleDTO
 {

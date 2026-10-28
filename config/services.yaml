@@ -106,6 +106,7 @@ services:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
     exclude:
       - '%kernel.project_dir%/src/CodingAgent/Tool/CodeMode/Resources/'
+      - '%kernel.project_dir%/src/CodingAgent/Extension/Builtin/Scheduling/'
 
   Ineersa\CodingAgent\Agent\Diagnostics\PromptCacheDiagnosticsInvocationSubscriber:
     arguments:
@@ -358,14 +359,6 @@ services:
     arguments:
       $enabled: '%app.session_resource_sampler.enabled%'
       $sessionId: '%env(HATFIELD_SESSION_ID)%'
-
-  hatfield.session_schedules.cache:
-    class: Symfony\Component\Cache\Adapter\FilesystemAdapter
-    arguments: ['session-schedules', 0, '%app.cwd%/.hatfield/cache']
-
-  Ineersa\CodingAgent\Scheduling\SessionScheduleRepository:
-    arguments:
-      $cache: '@hatfield.session_schedules.cache'
 
   # OutputCapConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\OutputCapConfig:
@@ -975,7 +968,6 @@ services:
     arguments:
       $providers:
         Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\BashTimeoutSchemaProvider'
-        Ineersa\CodingAgent\Tool\Schema\ScheduleArgumentsSchemaProvider: '@Ineersa\CodingAgent\Tool\Schema\ScheduleArgumentsSchemaProvider'
 
   # Same default chain as Describer(null) plus the provider-aware describer.
   # The chain members are vendor classes outside the autowire resource, so

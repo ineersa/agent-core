@@ -863,6 +863,9 @@ parameters:
       - AppExtensionApi
       - AppRuntimeContract
       - SymfonyYaml
+      - SymfonyScheduler
+      - SymfonyLock
+      - SymfonyTui
 
     AgentCore:
       - SymfonyLock

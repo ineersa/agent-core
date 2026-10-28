@@ -25,6 +25,8 @@ final readonly class ExtensionToolHandlerAdapter
     public function __construct(
         private ExtensionToolHandlerInterface|ContextualExtensionToolHandlerInterface $extensionHandler,
         private StackToolExecutionContextAccessor $contextAccessor,
+        private ChildRunExtensionAllowlistReaderInterface $children,
+        private bool $mainOnly = false,
     ) {
     }
 
@@ -33,6 +35,9 @@ final readonly class ExtensionToolHandlerAdapter
      */
     public function __invoke(array $arguments): mixed
     {
+        if ($this->mainOnly && null !== $this->contextAccessor->current() && null !== $this->children->readAllowedExtensions($this->contextAccessor->requireCurrent()->runId())) {
+            throw new \RuntimeException('This tool is available only to the main agent.');
+        }
         if ($this->extensionHandler instanceof ContextualExtensionToolHandlerInterface) {
             $current = $this->contextAccessor->current();
             $runId = $current?->runId();

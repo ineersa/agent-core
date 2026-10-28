@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Scheduling;
+namespace Ineersa\CodingAgent\Extension\Builtin\Scheduling;
 
-use Ineersa\CodingAgent\Scheduling\DTO\SessionScheduleDTO;
+use Ineersa\CodingAgent\Extension\Builtin\Scheduling\DTO\SessionScheduleDTO;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Scheduler\RecurringMessage;
@@ -44,11 +44,6 @@ final readonly class SessionScheduleRepository
         }
     }
 
-    public function deactivate(string $runId): void
-    {
-        $this->cache->deleteItem('controller-'.hash('sha256', $runId));
-    }
-
     public function save(SessionScheduleDTO $definition): void
     {
         $this->change($definition->runId, $definition->id, $definition);
@@ -66,7 +61,7 @@ final readonly class SessionScheduleRepository
 
     public function recurring(SessionScheduleDTO $definition): RecurringMessage
     {
-        return RecurringMessage::every($definition->every, new SessionScheduleMessageProvider($definition->runId, $definition->id), $definition->createdAt, $definition->expiresAt ?? new \DateTimeImmutable('3000-01-01'));
+        return RecurringMessage::every($definition->every, new \stdClass(), $definition->createdAt, $definition->expiresAt ?? new \DateTimeImmutable('3000-01-01'));
     }
 
     private function change(string $runId, string $id, ?SessionScheduleDTO $definition): void

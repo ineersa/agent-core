@@ -51,7 +51,7 @@ final readonly class AgentToolPolicyResolver
         // Neither inherit-all nor explicit lists can reintroduce these tools.
         $tools = array_values(array_filter(
             $tools,
-            static fn (string $name): bool => !\in_array($name, ['subagent', 'fork', 'agent_resume', 'agent_steer', 'schedule'], true),
+            fn (string $name): bool => !\in_array($name, ['subagent', 'fork', 'agent_resume', 'agent_steer'], true) && !($this->toolRegistry->toolDefinition($name)->mainOnly ?? false),
         ));
 
         // Parent-only tools (hatfield_docs, …) are stripped for every child,

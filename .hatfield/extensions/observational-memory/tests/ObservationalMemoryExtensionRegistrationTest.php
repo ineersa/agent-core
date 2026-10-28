@@ -37,6 +37,21 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $tools = [];
         $compactHooks = [];
         $api = new class($commands, $tools, $compactHooks) implements ExtensionApiInterface {
+            public function tools(): \Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function notifyOwner(\Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO $notification): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function registerRecurringJobSource(string $sourceId, \Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface $source): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
             /**
              * @param list<CommandDefinitionDTO>          $commands
              * @param list<ToolRegistrationDTO>           $tools

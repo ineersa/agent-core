@@ -66,7 +66,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
         if (null !== $receipt) {
             if (BackgroundCompletionDispositionEnum::Pending === $receipt->disposition
                 && $receipt->destinationRunId === $state->runId
-                && ($this->consumption->interrupted($receipt->deferredId) || $this->consumption->scheduledInterruption($receipt->origin, $state) || (null !== $state->parentRunId && $state->status->isTerminal()))) {
+                && ($this->consumption->interrupted($receipt->deferredId) || $this->consumption->notificationInterruption($receipt->origin, $state) || (null !== $state->parentRunId && $state->status->isTerminal()))) {
                 return $this->retireTerminalPending($receipt, $state);
             }
             // A consumed child admission remains consumed even if the original
@@ -99,7 +99,7 @@ final readonly class BackgroundCompletionRunHandler implements RunMessageHandler
                 "Background completion from child owner %s (agent_id: %s, run_id: %s). The child was not resumed.\n\n%s",
                 $owner->agentName, $owner->artifactId, $state->runId, $message->text,
             );
-            $interrupted = $this->consumption->interrupted($message->deferredId) || $this->consumption->scheduledInterruption($message->origin, $state);
+            $interrupted = $this->consumption->interrupted($message->deferredId) || $this->consumption->notificationInterruption($message->origin, $state);
             $forward = !$interrupted && null !== $state->parentRunId && ($state->status->isTerminal() || RunStatus::Cancelling === $state->status);
             $destination = $forward ? $rootRunId : $state->runId;
             $receipt = new BackgroundCompletionReceiptDTO(

@@ -702,6 +702,21 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
     private function api(string $cwd): ExtensionApiInterface
     {
         return new class($cwd) implements ExtensionApiInterface {
+            public function tools(): \Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function notifyOwner(\Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO $notification): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function registerRecurringJobSource(string $sourceId, \Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface $source): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
             public function __construct(private string $cwd)
             {
             }
@@ -789,6 +804,21 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
     private function apiWithReader(string $cwd, SessionEventReaderInterface $reader): ExtensionApiInterface
     {
         return new class($cwd, $reader) implements ExtensionApiInterface {
+            public function tools(): \Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function notifyOwner(\Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO $notification): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function registerRecurringJobSource(string $sourceId, \Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface $source): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
             public function __construct(
                 private string $cwd,
                 private SessionEventReaderInterface $reader,

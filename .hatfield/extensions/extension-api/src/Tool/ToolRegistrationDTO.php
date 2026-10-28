@@ -37,6 +37,7 @@ final readonly class ToolRegistrationDTO
         public readonly ?string $promptSummary = null,
         public readonly array $promptGuidelines = [],
         public readonly ?int $timeoutSeconds = null,
+        public readonly bool $mainOnly = false,
     ) {
         if (null !== $this->timeoutSeconds && $this->timeoutSeconds <= 0) {
             throw new \InvalidArgumentException('ToolRegistrationDTO timeoutSeconds must be null or a positive integer.');
