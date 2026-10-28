@@ -17,6 +17,8 @@ final readonly class DeliverBackgroundCompletionDTO extends AbstractAgentBusMess
         #[Assert\NotBlank(allowNull: true)] public ?string $sourceRunId = null,
         #[Assert\NotBlank(allowNull: true)] public ?string $deferredId = null,
         public ?ToolPayloadReferenceDTO $invocation = null,
+        #[Assert\Positive] public ?int $processRecordId = null,
+        public ?string $outputTail = null,
     ) {
         parent::__construct($runId, 0, $identity, 1, $identity);
     }

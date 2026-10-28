@@ -8,6 +8,7 @@ use Doctrine\DBAL\Exception as DbalException;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Event\OnFlushEventArgs;
 use Doctrine\ORM\Events;
+use Doctrine\ORM\Query;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
@@ -854,7 +855,7 @@ final class BashToolTest extends IsolatedKernelTestCase
                 $records = $backgrounded ? $this->recordsForSession($session) : $this->manager->foregroundTools($session);
                 if ([] !== $records) {
                     $selected = $records[0];
-                    $originalDeadline = $this->manager->findByRecordId($selected->id, $session)?->deadlineNanoseconds;
+                    $originalDeadline = self::getContainer()->get(ProcessStore::class)->fetchByRecordId($selected->id)?->deadlineNanoseconds;
                     if (!$backgrounded) {
                         $this->assertTrue($this->manager->requestBackground($session, $selected->id, 'tc_bash'));
                     }
@@ -898,7 +899,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             $record = $this->manager->findByRecordId($selected->id, $session);
             $this->assertNotNull($record);
             $this->assertSame($selected->pid, $record->pid);
-            $this->assertSame($originalDeadline, $record->deadlineNanoseconds);
+            $this->assertSame($originalDeadline, self::getContainer()->get(ProcessStore::class)->fetchByRecordId($record->id)?->deadlineNanoseconds);
             $this->assertNull($record->finishedAt);
             $this->assertNotNull($record->backgroundedAt);
             $this->assertCount(1, $this->recordsForSession($session));
@@ -921,7 +922,12 @@ final class BashToolTest extends IsolatedKernelTestCase
             $bus = $this->createMock(MessageBusInterface::class);
             $bus->expects($this->once())->method('dispatch')->with($this->callback(
                 static fn (DeliverBackgroundCompletionDTO $message): bool => $session === $message->runId() && str_contains($message->text, 'finished'),
-            ))->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
+            ))->willReturnCallback(static function (DeliverBackgroundCompletionDTO $message): Envelope {
+                // Model the owner's successful admission, not a broker enqueue.
+                static::getContainer()->get(ProcessStore::class)->markCompletionNotified($message->processRecordId, $message->runId());
+
+                return new Envelope($message);
+            });
             $poller = new BackgroundProcessCompletionPoller(
                 static::getContainer()->get(ProcessStore::class),
                 $this->manager,
@@ -980,7 +986,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             $this->assertSame('done', $result);
             $this->assertCount(1, $this->recordsForSession(self::TEST_SESSION));
             $this->assertNull($this->recordsForSession(self::TEST_SESSION)[0]->backgroundedAt);
-            $this->assertSame([], self::getContainer()->get(ProcessStore::class)->findCompletionCandidates([self::TEST_SESSION]));
+            $this->assertSame([], self::getContainer()->get(ProcessStore::class)->completionSnapshots([self::TEST_SESSION]));
         } finally {
             fclose($endpoint);
         }
@@ -1066,7 +1072,7 @@ final class BashToolTest extends IsolatedKernelTestCase
     private function recordsForSession(string $sessionId): array
     {
         return static::getContainer()->get(BackgroundProcessRepository::class)
-            ->findBy(['sessionId' => $sessionId], ['id' => 'DESC']);
+            ->createQueryBuilder('p')->where('p.sessionId = :run')->setParameter('run', $sessionId)->orderBy('p.id', 'DESC')->getQuery()->setHint(Query::HINT_REFRESH, true)->getResult();
     }
 
     private function countProcessesHoldingMarker(string $markerPath): int

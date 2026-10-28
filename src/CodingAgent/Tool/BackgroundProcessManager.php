@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundD
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\ForegroundBashProcessDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -85,7 +86,7 @@ final class BackgroundProcessManager
      *
      * Shutdown cleanup must address the exact rows this PHP process created.
      * Tracking OS PIDs alone is unsafe: rows can be deleted while ownership
-     * remains, and PID reuse can make fetchLatestByPid() resolve a foreign row.
+     * remains, and PID reuse can make latestSnapshot() resolve a foreign row.
      *
      * @var array<int, true>
      */
@@ -292,232 +293,84 @@ final class BackgroundProcessManager
     }
 
     /**
-     * List processes explicitly accepted as background work for one run.
-     * Private foreground-supervision records (backgroundedAt === null) are
-     * deliberately excluded from the user-facing bg_status surface.
+     * Only accepted background records are public. Private foreground
+     * supervision must never appear on bg_status's list surface.
      *
-     * Resolves status from filesystem state (/proc/<pid> or status file)
-     * and persists any changes before returning.
-     *
-     * @return list<BackgroundProcess>
+     * @return list<BashProcessRecordDTO>
      */
     public function list(string $sessionId): array
     {
-        $entities = $this->store->fetchBackgrounded($sessionId);
-
-        foreach ($entities as $entity) {
-            $this->resolveEntityStatus($entity);
+        $records = [];
+        foreach ($this->store->backgroundSnapshots($sessionId) as $candidate) {
+            $record = $this->findByRecordId($candidate->id, $sessionId);
+            if (null !== $record) {
+                $records[] = $record;
+            }
         }
 
-        $this->store->flush();
-
-        return $entities;
+        return $records;
     }
 
-    /**
-     * Check whether a row exists for the given PID.
-     *
-     * Uses an ORM COUNT query that always hits the database, bypassing
-     * the identity map. This allows callers to distinguish "row does not
-     * exist" from "row exists but ORM/identity map did not return it."
-     */
+    /** Scalar COUNT bypasses ORM identity-map state, including retained aliases. */
     public function existsByPid(int $pid): bool
     {
         return $this->store->existsByPid($pid);
     }
 
-    /**
-     * Check whether a row exists for the given record ID.
-     *
-     * Uses an ORM COUNT query that always hits the database, bypassing
-     * the identity map.
-     */
+    /** Scalar COUNT distinguishes a missing row from a filtered lookup. */
     public function existsByRecordId(int $id): bool
     {
         return $this->store->existsByRecordId($id);
     }
 
     /**
-     * Find a single background process by PID, with refreshed status.
-     *
-     * Resolves status from filesystem state and flushes before returning.
-     * This is O(1) per call (single entity fetch), unlike list() which
-     * refreshes all entities. Preferred for polling loops that only care
-     * about one known PID.
-     *
-     * Returns null for two distinct cases:
-     *   1. The row does not exist (genuinely absent / cleaned up).
-     *   2. The row exists but belongs to a different session (session
-     *      mismatch — the entity is silently filtered out).
-     *
-     * Callers that need to distinguish these cases should use the DB
-     * record id via findByRecordId() or call existsByPid() after a null
-     * result from this method.
-     *
-     * @param int         $pid       Process PID to find (must be > 0)
-     * @param string|null $sessionId optional session filter.
-     *                               When provided, only a matching session
-     *                               process is returned.
-     *
-     * @return BackgroundProcess|null the entity with refreshed status, or
-     *                                null if not found or session mismatch
-     *
-     * PID resolution uses the newest retained row (ORDER BY id DESC) for public
-     * bg_status semantics; session ownership is enforced after lookup
+     * Public PID lookup selects the newest retained row before filtering
+     * ownership. Null covers both absence and a different session; callers
+     * needing to distinguish them can query existsByPid(). Immutable record
+     * IDs, not reusable PIDs, address foreground supervision.
      */
-    public function find(int $pid, ?string $sessionId = null): ?BackgroundProcess
+    public function find(int $pid, ?string $sessionId = null): ?BashProcessRecordDTO
     {
-        $entity = $this->store->fetchLatestByPid($pid);
+        $record = $this->store->latestSnapshot($pid);
 
-        if (null === $entity) {
-            $this->logger->notice('background_process.find_by_pid_null', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.find_by_pid_null',
-                'process_pid' => $pid,
-                'session_id' => $sessionId ?? '',
-                'reason' => 'fetch_by_pid_returned_null',
-            ]);
-
-            return null;
-        }
-
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
-            $this->logger->notice('background_process.find_by_pid_session_mismatch', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.find_by_pid_session_mismatch',
-                'process_pid' => $pid,
-                'session_id' => $sessionId,
-                'entity_session_id' => $entity->sessionId,
-                'reason' => 'find_by_pid_session_mismatch',
-            ]);
-
-            return null;
-        }
-
-        // Only flush when the entity transitioned from running to a
-        // terminal state. If finishedAt was already set before the
-        // resolve call, no mutation occurred; if it remains null, the
-        // process is still running and no persisted column changed.
-        // This avoids unnecessary DB writes during polling loops that
-        // call find() every ~100 ms.
-        $wasFinished = null !== $entity->finishedAt;
-        $this->resolveEntityStatus($entity);
-
-        if (!$wasFinished && null !== $entity->finishedAt) {
-            $this->store->flush();
-        }
-
-        return $entity;
+        return null === $record ? null : $this->findByRecordId($record->id, $sessionId);
     }
 
-    /**
-     * Find a single background process by its auto-increment record ID,
-     * with refreshed status.
-     *
-     * Unlike find() which queries by OS PID (which can be reused after
-     * the process exits), this queries by the immutable auto-increment
-     * primary key. Prefer this when the DB id is available (e.g. from
-     * StartResult::$id returned by start()).
-     *
-     * Session scoping is preserved: if $sessionId is provided and the
-     * entity belongs to a different session, null is returned.
-     *
-     * @param int         $id        Auto-increment record ID (> 0)
-     * @param string|null $sessionId optional session filter.
-     *                               When provided, only a matching session
-     *                               process is returned.
-     *
-     * @return BackgroundProcess|null The entity with refreshed status, or
-     *                                null if not found or session mismatch
-     */
-    public function findByRecordId(int $id, ?string $sessionId = null): ?BackgroundProcess
+    public function findByRecordId(int $id, ?string $sessionId = null): ?BashProcessRecordDTO
     {
-        $entity = $this->store->fetchByRecordId($id);
-
-        if (null === $entity) {
-            $this->logger->notice('background_process.find_by_record_id_null', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.find_by_record_id_null',
-                'record_id' => $id,
-                'session_id' => $sessionId ?? '',
-                'reason' => 'fetch_by_record_id_returned_null',
-            ]);
-
+        $record = $this->store->snapshot($id);
+        if (null === $record || (null !== $sessionId && $record->sessionId !== $sessionId)) {
             return null;
         }
+        // Observations belong to the metadata owner. Neither this read nor an
+        // awaited reply retains a managed entity from the caller's UnitOfWork.
+        if (null === $record->finishedAt) {
+            $this->processDecision($id, $record->sessionId, BashProcessActionEnum::Observe);
 
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
-            $this->logger->notice('background_process.find_by_record_id_session_mismatch', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.find_by_record_id_session_mismatch',
-                'record_id' => $id,
-                'session_id' => $sessionId,
-                'entity_session_id' => $entity->sessionId,
-                'reason' => 'find_by_record_id_session_mismatch',
-            ]);
-
-            return null;
+            return $this->store->snapshot($id);
         }
 
-        $wasFinished = null !== $entity->finishedAt;
-        $this->resolveEntityStatus($entity);
-
-        if (!$wasFinished && null !== $entity->finishedAt) {
-            $this->store->flush();
-        }
-
-        return $entity;
+        return $record;
     }
 
-    /**
-     * Return a user-accepted background process log within its owning run.
-     * The repository applies run, PID, and backgroundedAt predicates together,
-     * so foreground and cross-run records are indistinguishable from absent.
-     *
-     * @throws \RuntimeException when no accepted process matches
-     */
     public function readLogTail(string $sessionId, int $pid, ?int $maxChars = null): LogTailResult
     {
-        $maxChars ??= $this->config->logTailChars;
-        $entity = $this->store->fetchBackgroundedByPid($sessionId, $pid);
-
-        if (null === $entity) {
+        $id = $this->store->acceptedRecordId($sessionId, $pid);
+        if (null === $id) {
             throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
-        $wasFinished = null !== $entity->finishedAt;
-        $this->resolveEntityStatus($entity);
-        if (!$wasFinished && null !== $entity->finishedAt) {
-            $this->store->flush();
-        }
-
-        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, null !== $entity->finishedAt);
+        return $this->readLogTailForRecord($id, $maxChars, $sessionId);
     }
 
-    /**
-     * Return the tail of a background process log by immutable record ID.
-     */
     public function readLogTailForRecord(int $recordId, ?int $maxChars = null, ?string $sessionId = null): LogTailResult
     {
-        $maxChars ??= $this->config->logTailChars;
-
-        $entity = $this->store->fetchByRecordId($recordId);
-
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('No background process found with record ID %d.', $recordId));
-        }
-
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+        $record = $this->findByRecordId($recordId, $sessionId);
+        if (null === $record) {
             throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
         }
 
-        $wasFinished = null !== $entity->finishedAt;
-        $this->resolveEntityStatus($entity);
-        if (!$wasFinished && null !== $entity->finishedAt) {
-            $this->store->flush();
-        }
-
-        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, null !== $entity->finishedAt);
+        return $this->lifecycle->readLogTail($record->logPath, $maxChars ?? $this->config->logTailChars, null !== $record->finishedAt);
     }
 
     public function isAcceptedRecord(int $recordId, string $runId): bool

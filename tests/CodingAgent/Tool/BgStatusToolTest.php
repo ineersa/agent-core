@@ -174,7 +174,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
             $data = Toon::decode($this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list'))));
             $this->assertSame('stopped', $data['processes'][0]['status']);
             $this->assertSame(0, $data['processes'][0]['exit_code']);
-            $this->assertNotNull($entity->finishedAt);
+            $this->assertNotNull($store->snapshot($process->id)?->finishedAt);
         } finally {
             fclose($release);
         }

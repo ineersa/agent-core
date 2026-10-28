@@ -10,8 +10,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\LoggerInterface;
@@ -29,9 +28,10 @@ use function Symfony\Component\String\u;
  * 2. Reads the log tail (capped at 3000 chars, matching pi bg-process.ts)
  * 3. Builds a synthetic follow-up message with PID, exit code, command,
  *    and output tail
- * 4. Sends an append_message UserCommand so the model sees the completion
- *    as a user-level message (like pi's sendUserMessage with deliverAs: followUp)
- * 5. Marks completionNotifiedAt to prevent re-notification
+ * 4. Submits completion to run_control for authoritative admission against
+ *    current stop state and the retained delivery receipt
+ * 5. Leaves completionNotifiedAt to the owner, which acknowledges only after
+ *    durable mailbox or forwarding admission
  *
  * Only processes explicitly backgrounded by the user through the
  * background shortcut trigger this notification — foreground commands
@@ -170,8 +170,37 @@ final class BackgroundProcessCompletionPoller
             ]);
         }
 
+        $failed = [];
         try {
-            $candidates = $this->processStore->findCompletionCandidates($sessionIds);
+            // Deadline/grace supervision still owns native controller actions.
+            // Its batch persistence is migrated separately from notification
+            // admission; never substitute a passive observation for a timeout.
+            $unfinished = $this->processStore->fetchAllUnfinished($sessionIds);
+            usort($unfinished, static fn (BackgroundProcess $left, BackgroundProcess $right): int => $left->id <=> $right->id);
+            $this->processManager->refreshEntities($unfinished, function (BackgroundProcess $process, \Throwable $exception) use (&$failed): void {
+                $failed[$process->id] = true;
+                $this->logger->warning('bg_process_completion.refresh_failed', [
+                    'component' => 'bg_process_completion.poller',
+                    'event_type' => 'bg_process_completion.refresh_failed',
+                    'run_id' => $process->sessionId,
+                    'session_id' => $this->sessionId,
+                    'exception_class' => $exception::class,
+                ]);
+            });
+        } catch (\Throwable $exception) {
+            $this->logger->warning('bg_process_completion.refresh_flush_failed', [
+                'component' => 'bg_process_completion.poller',
+                'event_type' => 'bg_process_completion.refresh_flush_failed',
+                'run_id' => $this->sessionId,
+                'session_id' => $this->sessionId,
+                'exception_class' => $exception::class,
+            ]);
+
+            return;
+        }
+
+        try {
+            $candidates = array_values(array_filter($this->processStore->completionSnapshots($sessionIds), static fn (BashProcessRecordDTO $record): bool => !isset($failed[$record->id])));
         } catch (\Throwable $e) {
             $this->logger->warning('bg_process_completion.poller_query_failed', [
                 'component' => 'bg_process_completion.poller',
@@ -186,32 +215,15 @@ final class BackgroundProcessCompletionPoller
         // Preserve the former scope order and duplicate-PID precedence. The
         // stable sort retains the query's record-ID order within each scope.
         $scopeOrder = array_flip($sessionIds);
-        usort($candidates, static fn (BackgroundProcess $left, BackgroundProcess $right): int => $scopeOrder[$left->sessionId] <=> $scopeOrder[$right->sessionId]);
+        usort($candidates, static fn (BashProcessRecordDTO $left, BashProcessRecordDTO $right): int => $scopeOrder[$left->sessionId] <=> $scopeOrder[$right->sessionId]);
 
-        // Natural completion initially writes only the status file. Resolve all
-        // selected records and flush once before any notification is delivered.
-        try {
-            $candidates = $this->processManager->refreshEntities($candidates, function (BackgroundProcess $process, \Throwable $e): void {
-                $this->logger->warning('bg_process_completion.refresh_failed', [
-                    'component' => 'bg_process_completion.poller',
-                    'event_type' => 'bg_process_completion.refresh_failed',
-                    'controller_session_id' => $this->sessionId,
-                    'scoped_session_id' => $process->sessionId,
-                    'exception' => $e->getMessage(),
-                ]);
-            });
-        } catch (\Throwable $e) {
-            $this->logger->warning('bg_process_completion.refresh_flush_failed', [
-                'component' => 'bg_process_completion.poller',
-                'event_type' => 'bg_process_completion.refresh_flush_failed',
-                'controller_session_id' => $this->sessionId,
-                'exception' => $e->getMessage(),
-            ]);
-
-            return;
-        }
-
-        foreach ($candidates as $process) {
+        // Observe each immutable record through its metadata owner. The
+        // resulting snapshot is still only a candidate for owner admission.
+        foreach ($candidates as $candidate) {
+            $process = $this->processManager->findByRecordId($candidate->id, $candidate->sessionId);
+            if (null === $process) {
+                continue;
+            }
             if (null !== $process->finishedAt && null !== $process->backgroundedAt && null === $process->completionNotifiedAt) {
                 $pendingByPid[$process->pid] = $process;
             }
@@ -236,26 +248,10 @@ final class BackgroundProcessCompletionPoller
     /**
      * Build and send a follow-up notification for a completed background process.
      */
-    private function sendNotification(BackgroundProcess $process): void
+    private function sendNotification(BashProcessRecordDTO $process): void
     {
         $pid = $process->pid;
         $sessionId = $process->sessionId;
-
-        if ('' === $sessionId) {
-            // Unscoped process — cannot send follow-up without a run.
-            // Mark notified to avoid re-polling.
-            $now = new \DateTimeImmutable();
-            $process->markCompletionNotified($now);
-            $this->processStore->flush();
-
-            $this->logger->info('bg_process_completion.skipped_no_session', [
-                'component' => 'bg_process_completion.poller',
-                'event_type' => 'bg_process_completion.skipped_no_session',
-                'process_pid' => $pid,
-            ]);
-
-            return;
-        }
 
         // Read log tail, matching pi's 3000 char cap.
         $output = '';
@@ -282,12 +278,6 @@ final class BackgroundProcessCompletionPoller
             ]);
         }
 
-        // The log lookup refreshes this managed record by immutable ID. An
-        // explicit stop may have acknowledged it since candidate hydration.
-        if (null !== $process->completionNotifiedAt) {
-            return;
-        }
-
         // Build notification message matching pi's bg-process.ts format.
         $exitCode = $process->exitCode;
         $statusLabel = match ($process->status) {
@@ -307,34 +297,17 @@ final class BackgroundProcessCompletionPoller
             $output,
         );
 
-        // Emit a runtime event for the TUI to show if desired.
-        $this->emitter->emit(new RuntimeEvent(
-            type: RuntimeEventTypeEnum::BackgroundProcessCompleted->value,
-            runId: $sessionId,
-            seq: 0,
-            payload: [
-                'pid' => $pid,
-                'exit_code' => $exitCode,
-                'status' => $process->status->value,
-                'command_preview' => $commandPreview,
-                'output_tail' => $output,
-            ],
-        ));
-
         // Recipient selection happens under the consuming owner's lock. A child
         // that finishes before delivery must not be revived by its Bash result.
         $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
-            $sessionId, 'background-process-'.$process->id, $notification,
+            $sessionId, 'background-process-'.$process->id, $notification, processRecordId: $process->id, outputTail: $output,
         ));
 
-        // Only mark notified after successful send.
-        $now = new \DateTimeImmutable();
-        $process->markCompletionNotified($now);
-        $this->processStore->flush();
-
-        $this->logger->info('bg_process_completion.notification_sent', [
+        // The owner marks only after retained mailbox/forwarding admission.
+        // A successful transport send alone is not a completion receipt.
+        $this->logger->info('bg_process_completion.notification_submitted', [
             'component' => 'bg_process_completion.poller',
-            'event_type' => 'bg_process_completion.notification_sent',
+            'event_type' => 'bg_process_completion.notification_submitted',
             'process_pid' => $pid,
             'run_id' => $sessionId,
             'exit_code' => $exitCode,

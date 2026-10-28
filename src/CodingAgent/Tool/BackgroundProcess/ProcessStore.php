@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
@@ -11,17 +12,14 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundD
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\ForegroundBashProcessDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
 
 /**
- * Doctrine ORM-backed durable store for background process records.
- *
- * Query operations delegate to BackgroundProcessRepository (ServiceEntityRepository)
- * which provides inherited find/findOneBy/findBy plus custom domain queries.
- * Write operations use EntityManager directly.
- *
+ * Durable process snapshots and owner decisions use the existing DBAL connection.
+ * Controller batch supervision and lifecycle cleanup still use ORM entities.
  * Schema is managed by Doctrine migrations.
  */
 final class ProcessStore
@@ -61,30 +59,6 @@ final class ProcessStore
         $this->flush();
 
         return $entity->id;
-    }
-
-    /**
-     * Find records needing status refresh or completion notification together.
-     *
-     * @param list<string> $sessionIds
-     *
-     * @return BackgroundProcess[]
-     */
-    public function findCompletionCandidates(array $sessionIds): array
-    {
-        return $this->repository->findCompletionCandidates($sessionIds);
-    }
-
-    /**
-     * Fetch the newest retained entity for an OS PID (globally by id DESC).
-     *
-     * Used for public PID-addressed operations (bg_status). Session ownership
-     * is enforced by callers after resolution. Foreground BashTool must use
-     * fetchByRecordId() with the immutable primary key.
-     */
-    public function fetchLatestByPid(int $pid): ?BackgroundProcess
-    {
-        return $this->repository->findLatestByPid($pid);
     }
 
     /**
@@ -142,14 +116,6 @@ final class ProcessStore
 
             return true;
         });
-    }
-
-    /**
-     * Fetch a user-accepted background process by PID within one run.
-     */
-    public function fetchBackgroundedByPid(string $sessionId, int $pid): ?BackgroundProcess
-    {
-        return $this->repository->findBackgroundedByPid($sessionId, $pid);
     }
 
     /**
@@ -354,6 +320,46 @@ final class ProcessStore
         });
     }
 
+    public function snapshot(int $recordId): ?BashProcessRecordDTO
+    {
+        $row = $this->entityManager->getConnection()->fetchAssociative('SELECT * FROM background_process WHERE id = ?', [$recordId]);
+
+        return false === $row ? null : $this->hydrateSnapshot($row);
+    }
+
+    /** @return list<BashProcessRecordDTO> */
+    public function backgroundSnapshots(string $runId): array
+    {
+        return array_map($this->hydrateSnapshot(...), $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id = ? AND backgrounded_at IS NOT NULL ORDER BY id DESC', [$runId]));
+    }
+
+    public function latestSnapshot(int $pid): ?BashProcessRecordDTO
+    {
+        $row = $this->entityManager->getConnection()->fetchAssociative('SELECT * FROM background_process WHERE pid = ? ORDER BY id DESC LIMIT 1', [$pid]);
+
+        return false === $row ? null : $this->hydrateSnapshot($row);
+    }
+
+    /** @param list<string> $runIds
+     * @return list<BashProcessRecordDTO>
+     */
+    public function completionSnapshots(array $runIds): array
+    {
+        if ([] === $runIds) {
+            return [];
+        }
+        $rows = $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id IN (?) AND backgrounded_at IS NOT NULL AND completion_notified_at IS NULL ORDER BY id', [$runIds], [ArrayParameterType::STRING]);
+
+        return array_map($this->hydrateSnapshot(...), $rows);
+    }
+
+    /** Owner-only acknowledgement after durable completion admission. */
+    public function markCompletionNotified(int $recordId, string $runId): void
+    {
+        $now = Clock::get()->now()->format('Y-m-d H:i:s');
+        $this->entityManager->getConnection()->executeStatement('UPDATE background_process SET completion_notified_at = COALESCE(completion_notified_at, ?), updated_at = ? WHERE id = ? AND session_id = ?', [$now, $now, $recordId, $runId]);
+    }
+
     public function isAcceptedRecord(int $recordId, string $runId): bool
     {
         return false !== $this->entityManager->getConnection()->fetchOne('SELECT id FROM background_process WHERE id = ? AND session_id = ? AND backgrounded_at IS NOT NULL', [$recordId, $runId]);
@@ -402,5 +408,20 @@ final class ProcessStore
 
             return new BashProcessSnapshotDTO($recordId, $runId, (int) $row['pid'], null === $row['pgid'] ? null : (int) $row['pgid'], (string) $row['status_path'], $finished, $status, $signalRequired);
         });
+    }
+
+    /** @param array<string, mixed> $row */
+    private function hydrateSnapshot(array $row): BashProcessRecordDTO
+    {
+        return new BashProcessRecordDTO(
+            (int) $row['id'], (int) $row['pid'], null === $row['pgid'] ? null : (int) $row['pgid'],
+            (string) $row['session_id'], (string) $row['command'], (string) $row['log_path'], (string) $row['status_path'],
+            new \DateTimeImmutable((string) $row['started_at']), null === $row['finished_at'] ? null : new \DateTimeImmutable((string) $row['finished_at']),
+            null === $row['exit_code'] ? null : (int) $row['exit_code'], (bool) $row['stopped_by_user'],
+            null === $row['backgrounded_at'] ? null : new \DateTimeImmutable((string) $row['backgrounded_at']),
+            null === $row['tool_call_id'] ? null : (string) $row['tool_call_id'], (bool) $row['background_requested'],
+            null === $row['completion_notified_at'] ? null : new \DateTimeImmutable((string) $row['completion_notified_at']),
+            BackgroundProcessStatusEnum::from((string) $row['status']),
+        );
     }
 }

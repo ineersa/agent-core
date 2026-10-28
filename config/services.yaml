@@ -197,6 +197,10 @@ services:
     arguments:
       $sink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
 
+  Ineersa\CodingAgent\Application\Pipeline\BackgroundCompletionHandler:
+    arguments:
+      $sink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
+
   Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationReplyPublisher:
     arguments:
       $endpoint: '%env(HATFIELD_SQLITE_QUEUE_ENDPOINT)%'

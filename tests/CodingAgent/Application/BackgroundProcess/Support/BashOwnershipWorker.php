@@ -11,6 +11,9 @@ use Amp\TimeoutCancellation;
 use DAMA\DoctrineTestBundle\Doctrine\DBAL\StaticDriver;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider;
@@ -30,6 +33,7 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationReplyD
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationResultDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\RegisterBashProcessHandler;
+use Ineersa\CodingAgent\Application\Pipeline\BackgroundCompletionHandler;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
@@ -326,8 +330,14 @@ try {
     $bus = new TestMessageBus();
     $poller = new BackgroundProcessCompletionPoller($store, $manager, $bus, new RuntimeEventEmitter(new NullLogger()), new NullLogger(), $container->get(AgentArtifactRegistry::class), $container->get(BackgroundCompletionReceiptRepository::class), $owner);
     (new ReflectionMethod($poller, 'poll'))->invoke($poller);
+    if ([] !== $bus->messages) {
+        PreparedEventStoreSeeder::append($container->get(PreparedTransitionEventStoreInterface::class), RunEvent::forAppend($owner, 0, 'run_started', ['payload' => ['messages' => []]]));
+        foreach ($bus->messages as $completion) {
+            $container->get(BackgroundCompletionHandler::class)($completion);
+        }
+    }
     (new ReflectionMethod($poller, 'poll'))->invoke($poller);
-    $record = $store->fetchByRecordId($launch['id']);
+    $record = $store->snapshot($launch['id']);
     file_put_contents($marker, json_encode(['notifications' => count($bus->messages), 'text' => $bus->messages[0]->text ?? null, 'exit' => $record->exitCode, 'user_stop' => $record->stoppedByUser, 'notified' => null !== $record->completionNotifiedAt, 'acceptance_redelivered' => $acceptanceRedelivered], \JSON_THROW_ON_ERROR));
 } finally {
     $stop->cancel();

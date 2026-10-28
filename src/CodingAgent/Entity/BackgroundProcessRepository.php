@@ -59,26 +59,6 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
     }
 
     /**
-     * Fetch the newest retained row for an OS PID (globally, not session-scoped).
-     *
-     * OS PIDs are reused while historical rows are retained. Public
-     * PID-addressed tools (bg_status) resolve the latest row by id DESC;
-     * callers enforce session ownership after resolution. Foreground BashTool
-     * must use immutable record IDs instead of this lookup.
-     */
-    public function findLatestByPid(int $pid): ?BackgroundProcess
-    {
-        return $this->createQueryBuilder('bp')
-            ->where('bp.pid = :pid')
-            ->setParameter('pid', $pid)
-            ->orderBy('bp.id', 'DESC')
-            ->setMaxResults(1)
-            ->getQuery()
-            ->setHint(Query::HINT_REFRESH, true)
-            ->getOneOrNullResult();
-    }
-
-    /**
      * Check whether a row exists for the given auto-increment record ID.
      *
      * Uses an ORM COUNT query that always hits the database, bypassing the
@@ -118,31 +98,6 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
     }
 
     /**
-     * Find unfinished records and accepted completions needing notification.
-     * Ownership comes from durable session/artifact identities: the operational
-     * projection is cleared at controller startup while accepted processes live on.
-     *
-     * @param list<string> $sessionIds
-     *
-     * @return BackgroundProcess[]
-     */
-    public function findCompletionCandidates(array $sessionIds): array
-    {
-        if ([] === $sessionIds) {
-            return [];
-        }
-
-        return $this->createQueryBuilder('bp')
-            ->where('bp.sessionId IN (:sessionIds)')
-            ->andWhere('bp.finishedAt IS NULL OR (bp.backgroundedAt IS NOT NULL AND bp.completionNotifiedAt IS NULL)')
-            ->setParameter('sessionIds', $sessionIds)
-            ->orderBy('bp.id', 'ASC')
-            ->getQuery()
-            ->setHint(Query::HINT_REFRESH, true)
-            ->getResult();
-    }
-
-    /**
      * Find user-accepted background processes for one run.
      *
      * @return BackgroundProcess[]
@@ -157,24 +112,6 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
             ->getQuery()
             ->setHint(Query::HINT_REFRESH, true)
             ->getResult();
-    }
-
-    /**
-     * Resolve a user-accepted background process by PID within one run.
-     */
-    public function findBackgroundedByPid(string $sessionId, int $pid): ?BackgroundProcess
-    {
-        return $this->createQueryBuilder('bp')
-            ->where('bp.sessionId = :sessionId')
-            ->andWhere('bp.pid = :pid')
-            ->andWhere('bp.backgroundedAt IS NOT NULL')
-            ->setParameter('sessionId', $sessionId)
-            ->setParameter('pid', $pid)
-            ->orderBy('bp.id', 'DESC')
-            ->setMaxResults(1)
-            ->getQuery()
-            ->setHint(Query::HINT_REFRESH, true)
-            ->getOneOrNullResult();
     }
 
     /**

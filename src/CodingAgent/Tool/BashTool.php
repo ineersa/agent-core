@@ -9,9 +9,9 @@ use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BashToolConfig;
-use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
@@ -324,12 +324,12 @@ final class BashTool implements HatfieldToolProviderInterface
     /**
      * Handle a finished/stopped process entity.
      *
-     * @param BackgroundProcess $entity    The finished process entity
-     * @param string|null       $sessionId Session ownership filter
+     * @param BashProcessRecordDTO $entity    The finished process entity
+     * @param string|null          $sessionId Session ownership filter
      *
      * @return string Formatted result text
      */
-    private function handleFinished(BackgroundProcess $entity, ?string $sessionId): string
+    private function handleFinished(BashProcessRecordDTO $entity, ?string $sessionId): string
     {
         $output = $this->readOutput($entity->id, $sessionId);
 

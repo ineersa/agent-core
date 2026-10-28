@@ -48,7 +48,7 @@ class BackgroundProcess
      * The @ORM\Index on 'pid' is intentionally non-unique. Prefer the
      * auto-increment $id as the authoritative lifecycle key.
      *
-     * @see ProcessStore::fetchLatestByPid() for public PID-based lookup semantics
+     * @see ProcessStore::latestSnapshot() for public PID-based lookup semantics
      * @see BackgroundProcessManager::findByRecordId() for immutable lookup
      */
     #[ORM\Column(type: 'integer')]

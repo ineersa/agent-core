@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
@@ -74,6 +75,28 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     }
 
     /* ── list() ── */
+
+    public function testGeneralReadsRetainNoManagedProcessRecords(): void
+    {
+        $this->createManager();
+        $store = self::getContainer()->get(ProcessStore::class);
+        $log = $this->tmpDir.'/snapshot.log';
+        file_put_contents($log, 'snapshot output');
+        $id = $store->insertRecord(['pid' => 9900123, 'session_id' => self::TEST_SESSION, 'command' => 'completed', 'log_path' => $log, 'started_at' => new \DateTimeImmutable()]);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $now = new \DateTimeImmutable()->format('Y-m-d H:i:s');
+        $em->getConnection()->update('background_process', ['backgrounded_at' => $now, 'finished_at' => $now, 'exit_code' => 0, 'status' => 'finished'], ['id' => $id]);
+        $em->clear();
+        $this->assertSame(0, $em->getUnitOfWork()->size());
+        for ($iteration = 0; $iteration < 20; ++$iteration) {
+            $this->assertSame($id, $this->manager->list(self::TEST_SESSION)[0]->id);
+            $this->assertSame($id, $this->manager->find(9900123, self::TEST_SESSION)?->id);
+            $this->assertSame(0, $this->manager->findByRecordId($id, self::TEST_SESSION)?->exitCode);
+            $this->assertSame('snapshot output', $this->manager->readLogTail(self::TEST_SESSION, 9900123)->content);
+            $this->assertSame('snapshot output', $this->manager->readLogTailForRecord($id, sessionId: self::TEST_SESSION)->content);
+        }
+        $this->assertSame(0, $em->getUnitOfWork()->size());
+    }
 
     public function testListReturnsAcceptedRunningAndFinished(): void
     {
@@ -352,7 +375,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $result = $this->manager->start('echo "completed"', self::TEST_SESSION);
         $this->waitUntilFinished($result->pid);
 
-        $connection = static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getConnection();
+        $connection = static::getContainer()->get(EntityManagerInterface::class)->getConnection();
         // Restore the unobserved state so cleanup must commit terminal evidence.
         // A real database refusal replaces the former ORM-flush-only injection.
         $connection->executeStatement('UPDATE background_process SET finished_at = NULL WHERE id = ?', [$result->id]);
@@ -517,7 +540,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertFalse($this->manager->findByRecordId($shell->id)?->backgroundRequested);
         $this->assertFalse($this->manager->findByRecordId($foreign->id)?->backgroundRequested);
         $this->assertSame([], $this->manager->list(self::TEST_SESSION));
-        foreach (static::getContainer()->get(ProcessStore::class)->findCompletionCandidates([self::TEST_SESSION]) as $candidate) {
+        foreach (static::getContainer()->get(ProcessStore::class)->fetchAllUnfinished([self::TEST_SESSION]) as $candidate) {
             $this->assertNull($candidate->backgroundedAt);
             $this->assertNull($candidate->completionNotifiedAt);
         }
@@ -562,7 +585,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $this->assertNotNull($record?->finishedAt);
         $this->assertGreaterThanOrEqual($originalDeadline, hrtime(true));
-        $this->assertSame($originalDeadline, $record->deadlineNanoseconds);
+        $this->assertSame($originalDeadline, self::getContainer()->get(ProcessStore::class)->fetchByRecordId($record->id)?->deadlineNanoseconds);
         $this->assertSame($process->pid, $record->pid);
         $this->assertFalse($record->stoppedByUser);
     }
