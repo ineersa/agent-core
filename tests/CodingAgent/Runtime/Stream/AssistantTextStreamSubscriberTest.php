@@ -15,6 +15,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\MessageItem;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Result\Stream\Delta\MessageComplete;
 use Symfony\AI\Platform\Bridge\OpenAIChatGPT\Result\Stream\Delta\MessageStart;
+use Symfony\AI\Platform\Result\Stream\Delta\CommentaryDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -49,8 +50,8 @@ final class AssistantTextStreamSubscriberTest extends TestCase
         foreach (['commentary', 'commentary', 'final_answer'] as $index => $phase) {
             $item = self::item('message-'.$index, $phase, 'same');
             $this->observer->onDelta('run', 'step', new MessageStart($item, $index));
-            $this->observer->onDelta('run', 'step', new TextDelta('sa'));
-            $this->observer->onDelta('run', 'step', new TextDelta('me'));
+            $this->observer->onDelta('run', 'step', 'commentary' === $phase ? new CommentaryDelta('sa') : new TextDelta('sa'));
+            $this->observer->onDelta('run', 'step', 'commentary' === $phase ? new CommentaryDelta('me') : new TextDelta('me'));
             $this->observer->onDelta('run', 'step', new MessageComplete(MessageItem::toText($item), $index));
         }
         $started = $this->ofType(RuntimeEventTypeEnum::AssistantTextStarted);
