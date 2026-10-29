@@ -54,6 +54,7 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
         file_put_contents($dest.'/SKILL.md', "---\nname: task-workflow\ndescription: stale\n".$versionLine."---\nstale body\n");
         file_put_contents($dest.'/references/stale.md', "stale reference\n");
         file_put_contents($dest.'/references/implementation-ownership.md', "old ownership\n");
+        file_put_contents($dest.'/references/board.md', "# Task board\n\n- Code checkout: `/home/ineersa/projects/agent-core`.\n- External board: `/home/ineersa/projects/agent-core-tasks`.\n");
 
         $this->installer()->install();
 
@@ -63,6 +64,8 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
         $this->assertFileExists($dest.'/references/implementation-ownership.md');
         $this->assertSame(file_get_contents($this->packageRoot.'/skills/task-workflow/references/implementation-ownership.md'), file_get_contents($dest.'/references/implementation-ownership.md'));
         $this->assertFileDoesNotExist($dest.'/references/stale.md');
+        $this->assertSame(file_get_contents($this->packageRoot.'/skills/task-workflow/references/board.md'), file_get_contents($dest.'/references/board.md'));
+        $this->assertStringNotContainsString('/home/ineersa/projects/agent-core', (string) file_get_contents($dest.'/references/board.md'));
     }
 
     #[Test]
@@ -85,6 +88,7 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
     {
         yield 'missing' => [''];
         yield 'different' => ["version: 1.0.0\n"];
+        yield 'previous bundled guidance' => ["version: 1.1.4\n"];
         yield 'malformed' => ["version: [\n"];
     }
 
