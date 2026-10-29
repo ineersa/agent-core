@@ -974,7 +974,7 @@ YAML;
         $this->assertSame(
             [],
             $this->lastTeardownSurvivorPids,
-            'No controller-owned descendants may remain after SIGTERM→0.05s→SIGKILL teardown',
+            'No controller-owned descendants may remain after SIGTERM→grace→SIGKILL and exit wait',
         );
     }
 
@@ -1042,6 +1042,24 @@ YAML;
         foreach ($pids as $pid) {
             if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
                 @posix_kill($pid, \SIGKILL);
+            }
+        }
+
+        // SIGKILL delivery is not exit acknowledgment. Wait until tracked
+        // same-UID PIDs leave /proc (or become zombies) before stopProcess
+        // samples survivors. Timeout is a safety cap around that predicate.
+        $deadline = microtime(true) + 1.0;
+        $stillAlive = true;
+        while ($stillAlive && microtime(true) < $deadline) {
+            $stillAlive = false;
+            foreach ($pids as $pid) {
+                if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
+                    $stillAlive = true;
+                    break;
+                }
+            }
+            if ($stillAlive) {
+                usleep(10_000);
             }
         }
     }
