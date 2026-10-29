@@ -15,12 +15,10 @@ use PHPUnit\Framework\Attributes\Group;
  * either FIFO is released. A serial single-worker scheduler cannot reach that
  * state. Overlap is therefore a positive barrier, not a timing lottery.
  *
- * The child opens its release FIFO for reading before publishing the entered
- * marker. Publishing first allowed the parent to release while the child had
- * not yet opened the FIFO, stranding one child after the parent's single
- * non-blocking write.
- * Parent release writes fflush after each fwrite so buffered bytes reach the
- * kernel FIFO before completion collection begins.
+ * Each child opens its release FIFO read/write, publishes entered, then reads.
+ * That self-satisfies the FIFO open without an early parent endpoint. The parent
+ * opens write-only only after both entered markers and live children exist, so it
+ * is never a competing reader of its own release write.
  *
  * Earlier read+bash wall-clock comparisons remain diagnostic-only and are not
  * retained as a contract here. Live tool_execution.started timestamps remain
@@ -55,7 +53,6 @@ final class ControllerReplayParallelToolOverlapTest extends ControllerReplayE2eT
         $this->assertNotSame('', $this->releaseFifoB);
         $this->assertNotSame('', $this->enteredMarkerA);
         $this->assertNotSame('', $this->enteredMarkerB);
-        $this->ensureReleaseEndpoints();
     }
 
     protected function tearDown(): void
@@ -128,6 +125,7 @@ final class ControllerReplayParallelToolOverlapTest extends ControllerReplayE2eT
 
         $this->waitForBothBashEntriesAndLiveness(4.0);
 
+        $this->openWriteOnlyReleaseEndpoints();
         $this->assertIsResource($this->releaseEndpointA);
         $this->assertIsResource($this->releaseEndpointB);
         $this->assertSame(8, fwrite($this->releaseEndpointA, "release\n"));
@@ -210,7 +208,6 @@ YAML;
         $this->enteredMarkerB = $this->tempDir.'/tool-overlap-entered-b.marker';
         $this->createFifoIfMissing($this->releaseFifoA);
         $this->createFifoIfMissing($this->releaseFifoB);
-        $this->ensureReleaseEndpoints();
 
         $fixturePath = __DIR__.'/fixtures/controller-parallel-dual-bash-barrier.json';
         $fixture = json_decode(
@@ -247,11 +244,9 @@ YAML;
 
     private function barrierCommand(string $enteredMarker, string $releaseFifo, string $outputMarker): string
     {
-        // Open the release FIFO for reading before publishing the entered
-        // marker. Writing the marker first allowed the parent to release while
-        // the child had not yet opened the FIFO; one child could then remain
-        // blocked after the parent's single non-blocking write.
-        return 'exec 3<'.escapeshellarg($releaseFifo)
+        // Child opens RDWR so the open does not wait for a writer, then marks
+        // entered and blocks on the same fd. Parent opens write-only later.
+        return 'exec 3<>'.escapeshellarg($releaseFifo)
             .' && printf entered > '.escapeshellarg($enteredMarker)
             .' && IFS= read -r release <&3'
             .' && printf %s '.escapeshellarg($outputMarker);
@@ -266,23 +261,22 @@ YAML;
         $this->assertTrue(posix_mkfifo($path, 0o600), 'Release FIFO must be created: '.$path);
     }
 
-    private function ensureReleaseEndpoints(): void
+    private function openWriteOnlyReleaseEndpoints(): void
     {
-        if (!\is_resource($this->releaseEndpointA)) {
-            $endpoint = fopen($this->releaseFifoA, 'r+b');
-            $this->assertIsResource($endpoint, 'Parent must own release FIFO A');
-            $this->assertTrue(stream_set_blocking($endpoint, false));
-            stream_set_write_buffer($endpoint, 0);
-            $this->releaseEndpointA = $endpoint;
-        }
+        $this->assertNull($this->releaseEndpointA, 'Release endpoint A must open only after both children wait');
+        $this->assertNull($this->releaseEndpointB, 'Release endpoint B must open only after both children wait');
 
-        if (!\is_resource($this->releaseEndpointB)) {
-            $endpoint = fopen($this->releaseFifoB, 'r+b');
-            $this->assertIsResource($endpoint, 'Parent must own release FIFO B');
-            $this->assertTrue(stream_set_blocking($endpoint, false));
-            stream_set_write_buffer($endpoint, 0);
-            $this->releaseEndpointB = $endpoint;
-        }
+        $endpointA = fopen($this->releaseFifoA, 'wb');
+        $this->assertIsResource($endpointA, 'Parent must own write-only release FIFO A');
+        $this->assertTrue(stream_set_blocking($endpointA, false));
+        stream_set_write_buffer($endpointA, 0);
+        $this->releaseEndpointA = $endpointA;
+
+        $endpointB = fopen($this->releaseFifoB, 'wb');
+        $this->assertIsResource($endpointB, 'Parent must own write-only release FIFO B');
+        $this->assertTrue(stream_set_blocking($endpointB, false));
+        stream_set_write_buffer($endpointB, 0);
+        $this->releaseEndpointB = $endpointB;
     }
 
     private function waitForBothBashEntriesAndLiveness(float $timeoutSeconds): void
@@ -330,7 +324,7 @@ YAML;
                 // Wrapper PID may own a child that holds the real command.
                 foreach ($this->discoverControllerProcessTreePids($pid) as $childPid) {
                     $childCmd = str_replace("\0", ' ', (string) @file_get_contents('/proc/'.$childPid.'/cmdline'));
-                    if (str_contains($childCmd, 'tool-overlap-release-') && str_contains($childCmd, 'IFS= read -r release <')) {
+                    if (str_contains($childCmd, 'tool-overlap-release-') && str_contains($childCmd, 'IFS= read -r release <&3')) {
                         ++$live;
                         break;
                     }
@@ -339,7 +333,7 @@ YAML;
                 continue;
             }
 
-            if (str_contains($cmd, 'IFS= read -r release <')) {
+            if (str_contains($cmd, 'IFS= read -r release <&3')) {
                 ++$live;
             }
         }
