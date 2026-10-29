@@ -135,6 +135,13 @@ final class AgentResumeExecutionService
             parentModel: $toolContext->parentModel(),
         );
 
+        // Interruption can commit while the reservation reply is pending.
+        // Read fresh intent before changing the artifact or dispatching follow-up;
+        // deferred registration still completes interruption delivery.
+        if (null !== $this->batchRepository->findByLifecycleId($lifecycleId)?->interruptionKind) {
+            return new DeferredToolCompletionOutcome($lifecycleId);
+        }
+
         try {
             try {
                 $this->artifactRegistry->update(

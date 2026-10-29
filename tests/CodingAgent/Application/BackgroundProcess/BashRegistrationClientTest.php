@@ -130,6 +130,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         yield 'resume with lost success reply' => [true, false];
         yield 'launch with lost success reply' => [false, false];
         yield 'interruption while awaiting reservation' => [false, true];
+        yield 'resume interruption while awaiting reservation' => [true, true];
     }
 
     #[DataProvider('childCallerModes')]
@@ -142,8 +143,9 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             $artifact = 'agent_resume_lost_reply';
             $registry->create($owner, $artifact, $child, 'scout', AgentArtifactKindEnum::Subagent);
             $registry->update($owner, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done');
+            $followUpCalled = new DeferredFuture();
             $runner = $this->createMock(AgentRunnerInterface::class);
-            $runner->expects($resume ? $this->once() : $this->never())->method('followUp')->with($child, $this->anything());
+            $runner->expects($resume ? ($interrupt ? $this->atMost(1) : $this->once()) : $this->never())->method('followUp')->with($child, $this->anything())->willReturnCallback(static fn () => $followUpCalled->complete());
             $runner->expects(!$resume && !$interrupt ? $this->once() : $this->never())->method('start');
             $status = $this->createStub(RunOperationalStatusReaderInterface::class);
             $status->method('findOperationalStatus')->willReturn(new RunOperationalStatusDTO(RunStatus::Completed, 1));
@@ -216,6 +218,10 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             }
             $caller = async(static fn () => $context->with(new ToolContext(runId: $owner, turnNo: 1, toolCallId: 'resume-lost', toolName: $resume ? 'agent_resume' : 'subagent', cancellationToken: new NullCancellationToken(), timeoutSeconds: 30, stepId: $resume ? 'resume-lost-step' : null, parentModel: 'test/model', launchContext: new ToolLaunchContextDTO(kind: ToolLaunchContextDTO::KIND_SUBAGENT, producingRunId: $owner, producingTurnNo: 1, producingModel: 'test/model', agentsContext: 'AGENTS')), static fn () => $resume ? $service->resume($owner, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')) : $launch->launch($owner, 'scout', 'continue')));
             try {
+                if ($interrupt) {
+                    \Amp\Future\awaitFirst([$caller, $followUpCalled->getFuture()], new TimeoutCancellation(8));
+                    $this->assertFalse($followUpCalled->isComplete(), 'Interrupted invocation must not dispatch followUp.');
+                }
                 if (!$interrupt) {
                     \Amp\Future\awaitFirst([$caller, $lost->getFuture()], new TimeoutCancellation(8));
                     $this->assertFalse($caller->isComplete());
@@ -226,6 +232,9 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                 $this->assertSame($interrupt ? DeferredSubagentBatchLaunchStatusEnum::Reserved : DeferredSubagentBatchLaunchStatusEnum::Launched, $batch?->launchStatus);
                 $this->assertSame($interrupt, $dropSuccess);
                 $this->assertSame($interrupt ? DeferredSubagentInterruptionKindEnum::ParentCancelled : null, $batch?->interruptionKind);
+                if ($resume && $interrupt) {
+                    $this->assertSame(AgentArtifactStatusEnum::Completed, $registry->get($owner, $artifact)?->status);
+                }
             } finally {
                 $caller->ignore();
                 $ownerTask->ignore();
