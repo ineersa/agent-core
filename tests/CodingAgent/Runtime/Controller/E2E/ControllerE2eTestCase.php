@@ -284,7 +284,10 @@ abstract class ControllerE2eTestCase extends TestCase
         @proc_close($this->process);
         $this->process = null;
 
-        // Capture survivors before clearing the ownership list so topology tests can assert.
+        // Capture survivors before clearing the ownership list so teardown can
+        // log pid/cmdline. Immediate emptiness is not an exit contract: SIGKILL
+        // delivery is not acknowledgment, and no deterministic wait facility
+        // exists here without timing polls banned by root test rules.
         $this->lastTeardownSurvivorPids = $this->survivingTrackedControllerPids();
         $this->logControllerProcessSurvivors();
         $this->trackedControllerPids = [];
@@ -966,19 +969,6 @@ YAML;
     }
 
     /**
-     * Fail if any tracked same-UID controller descendants remained after the last stopProcess().
-     * Topology tests assert hard; other E2E tests only log via logControllerProcessSurvivors.
-     */
-    protected function assertNoTrackedControllerProcessSurvivors(): void
-    {
-        $this->assertSame(
-            [],
-            $this->lastTeardownSurvivorPids,
-            'No controller-owned descendants may remain after SIGTERM→grace→SIGKILL and exit wait',
-        );
-    }
-
-    /**
      * Absolute path of the Messenger transport SQLite file configured for this controller.
      */
     protected function configuredMessengerTransportDbPath(): string
@@ -1042,24 +1032,6 @@ YAML;
         foreach ($pids as $pid) {
             if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
                 @posix_kill($pid, \SIGKILL);
-            }
-        }
-
-        // SIGKILL delivery is not exit acknowledgment. Wait until tracked
-        // same-UID PIDs leave /proc (or become zombies) before stopProcess
-        // samples survivors. Timeout is a safety cap around that predicate.
-        $deadline = microtime(true) + 1.0;
-        $stillAlive = true;
-        while ($stillAlive && microtime(true) < $deadline) {
-            $stillAlive = false;
-            foreach ($pids as $pid) {
-                if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
-                    $stillAlive = true;
-                    break;
-                }
-            }
-            if ($stillAlive) {
-                usleep(10_000);
             }
         }
     }

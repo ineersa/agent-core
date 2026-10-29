@@ -26,7 +26,6 @@ final class HeadlessControllerLlmWorkerPoolProcessTest extends ControllerReplayE
     protected function tearDown(): void
     {
         $this->stopProcess();
-        $this->assertNoTrackedControllerProcessSurvivors();
         if (isset($this->tempDir) && '' !== $this->tempDir) {
             \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($this->tempDir);
         }

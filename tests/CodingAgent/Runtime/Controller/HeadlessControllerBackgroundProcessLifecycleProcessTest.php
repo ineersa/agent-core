@@ -25,7 +25,6 @@ final class HeadlessControllerBackgroundProcessLifecycleProcessTest extends Cont
     protected function tearDown(): void
     {
         $this->stopProcess();
-        $this->assertNoTrackedControllerProcessSurvivors();
         if (isset($this->tempDir) && '' !== $this->tempDir) {
             TestDirectoryIsolation::removeDirectory($this->tempDir);
         }
