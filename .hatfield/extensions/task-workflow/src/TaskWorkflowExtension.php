@@ -65,7 +65,7 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
         // Project skill discovery loads the installed copy.
         (new TaskWorkflowSkillInstaller($codeRoot, $packageRoot, $this->logger))->install();
 
-        $api->registerPromptContributor(new WorkflowPrompt($taskRoot));
+        $api->registerPromptContributor(new WorkflowPrompt($codeRoot, $taskRoot));
 
         $statusEnum = ['TODO', 'IN-PROGRESS', 'CODE-REVIEW', 'DONE', 'ARCHIVE', 'CANCELLED'];
 
