@@ -90,9 +90,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                 'launch_model' => $intent['launchModel'],
                 'launch_reasoning' => $intent['launchReasoning'],
                 'launch_status' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
-                // Capture the current operational sequence so a pre-existing
-                // terminal child cannot look settled before this claim advances.
-                'child_event_cursor' => $this->operationalSequence($intent['childRunId']),
+                'child_event_cursor' => 0,
                 'projection_version' => 1,
                 'started_at' => null,
                 'terminal_completed_at' => null,
@@ -173,20 +171,8 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         $conn ??= $this->getEntityManager()->getConnection();
         // Cursor/projection must come from committed state before resume rebind.
         $existing ??= $this->findFreshEntityByChildRunId($childRunId);
-        $previousCursor = null === $existing ? 0 : $existing->childEventCursor;
-        $cursor = max($previousCursor, $this->operationalSequence($childRunId));
+        $cursor = null === $existing ? 0 : $existing->childEventCursor;
         $previous = null !== $existing ? $this->decodeChildLifecycleProjection($existing->childLifecycleProjection) : null;
-        // A terminal artifact is not reservation authority: it may still be
-        // terminal while the previous resume waits for its committed reply.
-        // Failed preparation releases its claim. Settlement must prove progress
-        // after the claim boundary captured here into child_event_cursor, so stale
-        // pre-reservation terminal state cannot reopen the original race and
-        // interrupted batches whose projections froze can still release.
-        // This runs in reserveBatch's transaction, so refusal also rolls back
-        // the new batch row.
-        if (null !== $existing && !$this->claimIsSettled($existing, $previousCursor, $previous)) {
-            throw new ToolCallException('The child is already claimed by an active invocation.', retryable: false);
-        }
         $projection = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -206,7 +192,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         );
 
         if ($existing instanceof DeferredSubagentChild) {
-            $updated = $conn->update('deferred_subagent_child', [
+            $conn->update('deferred_subagent_child', [
                 'batch_lifecycle_id' => $batchLifecycleId,
                 'batch_index' => $batchIndex,
                 'artifact_id' => $artifactId,
@@ -215,19 +201,13 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                 'launch_model' => $launchModel,
                 'launch_reasoning' => $launchReasoning,
                 'launch_status' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
-                'child_event_cursor' => $cursor,
                 'child_lifecycle_projection' => $projectionJson,
                 'terminal_completed_at' => null,
                 'terminal_status' => null,
                 'updated_at' => $now->format('Y-m-d H:i:s'),
             ], [
                 'child_run_id' => $childRunId,
-                'batch_lifecycle_id' => $existing->batchLifecycleId,
-                'projection_version' => $existing->projectionVersion,
             ]);
-            if (1 !== $updated) {
-                throw new ToolCallException('The child reservation changed before it could be claimed.', retryable: false);
-            }
 
             // DBAL update leaves the managed entity stale; drop only this child.
             $this->getEntityManager()->detach($existing);
@@ -300,58 +280,6 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         $row = $this->findFreshOneBy(['childRunId' => $childRunId]);
 
         return $row instanceof DeferredSubagentChild ? $row : null;
-    }
-
-    private function claimIsSettled(
-        DeferredSubagentChild $existing,
-        int $claimBoundary,
-        ?DeferredChildRunLifecycleProjectionDTO $previous,
-    ): bool {
-        if (DeferredSubagentChildLaunchStatusEnum::Failed === $existing->launchStatus) {
-            return true;
-        }
-        // Rebind resets the lifecycle projection for the new claim. A terminal
-        // projection therefore means the current claim was observed to finish,
-        // including Reserved rows whose launch-success metadata never committed.
-        if (true === $previous?->childStatus->isTerminal()) {
-            return true;
-        }
-        // Interrupted batches may freeze the projection while the child finishes.
-        // Operational progress past the preserved claim boundary releases the claim
-        // without treating the pre-reservation terminal snapshot as settlement.
-        $operational = $this->operationalSnapshot($existing->childRunId);
-        if (null === $operational) {
-            return false;
-        }
-        $status = RunStatus::tryFrom($operational['status']);
-
-        return null !== $status
-            && $status->isTerminal()
-            && $operational['lastEventSequence'] > $claimBoundary;
-    }
-
-    private function operationalSequence(string $childRunId): int
-    {
-        return $this->operationalSnapshot($childRunId)['lastEventSequence'] ?? 0;
-    }
-
-    /**
-     * @return array{status: string, lastEventSequence: int}|null
-     */
-    private function operationalSnapshot(string $childRunId): ?array
-    {
-        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
-            'SELECT status, last_event_sequence FROM run_operational_state WHERE run_id = ?',
-            [$childRunId],
-        );
-        if (false === $row) {
-            return null;
-        }
-
-        return [
-            'status' => (string) $row['status'],
-            'lastEventSequence' => (int) $row['last_event_sequence'],
-        ];
     }
 
     /**

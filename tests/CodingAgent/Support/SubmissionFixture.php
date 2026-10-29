@@ -16,16 +16,12 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\SubmissionReceiptDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\SubmissionFactory;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
-use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use PHPUnit\Framework\Assert;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Uid\Uuid;
@@ -67,43 +63,6 @@ final class SubmissionFixture
     {
         $state = $run === $this->parent ? $this->parentState : $this->childState;
         $this->container->get(RunOperationalProjectionRepository::class)->replace($state->with(['status' => $status]));
-    }
-
-    /**
-     * Finish the currently claimed child invocation so a later resume can rebind.
-     * Uses launch-success plus a terminal lifecycle projection, not a Failed shortcut.
-     */
-    public function completeActiveChildClaim(): void
-    {
-        $batches = $this->container->get(DeferredSubagentBatchRepository::class);
-        $children = $this->container->get(DeferredSubagentChildRepository::class);
-        $child = $children->findByChildRunId($this->child);
-        Assert::assertNotNull($child);
-        $batch = $batches->findByLifecycleId($child->batchLifecycleId);
-        Assert::assertNotNull($batch);
-        if (DeferredSubagentChildLaunchStatusEnum::Reserved === $child->launchStatus) {
-            $batches->applyLaunchSuccessState($batch->parentRunId, $batch->parentToolCallId, $batch->lifecycleId, new \DateTimeImmutable());
-            $child = $children->findByChildRunId($this->child);
-            Assert::assertNotNull($child);
-            $batch = $batches->findByLifecycleId($child->batchLifecycleId);
-            Assert::assertNotNull($batch);
-        }
-        $cursor = max($child->childEventCursor, $this->childState->lastSeq, 1);
-        $batches->applyBatchChildLifecycleProjection(
-            $child->batchLifecycleId,
-            $child->batchIndex,
-            new DeferredChildRunLifecycleProjectionDTO(
-                childStatus: RunStatus::Completed,
-                childTurnNo: max(1, $this->childState->turnNo),
-                lastCommittedSeq: $cursor,
-                model: $child->launchModel,
-                reasoning: $child->launchReasoning,
-            ),
-            $cursor,
-            $child->projectionVersion,
-            $batch->projectionVersion,
-            false,
-        );
     }
 
     /** @param array<string, mixed> $payload */

@@ -8,7 +8,6 @@ use Amp\Cancellation;
 use Amp\DeferredCancellation;
 use Amp\DeferredFuture;
 use Amp\Future;
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
@@ -142,9 +141,6 @@ final class BashRegistrationClient
             $this->commandBus->dispatch($command);
 
             $reply = $waiter->getFuture()->await();
-            if (null !== $reply->childReservationRefusal) {
-                throw new ToolCallException($reply->childReservationRefusal, retryable: false);
-            }
             if ($reply->failed) {
                 throw new \RuntimeException('Bash lifecycle request exhausted owner retries; committed outcome is unknown.');
             }

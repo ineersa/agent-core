@@ -8,6 +8,7 @@ use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
@@ -16,7 +17,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -40,8 +41,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredS
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchPreparationService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService;
@@ -72,7 +71,6 @@ use Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\ReserveChildInvocationDTO;
 use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleHandler;
 use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
-use Ineersa\CodingAgent\Application\Pipeline\ChildReservationRefusalService;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleHandler;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Application\Pipeline\RegisterDeferredInvocationHandler;
@@ -126,301 +124,6 @@ use function Amp\delay;
 
 final class BashRegistrationClientTest extends IsolatedKernelTestCase
 {
-    public function testConcurrentResumeCallersCannotStealTheSameChildReservation(): void
-    {
-        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher): void {
-            $container = self::getContainer();
-            $repository = $container->get(DeferredSubagentBatchRepository::class);
-            $children = $container->get(DeferredSubagentChildRepository::class);
-            $registry = $container->get(AgentArtifactRegistry::class);
-            $child = 'concurrent-resume-child';
-            $artifact = 'concurrent_resume';
-            $registry->create($owner, $artifact, $child, 'scout', AgentArtifactKindEnum::Subagent);
-            $registry->update($owner, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done');
-            $followUps = 0;
-            $runner = $this->createStub(AgentRunnerInterface::class);
-            $runner->method('followUp')->willReturnCallback(static function () use (&$followUps): void { ++$followUps; });
-            $status = $this->createStub(RunOperationalStatusReaderInterface::class);
-            $status->method('findOperationalStatus')->willReturn(new RunOperationalStatusDTO(RunStatus::Completed, 1));
-            $events = $this->createStub(EventStoreInterface::class);
-            $events->method('latestSequenceFor')->willReturn(1);
-            $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
-            $sender = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
-            $locator = new SendersLocator([ReserveChildInvocationDTO::class => ['run_control'], RecordChildLaunchSuccessDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
-            $client = new BashRegistrationClient(new MessageBus([new SendMessageMiddleware(new SerializedBrokerSendersLocator($locator))]), $paths->endpointPath, $owner, $container->get(SerializerInterface::class), $container->get(ValidatorInterface::class));
-            $remote = new ChildInvocationLifecycleService($repository);
-            $remote->useOwner($client);
-            $context = new StackToolExecutionContextAccessor();
-            $service = new AgentResumeExecutionService($registry, $repository, $children, new DeferredSubagentBatchIdentityFactory(), $runner, $status, $events, $container->get(RunLockManager::class), StubRunRelationshipReader::topLevel($owner), new AgentDepthGuard(), $context, new AgentsConfig(), new TestLogger(), $remote);
-            $handler = new ChildInvocationLifecycleHandler(new ChildInvocationLifecycleService($repository), $container->get(ChildReservationRefusalService::class), $publisher, $container->get(ValidatorInterface::class), $owner);
-            $failures = new BashLifecycleFailureSubscriber(new ServiceLocator([BashRegistrationReplyPublisher::class => static fn () => $publisher]), $owner);
-            $deliver = static function (Envelope $delivery) use ($handler, $failures): void {
-                try {
-                    $handler($delivery->getMessage());
-                } catch (\RuntimeException $error) {
-                    // Match the real worker's terminal failure reply so even a
-                    // broken success transition cannot strand this proof.
-                    (new TestLogger())->warning('test.owner_delivery_failed', ['exception' => $error]);
-                    $failures->onFailed(new WorkerMessageFailedEvent($delivery, 'run_control', $error));
-                }
-            };
-            $stop = new \Amp\DeferredCancellation();
-            $reservations = [];
-            $ownerTask = async(static function () use ($requests, $deliver, $stop, &$reservations): void {
-                try {
-                    // Neither reservation reply is published until BOTH real
-                    // callers have validated the same terminal artifact.
-                    $held = [];
-                    while (2 !== \count($held)) {
-                        foreach ($requests->get() as $delivery) {
-                            $held[] = $delivery;
-                            $reservations[] = $delivery->getMessage();
-                        }
-                        if (2 !== \count($held)) {
-                            $requests->wait(3000, $stop->getCancellation());
-                        }
-                    }
-                    foreach ($held as $delivery) {
-                        $deliver($delivery);
-                        $requests->ack($delivery);
-                    }
-                    while (true) {
-                        foreach ($requests->get() as $delivery) {
-                            $deliver($delivery);
-                            $requests->ack($delivery);
-                        }
-                        $requests->wait(3000, $stop->getCancellation());
-                    }
-                } catch (\Throwable $error) {
-                    if (!$stop->isCancelled()) {
-                        throw $error;
-                    }
-                    (new TestLogger())->debug('test.owner_wait_cancelled', ['exception' => $error]);
-                }
-            });
-            $callers = [];
-            foreach (['resume-first', 'resume-second'] as $call) {
-                $callers[$call] = async(static function () use ($context, $owner, $call, $service, $artifact): mixed {
-                    try {
-                        return $context->with(new ToolContext(runId: $owner, turnNo: 1, toolCallId: $call, toolName: 'agent_resume', cancellationToken: new NullCancellationToken(), timeoutSeconds: 30, parentModel: 'test/model'), static fn () => $service->resume($owner, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')));
-                    } catch (\Throwable $error) {
-                        return $error;
-                    }
-                });
-            }
-            try {
-                $results = \Amp\Future\await($callers, new TimeoutCancellation(8));
-                $this->assertSame(1, $followUps, 'Only the atomic reservation winner may call followUp.');
-                $winners = array_filter($results, static fn (mixed $result): bool => !$result instanceof \Throwable);
-                $losers = array_filter($results, static fn (mixed $result): bool => $result instanceof \Throwable);
-                $this->assertCount(1, $winners);
-                $this->assertCount(1, $losers);
-                $this->assertInstanceOf(ToolCallException::class, reset($losers));
-                $winner = reset($winners);
-                $this->assertSame($winner->deferredId, $children->findByChildRunId($child)?->batchLifecycleId);
-                $this->assertNull($repository->findByParentRunAndToolCall($owner, array_key_first($losers)));
-                $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $repository->findByLifecycleId($winner->deferredId)?->launchStatus);
-                // Same-invocation redelivery must preserve the winner's claim.
-                $winningRequest = array_values(array_filter($reservations, static fn ($request): bool => $request->lifecycleId === $winner->deferredId))[0];
-                $handler($winningRequest);
-                $this->assertSame($winner->deferredId, $children->findByChildRunId($child)?->batchLifecycleId);
-                // Even a stale terminal artifact cannot release Launched work.
-                $registry->update($owner, $artifact, status: AgentArtifactStatusEnum::Completed);
-                try {
-                    $context->with(new ToolContext(runId: $owner, turnNo: 2, toolCallId: 'resume-active', toolName: 'agent_resume', cancellationToken: new NullCancellationToken(), timeoutSeconds: 30, parentModel: 'test/model'), static fn () => $service->resume($owner, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')));
-                    $this->fail('A launched non-terminal claim must not be stolen.');
-                } catch (ToolCallException $refusal) {
-                    $this->assertSame('The child is already claimed by an active invocation.', $refusal->getMessage());
-                }
-                $this->assertSame(1, $followUps);
-                $this->assertNull($repository->findByParentRunAndToolCall($owner, 'resume-active'));
-                // Model the next committed terminal observation, using the
-                // same lifecycle projection that production resume inspects.
-                $projection = new DeferredChildRunLifecycleProjectionDTO(RunStatus::Completed, 1, 1, 'test/model', 'medium');
-                $current = $repository->findByLifecycleId($winner->deferredId);
-                $repository->applyBatchChildLifecycleProjection($winner->deferredId, 1, $projection, 1, $current->children[0]->projectionVersion, $current->projectionVersion, false);
-                $later = $context->with(new ToolContext(runId: $owner, turnNo: 3, toolCallId: 'resume-later', toolName: 'agent_resume', cancellationToken: new NullCancellationToken(), timeoutSeconds: 30, parentModel: 'test/model'), static fn () => $service->resume($owner, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')));
-                $this->assertSame(2, $followUps);
-                $this->assertSame($later->deferredId, $children->findByChildRunId($child)?->batchLifecycleId);
-            } finally {
-                $stop->cancel();
-                $ownerTask->await(new TimeoutCancellation(8));
-                foreach ($callers as $caller) {
-                    $caller->ignore();
-                }
-                $requests->close();
-                $sender->close();
-            }
-        });
-    }
-
-    public function testSettledInterruptedClaimCanResumeAndLostRefusalAckDoesNotCreateOrphanBatch(): void
-    {
-        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher): void {
-            $container = self::getContainer();
-            $repository = $container->get(DeferredSubagentBatchRepository::class);
-            $children = $container->get(DeferredSubagentChildRepository::class);
-            $registry = $container->get(AgentArtifactRegistry::class);
-            $connection = $container->get(EntityManagerInterface::class)->getConnection();
-            $child = 'settled-refusal-child';
-            $artifact = 'settled_refusal_artifact';
-            $registry->create($owner, $artifact, $child, 'scout', AgentArtifactKindEnum::Subagent);
-            $registry->update($owner, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done');
-            $connection->insert('run_operational_state', [
-                'run_id' => $child,
-                'parent_run_id' => null,
-                'owner_session_id' => $owner,
-                'status' => RunStatus::Completed->value,
-                'turn_no' => 1,
-                'active_step_id' => null,
-                'last_applied_advance_key' => null,
-                'last_applied_compaction_key' => null,
-                'last_event_sequence' => 4,
-                'transition_version' => 1,
-                'created_at' => '2026-10-29 00:00:00',
-                'updated_at' => '2026-10-29 00:00:00',
-            ]);
-            $followUps = 0;
-            $runner = $this->createStub(AgentRunnerInterface::class);
-            $runner->method('followUp')->willReturnCallback(static function () use (&$followUps): void { ++$followUps; });
-            $operational = new RunOperationalStatusDTO(RunStatus::Completed, 4);
-            $status = $this->createStub(RunOperationalStatusReaderInterface::class);
-            $status->method('findOperationalStatus')->willReturnCallback(static function () use (&$operational): RunOperationalStatusDTO {
-                return $operational;
-            });
-            $events = $this->createStub(EventStoreInterface::class);
-            $events->method('latestSequenceFor')->willReturnCallback(static function () use (&$operational): int {
-                return $operational->lastEventSequence;
-            });
-            $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
-            $sender = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
-            $locator = new SendersLocator([ReserveChildInvocationDTO::class => ['run_control'], RecordChildLaunchSuccessDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
-            $client = new BashRegistrationClient(new MessageBus([new SendMessageMiddleware(new SerializedBrokerSendersLocator($locator))]), $paths->endpointPath, $owner, $container->get(SerializerInterface::class), $container->get(ValidatorInterface::class));
-            $remote = new ChildInvocationLifecycleService($repository);
-            $remote->useOwner($client);
-            $context = new StackToolExecutionContextAccessor();
-            $service = new AgentResumeExecutionService($registry, $repository, $children, new DeferredSubagentBatchIdentityFactory(), $runner, $status, $events, $container->get(RunLockManager::class), StubRunRelationshipReader::topLevel($owner), new AgentDepthGuard(), $context, new AgentsConfig(), new TestLogger(), $remote);
-            $handler = new ChildInvocationLifecycleHandler(new ChildInvocationLifecycleService($repository), $container->get(ChildReservationRefusalService::class), $publisher, $container->get(ValidatorInterface::class), $owner);
-            $stop = new \Amp\DeferredCancellation();
-            $heldLoser = null;
-            $ownerTask = async(static function () use ($requests, $handler, $stop, &$heldLoser): void {
-                try {
-                    $held = [];
-                    while (2 !== \count($held)) {
-                        foreach ($requests->get() as $delivery) {
-                            $held[] = $delivery;
-                        }
-                        if (2 !== \count($held)) {
-                            $requests->wait(3000, $stop->getCancellation());
-                        }
-                    }
-                    // Deliver and ACK the first reservation; publish the second
-                    // refusal without acknowledging so broker redelivery can prove
-                    // durable refusal retention after the winner finishes.
-                    $handler($held[0]->getMessage());
-                    $requests->ack($held[0]);
-                    $handler($held[1]->getMessage());
-                    $heldLoser = $held[1];
-                    while (true) {
-                        foreach ($requests->get() as $delivery) {
-                            $handler($delivery->getMessage());
-                            $requests->ack($delivery);
-                        }
-                        $requests->wait(3000, $stop->getCancellation());
-                    }
-                } catch (\Throwable $error) {
-                    if (!$stop->isCancelled()) {
-                        throw $error;
-                    }
-                    (new TestLogger())->debug('test.owner_wait_cancelled', ['exception' => $error]);
-                }
-            });
-            $callers = [];
-            foreach (['resume-winner', 'resume-loser'] as $call) {
-                $callers[$call] = async(static function () use ($context, $owner, $call, $service, $artifact): mixed {
-                    try {
-                        return $context->with(new ToolContext(runId: $owner, turnNo: 1, toolCallId: $call, toolName: 'agent_resume', cancellationToken: new NullCancellationToken(), timeoutSeconds: 30, parentModel: 'test/model'), static fn () => $service->resume($owner, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')));
-                    } catch (\Throwable $error) {
-                        return $error;
-                    }
-                });
-            }
-            try {
-                $results = \Amp\Future\await($callers, new TimeoutCancellation(8));
-                $this->assertSame(1, $followUps);
-                $winner = null;
-                $loser = null;
-                foreach ($results as $call => $result) {
-                    if ($result instanceof \Throwable) {
-                        $loser = [$call, $result];
-                    } else {
-                        $winner = [$call, $result];
-                    }
-                }
-                $this->assertNotNull($winner);
-                $this->assertNotNull($loser);
-                $this->assertInstanceOf(ToolCallException::class, $loser[1]);
-                $this->assertSame('The child is already claimed by an active invocation.', $loser[1]->getMessage());
-                $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM child_reservation_refusal WHERE identity = ?', [(new DeferredSubagentBatchIdentityFactory())->batchLifecycleId($owner, $loser[0])]));
-                $this->assertNull($repository->findByParentRunAndToolCall($owner, $loser[0]));
-
-                // Model interrupted-batch settlement with a frozen nonterminal
-                // projection and later operational progress past the claim boundary.
-                $winnerId = $winner[1]->deferredId;
-                $connection->executeStatement(
-                    'UPDATE deferred_subagent_child SET launch_status = ?, child_lifecycle_projection = ?, terminal_status = NULL, terminal_completed_at = NULL, projection_version = projection_version + 1 WHERE child_run_id = ?',
-                    [DeferredSubagentChildLaunchStatusEnum::Reserved->value, json_encode(['child_status' => 'running', 'child_turn_no' => 1, 'last_committed_seq' => 4, 'model' => 'test/model', 'reasoning' => 'medium'], \JSON_THROW_ON_ERROR), $child],
-                );
-                $repository->markTerminalCompletionEnqueued($winnerId, new \DateTimeImmutable('2026-10-29 00:01:00'), $repository->findByLifecycleId($winnerId)->projectionVersion);
-                $connection->update('run_operational_state', [
-                    'status' => RunStatus::Cancelled->value,
-                    'last_event_sequence' => 7,
-                    'updated_at' => '2026-10-29 00:02:00',
-                ], ['run_id' => $child]);
-                $operational = new RunOperationalStatusDTO(RunStatus::Cancelled, 7);
-                $registry->update($owner, $artifact, status: AgentArtifactStatusEnum::Cancelled, summary: 'cancelled');
-                $afterInterrupt = $context->with(new ToolContext(runId: $owner, turnNo: 2, toolCallId: 'resume-after-interrupt', toolName: 'agent_resume', cancellationToken: new NullCancellationToken(), timeoutSeconds: 30, parentModel: 'test/model'), static fn () => $service->resume($owner, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue after interrupt')));
-                $this->assertSame(2, $followUps);
-                $this->assertSame($afterInterrupt->deferredId, $children->findByChildRunId($child)?->batchLifecycleId);
-
-                // Leave the child Reserved after a successful followUp whose
-                // launch-success metadata never committed, then finish it.
-                $connection->executeStatement(
-                    'UPDATE deferred_subagent_child SET launch_status = ?, child_lifecycle_projection = ?, terminal_status = NULL, terminal_completed_at = NULL, projection_version = projection_version + 1 WHERE child_run_id = ?',
-                    [DeferredSubagentChildLaunchStatusEnum::Reserved->value, json_encode(['child_status' => 'running', 'child_turn_no' => 1, 'last_committed_seq' => 7, 'model' => 'test/model', 'reasoning' => 'medium'], \JSON_THROW_ON_ERROR), $child],
-                );
-                $connection->update('run_operational_state', [
-                    'status' => RunStatus::Completed->value,
-                    'last_event_sequence' => 11,
-                    'updated_at' => '2026-10-29 00:03:00',
-                ], ['run_id' => $child]);
-                $operational = new RunOperationalStatusDTO(RunStatus::Completed, 11);
-                $registry->update($owner, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done again');
-                $afterReserved = $context->with(new ToolContext(runId: $owner, turnNo: 3, toolCallId: 'resume-after-reserved', toolName: 'agent_resume', cancellationToken: new NullCancellationToken(), timeoutSeconds: 30, parentModel: 'test/model'), static fn () => $service->resume($owner, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue after reserved')));
-                $this->assertSame(3, $followUps);
-                $this->assertSame($afterReserved->deferredId, $children->findByChildRunId($child)?->batchLifecycleId);
-
-                // Redeliver the unacked loser request after the winner finished.
-                $this->assertNotNull($heldLoser);
-                $beforeMembership = $children->findByChildRunId($child)?->batchLifecycleId;
-                $beforeBatches = (int) $connection->fetchOne('SELECT COUNT(*) FROM deferred_subagent_batch');
-                $handler($heldLoser->getMessage());
-                $this->assertSame($beforeMembership, $children->findByChildRunId($child)?->batchLifecycleId);
-                $this->assertSame($beforeBatches, (int) $connection->fetchOne('SELECT COUNT(*) FROM deferred_subagent_batch'));
-                $this->assertNull($repository->findByParentRunAndToolCall($owner, $loser[0]));
-                $requests->ack($heldLoser);
-            } finally {
-                $stop->cancel();
-                $ownerTask->await(new TimeoutCancellation(8));
-                foreach ($callers as $caller) {
-                    $caller->ignore();
-                }
-                $requests->close();
-                $sender->close();
-            }
-        });
-    }
-
     /** @return iterable<string, array{bool, bool}> */
     public static function childCallerModes(): iterable
     {
@@ -464,7 +167,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                 return $serializer->serialize($data, $format, $context);
             });
             $publisher = new BashRegistrationReplyPublisher($paths->endpointPath, $owner, $failing);
-            $handler = new ChildInvocationLifecycleHandler(new ChildInvocationLifecycleService($repository), self::getContainer()->get(ChildReservationRefusalService::class), $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
+            $handler = new ChildInvocationLifecycleHandler(new ChildInvocationLifecycleService($repository), $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
             $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
             $sender = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
             $locator = new SendersLocator([ReserveChildInvocationDTO::class => ['run_control'], RecordChildLaunchSuccessDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
@@ -472,7 +175,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             $remote = new ChildInvocationLifecycleService($repository);
             $remote->useOwner($client);
             $context = new StackToolExecutionContextAccessor();
-            $service = new AgentResumeExecutionService($registry, $repository, self::getContainer()->get(DeferredSubagentChildRepository::class), new DeferredSubagentBatchIdentityFactory(), $runner, $status, $events, self::getContainer()->get(RunLockManager::class), StubRunRelationshipReader::topLevel($owner), new AgentDepthGuard(), $context, new AgentsConfig(), new TestLogger(), $remote);
+            $service = new AgentResumeExecutionService($registry, $repository, self::getContainer()->get(DeferredSubagentChildRepository::class), new DeferredSubagentBatchIdentityFactory(), $runner, $status, $events, self::getContainer()->get(RunLockManager::class), StubRunRelationshipReader::topLevel($owner), new AgentDepthGuard(), $context, new AgentsConfig(), new TestLogger(), $remote, self::getContainer()->get(ToolBatchStoreInterface::class), self::getContainer()->get(SerializerInterface::class));
             $artifactLifecycle = self::getContainer()->get(ChildRunArtifactLifecycleService::class);
             $runtime = new DeferredSubagentBatchRuntimeStartService($runner, $artifactLifecycle, new ChildRunBatchLaunchService($runner, $artifactLifecycle, self::getContainer()->get(SubagentChildRunBatchLifecycleListener::class), new TestLogger()), self::getContainer()->get(ChildRunBatchLifecyclePolicyDTO::class), new TestLogger());
             $definitionPolicy = new SubagentLaunchDefinitionPolicyService(new AgentDefinitionCatalog([new AgentDefinitionDTO(name: 'scout', description: 'Test child', tools: ['read'], instructions: 'Test.')]), new AgentDepthGuard(), self::getContainer()->get(AgentToolPolicyResolver::class), self::getContainer()->get(RunRelationshipReader::class));
@@ -504,7 +207,14 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                     }
                 }
             });
-            $caller = async(static fn () => $context->with(new ToolContext(runId: $owner, turnNo: 1, toolCallId: 'resume-lost', toolName: $resume ? 'agent_resume' : 'subagent', cancellationToken: new NullCancellationToken(), timeoutSeconds: 30, parentModel: 'test/model', launchContext: new ToolLaunchContextDTO(kind: ToolLaunchContextDTO::KIND_SUBAGENT, producingRunId: $owner, producingTurnNo: 1, producingModel: 'test/model', agentsContext: 'AGENTS')), static fn () => $resume ? $service->resume($owner, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')) : $launch->launch($owner, 'scout', 'continue')));
+            if ($resume) {
+                $this->registerAgentResumeBatch($owner, 1, 'resume-lost-step', [[
+                    'toolCallId' => 'resume-lost',
+                    'orderIndex' => 0,
+                    'args' => ['artifact_id' => $artifact, 'task' => 'continue'],
+                ]]);
+            }
+            $caller = async(static fn () => $context->with(new ToolContext(runId: $owner, turnNo: 1, toolCallId: 'resume-lost', toolName: $resume ? 'agent_resume' : 'subagent', cancellationToken: new NullCancellationToken(), timeoutSeconds: 30, stepId: $resume ? 'resume-lost-step' : null, parentModel: 'test/model', launchContext: new ToolLaunchContextDTO(kind: ToolLaunchContextDTO::KIND_SUBAGENT, producingRunId: $owner, producingTurnNo: 1, producingModel: 'test/model', agentsContext: 'AGENTS')), static fn () => $resume ? $service->resume($owner, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')) : $launch->launch($owner, 'scout', 'continue')));
             try {
                 if (!$interrupt) {
                     \Amp\Future\awaitFirst([$caller, $lost->getFuture()], new TimeoutCancellation(8));
@@ -538,7 +248,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
     {
         $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher) use ($success): void {
             $repository = self::getContainer()->get(DeferredSubagentBatchRepository::class);
-            $handler = new ChildInvocationLifecycleHandler(new ChildInvocationLifecycleService($repository), self::getContainer()->get(ChildReservationRefusalService::class), $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
+            $handler = new ChildInvocationLifecycleHandler(new ChildInvocationLifecycleService($repository), $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
             $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
             $replies = (new TransportFactory())->createTransport('sqlite-queue://bash_registration_reply_tool?endpoint='.rawurlencode($paths->endpointPath), [], new Serializer(self::getContainer()->get(SerializerInterface::class)));
             try {
@@ -628,7 +338,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             $locator = new SendersLocator([ReserveChildInvocationDTO::class => ['run_control'], RecordChildLaunchSuccessDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
             $client = new BashRegistrationClient(new MessageBus([new SendMessageMiddleware(new SerializedBrokerSendersLocator($locator), $events)]), $paths->endpointPath, $owner, self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(ValidatorInterface::class));
             $lifecycle = new ChildInvocationLifecycleService(self::getContainer()->get(DeferredSubagentBatchRepository::class));
-            $handler = new ChildInvocationLifecycleHandler($lifecycle, self::getContainer()->get(ChildReservationRefusalService::class), $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
+            $handler = new ChildInvocationLifecycleHandler($lifecycle, $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
             $ownerTask = async(static function () use ($saturated, $requests, $handler): void {
                 $saturated->getFuture()->await(new TimeoutCancellation(8));
                 for ($handled = 0; $handled < 288;) {
@@ -1185,68 +895,36 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         });
     }
 
-    public function testReservationAfterPermanentSessionDeletionRefusesWithoutCreatingBatch(): void
+    /**
+     * @param list<array{toolCallId: string, orderIndex: int, args: array<string, mixed>}> $calls
+     */
+    private function registerAgentResumeBatch(string $parentRunId, int $turnNo, string $stepId, array $calls): void
     {
-        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher): void {
-            unset($bash);
-            $container = self::getContainer();
-            $repository = $container->get(DeferredSubagentBatchRepository::class);
-            $connection = $container->get(EntityManagerInterface::class)->getConnection();
-            $sessions = $container->get(HatfieldSessionStore::class);
-            $registry = $container->get(AgentArtifactRegistry::class);
-            $child = 'deleted-owner-child';
-            $artifact = 'deleted_owner_artifact';
-            $registry->create($owner, $artifact, $child, 'scout', AgentArtifactKindEnum::Subagent);
-            $registry->update($owner, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done');
-            $factory = new DeferredSubagentBatchIdentityFactory();
-            $lifecycle = $factory->batchLifecycleId($owner, 'resume-deleted-owner');
-            $command = new ReserveChildInvocationDTO(
-                $lifecycle,
-                $owner,
-                1,
-                'resume-deleted-owner',
-                0,
-                new \DateTimeImmutable('+600 seconds'),
-                new DeferredSubagentBatchChildIntentDTO(1, $child, $artifact, 'scout', 'continue', 'test/model', 'medium'),
-                'test/model',
-                str_repeat('a', 32),
-                bin2hex(random_bytes(16)),
-                BashRequesterRoleEnum::Tool,
+        $toolCalls = [];
+        foreach ($calls as $call) {
+            $toolCalls[] = new ExecuteToolCall(
+                runId: $parentRunId,
+                turnNo: $turnNo,
+                stepId: $stepId,
+                attempt: 1,
+                idempotencyKey: hash('sha256', $parentRunId.'|'.$stepId.'|'.$call['toolCallId']),
+                toolCallId: $call['toolCallId'],
+                toolName: 'agent_resume',
+                args: $call['args'],
+                orderIndex: $call['orderIndex'],
+                parentModel: 'test/model',
             );
-            $refusals = $container->get(ChildReservationRefusalService::class);
-            $replies = (new TransportFactory())->createTransport(
-                'sqlite-queue://'.BashRequesterRoleEnum::Tool->queue().'?endpoint='.rawurlencode($paths->endpointPath),
-                [],
-                new Serializer($container->get(SerializerInterface::class)),
-            );
-            try {
-                // Retain a refusal first, then permanently delete the session so both
-                // the refusal row and owner disappear before late redelivery.
-                $refusals->retain($command, 'The child is already claimed by an active invocation.');
-                $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM child_reservation_refusal WHERE identity = ?', [$lifecycle]));
-                $sessions->deleteSession($owner);
-                $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM child_reservation_refusal WHERE identity = ?', [$lifecycle]));
-                $this->assertFalse((bool) $connection->fetchOne('SELECT 1 FROM hatfield_session WHERE id = ?', [$owner]));
-
-                $handler = new ChildInvocationLifecycleHandler(new ChildInvocationLifecycleService($repository), $refusals, $publisher, $container->get(ValidatorInterface::class), $owner);
-                $beforeBatches = (int) $connection->fetchOne('SELECT COUNT(*) FROM deferred_subagent_batch');
-                $beforeChildren = (int) $connection->fetchOne('SELECT COUNT(*) FROM deferred_subagent_child');
-                $handler($command);
-                $delivery = iterator_to_array($replies->get())[0];
-                $reply = $delivery->getMessage();
-                $this->assertInstanceOf(BashRegistrationReplyDTO::class, $reply);
-                $this->assertSame('The child reservation owner session no longer exists.', $reply->childReservationRefusal);
-                $replies->ack($delivery);
-                $this->assertSame($beforeBatches, (int) $connection->fetchOne('SELECT COUNT(*) FROM deferred_subagent_batch'));
-                $this->assertSame($beforeChildren, (int) $connection->fetchOne('SELECT COUNT(*) FROM deferred_subagent_child'));
-                $this->assertNull($repository->findByParentRunAndToolCall($owner, 'resume-deleted-owner'));
-            } finally {
-                $replies->close();
-            }
-        });
+        }
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector(self::getContainer()->get(ToolBatchStoreInterface::class)),
+            self::getContainer()->get(ToolBatchStoreInterface::class),
+            $parentRunId,
+            $turnNo,
+            $stepId,
+            $toolCalls,
+        );
     }
 
-    /** @param callable(SessionSqliteQueuePaths, string, RegisterBashProcessHandler, BashRegistrationReplyPublisher): void $proof */
     private function withBroker(callable $proof): void
     {
         $directory = TestDirectoryIsolation::createProjectTempDir('bash-registration');
