@@ -27,7 +27,7 @@ final class ExtensionRecurringJobRegistryTest extends TestCase
         $handler = $this->createStub(ExtensionAgentJobHandlerInterface::class);
         $handlers->register('first', $handler);
         $handlers->register('second', $handler);
-        $registry = new ExtensionRecurringJobRegistry(static fn () => $schedule, $handlers, 'owner');
+        $registry = new ExtensionRecurringJobRegistry(static fn () => $schedule, $handlers, 'owner', $clock);
         $source = new class implements RecurringJobSourceInterface {
             /** @var list<RecurringJobDTO> */
             public array $definitions = [];
@@ -39,22 +39,41 @@ final class ExtensionRecurringJobRegistryTest extends TestCase
         };
         $registry->register('source', $source);
         $generator = new MessageGenerator($schedule, 'test', $clock);
-        $due = static fn (): array => array_values(array_filter(iterator_to_array($generator->getMessages(), false), static fn (object $message): bool => $message instanceof RedispatchMessage));
+        $due = static function () use ($generator, $registry): array {
+            $messages = [];
+            foreach ($generator->getMessages() as $message) {
+                if ($message instanceof RefreshExtensionRecurringJobs) {
+                    // Handle before advancing the generator: Symfony checkpoints after the handler returns.
+                    $registry->refresh($message);
+                } elseif ($message instanceof RedispatchMessage) {
+                    $messages[] = $message;
+                }
+            }
+
+            return $messages;
+        };
         $this->assertSame([], $due());
+        $clock->modify('+500 milliseconds');
+        $source->definitions = [new RecurringJobDTO('short', 'first', ['short' => true], '5 minutes', $clock->now(), $clock->now()->modify('+60 seconds'))];
+        $clock->modify('+500 milliseconds');
+        $this->assertSame([], $due(), 'The generated refresh installs the new recurrence.');
         $clock->modify('+1 microsecond');
+        $this->assertCount(1, $due(), 'A lifetime shorter than the interval must still get its initial execution.');
         $from = $clock->now();
         $until = $from->modify('+1 hour');
         $source->definitions = [new RecurringJobDTO('stable', 'first', ['value' => 1], '1 minute', $from, $until)];
-        $registry->refresh(new RefreshExtensionRecurringJobs());
+        $clock->modify('+1 second');
+        $this->assertSame([], $due());
         $installed = $schedule->getRecurringMessages();
         $registry->refresh(new RefreshExtensionRecurringJobs());
         $this->assertSame($installed, $schedule->getRecurringMessages(), 'An unchanged refresh must preserve installed instances.');
+        $clock->modify('+1 microsecond');
         $initial = $due();
         $this->assertCount(1, $initial, 'New work is immediately eligible rather than delayed by its interval.');
         $this->assertSame(['value' => 1], $initial[0]->envelope->getMessage()->payload);
-        $clock->modify('+59 seconds');
+        $clock->modify('+58 seconds');
         $this->assertSame([], $due());
-        $clock->modify('+1 second');
+        $clock->modify('+2 seconds');
         $this->assertCount(1, $due(), 'The next occurrence follows the configured cadence.');
         $job = end($installed);
         $this->assertEquals($from->modify('+2 minutes'), $job->getTrigger()->getNextRunDate($clock->now()));
@@ -76,7 +95,9 @@ final class ExtensionRecurringJobRegistryTest extends TestCase
             $callback = iterator_to_array($job->getMessages($context), false)[0]->envelope->getMessage();
             $this->assertSame($replacement->handlerId, $callback->handlerId);
             $this->assertSame($replacement->payload, $callback->payload);
-            $this->assertEquals($replacement->from->modify('+5 minutes'), $job->getTrigger()->getNextRunDate($clock->now()));
+            $initial = $job->getTrigger()->getNextRunDate($clock->now());
+            $this->assertEquals($clock->now()->modify('+1 microsecond'), $initial);
+            $this->assertEquals($replacement->from->modify('+5 minutes'), $job->getTrigger()->getNextRunDate($initial));
             $this->assertNull($job->getTrigger()->getNextRunDate($replacement->until));
             $registry->refresh(new RefreshExtensionRecurringJobs());
             $this->assertSame($messages, $schedule->getRecurringMessages());
@@ -86,5 +107,18 @@ final class ExtensionRecurringJobRegistryTest extends TestCase
         $this->assertCount(1, $schedule->getRecurringMessages());
         $clock->modify('+2 hours');
         $this->assertSame([], $due(), 'Removing a stable job removes the actual installed recurrence.');
+        $future = $clock->now()->modify('+10 seconds');
+        $source->definitions = [
+            new RecurringJobDTO('future', 'first', [], '5 minutes', $future, $future->modify('+60 seconds')),
+            new RecurringJobDTO('expired', 'first', [], '5 minutes', $from, $until),
+        ];
+        $clock->modify('+1 second');
+        $this->assertSame([], $due(), 'Installing future and expired descriptors must not execute either early.');
+        $clock->modify('+8 seconds');
+        $this->assertSame([], $due());
+        $clock->modify('+1 second');
+        $this->assertCount(1, $due(), 'Only the future descriptor executes at its original start.');
+        $clock->modify('+61 seconds');
+        $this->assertSame([], $due(), 'Neither descriptor executes beyond expiry.');
     }
 }
