@@ -17,7 +17,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 #[AsMessageHandler(bus: 'agent.command.bus')]
 final readonly class ChildInvocationLifecycleHandler
 {
-    public function __construct(private ChildInvocationLifecycleService $lifecycle, private BashRegistrationReplyPublisher $replies, private ValidatorInterface $validator, private string $sessionId)
+    public function __construct(private ChildInvocationLifecycleService $lifecycle, private ChildReservationRefusalService $refusals, private BashRegistrationReplyPublisher $replies, private ValidatorInterface $validator, private string $sessionId)
     {
     }
 
@@ -29,12 +29,21 @@ final readonly class ChildInvocationLifecycleHandler
         }
         $batch = null;
         if ($command instanceof ReserveChildInvocationDTO) {
+            $retained = $this->refusals->retainedRefusal($command);
+            if (null !== $retained) {
+                $this->replies->publish(new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, role: $command->role, childReservationRefusal: $retained));
+
+                return;
+            }
             try {
                 $batch = $this->lifecycle->reserveBatch($command->lifecycleId, $command->parentRunId, $command->parentTurnNo, $command->parentToolCallId, $command->parentOrderIndex, $command->deadlineAt, $command->childIntent, $command->parentModel);
             } catch (ToolCallException $refusal) {
                 // Propagate an authoritative refusal, not an unknown transport
                 // outcome that would retry an ineligible reservation.
-                $this->replies->publish(new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, role: $command->role, childReservationRefusal: $refusal->getMessage()));
+                // Retain the terminal refusal before publication so a lost ACK
+                // cannot later accept the same rejected invocation.
+                $message = $this->refusals->retain($command, $refusal->getMessage());
+                $this->replies->publish(new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, role: $command->role, childReservationRefusal: $message));
 
                 return;
             }

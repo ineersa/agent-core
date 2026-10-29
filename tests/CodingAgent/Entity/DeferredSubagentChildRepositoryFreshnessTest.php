@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Tests\Entity;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
@@ -186,6 +188,8 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
         $this->assertIsArray($row);
         $this->assertSame($resumeLifecycle, $row['batch_lifecycle_id']);
         $this->assertSame(1, (int) $row['batch_index']);
+        // Reservation captures the current operational sequence as the claim
+        // boundary. Without an operational row, the previous cursor remains.
         $this->assertSame(42, (int) $row['child_event_cursor']);
         $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved->value, $row['launch_status']);
         $this->assertNull($row['terminal_status']);
@@ -196,6 +200,85 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
         $this->assertSame(0, $resumed->inputTokens);
         $this->assertSame(30, $resumed->cacheInputTokens);
         $this->assertSame(18, $resumed->cacheReadTokens);
+    }
+
+    #[Test]
+    public function rebindReleasesSettledClaimsUsingOperationalProgressPastClaimBoundary(): void
+    {
+        [$oldLifecycle, $childRunId] = $this->reserveOneChild('parent-child-settled-rebind', 'tool-child-settled-rebind');
+        $this->connection->executeStatement(
+            'UPDATE deferred_subagent_child
+             SET child_event_cursor = :cursor,
+                 launch_status = :reserved,
+                 child_lifecycle_projection = :projection,
+                 terminal_status = NULL,
+                 terminal_completed_at = NULL,
+                 updated_at = :now,
+                 projection_version = projection_version + 1
+             WHERE child_run_id = :child_run_id',
+            [
+                'cursor' => 5,
+                'reserved' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
+                'projection' => json_encode([
+                    'child_status' => 'running', 'child_turn_no' => 1, 'last_committed_seq' => 5,
+                    'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
+                ], \JSON_THROW_ON_ERROR),
+                'now' => '2026-09-16 14:01:00',
+                'child_run_id' => $childRunId,
+            ],
+        );
+        $this->connection->insert('run_operational_state', [
+            'run_id' => $childRunId,
+            'parent_run_id' => null,
+            'owner_session_id' => '1',
+            'status' => RunStatus::Cancelled->value,
+            'turn_no' => 1,
+            'active_step_id' => null,
+            'last_applied_advance_key' => null,
+            'last_applied_compaction_key' => null,
+            'last_event_sequence' => 9,
+            'transition_version' => 1,
+            'created_at' => '2026-09-16 14:01:00',
+            'updated_at' => '2026-09-16 14:01:00',
+        ]);
+        $this->batchRepository->markTerminalCompletionEnqueued($oldLifecycle, new \DateTimeImmutable('2026-09-16 14:00:00'), 1);
+
+        $resumeLifecycle = $this->factory->batchLifecycleId('parent-child-settled-rebind-resume', 'tool-child-settled-rebind-resume');
+        $resumeIdentity = $this->factory->childIdentity('parent-child-settled-rebind-resume', 'tool-child-settled-rebind-resume', 1);
+        $this->childRepository->rebindExistingChildToResumeBatch(
+            batchLifecycleId: $resumeLifecycle,
+            batchIndex: 1,
+            childRunId: $childRunId,
+            artifactId: $resumeIdentity['artifactId'],
+            agentName: 'fresh-agent',
+            task: 'resume after interrupted settlement',
+            launchModel: 'deepseek/deepseek-v4-flash',
+            launchReasoning: 'medium',
+        );
+
+        $row = $this->connection->fetchAssociative(
+            'SELECT batch_lifecycle_id, child_event_cursor, launch_status FROM deferred_subagent_child WHERE child_run_id = ?',
+            [$childRunId],
+        );
+        $this->assertIsArray($row);
+        $this->assertSame($resumeLifecycle, $row['batch_lifecycle_id']);
+        $this->assertSame(9, (int) $row['child_event_cursor']);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved->value, $row['launch_status']);
+
+        // Pre-reservation terminal state at the captured boundary must not release
+        // an active claim while the first reservation still awaits its reply.
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('The child is already claimed by an active invocation.');
+        $this->childRepository->rebindExistingChildToResumeBatch(
+            batchLifecycleId: $this->factory->batchLifecycleId('parent-child-settled-rebind-active', 'tool-child-settled-rebind-active'),
+            batchIndex: 1,
+            childRunId: $childRunId,
+            artifactId: $resumeIdentity['artifactId'],
+            agentName: 'fresh-agent',
+            task: 'steal active claim',
+            launchModel: 'deepseek/deepseek-v4-flash',
+            launchReasoning: 'medium',
+        );
     }
 
     /**
