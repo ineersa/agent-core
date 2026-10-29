@@ -97,6 +97,24 @@ final readonly class ChildReservationRefusalService
         });
     }
 
+    /** Missing owner session must refuse before any batch/child insert. */
+    public function missingOwnerRefusal(ReserveChildInvocationDTO $request): ?string
+    {
+        $errors = $this->validator->validate($request);
+        if (0 !== \count($errors)) {
+            return null;
+        }
+        $owner = $this->processes->ownerSessionForRun($request->parentRunId);
+        if (null === $owner) {
+            return 'The child reservation owner session no longer exists.';
+        }
+        if (false === $this->entityManager->getConnection()->fetchOne('SELECT id FROM hatfield_session WHERE id = ?', [$owner])) {
+            return 'The child reservation owner session no longer exists.';
+        }
+
+        return null;
+    }
+
     private function inputHash(ReserveChildInvocationDTO $request): string
     {
         // Incarnation/correlation identify transport attempts, not the reserved

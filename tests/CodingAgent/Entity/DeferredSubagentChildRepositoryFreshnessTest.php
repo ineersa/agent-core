@@ -281,6 +281,75 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
         );
     }
 
+    #[Test]
+    public function rebindReleasesReservedClaimAfterObservedTerminalProjection(): void
+    {
+        [$oldLifecycle, $childRunId] = $this->reserveOneChild('parent-child-observed-reserved', 'tool-child-observed-reserved');
+        unset($oldLifecycle);
+        // Model the requested Reserved-but-finished case: followUp succeeded,
+        // launch-success metadata never committed, then observation wrote a
+        // terminal projection and advanced the cursor to the operational seq.
+        $this->connection->executeStatement(
+            'UPDATE deferred_subagent_child
+             SET child_event_cursor = :cursor,
+                 launch_status = :reserved,
+                 child_lifecycle_projection = :projection,
+                 terminal_status = :terminal,
+                 terminal_completed_at = :completed_at,
+                 updated_at = :now,
+                 projection_version = projection_version + 1
+             WHERE child_run_id = :child_run_id',
+            [
+                'cursor' => 11,
+                'reserved' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
+                'projection' => json_encode([
+                    'child_status' => 'completed', 'child_turn_no' => 2, 'last_committed_seq' => 11,
+                    'model' => 'deepseek/deepseek-v4-flash', 'reasoning' => 'medium',
+                ], \JSON_THROW_ON_ERROR),
+                'terminal' => RunStatus::Completed->value,
+                'completed_at' => '2026-09-16 14:02:00',
+                'now' => '2026-09-16 14:02:00',
+                'child_run_id' => $childRunId,
+            ],
+        );
+        $this->connection->insert('run_operational_state', [
+            'run_id' => $childRunId,
+            'parent_run_id' => null,
+            'owner_session_id' => '1',
+            'status' => RunStatus::Completed->value,
+            'turn_no' => 2,
+            'active_step_id' => null,
+            'last_applied_advance_key' => null,
+            'last_applied_compaction_key' => null,
+            'last_event_sequence' => 11,
+            'transition_version' => 2,
+            'created_at' => '2026-09-16 14:01:00',
+            'updated_at' => '2026-09-16 14:02:00',
+        ]);
+
+        $resumeLifecycle = $this->factory->batchLifecycleId('parent-child-observed-reserved-resume', 'tool-child-observed-reserved-resume');
+        $resumeIdentity = $this->factory->childIdentity('parent-child-observed-reserved-resume', 'tool-child-observed-reserved-resume', 1);
+        $this->childRepository->rebindExistingChildToResumeBatch(
+            batchLifecycleId: $resumeLifecycle,
+            batchIndex: 1,
+            childRunId: $childRunId,
+            artifactId: $resumeIdentity['artifactId'],
+            agentName: 'fresh-agent',
+            task: 'resume after observed reserved completion',
+            launchModel: 'deepseek/deepseek-v4-flash',
+            launchReasoning: 'medium',
+        );
+
+        $row = $this->connection->fetchAssociative(
+            'SELECT batch_lifecycle_id, launch_status, terminal_status FROM deferred_subagent_child WHERE child_run_id = ?',
+            [$childRunId],
+        );
+        $this->assertIsArray($row);
+        $this->assertSame($resumeLifecycle, $row['batch_lifecycle_id']);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved->value, $row['launch_status']);
+        $this->assertNull($row['terminal_status']);
+    }
+
     /**
      * @return array{0: string, 1: string}
      */

@@ -29,6 +29,14 @@ final readonly class ChildInvocationLifecycleHandler
         }
         $batch = null;
         if ($command instanceof ReserveChildInvocationDTO) {
+            $missingOwner = $this->refusals->missingOwnerRefusal($command);
+            if (null !== $missingOwner) {
+                // Permanent deletion removes retained refusals and the session.
+                // Refuse without inserting a batch/child under SQLite's disabled FKs.
+                $this->replies->publish(new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, role: $command->role, childReservationRefusal: $missingOwner));
+
+                return;
+            }
             $retained = $this->refusals->retainedRefusal($command);
             if (null !== $retained) {
                 $this->replies->publish(new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, role: $command->role, childReservationRefusal: $retained));

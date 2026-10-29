@@ -310,9 +310,10 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         if (DeferredSubagentChildLaunchStatusEnum::Failed === $existing->launchStatus) {
             return true;
         }
-        // Observed projection still proves settlement when observation kept up.
-        if (DeferredSubagentChildLaunchStatusEnum::Launched === $existing->launchStatus
-            && true === $previous?->childStatus->isTerminal()) {
+        // Rebind resets the lifecycle projection for the new claim. A terminal
+        // projection therefore means the current claim was observed to finish,
+        // including Reserved rows whose launch-success metadata never committed.
+        if (true === $previous?->childStatus->isTerminal()) {
             return true;
         }
         // Interrupted batches may freeze the projection while the child finishes.

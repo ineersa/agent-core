@@ -1185,6 +1185,67 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         });
     }
 
+    public function testReservationAfterPermanentSessionDeletionRefusesWithoutCreatingBatch(): void
+    {
+        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher): void {
+            unset($bash);
+            $container = self::getContainer();
+            $repository = $container->get(DeferredSubagentBatchRepository::class);
+            $connection = $container->get(EntityManagerInterface::class)->getConnection();
+            $sessions = $container->get(HatfieldSessionStore::class);
+            $registry = $container->get(AgentArtifactRegistry::class);
+            $child = 'deleted-owner-child';
+            $artifact = 'deleted_owner_artifact';
+            $registry->create($owner, $artifact, $child, 'scout', AgentArtifactKindEnum::Subagent);
+            $registry->update($owner, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done');
+            $factory = new DeferredSubagentBatchIdentityFactory();
+            $lifecycle = $factory->batchLifecycleId($owner, 'resume-deleted-owner');
+            $command = new ReserveChildInvocationDTO(
+                $lifecycle,
+                $owner,
+                1,
+                'resume-deleted-owner',
+                0,
+                new \DateTimeImmutable('+600 seconds'),
+                new DeferredSubagentBatchChildIntentDTO(1, $child, $artifact, 'scout', 'continue', 'test/model', 'medium'),
+                'test/model',
+                str_repeat('a', 32),
+                bin2hex(random_bytes(16)),
+                BashRequesterRoleEnum::Tool,
+            );
+            $refusals = $container->get(ChildReservationRefusalService::class);
+            $replies = (new TransportFactory())->createTransport(
+                'sqlite-queue://'.BashRequesterRoleEnum::Tool->queue().'?endpoint='.rawurlencode($paths->endpointPath),
+                [],
+                new Serializer($container->get(SerializerInterface::class)),
+            );
+            try {
+                // Retain a refusal first, then permanently delete the session so both
+                // the refusal row and owner disappear before late redelivery.
+                $refusals->retain($command, 'The child is already claimed by an active invocation.');
+                $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM child_reservation_refusal WHERE identity = ?', [$lifecycle]));
+                $sessions->deleteSession($owner);
+                $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM child_reservation_refusal WHERE identity = ?', [$lifecycle]));
+                $this->assertFalse((bool) $connection->fetchOne('SELECT 1 FROM hatfield_session WHERE id = ?', [$owner]));
+
+                $handler = new ChildInvocationLifecycleHandler(new ChildInvocationLifecycleService($repository), $refusals, $publisher, $container->get(ValidatorInterface::class), $owner);
+                $beforeBatches = (int) $connection->fetchOne('SELECT COUNT(*) FROM deferred_subagent_batch');
+                $beforeChildren = (int) $connection->fetchOne('SELECT COUNT(*) FROM deferred_subagent_child');
+                $handler($command);
+                $delivery = iterator_to_array($replies->get())[0];
+                $reply = $delivery->getMessage();
+                $this->assertInstanceOf(BashRegistrationReplyDTO::class, $reply);
+                $this->assertSame('The child reservation owner session no longer exists.', $reply->childReservationRefusal);
+                $replies->ack($delivery);
+                $this->assertSame($beforeBatches, (int) $connection->fetchOne('SELECT COUNT(*) FROM deferred_subagent_batch'));
+                $this->assertSame($beforeChildren, (int) $connection->fetchOne('SELECT COUNT(*) FROM deferred_subagent_child'));
+                $this->assertNull($repository->findByParentRunAndToolCall($owner, 'resume-deleted-owner'));
+            } finally {
+                $replies->close();
+            }
+        });
+    }
+
     /** @param callable(SessionSqliteQueuePaths, string, RegisterBashProcessHandler, BashRegistrationReplyPublisher): void $proof */
     private function withBroker(callable $proof): void
     {

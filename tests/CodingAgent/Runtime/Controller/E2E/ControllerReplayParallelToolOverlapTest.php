@@ -15,6 +15,13 @@ use PHPUnit\Framework\Attributes\Group;
  * either FIFO is released. A serial single-worker scheduler cannot reach that
  * state. Overlap is therefore a positive barrier, not a timing lottery.
  *
+ * The child opens its release FIFO for reading before publishing the entered
+ * marker. Publishing first allowed the parent to release while the child had
+ * not yet opened the FIFO, stranding one child after the parent's single
+ * non-blocking write.
+ * Parent release writes fflush after each fwrite so buffered bytes reach the
+ * kernel FIFO before completion collection begins.
+ *
  * Earlier read+bash wall-clock comparisons remain diagnostic-only and are not
  * retained as a contract here. Live tool_execution.started timestamps remain
  * admission-time; final duration_ms remains executor-side.
@@ -125,6 +132,8 @@ final class ControllerReplayParallelToolOverlapTest extends ControllerReplayE2eT
         $this->assertIsResource($this->releaseEndpointB);
         $this->assertSame(8, fwrite($this->releaseEndpointA, "release\n"));
         $this->assertSame(8, fwrite($this->releaseEndpointB, "release\n"));
+        $this->assertTrue(fflush($this->releaseEndpointA));
+        $this->assertTrue(fflush($this->releaseEndpointB));
 
         $completedIds = [];
         $completionEvents = $this->collectEventsUntil(
@@ -238,8 +247,13 @@ YAML;
 
     private function barrierCommand(string $enteredMarker, string $releaseFifo, string $outputMarker): string
     {
-        return 'printf entered > '.escapeshellarg($enteredMarker)
-            .' && IFS= read -r release < '.escapeshellarg($releaseFifo)
+        // Open the release FIFO for reading before publishing the entered
+        // marker. Writing the marker first allowed the parent to release while
+        // the child had not yet opened the FIFO; one child could then remain
+        // blocked after the parent's single non-blocking write.
+        return 'exec 3<'.escapeshellarg($releaseFifo)
+            .' && printf entered > '.escapeshellarg($enteredMarker)
+            .' && IFS= read -r release <&3'
             .' && printf %s '.escapeshellarg($outputMarker);
     }
 
@@ -258,6 +272,7 @@ YAML;
             $endpoint = fopen($this->releaseFifoA, 'r+b');
             $this->assertIsResource($endpoint, 'Parent must own release FIFO A');
             $this->assertTrue(stream_set_blocking($endpoint, false));
+            stream_set_write_buffer($endpoint, 0);
             $this->releaseEndpointA = $endpoint;
         }
 
@@ -265,6 +280,7 @@ YAML;
             $endpoint = fopen($this->releaseFifoB, 'r+b');
             $this->assertIsResource($endpoint, 'Parent must own release FIFO B');
             $this->assertTrue(stream_set_blocking($endpoint, false));
+            stream_set_write_buffer($endpoint, 0);
             $this->releaseEndpointB = $endpoint;
         }
     }
