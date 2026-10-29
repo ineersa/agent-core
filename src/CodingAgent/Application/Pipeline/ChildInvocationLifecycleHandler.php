@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationReplyPublisher;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationReplyDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO;
@@ -28,7 +29,15 @@ final readonly class ChildInvocationLifecycleHandler
         }
         $batch = null;
         if ($command instanceof ReserveChildInvocationDTO) {
-            $batch = $this->lifecycle->reserveBatch($command->lifecycleId, $command->parentRunId, $command->parentTurnNo, $command->parentToolCallId, $command->parentOrderIndex, $command->deadlineAt, $command->childIntent, $command->parentModel);
+            try {
+                $batch = $this->lifecycle->reserveBatch($command->lifecycleId, $command->parentRunId, $command->parentTurnNo, $command->parentToolCallId, $command->parentOrderIndex, $command->deadlineAt, $command->childIntent, $command->parentModel);
+            } catch (ToolCallException $refusal) {
+                // Propagate an authoritative refusal, not an unknown transport
+                // outcome that would retry an ineligible reservation.
+                $this->replies->publish(new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, role: $command->role, childReservationRefusal: $refusal->getMessage()));
+
+                return;
+            }
         } elseif ($command instanceof RecordChildLaunchSuccessDTO) {
             $this->lifecycle->applyLaunchSuccessState($command->parentRunId, $command->parentToolCallId, $command->lifecycleId, $command->startedAt);
         } else {

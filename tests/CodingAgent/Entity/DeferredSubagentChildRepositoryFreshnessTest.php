@@ -106,6 +106,20 @@ final class DeferredSubagentChildRepositoryFreshnessTest extends IsolatedKernelT
     }
 
     #[Test]
+    public function failedPreparationReleasesTheChildClaimForANewInvocation(): void
+    {
+        [$lifecycle, $childRunId] = $this->reserveOneChild('failed-parent', 'failed-tool');
+        $this->batchRepository->applyLaunchFailurePreparation('failed-parent', 'failed-tool', $lifecycle);
+        $replacement = $this->factory->batchLifecycleId('failed-parent', 'replacement-tool');
+        $this->batchRepository->reserveBatch(
+            $replacement, 'failed-parent', 2, 'replacement-tool', 0, new \DateTimeImmutable('+1 minute'),
+            new DeferredSubagentBatchChildIntentDTO(1, $childRunId, 'replacement-artifact', 'fresh-agent', 'retry', 'test/model', 'medium'),
+        );
+        $this->assertSame($replacement, $this->childRepository->findByChildRunId($childRunId)?->batchLifecycleId);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $this->childRepository->findByChildRunId($childRunId)?->launchStatus);
+    }
+
+    #[Test]
     public function rebindExistingChildToResumeBatchPreservesFreshCursorAndDetachesManagedChild(): void
     {
         [$oldLifecycle, $childRunId] = $this->reserveOneChild('parent-child-fresh-rebind', 'tool-child-fresh-rebind');

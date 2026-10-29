@@ -173,6 +173,16 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         $existing ??= $this->findFreshEntityByChildRunId($childRunId);
         $cursor = null === $existing ? 0 : $existing->childEventCursor;
         $previous = null !== $existing ? $this->decodeChildLifecycleProjection($existing->childLifecycleProjection) : null;
+        // A terminal artifact is not reservation authority: it may still be
+        // terminal while the previous resume waits for its committed reply.
+        // Failed preparation releases its claim; launched work releases only
+        // when its observed lifecycle is terminal. This runs in reserveBatch's
+        // transaction, so refusal also rolls back the new batch row.
+        if (null !== $existing
+            && DeferredSubagentChildLaunchStatusEnum::Failed !== $existing->launchStatus
+            && !(DeferredSubagentChildLaunchStatusEnum::Launched === $existing->launchStatus && true === $previous?->childStatus->isTerminal())) {
+            throw new ToolCallException('The child is already claimed by an active invocation.', retryable: false);
+        }
         $projection = new DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 0,
@@ -192,7 +202,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         );
 
         if ($existing instanceof DeferredSubagentChild) {
-            $conn->update('deferred_subagent_child', [
+            $updated = $conn->update('deferred_subagent_child', [
                 'batch_lifecycle_id' => $batchLifecycleId,
                 'batch_index' => $batchIndex,
                 'artifact_id' => $artifactId,
@@ -207,7 +217,12 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                 'updated_at' => $now->format('Y-m-d H:i:s'),
             ], [
                 'child_run_id' => $childRunId,
+                'batch_lifecycle_id' => $existing->batchLifecycleId,
+                'projection_version' => $existing->projectionVersion,
             ]);
+            if (1 !== $updated) {
+                throw new ToolCallException('The child reservation changed before it could be claimed.', retryable: false);
+            }
 
             // DBAL update leaves the managed entity stale; drop only this child.
             $this->getEntityManager()->detach($existing);

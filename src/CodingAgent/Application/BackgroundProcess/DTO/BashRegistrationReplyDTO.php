@@ -28,6 +28,8 @@ final readonly class BashRegistrationReplyDTO
         #[Assert\Length(min: 1, max: 128)]
         public ?string $deferredId = null,
         public ?DeferredSubagentBatchProjectionDTO $childBatch = null,
+        #[Assert\Length(min: 1, max: 512)]
+        public ?string $childReservationRefusal = null,
     ) {
     }
 }
