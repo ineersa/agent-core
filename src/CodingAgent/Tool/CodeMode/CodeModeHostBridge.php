@@ -91,7 +91,7 @@ final readonly class CodeModeHostBridge
             $process = null;
             $server = null;
             $connection = null;
-            $capture = new CodeModeDiagnosticCapture($this->outputCap, $parentContext?->runId(), $workspace['dir'], null !== $parentContext && (null !== $deferredId || $parentContext->retainOutput()) ? fn (callable $write): string => $this->payloads->saveAttachment($parentContext->runId(), $parentContext->toolCallId(), $write) : null);
+            $capture = new CodeModeDiagnosticCapture($this->outputCap, $parentContext?->runId(), $workspace['dir'], null !== $parentContext && (null !== $deferredId || $parentContext->retainOutput()) ? fn (callable $write): string => $this->payloads->saveAttachment($parentContext->runId(), $parentContext->attachmentOwnerToolCallId(), $write) : null);
 
             try {
                 $this->writeScript($workspace['script'], $script);
@@ -328,6 +328,7 @@ final readonly class CodeModeHostBridge
             parentModel: $parentContext?->parentModel(),
             allowsHumanInput: $parentContext?->allowsHumanInput() ?? true,
             retainOutput: $parentContext?->retainOutput() ?? false,
+            attachmentOwnerToolCallId: $parentContext?->attachmentOwnerToolCallId(),
         );
 
         return $this->contextAccessor->with($nestedContext, function () use ($name, $arguments, $toolCallId): mixed {

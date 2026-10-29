@@ -56,7 +56,7 @@ final class SchedulePicker implements ExtensionCommandHandlerInterface
             $tui->requestRender();
         };
         $list->onCancel($close);
-        $list->onSelect(function (SelectEvent $event) use ($runId, $tui, $list, $header, &$selected, $close, $context): void {
+        $list->onSelect(function (SelectEvent $event) use ($runId, $tui, $list, $header, &$selected, $close): void {
             if ($tui->getSessionId() !== $runId) {
                 $close();
 
@@ -72,7 +72,8 @@ final class SchedulePicker implements ExtensionCommandHandlerInterface
             $close();
             if ('yes' === $event->getItem()['value']) {
                 $this->schedules->cancel($runId, $selected);
-                $context->notify('Schedule cancelled. Running work is unchanged.');
+                $tui->setTransientStatus('scheduling', 'Schedule cancelled. Running work is unchanged.');
+                $tui->requestRender();
             }
         });
         $this->overlay = (new ContainerWidget())->add($header)->add($list);

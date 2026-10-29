@@ -298,7 +298,7 @@ final class BashTool implements HatfieldToolProviderInterface
             $logPath = $result->logPath;
             $context = $this->contextAccessor->current();
             if (null !== $context && $context->retainOutput()) {
-                $logPath = $this->payloads->saveAttachment($context->runId(), $context->toolCallId(), static function ($destination) use ($result): void {
+                $logPath = $this->payloads->saveAttachment($context->runId(), $context->attachmentOwnerToolCallId(), static function ($destination) use ($result): void {
                     $source = fopen($result->logPath, 'rb');
                     if (false === $source) {
                         throw new \RuntimeException('Failed to open scheduled Bash output.');

@@ -118,6 +118,7 @@ final class SchedulingExtension implements HatfieldExtensionInterface, TuiExtens
             ], 'required' => ['action'], 'additionalProperties' => false], $this,
             promptGuidelines: [
                 'Create with tool=bash or code_mode, arguments and every. Optional for_seconds limits its lifetime. Cancel with the returned id; /schedule lists and cancels future work.',
+                'The first execution is immediately eligible. The next field denotes the next recurring occurrence, not a delay before initial execution.',
                 'Scheduled work is already asynchronous. Do not pass backgrounded=true, sleep, or poll. Cancellation prevents future invocations, not work already running.',
                 'Scheduled work cannot ask for approval or human input. Approval-required actions are denied. Results arrive automatically; running code-mode invocations have no /bg control.',
             ], mainOnly: true,

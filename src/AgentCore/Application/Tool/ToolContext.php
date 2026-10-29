@@ -27,6 +27,7 @@ final readonly class ToolContext
         private ?ToolLaunchContextDTO $launchContext = null,
         private bool $allowsHumanInput = true,
         private bool $retainOutput = false,
+        private ?string $attachmentOwnerToolCallId = null,
     ) {
     }
 
@@ -38,6 +39,12 @@ final readonly class ToolContext
     public function retainOutput(): bool
     {
         return $this->retainOutput;
+    }
+
+    /** Nested execution keeps its own identity but shares retained output ownership. */
+    public function attachmentOwnerToolCallId(): string
+    {
+        return $this->attachmentOwnerToolCallId ?? $this->toolCallId;
     }
 
     public function runId(): string

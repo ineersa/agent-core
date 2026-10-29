@@ -22,6 +22,8 @@ existing `arguments`, and `every` to repeat work during this live session.
 Symfony accepts seconds as a string (`"60"`), ISO 8601 durations (`"PT5M"`), and
 relative intervals (`"5 minutes"`). Add `for_seconds` to limit the lifetime.
 Without a lifetime, the schedule lasts until cancelled or Hatfield closes.
+The first execution is immediately eligible. The `next` field denotes the next
+recurring occurrence, not a delay before initial execution.
 
 Use `action: list` to inspect schedules and `action: cancel` with the returned `id`
 to prevent future invocations. `/schedule` lists the current session's targets,

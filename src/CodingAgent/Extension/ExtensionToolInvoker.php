@@ -117,6 +117,6 @@ final readonly class ExtensionToolInvoker implements RegisteredToolInvokerInterf
         $this->results->releaseCompleted($request->runId, $request->invocationId, $request->toolName, null);
 
         return new ToolInvocationResultDTO($request->invocationId, $request->toolName, $result->isError,
-            true === ($details['cancelled'] ?? false) || true === ($details['stale_due_to_cancel'] ?? false), $result->content, $text, $outputs);
+            $token->isCancellationRequested() || true === ($details['cancelled'] ?? false) || true === ($details['stale_due_to_cancel'] ?? false), $result->content, $text, $outputs);
     }
 }

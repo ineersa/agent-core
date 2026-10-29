@@ -55,21 +55,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
         $captured = 'read' === $toolCall->toolName && \is_array($raw) ? ($raw['output_cap'] ?? null) : null;
         if (\is_array($captured) && \is_string($captured['saved_path'] ?? null) && \is_int($captured['byte_count'] ?? null)) {
             $savedPath = $captured['saved_path'];
-            if ($retain) {
-                $savedPath = $this->payloads->saveAttachment($runId, $toolCall->toolCallId, static function ($destination) use ($savedPath): void {
-                    $source = fopen($savedPath, 'rb');
-                    if (false === $source) {
-                        throw new \RuntimeException('Failed to open captured tool output.');
-                    }
-                    try {
-                        if (false === stream_copy_to_stream($source, $destination)) {
-                            throw new \RuntimeException('Failed to retain captured tool output.');
-                        }
-                    } finally {
-                        fclose($source);
-                    }
-                });
-            }
+            // Native read capture already applies retention, including raw nested calls.
             $bytes = $captured['byte_count'];
             $notice = '[Output capped: '.$bytes.' bytes > '.OutputCap::STREAM_BYTE_LIMIT."-byte safety limit]\nSaved full output: ".$savedPath;
             $capResult = new OutputCapResult($savedPath, null, null, null, $notice, $bytes);
