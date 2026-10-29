@@ -159,9 +159,10 @@ final class ReadFileTool implements HatfieldToolProviderInterface
         try {
             $start = null !== $offset ? max(0, $offset - 1) : 0;
             $effectiveLimit = $limit ?? self::DEFAULT_LINE_LIMIT;
+            $bytesUntilCheckpoint = 0;
 
             for ($skipped = 0; $skipped < $start; ++$skipped) {
-                if (!$this->advancePastLine($handle, $resolvedPath)) {
+                if (!$this->advancePastLine($handle, $resolvedPath, $bytesUntilCheckpoint)) {
                     return;
                 }
             }
@@ -170,7 +171,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface
             while ($selected < $effectiveLimit && !feof($handle)) {
                 $consumed = false;
                 $pending = '';
-                while (false !== ($chunk = $this->readChunk($handle, $resolvedPath))) {
+                while (false !== ($chunk = $this->readChunk($handle, $resolvedPath, $bytesUntilCheckpoint))) {
                     $consumed = true;
                     $lineEnded = str_ends_with($chunk, "\n");
                     $chunk = $pending.$chunk;
@@ -195,7 +196,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface
             }
 
             $totalLines = $start + $selected;
-            while ($this->advancePastLine($handle, $resolvedPath)) {
+            while ($this->advancePastLine($handle, $resolvedPath, $bytesUntilCheckpoint)) {
                 ++$totalLines;
             }
 
@@ -215,12 +216,12 @@ final class ReadFileTool implements HatfieldToolProviderInterface
      *
      * @param resource $handle
      */
-    private function advancePastLine($handle, string $resolvedPath): bool
+    private function advancePastLine($handle, string $resolvedPath, int &$bytesUntilCheckpoint): bool
     {
         $consumed = false;
 
         while (true) {
-            $chunk = $this->readChunk($handle, $resolvedPath);
+            $chunk = $this->readChunk($handle, $resolvedPath, $bytesUntilCheckpoint);
             if (false === $chunk) {
                 return $consumed;
             }
@@ -251,9 +252,20 @@ final class ReadFileTool implements HatfieldToolProviderInterface
     }
 
     /** @param resource $handle */
-    private function readChunk($handle, string $resolvedPath): string|false
+    private function readChunk($handle, string $resolvedPath, int &$bytesUntilCheckpoint): string|false
     {
-        $chunk = $this->toolRuntime->run(static fn () => fgets($handle, self::READ_CHUNK_BYTES + 1));
+        // Cancellation polls can cross the database-helper IPC boundary. Bound
+        // their frequency by bytes, not short logical lines, including skipped
+        // suffix lines. The outer runtime also checks before and after the read.
+        if (0 === $bytesUntilCheckpoint) {
+            $bytesUntilCheckpoint = self::READ_CHUNK_BYTES;
+            $chunk = $this->toolRuntime->run(static fn () => fgets($handle, self::READ_CHUNK_BYTES + 1));
+        } else {
+            $chunk = fgets($handle, $bytesUntilCheckpoint + 1);
+        }
+        if (false !== $chunk) {
+            $bytesUntilCheckpoint -= \strlen($chunk);
+        }
         if (false === $chunk && !feof($handle)) {
             throw new ToolCallException(\sprintf('Failed to read file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and disk health.');
         }

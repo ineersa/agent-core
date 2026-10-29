@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessControllerSessionLifecycleListener;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -20,6 +21,8 @@ use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Thesis: controller lifecycle events remove accepted process state only for
@@ -44,13 +47,12 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $config = new BackgroundProcessConfig(storageDir: $this->tmpDir, stopGraceSeconds: 0);
         $logger = new TestLogger();
         $this->store = static::getContainer()->get(ProcessStore::class);
-        $this->lifecycle = new ProcessLifecycle($config, $logger);
+        $this->lifecycle = new ProcessLifecycle($config, $logger, new LockFactory(new FlockStore()));
         $this->manager = new BackgroundProcessManager($this->store, $this->lifecycle, $config, $logger);
         $listener = new BackgroundProcessControllerSessionLifecycleListener(
             static::getContainer()->get(BackgroundProcessCompletionPoller::class),
             $this->store,
             $this->manager,
-            $this->lifecycle,
             $logger,
         );
         $this->dispatcher = new EventDispatcher();
@@ -147,10 +149,10 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
             'status_path' => $statusPath,
             'started_at' => new \DateTimeImmutable(),
         ]);
-        $entity = $this->store->fetchByRecordId($id);
+        $entity = BackgroundProcessFixture::record(self::getContainer(), $id);
         $this->assertNotNull($entity);
-        $entity->finish(0, new \DateTimeImmutable());
-        $this->store->flush();
+        BackgroundProcessFixture::finish($entity, 0, new \DateTimeImmutable());
+        self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->flush();
         $this->manager->markBackgroundedForRecord($id, $sessionId);
 
         return ['id' => $id, 'log' => $logPath];

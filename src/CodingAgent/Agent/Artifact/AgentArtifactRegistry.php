@@ -13,6 +13,8 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Uid\UuidV7;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
+use function Amp\delay;
+
 /**
  * File-backed parent-scoped agent artifact registry.
  *
@@ -85,7 +87,9 @@ final class AgentArtifactRegistry
         $this->pathResolver->validatePathComponent($agentRunId, 'agentRunId');
 
         $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
-        $lock->acquire(true);
+        while (!$lock->acquire()) {
+            delay(0.02);
+        }
 
         try {
             $entries = $this->loadRegistry($parentRunId);
@@ -127,7 +131,9 @@ final class AgentArtifactRegistry
         $this->pathResolver->validatePathComponent($agentRunId, 'agentRunId');
 
         $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
-        $lock->acquire(true);
+        while (!$lock->acquire()) {
+            delay(0.02);
+        }
 
         try {
             $entries = $this->loadRegistry($parentRunId);
@@ -196,7 +202,9 @@ final class AgentArtifactRegistry
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
 
         $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
-        $lock->acquire(true);
+        while (!$lock->acquire()) {
+            delay(0.02);
+        }
 
         try {
             $entries = $this->loadRegistry($parentRunId);
@@ -286,7 +294,9 @@ final class AgentArtifactRegistry
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
 
         $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
-        $lock->acquire(true);
+        while (!$lock->acquire()) {
+            delay(0.02);
+        }
 
         try {
             $entries = $this->loadRegistry($parentRunId);
@@ -396,7 +406,9 @@ final class AgentArtifactRegistry
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
 
         $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
-        $lock->acquire(true);
+        while (!$lock->acquire()) {
+            delay(0.02);
+        }
 
         try {
             return $this->loadRegistry($parentRunId);
@@ -439,7 +451,9 @@ final class AgentArtifactRegistry
     {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
-        $lock->acquire(true);
+        while (!$lock->acquire()) {
+            delay(0.02);
+        }
 
         try {
             $lifetime = $this->readParentLifetimes($parentRunId);

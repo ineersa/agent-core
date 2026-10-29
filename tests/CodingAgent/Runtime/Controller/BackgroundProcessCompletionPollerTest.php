@@ -7,17 +7,21 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Event\PostLoadEventArgs;
 use Doctrine\ORM\Events;
+use Doctrine\ORM\Query;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
+use Ineersa\CodingAgent\Application\Pipeline\BackgroundCompletionHandler;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
@@ -29,6 +33,8 @@ use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
 use Ineersa\CodingAgent\Runtime\Messenger\SerializedBrokerSendersLocator;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Session\Event\RunOperationalProjectionControllerSessionLifecycleListener;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -47,6 +53,8 @@ use Revolt\EventLoop;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\DependencyInjection\ServiceLocator;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -86,6 +94,11 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->commandBus = $this->createStub(MessageBusInterface::class);
         $this->commandBus->method('dispatch')->willReturnCallback(function (DeliverBackgroundCompletionDTO $message): Envelope {
             $this->sentCommands[] = [$message->runId(), $message];
+            // This poller-level double models a successful owner admission.
+            // The production admission/receipt boundary has its own handler tests.
+            if (null !== $message->processRecordId) {
+                self::getContainer()->get(ProcessStore::class)->markCompletionNotified($message->processRecordId, $message->runId());
+            }
 
             return new Envelope($message);
         });
@@ -107,7 +120,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
         $poller = null;
         $logger = $this->createStub(LoggerInterface::class);
         $logger->method('info')->willReturnCallback(static function (string $message) use (&$poller): void {
@@ -127,7 +140,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $exit = 'failure' === $mode ? 7 : 0;
             $process = $manager->start('printf ready; read -r release < '.escapeshellarg($fifo).'; printf done; exit '.$exit, 'native-stop', 'call');
             $manager->markBackgroundedForRecord($process->id, 'native-stop');
-            $record = $store->fetchByRecordId($process->id);
+            $record = BackgroundProcessFixture::record(self::getContainer(), $process->id);
             $this->assertNotNull($record);
             $deadline = hrtime(true) + 2_000_000_000;
             while (!str_contains((string) file_get_contents($record->logPath), 'ready') && hrtime(true) < $deadline) {
@@ -154,7 +167,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
             (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
             $this->assertCount('stop' === $mode ? 0 : 1, $this->sentCommands);
-            $this->assertNotNull($store->fetchByRecordId($process->id)?->completionNotifiedAt);
+            $this->assertNotNull($store->snapshot($process->id)?->completionNotifiedAt);
             $this->assertNotNull($manager->findByRecordId($process->id)?->finishedAt);
             $this->assertStringContainsString('ready', $manager->readLogTail('native-stop', $process->pid)->content);
             if ('stop' !== $mode) {
@@ -170,44 +183,20 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
         $owner = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
-        $other = new Kernel('test', true);
-        $other->boot();
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('stale Bash completion');
+        PreparedEventStoreSeeder::append(self::getContainer()->get(PreparedTransitionEventStoreInterface::class), RunEvent::forAppend($runId, 0, 'run_started', ['payload' => ['messages' => []]]));
         try {
-            $process = $owner->start('sleep 60', 'stale-stop', 'call');
-            $owner->markBackgroundedForRecord($process->id, 'stale-stop');
-            $container = $other->getContainer()->get('test.service_container');
-            $em = $container->get(EntityManagerInterface::class);
-            $this->assertNotSame(self::getContainer()->get(EntityManagerInterface::class), $em);
-            $barrier = new class {
-                public function postLoad(PostLoadEventArgs $event): void
-                {
-                    if ($event->getObject() instanceof BackgroundProcess) {
-                        \Fiber::suspend($event->getObject());
-                    }
-                }
-            };
-            $otherStore = $container->get(ProcessStore::class);
-            $poller = $this->createPoller($otherStore, new BackgroundProcessManager($otherStore, $lifecycle, $config, new NullLogger()), 'stale-stop');
-            $em->getEventManager()->addEventListener([Events::postLoad], $barrier);
-            $fiber = new \Fiber(static fn () => (new \ReflectionMethod($poller, 'poll'))->invoke($poller));
-            try {
-                $stale = $fiber->start();
-            } finally {
-                $em->getEventManager()->removeEventListener([Events::postLoad], $barrier);
-            }
-            $this->assertInstanceOf(BackgroundProcess::class, $stale);
-            $this->assertNull($stale->completionNotifiedAt);
-            $owner->stop($process->pid, 'stale-stop');
-            $this->assertNull($stale->completionNotifiedAt, 'The suspended reader really holds stale notification state.');
-            $fiber->resume();
-            $this->assertTrue($fiber->isTerminated());
-            $this->assertSame([], $this->sentCommands);
-            $this->assertNotNull($stale->completionNotifiedAt);
+            $process = $owner->start('sleep 60', $runId, 'call');
+            $owner->markBackgroundedForRecord($process->id, $runId);
+            $candidate = new DeliverBackgroundCompletionDTO($runId, 'background-process-'.$process->id, 'stale completion', processRecordId: $process->id);
+            $owner->stop($process->pid, $runId);
+            $this->assertNotNull($store->snapshot($process->id)?->completionNotifiedAt);
+            self::getContainer()->get(BackgroundCompletionHandler::class)($candidate);
+            $this->assertNull(self::getContainer()->get(BackgroundCompletionReceiptRepository::class)->receipt($candidate->identity));
         } finally {
             $owner->shutdownCleanup();
-            $other->shutdown();
         }
     }
 
@@ -229,7 +218,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -265,7 +254,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->commandBus = new MessageBus([new SendMessageMiddleware($locator)]);
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
-        $poller = $this->createPoller($store, new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger()), $config, new NullLogger()));
+        $poller = $this->createPoller($store, new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore())), $config, new NullLogger()));
         $poll = new \ReflectionMethod($poller, 'poll');
         $pending = new DeferredFuture();
         $release = new DeferredFuture();
@@ -309,18 +298,14 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertTrue($skippedWhilePending, 'Another pass must return instead of queueing a duplicate publish.');
             $this->assertCount(1, $requests);
             $this->assertStringContainsString('[BG_PROCESS_DONE]', $requests[0]->body);
-            if ($rejectFirst) {
-                $this->assertNull($process->completionNotifiedAt);
-            } else {
-                $this->assertNotNull($process->completionNotifiedAt);
-                $process = $this->persistProcess(10003, $log, 'echo completed again', $now, $now, 0, BackgroundProcessStatusEnum::Finished);
-            }
-            // Success and rejection must both release the pass guard.
+            $this->assertNull($store->snapshot($process->id)?->completionNotifiedAt, 'Enqueue is not durable owner admission.');
+            // Success and rejection must both release the pass guard. Until
+            // owner admission acknowledges delivery, another pass may retry.
             $poll->invoke($poller);
-            $this->assertNotNull($process->completionNotifiedAt);
             $this->assertCount(2, $requests);
+            $store->markCompletionNotified($process->id, $process->sessionId);
             $poll->invoke($poller);
-            $this->assertCount(2, $requests, 'Already notified completions must remain suppressed.');
+            $this->assertCount(2, $requests, 'Owner-acknowledged completions remain suppressed.');
         } finally {
             if (!$release->isComplete()) {
                 $release->complete();
@@ -353,7 +338,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -389,7 +374,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -416,7 +401,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -437,7 +422,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         // Construct with empty string — must be normalized to null
@@ -495,7 +480,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager, 'test-regression-run');
@@ -547,7 +532,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager);
@@ -593,7 +578,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
 
         $store = self::getContainer()->get(ProcessStore::class);
         $bgConfig = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
         $poller = $this->createPoller($store, $manager, 'test-poller-run');
@@ -613,7 +598,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $config = $this->createBgConfig();
-        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
         $owner = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
         $fifo = $this->tmpDir.'/timeout-cleanup';
         $this->assertTrue(posix_mkfifo($fifo, 0600));
@@ -632,7 +617,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $command = 'trap '.escapeshellarg($cleanup).' TERM; : > '.escapeshellarg($this->tmpDir.'/ready').'; while :; do sleep 0.05; done';
             $process = $owner->start($command, 'timeout-run', 'timeout-call', hrtime(true) - 1);
             $owner->markBackgroundedForRecord($process->id, 'timeout-run');
-            $record = $store->fetchByRecordId($process->id);
+            $record = BackgroundProcessFixture::record(self::getContainer(), $process->id);
             $this->assertNotNull($record);
             $deadline = hrtime(true) + 2_000_000_000;
             while (!is_file($this->tmpDir.'/ready') && hrtime(true) < $deadline) {
@@ -640,35 +625,12 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
                 usleep(10_000);
             }
             $this->assertFileExists($this->tmpDir.'/ready');
-            // Stop the independent read after hydration, not before its query:
-            // its managed copy must still say Running when timeout commits.
-            $barrier = new class($process->id) {
-                public function __construct(private readonly int $id)
-                {
-                }
-
-                public function postLoad(PostLoadEventArgs $event): void
-                {
-                    $entity = $event->getObject();
-                    if ($entity instanceof BackgroundProcess && $entity->id === $this->id) {
-                        \Fiber::suspend($entity);
-                    }
-                }
-            };
-            $events = $otherContainer->get(EntityManagerInterface::class)->getEventManager();
-            $events->addEventListener([Events::postLoad], $barrier);
-            $readTask = new \Fiber(static fn () => 'list' === $read ? $reader->list('timeout-run') : $reader->readLogTail('timeout-run', $process->pid));
-            try {
-                $independent = $readTask->start();
-            } finally {
-                $events->removeEventListener([Events::postLoad], $barrier);
-            }
-            $this->assertInstanceOf(BackgroundProcess::class, $independent);
-            $this->assertNotSame($record, $independent, 'The reader must hydrate its own ORM object.');
+            $independent = $reader->findByRecordId($process->id, 'timeout-run');
+            $this->assertNotNull($independent);
             $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status);
             $this->assertNull($independent->finishedAt);
-            $owner->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(['timeout-run']));
-            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $store->fetchByRecordId($process->id)?->status);
+            $owner->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots(['timeout-run']));
+            $this->assertSame(BackgroundProcessStatusEnum::Stopped, BackgroundProcessFixture::record(self::getContainer(), $process->id)?->status);
             $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status, 'Timeout must not refresh the suspended reader.');
             $this->assertSame(8, fwrite($release, "release\n"));
             $deadline = hrtime(true) + 2_000_000_000;
@@ -676,16 +638,19 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
                 usleep(10_000);
             }
             $this->assertSame(0, $lifecycle->readStatusFile($record->statusPath), 'TERM cleanup really exits successfully.');
-            $readTask->resume();
-            $this->assertTrue($readTask->isTerminated());
-            $this->assertSame(BackgroundProcessStatusEnum::Stopped, $independent->status);
-            $persisted = $store->fetchByRecordId($process->id);
+            if ('list' === $read) {
+                $this->assertSame(BackgroundProcessStatusEnum::Stopped, $reader->list('timeout-run')[0]->status);
+            } else {
+                $this->assertStringContainsString('cleaned', $reader->readLogTail('timeout-run', $process->pid)->content);
+            }
+            $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status, 'An immutable old snapshot cannot overwrite owner state.');
+            $persisted = $store->snapshot($process->id);
             $this->assertNotNull($persisted);
             $this->assertNotNull($persisted->finishedAt);
             $this->assertSame(0, $persisted->exitCode);
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $persisted->status);
             $this->assertFalse($persisted->stoppedByUser);
-            $owner->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished(['timeout-run']));
+            $owner->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots(['timeout-run']));
             $grace = new \ReflectionProperty($owner, 'timeoutGraceDeadlines');
             $this->assertSame([], $grace->getValue($owner));
             $poller = $this->createPoller($store, $owner, 'timeout-run');
@@ -704,13 +669,13 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ProcessStore::class);
         $config = new BackgroundProcessConfig(storageDir: $this->tmpDir, stopGraceSeconds: 0);
-        $manager = new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger()), $config, new NullLogger());
+        $manager = new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore())), $config, new NullLogger());
         $process = $manager->start('sleep 10', 'test-poller-run', 'zero-grace-call', hrtime(true) - 1);
         try {
             $manager->markBackgroundedForRecord($process->id, 'test-poller-run');
             $poller = $this->createPoller($store, $manager);
             (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
-            $record = $store->fetchByRecordId($process->id);
+            $record = BackgroundProcessFixture::record(self::getContainer(), $process->id);
             $this->assertNotNull($record);
             $this->assertNotNull($record->finishedAt);
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $record->status);
@@ -739,8 +704,8 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
 
         $selects = array_filter($logger->records, static fn (array $record): bool => str_starts_with($record['context']['sql'] ?? '', 'SELECT'));
-        $this->assertCount(2, $selects, 'Historical children must not add per-child SELECTs.');
-        $this->assertCount(1, array_filter($selects, static fn (array $record): bool => str_contains($record['context']['sql'], 'FROM background_process ')));
+        $this->assertCount(3, $selects, 'Historical children must not add per-child SELECTs.');
+        $this->assertCount(2, array_filter($selects, static fn (array $record): bool => str_contains($record['context']['sql'], 'FROM background_process ')));
         $this->assertCount(1, array_filter($selects, static fn (array $record): bool => str_contains($record['context']['sql'], 'FROM background_completion_receipt ')));
         $this->assertSame([], $this->sentCommands);
     }
@@ -749,7 +714,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     #[TestWith([1, false])]
     #[TestWith([100, false])]
     #[TestWith([3, true])]
-    public function testCandidateRefreshFlushesOnceBeforeSeparateDeliverySettlements(int $count, bool $complete): void
+    public function testCandidateRefreshUsesNoOrmFlushBeforeSeparateDeliverySettlements(int $count, bool $complete): void
     {
         $this->persistRefreshCandidates($count, $complete);
         $em = self::getContainer()->get(EntityManagerInterface::class);
@@ -776,6 +741,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertSame(0, (int) $db->fetchOne('SELECT COUNT(*) FROM background_process WHERE finished_at IS NULL'));
             $this->assertSame($published, (int) $db->fetchOne('SELECT COUNT(*) FROM background_process WHERE completion_notified_at IS NOT NULL'), 'Each previous delivery must already be durable before the next send.');
             ++$published;
+            self::getContainer()->get(ProcessStore::class)->markCompletionNotified($message->processRecordId, $message->runId());
 
             return new Envelope($message);
         });
@@ -790,15 +756,14 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         }
 
         $expectedDeliveries = $complete ? $count : 0;
-        $expectedFlushes = (0 === $count ? 0 : 1) + $expectedDeliveries;
-        $this->assertSame($expectedFlushes, $counter->flushes);
-        $this->assertSame($expectedFlushes, $counter->changeDetectionPasses);
+        $this->assertSame(0, $counter->flushes);
+        $this->assertSame(0, $counter->changeDetectionPasses);
         $this->assertSame($expectedDeliveries, $published);
         $queries = array_filter($logger->records, static fn (array $record): bool => str_contains($record['context']['sql'] ?? '', 'session_id IN'));
-        $this->assertCount(1, $queries);
+        $this->assertCount(2, $queries);
         $causeReads = array_filter($logger->records, static fn (array $record): bool => str_starts_with($record['context']['sql'] ?? '', 'SELECT')
             && str_contains($record['context']['sql'], 'status = ?'));
-        $this->assertCount($complete && $count > 0 ? 1 : 0, $causeReads, 'Terminal causes use one batched read, not one read per candidate or delivery.');
+        $this->assertCount(0, $causeReads, 'Current cause is classified inside each owner operation, not an ORM flush.');
         $this->assertSame($expectedDeliveries, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM background_process WHERE completion_notified_at IS NOT NULL'));
         $this->assertSame($complete ? 0 : $count, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM background_process WHERE finished_at IS NULL'));
     }
@@ -830,40 +795,34 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('PID '.$completed->pid, $this->sentCommands[0][1]->text ?? '');
         $this->assertNull($failed->finishedAt);
         $this->assertNull($failed->completionNotifiedAt);
-        $this->assertNotNull($completed->completionNotifiedAt);
+        $this->assertNotNull(self::getContainer()->get(ProcessStore::class)->snapshot($completed->id)?->completionNotifiedAt);
         $errors = array_filter($logger->records, static fn (array $record): bool => 'bg_process_completion.refresh_failed' === $record['message']);
         $this->assertCount(1, $errors);
         $poll->invoke($poller);
         $this->assertCount(2, $this->sentCommands);
-        $this->assertNotNull($failed->completionNotifiedAt);
+        $this->assertNotNull(self::getContainer()->get(ProcessStore::class)->snapshot($failed->id)?->completionNotifiedAt);
     }
 
-    public function testRefreshFlushFailureDefersEveryDeliveryUntilRetry(): void
+    public function testOwnerWriteFailureDefersDeliveryUntilRetry(): void
     {
         $processes = $this->persistRefreshCandidates(3, true);
-        $events = self::getContainer()->get(EntityManagerInterface::class)->getEventManager();
-        $listener = new class {
-            public function preFlush(): void
-            {
-                throw new \RuntimeException('refresh flush failed');
-            }
-        };
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $logger = new TestLogger();
         $poller = $this->createPoller(self::getContainer()->get(ProcessStore::class), self::getContainer()->get(BackgroundProcessManager::class), logger: $logger);
         $poll = new \ReflectionMethod($poller, 'poll');
-        $events->addEventListener([Events::preFlush], $listener);
+        $connection->executeStatement("CREATE TEMP TRIGGER reject_bash_refresh BEFORE UPDATE ON background_process BEGIN SELECT RAISE(ABORT, 'owner write refused'); END");
         try {
             $poll->invoke($poller);
         } finally {
-            $events->removeEventListener([Events::preFlush], $listener);
+            $connection->executeStatement('DROP TRIGGER reject_bash_refresh');
         }
         $this->assertSame([], $this->sentCommands);
-        $errors = array_filter($logger->records, static fn (array $record): bool => 'bg_process_completion.refresh_flush_failed' === $record['message']);
-        $this->assertCount(1, $errors);
+        $errors = array_filter($logger->records, static fn (array $record): bool => 'bg_process_completion.refresh_failed' === $record['message']);
+        $this->assertCount(3, $errors);
         $poll->invoke($poller);
         $this->assertCount(3, $this->sentCommands);
         foreach ($processes as $process) {
-            $this->assertNotNull($process->completionNotifiedAt);
+            $this->assertNotNull(self::getContainer()->get(ProcessStore::class)->snapshot($process->id)?->completionNotifiedAt);
         }
     }
 
@@ -883,8 +842,9 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $poll->invoke($poller);
 
         $this->assertCount(1, $this->sentCommands);
-        $this->assertNotNull($process->backgroundedAt);
-        $this->assertNotNull($process->completionNotifiedAt);
+        $this->assertNull($process->backgroundedAt, 'Scalar queries do not mutate a stale ORM alias.');
+        $this->assertNotNull(self::getContainer()->get(ProcessStore::class)->snapshot($process->id)?->backgroundedAt);
+        $this->assertNotNull(self::getContainer()->get(ProcessStore::class)->snapshot($process->id)?->completionNotifiedAt);
         $this->assertStringContainsString('exit 7', $this->sentCommands[0][1]->text ?? '');
         $poll->invoke($poller);
         $this->assertCount(1, $this->sentCommands, 'Persisted notified rows must not be selected again.');
@@ -924,7 +884,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertNull($this->findProcess(900013)?->completionNotifiedAt, 'Foreign completions must remain untouched.');
         $this->assertNotNull($this->findProcess(900012)?->completionNotifiedAt);
         $candidateQueries = array_filter($logger->records, static fn (array $record): bool => str_contains($record['context']['sql'] ?? '', 'session_id IN'));
-        $this->assertCount(1, $candidateQueries, 'All owned completions share one candidate SELECT.');
+        $this->assertCount(2, $candidateQueries, 'One supervision query and one scalar candidate query cover all owners.');
     }
 
     public function testCandidateOrderingPreservesScopePrecedenceForDuplicatePid(): void
@@ -946,7 +906,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertSame('child-run', $this->sentCommands[0][0]);
         $this->assertStringContainsString('child immutable record output', $this->sentCommands[0][1]->text ?? '');
         $this->assertStringNotContainsString('parent immutable record output', $this->sentCommands[0][1]->text ?? '');
-        $this->assertNotNull($child->completionNotifiedAt);
+        $this->assertNotNull(self::getContainer()->get(ProcessStore::class)->snapshot($child->id)?->completionNotifiedAt);
         $this->assertNull($parent->completionNotifiedAt);
     }
 
@@ -1020,7 +980,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
 
-        return $em->getRepository(BackgroundProcess::class)->findOneBy(['pid' => $pid]);
+        return $em->getRepository(BackgroundProcess::class)->createQueryBuilder('p')->where('p.pid = :pid')->setParameter('pid', $pid)->getQuery()->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult();
     }
 
     private function createBgConfig(): BackgroundProcessConfig

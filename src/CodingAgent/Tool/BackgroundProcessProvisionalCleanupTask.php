@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
@@ -24,12 +23,11 @@ use Symfony\Component\Scheduler\Attribute\AsPeriodicTask;
 #[AsPeriodicTask(frequency: self::INTERVAL_SECONDS, schedule: 'default')]
 final class BackgroundProcessProvisionalCleanupTask
 {
-    public const int INTERVAL_SECONDS = 300;
+    public const int INTERVAL_SECONDS = ProcessStore::PROVISIONAL_RETENTION_SECONDS;
 
     public function __construct(
         private readonly BackgroundProcessManager $manager,
         private readonly ProcessStore $store,
-        private readonly ProcessLifecycle $lifecycle,
         private readonly LoggerInterface $logger,
         private readonly OwnedRunIdsProvider $ownership,
         private readonly string $sessionId,
@@ -47,19 +45,14 @@ final class BackgroundProcessProvisionalCleanupTask
         $cutoff = Clock::get()->now()->modify('-'.self::INTERVAL_SECONDS.' seconds');
         $cleaned = 0;
         $failed = 0;
-        $ids = [];
-
-        foreach ($this->store->fetchFinishedProvisionalBefore($cutoff, $sessionIds) as $entity) {
-            if (!$this->lifecycle->deleteExactRecordSidecars($entity->logPath, $entity->statusPath)) {
+        foreach ($this->store->fetchFinishedProvisionalBefore($cutoff, $sessionIds) as $record) {
+            if (!$this->manager->cleanupFinishedRecord($record->id, $record->sessionId, provisional: true)) {
                 ++$failed;
                 continue;
             }
 
-            $ids[] = $entity->id;
+            ++$cleaned;
         }
-
-        $cleaned = $this->store->deleteByIds($ids);
-        $failed += \count($ids) - $cleaned;
 
         $this->logger->info('background_process.provisional_cleanup_completed', [
             'component' => 'tool.background_process',

@@ -23,8 +23,8 @@ final class SessionSqliteQueueBrokerTopology
      */
     public const int BROKER_TRANSPORTS = 6;
 
-    /** run_control, agent, mcp, and extension_agent — one consumer each. */
-    public const int FIXED_BROKER_CONSUMERS = 4;
+    /** run_control, mcp, and extension_agent; agent shares the tool process. */
+    public const int FIXED_BROKER_CONSUMERS = 3;
 
     /** Notification socket owned by one idle broker consumer transport. */
     public const int CONSUMER_NOTIFICATION_CONNECTIONS = 1;
@@ -43,6 +43,9 @@ final class SessionSqliteQueueBrokerTopology
 
     public const int CONNECTIONS_PER_NON_CONSUMER_PROCESS = self::BROKER_TRANSPORTS;
 
+    /** Three role publishers, each with a requester's operations and WAIT socket. */
+    public const int BASH_REGISTRATION_REPLY_CONNECTIONS = 9;
+
     private function __construct()
     {
     }
@@ -50,7 +53,7 @@ final class SessionSqliteQueueBrokerTopology
     /**
      * Minimum broker connections required before runtime.ready for the resolved pools.
      *
-     * Example: 32 tool + 4 llm + 4 fixed broker consumers = 40 consumer processes
+     * Example: 32 tool + 4 llm + 3 fixed broker consumers = 39 consumer processes
      * × 7 sockets, plus controller and scheduler × 6 operations sockets each.
      */
     public static function requiredConnections(int $llmWorkers, int $toolWorkers): int
@@ -63,7 +66,7 @@ final class SessionSqliteQueueBrokerTopology
         }
 
         $consumerProcesses = $llmWorkers + $toolWorkers + self::FIXED_BROKER_CONSUMERS;
-        $nonConsumerConnections = self::NON_CONSUMER_BROKER_PROCESSES * self::CONNECTIONS_PER_NON_CONSUMER_PROCESS;
+        $nonConsumerConnections = (self::NON_CONSUMER_BROKER_PROCESSES * self::CONNECTIONS_PER_NON_CONSUMER_PROCESS) + self::BASH_REGISTRATION_REPLY_CONNECTIONS;
         $maxConsumerProcesses = intdiv(\PHP_INT_MAX - $nonConsumerConnections, self::CONNECTIONS_PER_BROKER_CONSUMER_PROCESS);
         if ($consumerProcesses > $maxConsumerProcesses) {
             throw new \InvalidArgumentException(\sprintf('Broker connection budget overflows for llmWorkers=%d toolWorkers=%d.', $llmWorkers, $toolWorkers));

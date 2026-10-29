@@ -12,6 +12,8 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Thesis: isAlive must not treat PHP-stat-cached /proc rows or unreaped
@@ -31,6 +33,7 @@ final class ProcessLifecycleTest extends TestCase
         $this->lifecycle = new ProcessLifecycle(
             new BackgroundProcessConfig(storageDir: $this->tmpDir, stopGraceSeconds: 0),
             new TestLogger(),
+            new LockFactory(new FlockStore()),
         );
     }
 

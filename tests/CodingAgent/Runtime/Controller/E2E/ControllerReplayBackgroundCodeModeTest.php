@@ -72,7 +72,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             $this->collectEventsUntil(null, 5, static fn (array $e): bool => 'tool_execution.started' === ($e['type'] ?? '') && 'free' === ($e['payload']['tool_call_id'] ?? ''));
             $snapshot = json_decode(trim($this->query($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
             $this->assertCount(2, $snapshot['work']);
-            $this->assertContains('["free"]', $snapshot['inFlight'], 'Ordinary work has been dispatched while both real consumers are occupied.');
+            $this->assertContains('["free"]', $snapshot['inFlight'], 'Ordinary work has been dispatched while both shared consumer slots are occupied.');
             $this->assertCount(3, file($this->tempDir.'/requests.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES), 'The dispatched read has not returned to the model.');
             if ($stop) {
                 $this->writeCommand(['v' => 1, 'id' => 'stop', 'type' => 'stop_code_mode', 'runId' => $this->runId,
@@ -148,7 +148,7 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
 
     protected function extraSettingsYaml(): string
     {
-        return "tools:\n  execution:\n    max_parallelism: 2\n  code_mode:\n    enabled: true\n";
+        return "runtime:\n  tool_concurrency: 2\ntools:\n  execution:\n    max_parallelism: 2\n  code_mode:\n    enabled: true\n";
     }
 
     protected function replayExtraEnv(): array

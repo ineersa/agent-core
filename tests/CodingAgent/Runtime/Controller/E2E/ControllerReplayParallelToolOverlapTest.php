@@ -8,12 +8,17 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Deterministic real-process proof that two independent native parallel bash
- * tool calls overlap on the existing tool consumer pool.
+ * tool calls overlap in one shared Fiber consumer.
  *
  * Each bash child writes an entered marker, then blocks on its own FIFO.
  * Readiness requires both entered markers and a live bash child process before
  * either FIFO is released. A serial single-worker scheduler cannot reach that
  * state. Overlap is therefore a positive barrier, not a timing lottery.
+ *
+ * Each child opens its release FIFO read/write, publishes entered, then reads.
+ * That self-satisfies the FIFO open without an early parent endpoint. The parent
+ * opens write-only only after both entered markers and live children exist, so it
+ * is never a competing reader of its own release write.
  *
  * Earlier read+bash wall-clock comparisons remain diagnostic-only and are not
  * retained as a contract here. Live tool_execution.started timestamps remain
@@ -48,7 +53,6 @@ final class ControllerReplayParallelToolOverlapTest extends ControllerReplayE2eT
         $this->assertNotSame('', $this->releaseFifoB);
         $this->assertNotSame('', $this->enteredMarkerA);
         $this->assertNotSame('', $this->enteredMarkerB);
-        $this->ensureReleaseEndpoints();
     }
 
     protected function tearDown(): void
@@ -64,16 +68,16 @@ final class ControllerReplayParallelToolOverlapTest extends ControllerReplayE2eT
         parent::tearDown();
     }
 
-    public function testTwoIndependentNativeBashCallsOverlapOnToolWorkers(): void
+    public function testTwoIndependentNativeBashCallsOverlapInOneSharedConsumer(): void
     {
         $this->spawnController();
         $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
-        $toolConsumers = $this->waitForControllerToolConsumers(2, 3.0);
+        $toolConsumers = $this->waitForControllerToolConsumers(1, 3.0);
         $this->assertCount(
-            2,
+            1,
             $toolConsumers,
-            'Expected two messenger:consume tool descendants. got: '.json_encode($toolConsumers),
+            'Expected one shared Fiber tool consumer. got: '.json_encode($toolConsumers),
         );
 
         $startCmdId = 'cmd_start_'.uniqid('', true);
@@ -121,10 +125,13 @@ final class ControllerReplayParallelToolOverlapTest extends ControllerReplayE2eT
 
         $this->waitForBothBashEntriesAndLiveness(4.0);
 
+        $this->openWriteOnlyReleaseEndpoints();
         $this->assertIsResource($this->releaseEndpointA);
         $this->assertIsResource($this->releaseEndpointB);
         $this->assertSame(8, fwrite($this->releaseEndpointA, "release\n"));
         $this->assertSame(8, fwrite($this->releaseEndpointB, "release\n"));
+        $this->assertTrue(fflush($this->releaseEndpointA));
+        $this->assertTrue(fflush($this->releaseEndpointB));
 
         $completedIds = [];
         $completionEvents = $this->collectEventsUntil(
@@ -180,6 +187,8 @@ final class ControllerReplayParallelToolOverlapTest extends ControllerReplayE2eT
     protected function extraSettingsYaml(): string
     {
         return <<<'YAML'
+runtime:
+    tool_concurrency: 2
 tools:
     execution:
         max_parallelism: 2
@@ -199,7 +208,6 @@ YAML;
         $this->enteredMarkerB = $this->tempDir.'/tool-overlap-entered-b.marker';
         $this->createFifoIfMissing($this->releaseFifoA);
         $this->createFifoIfMissing($this->releaseFifoB);
-        $this->ensureReleaseEndpoints();
 
         $fixturePath = __DIR__.'/fixtures/controller-parallel-dual-bash-barrier.json';
         $fixture = json_decode(
@@ -236,8 +244,11 @@ YAML;
 
     private function barrierCommand(string $enteredMarker, string $releaseFifo, string $outputMarker): string
     {
-        return 'printf entered > '.escapeshellarg($enteredMarker)
-            .' && IFS= read -r release < '.escapeshellarg($releaseFifo)
+        // Child opens RDWR so the open does not wait for a writer, then marks
+        // entered and blocks on the same fd. Parent opens write-only later.
+        return 'exec 3<>'.escapeshellarg($releaseFifo)
+            .' && printf entered > '.escapeshellarg($enteredMarker)
+            .' && IFS= read -r release <&3'
             .' && printf %s '.escapeshellarg($outputMarker);
     }
 
@@ -250,21 +261,22 @@ YAML;
         $this->assertTrue(posix_mkfifo($path, 0o600), 'Release FIFO must be created: '.$path);
     }
 
-    private function ensureReleaseEndpoints(): void
+    private function openWriteOnlyReleaseEndpoints(): void
     {
-        if (!\is_resource($this->releaseEndpointA)) {
-            $endpoint = fopen($this->releaseFifoA, 'r+b');
-            $this->assertIsResource($endpoint, 'Parent must own release FIFO A');
-            $this->assertTrue(stream_set_blocking($endpoint, false));
-            $this->releaseEndpointA = $endpoint;
-        }
+        $this->assertNull($this->releaseEndpointA, 'Release endpoint A must open only after both children wait');
+        $this->assertNull($this->releaseEndpointB, 'Release endpoint B must open only after both children wait');
 
-        if (!\is_resource($this->releaseEndpointB)) {
-            $endpoint = fopen($this->releaseFifoB, 'r+b');
-            $this->assertIsResource($endpoint, 'Parent must own release FIFO B');
-            $this->assertTrue(stream_set_blocking($endpoint, false));
-            $this->releaseEndpointB = $endpoint;
-        }
+        $endpointA = fopen($this->releaseFifoA, 'wb');
+        $this->assertIsResource($endpointA, 'Parent must own write-only release FIFO A');
+        $this->assertTrue(stream_set_blocking($endpointA, false));
+        stream_set_write_buffer($endpointA, 0);
+        $this->releaseEndpointA = $endpointA;
+
+        $endpointB = fopen($this->releaseFifoB, 'wb');
+        $this->assertIsResource($endpointB, 'Parent must own write-only release FIFO B');
+        $this->assertTrue(stream_set_blocking($endpointB, false));
+        stream_set_write_buffer($endpointB, 0);
+        $this->releaseEndpointB = $endpointB;
     }
 
     private function waitForBothBashEntriesAndLiveness(float $timeoutSeconds): void
@@ -282,7 +294,7 @@ YAML;
         }
 
         $this->fail(\sprintf(
-            'Both bash workers did not enter barriers with live children before timeout. a=%s b=%s live=%d',
+            'Both bash handlers did not enter barriers with live children before timeout. a=%s b=%s live=%d',
             is_file($this->enteredMarkerA) ? trim((string) file_get_contents($this->enteredMarkerA)) : 'missing',
             is_file($this->enteredMarkerB) ? trim((string) file_get_contents($this->enteredMarkerB)) : 'missing',
             $this->countLiveOwnedBarrierBashProcesses(),
@@ -312,7 +324,7 @@ YAML;
                 // Wrapper PID may own a child that holds the real command.
                 foreach ($this->discoverControllerProcessTreePids($pid) as $childPid) {
                     $childCmd = str_replace("\0", ' ', (string) @file_get_contents('/proc/'.$childPid.'/cmdline'));
-                    if (str_contains($childCmd, 'tool-overlap-release-') && str_contains($childCmd, 'IFS= read -r release <')) {
+                    if (str_contains($childCmd, 'tool-overlap-release-') && str_contains($childCmd, 'IFS= read -r release <&3')) {
                         ++$live;
                         break;
                     }
@@ -321,7 +333,7 @@ YAML;
                 continue;
             }
 
-            if (str_contains($cmd, 'IFS= read -r release <')) {
+            if (str_contains($cmd, 'IFS= read -r release <&3')) {
                 ++$live;
             }
         }
@@ -362,7 +374,7 @@ YAML;
         foreach ($this->discoverControllerProcessTreePids($rootPid) as $pid) {
             $cmdline = (string) @file_get_contents("/proc/{$pid}/cmdline");
             $cmd = str_replace("\0", ' ', $cmdline);
-            if (!preg_match('/messenger:consume\s+tool(\s|$)/', $cmd)) {
+            if (!str_contains($cmd, 'hatfield:messenger:consume-llm') || !preg_match('/--transport=tool(\s|$)/', $cmd)) {
                 continue;
             }
             $matched[] = ['pid' => $pid, 'cmd' => trim($cmd)];

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
@@ -13,9 +14,11 @@ use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
@@ -31,6 +34,7 @@ use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
@@ -49,6 +53,7 @@ use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -70,7 +75,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
     {
         $container = self::getContainer();
         $em = $container->get('doctrine.orm.default_entity_manager');
-        $entity = new \Ineersa\CodingAgent\Entity\HatfieldSession();
+        $entity = new HatfieldSession();
         $entity->cwd = (string) getcwd();
         $entity->model = 'openai-codex/gpt-5.5';
         $entity->reasoning = 'low';
@@ -159,7 +164,13 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
     public function testDeferredForkKeepsProviderKeyThroughRequestsWorkerRecreationAndResume(): void
     {
         $container = self::getContainer();
-        $parent = 'parent-provider-cache';
+        $em = $container->get('doctrine.orm.default_entity_manager');
+        $session = new HatfieldSession();
+        $session->cwd = (string) getcwd();
+        $session->model = 'deepseek/deepseek-v4-flash';
+        $em->persist($session);
+        $em->flush();
+        $parent = (string) $session->id;
         $started = [];
         $runner = $this->createMock(AgentRunnerInterface::class);
         $runner->expects($this->exactly(2))->method('start')->willReturnCallback(
@@ -228,9 +239,24 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             ));
             $container->get(AgentArtifactRegistry::class)->update($parent, $child->artifactId, status: AgentArtifactStatusEnum::Completed);
             $resume = $container->get(AgentResumeExecutionService::class);
+            $stepId = 'cache-resume-step';
+            $batchStore = $container->get(ToolBatchStoreInterface::class);
+            TestToolBatchRegistration::register(new ToolBatchCollector($batchStore), $batchStore, $parent, 2, $stepId, [
+                new ExecuteToolCall(
+                    runId: $parent,
+                    turnNo: 2,
+                    stepId: $stepId,
+                    attempt: 1,
+                    idempotencyKey: 'cache-resume',
+                    toolCallId: 'cache-resume',
+                    toolName: 'agent_resume',
+                    args: ['artifact_id' => $child->artifactId, 'task' => 'resume'],
+                    orderIndex: 0,
+                ),
+            ]);
             $this->withToolContext($parent, 'cache-resume', static fn () => $resume->resume($parent,
                 new AgentResumeArgumentsDTO(artifact_id: $child->artifactId, task: 'resume'),
-            ), toolName: 'agent_resume');
+            ), toolName: 'agent_resume', stepId: $stepId);
             $messages[] = new AgentMessage('assistant', [['type' => 'text', 'text' => $third->assistantMessage->asText()]]);
             $messages[] = new AgentMessage('user', [['type' => 'text', 'text' => 'resume']]);
             $resumed = $adapter->invoke(new ModelInvocationRequest('fallback/unused', new ModelInvocationInput(runId: $child->childRunId, messages: $messages)));
@@ -452,7 +478,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
      *
      * @return T
      */
-    private function withToolContext(string $parentRunId, string $toolCallId, callable $callback, string $toolName = 'fork', ?ToolLaunchContextDTO $launchContext = null): mixed
+    private function withToolContext(string $parentRunId, string $toolCallId, callable $callback, string $toolName = 'fork', ?ToolLaunchContextDTO $launchContext = null, ?string $stepId = null): mixed
     {
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $launchContext ??= $this->forkLaunchContext($parentRunId);
@@ -464,6 +490,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
             orderIndex: 0,
+            stepId: $stepId,
             parentModel: $launchContext->producingModel,
             launchContext: $launchContext,
         );

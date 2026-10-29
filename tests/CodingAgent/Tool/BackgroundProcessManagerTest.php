@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
@@ -16,6 +18,8 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BackgroundProcessManager
@@ -72,6 +76,28 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     }
 
     /* ── list() ── */
+
+    public function testGeneralReadsRetainNoManagedProcessRecords(): void
+    {
+        $this->createManager();
+        $store = self::getContainer()->get(ProcessStore::class);
+        $log = $this->tmpDir.'/snapshot.log';
+        file_put_contents($log, 'snapshot output');
+        $id = $store->insertRecord(['pid' => 9900123, 'session_id' => self::TEST_SESSION, 'command' => 'completed', 'log_path' => $log, 'started_at' => new \DateTimeImmutable()]);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $now = new \DateTimeImmutable()->format('Y-m-d H:i:s');
+        $em->getConnection()->update('background_process', ['backgrounded_at' => $now, 'finished_at' => $now, 'exit_code' => 0, 'status' => 'finished'], ['id' => $id]);
+        $em->clear();
+        $this->assertSame(0, $em->getUnitOfWork()->size());
+        for ($iteration = 0; $iteration < 20; ++$iteration) {
+            $this->assertSame($id, $this->manager->list(self::TEST_SESSION)[0]->id);
+            $this->assertSame($id, $this->manager->find(9900123, self::TEST_SESSION)?->id);
+            $this->assertSame(0, $this->manager->findByRecordId($id, self::TEST_SESSION)?->exitCode);
+            $this->assertSame('snapshot output', $this->manager->readLogTail(self::TEST_SESSION, 9900123)->content);
+            $this->assertSame('snapshot output', $this->manager->readLogTailForRecord($id, sessionId: self::TEST_SESSION)->content);
+        }
+        $this->assertSame(0, $em->getUnitOfWork()->size());
+    }
 
     public function testListReturnsAcceptedRunningAndFinished(): void
     {
@@ -288,7 +314,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $this->manager->stopByRecordId($result->id, self::TEST_SESSION);
         $store = static::getContainer()->get(ProcessStore::class);
-        $this->assertTrue($store->deleteById($result->id));
+        $this->assertTrue(BackgroundProcessFixture::delete(self::getContainer(), $result->id));
 
         $this->assertSame(0, $this->manager->shutdownCleanup());
         $this->assertSame(0, $this->manager->shutdownCleanup());
@@ -316,7 +342,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $this->manager->stopByRecordId($owned->id, self::TEST_SESSION);
         $store = static::getContainer()->get(ProcessStore::class);
-        $this->assertTrue($store->deleteById($owned->id));
+        $this->assertTrue(BackgroundProcessFixture::delete(self::getContainer(), $owned->id));
 
         $foreignId = $store->insertRecord([
             'pid' => $pid,
@@ -334,14 +360,14 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         // Read through ProcessStore so resolveEntityStatus() does not mutate the
         // synthetic foreign row (no live process / status sidecar).
-        $foreign = $store->fetchByRecordId($foreignId);
+        $foreign = BackgroundProcessFixture::record(self::getContainer(), $foreignId);
         $this->assertNotNull($foreign);
         $this->assertSame('foreign-reuse-session', $foreign->sessionId);
         $this->assertSame($pid, $foreign->pid);
         $this->assertNull($foreign->finishedAt);
         $this->assertFalse($foreign->stoppedByUser);
 
-        $this->assertTrue($store->deleteById($foreignId));
+        $this->assertTrue(BackgroundProcessFixture::delete(self::getContainer(), $foreignId));
     }
 
     public function testShutdownCleanupLogsFailureAndRetainsOwnershipForRetry(): void
@@ -350,24 +376,24 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $result = $this->manager->start('echo "completed"', self::TEST_SESSION);
         $this->waitUntilFinished($result->pid);
 
-        $events = static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getEventManager();
-        $listener = new class {
-            public function onFlush(): void
-            {
-                throw new \RuntimeException('cleanup flush failed');
-            }
-        };
-        $events->addEventListener([\Doctrine\ORM\Events::onFlush], $listener);
+        $connection = static::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        // Restore the unobserved state so cleanup must commit terminal evidence.
+        // A real database refusal replaces the former ORM-flush-only injection.
+        $connection->executeStatement('UPDATE background_process SET finished_at = NULL WHERE id = ?', [$result->id]);
+        $connection->executeStatement("CREATE TRIGGER fail_cleanup BEFORE UPDATE ON background_process BEGIN SELECT RAISE(ABORT, 'cleanup write failed'); END");
         try {
             $this->assertSame(0, $this->manager->shutdownCleanup());
-            $this->assertShutdownCleanupErrors(['cleanup flush failed']);
+            $errors = array_values(array_filter($this->logger->records, static fn (array $record): bool => 'background_process.shutdown_cleanup_error' === $record['message']));
+            $this->assertCount(1, $errors);
+            $error = (string) $errors[0]['context']['error'];
+            $this->assertStringContainsString('cleanup write failed', $error);
         } finally {
-            $events->removeEventListener([\Doctrine\ORM\Events::onFlush], $listener);
+            $connection->executeStatement('DROP TRIGGER fail_cleanup');
         }
 
         $this->assertSame(1, $this->manager->shutdownCleanup());
         $this->assertSame(0, $this->manager->shutdownCleanup());
-        $this->assertShutdownCleanupErrors(['cleanup flush failed']);
+        $this->assertShutdownCleanupErrors([$error]);
     }
 
     /* ── Session scoping ── */
@@ -515,7 +541,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertFalse($this->manager->findByRecordId($shell->id)?->backgroundRequested);
         $this->assertFalse($this->manager->findByRecordId($foreign->id)?->backgroundRequested);
         $this->assertSame([], $this->manager->list(self::TEST_SESSION));
-        foreach (static::getContainer()->get(ProcessStore::class)->findCompletionCandidates([self::TEST_SESSION]) as $candidate) {
+        foreach (static::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]) as $candidate) {
             $this->assertNull($candidate->backgroundedAt);
             $this->assertNull($candidate->completionNotifiedAt);
         }
@@ -550,7 +576,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
         $safetyDeadline = hrtime(true) + 2_000_000_000;
         do {
-            $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished([self::TEST_SESSION]));
+            $this->manager->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]));
             $record = $this->manager->findByRecordId($process->id, self::TEST_SESSION);
             if (null !== $record?->finishedAt) {
                 break;
@@ -560,7 +586,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         $this->assertNotNull($record?->finishedAt);
         $this->assertGreaterThanOrEqual($originalDeadline, hrtime(true));
-        $this->assertSame($originalDeadline, $record->deadlineNanoseconds);
+        $this->assertSame($originalDeadline, BackgroundProcessFixture::record(self::getContainer(), $record->id)?->deadlineNanoseconds);
         $this->assertSame($process->pid, $record->pid);
         $this->assertFalse($record->stoppedByUser);
     }
@@ -583,7 +609,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             }
             $this->assertFileExists($ready);
         }
-        $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished([self::TEST_SESSION]));
+        $this->manager->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]));
         foreach ($processes as $index => $process) {
             $term = $this->tmpDir.'/term-'.($index + 1);
             $deadline = hrtime(true) + 500_000_000;
@@ -595,7 +621,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         }
         $deadline = hrtime(true) + 2_000_000_000;
         do {
-            $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished([self::TEST_SESSION]));
+            $this->manager->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]));
             $unfinished = array_filter($processes, fn (StartResult $process): bool => null === $this->manager->findByRecordId($process->id)?->finishedAt);
             if ([] === $unfinished) {
                 break;
@@ -610,19 +636,19 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->createManager();
         $process = $this->manager->start('sleep 10', self::TEST_SESSION, 'deleted-call', hrtime(true) - 1);
         $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
-        $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished([self::TEST_SESSION]));
+        $this->manager->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]));
         $store = self::getContainer()->get(ProcessStore::class);
-        $record = $store->fetchByRecordId($process->id);
+        $record = BackgroundProcessFixture::record(self::getContainer(), $process->id);
         $this->assertNotNull($record);
         $grace = new \ReflectionProperty($this->manager, 'timeoutGraceDeadlines');
         $this->assertArrayHasKey($process->id, $grace->getValue($this->manager));
         try {
-            $this->assertTrue($store->deleteById($process->id));
-            $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished([self::TEST_SESSION]));
+            $this->assertTrue(BackgroundProcessFixture::delete(self::getContainer(), $process->id));
+            $this->manager->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]));
             $this->assertSame([], $grace->getValue($this->manager));
         } finally {
             // The removed row cannot supervise this test-owned group anymore.
-            (new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger()))->sendKill($process->pid, $record->pgid);
+            (new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger(), new LockFactory(new FlockStore())))->sendKill($process->pid, $record->pgid);
         }
     }
 
@@ -631,14 +657,15 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->createManager();
         $process = $this->manager->start('printf done', self::TEST_SESSION, 'finished-call', hrtime(true) - 1);
         $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
-        $record = self::getContainer()->get(ProcessStore::class)->fetchByRecordId($process->id);
+        $record = BackgroundProcessFixture::record(self::getContainer(), $process->id);
         $this->assertNotNull($record);
         $deadline = hrtime(true) + 2_000_000_000;
         while (!is_file($record->statusPath) && hrtime(true) < $deadline) {
             usleep(10_000);
         }
         $this->assertFileExists($record->statusPath);
-        $this->manager->refreshEntities(self::getContainer()->get(ProcessStore::class)->fetchAllUnfinished([self::TEST_SESSION]));
+        $this->manager->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]));
+        $record = self::getContainer()->get(ProcessStore::class)->snapshot($process->id);
         $this->assertSame(BackgroundProcessStatusEnum::Finished, $record->status);
         $this->assertSame(0, $record->exitCode);
     }
@@ -689,7 +716,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
         // ProcessStore uses the container's EntityManager — no manual ORM setup.
         $store = static::getContainer()->get(ProcessStore::class);
-        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
         $this->logger = new TestLogger();
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, $this->logger);
     }
@@ -703,7 +730,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         );
 
         $store = static::getContainer()->get(ProcessStore::class);
-        $lifecycle = new ProcessLifecycle($config, new NullLogger());
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
 
         return new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
     }

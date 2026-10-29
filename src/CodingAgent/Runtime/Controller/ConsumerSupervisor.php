@@ -13,14 +13,13 @@ use Symfony\Component\Process\Process;
 /**
  * Manages messenger:consume child processes for the controller.
  *
- * Launches Symfony Process-based consumers for a given transport (llm uses
- * hatfield:messenger:consume-llm; other transports use messenger:consume),
+ * Launches Symfony Process-based consumers for a given role (llm and tool use
+ * hatfield:messenger:consume-llm; other roles use messenger:consume),
  * supervises their health via isRunning(), restarts crashed consumers
  * with exponential backoff, and gracefully stops them on shutdown.
  *
- * Supports multiple consumer instances per transport (e.g. multiple
- * "tool" workers for parallel tool execution). Each instance is tracked
- * by a composite key: transportName#instanceId.
+ * Tracks each instance by a composite key: transportName#instanceId.
+ * The tool role consumes both tool and agent queues in one process.
  *
  * Restart policy:
  * - Up to 3 restarts within a 60-second window per consumer key.
@@ -126,12 +125,13 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
             $env = \is_array($currentEnv) ? $currentEnv : $_ENV;
             $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = '1';
 
-            if ('llm' === $transportName) {
-                // Same-process Fiber capacity replaces the multi-process llm pool.
+            if (\in_array($transportName, ['llm', 'tool'], true)) {
+                // Same-process Fiber capacity replaces execution process pools.
                 // Stock messenger:consume --concurrency still spawns Amp children.
                 $command = [
                     ...$appCommand,
                     'hatfield:messenger:consume-llm',
+                    '--transport='.$transportName,
                     '--no-interaction',
                     '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
                 ];
@@ -174,18 +174,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
             'key' => $key,
             'pid' => $process->getPid(),
         ]);
-    }
-
-    /**
-     * Launch multiple consumer instances for the same transport.
-     *
-     * Used to scale tool workers for parallel execution.
-     */
-    public function launchMultiple(string $transportName, int $count): void
-    {
-        for ($i = 0; $i < $count; ++$i) {
-            $this->launch($transportName, $i);
-        }
     }
 
     /**
@@ -287,11 +275,14 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
      * Sequential Process::stop(grace) per child would delay the last consumer
      * by N×grace and orphan the tail of a large pool under parent timeout.
      */
-    public function shutdownUntil(float $deadline): void
+    public function shutdownUntil(float $deadline, bool $keepRunControl = false): void
     {
         $this->shuttingDown = true;
 
-        if ([] === $this->consumers) {
+        // Tools may need committed lifecycle replies while draining. Keep the
+        // owner alive until execution shutdown and session cleanup complete.
+        $stopping = array_filter($this->consumers, fn (string $key): bool => !$keepRunControl || 'run_control' !== $this->extractTransportName($key), \ARRAY_FILTER_USE_KEY);
+        if ([] === $stopping) {
             return;
         }
 
@@ -304,7 +295,7 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         ]);
 
         // Phase 1: signal every running tracked child before any wait.
-        foreach ($this->consumers as $key => $process) {
+        foreach ($stopping as $key => $process) {
             if (!$process->isRunning()) {
                 continue;
             }
@@ -326,7 +317,7 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         // Phase 2: one shared grace deadline for the whole tracked set.
         while (microtime(true) < $deadline) {
             $anyRunning = false;
-            foreach ($this->consumers as $process) {
+            foreach ($stopping as $process) {
                 if ($process->isRunning()) {
                     $anyRunning = true;
                     break;
@@ -339,7 +330,7 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         }
 
         // Phase 3: escalate only survivors (Process::stop(0) => immediate SIGKILL path).
-        foreach ($this->consumers as $key => $process) {
+        foreach ($stopping as $key => $process) {
             if (!$process->isRunning()) {
                 continue;
             }
@@ -361,7 +352,9 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
             'count' => \count($this->consumers),
         ]);
 
-        $this->consumers = [];
+        foreach ($stopping as $key => $process) {
+            unset($this->consumers[$key]);
+        }
     }
 
     /**

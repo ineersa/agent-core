@@ -18,9 +18,11 @@ use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletion;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Entity\ToolBatchCall;
@@ -42,6 +44,27 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
 {
+    public function testRepeatedCancellationAndCorrelationReadsDoNotManageDeferredEntities(): void
+    {
+        $container = self::getContainer();
+        $runId = $container->get(HatfieldSessionStore::class)->createSession('snapshot retention');
+        $invocation = new DeferredToolCompletionCorrelation('deferred', $runId, 1, 'step', 1, 'key', 'call', 'code_mode', [], 0);
+        TestToolBatchRegistration::registerDeferredInvocation($container->get(ToolBatchStoreInterface::class), $invocation);
+        $repository = $container->get(DeferredToolCompletionRepository::class);
+        $repository->registerPending($invocation);
+        $manager = $container->get(EntityManagerInterface::class);
+        $manager->clear();
+        for ($i = 0; $i < 128; ++$i) {
+            $this->assertSame('pending', $repository->status('deferred'));
+            $this->assertNotNull($repository->findMetadataByDeferredId('deferred'));
+            $correlation = $repository->findByDeferredId('deferred');
+            $this->assertNotNull($correlation);
+            $this->assertSame('pending', $repository->statusForRunAndToolCall($runId, $correlation->toolCallId));
+            $this->assertNotNull($repository->findByRunAndToolCall($runId, $correlation->toolCallId));
+        }
+        $this->assertSame([], $manager->getUnitOfWork()->getIdentityMap()[DeferredToolCompletion::class] ?? []);
+    }
+
     public function testPendingCompletionIndexCoversCleanupCorrelation(): void
     {
         $connection = self::getContainer()->get(Connection::class);

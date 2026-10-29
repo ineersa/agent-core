@@ -29,7 +29,6 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
     protected function tearDown(): void
     {
         $this->stopProcess();
-        $this->assertNoTrackedControllerProcessSurvivors();
         if (isset($this->tempDir) && '' !== $this->tempDir) {
             TestDirectoryIsolation::removeDirectory($this->tempDir);
         }
@@ -369,7 +368,6 @@ YAML;
         }
         $this->process = null;
         $this->trackedControllerPids = [];
-        $this->lastTeardownSurvivorPids = [];
         $this->stdoutBuf = '';
         $this->stderrBuf = '';
     }

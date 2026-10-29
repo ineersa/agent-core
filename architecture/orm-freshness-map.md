@@ -6,7 +6,7 @@
 
 The tables record decisions against source at `0ee03b085`, inspected on 2026-09-16. The Refresh decisions were implemented in `0ad6c26fb` and `1a4ae2c41`. Column notes saying "currently" or "today" describe the audited baseline, not the implementation. Container tests simulate external writes through DBAL while Doctrine retains cached entities. No query-cost benchmark was run.
 
-Model-selection fixes followed in `f29026b19` and `b59cc976c`. Commit `69248bfb3` removed the now-unused `ProcessStore::fetchById` and `DeferredSubagentChildRepository::findEntityByChildRunId` methods listed below. Their supported replacements are `fetchByRecordId` and `findByChildRunId`.
+Model-selection fixes followed in `f29026b19` and `b59cc976c`. Commit `69248bfb3` removed `DeferredSubagentChildRepository::findEntityByChildRunId`; its replacement is `findByChildRunId`. The background-process section describes the current scalar snapshot and metadata-owner boundary, which supersedes its original ORM refresh decisions.
 
 ## How to read the tables
 
@@ -38,20 +38,22 @@ The footer branch adds refresh to the shared point-lookup helper. That covers mo
 
 ## 2. Background processes
 
-Source: [ProcessStore](../src/CodingAgent/Tool/BackgroundProcess/ProcessStore.php), using [BackgroundProcessRepository](../src/CodingAgent/Entity/BackgroundProcessRepository.php).
+Sources: [ProcessStore](../src/CodingAgent/Tool/BackgroundProcess/ProcessStore.php), [BackgroundProcessManager](../src/CodingAgent/Tool/BackgroundProcessManager.php) and [BackgroundCompletionHandler](../src/CodingAgent/Application/Pipeline/BackgroundCompletionHandler.php).
 
-Tools register processes. The controller reads completion files, updates records, and sends notifications.
+Runtime process reads use DBAL rows hydrated into immutable snapshots, not managed entity aliases. `run_control` owns registration, background acceptance, stop/timeout decisions, settlement and deletion. Serialized in-process execution and exclusive startup cleanup use the same owner-local decisions directly.
 
-| Method | Database work | Decision | Why / current gap |
+| Method or operation | Database work | Freshness boundary | Invariant |
 |---|---|---|---|
-| `fetchLatestByPid`, `fetchBackgroundedByPid`, `fetchByRecordId`, `fetchById` | SELECT one process record | **Refresh** before reading mutable fields | Status/notification fields may have changed elsewhere. No general refresh today. |
-| `findPendingNotifications`, `fetchBackgrounded`, `fetchAllUnfinished`, `fetchFinishedProvisionalBefore` | SELECT process list | **Refresh** returned field values | SQL list filtering does not guarantee cached objects contain current fields. |
-| `existsByPid`, `existsByRecordId` | SELECT COUNT | **No refresh** | Already queries the database for a number, not an entity. |
-| `insertRecord` | INSERT | **No refresh** | New entity. |
-| `deleteById` | Find record, DELETE | **No field refresh** | Deletes by ID. If the return value must distinguish an already-deleted row, it needs a real existence check. |
-| `flush` after status/notification changes | UPDATE modified entities | **No refresh here** | Refresh now would overwrite the changes about to be saved. Freshness belongs at the preceding read. |
+| `snapshot`, `latestSnapshot`, `acceptedRecordId` | SELECT by immutable record ID or PID | **Scalar SQL read** | PID lookup selects a record; later owner decisions recheck record and run identity. |
+| `fetchForegroundTools`, `backgroundSnapshots`, `unfinishedSnapshots`, `completionSnapshots`, `fetchFinishedProvisionalBefore` | SELECT candidate rows | **Scalar SQL read** | Candidates are observations, not permission to mutate or signal. |
+| `existsByPid`, `existsByRecordId` | SELECT existence | **No entity refresh** | Existence does not depend on the identity map. |
+| `insertRecord` | ORM INSERT during registration | **Owner transaction** | Registration commits the process and its stable receipt atomically. No managed record crosses a worker wait. |
+| `requestBackground`, `acceptLocal`, `decide` | Conditioned DBAL reads and updates | **Owner decision** | Stop, timeout, settlement and deletion recheck current identity and state rather than writing back a candidate snapshot. |
+| `BackgroundCompletionHandler` → `markCompletionNotified` | Recheck authority, admit retained receipt, update notification marker | **Owner admission** | Enqueuing a notification candidate is not acknowledgement. Explicit-stop suppression and duplicate delivery use current owner state. |
 
-Do not clear between loading process records and saving their changed status. That would detach the objects and can prevent the updates from being saved.
+Native launch, output reads, signalling and cooperative grace waits remain in the manager/controller paths, outside metadata transactions. The scheduler's passive refresh never signals. Immutable record/run identity and exact status-sidecar evidence protect against PID reuse. Stop and cleanup retain the sidecar lock through their owner decision and native action; those owner operations do not acquire that lock, avoiding a circular wait. Session shutdown keeps the owner available until cleanup mutations finish. Accepted background jobs survive worker exit, not session shutdown or restart.
+
+There is no process-entity refresh or shared `flush` step in runtime supervision. Do not add per-message EntityManager clears beneath overlapping Fibers.
 
 ## 3. Run status and parent/child identity
 
@@ -128,9 +130,9 @@ Event logs and session snapshot files are not database queries and are outside t
 
 1. **Session reads/writes and session list:** require fresh fields at the operations marked above. Do not add refresh to every method just because they share a helper.
 2. **Model selection:** route picker, `/model`, and Ctrl+P through one operation that also updates the pending draft selection. This is a separate bug; database refresh cannot fix it.
-3. **Background and deferred status reads:** address the rows marked Refresh. Keep existing SQL concurrency checks.
+3. **Deferred status reads:** address the historical rows marked Refresh. Background-process reads now use the snapshot boundary above. Keep existing SQL concurrency checks.
 4. **Global clears:** audit helper callers before changing them. Never clear while another operation has unsaved changes.
 
-Workers have source-wired clearing between messages. TUI/controller reads do not get that worker reset. Neither guarantees freshness during one long-running operation.
+Shared Fiber execution workers do not clear or reset services between messages. Their process reads use scalar snapshots and their metadata writes go to the owner. Other lifecycle boundaries do not make cached entities fresh during a long-running operation.
 
 Open checks: deletion/lifetime assumptions marked above, callers that retain objects across a clear, actual compiled worker reset wiring, and query cost. This map makes no blanket claim that every SQLite query needs refresh.

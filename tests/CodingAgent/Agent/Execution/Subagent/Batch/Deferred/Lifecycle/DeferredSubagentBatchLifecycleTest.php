@@ -1245,6 +1245,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $container->get(AgentArtifactRegistry::class)->create($parent, $child['artifactId'], $child['childRunId'], 'scout', $kind);
         $outcome = new ChildRunTerminalOutcomeDTO(new ChildRunIdentityDTO($parent, $child['childRunId'], $child['artifactId'], 'scout', 'inspect', $kind), AgentArtifactStatusEnum::Completed, summary: 'HANDOFF');
         if ($rebound) {
+            // A real resume can rebind only after the old invocation has a
+            // committed terminal observation, not merely a publication body.
+            $current = $repo->findByLifecycleId($id);
+            $repo->applyBatchChildLifecycleProjection($id, 1, new DeferredChildRunLifecycleProjectionDTO(RunStatus::Completed, 1, 1, 'deepseek/deepseek-v4-flash', 'medium'), 1, $current->children[0]->projectionVersion, $current->projectionVersion, false);
             $repo->freezeCompletionSource($id, new DeferredSubagentCompletionSourceDTO(
                 $container->get(SubagentChildRunArtifactFinalizer::class)->preparePublication($outcome, $id), 'HANDOFF', false, null,
             ), $repo->findByLifecycleId($id)->projectionVersion);

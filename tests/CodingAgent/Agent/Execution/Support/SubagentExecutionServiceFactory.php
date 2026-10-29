@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentCh
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 
@@ -131,6 +132,7 @@ final class SubagentExecutionServiceFactory
             $args['contextAccessor'],
             $args['agentsConfig'],
             $args['logger'],
+            new ChildInvocationLifecycleService($args['batchRepository']),
         );
 
         return new SubagentExecutionService($deferredBatchLaunch);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\CodeMode;
 
+use Amp\DeferredFuture;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
@@ -17,6 +18,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
+use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
@@ -25,6 +27,7 @@ use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Revolt\EventLoop;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
@@ -36,6 +39,8 @@ use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeExcept
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\UuidV7;
+
+use function Amp\delay;
 
 /**
  * Owns one PHP script subprocess and bridges tool() calls to RegistryBackedToolbox.
@@ -63,6 +68,7 @@ final readonly class CodeModeHostBridge
         private ToolBatchStoreInterface $batches,
         private ToolPayloadStoreInterface $payloads,
         private MessageBusInterface $commandBus,
+        private CodeModeLifecycleService $lifecycle,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -99,7 +105,7 @@ final readonly class CodeModeHostBridge
                 $process = $this->startProcess($workspace, $cancelToken, $memoryLimit, $capture);
                 $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
                 if (null !== $deferredId) {
-                    $this->deferred->markReady($deferredId);
+                    $this->lifecycle->ready($parentContext->runId(), $deferredId);
                     if ($backgrounded) {
                         $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($parentContext->runId(), $deferredId, $parentContext->toolCallId()));
                     }
@@ -137,7 +143,8 @@ final readonly class CodeModeHostBridge
             return null;
         }
         $deferredId = UuidV7::v7()->toRfc4122();
-        $registered = $this->deferred->registerPending(new DeferredToolCompletionCorrelation(
+
+        return $this->lifecycle->register(new DeferredToolCompletionCorrelation(
             deferredId: $deferredId,
             runId: $call->runId(),
             turnNo: $call->turnNo(),
@@ -155,8 +162,6 @@ final readonly class CodeModeHostBridge
             argSchema: $call->argSchema,
             toolsRef: $call->toolsRef,
         ));
-
-        return $registered->deferredId;
     }
 
     /**
@@ -631,7 +636,7 @@ final readonly class CodeModeHostBridge
                 throw $this->earlyExitException($process);
             }
 
-            usleep(self::POLL_INTERVAL_MICROS);
+            $this->waitForSocket($server, false);
         }
     }
 
@@ -646,15 +651,7 @@ final readonly class CodeModeHostBridge
     ): bool {
         $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
 
-        $read = [$connection];
-        $write = null;
-        $except = null;
-        $selected = @stream_select($read, $write, $except, 0, self::POLL_INTERVAL_MICROS);
-        if (false === $selected) {
-            throw new ToolCallException('Failed while waiting for code-mode IPC data.', retryable: true);
-        }
-
-        return $selected > 0;
+        return $this->waitForSocket($connection, false);
     }
 
     /**
@@ -672,18 +669,42 @@ final readonly class CodeModeHostBridge
         $this->drainProcessOutput($process);
 
         // The opposite direction can stay ready without advancing this frame.
-        $read = $writing ? null : [$connection];
-        $write = $writing ? [$connection] : null;
-        $except = null;
-        $selected = @stream_select($read, $write, $except, 0, self::POLL_INTERVAL_MICROS);
-        if (false === $selected) {
-            throw new ToolCallException('Failed while waiting for code-mode IPC progress.', retryable: true);
-        }
+        $ready = $this->waitForSocket($connection, $writing);
 
         $this->drainProcessOutput($process);
-        if (0 === $selected && !$process->isRunning()) {
+        if (!$ready && !$process->isRunning()) {
             // Progress wait during an in-flight frame; peer death mid-frame is fatal.
             throw $this->earlyExitException($process);
+        }
+    }
+
+    /**
+     * @param resource $socket
+     */
+    private function waitForSocket(mixed $socket, bool $writing): bool
+    {
+        // Wake on readiness, but retain bounded cancellation, deadline and
+        // child-liveness checkpoints even when the peer stops sending frames.
+        $ready = new DeferredFuture();
+        $notify = static function () use ($ready): void {
+            if (!$ready->isComplete()) {
+                $ready->complete(true);
+            }
+        };
+        $watcher = $writing
+            ? EventLoop::onWritable($socket, $notify)
+            : EventLoop::onReadable($socket, $notify);
+        $timer = EventLoop::delay(self::POLL_INTERVAL_MICROS / 1_000_000, static function () use ($ready): void {
+            if (!$ready->isComplete()) {
+                $ready->complete(false);
+            }
+        });
+
+        try {
+            return $ready->getFuture()->await();
+        } finally {
+            EventLoop::cancel($watcher);
+            EventLoop::cancel($timer);
         }
     }
 
@@ -755,7 +776,7 @@ final readonly class CodeModeHostBridge
         while ($process->isRunning() && hrtime(true) < $deadlineNs) {
             $this->assertNotCancelledOrTimedOut($cancelToken, $timeoutSeconds, $startedAtNs);
             $this->drainProcessOutput($process);
-            usleep(self::POLL_INTERVAL_MICROS);
+            delay(self::POLL_INTERVAL_MICROS / 1_000_000);
         }
 
         $this->drainProcessOutput($process);
@@ -804,7 +825,19 @@ final readonly class CodeModeHostBridge
 
         try {
             if ($process->isRunning()) {
-                $process->stop(self::DEFAULT_GRACE_SECONDS);
+                $process->signal(\SIGTERM);
+                $deadline = hrtime(true) + self::DEFAULT_GRACE_SECONDS * 1_000_000_000;
+                while ($process->isRunning() && hrtime(true) < $deadline) {
+                    delay(self::POLL_INTERVAL_MICROS / 1_000_000);
+                }
+                if ($process->isRunning()) {
+                    $process->signal(\SIGKILL);
+                    // isRunning() lets Symfony reap its own child once exit
+                    // is observable, without stop() blocking in proc_close().
+                    while ($process->isRunning()) {
+                        delay(self::POLL_INTERVAL_MICROS / 1_000_000);
+                    }
+                }
             }
         } catch (ProcessRuntimeException $exception) {
             $this->logger->warning('code_mode.process_stop_failed', [

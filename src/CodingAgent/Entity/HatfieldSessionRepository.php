@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
-use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -37,32 +36,24 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
      * fixed order.  No DQL injection surface because the sort column and
      * direction are hard-coded.
      *
-     * @return list<HatfieldSession>
+     * @return list<array{id: int, name: string, cwd: string, prompt: ?string, model: ?string, model_provider: ?string, model_name: ?string, reasoning: ?string, created_at: string, updated_at: string}>
      */
     public function findForCatalog(): array
     {
-        /* @var list<HatfieldSession> */
-        return $this->createQueryBuilder('s')
-            ->orderBy('s.updatedAt', 'DESC')
-            ->getQuery()
-            ->setHint(Query::HINT_REFRESH, true)
-            ->getResult();
+        return $this->getEntityManager()->getConnection()->fetchAllAssociative(
+            'SELECT id, name, cwd, prompt, model, model_provider, model_name, reasoning, created_at, updated_at FROM hatfield_session ORDER BY updated_at DESC',
+        );
     }
 
     /**
      * Return whether a session row currently exists in the database.
      *
-     * Uses COUNT so existence does not depend on a possibly stale managed
+     * Uses SQL so existence does not depend on a possibly stale managed
      * entity remaining in the identity map after another process deleted it.
      */
     public function existsById(int $id): bool
     {
-        return (bool) $this->createQueryBuilder('s')
-            ->select('COUNT(s.id)')
-            ->where('s.id = :id')
-            ->setParameter('id', $id)
-            ->getQuery()
-            ->getSingleScalarResult();
+        return false !== $this->getEntityManager()->getConnection()->fetchOne('SELECT 1 FROM hatfield_session WHERE id = ?', [$id]);
     }
 
     /** @return list<array{session_id: string, name: string, prompt: ?string}> */

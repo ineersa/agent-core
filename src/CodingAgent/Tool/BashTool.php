@@ -9,11 +9,13 @@ use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BashToolConfig;
-use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
+
+use function Amp\delay;
 
 /**
  * Execute a shell command with foreground supervision via BackgroundProcessManager.
@@ -203,7 +205,11 @@ final class BashTool implements HatfieldToolProviderInterface
                 }
 
                 if ($record->backgroundRequested) {
-                    $this->manager->markBackgroundedForRecord($dbId, $sessionId);
+                    if (!$this->manager->tryMarkBackgroundedForRecord($dbId, $sessionId)) {
+                        // Completion won the owner's transaction. Re-read it on
+                        // the next pass instead of issuing a background ACK.
+                        continue;
+                    }
 
                     return \sprintf(
                         "Command moved to background.\nPID: %d\nLog: %s\n\nYou will be notified when the process finishes. Use bg_status log pid=%d to inspect output or bg_status stop pid=%d to stop it.",
@@ -214,8 +220,8 @@ final class BashTool implements HatfieldToolProviderInterface
                     );
                 }
 
-                // 5. Sleep before next poll
-                usleep($this->config->pollIntervalMicros);
+                // Yield during supervision so sibling invocations and lease timers progress.
+                delay($this->config->pollIntervalMicros / 1_000_000);
             }
         });
     }
@@ -318,12 +324,12 @@ final class BashTool implements HatfieldToolProviderInterface
     /**
      * Handle a finished/stopped process entity.
      *
-     * @param BackgroundProcess $entity    The finished process entity
-     * @param string|null       $sessionId Session ownership filter
+     * @param BashProcessRecordDTO $entity    The finished process entity
+     * @param string|null          $sessionId Session ownership filter
      *
      * @return string Formatted result text
      */
-    private function handleFinished(BackgroundProcess $entity, ?string $sessionId): string
+    private function handleFinished(BashProcessRecordDTO $entity, ?string $sessionId): string
     {
         $output = $this->readOutput($entity->id, $sessionId);
 
