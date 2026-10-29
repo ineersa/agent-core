@@ -113,6 +113,7 @@ final class SubmissionRunHandlerTest extends IsolatedKernelTestCase
         $f = new SubmissionFixture($c);
         $receipt = $f->prepare();
         $f->register($receipt);
+        $f->completeActiveChildClaim();
         $c->get(DeferredSubagentBatchRepository::class)->reserveBatch('later-resume', $f->parent, 1, 'resume-call', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, $f->child, $f->artifact, 'scout', 'new task', 'model', 'medium'));
         $f->append($f->parent, 4, 1, 'llm_step_completed', ['assistant_message' => ['tool_calls' => [['id' => 'resume-call'], ['id' => 'steer']]]]);
         $result = $c->get(SubmissionRunHandler::class)->handle(new AcceptSubmissionDTO($f->parent, $receipt->identity), $f->parentState);

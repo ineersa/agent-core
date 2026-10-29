@@ -163,6 +163,7 @@ final class SubmissionDeliveryRunHandlerTest extends IsolatedKernelTestCase
         $delivery = $this->accept($f);
         $result = $c->get(SubmissionDeliveryRunHandler::class)->handle($delivery, $f->childState);
         $this->commit($f->childState, $result);
+        $f->completeActiveChildClaim();
         $c->get(DeferredSubagentBatchRepository::class)->reserveBatch('later-resume', $f->parent, 1, 'resume', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, $f->child, $f->artifact, 'scout', 'new task', 'model', 'medium'));
         $boundary = $c->get(CommandMailboxPolicy::class)->applyPendingTurnStartCommands($result->nextState);
         Assert::assertSame('agent_command_rejected', $boundary->eventSpecs[0]['type']);
