@@ -368,7 +368,6 @@ YAML;
         }
         $this->process = null;
         $this->trackedControllerPids = [];
-        $this->lastTeardownSurvivorPids = [];
         $this->stdoutBuf = '';
         $this->stderrBuf = '';
     }

@@ -33,9 +33,6 @@ abstract class ControllerE2eTestCase extends TestCase
     /** @var list<int> PIDs in this test's controller subprocess tree (proc child + descendants). */
     protected array $trackedControllerPids = [];
 
-    /** @var list<int> Same-UID tracked PIDs still alive after the last stopProcess() teardown. */
-    protected array $lastTeardownSurvivorPids = [];
-
     /** Absolute path of this controller's session-owned sqlite-queue database. */
     protected string $sqliteQueueDatabasePath = '';
 
@@ -284,11 +281,10 @@ abstract class ControllerE2eTestCase extends TestCase
         @proc_close($this->process);
         $this->process = null;
 
-        // Capture survivors before clearing the ownership list so teardown can
-        // log pid/cmdline. Immediate emptiness is not an exit contract: SIGKILL
+        // Log survivor pid/cmdline before clearing the ownership list.
+        // Immediate emptiness is not an exit contract: SIGKILL
         // delivery is not acknowledgment, and no deterministic wait facility
         // exists here without timing polls banned by root test rules.
-        $this->lastTeardownSurvivorPids = $this->survivingTrackedControllerPids();
         $this->logControllerProcessSurvivors();
         $this->trackedControllerPids = [];
     }
