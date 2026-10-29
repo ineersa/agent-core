@@ -30,7 +30,10 @@ runs:
             ;;
           Darwin)
             # Homebrew equivalents; flex is keg-only and must be on PATH for SPC.
-            brew update
+            # Reuse runner-installed tools instead of rebuilding newer releases
+            # from source on Intel macOS (notably CMake).
+            export HOMEBREW_NO_AUTO_UPDATE=1
+            export HOMEBREW_NO_INSTALL_UPGRADE=1
             brew install cmake pkg-config autoconf automake libtool flex gperf bison
             if [[ "$(uname -m)" == "x86_64" ]]; then
               # Homebrew no longer publishes an Intel macOS bottle for re2c.
