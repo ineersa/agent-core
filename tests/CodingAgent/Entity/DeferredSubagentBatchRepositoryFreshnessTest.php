@@ -20,8 +20,8 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Batch mutable fields and version-guarded marker writes must refresh from SQL
- * before deciding, without replacing existing post-transaction clears.
+ * Snapshot reads see committed fields without refreshing managed aliases.
+ * Version-guarded owner writes still use fresh SQL before deciding.
  */
 #[Group('db')]
 final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelTestCase
@@ -76,8 +76,28 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
         $after = $this->repository->findByLifecycleId($lifecycle);
         $this->assertNotNull($after);
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $after->launchStatus);
-        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $managed->launchStatus);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $managed->launchStatus);
         $this->assertTrue($this->entityManager->contains($managed));
+    }
+
+    #[Test]
+    public function projectionReadsDoNotPopulateTheIdentityMap(): void
+    {
+        $parent = 'parent-batch-snapshot-retention';
+        $tool = 'tool-batch-snapshot-retention';
+        $lifecycle = $this->reserveOneChild($parent, $tool);
+        $this->entityManager->clear();
+
+        for ($round = 0; $round < 128; ++$round) {
+            $batch = $this->repository->findByLifecycleId($lifecycle);
+            $this->assertNotNull($batch);
+            $this->assertCount(1, $batch->children);
+            $this->assertEquals($batch, $this->repository->findByParentRunAndToolCall($parent, $tool));
+            $this->assertSame([], $this->entityManager->getUnitOfWork()->getIdentityMap());
+        }
+
+        $this->assertNull($this->repository->findByLifecycleId('missing-lifecycle'));
+        $this->assertNull($this->repository->findByParentRunAndToolCall($parent, 'missing-tool'));
     }
 
     #[Test]

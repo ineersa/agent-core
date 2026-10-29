@@ -33,9 +33,17 @@ final readonly class BackgroundBashHandler
             return;
         }
 
-        $accepted = 'background_child' === $command->type
-            ? $this->children->request($command->runId ?? '', $command->payload)
-            : $this->requests->request($command->runId ?? '', $command->payload);
+        if ('background_child' === $command->type) {
+            $accepted = $this->children->request($command->runId ?? '', $command->payload);
+        } else {
+            $request = $this->requests->prepare($command->runId ?? '', $command->payload);
+            $accepted = null !== $request;
+            if (null !== $request) {
+                // Refusal after authoritative owner classification arrives on
+                // the existing runtime event pipe, not a second reply pump.
+                $this->commandBus->dispatch($request);
+            }
+        }
         if (!$accepted) {
             $event->emit(new RuntimeEvent(
                 type: RuntimeEventTypeEnum::ProtocolError->value,

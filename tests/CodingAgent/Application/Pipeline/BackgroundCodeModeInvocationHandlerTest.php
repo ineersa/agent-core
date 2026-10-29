@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
+use Doctrine\DBAL\Connection;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\LocalMetadataCoordinator;
@@ -29,6 +30,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -41,6 +43,7 @@ use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Pipeline\BackgroundCodeModeInvocationHandler;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeBackgroundCoordinationHandler;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -51,13 +54,16 @@ use Ineersa\CodingAgent\Session\History\HistoryReplayFilter;
 use Ineersa\CodingAgent\Session\History\HistorySelectionService;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeCancellationToken;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\TestWith;
+use Symfony\Component\Messenger\MessageBus;
+use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Uid\Uuid;
 
-final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCase
+// Worker-role activation is process-lifetime state. Each case needs fresh services.
+final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKernelTestCase
 {
     #[TestWith([false], 'return to tip')]
     #[TestWith([true], 'edited prompt behind tip')]
@@ -287,7 +293,9 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
     #[TestWith([true, true, true], 'admitted receipt fenced before consumption')]
     #[TestWith([false], 'terminal wins')]
     #[TestWith([false, false], 'startup failure before readiness')]
-    public function testCallerRaceAndFirstTerminalRetention(bool $ackFirst, bool $ready = true, bool $fenceReceipt = false): void
+    #[TestWith([true, true, false, true], 'remote ACK wins')]
+    #[TestWith([false, true, false, true], 'remote terminal wins')]
+    public function testCallerRaceAndFirstTerminalRetention(bool $ackFirst, bool $ready = true, bool $fenceReceipt = false, bool $remote = false): void
     {
         $container = self::getContainer();
         $runId = $container->get(HatfieldSessionStore::class)->createSession('code mode admission');
@@ -330,11 +338,26 @@ final class BackgroundCodeModeInvocationHandlerTest extends IsolatedKernelTestCa
         $details = $ackFirst ? ['model_notifications' => [['id' => 'cap', 'source' => 'output_cap', 'kind' => 'output_capped', 'severity' => 'warning', 'delivery' => 'tool_result_replace', 'text' => 'PREVIEW: first result; Saved full output: /owned/artifact.txt', 'tool_call_id' => 'call', 'tool_name' => 'code_mode']]] : [];
         $result = ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => 'FIRST']], $details, isError: !$ready);
         $bus = $container->get('agent.command.bus');
+        $middleware = $container->get(ToolPayloadMiddleware::class);
+        if ($remote) {
+            $middleware->useRemoteResultOwner();
+            $container->get(ActiveRunContextInterface::class)->loadRecovered($ackFirst ? $ack->nextState : $state);
+        }
         $bus->dispatch($result);
+        if ($remote) {
+            $this->assertNull($container->get(Connection::class)->fetchOne('SELECT accepted_result_reference_json FROM tool_deferred_completion WHERE deferred_id = ?', [$id]), 'The tool sender seals files without accepting terminal metadata.');
+            $sealed = array_find(array_reverse($container->get('messenger.transport.run_control')->getSent()), static fn ($envelope): bool => $envelope->getMessage() instanceof ToolPayloadMessage)->getMessage();
+            (new MessageBus([$middleware]))->dispatch($sealed, [new ReceivedStamp('run_control')]);
+            $this->assertNotNull($container->get(Connection::class)->fetchOne('SELECT accepted_result_reference_json FROM tool_deferred_completion WHERE deferred_id = ?', [$id]), 'The initialized owner accepts before ordinary result admission.');
+        }
         $reference = $repository->findMetadataByDeferredId($id)->acceptedResultReference;
         $this->assertNotNull($reference);
         $this->assertSame('pending', $repository->status($id), 'Transport publication is not admission.');
         $bus->dispatch(ToolCallResultFactory::fromDeferredCorrelationAndCompletion($correlation, [['type' => 'text', 'text' => 'SECOND']]));
+        if ($remote) {
+            $sealed = array_find(array_reverse($container->get('messenger.transport.run_control')->getSent()), static fn ($envelope): bool => $envelope->getMessage() instanceof ToolPayloadMessage)->getMessage();
+            (new MessageBus([$middleware]))->dispatch($sealed, [new ReceivedStamp('run_control')]);
+        }
         $this->assertEquals($reference, $repository->findMetadataByDeferredId($id)->acceptedResultReference);
         $retained = $container->get(ToolPayloadStoreInterface::class)->read($reference);
         $this->assertSame('FIRST', $retained->result['content'][0]['text']);

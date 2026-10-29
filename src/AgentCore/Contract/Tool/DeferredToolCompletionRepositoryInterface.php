@@ -29,6 +29,8 @@ interface DeferredToolCompletionRepositoryInterface
     /** Read and validate stored correlation identity without opening its body. */
     public function findMetadataByDeferredId(string $deferredId): ?DeferredToolCompletionMetadataDTO;
 
+    public function findMetadataByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionMetadataDTO;
+
     /**
      * @return 'completed'|'pending'|null
      */

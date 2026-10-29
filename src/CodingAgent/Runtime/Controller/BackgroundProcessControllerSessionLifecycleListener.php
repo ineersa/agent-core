@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\LoggerInterface;
@@ -24,7 +23,6 @@ final class BackgroundProcessControllerSessionLifecycleListener
         private readonly BackgroundProcessCompletionPoller $completionPoller,
         private readonly ProcessStore $store,
         private readonly BackgroundProcessManager $manager,
-        private readonly ProcessLifecycle $lifecycle,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -63,13 +61,13 @@ final class BackgroundProcessControllerSessionLifecycleListener
         foreach ($sessionIds as $sessionId) {
             ++$scopeCount;
             try {
-                foreach ($this->store->fetchBackgrounded($sessionId) as $entity) {
+                foreach ($this->store->backgroundSnapshots($sessionId) as $entity) {
                     try {
                         if (null === $entity->finishedAt) {
                             $this->manager->stopByRecordId($entity->id, $sessionId);
                         }
 
-                        if (!$this->lifecycle->deleteExactRecordSidecars($entity->logPath, $entity->statusPath)) {
+                        if (!$this->manager->cleanupFinishedRecord($entity->id, $sessionId)) {
                             ++$failed;
                             $this->logger->warning('background_process.session_cleanup_row_failed', [
                                 'component' => 'tool.background_process',
@@ -82,11 +80,7 @@ final class BackgroundProcessControllerSessionLifecycleListener
                             continue;
                         }
 
-                        if ($this->store->deleteById($entity->id)) {
-                            ++$cleaned;
-                        } else {
-                            ++$failed;
-                        }
+                        ++$cleaned;
                     } catch (\Throwable $exception) {
                         ++$failed;
                         $this->logger->warning('background_process.session_cleanup_row_failed', [

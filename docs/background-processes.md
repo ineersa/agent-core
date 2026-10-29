@@ -59,6 +59,9 @@ Opening the picker does not call the model.
 The status panel shows cancellation requested until operational state confirms the outcome.
 The terminal notice clears on the next nonempty submission. Unavailable records do not
 count as confirmed termination. Quiet explicit Bash stops do not generate a model follow-up.
+In process mode, Bash stop requests go through the live session controller. If the
+controller is unavailable, the request is refused without starting or restarting it.
+A lost stop reply is an unknown outcome, not permission to repeat native signalling.
 
 The list is a snapshot fetched once on opening. It never refreshes while open, even
 after confirmation cancellation or process events. Reopen `/bg` for a fresh snapshot.

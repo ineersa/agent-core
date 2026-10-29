@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Psr\Log\LoggerInterface;
@@ -28,6 +29,7 @@ final class DeferredSubagentBatchLaunchService
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly AgentsConfig $agentsConfig,
         private readonly LoggerInterface $logger,
+        private readonly ChildInvocationLifecycleService $childLifecycle,
     ) {
     }
 
@@ -126,7 +128,7 @@ final class DeferredSubagentBatchLaunchService
         }
 
         if (null !== $existing && DeferredSubagentBatchLaunchStatusEnum::Launched === $existing->launchStatus) {
-            $this->batchRepository->reserveBatch(
+            $this->childLifecycle->reserveBatch(
                 lifecycleId: $lifecycleId,
                 parentRunId: $parentRunId,
                 parentTurnNo: $toolContext->turnNo(),
@@ -140,7 +142,7 @@ final class DeferredSubagentBatchLaunchService
             return new DeferredToolCompletionOutcome($lifecycleId);
         }
 
-        $projection = $this->batchRepository->reserveBatch(
+        $projection = $this->childLifecycle->reserveBatch(
             lifecycleId: $lifecycleId,
             parentRunId: $parentRunId,
             parentTurnNo: $toolContext->turnNo(),
@@ -169,7 +171,7 @@ final class DeferredSubagentBatchLaunchService
                 $e->failureBatchIndex,
             );
             try {
-                $this->batchRepository->applyLaunchFailurePreparation($parentRunId, $toolCallId, $lifecycleId);
+                $this->childLifecycle->applyLaunchFailurePreparation($parentRunId, $toolCallId, $lifecycleId);
             } catch (\Throwable $persistFailure) {
                 $this->logger->warning('deferred_subagent_batch.launch_failure_persist_failed', [
                     'run_id' => $parentRunId,
@@ -202,7 +204,7 @@ final class DeferredSubagentBatchLaunchService
         } catch (DeferredSubagentBatchRuntimeStartFailure $e) {
             $failureIndex = $e->failureBatchIndex;
             try {
-                $this->batchRepository->applyLaunchFailurePreparation(
+                $this->childLifecycle->applyLaunchFailurePreparation(
                     $parentRunId,
                     $toolCallId,
                     $lifecycleId,
@@ -223,7 +225,7 @@ final class DeferredSubagentBatchLaunchService
         }
 
         try {
-            $this->batchRepository->applyLaunchSuccessState($parentRunId, $toolCallId, $lifecycleId, $startedAt);
+            $this->childLifecycle->applyLaunchSuccessState($parentRunId, $toolCallId, $lifecycleId, $startedAt);
         } catch (\Throwable $persistFailure) {
             $this->logger->warning('deferred_subagent_batch.launch_success_persist_failed', [
                 'run_id' => $parentRunId,
@@ -272,7 +274,7 @@ final class DeferredSubagentBatchLaunchService
         }
 
         try {
-            $this->batchRepository->applyLaunchSuccessState(
+            $this->childLifecycle->applyLaunchSuccessState(
                 $parentRunId,
                 $toolCallId,
                 $lifecycleId,

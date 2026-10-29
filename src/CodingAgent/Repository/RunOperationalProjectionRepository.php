@@ -52,6 +52,16 @@ final class RunOperationalProjectionRepository extends ServiceEntityRepository i
         });
     }
 
+    /** @return array{parent_run_id: ?string}|null */
+    public function findRelationship(string $runId): ?array
+    {
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
+            'SELECT parent_run_id FROM run_operational_state WHERE run_id = ?', [$runId],
+        );
+
+        return false === $row ? null : $row;
+    }
+
     public function findOperationalStatus(string $runId): ?RunOperationalStatusDTO
     {
         // Bypass the identity map so long-lived cancellation polls observe

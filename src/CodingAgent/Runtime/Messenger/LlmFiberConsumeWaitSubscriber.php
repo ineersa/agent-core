@@ -24,7 +24,7 @@ use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\Worker;
 
 /**
- * Amp-safe idle WAIT for hatfield:messenger:consume-llm.
+ * Amp-safe idle WAIT for both roles of hatfield:messenger:consume-llm.
  *
  * NativeConsumeWaitSubscriber only arms stock messenger:consume. The Fiber
  * llm command hardcodes sleep=0, so without this subscriber the Worker would
@@ -87,21 +87,27 @@ final class LlmFiberConsumeWaitSubscriber implements EventSubscriberInterface
         }
 
         $names = $event->getWorker()->getMetadata()->getTransportNames();
-        if (['llm'] !== $names) {
+        if (!\in_array($names, [['llm'], ['tool', 'agent']], true)) {
             return;
         }
-        if (!$this->receiverLocator->has('llm')) {
-            return;
-        }
-        $receiver = $this->receiverLocator->get('llm');
-        if (!$receiver instanceof Transport) {
-            return;
+        $owner = null;
+        $queues = [];
+        foreach ($names as $name) {
+            $receiver = $this->receiverLocator->get($name);
+            if (!$receiver instanceof Transport) {
+                return;
+            }
+            if (null !== $owner && $owner->brokerEndpoint() !== $receiver->brokerEndpoint()) {
+                throw new \LogicException('Fiber execution receivers must share one queue broker.');
+            }
+            $owner ??= $receiver;
+            $queues[] = $receiver->queueName();
         }
 
         $stop = new DeferredCancellation();
         $this->stopsByWorker[$event->getWorker()] = $stop;
         $this->stopsByCommand[$command] = $stop;
-        $this->waitsByWorker[$event->getWorker()] = static fn (int $timeoutMilliseconds, Cancellation $cancellation): bool => $receiver->wait($timeoutMilliseconds, $cancellation);
+        $this->waitsByWorker[$event->getWorker()] = static fn (int $timeoutMilliseconds, Cancellation $cancellation): bool => $owner->waitAny($queues, $timeoutMilliseconds, $cancellation);
     }
 
     public function onWorkerRunning(WorkerRunningEvent $event): void

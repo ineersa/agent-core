@@ -124,7 +124,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             throw new \RuntimeException(\sprintf('Provider "%s" is not configured.', $modelRef->providerId));
         }
 
-        $session = '' !== $sessionId ? $this->sessionMetadataStore->findSession($sessionId) : null;
+        $session = '' !== $sessionId ? $this->sessionMetadataStore->findModelMetadata($sessionId) : null;
         if (null === $session && ctype_digit($sessionId)) {
             throw new \RuntimeException(\sprintf('Session "%s" has no metadata for model resolution.', $sessionId));
         }

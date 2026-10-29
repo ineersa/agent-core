@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Support;
 use DAMA\DoctrineTestBundle\Doctrine\DBAL\StaticDriver;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -58,12 +59,12 @@ final class ControllerReplayBackgroundProcessSeeder
                 'status_path' => $statusPath,
                 'started_at' => new \DateTimeImmutable(),
             ]);
-            $entity = $store->fetchByRecordId($id);
+            $entity = BackgroundProcessFixture::record($container, $id);
             if (null === $entity) {
                 throw new \RuntimeException(\sprintf('Seeded background process %d missing after insert.', $id));
             }
-            $entity->finish(0, new \DateTimeImmutable());
-            $store->flush();
+            BackgroundProcessFixture::finish($entity, 0, new \DateTimeImmutable());
+            $container->get(\Doctrine\ORM\EntityManagerInterface::class)->flush();
 
             /** @var BackgroundProcessManager $manager */
             $manager = $container->get(BackgroundProcessManager::class);

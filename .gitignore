@@ -6,6 +6,9 @@
 # Per-suite test cache dirs (generated during castor test)
 /.hatfield/cache-*/
 
+# Runtime sidecar synchronization locks
+/.hatfield/locks/
+
 # Generated artifacts
 callgraph.json
 callgraph.html

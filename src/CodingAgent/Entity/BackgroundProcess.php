@@ -13,15 +13,10 @@ use Doctrine\ORM\Mapping as ORM;
  * (DoctrineBundle 3.x default). Property hooks are supported since
  * ORM 3.4 when enable_native_lazy_objects is true.
  *
- * Lifecycle:
- *   finish(?int $exitCode, \DateTimeImmutable $finishedAt) — normal completion
- *   markStopped(\DateTimeImmutable $finishedAt) — user-initiated stop
- *   markFinishedUnclean(\DateTimeImmutable $finishedAt) — crash/unclean exit
- *
  * created_at / updated_at are \DateTimeImmutable maintained by
  * TimestampableLifecycleTrait.
- * Semantic process times (started_at, finished_at) are set explicitly
- * by BackgroundProcessManager.
+ * Registration sets started_at. Owner decisions in ProcessStore update
+ * terminal state and semantic process times through DBAL.
  */
 #[ORM\Entity(repositoryClass: BackgroundProcessRepository::class)]
 #[ORM\Table(name: 'background_process')]
@@ -48,7 +43,7 @@ class BackgroundProcess
      * The @ORM\Index on 'pid' is intentionally non-unique. Prefer the
      * auto-increment $id as the authoritative lifecycle key.
      *
-     * @see ProcessStore::fetchLatestByPid() for public PID-based lookup semantics
+     * @see ProcessStore::latestSnapshot() for public PID-based lookup semantics
      * @see BackgroundProcessManager::findByRecordId() for immutable lookup
      */
     #[ORM\Column(type: 'integer')]
@@ -115,61 +110,5 @@ class BackgroundProcess
         $this->startedAt = new \DateTimeImmutable();
         $this->createdAt = new \DateTimeImmutable();
         $this->updatedAt = new \DateTimeImmutable();
-    }
-
-    /**
-     * Mark this process as finished with an optional exit code.
-     */
-    public function finish(?int $exitCode, \DateTimeImmutable $finishedAt): void
-    {
-        $this->exitCode = $exitCode;
-        $this->finishedAt = $finishedAt;
-        // TERM initiation records Stopped before signaling. A successful cleanup
-        // exit must not turn that durable stop cause into a successful command.
-        if (BackgroundProcessStatusEnum::Stopped !== $this->status) {
-            $this->status = BackgroundProcessStatusEnum::Finished;
-        }
-    }
-
-    /**
-     * Mark this process as stopped by the user.
-     */
-    public function markStopped(\DateTimeImmutable $finishedAt): void
-    {
-        $this->stoppedByUser = true;
-        $this->finishedAt = $finishedAt;
-        $this->status = BackgroundProcessStatusEnum::Stopped;
-    }
-
-    /**
-     * Mark this process as finished uncleanly (crash / SIGKILL / no status file).
-     */
-    public function markFinishedUnclean(\DateTimeImmutable $finishedAt): void
-    {
-        $this->exitCode = null;
-        $this->finishedAt = $finishedAt;
-        if (BackgroundProcessStatusEnum::Stopped !== $this->status) {
-            $this->status = BackgroundProcessStatusEnum::FinishedUnclean;
-        }
-    }
-
-    /**
-     * Mark this process as having been explicitly moved to background
-     * by an explicit user background request.
-     *
-     * Processes with backgroundedAt set are eligible for automatic
-     * completion notification via BackgroundProcessCompletionPoller.
-     */
-    public function markBackgrounded(\DateTimeImmutable $now): void
-    {
-        $this->backgroundedAt = $now;
-    }
-
-    /**
-     * Mark completion as acknowledged by a follow-up or an explicit stop result.
-     */
-    public function markCompletionNotified(\DateTimeImmutable $now): void
-    {
-        $this->completionNotifiedAt = $now;
     }
 }

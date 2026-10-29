@@ -33,9 +33,6 @@ abstract class ControllerE2eTestCase extends TestCase
     /** @var list<int> PIDs in this test's controller subprocess tree (proc child + descendants). */
     protected array $trackedControllerPids = [];
 
-    /** @var list<int> Same-UID tracked PIDs still alive after the last stopProcess() teardown. */
-    protected array $lastTeardownSurvivorPids = [];
-
     /** Absolute path of this controller's session-owned sqlite-queue database. */
     protected string $sqliteQueueDatabasePath = '';
 
@@ -49,6 +46,8 @@ abstract class ControllerE2eTestCase extends TestCase
      * Set from the first run.started seen during a collection window, or from $this->runId when known.
      */
     protected ?string $parentRunIdForCollection = null;
+    /** @var list<array<string, mixed>> */
+    private array $pendingEvents = [];
 
     // ── Lifecycle ──
 
@@ -76,6 +75,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $this->pipes = [];
         $this->trackedControllerPids = [];
         $this->stdoutBuf = '';
+        $this->pendingEvents = [];
         $this->stderrBuf = '';
         $this->runId = '';
         $this->parentRunIdForCollection = null;
@@ -281,8 +281,10 @@ abstract class ControllerE2eTestCase extends TestCase
         @proc_close($this->process);
         $this->process = null;
 
-        // Capture survivors before clearing the ownership list so topology tests can assert.
-        $this->lastTeardownSurvivorPids = $this->survivingTrackedControllerPids();
+        // Log survivor pid/cmdline before clearing the ownership list.
+        // Immediate emptiness is not an exit contract: SIGKILL
+        // delivery is not acknowledgment, and no deterministic wait facility
+        // exists here without timing polls banned by root test rules.
         $this->logControllerProcessSurvivors();
         $this->trackedControllerPids = [];
     }
@@ -330,14 +332,16 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $this->drainStderr();
 
+        $events = $this->pendingEvents;
+        $this->pendingEvents = [];
         $chunk = stream_get_contents($this->pipes[1]);
         if (false === $chunk || '' === $chunk) {
-            return [];
+            return $events;
         }
 
         $this->stdoutBuf .= $chunk;
 
-        return $this->parseBuffer($this->stdoutBuf);
+        return array_merge($events, $this->parseBuffer($this->stdoutBuf));
     }
 
     protected function drainStderr(): void
@@ -415,7 +419,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $deadline = microtime(true) + $timeout;
 
         while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
+            foreach ($this->consumeEvents() as $event) {
                 if (($event['type'] ?? '') === $type) {
                     return $event;
                 }
@@ -456,7 +460,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
 
         while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
+            foreach ($this->consumeEvents() as $event) {
                 $events[] = $event;
                 $this->noteParentRunIdFromEvent($event);
 
@@ -961,19 +965,6 @@ YAML;
     }
 
     /**
-     * Fail if any tracked same-UID controller descendants remained after the last stopProcess().
-     * Topology tests assert hard; other E2E tests only log via logControllerProcessSurvivors.
-     */
-    protected function assertNoTrackedControllerProcessSurvivors(): void
-    {
-        $this->assertSame(
-            [],
-            $this->lastTeardownSurvivorPids,
-            'No controller-owned descendants may remain after SIGTERM→0.05s→SIGKILL teardown',
-        );
-    }
-
-    /**
      * Absolute path of the Messenger transport SQLite file configured for this controller.
      */
     protected function configuredMessengerTransportDbPath(): string
@@ -1038,6 +1029,16 @@ YAML;
             if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
                 @posix_kill($pid, \SIGKILL);
             }
+        }
+    }
+
+    /** @return \Generator<int, array<string, mixed>> */
+    private function consumeEvents(): \Generator
+    {
+        $this->pendingEvents = $this->readEvents();
+        // Remove only yielded frames. Returning early leaves the tail queued.
+        while ([] !== $this->pendingEvents) {
+            yield array_shift($this->pendingEvents);
         }
     }
 

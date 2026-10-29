@@ -7,8 +7,11 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\Process;
 
 #[Group('controller-replay')]
@@ -28,7 +31,30 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
         }
     }
 
-    public function testSameProcessSurvivesAcknowledgementAndExistingPollerDeliversOneCompletion(): void
+    public function testStopCommandReturnsCorrelatedUnavailableResultWithoutLaunchingWork(): void
+    {
+        $this->sessionId = trim($this->queryRuntime()->getOutput());
+        $this->spawnController();
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+        $this->writeCommand(['v' => 1, 'id' => 'stop-missing', 'type' => 'stop_bash', 'runId' => $this->sessionId,
+            'payload' => ['record_id' => 2147483647]]);
+        $events = $this->collectEventsUntil('bg_process.stop.completed', 5);
+        $result = $this->indexByType($events)['bg_process.stop.completed'][0] ?? null;
+        $this->assertNotNull($result, $this->collectDiagnostics($events));
+        $this->assertSame($this->sessionId, $result['runId']);
+        $this->assertSame(['commandId' => 'stop-missing', 'available' => false, 'stopped' => false], $result['payload']);
+        $this->assertFileDoesNotExist($this->tempDir.'/requests.jsonl');
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function completionModes(): iterable
+    {
+        yield 'natural completion' => [false];
+        yield 'owner-backed explicit stop' => [true];
+    }
+
+    #[DataProvider('completionModes')]
+    public function testSameProcessSurvivesAcknowledgementAndExistingPollerDeliversOneCompletion(bool $explicitStop): void
     {
         $this->assertTrue(posix_mkfifo($this->tempDir.'/release', 0600));
         $release = fopen($this->tempDir.'/release', 'r+b');
@@ -79,6 +105,26 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
                 && self::CALL_ID === ($message['tool_call_id'] ?? null)
                 && str_contains(json_encode($message, \JSON_THROW_ON_ERROR), 'Command moved to background.')));
             $this->assertStringNotContainsString('[BG_PROCESS_DONE]', json_encode($requests[1], \JSON_THROW_ON_ERROR));
+
+            if ($explicitStop) {
+                $this->writeCommand(['v' => 1, 'id' => 'owner-stop', 'type' => 'stop_bash', 'runId' => $this->runId, 'payload' => ['record_id' => $candidate['id']]]);
+                $stopped = $this->collectEventsUntil('bg_process.stop.completed', 5);
+                $result = $this->indexByType($stopped)['bg_process.stop.completed'][0];
+                $this->assertSame(['commandId' => 'owner-stop', 'available' => true, 'stopped' => true], $result['payload']);
+                $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger(), new LockFactory(new FlockStore()));
+                $deadline = microtime(true) + 3;
+                while ($lifecycle->isAlive($candidate['pid']) && microtime(true) < $deadline) {
+                    $this->assertTrue($this->isRunning(), 'The controller remains live while supervising explicit stop.');
+                    usleep(10_000);
+                }
+                $this->assertFalse($lifecycle->isAlive($candidate['pid']));
+                $this->writeCommand(['v' => 1, 'id' => 'owner-stop-replay', 'type' => 'stop_bash', 'runId' => $this->runId, 'payload' => ['record_id' => $candidate['id']]]);
+                $replayed = $this->collectEventsUntil('bg_process.stop.completed', 5);
+                $this->assertSame(['commandId' => 'owner-stop-replay', 'available' => true, 'stopped' => false], $this->indexByType($replayed)['bg_process.stop.completed'][0]['payload']);
+                $this->assertCount(2, $this->requests(), 'Owner-backed stop suppresses completion rather than creating a model turn.');
+
+                return;
+            }
 
             fwrite($release, "finish\n");
             fflush($release);
@@ -222,7 +268,7 @@ final class ControllerReplayBackgroundBashTest extends ControllerReplayE2eTestCa
             $this->writeCommand(['v' => 1, 'id' => 'during-grace', 'type' => 'cancel', 'runId' => $this->runId, 'payload' => []]);
             $events = $this->collectEventsUntil(null, 2, static fn (array $event): bool => 'command.ack' === ($event['type'] ?? '') && 'during-grace' === ($event['payload']['commandId'] ?? null));
             $this->assertTrue($this->foundAck($events, 'during-grace'), $this->collectDiagnostics($events));
-            $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger());
+            $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger(), new LockFactory(new FlockStore()));
             $this->assertTrue($lifecycle->isAlive($candidate['pid']), 'Acknowledgment arrives while native termination is still in grace, not after KILL or zombie exit.');
             if ($interruptedStop) {
                 $deadline = microtime(true) + 5;

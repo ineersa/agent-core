@@ -6,10 +6,12 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -20,6 +22,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
@@ -27,6 +30,7 @@ use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Tool\DTO\AgentResumeArgumentsDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Continues existing terminal child runs via follow_up + deferred batch wait.
@@ -49,6 +53,9 @@ final class AgentResumeExecutionService
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly AgentsConfig $agentsConfig,
         private readonly LoggerInterface $logger,
+        private readonly ChildInvocationLifecycleService $childLifecycle,
+        private readonly ToolBatchStoreInterface $toolBatches,
+        private readonly DenormalizerInterface $denormalizer,
     ) {
     }
 
@@ -69,6 +76,10 @@ final class AgentResumeExecutionService
             throw new ToolCallException('agent_resume parent run id does not match active tool context.', retryable: false);
         }
 
+        // Refuse same-batch duplicates from immutable membership before any
+        // running/terminal eligibility checks that the winner may have changed.
+        $entry = $this->resolveTargetIdentity($parentRunId, $task);
+        $this->assertCanonicalSameChildBatchPermission($toolContext, $entry);
         $entry = $this->resolveAndValidateTarget($parentRunId, $task);
 
         $toolCallId = $toolContext->toolCallId();
@@ -99,7 +110,7 @@ final class AgentResumeExecutionService
             throw new ToolCallException('agent_resume batch launch previously failed for this tool call.', retryable: false);
         }
         if (null !== $existing && DeferredSubagentBatchLaunchStatusEnum::Launched === $existing->launchStatus) {
-            $this->batchRepository->reserveBatch(
+            $this->childLifecycle->reserveBatch(
                 lifecycleId: $lifecycleId,
                 parentRunId: $parentRunId,
                 parentTurnNo: $toolContext->turnNo(),
@@ -113,7 +124,7 @@ final class AgentResumeExecutionService
             return new DeferredToolCompletionOutcome($lifecycleId);
         }
 
-        $this->batchRepository->reserveBatch(
+        $this->childLifecycle->reserveBatch(
             lifecycleId: $lifecycleId,
             parentRunId: $parentRunId,
             parentTurnNo: $toolContext->turnNo(),
@@ -123,6 +134,13 @@ final class AgentResumeExecutionService
             childIntent: $childIntent,
             parentModel: $toolContext->parentModel(),
         );
+
+        // Interruption can commit while the reservation reply is pending.
+        // Read fresh intent before changing the artifact or dispatching follow-up;
+        // deferred registration still completes interruption delivery.
+        if (null !== $this->batchRepository->findByLifecycleId($lifecycleId)?->interruptionKind) {
+            return new DeferredToolCompletionOutcome($lifecycleId);
+        }
 
         try {
             try {
@@ -178,7 +196,7 @@ final class AgentResumeExecutionService
             $failureBatchIndex = 1;
 
             try {
-                $this->batchRepository->applyLaunchFailurePreparation(
+                $this->childLifecycle->applyLaunchFailurePreparation(
                     $parentRunId,
                     $toolCallId,
                     $lifecycleId,
@@ -204,7 +222,7 @@ final class AgentResumeExecutionService
         }
 
         try {
-            $this->batchRepository->applyLaunchSuccessState(
+            $this->childLifecycle->applyLaunchSuccessState(
                 $parentRunId,
                 $toolCallId,
                 $lifecycleId,
@@ -227,17 +245,87 @@ final class AgentResumeExecutionService
         return new DeferredToolCompletionOutcome($lifecycleId);
     }
 
-    private function resolveAndValidateTarget(string $parentRunId, AgentResumeArgumentsDTO $task): AgentArtifactEntryDTO
+    /**
+     * Same-child duplicates are refused from the registered tool batch order.
+     * The earliest call targeting a resolved child may resume; later aliases of
+     * that child stay refused even after the winner finishes.
+     */
+    private function assertCanonicalSameChildBatchPermission(ToolContext $toolContext, AgentArtifactEntryDTO $entry): void
+    {
+        $stepId = $toolContext->stepId();
+        if (null === $stepId || '' === trim($stepId)) {
+            throw new ToolCallException('agent_resume requires an active tool batch step.', retryable: false);
+        }
+
+        $schedule = $this->toolBatches->loadSchedule($toolContext->runId(), $toolContext->turnNo(), $stepId);
+        if (null === $schedule) {
+            throw new ToolCallException('agent_resume requires a registered tool batch.', retryable: false);
+        }
+        if (!\array_key_exists($toolContext->toolCallId(), $schedule->expectedOrder)) {
+            throw new ToolCallException('agent_resume is not a member of the registered tool batch.', retryable: false);
+        }
+
+        $winnerToolCallId = null;
+        $winnerOrder = null;
+        foreach ($schedule->expectedOrder as $candidateToolCallId => $orderIndex) {
+            $call = $this->toolBatches->loadCall($toolContext->runId(), $toolContext->turnNo(), $stepId, $candidateToolCallId);
+            if (null === $call || 'agent_resume' !== $call->toolName) {
+                continue;
+            }
+            try {
+                $arguments = $this->denormalizer->denormalize($call->args, AgentResumeArgumentsDTO::class);
+            } catch (\Throwable $error) {
+                // Malformed sibling arguments cannot win; keep scanning the batch.
+                $this->logger->debug('agent_resume.batch_sibling_args_unreadable', [
+                    'run_id' => $toolContext->runId(),
+                    'tool_call_id' => $candidateToolCallId,
+                    'component' => 'agent.execution',
+                    'event_type' => 'agent_resume.batch_sibling_args_unreadable',
+                    'exception_class' => $error::class,
+                ]);
+                continue;
+            }
+            if (!$arguments instanceof AgentResumeArgumentsDTO) {
+                continue;
+            }
+            try {
+                $candidate = $this->resolveTargetIdentity($toolContext->runId(), $arguments);
+            } catch (ToolCallException $error) {
+                // Unresolvable siblings stay out of the canonical winner set.
+                $this->logger->debug('agent_resume.batch_sibling_identity_unresolved', [
+                    'run_id' => $toolContext->runId(),
+                    'tool_call_id' => $candidateToolCallId,
+                    'component' => 'agent.execution',
+                    'event_type' => 'agent_resume.batch_sibling_identity_unresolved',
+                    'exception_class' => $error::class,
+                ]);
+                continue;
+            }
+            if ($candidate->artifactId !== $entry->artifactId || $candidate->agentRunId !== $entry->agentRunId) {
+                continue;
+            }
+            if (null === $winnerOrder || $orderIndex < $winnerOrder || ($orderIndex === $winnerOrder && $candidateToolCallId < (string) $winnerToolCallId)) {
+                $winnerOrder = $orderIndex;
+                $winnerToolCallId = $candidateToolCallId;
+            }
+        }
+
+        if (null === $winnerToolCallId) {
+            throw new ToolCallException('agent_resume could not resolve a canonical batch winner for this child.', retryable: false);
+        }
+        if ($winnerToolCallId !== $toolContext->toolCallId()) {
+            throw new ToolCallException(\sprintf('Duplicate agent_resume for child "%s" in this tool batch. Only the first call may continue it.', $entry->artifactId), retryable: false);
+        }
+    }
+
+    private function resolveTargetIdentity(string $parentRunId, AgentResumeArgumentsDTO $task): AgentArtifactEntryDTO
     {
         $artifactId = null === $task->artifact_id ? null : trim($task->artifact_id);
         $agentRunId = null === $task->agent_run_id ? null : trim($task->agent_run_id);
-        if ('' === trim($task->task)) {
-            throw new ToolCallException('agent_resume task must be non-empty.', retryable: false);
-        }
 
         $byArtifact = null;
         $byRun = null;
-        if (null !== $artifactId) {
+        if (null !== $artifactId && '' !== $artifactId) {
             try {
                 $byArtifact = $this->artifactRegistry->get($parentRunId, $artifactId);
             } catch (\InvalidArgumentException $e) {
@@ -247,7 +335,7 @@ final class AgentResumeExecutionService
                 throw new ToolCallException(\sprintf('Unknown artifact_id "%s" in the current parent session.', $artifactId), retryable: false);
             }
         }
-        if (null !== $agentRunId) {
+        if (null !== $agentRunId && '' !== $agentRunId) {
             try {
                 $byRun = $this->artifactRegistry->findByAgentRunId($parentRunId, $agentRunId);
             } catch (\InvalidArgumentException $e) {
@@ -266,6 +354,17 @@ final class AgentResumeExecutionService
         if (null === $entry) {
             throw new ToolCallException('Unable to resolve artifact for agent_resume.', retryable: false);
         }
+
+        return $entry;
+    }
+
+    private function resolveAndValidateTarget(string $parentRunId, AgentResumeArgumentsDTO $task): AgentArtifactEntryDTO
+    {
+        if ('' === trim($task->task)) {
+            throw new ToolCallException('agent_resume task must be non-empty.', retryable: false);
+        }
+
+        $entry = $this->resolveTargetIdentity($parentRunId, $task);
 
         if (!$this->artifactRegistry->belongsToCurrentParentLifetime($parentRunId, $entry->artifactId)) {
             throw new ToolCallException(\sprintf('Artifact "%s" belongs to a previous parent lifetime and cannot be resumed after parent /resume.', $entry->artifactId), retryable: false);

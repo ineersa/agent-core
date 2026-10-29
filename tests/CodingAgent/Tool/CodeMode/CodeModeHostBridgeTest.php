@@ -25,6 +25,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeBackgroundCoordinationHandler;
+use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
@@ -368,6 +369,7 @@ PHP);
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
             self::getContainer()->get('agent.command.bus'),
+            self::getContainer()->get(CodeModeLifecycleService::class),
         );
 
         $result = $accessor->with(
@@ -451,6 +453,7 @@ PHP);
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
             self::getContainer()->get('agent.command.bus'),
+            self::getContainer()->get(CodeModeLifecycleService::class),
         );
 
         $result = $this->runScript($bridge, "return tool('code_mode', ['script' => 'return 1;']);");
@@ -671,6 +674,7 @@ PHP);
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
             self::getContainer()->get('agent.command.bus'),
+            self::getContainer()->get(CodeModeLifecycleService::class),
         );
 
         $result = $this->runScript($bridge, 'return "path-php-ok";');
@@ -886,6 +890,7 @@ PHP);
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
             self::getContainer()->get('agent.command.bus'),
+            self::getContainer()->get(CodeModeLifecycleService::class),
         );
     }
 
