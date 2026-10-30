@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -1198,6 +1199,25 @@ final class BashToolTest extends IsolatedKernelTestCase
     }
 
     /* ── Helpers ── */
+
+    public function testInvalidUtf8OutputCleansUnpersistedNestedSidecars(): void
+    {
+        $this->createManager();
+        $outer = new ToolContext($this->sessionId, 1, 'tc_code_mode', 'code_mode', $this->createStub(CancellationTokenInterface::class), 30, stepId: 'outer-step');
+        $inner = new ToolContext($this->sessionId, 1, 'tc_nested_bash', 'bash', $this->createStub(CancellationTokenInterface::class), 30, stepId: 'nested-step');
+        $before = glob($this->tmpDir.'/*.{log,status,pid}', \GLOB_BRACE) ?: [];
+        try {
+            $this->contextAccessor->with($outer, fn () => $this->contextAccessor->with($inner, fn () => ($this->makeBashTool())(
+                new BashArgumentsDTO(command: "php -r 'echo chr(0x80);'"),
+            )));
+            $this->fail('Invalid UTF-8 Bash output must throw before returning a text result.');
+        } catch (MalformedToolResultException) {
+            // Expected: output consumption fails after the command finishes.
+        }
+        $after = glob($this->tmpDir.'/*.{log,status,pid}', \GLOB_BRACE) ?: [];
+        $this->assertSame($before, $after, 'Invocation-boundary release must delete nested sidecars even when output reading throws.');
+        $this->assertSame([], $this->recordsForSession($this->sessionId));
+    }
 
     public function testConfiguredChildBashCanDetachWithoutEndingNativeExecution(): void
     {

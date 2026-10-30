@@ -158,6 +158,28 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertFileExists(substr($persisted->statusPath, 0, -7).'.pid');
     }
 
+    public function testReleaseNativeInvocationLogsSidecarCleanupFailure(): void
+    {
+        $logger = new TestLogger();
+        $this->createManager(logger: $logger);
+        $session = $this->createSession('sidecar cleanup failure');
+        $nested = $this->manager->start('printf nested-fail-cleanup', $session);
+        $this->assertNull($nested->id);
+        $this->waitUntilFinished($nested->pid);
+        $this->assertNotNull($this->manager->observeNativeByStatusPath($nested->statusPath, $session));
+        // Make unlink of the remaining sidecar siblings fail so delete returns false.
+        $this->assertTrue(chmod($this->tmpDir, 0o555));
+        try {
+            $this->manager->releaseNativeInvocation($nested->statusPath);
+        } finally {
+            $this->assertTrue(chmod($this->tmpDir, 0o755));
+        }
+        $messages = array_column(array_filter($logger->records, static fn (array $record): bool => 'error' === $record['level']), 'message');
+        $this->assertContains('background_process.native_sidecar_cleanup_failed', $messages);
+        $this->assertNull($this->manager->observeNativeByStatusPath($nested->statusPath, $session));
+    }
+
+
     public function testFindByRecordIdReturnsNullForNonexistentId(): void
     {
         $this->createManager();
@@ -325,7 +347,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertSame(0, $record->exitCode);
     }
 
-    private function createManager(int $stopGraceSeconds = 1): void
+    private function createManager(int $stopGraceSeconds = 1, ?TestLogger $logger = null): void
     {
         $config = new BackgroundProcessConfig(
             storageDir: $this->tmpDir,
@@ -334,7 +356,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         );
         $store = static::getContainer()->get(ProcessStore::class);
         $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
-        $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, new TestLogger());
+        $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, $logger ?? new TestLogger());
     }
 
     private function createOtherManager(int $stopGraceSeconds = 1): BackgroundProcessManager

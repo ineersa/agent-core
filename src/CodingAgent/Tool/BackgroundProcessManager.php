@@ -683,16 +683,40 @@ final class BackgroundProcessManager
             return;
         }
 
+        // Exceptional paths may still own a running unaccepted launch. Stop it
+        // with existing native supervision before dropping the handle. Accepted
+        // detach already released, so this path never signals those jobs.
+        $exitCode = $this->lifecycle->readStatusFile($statusPath);
+        if (null === $exitCode && $this->lifecycle->isAlive($native->pid)) {
+            $this->stopByStatusPath($statusPath, '' !== $native->sessionId ? $native->sessionId : null);
+            $native = $this->nativeLaunches[$statusPath] ?? null;
+            if (null === $native) {
+                return;
+            }
+        }
+
         $logPath = $native->logPath;
         $recordId = $native->recordId;
+        $sessionId = $native->sessionId;
+        $pid = $native->pid;
         $this->releaseNativeLaunch($statusPath);
         if (null !== $recordId) {
             return;
         }
 
-        $this->lifecycle->withSidecarLock($statusPath, function () use ($logPath, $statusPath): void {
-            $this->lifecycle->deleteLockedRecordSidecars($logPath, $statusPath);
+        $deleted = $this->lifecycle->withSidecarLock($statusPath, function () use ($logPath, $statusPath): bool {
+            return $this->lifecycle->deleteLockedRecordSidecars($logPath, $statusPath);
         });
+        if (!$deleted) {
+            $this->logger->error('background_process.native_sidecar_cleanup_failed', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.native_sidecar_cleanup_failed',
+                'status_path' => $statusPath,
+                'log_path' => $logPath,
+                'process_pid' => $pid,
+                'process_session_id' => $sessionId,
+            ]);
+        }
     }
 
     public function stopByRecordId(int $recordId, ?string $sessionId = null, bool $waitForExit = true): StopResult

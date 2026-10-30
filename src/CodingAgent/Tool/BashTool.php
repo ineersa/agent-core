@@ -117,72 +117,82 @@ final class BashTool implements HatfieldToolProviderInterface
                 'record_id' => $startResult->id,
             ]);
 
-            while (true) {
-                if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
-                    return $this->cancelNative($statusPath, $sessionId, $pid, $prepared, $startResult->id, $toolCallId);
-                }
-
-                if (hrtime(true) > $deadline) {
-                    $this->manager->stopByStatusPath($statusPath, $sessionId);
-                    $partialOutput = $this->readOutputForNativePaths($logPath, $statusPath);
-                    $this->manager->releaseNativeInvocation($statusPath);
-                    $this->logger->info('bash_tool.timed_out', [
-                        'component' => 'tool.bash',
-                        'event_type' => 'bash_tool.timed_out',
-                        'process_pid' => $pid,
-                        'timeout_seconds' => $timeout,
-                    ]);
-                    $text = \sprintf(
-                        "Command timed out after %d seconds.\n\nPartial output:\n%s",
-                        $timeout,
-                        $partialOutput,
-                    );
-
-                    return $this->finishText($prepared, $startResult->id, $sessionId, $pid, $statusPath, $logPath, $text, timedOut: true, toolCallId: $toolCallId);
-                }
-
-                $record = $this->manager->observeNativeByStatusPath($statusPath, $sessionId);
-                if (null === $record) {
-                    $this->logger->error('bash_tool.native_launch_vanished', [
-                        'component' => 'tool.bash',
-                        'event_type' => 'bash_tool.native_launch_vanished',
-                        'process_pid' => $pid,
-                        'status_path' => $statusPath,
-                        'session_id' => $sessionId ?? '',
-                    ]);
-
-                    throw new ToolCallException(\sprintf('Native Bash launch vanished unexpectedly (PID %d, status %s).', $pid, $statusPath), retryable: false);
-                }
-
-                if (BackgroundProcessStatusEnum::Running !== $record->status) {
-                    return $this->handleFinished($record, $prepared, $startResult->id, $sessionId, $toolCallId);
-                }
-
-                if ($record->backgroundRequested) {
-                    $candidate = $this->manager->resolveBackgroundAcceptance($statusPath, $sessionId);
-                    if (null === $candidate) {
-                        continue;
-                    }
-                    // Freshest cancel check after observation/identity resolution
-                    // and immediately before the local acceptance transition.
+            // Keep the native handle through output/metadata consumption, then
+            // release once at this invocation boundary — including when output
+            // reading throws (invalid UTF-8). Accepted detach already released.
+            try {
+                while (true) {
                     if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
                         return $this->cancelNative($statusPath, $sessionId, $pid, $prepared, $startResult->id, $toolCallId);
                     }
-                    if (!$this->manager->acceptResolvedBackground($candidate)) {
-                        continue;
+
+                    if (hrtime(true) > $deadline) {
+                        $this->manager->stopByStatusPath($statusPath, $sessionId);
+                        $partialOutput = $this->readOutputForNativePaths($logPath, $statusPath);
+                        $this->logger->info('bash_tool.timed_out', [
+                            'component' => 'tool.bash',
+                            'event_type' => 'bash_tool.timed_out',
+                            'process_pid' => $pid,
+                            'timeout_seconds' => $timeout,
+                        ]);
+                        $text = \sprintf(
+                            "Command timed out after %d seconds.\n\nPartial output:\n%s",
+                            $timeout,
+                            $partialOutput,
+                        );
+                        $observation = $this->manager->observeNativeByStatusPath($statusPath, $sessionId);
+                        if (null === $observation) {
+                            throw new ToolCallException(\sprintf('Native Bash launch vanished unexpectedly after timeout (PID %d, status %s).', $pid, $statusPath), retryable: false);
+                        }
+
+                        return $this->finishText($prepared, $startResult->id, $sessionId, $observation, $text, timedOut: true, toolCallId: $toolCallId);
                     }
-                    $text = \sprintf(
-                        "Command moved to background.\nPID: %d\nLog: %s\n\nYou will be notified when the process finishes. Use bg_status log pid=%d to inspect output or bg_status stop pid=%d to stop it.",
-                        $pid,
-                        $logPath,
-                        $pid,
-                        $pid,
-                    );
 
-                    return $this->finishBackgroundAck($prepared, $startResult->id, $sessionId, $record, $text, $toolCallId);
+                    $record = $this->manager->observeNativeByStatusPath($statusPath, $sessionId);
+                    if (null === $record) {
+                        $this->logger->error('bash_tool.native_launch_vanished', [
+                            'component' => 'tool.bash',
+                            'event_type' => 'bash_tool.native_launch_vanished',
+                            'process_pid' => $pid,
+                            'status_path' => $statusPath,
+                            'session_id' => $sessionId ?? '',
+                        ]);
+
+                        throw new ToolCallException(\sprintf('Native Bash launch vanished unexpectedly (PID %d, status %s).', $pid, $statusPath), retryable: false);
+                    }
+
+                    if (BackgroundProcessStatusEnum::Running !== $record->status) {
+                        return $this->handleFinished($record, $prepared, $startResult->id, $sessionId, $toolCallId);
+                    }
+
+                    if ($record->backgroundRequested) {
+                        $candidate = $this->manager->resolveBackgroundAcceptance($statusPath, $sessionId);
+                        if (null === $candidate) {
+                            continue;
+                        }
+                        // Freshest cancel check after observation/identity resolution
+                        // and immediately before the local acceptance transition.
+                        if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
+                            return $this->cancelNative($statusPath, $sessionId, $pid, $prepared, $startResult->id, $toolCallId);
+                        }
+                        if (!$this->manager->acceptResolvedBackground($candidate)) {
+                            continue;
+                        }
+                        $text = \sprintf(
+                            "Command moved to background.\nPID: %d\nLog: %s\n\nYou will be notified when the process finishes. Use bg_status log pid=%d to inspect output or bg_status stop pid=%d to stop it.",
+                            $pid,
+                            $logPath,
+                            $pid,
+                            $pid,
+                        );
+
+                        return $this->finishBackgroundAck($prepared, $startResult->id, $sessionId, $record, $text, $toolCallId);
+                    }
+
+                    delay($this->config->pollIntervalMicros / 1_000_000);
                 }
-
-                delay($this->config->pollIntervalMicros / 1_000_000);
+            } finally {
+                $this->manager->releaseNativeInvocation($statusPath);
             }
         });
     }
@@ -225,8 +235,6 @@ final class BashTool implements HatfieldToolProviderInterface
         ?string $toolCallId,
     ): never {
         $this->manager->stopByStatusPath($statusPath, $sessionId);
-        // Stop supervision finishes before caller-owned unpersisted sidecar cleanup.
-        $this->manager->releaseNativeInvocation($statusPath);
         $this->logger->info('bash_tool.cancelled', [
             'component' => 'tool.bash',
             'event_type' => 'bash_tool.cancelled',
@@ -282,7 +290,6 @@ final class BashTool implements HatfieldToolProviderInterface
         ?string $toolCallId,
     ): string|ToolResult {
         $output = $this->readOutputForNativePaths($entity->logPath, $entity->statusPath);
-        $this->manager->releaseNativeInvocation($entity->statusPath);
         $pid = $entity->pid;
         $exitCode = $entity->exitCode;
         $status = $entity->status;
@@ -298,7 +305,7 @@ final class BashTool implements HatfieldToolProviderInterface
         ]);
 
         if (BackgroundProcessStatusEnum::Finished === $status && 0 === $exitCode) {
-            return $this->finishText($prepared, $recordId, $sessionId, $pid, $entity->statusPath, $entity->logPath, $output, observation: $entity, toolCallId: $toolCallId);
+            return $this->finishText($prepared, $recordId, $sessionId, $entity, $output, toolCallId: $toolCallId);
         }
 
         $failure = null !== $exitCode
@@ -354,39 +361,19 @@ final class BashTool implements HatfieldToolProviderInterface
         ?PreparedBashLaunchDTO $prepared,
         ?int $recordId,
         ?string $sessionId,
-        int $pid,
-        string $statusPath,
-        string $logPath,
+        NativeBashObservationDTO $observation,
         string $text,
         bool $timedOut = false,
-        ?NativeBashObservationDTO $observation = null,
         ?string $toolCallId = null,
     ): string|ToolResult {
         if (null === $prepared || null === $recordId || null === $sessionId) {
             return $text;
         }
-        $entity = $observation ?? new NativeBashObservationDTO(
-            pid: $pid,
-            pgid: null,
-            sessionId: $sessionId,
-            command: $prepared->command,
-            logPath: $logPath,
-            statusPath: $statusPath,
-            startedAt: Clock::get()->now(),
-            finishedAt: Clock::get()->now(),
-            exitCode: $timedOut ? -1 : 0,
-            stoppedByUser: $timedOut,
-            toolCallId: $prepared->toolCallId,
-            backgroundRequested: false,
-            status: $timedOut ? BackgroundProcessStatusEnum::Stopped : BackgroundProcessStatusEnum::Finished,
-            deadlineNanoseconds: $prepared->deadlineNanoseconds,
-        );
-
         return $this->ordinaryResult(
             $prepared,
             $recordId,
             $sessionId,
-            $entity,
+            $observation,
             $text,
             isError: $timedOut,
             finished: true,
