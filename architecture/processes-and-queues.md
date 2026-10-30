@@ -164,7 +164,11 @@ independent stores retain their existing ownership.
 Bash foreground completion is migrating off request/reply metadata waits:
 the tool consumer launches and supervises natively, then reports finished
 output or background acknowledgment through an ordinary `ToolResult` that
-carries private `bash_native` facts for the owner.
+carries private `bash_native` facts. `ToolPayloadMiddleware` validates those
+facts into a `BashNativeCompletionStamp` on the ordinary result envelope,
+seals visible content without the private key, and applies the stamp on
+`run_control` receive before ordinary admission. Bash does not register a
+deferred completion.
 Code-mode deferred registration is prepared by `ToolPayloadMiddleware` on the
 owner before ExecuteToolCall dispatch. Socket-ready reports are one-way
 `ReadyCodeModeInvocationDTO` commands; the host does not await a reply.
@@ -183,10 +187,10 @@ sequenceDiagram
     participant DB as Application state.sqlite
 
     Tool->>Native: Launch and supervise
-    Tool->>Broker: Ordinary ToolCallResult with bash_native
+    Tool->>Broker: Ordinary ToolCallResult + BashNativeCompletionStamp
     Note over Tool: No metadata reply wait for foreground completion
     Broker->>Owner: Deliver ToolCallResult
-    Owner->>DB: Apply bash_native then strip it
+    Owner->>DB: Apply stamp facts before ordinary admission
 ```
 
 Residual Bash controller/scheduler `decide()` paths remain one-way owner writes.
@@ -194,7 +198,7 @@ They are not on the BashTool foreground completion path.
 
 | Domain | Serialized lifecycle operations | Work left in execution paths |
 |---|---|---|
-| Bash | Ordinary ToolResult carries bash_native; background request intent; residual controller decide/stop/timeout writes | Launch, local status/log supervision, signals, grace supervision |
+| Bash | Ordinary ToolResult + BashNativeCompletionStamp; background request intent; residual controller decide/stop/timeout writes | Launch, local status/log supervision, signals, grace supervision |
 | Code mode | Owner-prepared deferred registration before dispatch; one-way readiness; terminal acceptance/classification on owner receipt | Isolated PHP subprocess, IPC and result artifacts |
 | Child invocation | Owner-prepared reservation; one-way launch success; failed ToolCallResult retirement on owner receive; residual deferred-registration reply | Artifact preparation and runner `start()`/`followUp()` |
 

@@ -73,8 +73,9 @@ blocks its process. `tools.execution.max_parallelism` separately limits admissio
 within a tool batch.
 
 Bash foreground work supervises natively and publishes one-way lifecycle events
-to `run_control`. Code-mode registration and child launch-success are also
-one-way owner commands; generic deferred registration still uses a reply RPC.
+to `run_control` through an ordinary result envelope stamp. Code-mode
+registration and child launch-success are also one-way owner commands; generic
+deferred registration still uses a reply RPC.
 Tool context, log/trace scopes and run-lock reentrancy are isolated by
 Fiber. See the
 [persistence ownership flow](processes-and-queues.md#lifecycle-persistence-ownership)

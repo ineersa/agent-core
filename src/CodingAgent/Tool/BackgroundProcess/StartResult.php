@@ -17,7 +17,6 @@ final readonly class StartResult
         public string $logPath,
         public string $statusPath,
         public ?int $id = null,
-        public ?string $deferredId = null,
     ) {
     }
 }

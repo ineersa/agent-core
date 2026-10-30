@@ -10,9 +10,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
-use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
@@ -24,6 +22,7 @@ use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Runtime\Messenger\BashNativeCompletionStamp;
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -83,13 +82,14 @@ final class BashNativeCompletionWithoutOwnerReplyTest extends IsolatedKernelTest
             new NullLogger(),
             $bus,
         );
+        // Match production tool workers: observation stays local; owner applies finish.
+        $manager->useRemoteLifecycleOwner();
         $accessor = new StackToolExecutionContextAccessor();
         $tool = new BashTool(
             manager: $manager,
             contextAccessor: $accessor,
             toolRuntime: new ToolRuntime($accessor),
             logger: new TestLogger(),
-            deferred: self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
             normalizer: self::getContainer()->get(NormalizerInterface::class),
             config: new BashToolConfig(pollIntervalMicros: 1_000),
         );
@@ -113,9 +113,6 @@ final class BashNativeCompletionWithoutOwnerReplyTest extends IsolatedKernelTest
         );
         $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
         TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $runId, 1, 'step-native', [$call]);
-        self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->preparePending(
-            ToolCallResultFactory::correlationFromExecuteToolCall($call, 'deferred-native'),
-        );
         $prepared = $manager->prepareNativeLaunch($runId, 'call_native', "printf 'native-ok\\n'", false);
         $this->assertNull($store->snapshot($prepared->id)?->pid);
 
@@ -159,13 +156,13 @@ final class BashNativeCompletionWithoutOwnerReplyTest extends IsolatedKernelTest
             new HandleMessageMiddleware(new HandlersLocator([
                 ToolCallResult::class => [static fn (ToolCallResult $message): ToolCallResult => $message],
                 ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
-                CompleteDeferredToolCall::class => [static fn (CompleteDeferredToolCall $message): CompleteDeferredToolCall => $message],
             ])),
         ]);
         $sealed = $ownerBus->dispatch($result);
         $this->assertInstanceOf(ToolPayloadMessage::class, $sealed->getMessage());
-        $this->assertSame('deferred-native', $sealed->getMessage()->deferredId);
-        $ownerBus->dispatch($sealed->with(new ReceivedStamp('run_control')));
+        $this->assertNull($sealed->getMessage()->deferredId);
+        $this->assertInstanceOf(BashNativeCompletionStamp::class, $sealed->last(BashNativeCompletionStamp::class));
+        $ownerBus->dispatch($sealed->withoutAll(HandledStamp::class)->with(new ReceivedStamp('run_control')));
 
         $owned = $store->snapshot($prepared->id);
         $this->assertNotNull($owned);

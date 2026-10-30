@@ -168,15 +168,14 @@ final class ProcessStore
     /** @return list<ForegroundBashProcessDTO> */
     public function fetchForegroundTools(string $sessionId): array
     {
-        // Direct shell also persists tool_call_id. Only model Bash has prepared
-        // deferred correlation, so join that table for Ctrl+B eligibility.
+        // Direct shell also persists tool_call_id. Only model Bash has an active
+        // tool_batch_call row, so join that table for Ctrl+B eligibility.
         $rows = $this->entityManager->getConnection()->fetchAllAssociative(
             "SELECT p.id, p.pid, p.tool_call_id
              FROM background_process p
-             INNER JOIN tool_deferred_completion d
-                ON d.run_id = p.session_id
-               AND d.tool_call_id = p.tool_call_id
-               AND d.tool_name = 'bash'
+             INNER JOIN tool_batch_call c
+                ON c.run_id = p.session_id
+               AND c.tool_call_id = p.tool_call_id
              WHERE p.session_id = ?
                AND p.finished_at IS NULL
                AND p.tool_call_id IS NOT NULL

@@ -9,10 +9,11 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
- * Private native Bash facts carried inside deferred/ordinary completion details.
+ * Private native Bash facts carried inside ordinary completion details.
  *
- * Owner validates and applies these before caller-freshness can discard the
- * physical outcome, then strips the key from the visible tool result.
+ * ToolPayloadMiddleware validates them into BashNativeCompletionStamp, seals
+ * visible content without this key, and applies the stamp on owner receive
+ * before ordinary admission.
  */
 final readonly class BashNativeCompletionMetadataDTO
 {

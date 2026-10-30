@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -41,7 +40,6 @@ final class BashTool implements HatfieldToolProviderInterface
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
         private readonly LoggerInterface $logger,
-        private readonly DeferredToolCompletionRepositoryInterface $deferred,
         private readonly NormalizerInterface $normalizer,
         private readonly BashToolConfig $config = new BashToolConfig(),
     ) {
@@ -62,25 +60,9 @@ final class BashTool implements HatfieldToolProviderInterface
             $topLevelModel = null !== $context?->stepId() && 1 === $this->contextAccessor->depth();
             $toolCallId = $context?->toolCallId();
             $prepared = null;
-            $deferredId = null;
             if (null !== $sessionId && null !== $toolCallId && '' !== $toolCallId) {
                 $prepared = $this->manager->findPreparedLaunch($sessionId, $toolCallId);
-                if (null !== $prepared && $topLevelModel) {
-                    $deferredId = $this->deferred->findMetadataByRunAndToolCall($sessionId, $toolCallId)?->deferredId;
-                    if (null === $deferredId) {
-                        throw new ToolCallException('Owner-prepared Bash deferred correlation is missing.', retryable: false);
-                    }
-                    $prepared = new PreparedBashLaunchDTO(
-                        id: $prepared->id,
-                        runId: $prepared->runId,
-                        toolCallId: $prepared->toolCallId,
-                        command: $prepared->command,
-                        logPath: $prepared->logPath,
-                        statusPath: $prepared->statusPath,
-                        deferredId: $deferredId,
-                        deadlineNanoseconds: $prepared->deadlineNanoseconds,
-                    );
-                } elseif (null === $prepared && (null !== $context?->stepId() || 1 === $this->contextAccessor->depth())) {
+                if (null === $prepared && (null !== $context?->stepId() || 1 === $this->contextAccessor->depth())) {
                     // Top-level model Bash and direct shell must be owner-prepared.
                     // Nested code_mode Bash has depth > 1 and no prepared row.
                     if ($topLevelModel || null === $context?->stepId()) {
@@ -88,7 +70,7 @@ final class BashTool implements HatfieldToolProviderInterface
                     }
                 }
             }
-            if ($arguments->backgrounded && (null === $prepared || null === $prepared->deferredId)) {
+            if ($arguments->backgrounded && (null === $prepared || !$topLevelModel)) {
                 throw new ToolCallException('Background launch requires a top-level Bash tool invocation.', retryable: false);
             }
 
@@ -101,7 +83,6 @@ final class BashTool implements HatfieldToolProviderInterface
                 preparedRecordId: $prepared?->id,
                 preparedLogPath: $prepared?->logPath,
                 preparedStatusPath: $prepared?->statusPath,
-                deferredId: $prepared?->deferredId,
             );
             $pid = $startResult->pid;
             $statusPath = $startResult->statusPath;

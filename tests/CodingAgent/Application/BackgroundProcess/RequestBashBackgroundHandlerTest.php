@@ -7,8 +7,6 @@ namespace Ineersa\CodingAgent\Tests\Application\BackgroundProcess;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
-use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
@@ -34,12 +32,6 @@ final class RequestBashBackgroundHandlerTest extends IsolatedKernelTestCase
         $call = new ExecuteToolCall($runId, 1, 'step', 1, 'key', 'call', 'bash', ['command' => 'true'], 0);
         $batches = $container->get(ToolBatchStoreInterface::class);
         TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $runId, 1, 'step', [$call]);
-        $container->get(DeferredToolCompletionRepositoryInterface::class)->preparePending(
-            ToolCallResultFactory::correlationFromExecuteToolCall(
-                $call,
-                'deferred-call',
-            ),
-        );
         $manager = $container->get(EntityManagerInterface::class);
         $manager->clear();
         $sink = new InMemoryRuntimeEventSink();
@@ -75,12 +67,6 @@ final class RequestBashBackgroundHandlerTest extends IsolatedKernelTestCase
         $call = new ExecuteToolCall($runId, 1, 'step', 1, 'key', 'call', 'bash', ['command' => 'true'], 0);
         $batches = $container->get(ToolBatchStoreInterface::class);
         TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $runId, 1, 'step', [$call]);
-        $container->get(DeferredToolCompletionRepositoryInterface::class)->preparePending(
-            ToolCallResultFactory::correlationFromExecuteToolCall(
-                $call,
-                'deferred-finished',
-            ),
-        );
         $connection = $container->get(EntityManagerInterface::class)->getConnection();
         $connection->executeStatement("UPDATE background_process SET finished_at = '2026-10-28 00:00:01' WHERE id = ?", [$id]);
         $sink = new InMemoryRuntimeEventSink();

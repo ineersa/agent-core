@@ -184,7 +184,6 @@ final class BackgroundProcessManager
                 command: $existing->command,
                 logPath: $existing->logPath,
                 statusPath: $existing->statusPath,
-                deferredId: null,
                 deadlineNanoseconds: null,
             );
         }
@@ -209,7 +208,6 @@ final class BackgroundProcessManager
             command: $command,
             logPath: $logPath,
             statusPath: $statusPath,
-            deferredId: null,
             deadlineNanoseconds: null,
         );
     }
@@ -228,7 +226,6 @@ final class BackgroundProcessManager
             command: $existing->command,
             logPath: $existing->logPath,
             statusPath: $existing->statusPath,
-            deferredId: null,
             deadlineNanoseconds: $existing->deadlineNanoseconds,
         );
     }
@@ -281,7 +278,6 @@ final class BackgroundProcessManager
         ?int $preparedRecordId = null,
         ?string $preparedLogPath = null,
         ?string $preparedStatusPath = null,
-        ?string $deferredId = null,
     ): StartResult {
         $resolvedSessionId = $sessionId ?? '';
         $usingPrepared = null !== $preparedRecordId
@@ -321,7 +317,6 @@ final class BackgroundProcessManager
             statusPath: $statusFile,
             startedAt: $now,
             recordId: $recordId,
-            deferredId: $deferredId,
         );
         $this->nativeLaunches[$statusFile] = $native;
 
@@ -337,6 +332,8 @@ final class BackgroundProcessManager
             'log_path' => $logFile,
             'status_path' => $statusFile,
             'process_session_id' => $resolvedSessionId,
+            'run_id' => $resolvedSessionId,
+            'session_id' => $resolvedSessionId,
             'record_id' => $recordId,
         ]);
 
@@ -345,7 +342,6 @@ final class BackgroundProcessManager
             logPath: $logFile,
             statusPath: $statusFile,
             id: $recordId,
-            deferredId: $deferredId,
         );
     }
 
@@ -522,7 +518,7 @@ final class BackgroundProcessManager
      * Callers must perform the freshest cancellation check after this returns
      * and before {@see acceptResolvedBackground()}, with no yield between them.
      *
-     * @return array{kind: 'native', statusPath: string, recordId: int, pid: int, sessionId: string, deferredId: ?string}|array{kind: 'record', statusPath: string, recordId: int, pid: ?int, sessionId: string}|null
+     * @return array{kind: 'native', statusPath: string, recordId: int, pid: int, sessionId: string}|array{kind: 'record', statusPath: string, recordId: int, pid: ?int, sessionId: string}|null
      */
     public function resolveBackgroundAcceptance(string $statusPath, ?string $sessionId = null): ?array
     {
@@ -548,7 +544,6 @@ final class BackgroundProcessManager
                 'recordId' => $id,
                 'pid' => $observed->pid,
                 'sessionId' => $sessionId ?? $observed->sessionId,
-                'deferredId' => $native->deferredId,
             ];
         }
 
@@ -572,15 +567,15 @@ final class BackgroundProcessManager
     /**
      * Commit local acceptance for a candidate resolved by {@see resolveBackgroundAcceptance()}.
      *
-     * @param array{kind: 'native', statusPath: string, recordId: int, pid: int, sessionId: string, deferredId: ?string}|array{kind: 'record', statusPath: string, recordId: int, pid: ?int, sessionId: string} $candidate
+     * @param array{kind: 'native', statusPath: string, recordId: int, pid: int, sessionId: string}|array{kind: 'record', statusPath: string, recordId: int, pid: ?int, sessionId: string} $candidate
      */
     public function acceptResolvedBackground(array $candidate): bool
     {
         $statusPath = $candidate['statusPath'];
         if ('native' === $candidate['kind']) {
-            // Model Bash persists acceptance through ordinary ToolResult on the owner.
+            // Workers with remoteLifecycleOwner leave SQL writes to the owner.
             // Local/controller paths still write immediately.
-            if (null === $candidate['deferredId']) {
+            if (!$this->remoteLifecycleOwner) {
                 if (!$this->store->acceptLocal($candidate['recordId'], $candidate['sessionId'])) {
                     throw new \RuntimeException('Bash background acceptance record/session mismatch.');
                 }
@@ -591,6 +586,8 @@ final class BackgroundProcessManager
                 'process_pid' => $candidate['pid'],
                 'status_path' => $statusPath,
                 'process_session_id' => $candidate['sessionId'],
+                'run_id' => $candidate['sessionId'],
+                'session_id' => $candidate['sessionId'],
             ]);
             $this->releaseNativeLaunch($statusPath);
 
@@ -609,6 +606,8 @@ final class BackgroundProcessManager
             'status_path' => $statusPath,
             'record_id' => $candidate['recordId'],
             'process_session_id' => $candidate['sessionId'],
+            'run_id' => $candidate['sessionId'],
+            'session_id' => $candidate['sessionId'],
         ]);
         $this->releaseNativeLaunch($statusPath);
 
@@ -715,6 +714,8 @@ final class BackgroundProcessManager
                 'log_path' => $logPath,
                 'process_pid' => $pid,
                 'process_session_id' => $sessionId,
+                'run_id' => $sessionId,
+                'session_id' => $sessionId,
             ]);
         }
     }
@@ -985,7 +986,7 @@ final class BackgroundProcessManager
                 $status = BackgroundProcessStatusEnum::FinishedUnclean;
             }
             $finishedAt = Clock::get()->now();
-            if (null === $native->deferredId) {
+            if (!$this->remoteLifecycleOwner) {
                 $this->publishFinished($native, $exitCode, $status, $stoppedByUser, $finishedAt);
             }
         }

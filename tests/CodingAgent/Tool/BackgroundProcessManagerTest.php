@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
-use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -204,7 +202,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $command = 'cat '.escapeshellarg($fifo);
         $first = $this->startPrepared($command, $session, 'call-first');
         $second = $this->startPrepared($command, $session, 'call-second');
-        $shell = $this->startPrepared($command, $session, 'call-shell', prepareDeferred: false);
+        $shell = $this->startPrepared($command, $session, 'call-shell', registerBatch: false);
         $foreign = $this->startPrepared($command, $foreignSession, 'call-foreign');
 
         $controllerManager = $this->createOtherManager();
@@ -253,8 +251,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $endpoint = fopen($fifo, 'r+b');
         $this->assertIsResource($endpoint);
         $backgrounded = $this->startPrepared('cat '.escapeshellarg($fifo), $session, 'call-background');
-        // Model Bash acceptance is owner-applied from deferred completion, not the
-        // local markBackgrounded path (which skips SQL when deferredId is present).
+        // Model Bash acceptance is owner-applied from ordinary result stamp facts.
         self::getContainer()->get(ProcessStore::class)->applyAcceptedByRecord(
             $backgrounded->id,
             $session,
@@ -383,20 +380,13 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         string $toolCallId,
         ?int $deadlineNanoseconds = null,
         bool $backgroundRequested = false,
-        bool $prepareDeferred = true,
+        bool $registerBatch = true,
     ): StartResult {
-        if ($prepareDeferred) {
-            $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
-            if (null === $deferred->findMetadataByRunAndToolCall($sessionId, $toolCallId)) {
-                $stepId = 'step-'.$toolCallId;
-                $call = new ExecuteToolCall($sessionId, 1, $stepId, 1, 'key-'.$toolCallId, $toolCallId, 'bash', ['command' => $command], 0);
-                $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
-                TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $sessionId, 1, $stepId, [$call]);
-                $deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall(
-                    $call,
-                    'deferred-'.$toolCallId,
-                ));
-            }
+        if ($registerBatch) {
+            $stepId = 'step-'.$toolCallId;
+            $call = new ExecuteToolCall($sessionId, 1, $stepId, 1, 'key-'.$toolCallId, $toolCallId, 'bash', ['command' => $command], 0);
+            $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
+            TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $sessionId, 1, $stepId, [$call]);
         }
         $prepared = $this->manager->prepareNativeLaunch($sessionId, $toolCallId, $command, $backgroundRequested);
         $started = $this->manager->start(
@@ -408,7 +398,6 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             preparedRecordId: $prepared->id,
             preparedLogPath: $prepared->logPath,
             preparedStatusPath: $prepared->statusPath,
-            deferredId: $prepareDeferred ? 'deferred-'.$toolCallId : null,
         );
         self::getContainer()->get(ProcessStore::class)->applyLaunch(
             $prepared->id,
