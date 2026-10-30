@@ -222,10 +222,6 @@ services:
     arguments:
       $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
-  Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleHandler:
-    arguments:
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
-
   Ineersa\CodingAgent\Application\Pipeline\RegisterDeferredInvocationHandler:
     arguments:
       $sessionId: '%env(HATFIELD_SESSION_ID)%'
@@ -946,6 +942,10 @@ services:
         execution: '@Ineersa\CodingAgent\Agent\Fork\ForkExecutionService'
 
   # code_mode: definition provider is tagged; toolbox resolves only at nested invoke time.
+  Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
   Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge:
     arguments:
       $commandBus: '@agent.command.bus'

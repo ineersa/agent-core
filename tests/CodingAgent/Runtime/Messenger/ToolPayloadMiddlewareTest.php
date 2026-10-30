@@ -37,6 +37,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredS
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Messenger\SubagentExecuteToolCallRoutingMiddleware;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
@@ -543,6 +544,155 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         new MessageBus([$this->middleware($payloads, $deferred)])->dispatch(new Envelope($message, [new ReceivedStamp('run_control')]));
     }
 
+    public function testOwnerReceiveRetiresReservedAgentResumeAndIgnoresDelayedFailureAfterLaunch(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('owner retire agent_resume');
+        $artifact = 'agent_resume_retire';
+        $child = 'child-resume-retire';
+        $registry = $container->get(AgentArtifactRegistry::class);
+        $registry->create($run, $artifact, $child, 'scout', AgentArtifactKindEnum::Subagent);
+        $registry->update($run, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done');
+        $this->seedPreparedChildProjection($run, $artifact, $child);
+        $container->get(RunOperationalProjectionRepository::class)->replace(new RunState($run, RunStatus::Running));
+
+        $call = new ExecuteToolCall($run, 1, 'resume-retire-step', 1, hash('sha256', 'resume-retire'), 'resume-retire', 'agent_resume', [
+            'artifact_id' => $artifact,
+            'task' => 'continue',
+        ], 0, parentModel: 'test/model');
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'resume-retire-step',
+            [$call],
+        );
+
+        $bus = new MessageBus([
+            new SubagentExecuteToolCallRoutingMiddleware(),
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+            ])),
+        ]);
+        $sealedCall = $bus->dispatch($call);
+        $this->assertSame('call', $sealedCall->getMessage()->reference->kind);
+
+        $failed = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromExecuteToolCallAndThrowable(
+            $call,
+            new \Ineersa\AgentCore\Contract\Tool\ToolCallException('agent_resume followUp failed', retryable: false),
+        );
+        $failed = new ToolCallResult(
+            $failed->runId(),
+            $failed->turnNo(),
+            $failed->stepId(),
+            $failed->attempt(),
+            $failed->idempotencyKey(),
+            $failed->toolCallId,
+            $failed->orderIndex,
+            [
+                'tool_name' => 'agent_resume',
+                'content' => [['type' => 'text', 'text' => 'agent_resume followUp failed']],
+                'details' => ['retryable' => false],
+            ],
+            true,
+            ['message' => 'agent_resume followUp failed', 'retryable' => false],
+        );
+
+        $resultBus = new MessageBus([
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+            ])),
+        ]);
+        $resultSealed = $resultBus->dispatch($failed);
+        $this->assertSame('result', $resultSealed->getMessage()->reference->kind);
+        $batchAfterPublish = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-retire');
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Reserved,
+            $batchAfterPublish?->launchStatus,
+            'Remote/worker publication must leave the reserved resume batch untouched.',
+        );
+
+        $container->get(ActiveRunContextInterface::class)->loadRecovered(new RunState(
+            $run,
+            RunStatus::Running,
+            turnNo: 1,
+            activeStepId: 'resume-retire-step',
+            pendingToolCalls: ['resume-retire' => false],
+        ));
+        $ownerBus = new MessageBus([
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolCallResult::class => [static fn (ToolCallResult $message): ToolCallResult => $message],
+            ])),
+        ]);
+        $ownerBus->dispatch($resultSealed->with(new ReceivedStamp('run_control')));
+        $failedBatch = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-retire');
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $failedBatch?->launchStatus);
+
+        $launchedCall = new ExecuteToolCall($run, 1, 'resume-launched-step', 1, hash('sha256', 'resume-launched'), 'resume-launched', 'agent_resume', [
+            'artifact_id' => $artifact,
+            'task' => 'continue',
+        ], 0, parentModel: 'test/model');
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'resume-launched-step',
+            [$launchedCall],
+        );
+        $bus->dispatch($launchedCall);
+        $lifecycle = new ChildInvocationLifecycleService(
+            $container->get(DeferredSubagentBatchRepository::class),
+        );
+        $batch = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-launched');
+        $this->assertNotNull($batch);
+        $lifecycle->applyLaunchSuccessState($run, 'resume-launched', $batch->lifecycleId, new \DateTimeImmutable());
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Launched,
+            $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-launched')?->launchStatus,
+        );
+
+        $delayed = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromExecuteToolCallAndThrowable(
+            $launchedCall,
+            new \Ineersa\AgentCore\Contract\Tool\ToolCallException('late failure after launch', retryable: false),
+        );
+        $delayed = new ToolCallResult(
+            $delayed->runId(),
+            $delayed->turnNo(),
+            $delayed->stepId(),
+            $delayed->attempt(),
+            $delayed->idempotencyKey(),
+            $delayed->toolCallId,
+            $delayed->orderIndex,
+            [
+                'tool_name' => 'agent_resume',
+                'content' => [['type' => 'text', 'text' => 'late failure after launch']],
+                'details' => ['retryable' => false],
+            ],
+            true,
+            ['message' => 'late failure after launch', 'retryable' => false],
+        );
+        $delayedSealed = $resultBus->dispatch($delayed);
+        $container->get(ActiveRunContextInterface::class)->loadRecovered(new RunState(
+            $run,
+            RunStatus::Running,
+            turnNo: 1,
+            activeStepId: 'resume-launched-step',
+            pendingToolCalls: ['resume-launched' => false],
+        ));
+        $ownerBus->dispatch($delayedSealed->with(new ReceivedStamp('run_control')));
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Launched,
+            $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-launched')?->launchStatus,
+            'Delayed failed results must not overwrite Launched reservations.',
+        );
+    }
+
     /** @return iterable<array{string}> */
     public static function mismatchedIdentities(): iterable
     {
@@ -653,7 +803,7 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
             self::getContainer()->get(CodeModeLifecycleService::class),
             self::getContainer()->get(AgentResumeExecutionService::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService::class),
+            self::getContainer()->get(ChildInvocationLifecycleService::class),
             self::getContainer()->get(DeferredSubagentBatchRepository::class));
     }
 }

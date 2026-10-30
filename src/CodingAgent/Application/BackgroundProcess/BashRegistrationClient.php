@@ -17,8 +17,6 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationReplyD
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationResultDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
-use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO;
-use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -78,23 +76,13 @@ final class BashRegistrationClient
             ?? throw new \UnexpectedValueException('Missing deferred registration identity.');
     }
 
-    public function recordChildLaunchSuccess(string $parentRunId, string $parentToolCallId, string $lifecycleId, \DateTimeImmutable $startedAt): void
-    {
-        $this->request(new RecordChildLaunchSuccessDTO($parentRunId, $parentToolCallId, $lifecycleId, $startedAt, $this->incarnation, bin2hex(random_bytes(16)), $this->role));
-    }
-
-    public function recordChildLaunchFailure(string $parentRunId, string $parentToolCallId, string $lifecycleId): void
-    {
-        $this->request(new RecordChildLaunchFailureDTO($parentRunId, $parentToolCallId, $lifecycleId, $this->incarnation, bin2hex(random_bytes(16)), $this->role));
-    }
-
     private function changeOwnership(BashOwnershipRequestDTO $request, BashOwnershipActionEnum $action): BashOwnershipStatusEnum
     {
         return $this->request(new BashOwnershipCommandDTO($request, $action, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->ownership
             ?? throw new \UnexpectedValueException('Missing Bash ownership result.');
     }
 
-    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO|RecordChildLaunchSuccessDTO|RecordChildLaunchFailureDTO|RegisterDeferredInvocationDTO $command): BashRegistrationReplyDTO
+    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO|RegisterDeferredInvocationDTO $command): BashRegistrationReplyDTO
     {
         $errors = $this->validator->validate($command);
         if (0 !== \count($errors)) {

@@ -42,8 +42,10 @@ use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
 use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
@@ -53,6 +55,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
@@ -343,6 +346,15 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         ));
 
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
+
+        $batch = $container->get(DeferredSubagentBatchRepository::class)
+            ->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $this->assertNotNull($batch);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $batch->launchStatus);
+        // Container launch publishes one-way success; apply it as the owner would before retry.
+        new ChildInvocationLifecycleService(
+            $container->get(DeferredSubagentBatchRepository::class),
+        )->applyLaunchSuccessState($parentRunId, $toolCallId, $batch->lifecycleId, new \DateTimeImmutable());
 
         $retry = $this->withToolContext($parentRunId, $toolCallId, static fn () => $forkExecution->execute(
             $parentRunId,

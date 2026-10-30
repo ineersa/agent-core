@@ -311,7 +311,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             return;
         }
         $toolName = $message->result['tool_name'] ?? null;
-        if (!\is_string($toolName) || !\in_array($toolName, ['subagent', 'fork'], true)) {
+        if (!\is_string($toolName) || !\in_array($toolName, ['subagent', 'fork', 'agent_resume'], true)) {
             return;
         }
 

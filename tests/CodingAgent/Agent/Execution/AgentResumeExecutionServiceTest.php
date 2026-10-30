@@ -458,7 +458,18 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)
             ->findByParentRunAndToolCall($parent, $toolCallId);
         $this->assertNotNull($batch);
-        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch->launchStatus);
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Reserved,
+            $batch->launchStatus,
+            'Worker throw leaves Reserved until owner admits the sealed failure.',
+        );
+
+        new ChildInvocationLifecycleService(
+            self::getContainer()->get(DeferredSubagentBatchRepository::class),
+        )->applyLaunchFailurePreparation($parent, $toolCallId, $batch->lifecycleId);
+        $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)
+            ->findByParentRunAndToolCall($parent, $toolCallId);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch?->launchStatus);
 
         $entry = $this->registry()->get($parent, $artifactId);
         $this->assertNotNull($entry);
@@ -898,7 +909,9 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: $contextAccessor ?? new StackToolExecutionContextAccessor(),
             agentsConfig: new AgentsConfig(),
             logger: new NullLogger(),
-            childLifecycle: self::getContainer()->get(ChildInvocationLifecycleService::class),
+            childLifecycle: new ChildInvocationLifecycleService(
+                self::getContainer()->get(DeferredSubagentBatchRepository::class),
+            ),
             toolBatches: self::getContainer()->get(ToolBatchStoreInterface::class),
             denormalizer: self::getContainer()->get(SerializerInterface::class),
             validator: self::getContainer()->get(ValidatorInterface::class),
@@ -946,7 +959,9 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: $contextAccessor,
             agentsConfig: new AgentsConfig(),
             logger: $logger ?? new NullLogger(),
-            childLifecycle: self::getContainer()->get(ChildInvocationLifecycleService::class),
+            childLifecycle: new ChildInvocationLifecycleService(
+                self::getContainer()->get(DeferredSubagentBatchRepository::class),
+            ),
             toolBatches: self::getContainer()->get(ToolBatchStoreInterface::class),
             denormalizer: self::getContainer()->get(SerializerInterface::class),
             validator: self::getContainer()->get(ValidatorInterface::class),

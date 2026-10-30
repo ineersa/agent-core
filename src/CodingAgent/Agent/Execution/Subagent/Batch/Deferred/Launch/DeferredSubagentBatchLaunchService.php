@@ -245,19 +245,6 @@ final class DeferredSubagentBatchLaunchService
                 $e->getPrevious() ?? $e,
                 $e->failureBatchIndex,
             );
-            try {
-                $this->childLifecycle->applyLaunchFailurePreparation($parentRunId, $toolCallId, $lifecycleId);
-            } catch (\Throwable $persistFailure) {
-                $this->logger->warning('deferred_subagent_batch.launch_failure_persist_failed', [
-                    'run_id' => $parentRunId,
-                    'tool_call_id' => $toolCallId,
-                    'component' => 'agent.execution',
-                    'event_type' => 'deferred_subagent_batch.launch_failure_persist_failed',
-                    'failure_phase' => 'preparation',
-                    'failure_batch_index' => $e->failureBatchIndex,
-                    'exception_class' => $persistFailure::class,
-                ]);
-            }
 
             throw $this->launchFailedException($e->getPrevious() ?? $e);
         }
@@ -277,30 +264,11 @@ final class DeferredSubagentBatchLaunchService
                 $prepared,
             );
         } catch (DeferredSubagentBatchRuntimeStartFailure $e) {
-            $failureIndex = $e->failureBatchIndex;
-            try {
-                $this->childLifecycle->applyLaunchFailurePreparation(
-                    $parentRunId,
-                    $toolCallId,
-                    $lifecycleId,
-                );
-            } catch (\Throwable $persistFailure) {
-                $this->logger->warning('deferred_subagent_batch.launch_failure_persist_failed', [
-                    'run_id' => $parentRunId,
-                    'tool_call_id' => $toolCallId,
-                    'component' => 'agent.execution',
-                    'event_type' => 'deferred_subagent_batch.launch_failure_persist_failed',
-                    'failure_phase' => 'runtime_start',
-                    'failure_batch_index' => $failureIndex,
-                    'exception_class' => $persistFailure::class,
-                ]);
-            }
-
             throw $this->launchFailedException($e->getPrevious() ?? $e);
         }
 
         try {
-            $this->childLifecycle->applyLaunchSuccessState($parentRunId, $toolCallId, $lifecycleId, $startedAt);
+            $this->childLifecycle->publishLaunchSuccessState($parentRunId, $toolCallId, $lifecycleId, $startedAt);
         } catch (\Throwable $persistFailure) {
             $this->logger->warning('deferred_subagent_batch.launch_success_persist_failed', [
                 'run_id' => $parentRunId,
@@ -449,7 +417,7 @@ final class DeferredSubagentBatchLaunchService
         }
 
         try {
-            $this->childLifecycle->applyLaunchSuccessState(
+            $this->childLifecycle->publishLaunchSuccessState(
                 $parentRunId,
                 $toolCallId,
                 $lifecycleId,

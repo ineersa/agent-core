@@ -167,7 +167,10 @@ the tool consumer launches and supervises natively, then publishes one-way
 Code-mode deferred registration is prepared by `ToolPayloadMiddleware` on the
 owner before ExecuteToolCall dispatch. Socket-ready reports are one-way
 `ReadyCodeModeInvocationDTO` commands; the host does not await a reply.
-Child-invocation still uses the older reply client in this revision.
+Child reservation is also prepared before dispatch. Launch success is a one-way
+`RecordChildLaunchSuccessDTO` command; failed ordinary `ToolCallResult`s retire
+reserved child metadata on owner receive. Generic deferred registration still
+uses a reply RPC.
 Controller/scheduler accepted-job
 `decide()` RPCs remain an incomplete intermediate checkpoint for Bash.
 
@@ -186,15 +189,15 @@ sequenceDiagram
     Owner->>DB: Persist by status_path
 ```
 
-`BashRegistrationClient` remains for child metadata RPCs and residual
-controller/scheduler Bash `decide()` paths. It is not on the BashTool completion
-path anymore. Code-mode registration and readiness no longer use that client.
+`BashRegistrationClient` remains for generic deferred-registration replies and
+residual controller/scheduler Bash `decide()` paths. It is not on the BashTool
+completion path or child launch-success path anymore.
 
 | Domain | Serialized lifecycle operations | Work left in execution paths |
 |---|---|---|
 | Bash | One-way started/finished/accepted persistence; background request intent; residual controller decide/stop/timeout writes | Launch, local status/log supervision, signals, grace supervision |
 | Code mode | Owner-prepared deferred registration before dispatch; one-way readiness; terminal acceptance/classification on owner receipt | Isolated PHP subprocess, IPC and result artifacts |
-| Child invocation | Batch reservation, launch-success/failure metadata and deferred registration | Artifact preparation and runner `start()`/`followUp()` |
+| Child invocation | Owner-prepared reservation; one-way launch success; failed ToolCallResult retirement on owner receive; residual deferred-registration reply | Artifact preparation and runner `start()`/`followUp()` |
 
 Queries are observations, not write authority. Owner operations recheck identity
 and current state instead of writing back stale snapshots. Metadata redelivery

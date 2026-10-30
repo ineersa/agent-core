@@ -241,26 +241,6 @@ final class AgentResumeExecutionService
                 throw $followUpFailure;
             }
         } catch (\Throwable $e) {
-            $failureBatchIndex = 1;
-
-            try {
-                $this->childLifecycle->applyLaunchFailurePreparation(
-                    $parentRunId,
-                    $toolCallId,
-                    $lifecycleId,
-                );
-            } catch (\Throwable $persistFailure) {
-                $this->logger->warning('agent_resume.launch_failure_persist_failed', [
-                    'run_id' => $parentRunId,
-                    'tool_call_id' => $toolCallId,
-                    'component' => 'agent.execution',
-                    'event_type' => 'agent_resume.launch_failure_persist_failed',
-                    'failure_phase' => 'follow_up',
-                    'failure_batch_index' => $failureBatchIndex,
-                    'exception_class' => $persistFailure::class,
-                ]);
-            }
-
             // Failed followUp restores the child's prior terminal artifact status (best-effort).
             if ($e instanceof ToolCallException) {
                 throw $e;
@@ -270,7 +250,7 @@ final class AgentResumeExecutionService
         }
 
         try {
-            $this->childLifecycle->applyLaunchSuccessState(
+            $this->childLifecycle->publishLaunchSuccessState(
                 $parentRunId,
                 $toolCallId,
                 $lifecycleId,

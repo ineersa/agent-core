@@ -114,9 +114,18 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         }
         $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($parentRunId, $toolCallId);
         $this->assertNotNull($batch);
-        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch->launchStatus);
-        $this->assertCount(1, $batch->children);
-        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $batch->children[0]->launchStatus);
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Reserved,
+            $batch->launchStatus,
+            'Worker throw leaves Reserved until owner admits the sealed failure.',
+        );
+        new ChildInvocationLifecycleService(
+            self::getContainer()->get(DeferredSubagentBatchRepository::class),
+        )->applyLaunchFailurePreparation($parentRunId, $toolCallId, $batch->lifecycleId);
+        $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch?->launchStatus);
+        $this->assertCount(1, $batch?->children ?? []);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $batch?->children[0]->launchStatus);
         $this->assertSame(AgentArtifactStatusEnum::Failed, $registry->get($parentRunId, $child['artifactId'])?->status);
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('previously failed');
@@ -220,7 +229,17 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $batch = $batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId);
         $this->assertNotNull($batch);
-        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch->launchStatus);
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Reserved,
+            $batch->launchStatus,
+            'Worker throw leaves Reserved until owner admits the sealed failure.',
+        );
+        new ChildInvocationLifecycleService(
+            self::getContainer()->get(DeferredSubagentBatchRepository::class),
+        )->applyLaunchFailurePreparation($parentRunId, $toolCallId, $batch->lifecycleId);
+        $batch = $batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch?->launchStatus);
+        $this->assertNotNull($batch);
         $this->assertCount(1, $batch->children);
         foreach ($batch->children as $child) {
             $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $child->launchStatus);
@@ -432,7 +451,9 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             self::getContainer()->get(StackToolExecutionContextAccessor::class),
             $agentsConfig ?? self::getContainer()->get(AgentsConfig::class),
             $logger,
-            self::getContainer()->get(ChildInvocationLifecycleService::class),
+            new ChildInvocationLifecycleService(
+                self::getContainer()->get(DeferredSubagentBatchRepository::class),
+            ),
             $identityFactory,
             self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\DenormalizerInterface::class),
             self::getContainer()->get(\Symfony\Component\Validator\Validator\ValidatorInterface::class),
