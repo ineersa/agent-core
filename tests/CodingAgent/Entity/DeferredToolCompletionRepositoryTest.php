@@ -75,7 +75,7 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
     }
 
     #[DataProvider('completionBoundaries')]
-    public function testObsoleteCompletionSettlesMetadataAndRemovesRetainedBatchWithoutBodies(bool $producer): void
+    public function testOnlyOwnerSettlesObsoleteCompletionAndRemovesRetainedBatchWithoutBodies(bool $producer): void
     {
         [$runId, $reference, $directory] = $this->fixture(false);
         $container = self::getContainer();
@@ -90,8 +90,13 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
 
         $state = new RunState($runId, RunStatus::Cancelled, turnNo: 1);
         $bus = $this->bus($state);
-        $message = $producer ? new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'discard']])
-            : new Envelope(new ToolPayloadMessage($reference, 'deferred'), [new ReceivedStamp('run_control')]);
+        if ($producer) {
+            $bus->dispatch(new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'discard']]));
+            $this->assertSame('pending', $repository->status('deferred'), 'A stale producer must not write owner settlement.');
+            $this->assertNotNull($batches->loadSchedule($runId, 1, 'step'));
+            $this->assertDirectoryExists($directory);
+        }
+        $message = new Envelope(new ToolPayloadMessage($reference, 'deferred'), [new ReceivedStamp('run_control')]);
         $bus->dispatch($message);
         $this->assertSame('completed', $repository->status('deferred'));
         $this->assertNull($batches->loadSchedule($runId, 1, 'step'));
