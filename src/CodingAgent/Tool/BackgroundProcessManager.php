@@ -509,7 +509,17 @@ final class BackgroundProcessManager
             return [];
         }
 
-        return $this->store->fetchForegroundTools($runId);
+        $candidates = [];
+        foreach ($this->store->fetchForegroundTools($runId) as $process) {
+            // Prepared rows do not receive a PID until the tool result arrives.
+            // Read launch evidence without observing completion or enforcing deadlines.
+            $pid = $process->pid ?? $this->lifecycle->readPidFile($this->store->snapshot($process->id)?->statusPath);
+            if (null !== $pid) {
+                $candidates[] = new ForegroundBashProcessDTO($process->id, $pid, $process->toolCallId);
+            }
+        }
+
+        return $candidates;
     }
 
     /**
