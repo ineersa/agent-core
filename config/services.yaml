@@ -106,6 +106,7 @@ services:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
     exclude:
       - '%kernel.project_dir%/src/CodingAgent/Tool/CodeMode/Resources/'
+      - '%kernel.project_dir%/src/CodingAgent/Extension/Builtin/Scheduling/'
 
   Ineersa\CodingAgent\Agent\Diagnostics\PromptCacheDiagnosticsInvocationSubscriber:
     arguments:

@@ -28,6 +28,9 @@ interface ToolPayloadStoreInterface
 
     public function findFirstResult(ToolPayloadReferenceDTO $invocation): ?ToolPayloadReferenceDTO;
 
+    /** @return list<array{path: string, byte_count: int}> */
+    public function attachmentReferences(string $runId, string $toolCallId): array;
+
     public function saveAttachment(string $runId, string $toolCallId, callable $write): string;
 
     public function read(ToolPayloadReferenceDTO $reference): ExecuteToolCall|ExecuteShellToolCall|ToolCallResult|DeferredToolCompletionCorrelation;

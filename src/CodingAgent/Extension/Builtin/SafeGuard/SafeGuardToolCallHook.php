@@ -330,6 +330,9 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private function shouldAutoDenyRelaxable(ToolCallContextDTO $context): bool
     {
+        if (true === ($context->metadata['noninteractive_execution'] ?? false)) {
+            return true;
+        }
         if (!$this->autoDenyInNoninteractive) {
             return false;
         }

@@ -56,6 +56,8 @@ use Symfony\Component\Filesystem\Filesystem;
  */
 final class ExtensionToolRegistryBridgeTest extends TestCase
 {
+    use ExtensionHostCapabilitiesFixtureTrait;
+
     // ── Basic registration flow ──
 
     public function testRegisterToolForwardsToRegistry(): void
@@ -611,6 +613,10 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
                 resources: new AppResourceLocator('' !== $appConfig->cwd ? $appConfig->cwd : '/tmp'),
                 filesystem: new Filesystem(),
             ),
+            toolInvoker: $this->unusedToolInvoker(),
+            children: $this->createStub(\Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface::class),
+            recurringJobs: new \Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), ''),
+            commandBus: $this->createStub(\Symfony\Component\Messenger\MessageBusInterface::class),
         );
     }
 

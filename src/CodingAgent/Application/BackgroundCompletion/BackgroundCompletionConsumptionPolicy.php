@@ -32,6 +32,12 @@ final readonly class BackgroundCompletionConsumptionPolicy implements CommandCon
         return null !== $id && true === $this->deferred->findMetadataByDeferredId($id)?->continuationRequired;
     }
 
+    /** @param array<string, mixed> $origin */
+    public function notificationInterruption(array $origin, RunState $state): bool
+    {
+        return true === ($origin['interrupted'] ?? false) || (true === ($origin['retire_on_owner_cancel'] ?? false) && \in_array($state->status, [RunStatus::Cancelling, RunStatus::Cancelled], true));
+    }
+
     public function prepare(RunState $state, PendingCommand $command): ?CommandConsumptionDecisionDTO
     {
         $provenance = $command->payload['provenance'] ?? null;
@@ -50,7 +56,7 @@ final readonly class BackgroundCompletionConsumptionPolicy implements CommandCon
         if ($receipt->destinationRunId !== $state->runId || BackgroundCompletionDispositionEnum::Pending !== $receipt->disposition) {
             return new CommandConsumptionDecisionDTO('Background completion already consumed or transferred.');
         }
-        $interrupted = $this->interrupted($receipt->deferredId);
+        $interrupted = $this->interrupted($receipt->deferredId) || $this->notificationInterruption($receipt->origin, $state);
         // Receipt admission is passive. Do not launch a divergent turn from a
         // selected prefix; explicit continuation at the tip can drain it later.
         if (!$interrupted && ($this->parked($receipt->deferredId) || $this->events->hasForwardTail($state->runId, $state->turnNo))) {

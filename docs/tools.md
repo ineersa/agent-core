@@ -19,6 +19,7 @@ servers. Tool availability does not bypass approval policy.
 | `view_image` | Attach an image for model inspection | JPEG, PNG, GIF, and WebP. Size and dimension limits apply. |
 | `bash` | Run a shell command in the workspace | Local permissions apply. Timeout and cancellation do not undo completed effects. |
 | `bg_status` | List, inspect logs, or stop accepted background processes | Session-scoped. Does not expose private foreground supervision. |
+| `schedule` | Create, list, or cancel recurring Bash or code-mode work | Live controller only. Noninteractive; approval-required actions are denied. Cancellation stops future invocations, not running work. See [recurring work](background-processes.md#recurring-work-schedule). |
 | `ask_human` | Ask for text, confirmation, or a choice | Waits for a human response. Cancellation is not approval. |
 | `code_mode` | Run a PHP script that calls other tools through `tool(name, arguments)` | Disabled by default (`tools.code_mode.enabled`). Raw PHP bypasses toolbox hooks. Checkout/PHAR reuse the launching PHP CLI; fused native builds need `php` on PATH. |
 | `hatfield_docs` | List and read packaged Hatfield documentation | Does not automatically discover extension-package READMEs. |

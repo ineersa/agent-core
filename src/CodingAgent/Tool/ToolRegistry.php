@@ -90,6 +90,7 @@ final class ToolRegistry implements ToolRegistryInterface
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
         ?int $timeoutSeconds = null,
         ?string $extensionOwnerClass = null,
+        bool $mainOnly = false,
     ): void {
         if ('' === $name || '' === $description) {
             throw new \InvalidArgumentException(\sprintf('Tool name and description must be non-empty strings, got name="%s" description="%s".', $name, $description));
@@ -110,6 +111,7 @@ final class ToolRegistry implements ToolRegistryInterface
             executionMode: $executionMode,
             timeoutSeconds: $timeoutSeconds,
             extensionOwnerClass: $extensionOwnerClass,
+            mainOnly: $mainOnly,
         );
         $this->permanentOrder[] = $name;
     }

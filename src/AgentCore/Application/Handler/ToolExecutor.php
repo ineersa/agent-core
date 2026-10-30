@@ -384,6 +384,8 @@ final class ToolExecutor implements ToolExecutorInterface
             stepId: \is_string($stepId) && '' !== $stepId ? $stepId : null,
             parentModel: $parentModel,
             launchContext: $launchContext,
+            allowsHumanInput: false !== ($toolCall->context['allows_human_input'] ?? true),
+            retainOutput: true === ($toolCall->context['retain_output'] ?? false),
         );
 
         /** @var SymfonyToolResult $result */

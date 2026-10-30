@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
@@ -22,11 +23,19 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validation;
 
 /**
  * Bridges public ExtensionApiInterface calls to the internal ToolRegistry.
@@ -57,7 +66,39 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private ExtensionAgentJobDispatcher $extensionAgentJobDispatcher,
         private StackToolExecutionContextAccessor $toolContextAccessor,
         private SkillDiscovery $skillDiscovery,
+        private ExtensionToolInvoker $toolInvoker,
+        private ChildRunExtensionAllowlistReaderInterface $children,
+        private ExtensionRecurringJobRegistry $recurringJobs,
+        #[Autowire(service: 'agent.command.bus')] private MessageBusInterface $commandBus,
     ) {
+    }
+
+    public function tools(): RegisteredToolInvokerInterface
+    {
+        return $this->toolInvoker;
+    }
+
+    public function notifyOwner(OwnerNotificationDTO $notification): void
+    {
+        $this->toolInvoker->assertOwner($notification->runId);
+        $violations = Validation::createValidator()->validate([
+            'identity' => $notification->identity, 'text' => $notification->text,
+        ], new Assert\Collection([
+            'identity' => new Assert\NotBlank(normalizer: 'trim'),
+            'text' => new Assert\NotBlank(normalizer: 'trim'),
+        ]));
+        if (0 !== $violations->count()) {
+            throw new ValidationFailedException($notification, $violations);
+        }
+        $this->commandBus->dispatch(new DeliverBackgroundCompletionDTO(
+            $notification->runId, $notification->identity, $notification->text,
+            origin: ['interrupted' => $notification->interrupted, 'retire_on_owner_cancel' => true],
+        ));
+    }
+
+    public function registerRecurringJobSource(string $sourceId, RecurringJobSourceInterface $source): void
+    {
+        $this->recurringJobs->register($sourceId, $source);
     }
 
     /**
@@ -75,7 +116,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function registerTool(ToolRegistrationDTO $tool): void
     {
         // Accepts argument-only ExtensionToolHandlerInterface or contextual handlers.
-        $adapter = new ExtensionToolHandlerAdapter($tool->handler, $this->toolContextAccessor);
+        $adapter = new ExtensionToolHandlerAdapter($tool->handler, $this->toolContextAccessor, $this->children, $tool->mainOnly);
 
         $this->toolRegistry->registerTool(
             name: $tool->name,
@@ -86,6 +127,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
             promptGuidelines: $tool->promptGuidelines,
             timeoutSeconds: $tool->timeoutSeconds,
             extensionOwnerClass: ExtensionRegistrationContext::currentOwnerClass(),
+            mainOnly: $tool->mainOnly,
         );
     }
 

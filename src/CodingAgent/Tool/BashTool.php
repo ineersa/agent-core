@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
@@ -14,6 +15,7 @@ use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
+use Symfony\Contracts\Service\Attribute\Required;
 
 use function Amp\delay;
 
@@ -66,6 +68,8 @@ final class BashTool implements HatfieldToolProviderInterface
     public const string NAME = 'bash';
 
     public const string DESCRIPTION_TEMPLATE = 'Execute a shell command. By default, wait for completion. Set backgrounded=true to continue other work; you will be notified when the command finishes. Do not poll for completion. Commands time out after %d seconds by default. Provide the timeout argument with an explicit higher value when a command needs more time.';
+
+    private ToolPayloadStoreInterface $payloads;
 
     public function __construct(
         private readonly BackgroundProcessManager $manager,
@@ -226,6 +230,12 @@ final class BashTool implements HatfieldToolProviderInterface
         });
     }
 
+    #[Required]
+    public function setPayloadStore(ToolPayloadStoreInterface $payloads): void
+    {
+        $this->payloads = $payloads;
+    }
+
     /**
      * Return the tool definition for automatic provider registration.
      */
@@ -269,8 +279,8 @@ final class BashTool implements HatfieldToolProviderInterface
      * Foreground completion must never materialize multi-megabyte logs into PHP
      * strings. Use the existing log tail bound (bash.log_tail_chars). When the
      * log exceeds that bound, return a compact notice that points at the live
-     * background log path (the full artifact) instead of duplicating into
-     * output-cap storage.
+     * background log path. Scheduled invocations retain a streamed attachment
+     * before provisional process cleanup can remove that log.
      *
      * @param int         $recordId  Immutable background-process record ID
      * @param string|null $sessionId Session ownership filter
@@ -291,11 +301,29 @@ final class BashTool implements HatfieldToolProviderInterface
                 return $result->content;
             }
 
+            $logPath = $result->logPath;
+            $context = $this->contextAccessor->current();
+            if (null !== $context && $context->retainOutput()) {
+                $logPath = $this->payloads->saveAttachment($context->runId(), $context->attachmentOwnerToolCallId(), static function ($destination) use ($result): void {
+                    $source = fopen($result->logPath, 'rb');
+                    if (false === $source) {
+                        throw new \RuntimeException('Failed to open scheduled Bash output.');
+                    }
+                    try {
+                        if (false === stream_copy_to_stream($source, $destination)) {
+                            throw new \RuntimeException('Failed to retain scheduled Bash output.');
+                        }
+                    } finally {
+                        fclose($source);
+                    }
+                });
+            }
+
             // Keep this notice well under the generic OutputCap default so the
-            // central processor does not re-cap it or copy the background log.
+            // central processor does not re-cap it or copy the artifact again.
             return \sprintf(
                 "[Bash output truncated: %d bytes > %d-byte read bound]\n".
-                "Full output remains at the background log:\n%s\n".
+                "%s:\n%s\n".
                 "\n".
                 "Next: inspect a bounded byte window as hexadecimal, e.g.\n".
                 "- bash(command: \"od -An -tx1 -N %d %s\")\n".
@@ -303,13 +331,17 @@ final class BashTool implements HatfieldToolProviderInterface
                 'Do not rerun the original command or load the full log unbound.',
                 $result->totalBytes,
                 $this->config->logTailChars,
-                $result->logPath,
+                $logPath === $result->logPath ? 'Full output remains at the background log' : 'Saved full output',
+                $logPath,
                 $this->config->logTailChars,
-                escapeshellarg($result->logPath),
+                escapeshellarg($logPath),
             );
         } catch (MalformedToolResultException $e) {
             throw $e;
         } catch (\RuntimeException $e) {
+            if (true === $this->contextAccessor->current()?->retainOutput()) {
+                throw $e;
+            }
             $this->logger->warning('bash_tool.read_output_failed', [
                 'component' => 'tool.bash',
                 'event_type' => 'bash_tool.read_output_failed',
