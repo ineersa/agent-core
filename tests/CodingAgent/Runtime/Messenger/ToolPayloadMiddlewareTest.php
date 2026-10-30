@@ -24,9 +24,11 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -43,12 +45,15 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Runtime\Messenger\BashNativeCompletionStamp;
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Session\CanonicalToolInvocationReader;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tests\Runtime\Messenger\Support\ToolPayloadWorkerTransport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -365,8 +370,8 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $registry = $container->get(ActiveRunContextInterface::class);
         $middleware = $container->get(ToolPayloadMiddleware::class);
         $transport = $container->get('messenger.transport.run_control');
-        $processes = $container->get(\Ineersa\CodingAgent\Tool\BackgroundProcessManager::class);
-        $store = $container->get(\Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore::class);
+        $processes = $container->get(BackgroundProcessManager::class);
+        $store = $container->get(ProcessStore::class);
 
         $prepareBus = new MessageBus([
             $middleware,
@@ -435,7 +440,7 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $this->assertSame('result', $sealedAck->getMessage()->reference->kind);
         $this->assertSame(['run_control'], $sealedAck->last(TransportNamesStamp::class)?->getTransportNames());
         $this->assertNull($sealedAck->getMessage()->deferredId);
-        $this->assertInstanceOf(\Ineersa\CodingAgent\Runtime\Messenger\BashNativeCompletionStamp::class, $sealedAck->last(\Ineersa\CodingAgent\Runtime\Messenger\BashNativeCompletionStamp::class));
+        $this->assertInstanceOf(BashNativeCompletionStamp::class, $sealedAck->last(BashNativeCompletionStamp::class));
         $ownerBus = new MessageBus([
             $middleware,
             new HandleMessageMiddleware(new HandlersLocator([
@@ -474,12 +479,14 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
             'command' => 'printf stamp-ok',
         ], 0);
         $batches = $container->get(ToolBatchStoreInterface::class);
-        TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $run, 1, 'bash-stamp-step', [$call]);
+        $collector = new ToolBatchCollector($batches);
+        TestToolBatchRegistration::register($collector, $batches, $run, 1, 'bash-stamp-step', [$call]);
         $middleware = $container->get(ToolPayloadMiddleware::class);
-        $processes = $container->get(\Ineersa\CodingAgent\Tool\BackgroundProcessManager::class);
-        $store = $container->get(\Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore::class);
+        $processes = $container->get(BackgroundProcessManager::class);
+        $store = $container->get(ProcessStore::class);
         $payloads = $container->get(ToolPayloadStoreInterface::class);
         $registry = $container->get(ActiveRunContextInterface::class);
+        $serializer = $container->get('messenger.transport.native_php_serializer');
 
         $prepareBus = new MessageBus([
             $middleware,
@@ -492,6 +499,25 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $this->assertNotNull($prepared);
         $this->assertNull($container->get(DeferredToolCompletionRepository::class)->findMetadataByRunAndToolCall($run, 'bash-stamp'));
 
+        // Approval updates the batch attempt/key, then re-preparation reuses the same native row.
+        TestToolBatchCoordination::suspend($collector, $batches, $run, 1, 'bash-stamp-step', 'bash-stamp', 'q-bash-stamp');
+        $answer = new ToolCallHumanInputAnswerDTO(
+            questionId: 'q-bash-stamp',
+            answer: 'allow',
+            continuationRef: ['run_id' => $run, 'turn_no' => 1, 'step_id' => 'bash-stamp-step', 'tool_call_id' => 'bash-stamp'],
+            requestPayload: ['question_id' => 'q-bash-stamp'],
+        );
+        $resumed = TestToolBatchCoordination::resume($collector, $batches, $run, 1, 'bash-stamp-step', 'bash-stamp', 'q-bash-stamp', $answer);
+        $this->assertCount(1, $resumed);
+        $this->assertSame(2, $resumed[0]->attempt());
+        $prepareBus->dispatch($resumed[0]);
+        $preparedAfterApproval = $processes->findPreparedLaunch($run, 'bash-stamp');
+        $this->assertNotNull($preparedAfterApproval);
+        $this->assertSame($prepared->id, $preparedAfterApproval->id);
+        $this->assertSame($prepared->logPath, $preparedAfterApproval->logPath);
+        $this->assertSame($prepared->statusPath, $preparedAfterApproval->statusPath);
+        $this->assertNull($container->get(DeferredToolCompletionRepository::class)->findMetadataByRunAndToolCall($run, 'bash-stamp'));
+
         $registry->loadRecovered(new RunState(
             $run,
             RunStatus::Running,
@@ -500,13 +526,12 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
             pendingToolCalls: ['bash-stamp' => false],
         ));
         $finishedAt = new \DateTimeImmutable('2026-10-30T18:05:00+00:00');
-        // Approval increments attempt/key; preparation is keyed by run/tool-call only.
         $result = new ToolCallResult(
             $run,
             1,
             'bash-stamp-step',
-            2,
-            hash('sha256', 'bash-stamp-2'),
+            $resumed[0]->attempt(),
+            $resumed[0]->idempotencyKey(),
             'bash-stamp',
             0,
             [
@@ -528,19 +553,36 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
             ],
             false,
         );
+        $handledResults = [];
         $resultBus = new MessageBus([
             $middleware,
             new HandleMessageMiddleware(new HandlersLocator([
                 ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
-                ToolCallResult::class => [static fn (ToolCallResult $message): ToolCallResult => $message],
+                ToolCallResult::class => [static function (ToolCallResult $message) use (&$handledResults): ToolCallResult {
+                    $handledResults[] = $message;
+
+                    return $message;
+                }],
             ])),
         ]);
         $sealed = $resultBus->dispatch($result);
         $this->assertInstanceOf(ToolPayloadMessage::class, $sealed->getMessage());
         $this->assertNull($sealed->getMessage()->deferredId);
-        $stamp = $sealed->last(\Ineersa\CodingAgent\Runtime\Messenger\BashNativeCompletionStamp::class);
-        $this->assertInstanceOf(\Ineersa\CodingAgent\Runtime\Messenger\BashNativeCompletionStamp::class, $stamp);
-        $resultBus->dispatch($sealed->withoutAll(HandledStamp::class)->with(new ReceivedStamp('run_control')));
+        $stamp = $sealed->last(BashNativeCompletionStamp::class);
+        $this->assertInstanceOf(BashNativeCompletionStamp::class, $stamp);
+        $this->assertSame(2, $sealed->getMessage()->reference->attempt);
+        $this->assertSame($resumed[0]->idempotencyKey(), $sealed->getMessage()->reference->idempotencyKey);
+
+        $encoded = $serializer->encode($sealed->withoutAll(HandledStamp::class));
+        $decoded = $serializer->decode($encoded);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $decoded->getMessage());
+        $this->assertInstanceOf(BashNativeCompletionStamp::class, $decoded->last(BashNativeCompletionStamp::class));
+
+        $resultBus->dispatch($decoded->with(new ReceivedStamp('run_control')));
+        $this->assertCount(1, $handledResults);
+        $this->assertSame("stamp-ok\n", $handledResults[0]->result['content'][0]['text'] ?? null);
+        $this->assertSame(2, $handledResults[0]->attempt());
+        $this->assertArrayNotHasKey('bash_native', $handledResults[0]->result['details'] ?? []);
         $owned = $store->snapshot($prepared->id);
         $this->assertSame(5151, $owned?->pid);
         $this->assertSame(0, $owned?->exitCode);
@@ -554,16 +596,82 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
             activeStepId: 'bash-stamp-step',
             pendingToolCalls: [],
         ));
-        $duplicate = $resultBus->dispatch($sealed->withoutAll(HandledStamp::class)->with(new ReceivedStamp('run_control')));
+        $duplicate = $resultBus->dispatch($decoded->with(new ReceivedStamp('run_control')));
         $this->assertNull($duplicate->last(HandledStamp::class)?->getResult());
+        $this->assertCount(1, $handledResults, 'Stale duplicate must not invoke the ordinary result handler again.');
         $this->assertSame(5151, $store->snapshot($prepared->id)?->pid);
+
+        // Late accepted-background ACK after caller cancellation still persists acceptedAt.
+        $lateRun = $container->get(HatfieldSessionStore::class)->createSession('bash stamp late ack');
+        $lateCall = new ExecuteToolCall($lateRun, 1, 'bash-late-step', 1, hash('sha256', 'bash-late'), 'bash-late', 'bash', [
+            'command' => 'sleep 1',
+            'backgrounded' => true,
+        ], 0);
+        TestToolBatchRegistration::register($collector, $batches, $lateRun, 1, 'bash-late-step', [$lateCall]);
+        $prepareBus->dispatch($lateCall);
+        $latePrepared = $processes->findPreparedLaunch($lateRun, 'bash-late');
+        $this->assertNotNull($latePrepared);
+        $registry->loadRecovered(new RunState(
+            $lateRun,
+            RunStatus::Cancelling,
+            turnNo: 1,
+            activeStepId: 'bash-late-step',
+            pendingToolCalls: [],
+        ));
+        $acceptedAt = new \DateTimeImmutable('2026-10-30T18:06:00+00:00');
+        $lateAck = new ToolCallResult(
+            $lateRun,
+            1,
+            'bash-late-step',
+            1,
+            hash('sha256', 'bash-late'),
+            'bash-late',
+            0,
+            [
+                'tool_name' => 'bash',
+                'content' => [['type' => 'text', 'text' => 'Backgrounded bash acknowledgment']],
+                'details' => [
+                    'mode' => 'background',
+                    'bash_native' => [
+                        'record_id' => $latePrepared->id,
+                        'run_id' => $lateRun,
+                        'tool_call_id' => 'bash-late',
+                        'pid' => 6161,
+                        'pgid' => 6161,
+                        'started_at' => $acceptedAt->format(\DATE_ATOM),
+                        'accepted_at' => $acceptedAt->format(\DATE_ATOM),
+                    ],
+                ],
+            ],
+            false,
+        );
+        $lateHandled = [];
+        $lateBus = new MessageBus([
+            $middleware,
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+                ToolCallResult::class => [static function (ToolCallResult $message) use (&$lateHandled): ToolCallResult {
+                    $lateHandled[] = $message;
+
+                    return $message;
+                }],
+            ])),
+        ]);
+        $sealedLate = $lateBus->dispatch($lateAck);
+        $this->assertInstanceOf(BashNativeCompletionStamp::class, $sealedLate->last(BashNativeCompletionStamp::class));
+        $lateBus->dispatch($sealedLate->withoutAll(HandledStamp::class)->with(new ReceivedStamp('run_control')));
+        $this->assertSame([], $lateHandled, 'Obsolete caller must not receive the ordinary result.');
+        $lateOwned = $store->snapshot($latePrepared->id);
+        $this->assertNotNull($lateOwned);
+        $this->assertSame(6161, $lateOwned->pid);
+        $this->assertNotNull($lateOwned->backgroundedAt);
 
         // Terminal error without bash_native creates no Bash deferred marker.
         $errorRun = $container->get(HatfieldSessionStore::class)->createSession('bash stamp error');
         $errorCall = new ExecuteToolCall($errorRun, 1, 'bash-error-step', 1, hash('sha256', 'bash-error'), 'bash-error', 'bash', [
             'command' => 'false',
         ], 0);
-        TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $errorRun, 1, 'bash-error-step', [$errorCall]);
+        TestToolBatchRegistration::register($collector, $batches, $errorRun, 1, 'bash-error-step', [$errorCall]);
         $prepareBus->dispatch($errorCall);
         $this->assertNotNull($processes->findPreparedLaunch($errorRun, 'bash-error'));
         $registry->loadRecovered(new RunState(
@@ -588,11 +696,27 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
             ],
             true,
         );
-        $sealedError = $resultBus->dispatch($error);
+        $errorHandled = [];
+        $errorBus = new MessageBus([
+            $middleware,
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+                ToolCallResult::class => [static function (ToolCallResult $message) use (&$errorHandled): ToolCallResult {
+                    $errorHandled[] = $message;
+
+                    return $message;
+                }],
+            ])),
+        ]);
+        $sealedError = $errorBus->dispatch($error);
         $this->assertInstanceOf(ToolPayloadMessage::class, $sealedError->getMessage());
         $this->assertNull($sealedError->getMessage()->deferredId);
-        $this->assertNull($sealedError->last(\Ineersa\CodingAgent\Runtime\Messenger\BashNativeCompletionStamp::class));
+        $this->assertNull($sealedError->last(BashNativeCompletionStamp::class));
         $this->assertNull($container->get(DeferredToolCompletionRepository::class)->findMetadataByRunAndToolCall($errorRun, 'bash-error'));
+        $errorBus->dispatch($sealedError->withoutAll(HandledStamp::class)->with(new ReceivedStamp('run_control')));
+        $this->assertCount(1, $errorHandled);
+        $this->assertSame('boom', $errorHandled[0]->result['content'][0]['text'] ?? null);
+        $this->assertTrue($errorHandled[0]->isError);
     }
 
     public function testProducerPreparesAgentResumeAndRoutesRefusalToRunControlDespiteAgentStamp(): void

@@ -432,7 +432,7 @@ final class ProcessStore
                     $status = BackgroundProcessStatusEnum::Stopped;
                     $signalRequired = true;
                     if (!(bool) $row['stopped_by_user']) {
-                        $connection->executeStatement('UPDATE background_process SET stopped_by_user = 1, status = ?, completion_notified_at = COALESCE(completion_notified_at, ?), updated_at = ? WHERE id = ?', [$status->value, $now, $now, $recordId]);
+                        $connection->executeStatement('UPDATE background_process SET stopped_by_user = 1, status = ?, updated_at = ? WHERE id = ?', [$status->value, $now, $recordId]);
                     }
                 }
                 if (null !== $pid && null === $row['pid']) {

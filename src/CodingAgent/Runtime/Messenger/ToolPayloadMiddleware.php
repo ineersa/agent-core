@@ -453,6 +453,13 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
     ): void
     {
         $metadata = $stamp->metadata;
+        if ('result' !== $reference->kind || 'bash' !== $reference->toolName) {
+            throw new ToolPayloadException('Bash native completion stamp requires an ordinary bash result reference.');
+        }
+        $violations = $this->validator->validate($metadata);
+        if (\count($violations) > 0) {
+            throw new ToolPayloadException((string) $violations);
+        }
         if ($metadata->runId !== $reference->runId || $metadata->toolCallId !== $reference->toolCallId) {
             throw new ToolPayloadException('Bash native completion does not match the transport reference identity.');
         }

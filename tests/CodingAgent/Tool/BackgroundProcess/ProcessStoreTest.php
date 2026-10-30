@@ -136,7 +136,7 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testStopCommitsSuppressionBeforeSignalAndRecognizesReplayWithoutHydration(): void
+    public function testStopCommitsCauseBeforeSignalWithoutSuppressingCompletionAndRecognizesReplayWithoutHydration(): void
     {
         $directory = TestDirectoryIsolation::createProjectTempDir('bash-stop-decision');
         try {
@@ -158,7 +158,7 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $first->status);
             $row = $manager->getConnection()->fetchAssociative('SELECT * FROM background_process WHERE id = ?', [$process->id]);
             $this->assertSame(1, (int) $row['stopped_by_user']);
-            $this->assertNotNull($row['completion_notified_at']);
+            $this->assertNull($row['completion_notified_at'], 'Stop records cause without suppressing later completion delivery.');
             for ($i = 0; $i < 32; ++$i) {
                 $this->assertTrue($store->decide($process->id, 'stop-owner', BashProcessActionEnum::Stop, $lifecycle)->signalRequired, 'Reply loss must reconstruct the committed stop obligation, not assume TERM occurred.');
             }

@@ -11,6 +11,7 @@ use Doctrine\ORM\Events;
 use Doctrine\ORM\Query;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -126,7 +127,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $logger->method('info')->willReturnCallback(static function (string $message) use (&$poller): void {
             if ('background_process.stopped' === $message) {
                 // Poll after native exit but before stop() returns. Completion
-                // must already be quiet, not deferred until the final stop flush.
+                // may already be submitted; later polls must not duplicate it.
                 (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
             }
         });
@@ -185,13 +186,12 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $poller = $this->createPoller($store, $manager, 'native-stop');
             (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
             (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
-            $this->assertCount('stop' === $mode ? 0 : 1, $this->sentCommands);
+            $this->assertCount(1, $this->sentCommands, 'Stop must not suppress completion delivery; duplicates stay blocked by the receipt.');
             $this->assertNotNull($store->snapshot($process->id)?->completionNotifiedAt);
             $this->assertNotNull($manager->findByRecordId($process->id)?->finishedAt);
             $this->assertStringContainsString('ready', $manager->readLogTail('native-stop', $process->pid)->content);
-            if ('stop' !== $mode) {
-                $this->assertStringContainsString('exit '.$exit, $this->sentCommands[0][1]->text ?? '');
-            }
+            $observedExit = $manager->findByRecordId($process->id)?->exitCode ?? $exit;
+            $this->assertStringContainsString('exit '.$observedExit, $this->sentCommands[0][1]->text ?? '');
         } finally {
             fclose($release);
             $manager->shutdownCleanup();
@@ -229,9 +229,18 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $owner->acceptResolvedBackground($candidate);
             $candidate = new DeliverBackgroundCompletionDTO($runId, 'background-process-'.$process->id, 'stale completion', processRecordId: $process->id);
             $owner->stop($process->pid, $runId);
-            $this->assertNotNull($store->snapshot($process->id)?->completionNotifiedAt);
+            $snapshot = $store->snapshot($process->id);
+            $this->assertNotNull($snapshot);
+            $this->assertTrue($snapshot->stoppedByUser);
+            $this->assertNull($snapshot->completionNotifiedAt, 'Stop alone must not mark completion notified.');
+            // First observed completion after stop still delivers once.
             self::getContainer()->get(BackgroundCompletionHandler::class)($candidate);
-            $this->assertNull(self::getContainer()->get(BackgroundCompletionReceiptRepository::class)->receipt($candidate->identity));
+            $this->assertNotNull(self::getContainer()->get(BackgroundCompletionReceiptRepository::class)->receipt($candidate->identity));
+            $this->assertNotNull($store->snapshot($process->id)?->completionNotifiedAt);
+            // A second stale candidate is rejected by the retained receipt path.
+            $duplicate = new DeliverBackgroundCompletionDTO($runId, 'background-process-'.$process->id, 'duplicate stale completion', processRecordId: $process->id);
+            self::getContainer()->get(BackgroundCompletionHandler::class)($duplicate);
+            $this->assertCount(1, self::getContainer()->get(CommandStoreInterface::class)->pending($runId));
         } finally {
             $owner->shutdownCleanup();
         }
@@ -714,7 +723,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $poller = $this->createPoller($store, $owner, 'timeout-run');
             (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
             $this->assertCount(1, $this->sentCommands);
-            $this->assertStringContainsString('finished (exit stopped)', $this->sentCommands[0][1]->text ?? '');
+            $this->assertStringContainsString('finished (exit 0)', $this->sentCommands[0][1]->text ?? '');
             $this->assertStringContainsString('cleaned', $this->sentCommands[0][1]->text ?? '');
         } finally {
             fclose($release);
@@ -758,7 +767,8 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $record->status);
             $this->assertFalse($record->stoppedByUser);
             $this->assertCount(1, $this->sentCommands);
-            $this->assertStringContainsString('exit stopped', $this->sentCommands[0][1]->text ?? '');
+            $observedExit = null !== $record->exitCode ? (string) $record->exitCode : '?';
+            $this->assertStringContainsString('exit '.$observedExit, $this->sentCommands[0][1]->text ?? '');
         } finally {
             $manager->shutdownCleanup();
         }
