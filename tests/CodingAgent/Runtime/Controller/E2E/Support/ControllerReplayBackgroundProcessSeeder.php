@@ -10,7 +10,6 @@ use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
-use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
 
@@ -63,12 +62,12 @@ final class ControllerReplayBackgroundProcessSeeder
             if (null === $entity) {
                 throw new \RuntimeException(\sprintf('Seeded background process %d missing after insert.', $id));
             }
+            // Acceptance must precede finish: workers no longer accept finished rows.
+            if (!$store->acceptLocal($id, $sessionId)) {
+                throw new \RuntimeException(\sprintf('Unable to accept seeded background process %d.', $id));
+            }
             BackgroundProcessFixture::finish($entity, 0, new \DateTimeImmutable());
             $container->get(\Doctrine\ORM\EntityManagerInterface::class)->flush();
-
-            /** @var BackgroundProcessManager $manager */
-            $manager = $container->get(BackgroundProcessManager::class);
-            $manager->markBackgroundedForRecord($id, $sessionId);
 
             return [
                 'id' => $id,

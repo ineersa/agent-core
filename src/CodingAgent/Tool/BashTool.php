@@ -101,7 +101,7 @@ final class BashTool implements HatfieldToolProviderInterface
             $startResult = $this->manager->start(
                 $command,
                 $sessionId,
-                $prepared?->toolCallId ?? ($topLevelModel ? $toolCallId : null),
+                null !== $prepared ? $prepared->toolCallId : ($topLevelModel ? $toolCallId : null),
                 $deadline,
                 backgroundRequested: $arguments->backgrounded,
                 preparedRecordId: $prepared?->id,
@@ -253,6 +253,9 @@ final class BashTool implements HatfieldToolProviderInterface
         }
     }
 
+    /**
+     * @return string|array{content: string, bash_native: array<string, mixed>}|DeferredToolCompletionOutcome
+     */
     private function handleFinished(
         NativeBashObservationDTO $entity,
         ?PreparedBashLaunchDTO $prepared,
@@ -306,7 +309,7 @@ final class BashTool implements HatfieldToolProviderInterface
         ?string $sessionId,
         NativeBashObservationDTO $entity,
         string $text,
-    ): string|array|DeferredToolCompletionOutcome {
+    ): string|DeferredToolCompletionOutcome {
         if (null === $prepared?->deferredId || null === $recordId || null === $sessionId) {
             return $text;
         }
@@ -323,6 +326,9 @@ final class BashTool implements HatfieldToolProviderInterface
         );
     }
 
+    /**
+     * @return string|array{content: string, bash_native: array<string, mixed>}|DeferredToolCompletionOutcome
+     */
     private function finishText(
         ?PreparedBashLaunchDTO $prepared,
         ?int $recordId,

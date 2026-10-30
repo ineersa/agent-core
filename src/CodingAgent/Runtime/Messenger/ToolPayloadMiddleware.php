@@ -350,7 +350,10 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
 
                 return [$metadata->deferredId, $this->remoteResultOwner ? $reference : $this->acceptCodeModeResult($reference, false)];
             }
-            if ('completed' === ($metadata?->status ?? $this->deferred->statusForRunAndToolCall($message->runId(), $message->toolCallId))) {
+            $status = null !== $metadata
+                ? $metadata->status
+                : $this->deferred->statusForRunAndToolCall($message->runId(), $message->toolCallId);
+            if ('completed' === $status) {
                 return [null, null];
             }
             $metadata = $this->findEarlyDeferredRegistration($message);
@@ -410,7 +413,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                     $message->args,
                 );
             } catch (ValidatorValidationFailedException $exception) {
-                throw new ToolCallException((string) $exception->getMessage(), retryable: false, previous: $exception);
+                throw new ToolCallException($exception->getMessage(), retryable: false, previous: $exception);
             }
             $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($message, $receipt->identity));
         }
@@ -520,7 +523,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         }
 
         $existing = $this->deferred->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
-        $deferredId = $existing?->deferredId ?? UuidV7::v7()->toRfc4122();
+        $deferredId = null !== $existing ? $existing->deferredId : UuidV7::v7()->toRfc4122();
         if (null === $existing) {
             $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($message, $deferredId));
         }

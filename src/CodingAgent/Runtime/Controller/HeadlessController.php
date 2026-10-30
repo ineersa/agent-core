@@ -186,6 +186,7 @@ final class HeadlessController
             $this->consumerSupervisor->shutdownUntil($deadline);
             $this->brokerSupervisor->shutdownUntil($deadline);
             try {
+                $this->backgroundProcesses->useLocalLifecycleOwner();
                 $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
             } catch (\Throwable $lifecycleException) {
                 $this->logger->error('Controller session shutdown lifecycle failed after partial consumer launch', [
@@ -508,6 +509,10 @@ final class HeadlessController
         $this->consumerSupervisor->shutdownUntil($deadline, keepRunControl: true);
 
         try {
+            // Consumers are already draining or kept only for lifecycle. Local
+            // finished-row deletion is required; one-way remote deletes cannot
+            // prove completion before this process exits.
+            $this->backgroundProcesses->useLocalLifecycleOwner();
             $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
         } catch (\Throwable $exception) {
             $this->logger->error('Controller session shutdown lifecycle failed', [

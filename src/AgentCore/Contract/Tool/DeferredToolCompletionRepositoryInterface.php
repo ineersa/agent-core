@@ -47,6 +47,9 @@ interface DeferredToolCompletionRepositoryInterface
     /** Owner readiness stamp after launch success, host ready, or communication acceptance. */
     public function markReady(string $deferredId): void;
 
+    /** Owner acceptance stamp after a deferred Bash/code-mode background handoff. */
+    public function markBackgrounded(string $deferredId, \DateTimeImmutable $acceptedAt): void;
+
     /** Old successor tokens require an explicit owner continuation after loss. */
     public function runRequiresContinuation(string $runId): bool;
 

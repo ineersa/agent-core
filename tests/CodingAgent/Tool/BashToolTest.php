@@ -38,7 +38,6 @@ use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
-use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
@@ -53,6 +52,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashNativeCompletionMetadataDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -79,6 +79,8 @@ use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\ConstraintValidatorFactory;
 use Symfony\Component\Validator\ValidatorBuilder;
 
@@ -869,8 +871,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertIsResource($endpoint);
         $token = $this->createStub(CancellationTokenInterface::class);
         $selected = null;
-        $originalDeadline = null;
-        $token->method('isCancellationRequested')->willReturnCallback(function () use ($session, $backgrounded, &$selected, &$originalDeadline): bool {
+        $token->method('isCancellationRequested')->willReturnCallback(function () use ($session, $backgrounded, &$selected): bool {
             if (null === $selected) {
                 $records = $this->manager->foregroundTools($session);
                 if ([] === $records) {
@@ -878,7 +879,6 @@ final class BashToolTest extends IsolatedKernelTestCase
                 }
                 if ([] !== $records) {
                     $selected = $records[0];
-                    $originalDeadline = BackgroundProcessFixture::record(self::getContainer(), $selected->id)?->deadlineNanoseconds;
                     if (!$backgrounded) {
                         $this->assertTrue($this->manager->requestBackground($session, $selected->id, 'tc_bash'));
                     }
@@ -928,8 +928,11 @@ final class BashToolTest extends IsolatedKernelTestCase
             $this->assertStringContainsString('Command moved to background.', $acknowledgment);
             $record = $this->manager->findByRecordId($selected->id, $session);
             $this->assertNotNull($record);
-            $this->assertSame($selected->pid, $record->pid);
-            $this->assertSame($originalDeadline, BackgroundProcessFixture::record(self::getContainer(), $record->id)?->deadlineNanoseconds);
+            // Selection can happen before owner receipt persists the wrapper PID.
+            $this->assertSame($selected->id, $record->id);
+            $this->assertNotNull($record->pid);
+            // Owner applies the worker-computed deadline with launch facts; prepared rows start null.
+            $this->assertNotNull(BackgroundProcessFixture::record(self::getContainer(), $record->id)?->deadlineNanoseconds);
             $this->assertNull($record->finishedAt);
             $this->assertNotNull($record->backgroundedAt);
             $this->assertCount(1, $this->recordsForSession($session));
@@ -1238,35 +1241,43 @@ final class BashToolTest extends IsolatedKernelTestCase
         if (!\is_array($details) || !isset($details['bash_native']) || !\is_array($details['bash_native'])) {
             return;
         }
-        $native = $details['bash_native'];
-        $recordId = (int) ($native['recordId'] ?? 0);
-        $runId = (string) ($native['runId'] ?? '');
-        if ($recordId <= 0 || '' === $runId) {
+        $serializer = self::getContainer()->get(SerializerInterface::class);
+        $native = $serializer->denormalize(
+            $details['bash_native'],
+            BashNativeCompletionMetadataDTO::class,
+            context: [AbstractNormalizer::ALLOW_EXTRA_ATTRIBUTES => false],
+        );
+        if (!$native instanceof BashNativeCompletionMetadataDTO) {
             return;
         }
         $store = self::getContainer()->get(ProcessStore::class);
-        if (isset($native['pid']) && \is_int($native['pid'])) {
-            $startedAt = isset($native['startedAt']) ? new \DateTimeImmutable((string) $native['startedAt']) : new \DateTimeImmutable();
+        if (null !== $native->pid) {
+            if (null === $native->startedAt) {
+                throw new \RuntimeException('Fixture bash_native launch facts require started_at.');
+            }
             $store->applyLaunch(
-                $recordId,
-                $runId,
-                $native['pid'],
-                isset($native['pgid']) && \is_int($native['pgid']) ? $native['pgid'] : null,
-                $startedAt,
-                isset($native['deadlineNanoseconds']) && \is_int($native['deadlineNanoseconds']) ? $native['deadlineNanoseconds'] : null,
+                $native->recordId,
+                $native->runId,
+                $native->pid,
+                $native->pgid,
+                $native->startedAt,
+                $native->deadlineNanoseconds,
             );
         }
-        if (isset($native['acceptedAt'])) {
-            $store->applyAcceptedByRecord($recordId, $runId, new \DateTimeImmutable((string) $native['acceptedAt']));
+        if (null !== $native->acceptedAt) {
+            $store->applyAcceptedByRecord($native->recordId, $native->runId, $native->acceptedAt);
         }
-        if (isset($native['finishedAt'], $native['status'])) {
+        if (null !== $native->finishedAt) {
+            if (null === $native->status) {
+                throw new \RuntimeException('Fixture bash_native finish facts require status.');
+            }
             $store->applyFinishedByRecord(
-                $recordId,
-                $runId,
-                isset($native['exitCode']) && \is_int($native['exitCode']) ? $native['exitCode'] : null,
-                BackgroundProcessStatusEnum::from((string) $native['status']),
-                (bool) ($native['stoppedByUser'] ?? false),
-                new \DateTimeImmutable((string) $native['finishedAt']),
+                $native->recordId,
+                $native->runId,
+                $native->exitCode,
+                $native->status,
+                $native->stoppedByUser,
+                $native->finishedAt,
             );
         }
     }
