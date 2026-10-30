@@ -350,6 +350,7 @@ final class BashTool implements HatfieldToolProviderInterface
         if (null === $prepared || null === $recordId || null === $sessionId) {
             return $text;
         }
+
         return $this->ordinaryResult(
             $prepared,
             $recordId,

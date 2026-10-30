@@ -158,6 +158,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                     if (!$body instanceof ToolCallResult || !\is_array($body->result)) {
                         throw new ToolPayloadException('Deferred completion data is not a tool result.');
                     }
+
                     return new CompleteDeferredToolCall(
                         $message->deferredId,
                         $body->result['content'],
@@ -450,8 +451,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         ToolPayloadReferenceDTO $reference,
         BashNativeCompletionStamp $stamp,
         bool $activeCaller,
-    ): void
-    {
+    ): void {
         $metadata = $stamp->metadata;
         if ('result' !== $reference->kind || 'bash' !== $reference->toolName) {
             throw new ToolPayloadException('Bash native completion stamp requires an ordinary bash result reference.');

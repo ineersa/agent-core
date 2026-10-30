@@ -177,7 +177,6 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertNull($this->manager->observeNativeByStatusPath($nested->statusPath, $session));
     }
 
-
     public function testFindByRecordIdReturnsNullForNonexistentId(): void
     {
         $this->createManager();

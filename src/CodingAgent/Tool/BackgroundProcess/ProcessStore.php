@@ -171,7 +171,7 @@ final class ProcessStore
         // Direct shell also persists tool_call_id. Only model Bash has an active
         // tool_batch_call row, so join that table for Ctrl+B eligibility.
         $rows = $this->entityManager->getConnection()->fetchAllAssociative(
-            "SELECT p.id, p.pid, p.tool_call_id
+            'SELECT p.id, p.pid, p.tool_call_id
              FROM background_process p
              INNER JOIN tool_batch_call c
                 ON c.run_id = p.session_id
@@ -181,7 +181,7 @@ final class ProcessStore
                AND p.tool_call_id IS NOT NULL
                AND p.backgrounded_at IS NULL
                AND p.background_requested = 0
-             ORDER BY p.id DESC",
+             ORDER BY p.id DESC',
             [$sessionId],
         );
 
