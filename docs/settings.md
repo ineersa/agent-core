@@ -140,8 +140,8 @@ across tool waits or recycle after a fixed number of messages. Services are not
 reset beneath active Fibers. The normal worker memory limit remains in effect.
 Metadata redelivery does not repeat an external launch or resume action; it does
 not guarantee exactly-once external tool effects.
-Code-mode deferred registration is prepared by the owner before dispatch;
-readiness still uses the worker reply client.
+Code-mode deferred registration is prepared by the owner before dispatch.
+Socket-ready reports are one-way owner commands; the host does not await a reply.
 
 ### Tool execution
 

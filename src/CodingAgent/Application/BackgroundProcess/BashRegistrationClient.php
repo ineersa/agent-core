@@ -19,7 +19,6 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationReplyD
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationResultDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
-use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO;
@@ -82,14 +81,6 @@ final class BashRegistrationClient
             ?? throw new \UnexpectedValueException('Missing deferred registration identity.');
     }
 
-    public function readyCodeMode(string $runId, string $deferredId): void
-    {
-        $reply = $this->request(new ReadyCodeModeInvocationDTO($runId, $deferredId, $this->incarnation, bin2hex(random_bytes(16)), $this->role));
-        if ($reply->deferredId !== $deferredId) {
-            throw new \UnexpectedValueException('Code-mode readiness identity mismatch.');
-        }
-    }
-
     public function reserveChild(string $lifecycleId, string $parentRunId, int $parentTurnNo, string $parentToolCallId, int $parentOrderIndex, \DateTimeImmutable $deadlineAt, DeferredSubagentBatchChildIntentDTO $childIntent, ?string $parentModel): DeferredSubagentBatchProjectionDTO
     {
         return $this->request(new ReserveChildInvocationDTO($lifecycleId, $parentRunId, $parentTurnNo, $parentToolCallId, $parentOrderIndex, $deadlineAt, $childIntent, $parentModel, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->childBatch
@@ -112,7 +103,7 @@ final class BashRegistrationClient
             ?? throw new \UnexpectedValueException('Missing Bash ownership result.');
     }
 
-    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO|ReadyCodeModeInvocationDTO|ReserveChildInvocationDTO|RecordChildLaunchSuccessDTO|RecordChildLaunchFailureDTO|RegisterDeferredInvocationDTO $command): BashRegistrationReplyDTO
+    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO|ReserveChildInvocationDTO|RecordChildLaunchSuccessDTO|RecordChildLaunchFailureDTO|RegisterDeferredInvocationDTO $command): BashRegistrationReplyDTO
     {
         $errors = $this->validator->validate($command);
         if (0 !== \count($errors)) {

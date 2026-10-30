@@ -165,7 +165,8 @@ Bash foreground completion is migrating off request/reply metadata waits:
 the tool consumer launches and supervises natively, then publishes one-way
 `BashProcessStarted` / `BashProcessFinished` / `BashProcessAccepted` events.
 Code-mode deferred registration is prepared by `ToolPayloadMiddleware` on the
-owner before ExecuteToolCall dispatch. Readiness still uses the reply client.
+owner before ExecuteToolCall dispatch. Socket-ready reports are one-way
+`ReadyCodeModeInvocationDTO` commands; the host does not await a reply.
 Child-invocation still uses the older reply client in this revision.
 Controller/scheduler accepted-job
 `decide()` RPCs remain an incomplete intermediate checkpoint for Bash.
@@ -185,15 +186,14 @@ sequenceDiagram
     Owner->>DB: Persist by status_path
 ```
 
-`BashRegistrationClient` remains for code-mode/child metadata RPCs and residual
+`BashRegistrationClient` remains for child metadata RPCs and residual
 controller/scheduler Bash `decide()` paths. It is not on the BashTool completion
-path anymore.
-Code-mode registration no longer uses that client.
+path anymore. Code-mode registration and readiness no longer use that client.
 
 | Domain | Serialized lifecycle operations | Work left in execution paths |
 |---|---|---|
 | Bash | One-way started/finished/accepted persistence; background request intent; residual controller decide/stop/timeout writes | Launch, local status/log supervision, signals, grace supervision |
-| Code mode | Owner-prepared deferred registration before dispatch; readiness and terminal acceptance/classification on owner receipt | Isolated PHP subprocess, IPC and result artifacts |
+| Code mode | Owner-prepared deferred registration before dispatch; one-way readiness; terminal acceptance/classification on owner receipt | Isolated PHP subprocess, IPC and result artifacts |
 | Child invocation | Batch reservation, launch-success/failure metadata and deferred registration | Artifact preparation and runner `start()`/`followUp()` |
 
 Queries are observations, not write authority. Owner operations recheck identity

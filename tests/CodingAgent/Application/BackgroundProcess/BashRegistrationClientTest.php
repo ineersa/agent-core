@@ -63,15 +63,12 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationResult
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\RegisterBashProcessHandler;
-use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\ReserveChildInvocationDTO;
 use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleHandler;
 use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
-use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleHandler;
-use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Application\Pipeline\RegisterDeferredInvocationHandler;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
@@ -391,95 +388,6 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             } finally {
                 $requests->close();
                 $sender->close();
-            }
-        });
-    }
-
-    public function testCodeModeReadinessSharesTheIndependentToolReplyPump(): void
-    {
-        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher): void {
-            $invocation = new DeferredToolCompletionCorrelation('canonical-code-mode', $owner, 1, 'step', 1, 'key', 'call', 'code_mode', [], 0);
-            TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(ToolBatchStoreInterface::class), $invocation);
-            self::getContainer()->get(DeferredToolCompletionRepository::class)->registerPending($invocation);
-            $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
-            $sender = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
-            $sent = 0;
-            $saturated = new DeferredFuture();
-            $events = new EventDispatcher();
-            $events->addListener(MessageSentToTransportsEvent::class, static function () use (&$sent, $saturated): void {
-                if (16 === ++$sent) {
-                    $saturated->complete();
-                }
-            });
-            $locator = new SendersLocator([ReadyCodeModeInvocationDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
-            $client = new BashRegistrationClient(new MessageBus([new SendMessageMiddleware(new SerializedBrokerSendersLocator($locator), $events)]), $paths->endpointPath, $owner, self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(ValidatorInterface::class));
-            $lifecycle = new CodeModeLifecycleService(self::getContainer()->get(DeferredToolCompletionRepository::class));
-            $handler = new CodeModeLifecycleHandler($lifecycle, $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
-            $ownerTask = async(static function () use ($saturated, $requests, $handler): void {
-                $saturated->getFuture()->await(new TimeoutCancellation(8));
-                for ($handled = 0; $handled < 16;) {
-                    foreach ($requests->get() as $delivery) {
-                        $handler($delivery->getMessage());
-                        $requests->ack($delivery);
-                        ++$handled;
-                    }
-                    if ($handled < 16) {
-                        $requests->wait(3000, new TimeoutCancellation(8));
-                    }
-                }
-            });
-            try {
-                $tasks = [];
-                for ($i = 0; $i < 16; ++$i) {
-                    $tasks[] = async(static function () use ($client, $invocation): void {
-                        $client->readyCodeMode($invocation->runId, $invocation->deferredId);
-                    });
-                }
-                foreach ($tasks as $task) {
-                    $task->await(new TimeoutCancellation(8));
-                }
-                $ownerTask->await(new TimeoutCancellation(8));
-                $this->assertSame(16, $sent);
-                $this->assertNotNull(self::getContainer()->get(DeferredToolCompletionRepository::class)->findMetadataByDeferredId($invocation->deferredId)?->readyAt);
-            } finally {
-                $requests->close();
-                $sender->close();
-            }
-        });
-    }
-
-    public function testCodeModeLostReadinessRepliesRedeliverOnlyMetadataAndKeepCanonicalIdentity(): void
-    {
-        // Native lease redelivery is the external contract; WAIT observes broker
-        // eligibility and the test future deadline is only a failure cap.
-        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher): void {
-            $invocation = new DeferredToolCompletionCorrelation('canonical-code-mode', $owner, 1, 'step', 1, 'key', 'call', 'code_mode', [], 0);
-            TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(ToolBatchStoreInterface::class), $invocation);
-            $repository = self::getContainer()->get(DeferredToolCompletionRepository::class);
-            $repository->registerPending($invocation);
-            $handler = new CodeModeLifecycleHandler(new CodeModeLifecycleService($repository), $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
-            $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
-            $replies = (new TransportFactory())->createTransport('sqlite-queue://bash_registration_reply_tool?endpoint='.rawurlencode($paths->endpointPath), [], new Serializer(self::getContainer()->get(SerializerInterface::class)));
-            try {
-                $command = new ReadyCodeModeInvocationDTO($owner, $invocation->deferredId, str_repeat('b', 32), str_repeat('d', 32), BashRequesterRoleEnum::Tool);
-                $requests->send(new Envelope($command));
-                $delivery = iterator_to_array($requests->get())[0];
-                $handler($delivery->getMessage());
-                $first = iterator_to_array($replies->get())[0];
-                $this->assertSame($invocation->deferredId, $first->getMessage()->deferredId);
-                $replies->ack($first);
-                $ready = $repository->findMetadataByDeferredId($invocation->deferredId)?->readyAt;
-                $requests->wait(3000, new TimeoutCancellation(8));
-                $redelivery = iterator_to_array($requests->get())[0];
-                $handler($redelivery->getMessage());
-                $second = iterator_to_array($replies->get())[0];
-                $this->assertSame($invocation->deferredId, $second->getMessage()->deferredId);
-                $this->assertEquals($ready, $repository->findMetadataByDeferredId($invocation->deferredId)?->readyAt);
-                $replies->ack($second);
-                $requests->ack($redelivery);
-            } finally {
-                $requests->close();
-                $replies->close();
             }
         });
     }

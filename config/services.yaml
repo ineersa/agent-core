@@ -222,10 +222,6 @@ services:
     arguments:
       $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
-  Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleHandler:
-    arguments:
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
-
   Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleHandler:
     arguments:
       $sessionId: '%env(HATFIELD_SESSION_ID)%'

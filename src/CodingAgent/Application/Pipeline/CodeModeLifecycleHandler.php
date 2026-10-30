@@ -4,18 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
-use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationReplyPublisher;
-use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashRegistrationReplyDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
-/** Readiness-only owner handler. Registration is prepared before dispatch. */
+/** One-way readiness owner handler. Registration is prepared before dispatch. */
 #[AsMessageHandler(bus: 'agent.command.bus')]
 final readonly class CodeModeLifecycleHandler
 {
-    public function __construct(private CodeModeLifecycleService $lifecycle, private BashRegistrationReplyPublisher $replies, private ValidatorInterface $validator, private string $sessionId)
+    public function __construct(private CodeModeLifecycleService $lifecycle, private ValidatorInterface $validator)
     {
     }
 
@@ -26,8 +24,5 @@ final readonly class CodeModeLifecycleHandler
             throw new ValidationFailedException($command, $errors);
         }
         $this->lifecycle->ready($command->runId, $command->deferredId);
-        // The repository releases its run lock before publication. Lost replies
-        // redrive only readiness, never the isolated script launch.
-        $this->replies->publish(new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, role: $command->role, deferredId: $command->deferredId));
     }
 }

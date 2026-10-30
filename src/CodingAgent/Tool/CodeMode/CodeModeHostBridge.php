@@ -17,7 +17,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
-use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
+use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
@@ -67,7 +67,6 @@ final readonly class CodeModeHostBridge
         private ToolBatchStoreInterface $batches,
         private ToolPayloadStoreInterface $payloads,
         private MessageBusInterface $commandBus,
-        private CodeModeLifecycleService $lifecycle,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -104,7 +103,9 @@ final readonly class CodeModeHostBridge
                 $process = $this->startProcess($workspace, $cancelToken, $memoryLimit, $capture);
                 $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
                 if (null !== $deferredId) {
-                    $this->lifecycle->ready($parentContext->runId(), $deferredId);
+                    // One-way readiness after the script socket is accepted.
+                    // Serve continues without waiting for owner acknowledgment.
+                    $this->commandBus->dispatch(new ReadyCodeModeInvocationDTO($parentContext->runId(), $deferredId));
                     if ($backgrounded) {
                         $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($parentContext->runId(), $deferredId, $parentContext->toolCallId()));
                     }

@@ -25,7 +25,11 @@ use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeBackgroundCoordinationHandler;
+use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleHandler;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
@@ -371,7 +375,6 @@ PHP);
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
             self::getContainer()->get('agent.command.bus'),
-            self::getContainer()->get(CodeModeLifecycleService::class),
         );
 
         $runId = $this->prepareTopLevelRegistration('code-mode-bridge-test-budget');
@@ -456,7 +459,6 @@ PHP);
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
             self::getContainer()->get('agent.command.bus'),
-            self::getContainer()->get(CodeModeLifecycleService::class),
         );
 
         $result = $this->runScript($bridge, "return tool('code_mode', ['script' => 'return 1;']);");
@@ -677,7 +679,6 @@ PHP);
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
             self::getContainer()->get('agent.command.bus'),
-            self::getContainer()->get(CodeModeLifecycleService::class),
         );
 
         $result = $this->runScript($bridge, 'return "path-php-ok";');
@@ -834,6 +835,128 @@ PHP);
         $this->assertFileDoesNotExist($marker);
     }
 
+    public function testPreparedHostServesWhileReadyIsOnlyQueuedAndHandlerPersistsReadyAt(): void
+    {
+        $commands = new TestMessageBus();
+        $locator = new class implements \Psr\Container\ContainerInterface {
+            public function get(string $id): mixed
+            {
+                throw new \RuntimeException('toolbox should not be needed');
+            }
+
+            public function has(string $id): bool
+            {
+                return false;
+            }
+        };
+        $bridge = new CodeModeHostBridge(
+            self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            self::getContainer()->get(ToolRuntime::class),
+            $locator,
+            self::getContainer()->get(RuntimeProcessConfig::class),
+            self::getContainer()->get(OutputCap::class),
+            self::getContainer()->get(DeferredToolCompletionRepository::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
+            self::getContainer()->get(ToolPayloadStoreInterface::class),
+            $commands,
+        );
+
+        $runId = $this->prepareTopLevelRegistration('code-mode-ready-one-way');
+        $deferred = self::getContainer()->get(DeferredToolCompletionRepository::class);
+        $metadata = $deferred->findMetadataByRunAndToolCall($runId, 'code-mode-ready-one-way');
+        $this->assertNotNull($metadata);
+        $this->assertNull($metadata->readyAt);
+
+        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
+        $result = $accessor->with(
+            new ToolContext(
+                runId: $runId,
+                turnNo: 1,
+                toolCallId: 'code-mode-ready-one-way',
+                toolName: 'code_mode',
+                cancellationToken: new NullCancellationToken(),
+                timeoutSeconds: 10,
+                orderIndex: 0,
+                humanInputAnswer: null,
+                stepId: 'code-mode-bridge-test-step',
+                parentModel: null,
+            ),
+            static fn (): mixed => $bridge->execute('return 42;'),
+        );
+        $this->assertSame(42, $result instanceof CodeModeExecutionResult ? $result->result : $result);
+
+        $this->assertCount(1, $commands->messages);
+        $this->assertInstanceOf(ReadyCodeModeInvocationDTO::class, $commands->messages[0]);
+        $this->assertSame($runId, $commands->messages[0]->runId);
+        $this->assertSame($metadata->deferredId, $commands->messages[0]->deferredId);
+        $this->assertNull($deferred->findMetadataByDeferredId($metadata->deferredId)?->readyAt, 'Host must not wait for readiness acknowledgment.');
+
+        $handler = new CodeModeLifecycleHandler(
+            self::getContainer()->get(CodeModeLifecycleService::class),
+            self::getContainer()->get(\Symfony\Component\Validator\Validator\ValidatorInterface::class),
+        );
+        $handler($commands->messages[0]);
+        $this->assertNotNull($deferred->findMetadataByDeferredId($metadata->deferredId)?->readyAt);
+
+        $backgroundCommands = new class implements \Symfony\Component\Messenger\MessageBusInterface {
+            /** @var list<object> */
+            public array $messages = [];
+
+            public function dispatch(object $message, array $stamps = []): \Symfony\Component\Messenger\Envelope
+            {
+                $this->messages[] = $message;
+                $envelope = new \Symfony\Component\Messenger\Envelope($message, $stamps);
+                if (2 === \count($this->messages)) {
+                    throw new \RuntimeException('stop after ready+background publication order');
+                }
+
+                return $envelope;
+            }
+        };
+        $backgroundBridge = new CodeModeHostBridge(
+            self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            self::getContainer()->get(ToolRuntime::class),
+            $locator,
+            self::getContainer()->get(RuntimeProcessConfig::class),
+            self::getContainer()->get(OutputCap::class),
+            self::getContainer()->get(DeferredToolCompletionRepository::class),
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
+            self::getContainer()->get(ToolPayloadStoreInterface::class),
+            $backgroundCommands,
+        );
+        $bgRun = $this->prepareTopLevelRegistration('code-mode-ready-before-bg');
+        $bgMeta = $deferred->findMetadataByRunAndToolCall($bgRun, 'code-mode-ready-before-bg');
+        $this->assertNotNull($bgMeta);
+        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
+        try {
+            $accessor->with(
+                new ToolContext(
+                    runId: $bgRun,
+                    turnNo: 1,
+                    toolCallId: 'code-mode-ready-before-bg',
+                    toolName: 'code_mode',
+                    cancellationToken: new NullCancellationToken(),
+                    timeoutSeconds: 10,
+                    orderIndex: 0,
+                    humanInputAnswer: null,
+                    stepId: 'code-mode-bridge-test-step',
+                    parentModel: null,
+                ),
+                static fn (): mixed => $backgroundBridge->execute('return 1;', backgrounded: true),
+            );
+            $this->fail('Expected publication-order stop after Ready and Background dispatches.');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('stop after ready+background publication order', $exception->getMessage());
+        }
+        $this->assertCount(2, $backgroundCommands->messages);
+        $this->assertInstanceOf(ReadyCodeModeInvocationDTO::class, $backgroundCommands->messages[0]);
+        $this->assertInstanceOf(BackgroundCodeModeInvocationDTO::class, $backgroundCommands->messages[1]);
+        $this->assertSame($bgMeta->deferredId, $backgroundCommands->messages[0]->deferredId);
+        $this->assertSame($bgMeta->deferredId, $backgroundCommands->messages[1]->deferredId);
+    }
+
     public function testMissingOwnerPreparationRefusesDispatchedTopLevelCall(): void
     {
         $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('missing code_mode preparation');
@@ -945,7 +1068,6 @@ PHP);
             self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class),
             self::getContainer()->get(ToolPayloadStoreInterface::class),
             self::getContainer()->get('agent.command.bus'),
-            self::getContainer()->get(CodeModeLifecycleService::class),
         );
     }
 

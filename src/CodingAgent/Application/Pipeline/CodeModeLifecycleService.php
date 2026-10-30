@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Application\Pipeline;
 
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
-use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Symfony\Component\Uid\UuidV7;
@@ -16,19 +15,12 @@ use Symfony\Component\Uid\UuidV7;
  *
  * Registration runs in run_control before ExecuteToolCall dispatch. The tool
  * host resolves that prepared identity and never allocates or registers one.
- * Readiness still uses the worker reply client until a later slice removes it.
+ * Readiness is applied from one-way ReadyCodeModeInvocationDTO messages.
  */
 final class CodeModeLifecycleService
 {
-    private ?BashRegistrationClient $owner = null;
-
     public function __construct(private readonly DeferredToolCompletionRepository $deferred)
     {
-    }
-
-    public function useOwner(BashRegistrationClient $owner): void
-    {
-        $this->owner = $owner;
     }
 
     public function prepare(ExecuteToolCall $call): string
@@ -63,11 +55,6 @@ final class CodeModeLifecycleService
 
     public function ready(string $runId, string $deferredId): void
     {
-        if (null !== $this->owner) {
-            $this->owner->readyCodeMode($runId, $deferredId);
-
-            return;
-        }
         $metadata = $this->deferred->findMetadataByDeferredId($deferredId);
         if (null === $metadata || $metadata->reference->runId !== $runId || 'code_mode' !== $metadata->reference->toolName) {
             throw new ToolPayloadException('Code-mode readiness does not match its registration.');
