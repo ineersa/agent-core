@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 
@@ -19,6 +20,31 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
  */
 final class ToolCallResultFactory
 {
+    /**
+     * Owner-prepared deferred correlation fields from an ExecuteToolCall envelope.
+     */
+    public static function correlationFromExecuteToolCall(ExecuteToolCall $call, string $deferredId): DeferredToolCompletionCorrelation
+    {
+        return new DeferredToolCompletionCorrelation(
+            deferredId: $deferredId,
+            runId: $call->runId(),
+            turnNo: $call->turnNo(),
+            stepId: $call->stepId(),
+            attempt: $call->attempt(),
+            idempotencyKey: $call->idempotencyKey(),
+            toolCallId: $call->toolCallId,
+            toolName: $call->toolName,
+            arguments: $call->args,
+            orderIndex: $call->orderIndex,
+            toolIdempotencyKey: $call->toolIdempotencyKey,
+            mode: $call->mode,
+            timeoutSeconds: $call->timeoutSeconds,
+            maxParallelism: $call->maxParallelism,
+            argSchema: $call->argSchema,
+            toolsRef: $call->toolsRef,
+        );
+    }
+
     public static function fromExecuteToolCallAndToolResult(ExecuteToolCall $message, ToolResult $toolResult): ToolCallResult
     {
         $raw = \is_array($toolResult->details) ? ($toolResult->details['raw_result'] ?? null) : null;
@@ -147,7 +173,7 @@ final class ToolCallResultFactory
      * @param array<string, mixed>|null        $error
      */
     public static function fromDeferredCorrelationAndCompletion(
-        \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation $correlation,
+        DeferredToolCompletionCorrelation $correlation,
         array $content,
         ?array $details = null,
         bool $isError = false,

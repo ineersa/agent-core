@@ -98,6 +98,19 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         }
     }
 
+    public function markReady(string $deferredId): void
+    {
+        if (!isset($this->byDeferredId[$deferredId])) {
+            throw new \RuntimeException(\sprintf('Deferred id "%s" is not registered.', $deferredId));
+        }
+        if ('pending' !== $this->byDeferredId[$deferredId]['status']) {
+            throw new \RuntimeException(\sprintf('Deferred id "%s" is no longer pending for readiness.', $deferredId));
+        }
+        if (null === $this->byDeferredId[$deferredId]['readyAt']) {
+            $this->byDeferredId[$deferredId]['readyAt'] = new \DateTimeImmutable();
+        }
+    }
+
     // Native host state is exercised with the real repository, not this core fake.
     public function acceptResultReference(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO
     {

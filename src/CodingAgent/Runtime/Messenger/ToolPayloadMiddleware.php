@@ -21,6 +21,7 @@ use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
+use Ineersa\CodingAgent\Application\AgentCommunication\SubmissionFactory;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
@@ -42,6 +43,7 @@ use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Exception\ValidationFailedException as ValidatorValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /** Seal before send_message; resolve only after owner initialization on consumption. */
@@ -62,6 +64,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         private readonly CodeModeLifecycleService $codeModeLifecycle,
         private readonly AgentResumeExecutionService $agentResume,
         private readonly DeferredSubagentBatchLaunchService $deferredChildLaunch,
+        private readonly SubmissionFactory $submissionFactory,
         private readonly ChildInvocationLifecycleService $childLifecycle,
         private readonly DeferredSubagentBatchRepository $childBatches,
     ) {
@@ -213,22 +216,12 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                 if ($message instanceof ExecuteToolCall && 'code_mode' === $message->toolName) {
                     $this->codeModeLifecycle->prepare($message);
                 }
-                if ($message instanceof ExecuteToolCall && 'agent_resume' === $message->toolName) {
+                if ($message instanceof ExecuteToolCall) {
                     try {
-                        $this->agentResume->prepare($message);
+                        $this->prepareDeferredExecution($message);
                     } catch (ToolCallException $exception) {
                         // Preparation refusals settle as ordinary failed results.
                         // Do not dispatch execution or throw into owner effect retries.
-                        $failed = ToolCallResultFactory::fromExecuteToolCallAndThrowable($message, $exception);
-                        $deferredId = null;
-
-                        return $this->payloads->publish($failed);
-                    }
-                }
-                if ($message instanceof ExecuteToolCall && \in_array($message->toolName, ['subagent', 'fork'], true)) {
-                    try {
-                        $this->deferredChildLaunch->prepare($message);
-                    } catch (ToolCallException $exception) {
                         $failed = ToolCallResultFactory::fromExecuteToolCallAndThrowable($message, $exception);
                         $deferredId = null;
 
@@ -303,6 +296,45 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
 
             return [null, $this->payloads->publish($message)];
         }));
+    }
+
+    /**
+     * Owner-side reservation and deferred correlation preparation before dispatch.
+     *
+     * Child tools reuse the reserved lifecycle id. Communication tools freeze the
+     * submission identity. Readiness stays unset until launch success or host ready.
+     */
+    private function prepareDeferredExecution(ExecuteToolCall $message): void
+    {
+        if ('agent_resume' === $message->toolName) {
+            $projection = $this->agentResume->prepare($message);
+            $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($message, $projection->lifecycleId));
+
+            return;
+        }
+
+        if (\in_array($message->toolName, ['subagent', 'fork'], true)) {
+            $projection = $this->deferredChildLaunch->prepare($message);
+            $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($message, $projection->lifecycleId));
+
+            return;
+        }
+
+        if (\in_array($message->toolName, ['agent_steer', 'notify_parent'], true)) {
+            try {
+                $receipt = $this->submissionFactory->prepare(
+                    $message->runId(),
+                    $message->turnNo(),
+                    $message->stepId(),
+                    $message->toolCallId,
+                    $message->toolName,
+                    $message->args,
+                );
+            } catch (ValidatorValidationFailedException $exception) {
+                throw new ToolCallException((string) $exception->getMessage(), retryable: false, previous: $exception);
+            }
+            $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($message, $receipt->identity));
+        }
     }
 
     private function retireFailedChildReservation(ToolCallResult $message): void

@@ -20,7 +20,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -65,10 +64,8 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCom
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\RegisterBashProcessHandler;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO;
-use Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO;
 use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleHandler;
 use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
-use Ineersa\CodingAgent\Application\Pipeline\RegisterDeferredInvocationHandler;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -141,6 +138,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         $remote = new ChildInvocationLifecycleService($repository, $commands);
         $handler = new ChildInvocationLifecycleHandler(
             new ChildInvocationLifecycleService($repository),
+            self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(ValidatorInterface::class),
         );
         $runner = $this->createMock(AgentRunnerInterface::class);
@@ -397,6 +395,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         $repository = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $handler = new ChildInvocationLifecycleHandler(
             new ChildInvocationLifecycleService($repository),
+            self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(ValidatorInterface::class),
         );
         $factory = new DeferredSubagentBatchIdentityFactory();
@@ -413,42 +412,6 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         $this->assertEquals($committed, $repository->findByLifecycleId($id));
     }
 
-    public function testGenericDeferredRegistrationRedeliveryKeepsTheCommittedChildIdentity(): void
-    {
-        // Native lease redelivery is the external contract; WAIT observes broker
-        // eligibility and the test future deadline is only a failure cap.
-        $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher): void {
-            $invocation = new DeferredToolCompletionCorrelation('canonical-child', $owner, 1, 'step', 1, 'key', 'call', 'subagent', [], 0);
-            TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(ToolBatchStoreInterface::class), $invocation);
-            $repository = self::getContainer()->get(DeferredToolCompletionRepository::class);
-            $handler = new RegisterDeferredInvocationHandler($repository, $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
-            $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
-            $replies = (new TransportFactory())->createTransport('sqlite-queue://bash_registration_reply_tool?endpoint='.rawurlencode($paths->endpointPath), [], new Serializer(self::getContainer()->get(SerializerInterface::class)));
-            try {
-                foreach ([new RegisterDeferredInvocationDTO($invocation, str_repeat('b', 32), str_repeat('c', 32), BashRequesterRoleEnum::Tool)] as $command) {
-                    $requests->send(new Envelope($command));
-                    $delivery = iterator_to_array($requests->get())[0];
-                    $handler($delivery->getMessage());
-                    $first = iterator_to_array($replies->get())[0];
-                    $this->assertSame($invocation->deferredId, $first->getMessage()->deferredId);
-                    $replies->ack($first);
-                    $ready = $repository->findMetadataByDeferredId($invocation->deferredId)?->readyAt;
-                    $requests->wait(3000, new TimeoutCancellation(8));
-                    $redelivery = iterator_to_array($requests->get())[0];
-                    $handler($redelivery->getMessage());
-                    $second = iterator_to_array($replies->get())[0];
-                    $this->assertSame($invocation->deferredId, $second->getMessage()->deferredId);
-                    $this->assertEquals($ready, $repository->findMetadataByDeferredId($invocation->deferredId)?->readyAt);
-                    $replies->ack($second);
-                    $requests->ack($redelivery);
-                }
-            } finally {
-                $requests->close();
-                $replies->close();
-            }
-        });
-    }
-
     public function testSixteenOneWayChildLaunchSuccessCommandsApplyOnceEach(): void
     {
         $owner = self::getContainer()->get(HatfieldSessionStore::class)->createSession('sixteen one-way child success');
@@ -457,6 +420,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         $remote = new ChildInvocationLifecycleService($repository, $commands);
         $handler = new ChildInvocationLifecycleHandler(
             new ChildInvocationLifecycleService($repository),
+            self::getContainer()->get(DeferredToolCompletionRepository::class),
             self::getContainer()->get(ValidatorInterface::class),
         );
         $factory = new DeferredSubagentBatchIdentityFactory();

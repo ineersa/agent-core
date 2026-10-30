@@ -83,6 +83,6 @@ final class SubmissionFixture
     {
         $correlation = new DeferredToolCompletionCorrelation($receipt->identity, $receipt->sourceRunId, 1, 'step', 1, 'source-key', 'notify_parent' === $receipt->toolName ? 'notice' : 'steer', $receipt->toolName, 'notify_parent' === $receipt->toolName ? ['text' => $receipt->text] : ['text' => $receipt->text, 'artifact_id' => $this->artifact], 0);
         TestToolBatchRegistration::registerDeferredInvocation($this->container->get(ToolBatchStoreInterface::class), $correlation);
-        $this->container->get(DeferredToolCompletionRepositoryInterface::class)->registerPending($correlation);
+        $this->container->get(DeferredToolCompletionRepositoryInterface::class)->preparePending($correlation);
     }
 }

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
-use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Symfony\Component\Uid\UuidV7;
@@ -29,27 +29,9 @@ final class CodeModeLifecycleService
             throw new ToolPayloadException('Code-mode registration requires a code_mode invocation.');
         }
 
-        $correlation = new DeferredToolCompletionCorrelation(
-            deferredId: UuidV7::v7()->toRfc4122(),
-            runId: $call->runId(),
-            turnNo: $call->turnNo(),
-            stepId: $call->stepId(),
-            attempt: $call->attempt(),
-            idempotencyKey: $call->idempotencyKey(),
-            toolCallId: $call->toolCallId,
-            toolName: $call->toolName,
-            arguments: $call->args,
-            orderIndex: $call->orderIndex,
-            toolIdempotencyKey: $call->toolIdempotencyKey,
-            mode: $call->mode,
-            timeoutSeconds: $call->timeoutSeconds,
-            maxParallelism: $call->maxParallelism,
-            argSchema: $call->argSchema,
-            toolsRef: $call->toolsRef,
-        );
+        $correlation = ToolCallResultFactory::correlationFromExecuteToolCall($call, UuidV7::v7()->toRfc4122());
 
-        // Producer/run_control never calls DeferredToolCompletionRepository::useOwner(),
-        // so preparePending() stays owner-local under the existing run lock and
+        // preparePending() stays owner-local under the existing run lock and
         // leaves readyAt null until the host reports readiness.
         return $this->deferred->preparePending($correlation)->deferredId;
     }

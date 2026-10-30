@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
@@ -208,26 +209,37 @@ final readonly class ExecuteToolCallWorker
             throw new \RuntimeException('Deferred tool outcome missing typed raw_result marker.');
         }
 
-        $correlation = new DeferredToolCompletionCorrelation(
-            deferredId: $raw->deferredId,
-            runId: $message->runId(),
-            turnNo: $message->turnNo(),
-            stepId: $message->stepId(),
-            attempt: $message->attempt(),
-            idempotencyKey: $message->idempotencyKey(),
-            toolCallId: $message->toolCallId,
-            toolName: $message->toolName,
-            arguments: $message->args,
-            orderIndex: $message->orderIndex,
-            toolIdempotencyKey: $message->toolIdempotencyKey,
-            mode: $message->mode,
-            timeoutSeconds: $message->timeoutSeconds,
-            maxParallelism: $message->maxParallelism,
-            argSchema: $message->argSchema,
-            toolsRef: $message->toolsRef,
-        );
+        $metadata = $this->deferredToolCompletionRepository->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
+        if (null === $metadata) {
+            throw new ToolCallException('Owner-prepared deferred registration is missing for this invocation.', retryable: false);
+        }
 
-        return $this->deferredToolCompletionRepository->registerPending($correlation);
+        $reference = $metadata->reference;
+        if (
+            $metadata->deferredId !== $raw->deferredId
+            || $reference->runId !== $message->runId()
+            || $reference->turnNo !== $message->turnNo()
+            || $reference->stepId !== $message->stepId()
+            || $reference->attempt !== $message->attempt()
+            || $reference->idempotencyKey !== $message->idempotencyKey()
+            || $reference->toolCallId !== $message->toolCallId
+            || $reference->orderIndex !== $message->orderIndex
+            || $reference->toolName !== $message->toolName
+        ) {
+            throw new ToolCallException('Prepared deferred registration does not match its deferred outcome.', retryable: false);
+        }
+
+        if ('completed' === $metadata->status) {
+            // Terminal no-op: do not reopen a deleted correlation body.
+            return ToolCallResultFactory::correlationFromExecuteToolCall($message, $metadata->deferredId);
+        }
+
+        $correlation = $this->deferredToolCompletionRepository->findByDeferredId($metadata->deferredId);
+        if (null === $correlation) {
+            throw new ToolCallException('Owner-prepared deferred registration body is unavailable.', retryable: false);
+        }
+
+        return $correlation;
     }
 
     private function dispatchDeferredRegistered(DeferredToolCompletionCorrelation $correlation): void

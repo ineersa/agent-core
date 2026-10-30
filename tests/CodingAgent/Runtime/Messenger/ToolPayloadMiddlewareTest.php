@@ -461,6 +461,11 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
                         $batch = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, $message->reference->toolCallId);
                         $this->assertNotNull($batch, 'Reserved batch must exist inside the outgoing call path.');
                         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $batch->launchStatus);
+                        $deferred = $container->get(DeferredToolCompletionRepositoryInterface::class)
+                            ->findMetadataByRunAndToolCall($run, $message->reference->toolCallId);
+                        $this->assertNotNull($deferred, 'Prepared deferred correlation must exist before send.');
+                        $this->assertSame($batch->lifecycleId, $deferred->deferredId);
+                        $this->assertNull($deferred->readyAt);
                     }
 
                     return $message;
@@ -803,6 +808,7 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
             self::getContainer()->get(CodeModeLifecycleService::class),
             self::getContainer()->get(AgentResumeExecutionService::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Application\AgentCommunication\SubmissionFactory::class),
             self::getContainer()->get(ChildInvocationLifecycleService::class),
             self::getContainer()->get(DeferredSubagentBatchRepository::class));
     }
