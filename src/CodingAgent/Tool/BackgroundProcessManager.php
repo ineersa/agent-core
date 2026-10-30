@@ -1081,6 +1081,12 @@ final class BackgroundProcessManager
         if (null === $id || '' === $native->sessionId) {
             return;
         }
+        if ($this->remoteLifecycleOwner) {
+            // Observation remains local; only the owner may persist completion.
+            $this->processDecision($id, $native->sessionId, BashProcessActionEnum::Observe);
+
+            return;
+        }
         $this->store->applyFinishedByRecord($id, $native->sessionId, $exitCode, $status, $stoppedByUser, $finishedAt);
     }
 

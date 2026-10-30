@@ -332,7 +332,8 @@ final class DeferredSubagentBatchLaunchService
     /**
      * @template T of object
      *
-     * @param class-string<T> $class
+     * @param array<string, mixed> $args
+     * @param class-string<T>      $class
      *
      * @return T
      */
