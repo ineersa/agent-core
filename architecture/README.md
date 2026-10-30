@@ -66,17 +66,18 @@ processes. The broker and its SQLite helper remain separate from execution worke
 The `agent` queue still exists, but has no separate consumer process. Scheduler and
 optional extension-agent workers are detailed in [processes and queues](processes-and-queues.md).
 
-`runtime.llm_concurrency` and `runtime.tool_concurrency` bound active handlers, not
-process counts. A waiting handler yields so another Fiber can run; synchronous
-CPU or blocking I/O still blocks its process. `tools.execution.max_parallelism`
-separately limits admission within a tool batch.
+`runtime.llm_concurrency` bounds active LLM handlers, not process counts.
+`runtime.tool_concurrency` still exists for the shared tool consumer. A waiting
+handler yields so another Fiber can run; synchronous CPU or blocking I/O still
+blocks its process. `tools.execution.max_parallelism` separately limits admission
+within a tool batch.
 
-The shared tool process reads scalar lifecycle snapshots and sends mutations to
-`run_control`. It does not retain managed ORM entities across owner-reply waits or
-reset shared services between overlapping messages. Tool context, log/trace scopes
-and run-lock reentrancy are isolated by Fiber. See the
+Bash foreground work supervises natively and publishes one-way lifecycle events
+to `run_control`. Code-mode/child metadata still use reply RPCs until later
+slices. Tool context, log/trace scopes and run-lock reentrancy are isolated by
+Fiber. See the
 [persistence ownership flow](processes-and-queues.md#lifecycle-persistence-ownership)
-for the boundary between native execution and serialized metadata writes.
+for the current boundary.
 
 ## Code boundaries
 

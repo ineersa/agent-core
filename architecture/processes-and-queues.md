@@ -156,52 +156,49 @@ boundary. Memory-limit recycling is not a substitute for correct scope cleanup.
 
 ## Lifecycle persistence ownership
 
-`run_control` owns the migrated Bash, code-mode and child-invocation mutations.
+`run_control` owns durable Bash, code-mode and child-invocation mutations.
 This is a lifecycle boundary, not a ban on Doctrine or a claim that every database
 write in the application goes through run control. TUI session metadata and other
 independent stores retain their existing ownership.
 
+Bash foreground completion is migrating off request/reply metadata waits:
+the tool consumer launches and supervises natively, then publishes one-way
+`BashProcessStarted` / `BashProcessFinished` / `BashProcessAccepted` events.
+Code-mode and child-invocation still use the older reply client in this revision;
+those domains follow in later slices. Controller/scheduler accepted-job
+`decide()` RPCs remain an incomplete intermediate checkpoint for Bash.
+
 ```mermaid
 sequenceDiagram
-    participant Tool as Execution Fiber
-    participant Client as Lifecycle client
+    participant Tool as Bash execution Fiber
+    participant Native as Status/log sidecars
     participant Broker as Session broker
     participant Owner as run_control
     participant DB as Application state.sqlite
-    participant Pump as Requester reply pump
 
-    Tool->>Client: Typed lifecycle operation
-    Client->>Broker: Command with request and incarnation identity
-    Note over Tool,Client: Await reply; other Fibers can run
-    Broker->>Owner: Deliver command
-    Owner->>DB: Short transaction; current-state checks and mutation
-    DB-->>Owner: Commit
-    Owner->>Broker: Typed reply on fixed requester-role queue
-    Broker->>Pump: Reply notification
-    Pump->>Client: Resolve matching waiter
-    Client-->>Tool: Scalar DTO result
-    Tool->>Tool: Recheck interruption before starting child work
+    Tool->>Native: Launch and supervise
+    Tool->>Broker: One-way Started/Finished/Accepted
+    Note over Tool: Return tool result from native evidence
+    Broker->>Owner: Deliver lifecycle event
+    Owner->>DB: Persist by status_path
 ```
 
-`BashRegistrationClient` carries these typed operations despite its historical
-name. Tool, Controller and Scheduler requesters have separate fixed reply roles.
-Each reply pump runs independently of tool admission, so full execution capacity
-does not prevent replies from releasing waiting slots. Requester incarnations
-fence stale replies. Owner-local and serialized in-process paths invoke the same
-decisions directly rather than requesting themselves.
+`BashRegistrationClient` remains for code-mode/child metadata RPCs and residual
+controller/scheduler Bash `decide()` paths. It is not on the BashTool completion
+path anymore.
 
 | Domain | Serialized lifecycle operations | Work left in execution paths |
 |---|---|---|
-| Bash | Registration, acceptance/retirement, background and stop intent, timeout/settlement, completion admission, cleanup metadata | Launch, output, signals, status-sidecar evidence and grace supervision |
+| Bash | One-way started/finished/accepted persistence; background request intent; residual controller decide/stop/timeout writes | Launch, local status/log supervision, signals, grace supervision |
 | Code mode | Deferred registration, readiness and terminal acceptance/classification on owner receipt | Isolated PHP subprocess, IPC and result artifacts |
 | Child invocation | Batch reservation, launch-success/failure metadata and deferred registration | Artifact preparation and runner `start()`/`followUp()` |
 
 Queries are observations, not write authority. Owner operations recheck identity
 and current state instead of writing back stale snapshots. Metadata redelivery
-does not repeat native child launch. Bash registration retains its committed
-receipt; this does not imply exactly-once process signalling or universal crash
-recovery. Sidecar locks stay outside owner metadata decisions to avoid circular
-waits with native cleanup.
+does not repeat native child launch. Bash no longer depends on registration
+receipts for foreground completion; obsolete receipt/ownership tables remain
+until callers are gone and a generated final migration ships. This does not imply
+exactly-once process signalling or universal crash recovery.
 
 Resume rejects same-child duplicates by immutable registered tool-batch order,
 resolving artifact and run handles to the same child. Different children may

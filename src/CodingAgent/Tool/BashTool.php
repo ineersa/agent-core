@@ -117,14 +117,14 @@ final class BashTool implements HatfieldToolProviderInterface
             }
             $startResult = $this->manager->start($command, $sessionId, $toolCallId, $deadline, backgroundRequested: $arguments->backgrounded);
             $pid = $startResult->pid;
-            $dbId = $startResult->id;
+            $statusPath = $startResult->statusPath;
             $logPath = $startResult->logPath;
 
             $this->logger->info('bash_tool.started', [
                 'component' => 'tool.bash',
                 'event_type' => 'bash_tool.started',
                 'process_pid' => $pid,
-                'record_id' => $dbId,
+                'status_path' => $statusPath,
                 'log_path' => $logPath,
                 'session_id' => $sessionId ?? 'none',
             ]);
@@ -142,7 +142,7 @@ final class BashTool implements HatfieldToolProviderInterface
                 // return value only serves local control flow and is never
                 // user-visible.
                 if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
-                    $this->manager->stopByRecordId($dbId, $sessionId);
+                    $this->manager->stopByStatusPath($statusPath, $sessionId);
 
                     $this->logger->info('bash_tool.cancelled', [
                         'component' => 'tool.bash',
@@ -155,8 +155,8 @@ final class BashTool implements HatfieldToolProviderInterface
 
                 // 2. Monotonic timeout deadline
                 if (hrtime(true) > $deadline) {
-                    $this->manager->stopByRecordId($dbId, $sessionId);
-                    $partialOutput = $this->readOutput($dbId, $sessionId);
+                    $this->manager->stopByStatusPath($statusPath, $sessionId);
+                    $partialOutput = $this->readOutputForStatusPath($statusPath, $sessionId);
                     $this->logger->info('bash_tool.timed_out', [
                         'component' => 'tool.bash',
                         'event_type' => 'bash_tool.timed_out',
@@ -171,43 +171,29 @@ final class BashTool implements HatfieldToolProviderInterface
                     );
                 }
 
-                // 3. Poll process status from BackgroundProcessManager
-                // Uses findByRecordId() with the immutable DB primary key rather
-                // than find() with the OS PID, because PID-based lookups can
-                // miss rows under SQLite write contention or when the ORM identity
-                // map is stale (see #228). The DB record ID is unique, immutable,
-                // and returned by start() in StartResult::$id.
-                $record = $this->manager->findByRecordId($dbId, $sessionId);
+                // 3. Poll native status for this launch. Foreground completion
+                // uses local status/log files, not an owner Observe reply.
+                $record = $this->manager->findByStatusPath($statusPath, $sessionId);
 
                 if (null === $record) {
-                    // One-shot diagnostic: check ORM existence for both the
-                    // record id and the pid to distinguish genuine absence
-                    // from ORM/connection inconsistency.
-                    $rowExistsById = $this->manager->existsByRecordId($dbId);
-                    $rowExistsByPid = $this->manager->existsByPid($pid);
-
-                    $this->logger->error('bash_tool.record_vanished', [
+                    $this->logger->error('bash_tool.native_launch_vanished', [
                         'component' => 'tool.bash',
-                        'event_type' => 'bash_tool.record_vanished',
+                        'event_type' => 'bash_tool.native_launch_vanished',
                         'process_pid' => $pid,
-                        'record_id' => $dbId,
+                        'status_path' => $statusPath,
                         'session_id' => $sessionId ?? '',
-                        'row_exists_by_id' => $rowExistsById,
-                        'row_exists_by_pid' => $rowExistsByPid,
                     ]);
 
-                    throw new ToolCallException(\sprintf('Background process record vanished unexpectedly (PID %d, record %d). DB row exists: by_id=%s, by_pid=%s. The process may have been cleaned up or the store is inconsistent.', $pid, $dbId, $rowExistsById ? 'true' : 'false', $rowExistsByPid ? 'true' : 'false'), retryable: false);
+                    throw new ToolCallException(\sprintf('Native Bash launch vanished unexpectedly (PID %d, status %s).', $pid, $statusPath), retryable: false);
                 }
 
                 if (BackgroundProcessStatusEnum::Running !== $record->status) {
-                    // Process finished (or stopped/finished uncleanly)
                     return $this->handleFinished($record, $sessionId);
                 }
 
                 if ($record->backgroundRequested) {
-                    if (!$this->manager->tryMarkBackgroundedForRecord($dbId, $sessionId)) {
-                        // Completion won the owner's transaction. Re-read it on
-                        // the next pass instead of issuing a background ACK.
+                    if (!$this->manager->tryMarkBackgroundedForStatusPath($statusPath, $sessionId)) {
+                        // Native completion won before acceptance. Re-read it.
                         continue;
                     }
 
@@ -277,12 +263,11 @@ final class BashTool implements HatfieldToolProviderInterface
      *
      * @return string The log content, or a compact oversized-output notice
      */
-    private function readOutput(int $recordId, ?string $sessionId): string
+    private function readOutputForStatusPath(string $statusPath, ?string $sessionId): string
     {
         try {
-            // Use the immutable DB record ID — never re-resolve by OS PID.
-            $result = $this->manager->readLogTailForRecord(
-                $recordId,
+            $result = $this->manager->readLogTailForStatusPath(
+                $statusPath,
                 $this->config->logTailChars,
                 $sessionId,
             );
@@ -313,7 +298,7 @@ final class BashTool implements HatfieldToolProviderInterface
             $this->logger->warning('bash_tool.read_output_failed', [
                 'component' => 'tool.bash',
                 'event_type' => 'bash_tool.read_output_failed',
-                'record_id' => $recordId,
+                'status_path' => $statusPath,
                 'error' => $e->getMessage(),
             ]);
 
@@ -331,7 +316,7 @@ final class BashTool implements HatfieldToolProviderInterface
      */
     private function handleFinished(BashProcessRecordDTO $entity, ?string $sessionId): string
     {
-        $output = $this->readOutput($entity->id, $sessionId);
+        $output = $this->readOutputForStatusPath($entity->statusPath, $sessionId);
 
         $pid = $entity->pid;
 

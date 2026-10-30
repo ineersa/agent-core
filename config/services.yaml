@@ -461,6 +461,7 @@ services:
       $store: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore'
       $lifecycle: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle'
       $config: '@Ineersa\CodingAgent\Config\BackgroundProcessConfig'
+      $commandBus: '@agent.command.bus'
     calls:
       - registerShutdownHandler: []
 

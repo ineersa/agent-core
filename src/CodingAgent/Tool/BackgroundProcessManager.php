@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
-use Ineersa\CodingAgent\Application\BackgroundProcess\BashOwnershipStatusEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
-use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationStatusEnum;
-use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipRequestDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessAcceptedDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessFinishedDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
-use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessStartedDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\ForegroundBashProcessDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\NativeBashLaunchDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -22,6 +23,7 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 use function Amp\delay;
 
@@ -90,12 +92,12 @@ final class BackgroundProcessManager
      */
     private array $ownedRecordIds = [];
 
-    private ?BashRegistrationClient $ownerClient = null;
     private ?BashRegistrationClient $processOwnerClient = null;
-    /** @var array<string, array{pid: int, pgid: ?int, status: string, owner: string}> */
-    private array $ownedLaunches = [];
-    /** @var array<int, string> */
-    private array $launchIdentities = [];
+    private ?MessageBusInterface $commandBus = null;
+    /** @var array<string, NativeBashLaunchDTO> statusPath => native launch */
+    private array $nativeLaunches = [];
+    /** @var array<string, true> accepted status paths retained across worker exit */
+    private array $acceptedStatusPaths = [];
 
     /** @var array<int, int> Immutable record ID to monotonic TERM grace deadline. */
     private array $timeoutGraceDeadlines = [];
@@ -105,7 +107,9 @@ final class BackgroundProcessManager
         private readonly ProcessLifecycle $lifecycle,
         private readonly BackgroundProcessConfig $config,
         private readonly LoggerInterface $logger,
+        ?MessageBusInterface $commandBus = null,
     ) {
+        $this->commandBus = $commandBus;
         // Shutdown handler is NOT registered here. Call
         // registerShutdownHandler() from production wiring
         // (config/services.yaml) to enable automatic cleanup.
@@ -145,12 +149,15 @@ final class BackgroundProcessManager
 
     public function useProcessOwner(BashRegistrationClient $client): void
     {
+        // Controller/scheduler still use owner decide for accepted-job refresh/stop
+        // writes in this Bash slice. Tool execution no longer awaits lifecycle replies.
         $this->processOwnerClient = $client;
     }
 
     public function useLifecycleOwner(BashRegistrationClient $client): void
     {
-        $this->ownerClient = $client;
+        // Retained for code-mode/child wiring in BashWorkerLifecycleSubscriber.
+        // Bash process start/observe/accept no longer use this client.
         $this->processOwnerClient = $client;
     }
 
@@ -197,56 +204,53 @@ final class BackgroundProcessManager
      */
     public function start(string $command, ?string $sessionId = null, ?string $toolCallId = null, ?int $deadlineNanoseconds = null, bool $backgroundRequested = false): StartResult
     {
-        $owner = null;
-        if (null !== $this->ownerClient) {
-            $owner = $this->store->ownerSessionForRun($sessionId ?? '');
-            if (null === $owner) {
-                throw new \RuntimeException('Bash launch has no retained owning session.');
-            }
-        }
-        // Ensure storage directory exists
         $bgDir = $this->lifecycle->ensureStorageDir();
-
-        // Generate unique file prefix and file paths
         $filePrefix = bin2hex(random_bytes(16));
         $pidFile = $bgDir.'/'.$filePrefix.'.pid';
         $statusFile = $bgDir.'/'.$filePrefix.'.status';
         $logFile = $bgDir.'/'.$filePrefix.'.log';
-
         $now = Clock::get()->now();
+        $resolvedSessionId = $sessionId ?? '';
 
-        // Launch process in new session group
         $launchResult = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
         $pid = $launchResult['pid'];
         $pgid = $launchResult['pgid'];
+        $native = new NativeBashLaunchDTO(
+            pid: $pid,
+            pgid: $pgid,
+            sessionId: $resolvedSessionId,
+            command: $command,
+            toolCallId: $toolCallId,
+            deadlineNanoseconds: $deadlineNanoseconds,
+            backgroundRequested: $backgroundRequested,
+            logPath: $logFile,
+            statusPath: $statusFile,
+            startedAt: $now,
+        );
+        $this->nativeLaunches[$statusFile] = $native;
 
-        // Persist launch intent with the initial row; acknowledgement still belongs to the supervisor.
+        $recordId = null;
         try {
-            if (null !== $this->ownerClient) {
-                // Remember the captured launch before publication. A send failure
-                // does not tell us whether registration committed remotely.
-                $this->ownedLaunches[$filePrefix] = ['pid' => $pid, 'pgid' => $pgid, 'status' => $statusFile, 'owner' => $owner];
-                $result = $this->ownerClient->register(new RegisterBashProcessDTO(
-                    $filePrefix, $owner, $sessionId ?? '', $pid, $pgid,
-                    $command, $toolCallId, $deadlineNanoseconds, $backgroundRequested,
-                    $logFile, $statusFile, $now,
+            if (null !== $this->commandBus && '' !== $resolvedSessionId) {
+                // One-way persistence. Native supervision does not await a reply.
+                $this->commandBus->dispatch(new BashProcessStartedDTO(
+                    runId: $resolvedSessionId,
+                    pid: $pid,
+                    pgid: $pgid,
+                    command: $command,
+                    toolCallId: $toolCallId,
+                    deadlineNanoseconds: $deadlineNanoseconds,
+                    backgroundRequested: $backgroundRequested,
+                    logPath: $logFile,
+                    statusPath: $statusFile,
+                    startedAt: $now,
                 ));
-                if (BashRegistrationStatusEnum::Registered === $result->status && !$result->processExists) {
-                    // Provisional cleanup already retired this completed launch.
-                    // Its old PID is no longer safe to signal after reply loss.
-                    unset($this->ownedLaunches[$filePrefix]);
-                }
-                if (BashRegistrationStatusEnum::Registered !== $result->status || !$result->processExists || null === $result->recordId || null === $result->logPath) {
-                    throw new \RuntimeException('Bash registration refused: '.$result->status->value.([] !== $result->invalidFields ? ' ('.implode(', ', $result->invalidFields).')' : ''));
-                }
-                $dbId = $result->recordId;
-                $logFile = $result->logPath;
-                $this->launchIdentities[$dbId] = $filePrefix;
             } else {
-                $dbId = $this->store->insertRecord([
+                // In-process / unscoped tests insert locally without RPC.
+                $recordId = $this->store->insertRecord([
                     'pid' => $pid,
                     'pgid' => $pgid,
-                    'session_id' => $sessionId ?? '',
+                    'session_id' => $resolvedSessionId,
                     'command' => $command,
                     'tool_call_id' => $toolCallId,
                     'deadline_nanoseconds' => $deadlineNanoseconds,
@@ -255,24 +259,13 @@ final class BackgroundProcessManager
                     'status_path' => $statusFile,
                     'started_at' => $now,
                 ]);
+                $this->ownedRecordIds[$recordId] = true;
             }
         } catch (\Throwable $exception) {
-            if (null === $this->ownerClient) {
-                // Local insert failures have a known outcome.
-                $this->lifecycle->sendKill($pid, $pgid);
-            } else {
-                // Only an authoritative retirement grants permission to kill.
-                // Unknown outcomes retain ownership for shutdown reconciliation.
-                $this->reapOwnedLaunches($filePrefix);
-            }
+            unset($this->nativeLaunches[$statusFile]);
+            $this->lifecycle->sendKill($pid, $pgid);
             throw $exception;
         }
-
-        // Track for instance-scoped shutdown only after the durable row exists.
-        // Ownership is the immutable record ID, never the reusable OS PID.
-        $this->ownedRecordIds[$dbId] = true;
-
-        $resolvedSessionId = $sessionId ?? '';
 
         $this->logger->info('background_process.started', [
             'component' => 'tool.background_process',
@@ -281,22 +274,17 @@ final class BackgroundProcessManager
             'process_pgid' => $pgid,
             'has_group_termination' => true,
             'log_path' => $logFile,
+            'status_path' => $statusFile,
             'process_session_id' => $resolvedSessionId,
         ]);
 
         return new StartResult(
-            id: $dbId,
             pid: $pid,
             logPath: $logFile,
+            statusPath: $statusFile,
+            id: $recordId,
         );
     }
-
-    /**
-     * Only accepted background records are public. Private foreground
-     * supervision must never appear on bg_status's list surface.
-     *
-     * @return list<BashProcessRecordDTO>
-     */
     public function list(string $sessionId): array
     {
         $records = [];
@@ -341,15 +329,31 @@ final class BackgroundProcessManager
         if (null === $record || (null !== $sessionId && $record->sessionId !== $sessionId)) {
             return null;
         }
-        // Observations belong to the metadata owner. Neither this read nor an
-        // awaited reply retains a managed entity from the caller's UnitOfWork.
         if (null === $record->finishedAt) {
-            $this->processDecision($id, $record->sessionId, BashProcessActionEnum::Observe);
-
-            return $this->store->snapshot($id);
+            $this->observeNativeAndPublish($record);
+            $record = $this->store->snapshot($id) ?? $record;
         }
 
         return $record;
+    }
+
+    public function findByStatusPath(string $statusPath, ?string $sessionId = null): ?BashProcessRecordDTO
+    {
+        $native = $this->nativeLaunches[$statusPath] ?? null;
+        if (null !== $native) {
+            $observed = $this->observeNativeLaunch($native);
+            if (null !== $sessionId && $observed->sessionId !== $sessionId) {
+                return null;
+            }
+
+            return $observed;
+        }
+        $id = null === $sessionId ? null : $this->store->recordIdForStatusPath($statusPath, $sessionId);
+        if (null === $id) {
+            return null;
+        }
+
+        return $this->findByRecordId($id, $sessionId);
     }
 
     public function readLogTail(string $sessionId, int $pid, ?int $maxChars = null): LogTailResult
@@ -448,61 +452,53 @@ final class BackgroundProcessManager
      */
     public function markBackgroundedForRecord(int $recordId, ?string $sessionId = null): void
     {
-        if (null !== $this->ownerClient && isset($this->launchIdentities[$recordId])) {
-            if (!$this->tryMarkBackgroundedForRecord($recordId, $sessionId)) {
-                throw new \RuntimeException('Bash process finished before background acceptance.');
-            }
-
-            return;
+        if (!$this->tryMarkBackgroundedForRecord($recordId, $sessionId)) {
+            throw new \RuntimeException('Bash process finished before background acceptance.');
         }
-        if (null !== $this->processOwnerClient) {
-            throw new \RuntimeException('Bash background acceptance requires this worker\'s registered launch identity.');
-        }
-        $record = $this->store->snapshot($recordId);
+    }
 
-        if (null === $record) {
-            throw new \RuntimeException(\sprintf('Background process record with ID %d not found.', $recordId));
-        }
-
-        if (null !== $sessionId && $record->sessionId !== $sessionId) {
-            throw new \RuntimeException(\sprintf('No background process with record ID %d for this session.', $recordId));
-        }
-
-        if (!$this->store->acceptLocal($recordId, $sessionId)) {
+    public function tryMarkBackgroundedForStatusPath(string $statusPath, ?string $sessionId = null): bool
+    {
+        $native = $this->nativeLaunches[$statusPath] ?? null;
+        $record = null !== $native
+            ? $this->observeNativeLaunch($native)
+            : $this->findByStatusPath($statusPath, $sessionId);
+        if (null === $record || (null !== $sessionId && $record->sessionId !== $sessionId)) {
             throw new \RuntimeException('Bash background acceptance record/session mismatch.');
         }
-
+        if (null !== $record->finishedAt) {
+            return false;
+        }
+        $acceptedAt = Clock::get()->now();
+        $this->acceptedStatusPaths[$statusPath] = true;
+        if (null !== $this->commandBus && '' !== $record->sessionId) {
+            $this->commandBus->dispatch(new BashProcessAcceptedDTO($record->sessionId, $statusPath, $acceptedAt));
+        } elseif (null !== $record->id && $record->id > 0) {
+            if (!$this->store->acceptLocal($record->id, $sessionId)) {
+                throw new \RuntimeException('Bash background acceptance record/session mismatch.');
+            }
+        }
         $this->logger->info('background_process.marked_backgrounded', [
             'component' => 'tool.background_process',
             'event_type' => 'background_process.marked_backgrounded',
             'process_pid' => $record->pid,
-            'record_id' => $recordId,
+            'status_path' => $statusPath,
+            'record_id' => $record->id,
             'process_session_id' => $sessionId ?? '',
         ]);
-    }
-
-    /** A completion committed before acceptance belongs to the foreground result. */
-    public function tryMarkBackgroundedForRecord(int $recordId, ?string $sessionId = null): bool
-    {
-        if (null === $this->ownerClient || !isset($this->launchIdentities[$recordId])) {
-            $this->markBackgroundedForRecord($recordId, $sessionId);
-
-            return true;
-        }
-        $recordSession = $this->store->sessionForRecord($recordId);
-        if (null === $recordSession || (null !== $sessionId && $recordSession !== $sessionId)) {
-            throw new \RuntimeException('Bash background acceptance record/session mismatch.');
-        }
-        $identity = $this->launchIdentities[$recordId];
-        $status = $this->ownerClient->accept(new BashOwnershipRequestDTO($identity, $this->ownedLaunches[$identity]['owner']));
-        if (BashOwnershipStatusEnum::ProcessFinished === $status) {
-            return false;
-        }
-        if (BashOwnershipStatusEnum::Accepted !== $status) {
-            throw new \RuntimeException('Bash background acceptance refused: '.$status->value);
-        }
 
         return true;
+    }
+
+    /** A completion observed before acceptance belongs to the foreground result. */
+    public function tryMarkBackgroundedForRecord(int $recordId, ?string $sessionId = null): bool
+    {
+        $record = $this->store->snapshot($recordId);
+        if (null === $record || (null !== $sessionId && $record->sessionId !== $sessionId)) {
+            throw new \RuntimeException('Bash background acceptance record/session mismatch.');
+        }
+
+        return $this->tryMarkBackgroundedForStatusPath($record->statusPath, $sessionId);
     }
 
     /**
@@ -514,6 +510,49 @@ final class BackgroundProcessManager
      *
      * @throws \RuntimeException when record not found, session mismatch, or invalid state
      */
+    public function stopByStatusPath(string $statusPath, ?string $sessionId = null, bool $waitForExit = true): StopResult
+    {
+        $native = $this->nativeLaunches[$statusPath] ?? null;
+        if (null !== $native) {
+            if (null !== $sessionId && $native->sessionId !== $sessionId) {
+                throw new \RuntimeException(\sprintf('No background process found with status path %s for this session.', $statusPath));
+            }
+            $this->lifecycle->sendTerm($native->pid, $native->pgid);
+            if (!$waitForExit) {
+                return new StopResult(pgid: $native->pgid, alreadyFinished: false, signalSent: 'TERM');
+            }
+            $deadline = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+            while (null === $this->lifecycle->readStatusFile($statusPath) && $this->lifecycle->isAlive($native->pid) && hrtime(true) < $deadline) {
+                delay(0.05);
+            }
+            $signalSent = 'TERM';
+            if (null === $this->lifecycle->readStatusFile($statusPath) && $this->lifecycle->isAlive($native->pid)) {
+                $this->lifecycle->sendKill($native->pid, $native->pgid);
+                $signalSent = 'KILL';
+            }
+            $this->lifecycle->writeStopMarker($statusPath);
+            $this->observeNativeLaunch($native);
+
+            return new StopResult(pgid: $native->pgid, alreadyFinished: false, signalSent: $signalSent);
+        }
+        $record = $this->findByStatusPath($statusPath, $sessionId);
+        if (null === $record || $record->id <= 0) {
+            throw new \RuntimeException(\sprintf('No background process found with status path %s for this session.', $statusPath));
+        }
+
+        return $this->stopByRecordId($record->id, $sessionId, $waitForExit);
+    }
+
+    public function readLogTailForStatusPath(string $statusPath, ?int $maxChars = null, ?string $sessionId = null): LogTailResult
+    {
+        $record = $this->findByStatusPath($statusPath, $sessionId);
+        if (null === $record) {
+            throw new \RuntimeException(\sprintf('No background process found with status path %s for this session.', $statusPath));
+        }
+
+        return $this->lifecycle->readLogTail($record->logPath, $maxChars ?? $this->config->logTailChars, null !== $record->finishedAt);
+    }
+
     public function stopByRecordId(int $recordId, ?string $sessionId = null, bool $waitForExit = true): StopResult
     {
         if ($recordId <= 0) {
@@ -743,6 +782,128 @@ final class BackgroundProcessManager
         });
     }
 
+    private function observeNativeLaunch(NativeBashLaunchDTO $native): BashProcessRecordDTO
+    {
+        $exitCode = $this->lifecycle->readStatusFile($native->statusPath);
+        $finished = null !== $exitCode || !$this->lifecycle->isAlive($native->pid);
+        $stoppedByUser = false;
+        $status = BackgroundProcessStatusEnum::Running;
+        $finishedAt = null;
+        if ($finished) {
+            if (-1 === $exitCode) {
+                $status = BackgroundProcessStatusEnum::Stopped;
+                $stoppedByUser = true;
+            } elseif (null !== $exitCode) {
+                $status = BackgroundProcessStatusEnum::Finished;
+            } else {
+                $status = BackgroundProcessStatusEnum::FinishedUnclean;
+            }
+            $finishedAt = Clock::get()->now();
+            $this->publishFinished($native, $exitCode, $status, $stoppedByUser, $finishedAt);
+        }
+        $id = '' !== $native->sessionId
+            ? ($this->store->recordIdForStatusPath($native->statusPath, $native->sessionId) ?? 0)
+            : 0;
+        $backgroundRequested = $native->backgroundRequested;
+        if ($id > 0) {
+            $stored = $this->store->snapshot($id);
+            if (null !== $stored) {
+                $backgroundRequested = $stored->backgroundRequested || $backgroundRequested;
+                if (null !== $stored->finishedAt) {
+                    return $stored;
+                }
+            }
+        }
+
+        return new BashProcessRecordDTO(
+            id: $id,
+            pid: $native->pid,
+            pgid: $native->pgid,
+            sessionId: $native->sessionId,
+            command: $native->command,
+            logPath: $native->logPath,
+            statusPath: $native->statusPath,
+            startedAt: $native->startedAt,
+            finishedAt: $finishedAt,
+            exitCode: $exitCode,
+            stoppedByUser: $stoppedByUser,
+            backgroundedAt: isset($this->acceptedStatusPaths[$native->statusPath]) ? Clock::get()->now() : null,
+            toolCallId: $native->toolCallId,
+            backgroundRequested: $backgroundRequested,
+            completionNotifiedAt: null,
+            status: $status,
+            deadlineNanoseconds: $native->deadlineNanoseconds,
+        );
+    }
+
+    private function observeNativeAndPublish(BashProcessRecordDTO $record): void
+    {
+        if (isset($this->nativeLaunches[$record->statusPath])) {
+            $this->observeNativeLaunch($this->nativeLaunches[$record->statusPath]);
+
+            return;
+        }
+        $exitCode = $this->lifecycle->readStatusFile($record->statusPath);
+        $finished = null !== $exitCode || !$this->lifecycle->isAlive($record->pid);
+        if (!$finished) {
+            return;
+        }
+        $status = -1 === $exitCode
+            ? BackgroundProcessStatusEnum::Stopped
+            : (null !== $exitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean);
+        $this->publishFinished(
+            new NativeBashLaunchDTO(
+                pid: $record->pid,
+                pgid: $record->pgid,
+                sessionId: $record->sessionId,
+                command: $record->command,
+                toolCallId: $record->toolCallId,
+                deadlineNanoseconds: $record->deadlineNanoseconds,
+                backgroundRequested: $record->backgroundRequested,
+                logPath: $record->logPath,
+                statusPath: $record->statusPath,
+                startedAt: $record->startedAt,
+            ),
+            $exitCode,
+            $status,
+            $record->stoppedByUser || -1 === $exitCode,
+            Clock::get()->now(),
+        );
+    }
+
+    private function publishFinished(
+        NativeBashLaunchDTO $native,
+        ?int $exitCode,
+        BackgroundProcessStatusEnum $status,
+        bool $stoppedByUser,
+        \DateTimeImmutable $finishedAt,
+    ): void {
+        if ('' === $native->sessionId) {
+            if (isset($this->nativeLaunches[$native->statusPath])) {
+                $id = $this->store->recordIdForStatusPath($native->statusPath, $native->sessionId);
+                // unscoped local tests rely on ProcessStore.decide Observe path via processDecision
+            }
+
+            return;
+        }
+        if (null !== $this->commandBus) {
+            $this->commandBus->dispatch(new BashProcessFinishedDTO(
+                runId: $native->sessionId,
+                statusPath: $native->statusPath,
+                exitCode: $exitCode,
+                status: $status,
+                stoppedByUser: $stoppedByUser,
+                finishedAt: $finishedAt,
+            ));
+
+            return;
+        }
+        $id = $this->store->recordIdForStatusPath($native->statusPath, $native->sessionId);
+        if (null !== $id) {
+            $this->store->decide($id, $native->sessionId, BashProcessActionEnum::Observe, $this->lifecycle);
+        }
+    }
+
     private function processDecision(int $recordId, string $runId, BashProcessActionEnum $action): ?BashProcessSnapshotDTO
     {
         return null !== $this->processOwnerClient
@@ -758,12 +919,8 @@ final class BackgroundProcessManager
      */
     private function reapOwnedProcesses(): int
     {
-        $count = $this->reapOwnedLaunches();
+        $count = $this->reapUnacceptedNativeLaunches();
         foreach (array_keys($this->ownedRecordIds) as $recordId) {
-            if (isset($this->launchIdentities[$recordId])) {
-                unset($this->ownedRecordIds[$recordId]);
-                continue;
-            }
             try {
                 $runId = $this->store->sessionForRecord($recordId);
                 if (null !== $runId) {
@@ -786,48 +943,36 @@ final class BackgroundProcessManager
         return $count;
     }
 
-    private function reapOwnedLaunches(?string $onlyIdentity = null): int
+    /** Worker exit kills only unaccepted foreground launches it still owns. */
+    private function reapUnacceptedNativeLaunches(): int
     {
         $count = 0;
-        foreach ($this->ownedLaunches as $identity => $launch) {
-            if (null !== $onlyIdentity && $identity !== $onlyIdentity) {
+        foreach ($this->nativeLaunches as $statusPath => $launch) {
+            if (isset($this->acceptedStatusPaths[$statusPath])) {
                 continue;
             }
             try {
-                $count += $this->lifecycle->withSidecarLock($launch['status'], function () use ($identity, $launch): int {
-                    $status = $this->ownerClient?->retire(new BashOwnershipRequestDTO($identity, $launch['owner']));
-                    if (BashOwnershipStatusEnum::Retired === $status) {
-                        // Infrastructure retirement is not a user stop and must not
-                        // suppress completion delivery by marking it notified.
-                        // Hold the sidecar lock across the owner round trip: deletion
-                        // after its reply cannot erase evidence before signalling.
-                        if (null !== $this->lifecycle->readStatusFile($launch['status']) || !$this->lifecycle->isAlive($launch['pid'])) {
-                            return 0;
-                        }
-                        $this->lifecycle->sendTerm($launch['pid'], $launch['pgid']);
-                        $deadline = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
-                        while (null === $this->lifecycle->readStatusFile($launch['status']) && $this->lifecycle->isAlive($launch['pid']) && hrtime(true) < $deadline) {
-                            delay(0.05);
-                        }
-                        if (null === $this->lifecycle->readStatusFile($launch['status']) && $this->lifecycle->isAlive($launch['pid'])) {
-                            $this->lifecycle->sendKill($launch['pid'], $launch['pgid']);
-                        }
-
-                        return 1;
-                    }
-                    if (!\in_array($status, [BashOwnershipStatusEnum::Accepted, BashOwnershipStatusEnum::ProcessMissing, BashOwnershipStatusEnum::ProcessFinished], true)) {
-                        throw new \RuntimeException('Bash retirement refused: '.($status->value ?? 'no_owner'));
-                    }
-
-                    return 0;
-                });
-                unset($this->ownedLaunches[$identity]);
+                if (null !== $this->lifecycle->readStatusFile($launch->statusPath) || !$this->lifecycle->isAlive($launch->pid)) {
+                    unset($this->nativeLaunches[$statusPath]);
+                    continue;
+                }
+                $this->lifecycle->sendTerm($launch->pid, $launch->pgid);
+                $deadline = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+                while (null === $this->lifecycle->readStatusFile($launch->statusPath) && $this->lifecycle->isAlive($launch->pid) && hrtime(true) < $deadline) {
+                    delay(0.05);
+                }
+                if (null === $this->lifecycle->readStatusFile($launch->statusPath) && $this->lifecycle->isAlive($launch->pid)) {
+                    $this->lifecycle->sendKill($launch->pid, $launch->pgid);
+                }
+                unset($this->nativeLaunches[$statusPath]);
+                ++$count;
             } catch (\Throwable $error) {
-                $this->logger->error('background_process.retirement_unknown', [
+                $this->logger->error('background_process.native_reap_failed', [
                     'component' => 'tool.background_process',
-                    'event_type' => 'background_process.retirement_unknown',
-                    'session_id' => $launch['owner'],
-                    'run_id' => $launch['owner'],
+                    'event_type' => 'background_process.native_reap_failed',
+                    'session_id' => $launch->sessionId,
+                    'run_id' => $launch->sessionId,
+                    'status_path' => $statusPath,
                     'exception' => $error,
                 ]);
             }

@@ -8,6 +8,9 @@ use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessAcceptedDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessFinishedDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessStartedDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
@@ -61,6 +64,92 @@ final class ProcessStore
         $this->entityManager->flush();
 
         return $entity->id;
+    }
+
+    /** Persist or refresh a native launch by its unique status_path. */
+    public function applyStarted(BashProcessStartedDTO $event): int
+    {
+        return $this->entityManager->getConnection()->transactional(function () use ($event): int {
+            $connection = $this->entityManager->getConnection();
+            $existing = $connection->fetchAssociative(
+                'SELECT id FROM background_process WHERE status_path = ?',
+                [$event->statusPath],
+            );
+            if (false !== $existing) {
+                $connection->executeStatement(
+                    'UPDATE background_process SET pid = ?, pgid = ?, session_id = ?, command = ?, tool_call_id = ?, deadline_nanoseconds = ?, background_requested = CASE WHEN background_requested = 1 THEN 1 ELSE ? END, log_path = ?, started_at = ?, updated_at = ? WHERE id = ?',
+                    [
+                        $event->pid,
+                        $event->pgid,
+                        $event->runId,
+                        $event->command,
+                        $event->toolCallId,
+                        $event->deadlineNanoseconds,
+                        $event->backgroundRequested ? 1 : 0,
+                        $event->logPath,
+                        $event->startedAt->format('Y-m-d H:i:s.u'),
+                        Clock::get()->now()->format('Y-m-d H:i:s'),
+                        (int) $existing['id'],
+                    ],
+                );
+
+                return (int) $existing['id'];
+            }
+
+            return $this->insertRecord([
+                'pid' => $event->pid,
+                'pgid' => $event->pgid,
+                'session_id' => $event->runId,
+                'command' => $event->command,
+                'tool_call_id' => $event->toolCallId,
+                'deadline_nanoseconds' => $event->deadlineNanoseconds,
+                'background_requested' => $event->backgroundRequested,
+                'log_path' => $event->logPath,
+                'status_path' => $event->statusPath,
+                'started_at' => $event->startedAt,
+            ]);
+        });
+    }
+
+    /** Apply native completion facts keyed by status_path. */
+    public function applyFinished(BashProcessFinishedDTO $event): void
+    {
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE background_process SET finished_at = COALESCE(finished_at, ?), exit_code = COALESCE(exit_code, ?), status = ?, stopped_by_user = CASE WHEN ? = 1 THEN 1 ELSE stopped_by_user END, updated_at = ? WHERE status_path = ? AND session_id = ?',
+            [
+                $event->finishedAt->format('Y-m-d H:i:s'),
+                $event->exitCode,
+                $event->status->value,
+                $event->stoppedByUser ? 1 : 0,
+                Clock::get()->now()->format('Y-m-d H:i:s'),
+                $event->statusPath,
+                $event->runId,
+            ],
+        );
+    }
+
+    /** Apply background acceptance keyed by status_path. */
+    public function applyAccepted(BashProcessAcceptedDTO $event): void
+    {
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE background_process SET backgrounded_at = COALESCE(backgrounded_at, ?), updated_at = ? WHERE status_path = ? AND session_id = ? AND finished_at IS NULL',
+            [
+                $event->acceptedAt->format('Y-m-d H:i:s'),
+                Clock::get()->now()->format('Y-m-d H:i:s'),
+                $event->statusPath,
+                $event->runId,
+            ],
+        );
+    }
+
+    public function recordIdForStatusPath(string $statusPath, string $runId): ?int
+    {
+        $id = $this->entityManager->getConnection()->fetchOne(
+            'SELECT id FROM background_process WHERE status_path = ? AND session_id = ?',
+            [$statusPath, $runId],
+        );
+
+        return false === $id ? null : (int) $id;
     }
 
     /** @return list<ForegroundBashProcessDTO> */
