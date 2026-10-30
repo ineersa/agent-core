@@ -126,7 +126,6 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         yield 'resume with lost success reply' => [true, false];
         yield 'launch with lost success reply' => [false, false];
         yield 'interruption while awaiting reservation' => [false, true];
-        yield 'resume interruption while awaiting reservation' => [true, true];
     }
 
     #[DataProvider('childCallerModes')]
@@ -173,7 +172,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             $remote = new ChildInvocationLifecycleService($repository);
             $remote->useOwner($client);
             $context = new StackToolExecutionContextAccessor();
-            $service = new AgentResumeExecutionService($registry, $repository, self::getContainer()->get(DeferredSubagentChildRepository::class), new DeferredSubagentBatchIdentityFactory(), $runner, $status, $events, self::getContainer()->get(RunLockManager::class), StubRunRelationshipReader::topLevel($owner), new AgentDepthGuard(), $context, new AgentsConfig(), new TestLogger(), $remote, self::getContainer()->get(ToolBatchStoreInterface::class), self::getContainer()->get(SerializerInterface::class));
+            $service = new AgentResumeExecutionService($registry, $repository, self::getContainer()->get(DeferredSubagentChildRepository::class), new DeferredSubagentBatchIdentityFactory(), $runner, $status, $events, self::getContainer()->get(RunLockManager::class), StubRunRelationshipReader::topLevel($owner), new AgentDepthGuard(), $context, new AgentsConfig(), new TestLogger(), $remote, self::getContainer()->get(ToolBatchStoreInterface::class), self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(ValidatorInterface::class));
             $artifactLifecycle = self::getContainer()->get(ChildRunArtifactLifecycleService::class);
             $runtime = new DeferredSubagentBatchRuntimeStartService($runner, $artifactLifecycle, new ChildRunBatchLaunchService($runner, $artifactLifecycle, self::getContainer()->get(SubagentChildRunBatchLifecycleListener::class), new TestLogger()), self::getContainer()->get(ChildRunBatchLifecyclePolicyDTO::class), new TestLogger());
             $definitionPolicy = new SubagentLaunchDefinitionPolicyService(new AgentDefinitionCatalog([new AgentDefinitionDTO(name: 'scout', description: 'Test child', tools: ['read'], instructions: 'Test.')]), new AgentDepthGuard(), self::getContainer()->get(AgentToolPolicyResolver::class), self::getContainer()->get(RunRelationshipReader::class));
@@ -211,6 +210,18 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                     'orderIndex' => 0,
                     'args' => ['artifact_id' => $artifact, 'task' => 'continue'],
                 ]]);
+                $service->prepare(new ExecuteToolCall(
+                    runId: $owner,
+                    turnNo: 1,
+                    stepId: 'resume-lost-step',
+                    attempt: 1,
+                    idempotencyKey: hash('sha256', $owner.'|resume-lost-step|resume-lost'),
+                    toolCallId: 'resume-lost',
+                    toolName: 'agent_resume',
+                    args: ['artifact_id' => $artifact, 'task' => 'continue'],
+                    orderIndex: 0,
+                    parentModel: 'test/model',
+                ));
             }
             $caller = async(static fn () => $context->with(new ToolContext(runId: $owner, turnNo: 1, toolCallId: 'resume-lost', toolName: $resume ? 'agent_resume' : 'subagent', cancellationToken: new NullCancellationToken(), timeoutSeconds: 30, stepId: $resume ? 'resume-lost-step' : null, parentModel: 'test/model', launchContext: new ToolLaunchContextDTO(kind: ToolLaunchContextDTO::KIND_SUBAGENT, producingRunId: $owner, producingTurnNo: 1, producingModel: 'test/model', agentsContext: 'AGENTS')), static fn () => $resume ? $service->resume($owner, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')) : $launch->launch($owner, 'scout', 'continue')));
             try {
@@ -228,9 +239,6 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                 $this->assertSame($interrupt ? DeferredSubagentBatchLaunchStatusEnum::Reserved : DeferredSubagentBatchLaunchStatusEnum::Launched, $batch?->launchStatus);
                 $this->assertSame($interrupt, $dropSuccess);
                 $this->assertSame($interrupt ? DeferredSubagentInterruptionKindEnum::ParentCancelled : null, $batch?->interruptionKind);
-                if ($resume && $interrupt) {
-                    $this->assertSame(AgentArtifactStatusEnum::Completed, $registry->get($owner, $artifact)?->status);
-                }
             } finally {
                 $caller->ignore();
                 $ownerTask->ignore();
@@ -239,6 +247,88 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                 $sender->close();
             }
         });
+    }
+
+    public function testResumeInterruptionBetweenOwnerPrepareAndWorkerLaunchPreventsFollowUp(): void
+    {
+        $owner = self::getContainer()->get(HatfieldSessionStore::class)->createSession('resume interruption after prepare');
+        $repository = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $child = 'resume-interrupt-child';
+        $artifact = 'agent_resume_interrupt';
+        $registry->create($owner, $artifact, $child, 'scout', AgentArtifactKindEnum::Subagent);
+        $registry->update($owner, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done');
+        $runner = $this->createMock(AgentRunnerInterface::class);
+        $runner->expects($this->never())->method('followUp');
+        $status = $this->createStub(RunOperationalStatusReaderInterface::class);
+        $status->method('findOperationalStatus')->willReturn(new RunOperationalStatusDTO(RunStatus::Completed, 1));
+        $events = $this->createStub(EventStoreInterface::class);
+        $events->method('latestSequenceFor')->willReturn(1);
+        $context = new StackToolExecutionContextAccessor();
+        $service = new AgentResumeExecutionService(
+            $registry,
+            $repository,
+            self::getContainer()->get(DeferredSubagentChildRepository::class),
+            new DeferredSubagentBatchIdentityFactory(),
+            $runner,
+            $status,
+            $events,
+            self::getContainer()->get(RunLockManager::class),
+            StubRunRelationshipReader::topLevel($owner),
+            new AgentDepthGuard(),
+            $context,
+            new AgentsConfig(),
+            new TestLogger(),
+            self::getContainer()->get(ChildInvocationLifecycleService::class),
+            self::getContainer()->get(ToolBatchStoreInterface::class),
+            self::getContainer()->get(SerializerInterface::class),
+            self::getContainer()->get(ValidatorInterface::class),
+        );
+        $this->registerAgentResumeBatch($owner, 1, 'resume-interrupt-step', [[
+            'toolCallId' => 'resume-interrupt',
+            'orderIndex' => 0,
+            'args' => ['artifact_id' => $artifact, 'task' => 'continue'],
+        ]]);
+        $call = new ExecuteToolCall(
+            runId: $owner,
+            turnNo: 1,
+            stepId: 'resume-interrupt-step',
+            attempt: 1,
+            idempotencyKey: hash('sha256', $owner.'|resume-interrupt-step|resume-interrupt'),
+            toolCallId: 'resume-interrupt',
+            toolName: 'agent_resume',
+            args: ['artifact_id' => $artifact, 'task' => 'continue'],
+            orderIndex: 0,
+            parentModel: 'test/model',
+        );
+        $prepared = $service->prepare($call);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $prepared->launchStatus);
+        $repository->persistInterruptionIntent(
+            $prepared->lifecycleId,
+            DeferredSubagentInterruptionKindEnum::ParentCancelled,
+            new \DateTimeImmutable(),
+            $prepared->projectionVersion,
+        );
+
+        $outcome = $context->with(
+            new ToolContext(
+                runId: $owner,
+                turnNo: 1,
+                toolCallId: 'resume-interrupt',
+                toolName: 'agent_resume',
+                cancellationToken: new NullCancellationToken(),
+                timeoutSeconds: 30,
+                orderIndex: 0,
+                stepId: 'resume-interrupt-step',
+                parentModel: 'test/model',
+            ),
+            static fn () => $service->resume($owner, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')),
+        );
+
+        $batch = $repository->findByLifecycleId($outcome->deferredId);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $batch?->launchStatus);
+        $this->assertSame(DeferredSubagentInterruptionKindEnum::ParentCancelled, $batch?->interruptionKind);
+        $this->assertSame(AgentArtifactStatusEnum::Completed, $registry->get($owner, $artifact)?->status);
     }
 
     /** @return iterable<string, array{bool}> */

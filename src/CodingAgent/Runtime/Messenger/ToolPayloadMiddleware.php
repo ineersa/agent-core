@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
@@ -18,6 +19,7 @@ use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
@@ -55,6 +57,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         private readonly CompleteDeferredToolCallHandler $deferredHandler,
         private readonly DenormalizerInterface $serializer,
         private readonly CodeModeLifecycleService $codeModeLifecycle,
+        private readonly AgentResumeExecutionService $agentResume,
     ) {
     }
 
@@ -187,7 +190,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             [$deferredId, $reference] = $this->publishProcessedResult($message);
         } else {
             $deferredId = null;
-            $reference = $this->locks->synchronized($message->runId(), function () use ($message): ?ToolPayloadReferenceDTO {
+            $reference = $this->locks->synchronized($message->runId(), function () use ($message, &$deferredId): ?ToolPayloadReferenceDTO {
                 if (!$this->admission->canPublish($message)) {
                     return null;
                 }
@@ -195,6 +198,18 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                 // reference is sealed and sent. Failure prevents dispatch.
                 if ($message instanceof ExecuteToolCall && 'code_mode' === $message->toolName) {
                     $this->codeModeLifecycle->prepare($message);
+                }
+                if ($message instanceof ExecuteToolCall && 'agent_resume' === $message->toolName) {
+                    try {
+                        $this->agentResume->prepare($message);
+                    } catch (ToolCallException $exception) {
+                        // Preparation refusals settle as ordinary failed results.
+                        // Do not dispatch execution or throw into owner effect retries.
+                        $failed = ToolCallResultFactory::fromExecuteToolCallAndThrowable($message, $exception);
+                        $deferredId = null;
+
+                        return $this->payloads->publish($failed);
+                    }
                 }
 
                 return $this->payloads->publish($message);
@@ -379,11 +394,17 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
 
     private function route(Envelope $envelope, ToolPayloadMessage $message): Envelope
     {
+        // Preparation refusals convert an agent/tool call stamp into a result.
+        // Result references always own run_control, even when a prior stamp remains.
+        if ('result' === $message->reference->kind) {
+            return $envelope->withoutAll(TransportNamesStamp::class)
+                ->with(new TransportNamesStamp(['run_control']));
+        }
         if (null !== $envelope->last(TransportNamesStamp::class)) {
             return $envelope;
         }
 
-        return $envelope->with(new TransportNamesStamp(['result' === $message->reference->kind ? 'run_control' : 'tool']));
+        return $envelope->with(new TransportNamesStamp(['tool']));
     }
 
     private function validate(ToolPayloadMessage $message): void

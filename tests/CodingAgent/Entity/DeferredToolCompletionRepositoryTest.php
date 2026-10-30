@@ -208,6 +208,7 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
             $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, $container->get(CanonicalToolInvocationReader::class)), $repository, $locks,
             $container->get(ValidatorInterface::class), $commands, $logger,
             new CompleteDeferredToolCallHandler($repository, $commands, $locks, $batches, $logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-            $container->get(\Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService::class))]);
+            $container->get(\Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService::class),
+            $container->get(\Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService::class))]);
     }
 }

@@ -14,19 +14,34 @@ use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
+use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Messenger\SubagentExecuteToolCallRoutingMiddleware;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Session\CanonicalToolInvocationReader;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
@@ -60,8 +75,11 @@ use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
+use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 use Symfony\Component\Messenger\Worker;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\ConstraintViolationList;
 use Symfony\Component\Validator\Validation;
 
@@ -323,6 +341,92 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $this->assertSame($firstId, $container->get(CodeModeLifecycleService::class)->prepare($code));
     }
 
+    public function testProducerPreparesAgentResumeAndRoutesRefusalToRunControlDespiteAgentStamp(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('owner prepared agent_resume');
+        $artifact = 'agent_resume_prepare';
+        $child = 'child-resume-prepare';
+        $registry = $container->get(AgentArtifactRegistry::class);
+        $registry->create($run, $artifact, $child, 'scout', AgentArtifactKindEnum::Subagent);
+        $registry->update($run, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done');
+        $this->seedPreparedChildProjection($run, $artifact, $child);
+        $container->get(RunOperationalProjectionRepository::class)->replace(new RunState($run, RunStatus::Running));
+
+        $winner = new ExecuteToolCall($run, 1, 'resume-step', 1, hash('sha256', 'winner'), 'resume-winner', 'agent_resume', [
+            'artifact_id' => $artifact,
+            'task' => 'continue',
+        ], 0, mode: 'parallel', maxParallelism: 3, parentModel: 'test/model');
+        $duplicate = new ExecuteToolCall($run, 1, 'resume-step', 1, hash('sha256', 'dup'), 'resume-dup', 'agent_resume', [
+            'artifact_id' => $artifact,
+            'task' => 'duplicate',
+        ], 1, mode: 'parallel', maxParallelism: 3, parentModel: 'test/model');
+        $invalid = new ExecuteToolCall($run, 1, 'resume-step', 1, hash('sha256', 'missing'), 'resume-missing', 'agent_resume', [
+            'artifact_id' => 'agent_missing',
+            'task' => 'continue',
+        ], 2, mode: 'parallel', maxParallelism: 3, parentModel: 'test/model');
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'resume-step',
+            [$winner, $duplicate, $invalid],
+        );
+
+        $published = [];
+        $bus = new MessageBus([
+            new SubagentExecuteToolCallRoutingMiddleware(),
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [function (ToolPayloadMessage $message) use (&$published, $container, $run, $artifact, $child): ToolPayloadMessage {
+                    $published[] = $message;
+                    if ('resume-winner' === $message->reference->toolCallId) {
+                        $this->assertSame('call', $message->reference->kind);
+                        $batch = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-winner');
+                        $this->assertNotNull($batch, 'Reserved batch must exist inside the outgoing call path.');
+                        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $batch->launchStatus);
+                        $this->assertCount(1, $batch->children);
+                        $this->assertSame($child, $batch->children[0]->childRunId);
+                        $this->assertSame($artifact, $batch->children[0]->artifactId);
+                    }
+
+                    return $message;
+                }],
+            ])),
+        ]);
+
+        $winnerSealed = $bus->dispatch($winner);
+        $winnerMessage = $winnerSealed->getMessage();
+        $this->assertInstanceOf(ToolPayloadMessage::class, $winnerMessage);
+        $this->assertSame('call', $winnerMessage->reference->kind);
+        $this->assertSame(['agent'], $winnerSealed->last(TransportNamesStamp::class)?->getTransportNames());
+
+        $duplicateSealed = $bus->dispatch($duplicate);
+        $duplicateMessage = $duplicateSealed->getMessage();
+        $this->assertInstanceOf(ToolPayloadMessage::class, $duplicateMessage);
+        $this->assertSame('result', $duplicateMessage->reference->kind);
+        $this->assertSame(['run_control'], $duplicateSealed->last(TransportNamesStamp::class)?->getTransportNames());
+        $duplicateBody = $container->get(\Ineersa\CodingAgent\Session\SessionToolPayloadStore::class)->read($duplicateMessage->reference);
+        $this->assertInstanceOf(ToolCallResult::class, $duplicateBody);
+        $this->assertTrue($duplicateBody->isError);
+        $this->assertStringContainsString('Duplicate agent_resume', (string) ($duplicateBody->result['content'][0]['text'] ?? ''));
+        $this->assertNull($container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-dup'));
+
+        $invalidSealed = $bus->dispatch($invalid);
+        $invalidMessage = $invalidSealed->getMessage();
+        $this->assertInstanceOf(ToolPayloadMessage::class, $invalidMessage);
+        $this->assertSame('result', $invalidMessage->reference->kind);
+        $this->assertSame(['run_control'], $invalidSealed->last(TransportNamesStamp::class)?->getTransportNames());
+        $invalidBody = $container->get(\Ineersa\CodingAgent\Session\SessionToolPayloadStore::class)->read($invalidMessage->reference);
+        $this->assertInstanceOf(ToolCallResult::class, $invalidBody);
+        $this->assertTrue($invalidBody->isError);
+        $this->assertStringContainsString('Unknown artifact_id', (string) ($invalidBody->result['content'][0]['text'] ?? ''));
+
+        $this->assertGreaterThanOrEqual(3, \count($published));
+    }
+
     #[DataProvider('mismatchedIdentities')]
     public function testDeferredReceiverRefusesMismatchedIdentityEvenAfterCompletion(string $field): void
     {
@@ -345,6 +449,52 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         foreach (['runId', 'turnNo', 'stepId', 'attempt', 'idempotencyKey', 'toolCallId', 'orderIndex', 'toolName'] as $field) {
             yield $field => [$field];
         }
+    }
+
+    private function seedPreparedChildProjection(string $parent, string $artifactId, string $childRunId): void
+    {
+        $serializer = self::getContainer()->get(SerializerInterface::class);
+        $projection = new DeferredChildRunLifecycleProjectionDTO(
+            childStatus: RunStatus::Completed,
+            childTurnNo: 2,
+            lastCommittedSeq: 5,
+            model: 'test/model',
+            reasoning: 'medium',
+            latestInputTokens: 10,
+            contextWindow: 200_000,
+        );
+        $projectionArray = $serializer->normalize(
+            $projection,
+            null,
+            [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+        );
+        if (!\is_array($projectionArray)) {
+            throw new \RuntimeException('Expected normalized lifecycle projection array.');
+        }
+
+        $em = self::getContainer()->get('doctrine')->getManager();
+        $row = new DeferredSubagentChild();
+        $row->batchLifecycleId = 'batch-'.$childRunId;
+        $row->batchIndex = 1;
+        $row->childRunId = $childRunId;
+        $row->artifactId = $artifactId;
+        $row->agentName = 'scout';
+        $row->task = 'seed';
+        $row->launchModel = 'test/model';
+        $row->launchReasoning = 'medium';
+        $row->launchStatus = DeferredSubagentChildLaunchStatusEnum::Launched;
+        $row->childEventCursor = 5;
+        $row->childLifecycleProjection = $projectionArray;
+        $row->terminalCompletedAt = new \DateTimeImmutable('2026-08-21T00:01:00Z');
+        $row->terminalStatus = 'completed';
+        $em->persist($row);
+        $em->flush();
+        $store = self::getContainer()->get(AgentChildRunEventStoreFactory::class)->create($parent, $childRunId, $artifactId);
+        PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childRunId, 1, 'run_started'));
+        $terminal = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childRunId, 1, 'agent_end', ['status' => 'completed']));
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(
+            new RunState($childRunId, RunStatus::Completed, parentRunId: $parent, lastSeq: $terminal->seq),
+        );
     }
 
     private function reference(string $kind): ToolPayloadReferenceDTO
@@ -385,6 +535,7 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
             $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class))), $deferred, $locks,
             Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(), $commands, $logger,
             new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-            self::getContainer()->get(CodeModeLifecycleService::class));
+            self::getContainer()->get(CodeModeLifecycleService::class),
+            self::getContainer()->get(AgentResumeExecutionService::class));
     }
 }
