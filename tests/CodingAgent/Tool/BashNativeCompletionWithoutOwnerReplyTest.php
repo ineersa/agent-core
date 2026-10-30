@@ -18,7 +18,6 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
@@ -122,14 +121,13 @@ final class BashNativeCompletionWithoutOwnerReplyTest extends IsolatedKernelTest
 
         $outcome = $accessor->with(
             new ToolContext($runId, 1, 'call_native', 'bash', new NullCancellationToken(), 1, stepId: 'step-native'),
-            static fn (): string|DeferredToolCompletionOutcome => $tool(new BashArgumentsDTO(command: "printf 'native-ok\\n'")),
+            static fn (): string|ToolResult => $tool(new BashArgumentsDTO(command: "printf 'native-ok\\n'")),
         );
 
-        $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
-        $this->assertSame('deferred-native', $outcome->deferredId);
-        $this->assertNotNull($outcome->completion);
-        $this->assertSame("native-ok\n", $outcome->completion->content[0]['text'] ?? null);
-        $this->assertArrayHasKey('bash_native', $outcome->completion->details ?? []);
+        $this->assertInstanceOf(ToolResult::class, $outcome);
+        $this->assertFalse($outcome->isError);
+        $this->assertSame("native-ok\n", $outcome->content[0]['text'] ?? null);
+        $this->assertArrayHasKey('bash_native', $outcome->details ?? []);
         $this->assertSame([], array_values(array_filter(
             $bus->messages,
             static fn (object $message): bool => !$message instanceof ToolCallResult,
@@ -141,17 +139,10 @@ final class BashNativeCompletionWithoutOwnerReplyTest extends IsolatedKernelTest
         $this->assertSame(BackgroundProcessStatusEnum::Running, $snapshot->status);
         $this->assertNull($manager->observeNativeByStatusPath($prepared->statusPath, $runId));
 
-        // Match ExecuteToolCallWorker: convert the deferred completion into an ordinary
-        // ToolCallResult from the validated ExecuteToolCall identity.
+        // Ordinary ToolResult seals through the existing owner ToolCallResult path.
         $result = ToolCallResultFactory::fromExecuteToolCallAndToolResult(
             $call,
-            new ToolResult(
-                toolCallId: $call->toolCallId,
-                toolName: $call->toolName,
-                content: $outcome->completion->content,
-                details: $outcome->completion->details,
-                isError: $outcome->completion->isError,
-            ),
+            $outcome,
         );
 
         self::getContainer()->get(ActiveRunContextInterface::class)->loadRecovered(new RunState(

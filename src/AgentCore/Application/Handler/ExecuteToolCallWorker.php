@@ -178,24 +178,6 @@ final readonly class ExecuteToolCallWorker
                     throw new \RuntimeException('Deferred tool outcome missing typed raw_result marker.');
                 }
                 $this->registerDeferredExecution($message, $raw);
-                if (null !== $raw->completion) {
-                    if ($raw->completion->deferredId !== $raw->deferredId) {
-                        throw new \RuntimeException('Deferred completion payload must use the same deferredId.');
-                    }
-
-                    // Build an ordinary ToolCallResult from the validated ExecuteToolCall
-                    // identity. Do not reopen/delete deferred correlation bodies later.
-                    return ToolCallResultFactory::fromExecuteToolCallAndToolResult(
-                        $message,
-                        new ToolResult(
-                            toolCallId: $message->toolCallId,
-                            toolName: $message->toolName,
-                            content: $raw->completion->content,
-                            details: $raw->completion->details,
-                            isError: $raw->completion->isError,
-                        ),
-                    );
-                }
                 $this->resultStore->releaseCompleted(
                     $message->runId(),
                     $message->toolCallId,

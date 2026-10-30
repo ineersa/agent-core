@@ -543,7 +543,15 @@ final class BackgroundProcessManager
         }
     }
 
-    public function tryMarkBackgroundedForStatusPath(string $statusPath, ?string $sessionId = null): bool
+    /**
+     * Resolve a still-running background acceptance candidate.
+     *
+     * Callers must perform the freshest cancellation check after this returns
+     * and before {@see acceptResolvedBackground()}, with no yield between them.
+     *
+     * @return array{kind: 'native', statusPath: string, recordId: int, pid: int, sessionId: string, deferredId: ?string}|array{kind: 'record', statusPath: string, recordId: int, pid: ?int, sessionId: string}|null
+     */
+    public function resolveBackgroundAcceptance(string $statusPath, ?string $sessionId = null): ?array
     {
         $native = $this->nativeLaunches[$statusPath] ?? null;
         if (null !== $native) {
@@ -552,35 +560,23 @@ final class BackgroundProcessManager
                 throw new \RuntimeException('Bash background acceptance record/session mismatch.');
             }
             if (null !== $observed->finishedAt) {
-                return false;
+                return null;
             }
-            $acceptedAt = Clock::get()->now();
-            $this->acceptedStatusPaths[$statusPath] = true;
             $id = $native->recordId ?? (
                 '' === $observed->sessionId ? null : $this->store->recordIdForStatusPath($statusPath, $observed->sessionId)
             );
             if (null === $id) {
                 throw new \RuntimeException('Bash background acceptance record/session mismatch.');
             }
-            // Model Bash persists acceptance through deferred completion on the owner.
-            // Local/controller paths still write immediately.
-            if (null === $native->deferredId) {
-                if (!$this->store->acceptLocal($id, $sessionId ?? $observed->sessionId)) {
-                    throw new \RuntimeException('Bash background acceptance record/session mismatch.');
-                }
-            }
-            $this->logger->info('background_process.marked_backgrounded', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.marked_backgrounded',
-                'process_pid' => $observed->pid,
-                'status_path' => $statusPath,
-                'process_session_id' => $sessionId ?? $observed->sessionId,
-            ]);
 
-            // Detached jobs belong to the session owner, not this worker map.
-            $this->releaseNativeLaunch($statusPath);
-
-            return true;
+            return [
+                'kind' => 'native',
+                'statusPath' => $statusPath,
+                'recordId' => $id,
+                'pid' => $observed->pid,
+                'sessionId' => $sessionId ?? $observed->sessionId,
+                'deferredId' => $native->deferredId,
+            ];
         }
 
         $record = $this->findByStatusPath($statusPath, $sessionId);
@@ -588,27 +584,73 @@ final class BackgroundProcessManager
             throw new \RuntimeException('Bash background acceptance record/session mismatch.');
         }
         if (null !== $record->finishedAt) {
-            return false;
+            return null;
         }
-        $acceptedAt = Clock::get()->now();
+
+        return [
+            'kind' => 'record',
+            'statusPath' => $statusPath,
+            'recordId' => $record->id,
+            'pid' => $record->pid,
+            'sessionId' => $sessionId ?? $record->sessionId,
+        ];
+    }
+
+    /**
+     * Commit local acceptance for a candidate resolved by {@see resolveBackgroundAcceptance()}.
+     *
+     * @param array{kind: 'native', statusPath: string, recordId: int, pid: int, sessionId: string, deferredId: ?string}|array{kind: 'record', statusPath: string, recordId: int, pid: ?int, sessionId: string} $candidate
+     */
+    public function acceptResolvedBackground(array $candidate): bool
+    {
+        $statusPath = $candidate['statusPath'];
         $this->acceptedStatusPaths[$statusPath] = true;
-        if ($record->id > 0) {
-            if (!$this->store->acceptLocal($record->id, $sessionId)) {
+        if ('native' === $candidate['kind']) {
+            // Model Bash persists acceptance through ordinary ToolResult on the owner.
+            // Local/controller paths still write immediately.
+            if (null === $candidate['deferredId']) {
+                if (!$this->store->acceptLocal($candidate['recordId'], $candidate['sessionId'])) {
+                    throw new \RuntimeException('Bash background acceptance record/session mismatch.');
+                }
+            }
+            $this->logger->info('background_process.marked_backgrounded', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.marked_backgrounded',
+                'process_pid' => $candidate['pid'],
+                'status_path' => $statusPath,
+                'process_session_id' => $candidate['sessionId'],
+            ]);
+            $this->releaseNativeLaunch($statusPath);
+
+            return true;
+        }
+
+        if ($candidate['recordId'] > 0) {
+            if (!$this->store->acceptLocal($candidate['recordId'], $candidate['sessionId'])) {
                 throw new \RuntimeException('Bash background acceptance record/session mismatch.');
             }
         }
         $this->logger->info('background_process.marked_backgrounded', [
             'component' => 'tool.background_process',
             'event_type' => 'background_process.marked_backgrounded',
-            'process_pid' => $record->pid,
+            'process_pid' => $candidate['pid'],
             'status_path' => $statusPath,
-            'record_id' => $record->id,
-            'process_session_id' => $sessionId ?? '',
+            'record_id' => $candidate['recordId'],
+            'process_session_id' => $candidate['sessionId'],
         ]);
-
         $this->releaseNativeLaunch($statusPath);
 
         return true;
+    }
+
+    public function tryMarkBackgroundedForStatusPath(string $statusPath, ?string $sessionId = null): bool
+    {
+        $candidate = $this->resolveBackgroundAcceptance($statusPath, $sessionId);
+        if (null === $candidate) {
+            return false;
+        }
+
+        return $this->acceptResolvedBackground($candidate);
     }
 
     /** A completion observed before acceptance belongs to the foreground result. */

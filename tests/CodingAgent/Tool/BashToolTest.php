@@ -24,7 +24,6 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
@@ -338,13 +337,8 @@ final class BashToolTest extends IsolatedKernelTestCase
      * pre-check before entering the callback, which must not trigger
      * cancellation (otherwise the command would never start).
      *
-     * The $callCount counter tracks this: call 1 returns false (pre-check),
-     * calls 2+ return true (supervision loop trigger).
-     *
-     * ToolRuntime::run() throws RuntimeException for stale results after
-     * the callback returns, so the callback's return value is discarded.
-     * The meaningful behaviour is that BackgroundProcessManager::stop()
-     * was called, which this test verifies as a post-condition.
+     * BashTool now throws an explicit ToolCallException after stopping the
+     * native command; ToolRuntime no longer rewrites completed results.
      */
     public function testCancellationStopsProcess(): void
     {
@@ -369,19 +363,19 @@ final class BashToolTest extends IsolatedKernelTestCase
             toolName: 'bash',
             cancellationToken: $cancellationToken,
             timeoutSeconds: 30,
+            stepId: 'cancel-step',
         );
 
         $this->createManager();
+        $this->prepareTopLevelBash($this->sessionId, 'tc_bash', 'cancel-step', 'echo "before cancel" && sleep 10');
 
         $storedPid = null;
 
-        // ToolRuntime::run() detects stale cancellation AFTER the callback
-        // returns, so we expect a RuntimeException about stale result.
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('due to run cancellation');
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('Bash command cancelled');
 
         try {
-            $this->contextAccessor->with($context, function () use (&$storedPid): string {
+            $this->contextAccessor->with($context, function () use (&$storedPid): string|ToolResult {
                 // Capture the PID before cancellation triggers in the loop
                 $entities = $this->manager->list($this->sessionId);
                 if ([] !== $entities) {
@@ -398,6 +392,125 @@ final class BashToolTest extends IsolatedKernelTestCase
                     $this->assertNotNull($entity->finishedAt, 'Cancelled process should be marked finished');
                 }
             }
+        }
+    }
+
+    /**
+     * Cancel before local background acceptance stops the native command and
+     * prevents detachment.
+     */
+    public function testCancelBeforeBackgroundAcceptanceStopsNativeAndPreventsDetach(): void
+    {
+        $callCount = 0;
+        $cancellationToken = $this->createStub(CancellationTokenInterface::class);
+        $cancellationToken
+            ->method('isCancellationRequested')
+            ->willReturnCallback(static function () use (&$callCount): bool {
+                ++$callCount;
+
+                // ToolRuntime pre-check must stay false so the command starts.
+                return $callCount >= 2;
+            });
+
+        $this->createManager();
+        $command = 'printf "started\\n"; sleep 10';
+        $this->prepareTopLevelBash($this->sessionId, 'tc_bash', 'cancel-before-bg', $command, true);
+        $context = new ToolContext(
+            runId: $this->sessionId,
+            turnNo: 1,
+            toolCallId: 'tc_bash',
+            toolName: 'bash',
+            cancellationToken: $cancellationToken,
+            timeoutSeconds: 30,
+            stepId: 'cancel-before-bg',
+        );
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('Bash command cancelled');
+
+        $prepared = $this->manager->findPreparedLaunch($this->sessionId, 'tc_bash');
+        $this->assertNotNull($prepared);
+        $pidPath = preg_replace('/\.status$/', '.pid', $prepared->statusPath) ?? ($prepared->statusPath.'.pid');
+
+        try {
+            $this->contextAccessor->with($context, function () use ($command): string|ToolResult {
+                return ($this->makeBashTool())(new BashArgumentsDTO(command: $command, backgrounded: true));
+            });
+        } finally {
+            $records = $this->recordsForSession($this->sessionId);
+            $this->assertCount(1, $records);
+            $this->assertNull($records[0]->backgroundedAt, 'Cancel before acceptance must not detach.');
+            $pid = is_file($pidPath) ? (int) trim((string) file_get_contents($pidPath)) : 0;
+            if ($pid > 0) {
+                $this->assertFalse(@posix_kill($pid, 0), 'Cancel before acceptance must stop the native command.');
+            }
+        }
+    }
+
+    /**
+     * Acceptance first keeps the acknowledgment and native job when cancel
+     * arrives afterward through ToolExecutor.
+     */
+    public function testBackgroundAcceptanceSurvivesLaterCancellation(): void
+    {
+        $this->createManager();
+        $fifo = $this->tmpDir.'/accept-first-release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $endpoint = fopen($fifo, 'r+b');
+        $this->assertIsResource($endpoint);
+
+        try {
+            $arguments = [
+                'command' => 'printf "started\\n"; IFS= read -r release < '.escapeshellarg($fifo).'; printf "finished\\n"',
+                'backgrounded' => true,
+            ];
+            $registry = new ToolRegistry();
+            $registry->registerTool(name: 'bash', description: 'bash', handler: $this->makeBashTool(), promptLine: 'bash');
+            $hits = 0;
+            $token = new class($hits) implements CancellationTokenInterface {
+                public function __construct(private int &$hits)
+                {
+                }
+
+                public function isCancellationRequested(): bool
+                {
+                    ++$this->hits;
+
+                    // Stay false through Bash acceptance; flip true for ToolExecutor's
+                    // post-return cancel_after probe only.
+                    return $this->hits > 4;
+                }
+            };
+            $executor = new ToolExecutor(
+                defaultMode: 'parallel',
+                maxParallelism: 2,
+                resultStore: new ToolExecutionResultStore(),
+                toolbox: new RegistryBackedToolbox($registry, new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()), NativeToolSchemaProbe::schemaFactory()),
+                contextAccessor: $this->contextAccessor,
+            );
+            $call = ToolCallBuilder::create('tc_bash')->withToolName('bash')->withArguments($arguments)
+                ->withRunId($this->sessionId)->withContext(['cancel_token' => $token, 'turn_no' => 1, 'step_id' => 'accept-first'])->build();
+            $first = new ExecuteToolCall($this->sessionId, 1, 'accept-first', 1, 'first', 'tc_bash', 'bash', $arguments, 0, mode: 'parallel', maxParallelism: 2);
+            $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
+            TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $this->sessionId, 1, 'accept-first', [$first]);
+            $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+            $deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($first, 'deferred-tc_bash'));
+            $this->manager->prepareNativeLaunch($this->sessionId, 'tc_bash', (string) $arguments['command'], true);
+
+            $result = $executor->execute($call);
+            $this->assertFalse($result->isError, 'Later cancellation must not rewrite a successful background acknowledgment.');
+            $this->assertStringContainsString('Command moved to background.', $result->content[0]['text'] ?? '');
+            $this->assertArrayHasKey('bash_native', $result->details ?? []);
+            $this->applyOwnerNativeMetadata(\is_array($result->details) ? $result->details : null);
+
+            $records = $this->recordsForSession($this->sessionId);
+            $this->assertCount(1, $records);
+            $this->assertNotNull($records[0]->backgroundedAt);
+            $this->assertNull($records[0]->finishedAt);
+            $this->assertNotNull($records[0]->pid);
+            $this->assertTrue(posix_kill($records[0]->pid, 0), 'Accepted background job must keep running after later cancellation.');
+        } finally {
+            fclose($endpoint);
         }
     }
 
@@ -911,11 +1024,9 @@ final class BashToolTest extends IsolatedKernelTestCase
             $deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($first, 'deferred-tc_bash'));
             $this->manager->prepareNativeLaunch($session, 'tc_bash', (string) $arguments['command'], $backgrounded);
             $result = $executor->execute($call);
-            $raw = $result->details['raw_result'] ?? null;
-            $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $raw);
-            $this->assertNotNull($raw->completion);
-            $acknowledgment = $raw->completion->content[0]['text'] ?? $result->content[0]['text'];
-            $this->applyOwnerNativeMetadata($raw->completion->details ?? null);
+            $this->assertFalse($result->isError);
+            $acknowledgment = $result->content[0]['text'] ?? '';
+            $this->applyOwnerNativeMetadata(\is_array($result->details) ? $result->details : null);
             $receipt = ToolCallResultFactory::fromExecuteToolCallAndToolResult($first, $result);
             $collected = TestToolBatchCoordination::collect($batch, $store, $receipt);
             $this->assertTrue($collected->accepted);
@@ -1214,17 +1325,10 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     private function unwrapBashOutcome(mixed $outcome): mixed
     {
-        if ($outcome instanceof DeferredToolCompletionOutcome) {
-            $this->assertNotNull($outcome->completion);
-            $this->applyOwnerNativeMetadata($outcome->completion->details ?? null);
+        if ($outcome instanceof ToolResult) {
+            $this->applyOwnerNativeMetadata(\is_array($outcome->details) ? $outcome->details : null);
 
-            return $outcome->completion->content[0]['text'] ?? '';
-        }
-
-        if (\is_array($outcome) && isset($outcome['content'], $outcome['bash_native']) && \is_string($outcome['content'])) {
-            $this->applyOwnerNativeMetadata(['bash_native' => $outcome['bash_native']]);
-
-            return $outcome['content'];
+            return $outcome->content[0]['text'] ?? '';
         }
 
         return $outcome;

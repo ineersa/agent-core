@@ -8,9 +8,8 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
-use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
@@ -27,10 +26,9 @@ use function Amp\delay;
 /**
  * Execute a shell command with foreground supervision via BackgroundProcessManager.
  *
- * Top-level model Bash uses owner-prepared native identity and reports finished
- * output or background acknowledgment through DeferredToolCompletionOutcome with
- * an optional CompleteDeferredToolCall. Nested code_mode Bash stays local and
- * unpersisted. Direct !shell uses prepared paths but returns an ordinary result.
+ * Top-level model Bash and direct !shell use owner-prepared native identity and
+ * return an ordinary {@see ToolResult} with visible content plus private
+ * bash_native details. Nested code_mode Bash stays local plain text.
  */
 final class BashTool implements HatfieldToolProviderInterface
 {
@@ -49,14 +47,11 @@ final class BashTool implements HatfieldToolProviderInterface
     ) {
     }
 
-    /**
-     * @return string|array{content: string, bash_native: array<string, mixed>}|DeferredToolCompletionOutcome
-     */
     public function __invoke(
         #[MapToolArguments]
         BashArgumentsDTO $arguments,
-    ): string|array|DeferredToolCompletionOutcome {
-        return $this->toolRuntime->run(function () use ($arguments): string|array|DeferredToolCompletionOutcome {
+    ): string|ToolResult {
+        return $this->toolRuntime->run(function () use ($arguments): string|ToolResult {
             $command = trim($arguments->command);
             $timeout = $this->resolveTimeout($arguments);
             $context = $this->contextAccessor->current();
@@ -125,14 +120,7 @@ final class BashTool implements HatfieldToolProviderInterface
 
             while (true) {
                 if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
-                    $this->manager->stopByStatusPath($statusPath, $sessionId);
-                    $this->logger->info('bash_tool.cancelled', [
-                        'component' => 'tool.bash',
-                        'event_type' => 'bash_tool.cancelled',
-                        'process_pid' => $pid,
-                    ]);
-
-                    return '';
+                    return $this->cancelNative($statusPath, $sessionId, $pid, $prepared, $startResult->id, $toolCallId);
                 }
 
                 if (hrtime(true) > $deadline) {
@@ -150,7 +138,7 @@ final class BashTool implements HatfieldToolProviderInterface
                         $partialOutput,
                     );
 
-                    return $this->finishText($prepared, $startResult->id, $sessionId, $pid, $statusPath, $logPath, $text, timedOut: true);
+                    return $this->finishText($prepared, $startResult->id, $sessionId, $pid, $statusPath, $logPath, $text, timedOut: true, toolCallId: $toolCallId);
                 }
 
                 $record = $this->manager->observeNativeByStatusPath($statusPath, $sessionId);
@@ -167,11 +155,20 @@ final class BashTool implements HatfieldToolProviderInterface
                 }
 
                 if (BackgroundProcessStatusEnum::Running !== $record->status) {
-                    return $this->handleFinished($record, $prepared, $startResult->id, $sessionId);
+                    return $this->handleFinished($record, $prepared, $startResult->id, $sessionId, $toolCallId);
                 }
 
                 if ($record->backgroundRequested) {
-                    if (!$this->manager->tryMarkBackgroundedForStatusPath($statusPath, $sessionId)) {
+                    $candidate = $this->manager->resolveBackgroundAcceptance($statusPath, $sessionId);
+                    if (null === $candidate) {
+                        continue;
+                    }
+                    // Freshest cancel check after observation/identity resolution
+                    // and immediately before the local acceptance transition.
+                    if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
+                        return $this->cancelNative($statusPath, $sessionId, $pid, $prepared, $startResult->id, $toolCallId);
+                    }
+                    if (!$this->manager->acceptResolvedBackground($candidate)) {
                         continue;
                     }
                     $text = \sprintf(
@@ -182,7 +179,7 @@ final class BashTool implements HatfieldToolProviderInterface
                         $pid,
                     );
 
-                    return $this->finishBackgroundAck($prepared, $startResult->id, $sessionId, $record, $text);
+                    return $this->finishBackgroundAck($prepared, $startResult->id, $sessionId, $record, $text, $toolCallId);
                 }
 
                 delay($this->config->pollIntervalMicros / 1_000_000);
@@ -219,6 +216,28 @@ final class BashTool implements HatfieldToolProviderInterface
         return $arguments->timeout ?? $this->config->defaultTimeoutSeconds;
     }
 
+    private function cancelNative(
+        string $statusPath,
+        ?string $sessionId,
+        int $pid,
+        ?PreparedBashLaunchDTO $prepared,
+        ?int $recordId,
+        ?string $toolCallId,
+    ): never {
+        $this->manager->stopByStatusPath($statusPath, $sessionId);
+        $this->logger->info('bash_tool.cancelled', [
+            'component' => 'tool.bash',
+            'event_type' => 'bash_tool.cancelled',
+            'process_pid' => $pid,
+            'status_path' => $statusPath,
+            'session_id' => $sessionId ?? '',
+            'record_id' => $recordId,
+            'tool_call_id' => $toolCallId ?? '',
+        ]);
+
+        throw new ToolCallException(\sprintf('Bash command cancelled (PID %d).', $pid), retryable: false);
+    }
+
     private function readOutputForNativePaths(string $logPath, string $statusPath): string
     {
         try {
@@ -253,15 +272,13 @@ final class BashTool implements HatfieldToolProviderInterface
         }
     }
 
-    /**
-     * @return string|array{content: string, bash_native: array<string, mixed>}|DeferredToolCompletionOutcome
-     */
     private function handleFinished(
         NativeBashObservationDTO $entity,
         ?PreparedBashLaunchDTO $prepared,
         ?int $recordId,
         ?string $sessionId,
-    ): string|array|DeferredToolCompletionOutcome {
+        ?string $toolCallId,
+    ): string|ToolResult {
         $output = $this->readOutputForNativePaths($entity->logPath, $entity->statusPath);
         $pid = $entity->pid;
         $exitCode = $entity->exitCode;
@@ -278,7 +295,7 @@ final class BashTool implements HatfieldToolProviderInterface
         ]);
 
         if (BackgroundProcessStatusEnum::Finished === $status && 0 === $exitCode) {
-            return $this->finishText($prepared, $recordId, $sessionId, $pid, $entity->statusPath, $entity->logPath, $output, observation: $entity);
+            return $this->finishText($prepared, $recordId, $sessionId, $pid, $entity->statusPath, $entity->logPath, $output, observation: $entity, toolCallId: $toolCallId);
         }
 
         $failure = null !== $exitCode
@@ -288,8 +305,8 @@ final class BashTool implements HatfieldToolProviderInterface
             ? \sprintf("\n\nThe supervisor exited without recording the command's final status. Workload outcome is unknown; do not blindly rerun it.\nLog: %s\nStatus file: %s\nPID: %d\nInspect these files with read. Foreground records are not exposed by bg_status.", $entity->logPath, $entity->statusPath, $pid)
             : '';
         $text = \sprintf("%s\n\nOutput:\n%s%s", $failure, $output, $logHint);
-        if (null !== $prepared?->deferredId && null !== $recordId && null !== $sessionId) {
-            return $this->deferredCompletion(
+        if (null !== $prepared && null !== $recordId && null !== $sessionId) {
+            return $this->ordinaryResult(
                 $prepared,
                 $recordId,
                 $sessionId,
@@ -297,6 +314,8 @@ final class BashTool implements HatfieldToolProviderInterface
                 $text,
                 isError: true,
                 finished: true,
+                accepted: false,
+                toolCallId: $toolCallId,
             );
         }
 
@@ -309,12 +328,13 @@ final class BashTool implements HatfieldToolProviderInterface
         ?string $sessionId,
         NativeBashObservationDTO $entity,
         string $text,
-    ): string|DeferredToolCompletionOutcome {
-        if (null === $prepared?->deferredId || null === $recordId || null === $sessionId) {
+        ?string $toolCallId,
+    ): string|ToolResult {
+        if (null === $prepared || null === $recordId || null === $sessionId) {
             return $text;
         }
 
-        return $this->deferredCompletion(
+        return $this->ordinaryResult(
             $prepared,
             $recordId,
             $sessionId,
@@ -323,12 +343,10 @@ final class BashTool implements HatfieldToolProviderInterface
             isError: false,
             finished: false,
             accepted: true,
+            toolCallId: $toolCallId,
         );
     }
 
-    /**
-     * @return string|array{content: string, bash_native: array<string, mixed>}|DeferredToolCompletionOutcome
-     */
     private function finishText(
         ?PreparedBashLaunchDTO $prepared,
         ?int $recordId,
@@ -339,50 +357,9 @@ final class BashTool implements HatfieldToolProviderInterface
         string $text,
         bool $timedOut = false,
         ?NativeBashObservationDTO $observation = null,
-    ): string|array|DeferredToolCompletionOutcome {
-        if (null === $prepared?->deferredId || null === $recordId || null === $sessionId) {
-            if (null !== $prepared && null !== $recordId && null !== $sessionId) {
-                $entity = $observation ?? new NativeBashObservationDTO(
-                    pid: $pid,
-                    pgid: null,
-                    sessionId: $sessionId,
-                    command: $prepared->command,
-                    logPath: $logPath,
-                    statusPath: $statusPath,
-                    startedAt: Clock::get()->now(),
-                    finishedAt: Clock::get()->now(),
-                    exitCode: $timedOut ? -1 : 0,
-                    stoppedByUser: $timedOut,
-                    accepted: false,
-                    toolCallId: $prepared->toolCallId,
-                    backgroundRequested: false,
-                    status: $timedOut ? BackgroundProcessStatusEnum::Stopped : BackgroundProcessStatusEnum::Finished,
-                    deadlineNanoseconds: null,
-                );
-                $native = new BashNativeCompletionMetadataDTO(
-                    recordId: $recordId,
-                    runId: $sessionId,
-                    toolCallId: $prepared->toolCallId,
-                    pid: $entity->pid,
-                    pgid: $entity->pgid,
-                    startedAt: $entity->startedAt,
-                    deadlineNanoseconds: null,
-                    acceptedAt: null,
-                    finishedAt: $entity->finishedAt,
-                    exitCode: $entity->exitCode,
-                    status: $entity->status,
-                    stoppedByUser: $entity->stoppedByUser,
-                );
-
-                /** @var array<string, mixed> $normalized */
-                $normalized = $this->normalizer->normalize($native);
-
-                return [
-                    'content' => $text,
-                    'bash_native' => $normalized,
-                ];
-            }
-
+        ?string $toolCallId = null,
+    ): string|ToolResult {
+        if (null === $prepared || null === $recordId || null === $sessionId) {
             return $text;
         }
         $entity = $observation ?? new NativeBashObservationDTO(
@@ -403,7 +380,7 @@ final class BashTool implements HatfieldToolProviderInterface
             deadlineNanoseconds: $prepared->deadlineNanoseconds,
         );
 
-        return $this->deferredCompletion(
+        return $this->ordinaryResult(
             $prepared,
             $recordId,
             $sessionId,
@@ -411,10 +388,12 @@ final class BashTool implements HatfieldToolProviderInterface
             $text,
             isError: $timedOut,
             finished: true,
+            accepted: false,
+            toolCallId: $toolCallId,
         );
     }
 
-    private function deferredCompletion(
+    private function ordinaryResult(
         PreparedBashLaunchDTO $prepared,
         int $recordId,
         string $sessionId,
@@ -422,8 +401,9 @@ final class BashTool implements HatfieldToolProviderInterface
         string $text,
         bool $isError,
         bool $finished,
-        bool $accepted = false,
-    ): DeferredToolCompletionOutcome {
+        bool $accepted,
+        ?string $toolCallId,
+    ): ToolResult {
         $native = new BashNativeCompletionMetadataDTO(
             recordId: $recordId,
             runId: $sessionId,
@@ -442,14 +422,12 @@ final class BashTool implements HatfieldToolProviderInterface
         /** @var array<string, mixed> $normalized */
         $normalized = $this->normalizer->normalize($native);
 
-        return new DeferredToolCompletionOutcome(
-            $prepared->deferredId,
-            new CompleteDeferredToolCall(
-                $prepared->deferredId,
-                [['type' => 'text', 'text' => $text]],
-                ['bash_native' => $normalized],
-                $isError,
-            ),
+        return new ToolResult(
+            toolCallId: $toolCallId ?? $prepared->toolCallId,
+            toolName: self::NAME,
+            content: [['type' => 'text', 'text' => $text]],
+            details: ['bash_native' => $normalized],
+            isError: $isError,
         );
     }
 }

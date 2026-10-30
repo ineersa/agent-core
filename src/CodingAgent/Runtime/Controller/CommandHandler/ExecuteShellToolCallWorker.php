@@ -86,20 +86,6 @@ final readonly class ExecuteShellToolCallWorker
         ]);
 
         $details = $result->details;
-        if (\is_array($details)) {
-            $raw = $details['raw_result'] ?? null;
-            if (\is_array($raw) && isset($raw['bash_native'], $raw['content']) && \is_string($raw['content'])) {
-                $details['bash_native'] = $raw['bash_native'];
-                $details['raw_result'] = $raw['content'];
-                $result = new \Ineersa\AgentCore\Domain\Tool\ToolResult(
-                    toolCallId: $result->toolCallId,
-                    toolName: $result->toolName,
-                    content: [['type' => 'text', 'text' => $raw['content']]],
-                    details: $details,
-                    isError: $result->isError,
-                );
-            }
-        }
 
         return (new ToolCallResult(
             runId: $message->runId(),
@@ -112,7 +98,7 @@ final readonly class ExecuteShellToolCallWorker
             result: [
                 'tool_name' => $result->toolName,
                 'content' => $result->content,
-                'details' => $details ?? $result->details,
+                'details' => $result->details,
                 'arguments' => $arguments,
                 'standalone' => $message->standalone,
             ],

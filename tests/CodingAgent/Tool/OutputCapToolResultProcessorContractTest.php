@@ -171,7 +171,10 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolCallId: 'call-g1',
             toolName: 'bash',
             content: [['type' => 'text', 'text' => $largeText]],
-            details: ['raw_result' => $largeText],
+            details: [
+                'raw_result' => $largeText,
+                'bash_native' => ['record_id' => 7, 'run_id' => 'test-run', 'tool_call_id' => 'call-g1'],
+            ],
             isError: false,
         );
 
@@ -187,6 +190,11 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
 
         $details = \is_array($processed->details) ? $processed->details : [];
         $this->assertArrayHasKey('model_notifications', $details);
+        $this->assertSame(
+            ['record_id' => 7, 'run_id' => 'test-run', 'tool_call_id' => 'call-g1'],
+            $details['bash_native'] ?? null,
+            'Private bash_native facts must survive output capping until the owner strips them.',
+        );
         $notifications = $details['model_notifications'];
         $this->assertCount(1, $notifications);
 

@@ -162,17 +162,17 @@ write in the application goes through run control. TUI session metadata and othe
 independent stores retain their existing ownership.
 
 Bash foreground completion is migrating off request/reply metadata waits:
-the tool consumer launches and supervises natively, then publishes one-way
-`BashProcessStarted` / `BashProcessFinished` / `BashProcessAccepted` events.
+the tool consumer launches and supervises natively, then reports finished
+output or background acknowledgment through an ordinary `ToolResult` that
+carries private `bash_native` facts for the owner.
 Code-mode deferred registration is prepared by `ToolPayloadMiddleware` on the
 owner before ExecuteToolCall dispatch. Socket-ready reports are one-way
 `ReadyCodeModeInvocationDTO` commands; the host does not await a reply.
 Child reservation is also prepared before dispatch. Launch success is a one-way
 `RecordChildLaunchSuccessDTO` command; failed ordinary `ToolCallResult`s retire
 reserved child metadata on owner receive. Generic deferred registration still
-uses a reply RPC.
-Controller/scheduler accepted-job
-`decide()` RPCs remain an incomplete intermediate checkpoint for Bash.
+uses a reply RPC. Controller/scheduler accepted-job `decide()` RPCs remain an
+incomplete intermediate checkpoint for Bash.
 
 ```mermaid
 sequenceDiagram
@@ -183,28 +183,27 @@ sequenceDiagram
     participant DB as Application state.sqlite
 
     Tool->>Native: Launch and supervise
-    Tool->>Broker: One-way Started/Finished/Accepted
-    Note over Tool: Return tool result from native evidence
-    Broker->>Owner: Deliver lifecycle event
-    Owner->>DB: Persist by status_path
+    Tool->>Broker: Ordinary ToolCallResult with bash_native
+    Note over Tool: No metadata reply wait for foreground completion
+    Broker->>Owner: Deliver ToolCallResult
+    Owner->>DB: Apply bash_native then strip it
 ```
 
-`BashRegistrationClient` remains for generic deferred-registration replies and
-residual controller/scheduler Bash `decide()` paths. It is not on the BashTool
-completion path or child launch-success path anymore.
+Residual Bash controller/scheduler `decide()` paths remain one-way owner writes.
+They are not on the BashTool foreground completion path.
 
 | Domain | Serialized lifecycle operations | Work left in execution paths |
 |---|---|---|
-| Bash | One-way started/finished/accepted persistence; background request intent; residual controller decide/stop/timeout writes | Launch, local status/log supervision, signals, grace supervision |
+| Bash | Ordinary ToolResult carries bash_native; background request intent; residual controller decide/stop/timeout writes | Launch, local status/log supervision, signals, grace supervision |
 | Code mode | Owner-prepared deferred registration before dispatch; one-way readiness; terminal acceptance/classification on owner receipt | Isolated PHP subprocess, IPC and result artifacts |
 | Child invocation | Owner-prepared reservation; one-way launch success; failed ToolCallResult retirement on owner receive; residual deferred-registration reply | Artifact preparation and runner `start()`/`followUp()` |
 
 Queries are observations, not write authority. Owner operations recheck identity
 and current state instead of writing back stale snapshots. Metadata redelivery
 does not repeat native child launch. Bash no longer depends on registration
-receipts for foreground completion; obsolete receipt/ownership tables remain
-until callers are gone and a generated final migration ships. This does not imply
-exactly-once process signalling or universal crash recovery.
+receipts for foreground completion. Cancel before background acceptance stops
+the foreground command; acceptance first keeps the acknowledgment and job.
+This does not imply exactly-once process signalling or universal crash recovery.
 
 Resume rejects same-child duplicates by immutable registered tool-batch order,
 resolving artifact and run handles to the same child. Different children may
