@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\BackgroundProcess\DTO;
 
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashOwnershipStatusEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRequesterRoleEnum;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -27,7 +26,6 @@ final readonly class BashRegistrationReplyDTO
         public ?BashProcessSnapshotDTO $process = null,
         #[Assert\Length(min: 1, max: 128)]
         public ?string $deferredId = null,
-        public ?DeferredSubagentBatchProjectionDTO $childBatch = null,
     ) {
     }
 }

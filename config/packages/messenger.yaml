@@ -105,7 +105,6 @@ framework:
 
         routing:
             Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO: run_control
-            Ineersa\CodingAgent\Application\Message\DTO\ReserveChildInvocationDTO: run_control
             Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO: run_control
             Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO: run_control
             Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO: run_control

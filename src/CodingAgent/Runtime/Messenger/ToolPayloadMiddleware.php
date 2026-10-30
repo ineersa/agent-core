@@ -20,8 +20,11 @@ use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use Psr\Log\LoggerInterface;
@@ -58,6 +61,9 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         private readonly DenormalizerInterface $serializer,
         private readonly CodeModeLifecycleService $codeModeLifecycle,
         private readonly AgentResumeExecutionService $agentResume,
+        private readonly DeferredSubagentBatchLaunchService $deferredChildLaunch,
+        private readonly ChildInvocationLifecycleService $childLifecycle,
+        private readonly DeferredSubagentBatchRepository $childBatches,
     ) {
     }
 
@@ -121,6 +127,14 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                 }
                 if (!$body instanceof ExecuteToolCall && !$body instanceof ExecuteShellToolCall && !$body instanceof ToolCallResult) {
                     throw new ToolPayloadException('Transport reference does not identify tool invocation or result data.');
+                }
+                if ('run_control' === $received->getTransportName()
+                    && $body instanceof ToolCallResult
+                    && null === $message->deferredId) {
+                    // Owner-only: retire reserved subagent/fork metadata after
+                    // identity admission and body hydration, before converting
+                    // deferred results or handing the body to handlers.
+                    $this->retireFailedChildReservation($body);
                 }
                 if (null !== $message->deferredId) {
                     if (!$body instanceof ToolCallResult || !\is_array($body->result)) {
@@ -211,6 +225,16 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                         return $this->payloads->publish($failed);
                     }
                 }
+                if ($message instanceof ExecuteToolCall && \in_array($message->toolName, ['subagent', 'fork'], true)) {
+                    try {
+                        $this->deferredChildLaunch->prepare($message);
+                    } catch (ToolCallException $exception) {
+                        $failed = ToolCallResultFactory::fromExecuteToolCallAndThrowable($message, $exception);
+                        $deferredId = null;
+
+                        return $this->payloads->publish($failed);
+                    }
+                }
 
                 return $this->payloads->publish($message);
             });
@@ -273,8 +297,34 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                 return [null, $this->remoteResultOwner ? $reference : $this->acceptCodeModeResult($reference, false)];
             }
 
-            return [null, $this->admission->canPublish($message) ? $this->payloads->publish($message) : null];
+            if (!$this->admission->canPublish($message)) {
+                return [null, null];
+            }
+
+            return [null, $this->payloads->publish($message)];
         }));
+    }
+
+    private function retireFailedChildReservation(ToolCallResult $message): void
+    {
+        if (!$message->isError || !\is_array($message->result)) {
+            return;
+        }
+        $toolName = $message->result['tool_name'] ?? null;
+        if (!\is_string($toolName) || !\in_array($toolName, ['subagent', 'fork'], true)) {
+            return;
+        }
+
+        $batch = $this->childBatches->findByParentRunAndToolCall($message->runId(), $message->toolCallId);
+        if (null === $batch) {
+            return;
+        }
+
+        $this->childLifecycle->applyLaunchFailurePreparation(
+            $message->runId(),
+            $message->toolCallId,
+            $batch->lifecycleId,
+        );
     }
 
     private function acceptCodeModeResult(ToolPayloadReferenceDTO $incoming, bool $owner = true): ?ToolPayloadReferenceDTO

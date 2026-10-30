@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Fork;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
@@ -11,6 +12,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 
 /**
@@ -25,6 +27,7 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
         private readonly RunRelationshipReaderInterface $relationshipReader,
         private readonly ForkSnapshotSanitizer $snapshotSanitizer,
         private readonly CompactionServiceInterface $compactionService,
+        private readonly StackToolExecutionContextAccessor $contextAccessor,
     ) {
     }
 
@@ -53,13 +56,34 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             throw new ToolCallException(\sprintf('Fork requires owner-prepared producing model for run_id=%s before compaction.', $parentRunId), retryable: false);
         }
 
+        $toolContext = $this->contextAccessor->requireCurrent();
+        if ($parentRunId !== $toolContext->runId()) {
+            throw new ToolCallException('Fork parent run id does not match active tool context.', retryable: false);
+        }
+
+        // Owner preparation already reserved batch/child metadata. Skip costly
+        // compaction when this invocation is already launched or interrupted.
+        $projection = $this->deferredBatchLaunch->requirePreparedProjection(
+            $parentRunId,
+            $toolContext->toolCallId(),
+            $toolContext->turnNo(),
+            $toolContext->orderIndex(),
+        );
+        if (DeferredSubagentBatchLaunchStatusEnum::Failed === $projection->launchStatus) {
+            throw new ToolCallException('Subagent batch launch previously failed for this tool call.', retryable: false);
+        }
+        if (DeferredSubagentBatchLaunchStatusEnum::Launched === $projection->launchStatus
+            || null !== $projection->interruptionKind) {
+            return new DeferredToolCompletionOutcome($projection->lifecycleId);
+        }
+
         // 1) Sanitize in-flight fork invocation / provider-invalid tail from the
         //    immutable owner-prepared snapshot (not a live parent state lookup).
         $sanitized = $this->snapshotSanitizer->sanitize($launchContext->forkMessages);
 
         // 2) Synchronously compact sanitized snapshot via existing compaction service
-        //    BEFORE any deferred batch reservation. Child model/thinking overrides
-        //    are intentionally applied only after this step (in preparation).
+        //    BEFORE child launch. Child model/thinking overrides are intentionally
+        //    applied only after this step (in preparation).
         $compactResult = $this->compactionService->compactMessages(
             runId: $parentRunId,
             turnNo: $launchContext->producingTurnNo,

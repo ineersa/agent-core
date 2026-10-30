@@ -9,8 +9,6 @@ use Amp\DeferredCancellation;
 use Amp\DeferredFuture;
 use Amp\Future;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipRequestDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessCommandDTO;
@@ -22,7 +20,6 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO;
-use Ineersa\CodingAgent\Application\Message\DTO\ReserveChildInvocationDTO;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Transport\Serialization\Serializer;
@@ -81,12 +78,6 @@ final class BashRegistrationClient
             ?? throw new \UnexpectedValueException('Missing deferred registration identity.');
     }
 
-    public function reserveChild(string $lifecycleId, string $parentRunId, int $parentTurnNo, string $parentToolCallId, int $parentOrderIndex, \DateTimeImmutable $deadlineAt, DeferredSubagentBatchChildIntentDTO $childIntent, ?string $parentModel): DeferredSubagentBatchProjectionDTO
-    {
-        return $this->request(new ReserveChildInvocationDTO($lifecycleId, $parentRunId, $parentTurnNo, $parentToolCallId, $parentOrderIndex, $deadlineAt, $childIntent, $parentModel, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->childBatch
-            ?? throw new \UnexpectedValueException('Missing child reservation result.');
-    }
-
     public function recordChildLaunchSuccess(string $parentRunId, string $parentToolCallId, string $lifecycleId, \DateTimeImmutable $startedAt): void
     {
         $this->request(new RecordChildLaunchSuccessDTO($parentRunId, $parentToolCallId, $lifecycleId, $startedAt, $this->incarnation, bin2hex(random_bytes(16)), $this->role));
@@ -103,7 +94,7 @@ final class BashRegistrationClient
             ?? throw new \UnexpectedValueException('Missing Bash ownership result.');
     }
 
-    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO|ReserveChildInvocationDTO|RecordChildLaunchSuccessDTO|RecordChildLaunchFailureDTO|RegisterDeferredInvocationDTO $command): BashRegistrationReplyDTO
+    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO|RecordChildLaunchSuccessDTO|RecordChildLaunchFailureDTO|RegisterDeferredInvocationDTO $command): BashRegistrationReplyDTO
     {
         $errors = $this->validator->validate($command);
         if (0 !== \count($errors)) {

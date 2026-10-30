@@ -133,6 +133,9 @@ final class SubagentExecutionServiceFactory
             $args['agentsConfig'],
             $args['logger'],
             new ChildInvocationLifecycleService($args['batchRepository']),
+            $identityFactory,
+            $args['denormalizer'] ?? \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            $args['validator'] ?? \Symfony\Component\Validator\Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(),
         );
 
         return new SubagentExecutionService($deferredBatchLaunch);

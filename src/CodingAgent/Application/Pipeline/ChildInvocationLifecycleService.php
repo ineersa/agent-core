@@ -33,10 +33,6 @@ final class ChildInvocationLifecycleService
         DeferredSubagentBatchChildIntentDTO $childIntent,
         ?string $parentModel = null,
     ): DeferredSubagentBatchProjectionDTO {
-        if (null !== $this->owner) {
-            return $this->owner->reserveChild($lifecycleId, $parentRunId, $parentTurnNo, $parentToolCallId, $parentOrderIndex, $deadlineAt, $childIntent, $parentModel);
-        }
-
         return $this->batches->reserveBatch($lifecycleId, $parentRunId, $parentTurnNo, $parentToolCallId, $parentOrderIndex, $deadlineAt, $childIntent, $parentModel);
     }
 

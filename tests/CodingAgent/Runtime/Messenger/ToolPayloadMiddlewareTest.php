@@ -49,6 +49,7 @@ use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use Ineersa\CodingAgent\Tests\Runtime\Messenger\Support\ToolPayloadWorkerTransport;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\DependencyInjection\ServiceLocator;
@@ -427,6 +428,105 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $this->assertGreaterThanOrEqual(3, \count($published));
     }
 
+    public function testProducerPreparesSubagentAndForkBeforeSealingExecutionAndRetiresFailedReservation(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('owner prepared subagent fork');
+        $container->get(RunOperationalProjectionRepository::class)->replace(new RunState($run, RunStatus::Running));
+        $subagent = new ExecuteToolCall($run, 1, 'child-step', 1, hash('sha256', 'sub'), 'sub-call', 'subagent', [
+            'agent' => 'scout',
+            'task' => 'inspect',
+        ], 0, mode: 'parallel', maxParallelism: 2, parentModel: 'test/model');
+        $fork = new ExecuteToolCall($run, 1, 'child-step', 1, hash('sha256', 'fork'), 'fork-call', 'fork', [
+            'task' => 'continue',
+        ], 1, mode: 'parallel', maxParallelism: 2, parentModel: 'test/model');
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'child-step',
+            [$subagent, $fork],
+        );
+        $published = [];
+        $bus = new MessageBus([
+            new SubagentExecuteToolCallRoutingMiddleware(),
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [function (ToolPayloadMessage $message) use (&$published, $container, $run): ToolPayloadMessage {
+                    $published[] = $message;
+                    if ('call' === $message->reference->kind) {
+                        $batch = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, $message->reference->toolCallId);
+                        $this->assertNotNull($batch, 'Reserved batch must exist inside the outgoing call path.');
+                        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $batch->launchStatus);
+                    }
+
+                    return $message;
+                }],
+            ])),
+        ]);
+        $subagentSealed = $bus->dispatch($subagent);
+        $this->assertSame('call', $subagentSealed->getMessage()->reference->kind);
+        $this->assertSame(['agent'], $subagentSealed->last(TransportNamesStamp::class)?->getTransportNames());
+        $forkSealed = $bus->dispatch($fork);
+        $this->assertSame('call', $forkSealed->getMessage()->reference->kind);
+        $failed = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromExecuteToolCallAndThrowable(
+            $subagent,
+            new \Ineersa\AgentCore\Contract\Tool\ToolCallException('Fork compaction failed before child launch: boom', retryable: false),
+        );
+        // Force tool_name to subagent for retirement path coverage of reserved row.
+        $failed = new ToolCallResult(
+            $failed->runId(),
+            $failed->turnNo(),
+            $failed->stepId(),
+            $failed->attempt(),
+            $failed->idempotencyKey(),
+            $failed->toolCallId,
+            $failed->orderIndex,
+            [
+                'tool_name' => 'subagent',
+                'content' => [['type' => 'text', 'text' => 'Fork compaction failed before child launch: boom']],
+                'details' => ['retryable' => false],
+            ],
+            true,
+            ['message' => 'Fork compaction failed before child launch: boom', 'retryable' => false],
+        );
+        $resultBus = new MessageBus([
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+            ])),
+        ]);
+        $resultSealed = $resultBus->dispatch($failed);
+        $this->assertSame('result', $resultSealed->getMessage()->reference->kind);
+        $this->assertSame(['run_control'], $resultSealed->last(TransportNamesStamp::class)?->getTransportNames());
+        $batchAfterPublish = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'sub-call');
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Reserved,
+            $batchAfterPublish?->launchStatus,
+            'Remote/worker publication must leave the reserved batch untouched.',
+        );
+
+        $container->get(ActiveRunContextInterface::class)->loadRecovered(new RunState(
+            $run,
+            RunStatus::Running,
+            turnNo: 1,
+            activeStepId: 'child-step',
+            pendingToolCalls: ['sub-call' => false, 'fork-call' => false],
+        ));
+        $ownerBus = new MessageBus([
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolCallResult::class => [static fn (ToolCallResult $message): ToolCallResult => $message],
+            ])),
+        ]);
+        $ownerBus->dispatch($resultSealed->with(new ReceivedStamp('run_control')));
+        $batch = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'sub-call');
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch?->launchStatus);
+        $this->assertGreaterThanOrEqual(2, \count($published));
+    }
+
     #[DataProvider('mismatchedIdentities')]
     public function testDeferredReceiverRefusesMismatchedIdentityEvenAfterCompletion(string $field): void
     {
@@ -448,6 +548,21 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
     {
         foreach (['runId', 'turnNo', 'stepId', 'attempt', 'idempotencyKey', 'toolCallId', 'orderIndex', 'toolName'] as $field) {
             yield $field => [$field];
+        }
+    }
+
+    protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
+    {
+        // Isolated CWD starts without installed agents; seed the bundled scout
+        // definition so owner-prepared subagent preparation can reserve metadata.
+        $agentsDir = $classCwd.'/.hatfield/agents';
+        TestDirectoryIsolation::ensureDirectory($agentsDir);
+        $source = \dirname(__DIR__, 4).'/src/CodingAgent/Resources/agents/scout.md';
+        if (!is_file($source)) {
+            throw new \RuntimeException('Bundled scout agent definition is missing: '.$source);
+        }
+        if (!copy($source, $agentsDir.'/scout.md')) {
+            throw new \RuntimeException('Failed to install scout agent fixture into '.$agentsDir);
         }
     }
 
@@ -536,6 +651,9 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
             Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(), $commands, $logger,
             new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
             self::getContainer()->get(CodeModeLifecycleService::class),
-            self::getContainer()->get(AgentResumeExecutionService::class));
+            self::getContainer()->get(AgentResumeExecutionService::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService::class),
+            self::getContainer()->get(DeferredSubagentBatchRepository::class));
     }
 }
