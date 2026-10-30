@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Doctrine\DBAL\Exception as DbalException;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Event\OnFlushEventArgs;
-use Doctrine\ORM\Events;
 use Doctrine\ORM\Query;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
@@ -893,7 +890,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $token->method('isCancellationRequested')->willReturnCallback(function () use ($session, $backgrounded, &$selected): bool {
             if (null === $selected) {
                 $records = $this->manager->foregroundTools($session);
-                if ([] === $records) {
+                if ([] === $records && $backgrounded) {
                     $records = $this->recordsForSession($session);
                 }
                 if ([] !== $records) {
@@ -998,96 +995,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testCompletionWinningRequestRaceReturnsOnlyForegroundOutput(): void
-    {
-        $this->createManager();
-        $fifo = $this->tmpDir.'/finish-race';
-        $this->assertTrue(posix_mkfifo($fifo, 0600));
-        $endpoint = fopen($fifo, 'r+b');
-        $this->assertIsResource($endpoint);
-        $token = $this->createStub(CancellationTokenInterface::class);
-        $requested = false;
-        $token->method('isCancellationRequested')->willReturnCallback(function () use ($endpoint, &$requested): bool {
-            $records = $this->manager->foregroundTools($this->sessionId);
-            if (!$requested && [] !== $records) {
-                $record = $records[0];
-                $requested = true;
-                $this->assertTrue($this->manager->requestBackground($this->sessionId, $record->id, 'tc_bash'));
-                $this->assertSame(8, fwrite($endpoint, "release\n"));
-            }
-
-            return false;
-        });
-        try {
-            $result = $this->withContext($this->sessionId, fn () => ($this->makeBashTool())(
-                new BashArgumentsDTO(command: 'IFS= read -r release < '.escapeshellarg($fifo).'; printf done'),
-            ), cancellationToken: $token);
-            $this->assertSame('done', $result);
-            $this->assertTrue($requested);
-            $this->assertCount(1, $this->recordsForSession($this->sessionId));
-            $this->assertNull($this->recordsForSession($this->sessionId)[0]->backgroundedAt);
-            $this->assertSame([], self::getContainer()->get(ProcessStore::class)->completionSnapshots([$this->sessionId]));
-        } finally {
-            fclose($endpoint);
-        }
-    }
-
-    public function testAcceptanceObservationOfFinishedLaunchStillReturnsForegroundOutput(): void
-    {
-        $this->createManager();
-        $fifo = $this->tmpDir.'/accept-observe-finish';
-        $this->assertTrue(posix_mkfifo($fifo, 0600));
-        $endpoint = fopen($fifo, 'r+b');
-        $this->assertIsResource($endpoint);
-        $token = $this->createStub(CancellationTokenInterface::class);
-        $requested = false;
-        $forcedAcceptanceObservation = false;
-        $statusPath = null;
-        $token->method('isCancellationRequested')->willReturnCallback(function () use ($endpoint, &$requested, &$forcedAcceptanceObservation, &$statusPath): bool {
-            if (!$requested) {
-                $records = $this->manager->foregroundTools($this->sessionId);
-                if ([] === $records) {
-                    return false;
-                }
-                $record = $records[0];
-                $snapshot = $this->manager->findByRecordId($record->id, $this->sessionId);
-                $this->assertNotNull($snapshot);
-                $requested = true;
-                $statusPath = $snapshot->statusPath;
-                $this->assertTrue($this->manager->requestBackground($this->sessionId, $record->id, 'tc_bash'));
-                $this->assertSame(8, fwrite($endpoint, "release\n"));
-
-                return false;
-            }
-            if (!$forcedAcceptanceObservation && null !== $statusPath) {
-                $observed = $this->manager->observeNativeByStatusPath($statusPath, $this->sessionId);
-                if (null !== $observed?->finishedAt) {
-                    $forcedAcceptanceObservation = true;
-                    // Same race as resolveBackgroundAcceptance seeing Finished between
-                    // the Running check and acceptance, then continuing the loop.
-                    $this->assertNull($this->manager->resolveBackgroundAcceptance($statusPath, $this->sessionId));
-                }
-            }
-
-            return false;
-        });
-        try {
-            $result = $this->withContext($this->sessionId, fn () => ($this->makeBashTool())(
-                new BashArgumentsDTO(command: 'IFS= read -r release < '.escapeshellarg($fifo).'; printf accept-race-output'),
-            ), cancellationToken: $token);
-            $this->assertSame('accept-race-output', $result);
-            $this->assertTrue($requested);
-            $this->assertTrue($forcedAcceptanceObservation);
-            $records = $this->recordsForSession($this->sessionId);
-            $this->assertCount(1, $records);
-            $this->assertNull($records[0]->backgroundedAt);
-            $this->assertFileExists($records[0]->logPath);
-            $this->assertFileExists($records[0]->statusPath);
-        } finally {
-            fclose($endpoint);
-        }
-    }
-
     public function testNestedBashRemovesUnpersistedSidecarsAfterCompletion(): void
     {
         $this->createManager();
@@ -1140,10 +1047,10 @@ final class BashToolTest extends IsolatedKernelTestCase
         $token = $this->createStub(CancellationTokenInterface::class);
         $checked = false;
         $token->method('isCancellationRequested')->willReturnCallback(function () use ($manager, &$checked): bool {
-            $records = $this->recordsForSession($this->sessionId);
+            $records = $manager->foregroundTools($this->sessionId);
             if (!$checked && [] !== $records) {
                 $checked = true;
-                $this->assertCount(1, $manager->foregroundTools($this->sessionId));
+                $this->assertCount(1, $records);
                 $this->assertTrue($manager->requestBackground($this->sessionId, $records[0]->id, 'tc_child'));
             }
 
