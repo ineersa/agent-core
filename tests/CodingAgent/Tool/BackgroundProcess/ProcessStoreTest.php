@@ -217,4 +217,35 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
         $this->assertNull($store->ownerSessionForRun('cycle-a'));
         $this->assertSame($before, $manager->getUnitOfWork()->size());
     }
+
+    public function testApplyAcceptedSurvivesEarlierFinished(): void
+    {
+        $directory = TestDirectoryIsolation::createProjectTempDir('bash-accept-after-finish');
+        try {
+            $manager = self::getContainer()->get(EntityManagerInterface::class);
+            $store = self::getContainer()->get(ProcessStore::class);
+            $statusPath = $directory.'/launch.status';
+            $process = new BackgroundProcess();
+            $process->sessionId = 'accept-owner';
+            $process->pid = getmypid();
+            $process->statusPath = $statusPath;
+            $process->toolCallId = 'call_accept';
+            $manager->persist($process);
+            $manager->flush();
+
+            $finishedAt = new \DateTimeImmutable('2026-10-30 12:00:00');
+            $acceptedAt = new \DateTimeImmutable('2026-10-30 12:00:01');
+            $store->applyFinishedByRecord($process->id, 'accept-owner', 0, BackgroundProcessStatusEnum::Finished, false, $finishedAt);
+            $store->applyAcceptedByRecord($process->id, 'accept-owner', $acceptedAt);
+
+            $snapshot = $store->snapshot($process->id);
+            $this->assertNotNull($snapshot);
+            $this->assertNotNull($snapshot->finishedAt);
+            $this->assertNotNull($snapshot->backgroundedAt);
+            $this->assertSame($acceptedAt->format('Y-m-d H:i:s'), $snapshot->backgroundedAt->format('Y-m-d H:i:s'));
+            $this->assertCount(1, $store->completionSnapshots(['accept-owner']));
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
 }

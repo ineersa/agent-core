@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
-use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
@@ -85,7 +84,6 @@ final class HeadlessController
         private readonly string $runtimeCwd,
         private readonly ExtensionAgentJobRegistry $extensionAgentJobRegistry,
         private readonly BackgroundProcessManager $backgroundProcesses,
-        private readonly BashRegistrationClient $bashControllerClient,
         /**
          * Optional background process completion poller for sending
          * follow-up notifications when a backgrounded process finishes.
@@ -205,7 +203,6 @@ final class HeadlessController
 
         // Live stop and cleanup metadata now use the controller's reply role.
         // Shutdown retains run_control until the lifecycle listener finishes.
-        $this->backgroundProcesses->useProcessOwner($this->bashControllerClient);
 
         // Same event type/payload as before; emission now follows consumer launch.
         $this->emitter->emit(new RuntimeEvent(

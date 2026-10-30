@@ -810,6 +810,6 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Application\AgentCommunication\SubmissionFactory::class),
             self::getContainer()->get(ChildInvocationLifecycleService::class),
-            self::getContainer()->get(DeferredSubagentBatchRepository::class));
+            self::getContainer()->get(DeferredSubagentBatchRepository::class), self::getContainer()->get(\Ineersa\CodingAgent\Tool\BackgroundProcessManager::class), self::getContainer()->get(\Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore::class));
     }
 }

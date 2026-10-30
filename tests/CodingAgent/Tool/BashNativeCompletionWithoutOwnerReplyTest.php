@@ -4,14 +4,26 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessFinishedDTO;
-use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessStartedDTO;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
@@ -26,17 +38,23 @@ use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
+use Symfony\Component\Messenger\Stamp\ReceivedStamp;
+use Symfony\Component\Messenger\Handler\HandlersLocator;
+use Symfony\Component\Messenger\MessageBus;
+use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
- * Foreground Bash returns native completion without awaiting owner metadata replies.
+ * Owner-prepared Bash finishes locally and reports through deferred completion.
  *
- * Lost coverage relative to reply-RPC proofs: this does not exercise
- * BashRegistrationClient register/observe awaits. Those waits are the defect
- * under removal for the Bash tool path.
+ * Lost coverage relative to reply-RPC proofs: register/observe/accept awaits and
+ * Started/Finished/Accepted lifecycle messages are deleted, not rebuilt.
+ *
+ * @covers \Ineersa\CodingAgent\Tool\BashTool
  */
 final class BashNativeCompletionWithoutOwnerReplyTest extends IsolatedKernelTestCase
 {
-    public function testForegroundBashCompletesFromNativeStatusWithoutOwnerReply(): void
+    public function testOwnerPreparedForegroundBashCompletesWithoutOwnerReply(): void
     {
         $temporary = TestDirectoryIsolation::createProjectTempDir('bash-native-completion');
         $bus = new class implements MessageBusInterface {
@@ -47,7 +65,6 @@ final class BashNativeCompletionWithoutOwnerReplyTest extends IsolatedKernelTest
             {
                 $this->messages[] = $message;
 
-                // Publish only. Never complete a correlated reply Future.
                 return new Envelope($message, [new HandledStamp(null, 'test')]);
             }
         };
@@ -64,34 +81,87 @@ final class BashNativeCompletionWithoutOwnerReplyTest extends IsolatedKernelTest
             new NullLogger(),
             $bus,
         );
-        // Intentionally leave processOwnerClient unset: no decide()/register() RPC.
         $accessor = new StackToolExecutionContextAccessor();
         $tool = new BashTool(
             manager: $manager,
             contextAccessor: $accessor,
             toolRuntime: new ToolRuntime($accessor),
             logger: new TestLogger(),
+            deferred: self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
+            normalizer: self::getContainer()->get(NormalizerInterface::class),
             config: new BashToolConfig(pollIntervalMicros: 1_000),
         );
 
-        $output = $accessor->with(
-            new ToolContext('97', 1, 'call_native', 'bash', new NullCancellationToken(), 1, stepId: 'step-native'),
-            static fn (): string => $tool(new BashArgumentsDTO(command: "printf 'native-ok\\n'")),
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('bash native completion');
+        $call = new ExecuteToolCall(
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'step-native',
+            attempt: 1,
+            idempotencyKey: 'bash-native',
+            toolCallId: 'call_native',
+            toolName: 'bash',
+            args: ['command' => "printf 'native-ok\\n'"],
+            orderIndex: 0,
+            mode: 'parallel',
+            timeoutSeconds: 30,
+            maxParallelism: 1,
+            argSchema: [],
+            toolsRef: null,
+        );
+        $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $runId, 1, 'step-native', [$call]);
+        self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class)->preparePending(
+            ToolCallResultFactory::correlationFromExecuteToolCall($call, 'deferred-native'),
+        );
+        $prepared = $manager->prepareNativeLaunch($runId, 'call_native', "printf 'native-ok\\n'", false);
+        $this->assertNull($store->snapshot($prepared->id)?->pid);
+
+        $outcome = $accessor->with(
+            new ToolContext($runId, 1, 'call_native', 'bash', new NullCancellationToken(), 1, stepId: 'step-native'),
+            static fn (): string|DeferredToolCompletionOutcome => $tool(new BashArgumentsDTO(command: "printf 'native-ok\\n'")),
         );
 
-        $this->assertSame("native-ok\n", $output);
-        $started = array_values(array_filter($bus->messages, static fn (object $message): bool => $message instanceof BashProcessStartedDTO));
-        $finished = array_values(array_filter($bus->messages, static fn (object $message): bool => $message instanceof BashProcessFinishedDTO));
-        $this->assertCount(1, $started);
-        $this->assertSame('97', $started[0]->runId);
-        $this->assertSame('call_native', $started[0]->toolCallId);
-        $this->assertNotSame('', $started[0]->statusPath);
-        $this->assertGreaterThanOrEqual(1, \count($finished));
-        $this->assertSame($started[0]->statusPath, $finished[0]->statusPath);
-        $this->assertSame(0, $finished[0]->exitCode);
-        foreach ($bus->messages as $message) {
-            $this->assertNotInstanceOf(\Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO::class, $message);
-            $this->assertNotInstanceOf(\Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessCommandDTO::class, $message);
-        }
+        $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
+        $this->assertSame('deferred-native', $outcome->deferredId);
+        $this->assertNotNull($outcome->completion);
+        $this->assertInstanceOf(CompleteDeferredToolCall::class, $outcome->completion);
+        $this->assertSame("native-ok\n", $outcome->completion->content[0]['text'] ?? null);
+        $this->assertArrayHasKey('bash_native', $outcome->completion->details ?? []);
+        $this->assertSame([], array_values(array_filter(
+            $bus->messages,
+            static fn (object $message): bool => !$message instanceof CompleteDeferredToolCall,
+        )), 'Foreground Bash must not publish lifecycle/reply commands.');
+
+        $snapshot = $store->snapshot($prepared->id);
+        $this->assertNotNull($snapshot);
+        $this->assertNull($snapshot->pid, 'Worker must not write native launch facts; owner applies them on receipt.');
+        $this->assertSame(BackgroundProcessStatusEnum::Running, $snapshot->status);
+        $this->assertNull($manager->observeNativeByStatusPath($prepared->statusPath, $runId));
+
+        self::getContainer()->get(ActiveRunContextInterface::class)->loadRecovered(new RunState(
+            $runId,
+            RunStatus::Running,
+            turnNo: 1,
+            activeStepId: 'step-native',
+            pendingToolCalls: ['call_native' => false],
+        ));
+        $ownerBus = new MessageBus([
+            self::getContainer()->get(\Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                CompleteDeferredToolCall::class => [static fn (CompleteDeferredToolCall $message): CompleteDeferredToolCall => $message],
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+            ])),
+        ]);
+        $sealed = $ownerBus->dispatch($outcome->completion);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $sealed->getMessage());
+        $ownerBus->dispatch($sealed->with(new ReceivedStamp('run_control')));
+
+        $owned = $store->snapshot($prepared->id);
+        $this->assertNotNull($owned);
+        $this->assertNotNull($owned->pid, 'Owner receipt must apply the native PID.');
+        $this->assertNotNull($owned->startedAt, 'Owner receipt must apply the actual start time.');
+        $this->assertSame(BackgroundProcessStatusEnum::Finished, $owned->status);
+        $this->assertSame(0, $owned->exitCode);
     }
 }

@@ -173,7 +173,19 @@ final readonly class ExecuteToolCallWorker
                 ], $executeTool, level: LogLevel::INFO);
 
             if ($this->isDeferredOutcome($toolResult)) {
-                $this->registerDeferredExecution($message, $toolResult);
+                $raw = $toolResult->details['raw_result'] ?? null;
+                if (!$raw instanceof DeferredToolCompletionOutcome) {
+                    throw new \RuntimeException('Deferred tool outcome missing typed raw_result marker.');
+                }
+                $this->registerDeferredExecution($message, $raw);
+                if (null !== $raw->completion) {
+                    // Immediate finished/background acknowledgment reuses the
+                    // existing deferred completion path; no Bash-specific event.
+                    if ($raw->completion->deferredId !== $raw->deferredId) {
+                        throw new \RuntimeException('Deferred completion payload must use the same deferredId.');
+                    }
+                    $this->commandBus->dispatch($raw->completion);
+                }
                 $this->resultStore->releaseCompleted(
                     $message->runId(),
                     $message->toolCallId,
@@ -202,13 +214,8 @@ final readonly class ExecuteToolCallWorker
         return ($details['raw_result'] ?? null) instanceof DeferredToolCompletionOutcome;
     }
 
-    private function registerDeferredExecution(ExecuteToolCall $message, ToolResult $toolResult): DeferredToolCompletionCorrelation
+    private function registerDeferredExecution(ExecuteToolCall $message, DeferredToolCompletionOutcome $raw): DeferredToolCompletionCorrelation
     {
-        $raw = $toolResult->details['raw_result'] ?? null;
-        if (!$raw instanceof DeferredToolCompletionOutcome) {
-            throw new \RuntimeException('Deferred tool outcome missing typed raw_result marker.');
-        }
-
         $metadata = $this->deferredToolCompletionRepository->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
         if (null === $metadata) {
             throw new ToolCallException('Owner-prepared deferred registration is missing for this invocation.', retryable: false);

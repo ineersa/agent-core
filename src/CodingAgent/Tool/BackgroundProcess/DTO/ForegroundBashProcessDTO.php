@@ -8,7 +8,7 @@ final readonly class ForegroundBashProcessDTO
 {
     public function __construct(
         public int $id,
-        public int $pid,
+        public ?int $pid,
         public string $toolCallId,
     ) {
     }

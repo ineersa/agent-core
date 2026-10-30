@@ -5,61 +5,32 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashNativeCompletionMetadataDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\NativeBashObservationDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\PreparedBashLaunchDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
+use Symfony\Component\Clock\Clock;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 use function Amp\delay;
 
 /**
  * Execute a shell command with foreground supervision via BackgroundProcessManager.
  *
- * Implements HatfieldToolProviderInterface for automatic registration
- * as a permanent tool and the Symfony AI native tool contract (typed DTO arguments).
- *
- * Key design:
- * - Every bash command starts immediately through
- *   BackgroundProcessManager::start($command, $sessionId), guaranteeing
- *   exactly one command execution.
- * - A foreground supervision loop polls the manager for process status,
- *   checks ambient ToolContext cancellation, and enforces a monotonic
- *   timeout deadline.
- * - Ctrl+B requests detachment of one exact invocation. Its worker checks
- *   completion before accepting, then the existing controller poller owns
- *   supervision and completion notification for the same native process.
- * - On successful completion, returns captured capped output.
- * - On non-zero or unclean exit, throws ToolCallException with output and
- *   exit status so ToolExecutor preserves the failed result for the TUI.
- * - On timeout/cancellation, stops the managed process and returns
- *   partial output with a clear notice.
- * - Accepting backgrounding never launches a second copy of the command.
- *
- * Tool definition schema exposes only:
- *   - command (required): the shell command string
- *   - timeout (optional int): explicit timeout in seconds
- *
- * backgrounded (optional bool): request detachment after startup.
- *
- * ## Safety note: raw shell execution
- *
- * This tool intentionally executes the model-provided command string directly
- * via bash -c. That is the tool's purpose — giving the model a real shell.
- * Because of this, bash is excluded from real-LLM E2E tests by default
- * (--tools-excluded=bash) unless a test specifically needs to drive it.
- * The caller (AgentCommand) controls tool exposure per run through
- * --tools / --tools-excluded CLI options.
- *
- * Note: BackgroundProcessManager::start() warns callers to escape with
- * escapeshellarg(). That warning applies to callers that take user input
- * from untrusted sources. BashTool intentionally passes the model-provided
- * string directly — the model is treated as a trusted caller within the
- * same agent session.
+ * Top-level model Bash uses owner-prepared native identity and reports finished
+ * output or background acknowledgment through DeferredToolCompletionOutcome with
+ * an optional CompleteDeferredToolCall. Nested code_mode Bash stays local and
+ * unpersisted. Direct !shell uses prepared paths but returns an ordinary result.
  */
 final class BashTool implements HatfieldToolProviderInterface
 {
@@ -72,50 +43,72 @@ final class BashTool implements HatfieldToolProviderInterface
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
         private readonly LoggerInterface $logger,
+        private readonly DeferredToolCompletionRepositoryInterface $deferred,
+        private readonly NormalizerInterface $normalizer,
         private readonly BashToolConfig $config = new BashToolConfig(),
     ) {
     }
 
     /**
-     * Execute a bash command with foreground supervision.
-     *
-     * @param BashArgumentsDTO $arguments
-     *                                    Optional 'timeout' (int|null)
-     *
-     * @return string Command output or backgrounding notice
-     *
-     * @throws ToolCallException on validation errors or execution failures
+     * @return string|array{content: string, bash_native: array<string, mixed>}|DeferredToolCompletionOutcome
      */
     public function __invoke(
         #[MapToolArguments]
         BashArgumentsDTO $arguments,
-    ): string {
-        return $this->toolRuntime->run(function () use ($arguments): string {
+    ): string|array|DeferredToolCompletionOutcome {
+        return $this->toolRuntime->run(function () use ($arguments): string|array|DeferredToolCompletionOutcome {
             $command = trim($arguments->command);
             $timeout = $this->resolveTimeout($arguments);
-
-            // Resolve session context.
-            // When no ToolContext is active (e.g. tests bypassing context
-            // wrapping, admin/tooling commands), $sessionId is null and
-            // $cancelToken is null. BackgroundProcessManager treats null
-            // sessionId as unscoped/admin — the process is stored with an
-            // empty session and list/stop calls scoped to a session won't
-            // see it. Cancellation is simply unavailable when no context
-            // is present; only the timeout deadline bounds execution.
             $context = $this->contextAccessor->current();
             $sessionId = $context?->runId();
             $cancelToken = $context?->cancellationToken();
-
-            // Start the command immediately through BackgroundProcessManager.
-            // This guarantees exactly one process execution per tool call.
             $deadline = hrtime(true) + $timeout * 1_000_000_000;
-            // Only direct model tools are targets, including child-run tools. Direct !shell has no
-            // producing step; code-mode nested calls have a deeper context.
-            $toolCallId = null !== $context?->stepId() && 1 === $this->contextAccessor->depth() ? $context->toolCallId() : null;
-            if ($arguments->backgrounded && null === $toolCallId) {
+
+            $topLevelModel = null !== $context?->stepId() && 1 === $this->contextAccessor->depth();
+            $toolCallId = $context?->toolCallId();
+            $prepared = null;
+            $deferredId = null;
+            if (null !== $sessionId && null !== $toolCallId && '' !== $toolCallId) {
+                $prepared = $this->manager->findPreparedLaunch($sessionId, $toolCallId);
+                if (null !== $prepared && $topLevelModel) {
+                    $deferredId = $this->deferred->findMetadataByRunAndToolCall($sessionId, $toolCallId)?->deferredId;
+                    if (null === $deferredId) {
+                        throw new ToolCallException('Owner-prepared Bash deferred correlation is missing.', retryable: false);
+                    }
+                    $prepared = new PreparedBashLaunchDTO(
+                        id: $prepared->id,
+                        runId: $prepared->runId,
+                        toolCallId: $prepared->toolCallId,
+                        command: $prepared->command,
+                        logPath: $prepared->logPath,
+                        statusPath: $prepared->statusPath,
+                        deferredId: $deferredId,
+                        backgroundEligible: true,
+                        deadlineNanoseconds: $prepared->deadlineNanoseconds,
+                    );
+                } elseif (null === $prepared && (null !== $context?->stepId() || 1 === $this->contextAccessor->depth())) {
+                    // Top-level model Bash and direct shell must be owner-prepared.
+                    // Nested code_mode Bash has depth > 1 and no prepared row.
+                    if ($topLevelModel || null === $context?->stepId()) {
+                        throw new ToolCallException('Owner-prepared native Bash identity is missing for this invocation.', retryable: false);
+                    }
+                }
+            }
+            if ($arguments->backgrounded && (null === $prepared || null === $prepared->deferredId)) {
                 throw new ToolCallException('Background launch requires a top-level Bash tool invocation.', retryable: false);
             }
-            $startResult = $this->manager->start($command, $sessionId, $toolCallId, $deadline, backgroundRequested: $arguments->backgrounded);
+
+            $startResult = $this->manager->start(
+                $command,
+                $sessionId,
+                $prepared?->toolCallId ?? ($topLevelModel ? $toolCallId : null),
+                $deadline,
+                backgroundRequested: $arguments->backgrounded,
+                preparedRecordId: $prepared?->id,
+                preparedLogPath: $prepared?->logPath,
+                preparedStatusPath: $prepared?->statusPath,
+                deferredId: $prepared?->deferredId,
+            );
             $pid = $startResult->pid;
             $statusPath = $startResult->statusPath;
             $logPath = $startResult->logPath;
@@ -127,54 +120,40 @@ final class BashTool implements HatfieldToolProviderInterface
                 'status_path' => $statusPath,
                 'log_path' => $logPath,
                 'session_id' => $sessionId ?? 'none',
+                'record_id' => $startResult->id,
             ]);
 
-            // Foreground supervision loop
             while (true) {
-                // 1. Cooperative cancellation check from ambient ToolContext.
-                //
-                // The process is stopped, but the return value is discarded:
-                // ToolRuntime::run() throws a RuntimeException for stale results
-                // when it detects cancellation after the callback returns (see
-                // src/AgentCore/Application/Handler/ToolExecutor.php which also
-                // converts post-execution cancellation to an error result).
-                // The meaningful work here is stop() + structured log; the
-                // return value only serves local control flow and is never
-                // user-visible.
                 if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
                     $this->manager->stopByStatusPath($statusPath, $sessionId);
-
                     $this->logger->info('bash_tool.cancelled', [
                         'component' => 'tool.bash',
                         'event_type' => 'bash_tool.cancelled',
                         'process_pid' => $pid,
                     ]);
 
-                    return ''; // discarded by ToolRuntime; meaningful action is stop() above
+                    return '';
                 }
 
-                // 2. Monotonic timeout deadline
                 if (hrtime(true) > $deadline) {
                     $this->manager->stopByStatusPath($statusPath, $sessionId);
-                    $partialOutput = $this->readOutputForStatusPath($statusPath, $sessionId);
+                    $partialOutput = $this->readOutputForNativePaths($logPath, $statusPath);
                     $this->logger->info('bash_tool.timed_out', [
                         'component' => 'tool.bash',
                         'event_type' => 'bash_tool.timed_out',
                         'process_pid' => $pid,
                         'timeout_seconds' => $timeout,
                     ]);
-
-                    return \sprintf(
+                    $text = \sprintf(
                         "Command timed out after %d seconds.\n\nPartial output:\n%s",
                         $timeout,
                         $partialOutput,
                     );
+
+                    return $this->finishText($prepared, $startResult->id, $sessionId, $pid, $statusPath, $logPath, $text, timedOut: true);
                 }
 
-                // 3. Poll native status for this launch. Foreground completion
-                // uses local status/log files, not an owner Observe reply.
-                $record = $this->manager->findByStatusPath($statusPath, $sessionId);
-
+                $record = $this->manager->observeNativeByStatusPath($statusPath, $sessionId);
                 if (null === $record) {
                     $this->logger->error('bash_tool.native_launch_vanished', [
                         'component' => 'tool.bash',
@@ -188,33 +167,29 @@ final class BashTool implements HatfieldToolProviderInterface
                 }
 
                 if (BackgroundProcessStatusEnum::Running !== $record->status) {
-                    return $this->handleFinished($record, $sessionId);
+                    return $this->handleFinished($record, $prepared, $startResult->id, $sessionId);
                 }
 
                 if ($record->backgroundRequested) {
                     if (!$this->manager->tryMarkBackgroundedForStatusPath($statusPath, $sessionId)) {
-                        // Native completion won before acceptance. Re-read it.
                         continue;
                     }
-
-                    return \sprintf(
+                    $text = \sprintf(
                         "Command moved to background.\nPID: %d\nLog: %s\n\nYou will be notified when the process finishes. Use bg_status log pid=%d to inspect output or bg_status stop pid=%d to stop it.",
                         $pid,
                         $logPath,
                         $pid,
                         $pid,
                     );
+
+                    return $this->finishBackgroundAck($prepared, $startResult->id, $sessionId, $record, $text);
                 }
 
-                // Yield during supervision so sibling invocations and lease timers progress.
                 delay($this->config->pollIntervalMicros / 1_000_000);
             }
         });
     }
 
-    /**
-     * Return the tool definition for automatic provider registration.
-     */
     public function definition(): ToolDefinitionDTO
     {
         return new ToolDefinitionDTO(
@@ -239,37 +214,18 @@ final class BashTool implements HatfieldToolProviderInterface
         );
     }
 
-    // ─── Private helpers ────────────────────────────────────────────
-
     private function resolveTimeout(BashArgumentsDTO $arguments): int
     {
-        // Argument bounds are validated natively (Assert\Range +
-        // BashTimeoutMax against the configured max); this only applies
-        // the configured default when the model omitted timeout.
         return $arguments->timeout ?? $this->config->defaultTimeoutSeconds;
     }
 
-    /**
-     * Read bounded output for the exact immutable background-process record.
-     *
-     * Foreground completion must never materialize multi-megabyte logs into PHP
-     * strings. Use the existing log tail bound (bash.log_tail_chars). When the
-     * log exceeds that bound, return a compact notice that points at the live
-     * background log path (the full artifact) instead of duplicating into
-     * output-cap storage.
-     *
-     * @param int         $recordId  Immutable background-process record ID
-     * @param string|null $sessionId Session ownership filter
-     *
-     * @return string The log content, or a compact oversized-output notice
-     */
-    private function readOutputForStatusPath(string $statusPath, ?string $sessionId): string
+    private function readOutputForNativePaths(string $logPath, string $statusPath): string
     {
         try {
-            $result = $this->manager->readLogTailForStatusPath(
+            $result = $this->manager->readLogTailForNativePaths(
+                $logPath,
                 $statusPath,
                 $this->config->logTailChars,
-                $sessionId,
             );
 
             if (!$result->truncated) {
@@ -283,86 +239,211 @@ final class BashTool implements HatfieldToolProviderInterface
                 "Full output remains at the background log:\n%s\n".
                 "\n".
                 "Next: inspect a bounded byte window as hexadecimal, e.g.\n".
-                "- bash(command: \"od -An -tx1 -N %d %s\")\n".
-                "Use od -j OFFSET for a later window. Do not cut UTF-8 text with tail -c.\n".
-                'Do not rerun the original command or load the full log unbound.',
+                "  read path=%s offset=0 limit=64\n".
+                "or use an explicit character window with a text encoding if you need readable text.",
                 $result->totalBytes,
                 $this->config->logTailChars,
-                $result->logPath,
-                $this->config->logTailChars,
-                escapeshellarg($result->logPath),
+                $logPath,
+                $logPath,
             );
-        } catch (MalformedToolResultException $e) {
-            throw $e;
-        } catch (\RuntimeException $e) {
-            $this->logger->warning('bash_tool.read_output_failed', [
-                'component' => 'tool.bash',
-                'event_type' => 'bash_tool.read_output_failed',
-                'status_path' => $statusPath,
-                'error' => $e->getMessage(),
-            ]);
-
-            return '';
+        } catch (MalformedToolResultException $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            throw new ToolCallException(\sprintf('Failed to read Bash output: %s', $exception->getMessage()), retryable: false, previous: $exception);
         }
     }
 
-    /**
-     * Handle a finished/stopped process entity.
-     *
-     * @param BashProcessRecordDTO $entity    The finished process entity
-     * @param string|null          $sessionId Session ownership filter
-     *
-     * @return string Formatted result text
-     */
-    private function handleFinished(BashProcessRecordDTO $entity, ?string $sessionId): string
-    {
-        $output = $this->readOutputForStatusPath($entity->statusPath, $sessionId);
-
+    private function handleFinished(
+        NativeBashObservationDTO $entity,
+        ?PreparedBashLaunchDTO $prepared,
+        ?int $recordId,
+        ?string $sessionId,
+    ): string|array|DeferredToolCompletionOutcome {
+        $output = $this->readOutputForNativePaths($entity->logPath, $entity->statusPath);
         $pid = $entity->pid;
-
         $exitCode = $entity->exitCode;
-        $status = $entity->status->value;
+        $status = $entity->status;
 
-        // Check if this was a user-requested stop (bg_status stop)
-        // before treating exit code 0 as normal success, so a
-        // user-stopped command can never be misreported as successful.
-        if ($entity->stoppedByUser) {
-            throw new ToolCallException(\sprintf("Command was stopped (exit code %d).\n\nOutput:\n%s", $exitCode ?? -1, $output));
-        }
-
-        // Normal successful completion
-        if (0 === $exitCode) {
-            $this->logger->info('bash_tool.completed', [
-                'component' => 'tool.bash',
-                'event_type' => 'bash_tool.completed',
-                'process_pid' => $pid,
-                'exit_code' => $exitCode,
-            ]);
-
-            return $output;
-        }
-
-        // Non-zero exit code or finished/unclean status
-        $this->logger->info('bash_tool.failed', [
+        $this->logger->info('bash_tool.completed', [
             'component' => 'tool.bash',
-            'event_type' => 'bash_tool.failed',
+            'event_type' => 'bash_tool.completed',
             'process_pid' => $pid,
             'exit_code' => $exitCode,
             'status' => $status,
             'log_path' => $entity->logPath,
-            'record_id' => $entity->id,
+            'status_path' => $entity->statusPath,
         ]);
 
-        // A missing exit code is an unclean completion, never a success.
-        // Do not return this diagnostic as ordinary text: that loses the
-        // failed outcome at the toolbox boundary even though it says failed.
+        if (BackgroundProcessStatusEnum::Finished === $status && 0 === $exitCode) {
+            return $this->finishText($prepared, $recordId, $sessionId, $pid, $entity->statusPath, $entity->logPath, $output, observation: $entity);
+        }
+
         $failure = null !== $exitCode
             ? \sprintf('Command failed with exit code %d.', $exitCode)
             : 'Command supervision ended without an exit status.';
         $logHint = null === $exitCode && '' !== $entity->logPath
-            ? \sprintf("\n\nThe supervisor exited without recording the command's final status. Workload outcome is unknown; do not blindly rerun it.\nLog: %s\nStatus file: %s\nPID: %d\nRecord: %d\nInspect these files with read. Foreground records are not exposed by bg_status.", $entity->logPath, $entity->statusPath, $pid, $entity->id)
+            ? \sprintf("\n\nThe supervisor exited without recording the command's final status. Workload outcome is unknown; do not blindly rerun it.\nLog: %s\nStatus file: %s\nPID: %d\nInspect these files with read. Foreground records are not exposed by bg_status.", $entity->logPath, $entity->statusPath, $pid)
             : '';
+        $text = \sprintf("%s\n\nOutput:\n%s%s", $failure, $output, $logHint);
+        if (null !== $prepared?->deferredId && null !== $recordId && null !== $sessionId) {
+            return $this->deferredCompletion(
+                $prepared,
+                $recordId,
+                $sessionId,
+                $entity,
+                $text,
+                isError: true,
+                finished: true,
+            );
+        }
 
-        throw new ToolCallException(\sprintf("%s\n\nOutput:\n%s%s", $failure, $output, $logHint));
+        throw new ToolCallException($text);
+    }
+
+    private function finishBackgroundAck(
+        ?PreparedBashLaunchDTO $prepared,
+        ?int $recordId,
+        ?string $sessionId,
+        NativeBashObservationDTO $entity,
+        string $text,
+    ): string|array|DeferredToolCompletionOutcome {
+        if (null === $prepared?->deferredId || null === $recordId || null === $sessionId) {
+            return $text;
+        }
+
+        return $this->deferredCompletion(
+            $prepared,
+            $recordId,
+            $sessionId,
+            $entity,
+            $text,
+            isError: false,
+            finished: false,
+            accepted: true,
+        );
+    }
+
+    private function finishText(
+        ?PreparedBashLaunchDTO $prepared,
+        ?int $recordId,
+        ?string $sessionId,
+        int $pid,
+        string $statusPath,
+        string $logPath,
+        string $text,
+        bool $timedOut = false,
+        ?NativeBashObservationDTO $observation = null,
+    ): string|array|DeferredToolCompletionOutcome {
+        if (null === $prepared?->deferredId || null === $recordId || null === $sessionId) {
+            if (null !== $prepared && null !== $recordId && null !== $sessionId) {
+                $entity = $observation ?? new NativeBashObservationDTO(
+                    pid: $pid,
+                    pgid: null,
+                    sessionId: $sessionId,
+                    command: $prepared->command,
+                    logPath: $logPath,
+                    statusPath: $statusPath,
+                    startedAt: Clock::get()->now(),
+                    finishedAt: Clock::get()->now(),
+                    exitCode: $timedOut ? -1 : 0,
+                    stoppedByUser: $timedOut,
+                    accepted: false,
+                    toolCallId: $prepared->toolCallId,
+                    backgroundRequested: false,
+                    status: $timedOut ? BackgroundProcessStatusEnum::Stopped : BackgroundProcessStatusEnum::Finished,
+                    deadlineNanoseconds: null,
+                );
+                $native = new BashNativeCompletionMetadataDTO(
+                    recordId: $recordId,
+                    runId: $sessionId,
+                    toolCallId: $prepared->toolCallId,
+                    pid: $entity->pid,
+                    pgid: $entity->pgid,
+                    startedAt: $entity->startedAt,
+                    deadlineNanoseconds: null,
+                    acceptedAt: null,
+                    finishedAt: $entity->finishedAt,
+                    exitCode: $entity->exitCode,
+                    status: $entity->status,
+                    stoppedByUser: $entity->stoppedByUser,
+                );
+
+                /** @var array<string, mixed> $normalized */
+                $normalized = $this->normalizer->normalize($native);
+
+                return [
+                    'content' => $text,
+                    'bash_native' => $normalized,
+                ];
+            }
+
+            return $text;
+        }
+        $entity = $observation ?? new NativeBashObservationDTO(
+            pid: $pid,
+            pgid: null,
+            sessionId: $sessionId,
+            command: $prepared->command,
+            logPath: $logPath,
+            statusPath: $statusPath,
+            startedAt: Clock::get()->now(),
+            finishedAt: Clock::get()->now(),
+            exitCode: $timedOut ? -1 : 0,
+            stoppedByUser: $timedOut,
+            accepted: false,
+            toolCallId: $prepared->toolCallId,
+            backgroundRequested: false,
+            status: $timedOut ? BackgroundProcessStatusEnum::Stopped : BackgroundProcessStatusEnum::Finished,
+            deadlineNanoseconds: $prepared->deadlineNanoseconds,
+        );
+
+        return $this->deferredCompletion(
+            $prepared,
+            $recordId,
+            $sessionId,
+            $entity,
+            $text,
+            isError: $timedOut,
+            finished: true,
+        );
+    }
+
+    private function deferredCompletion(
+        PreparedBashLaunchDTO $prepared,
+        int $recordId,
+        string $sessionId,
+        NativeBashObservationDTO $entity,
+        string $text,
+        bool $isError,
+        bool $finished,
+        bool $accepted = false,
+    ): DeferredToolCompletionOutcome {
+        $native = new BashNativeCompletionMetadataDTO(
+            recordId: $recordId,
+            runId: $sessionId,
+            toolCallId: $prepared->toolCallId,
+            pid: $entity->pid,
+            pgid: $entity->pgid,
+            startedAt: $entity->startedAt,
+            deadlineNanoseconds: $entity->deadlineNanoseconds ?? $prepared->deadlineNanoseconds,
+            acceptedAt: $accepted ? Clock::get()->now() : null,
+            finishedAt: $finished ? ($entity->finishedAt ?? Clock::get()->now()) : null,
+            exitCode: $finished ? $entity->exitCode : null,
+            status: $finished ? $entity->status : null,
+            stoppedByUser: $finished ? $entity->stoppedByUser : false,
+        );
+
+        /** @var array<string, mixed> $normalized */
+        $normalized = $this->normalizer->normalize($native);
+
+        return new DeferredToolCompletionOutcome(
+            $prepared->deferredId,
+            new CompleteDeferredToolCall(
+                $prepared->deferredId,
+                [['type' => 'text', 'text' => $text]],
+                ['bash_native' => $normalized],
+                $isError,
+            ),
+        );
     }
 }

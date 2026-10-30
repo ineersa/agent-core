@@ -28,6 +28,10 @@ use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
+use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashNativeCompletionMetadataDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\DelayedMessageHandlingException;
@@ -45,6 +49,8 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Exception\ValidationFailedException as ValidatorValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
+use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
+use Symfony\Component\Uid\UuidV7;
 
 /** Seal before send_message; resolve only after owner initialization on consumption. */
 final class ToolPayloadMiddleware implements MiddlewareInterface
@@ -67,6 +73,8 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         private readonly SubmissionFactory $submissionFactory,
         private readonly ChildInvocationLifecycleService $childLifecycle,
         private readonly DeferredSubagentBatchRepository $childBatches,
+        private readonly BackgroundProcessManager $backgroundProcesses,
+        private readonly ProcessStore $processStore,
     ) {
     }
 
@@ -103,7 +111,10 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                 if (null !== $message->deferredId) {
                     $metadata = $this->deferredMetadata($message->deferredId);
                     $this->assertDeferredReference($metadata, $message->reference);
-                    if ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, 'run_control' === $received->getTransportName())) {
+                    // Bash physical outcomes are applied after body hydration so
+                    // caller staleness cannot erase native launch/acceptance facts.
+                    if ('bash' !== $metadata->reference->toolName
+                        && ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, 'run_control' === $received->getTransportName()))) {
                         $ref = $metadata->reference;
                         $this->deferredHandler->settle($metadata->deferredId, $ref->runId, $ref->turnNo, $ref->stepId);
 
@@ -138,13 +149,50 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                     // identity admission and body hydration, before converting
                     // deferred results or handing the body to handlers.
                     $this->retireFailedChildReservation($body);
+                    if ('bash' === $message->reference->toolName && \is_array($body->result)) {
+                        $body = new ToolCallResult(
+                            $body->runId(),
+                            $body->turnNo(),
+                            $body->stepId(),
+                            $body->attempt(),
+                            $body->idempotencyKey(),
+                            $body->toolCallId,
+                            $body->orderIndex,
+                            [
+                                ...$body->result,
+                                'details' => $this->applyBashNativeCompletionMetadata(null, $body->result['details'] ?? null),
+                            ],
+                            $body->isError,
+                            $body->error,
+                        );
+                    }
                 }
                 if (null !== $message->deferredId) {
                     if (!$body instanceof ToolCallResult || !\is_array($body->result)) {
                         throw new ToolPayloadException('Deferred completion data is not a tool result.');
                     }
+                    $details = $body->result['details'] ?? null;
+                    $suppressVisible = false;
+                    if ('run_control' === $received->getTransportName()) {
+                        $details = $this->applyBashNativeCompletionMetadata($message->deferredId, $details);
+                        $metadata = $this->deferredMetadata($message->deferredId);
+                        if ('bash' === $metadata->reference->toolName) {
+                            if ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, true)) {
+                                $this->deferredHandler->settle(
+                                    $metadata->deferredId,
+                                    $metadata->reference->runId,
+                                    $metadata->reference->turnNo,
+                                    $metadata->reference->stepId,
+                                );
+                                $suppressVisible = true;
+                            }
+                        }
+                    }
+                    if ($suppressVisible) {
+                        return null;
+                    }
 
-                    return new CompleteDeferredToolCall($message->deferredId, $body->result['content'], $body->result['details'] ?? null, $body->isError, $body->error);
+                    return new CompleteDeferredToolCall($message->deferredId, $body->result['content'], $details, $body->isError, $body->error);
                 }
 
                 return $body;
@@ -228,6 +276,9 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                         return $this->payloads->publish($failed);
                     }
                 }
+                if ($message instanceof ExecuteShellToolCall) {
+                    $this->prepareDirectShellNative($message);
+                }
 
                 return $this->payloads->publish($message);
             });
@@ -250,7 +301,10 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         return $this->locks->synchronized($initial->reference->runId, function () use ($message, $initial): ?ToolPayloadReferenceDTO {
             $metadata = $this->deferredMetadata($message->deferredId);
             $this->assertDeferredReference($metadata, $initial->reference);
-            if ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, false)) {
+            // Physical Bash completions must still seal so the owner can apply
+            // native facts even when the caller is already stale.
+            if ('bash' !== $metadata->reference->toolName
+                && ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, false))) {
                 $ref = $metadata->reference;
                 $this->deferredHandler->settle($metadata->deferredId, $ref->runId, $ref->turnNo, $ref->stepId);
 
@@ -320,6 +374,12 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             return;
         }
 
+        if ('bash' === $message->toolName) {
+            $this->prepareModelBashNative($message);
+
+            return;
+        }
+
         if (\in_array($message->toolName, ['agent_steer', 'notify_parent'], true)) {
             try {
                 $receipt = $this->submissionFactory->prepare(
@@ -335,6 +395,133 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             }
             $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($message, $receipt->identity));
         }
+    }
+
+    /**
+     * Owner applies private native Bash facts from a deferred completion, then
+     * strips them so the visible tool result stays unchanged for callers.
+     *
+     * @param array<string, mixed>|null $details
+     *
+     * @return array<string, mixed>|null
+     */
+    private function applyBashNativeCompletionMetadata(?string $deferredId, ?array $details): ?array
+    {
+        if (!\is_array($details)) {
+            return $details;
+        }
+        $native = $details['bash_native'] ?? null;
+        if (null === $native) {
+            return $details;
+        }
+        try {
+            $metadata = $this->serializer->denormalize(
+                $native,
+                BashNativeCompletionMetadataDTO::class,
+                context: [AbstractNormalizer::ALLOW_EXTRA_ATTRIBUTES => false],
+            );
+        } catch (\Throwable $exception) {
+            throw new ToolPayloadException('Bash deferred completion native metadata is invalid.', previous: $exception);
+        }
+        if (!$metadata instanceof BashNativeCompletionMetadataDTO) {
+            throw new ToolPayloadException('Bash deferred completion native metadata is invalid.');
+        }
+        $violations = $this->validator->validate($metadata);
+        if (\count($violations) > 0) {
+            throw new ToolPayloadException((string) $violations);
+        }
+        $prepared = $this->backgroundProcesses->findPreparedLaunch($metadata->runId, $metadata->toolCallId);
+        if (null === $prepared || $prepared->id !== $metadata->recordId) {
+            throw new ToolPayloadException('Bash deferred completion does not match its prepared native row.');
+        }
+        if (null !== $deferredId) {
+            $deferred = $this->deferred->findMetadataByRunAndToolCall($metadata->runId, $metadata->toolCallId);
+            if (null === $deferred || $deferred->deferredId !== $deferredId || 'bash' !== $deferred->reference->toolName) {
+                throw new ToolPayloadException('Bash deferred completion does not match its prepared deferred identity.');
+            }
+        }
+        if (null !== $metadata->pid) {
+            if (null === $metadata->startedAt) {
+                throw new ToolPayloadException('Bash launch acknowledgment requires the actual started_at.');
+            }
+            $this->processStore->applyLaunch(
+                $metadata->recordId,
+                $metadata->runId,
+                $metadata->pid,
+                $metadata->pgid,
+                $metadata->startedAt,
+                $metadata->deadlineNanoseconds,
+            );
+        }
+        if (null !== $metadata->acceptedAt) {
+            $this->processStore->applyAcceptedByRecord($metadata->recordId, $metadata->runId, $metadata->acceptedAt);
+            if (null !== $deferredId) {
+                $this->deferred->markReady($deferredId);
+                $this->deferred->markBackgrounded($deferredId, $metadata->acceptedAt);
+            }
+        }
+        if (null !== $metadata->finishedAt) {
+            if (null === $metadata->status) {
+                throw new ToolPayloadException('Bash finish acknowledgment requires a native status.');
+            }
+            $this->processStore->applyFinishedByRecord(
+                $metadata->recordId,
+                $metadata->runId,
+                $metadata->exitCode,
+                $metadata->status,
+                $metadata->stoppedByUser,
+                $metadata->finishedAt,
+            );
+            if (null !== $deferredId) {
+                $this->deferred->markReady($deferredId);
+            }
+        }
+        unset($details['bash_native']);
+
+        return $details;
+    }
+
+    private function prepareModelBashNative(ExecuteToolCall $message): void
+    {
+        try {
+            $arguments = $this->serializer->denormalize(
+                $message->args,
+                BashArgumentsDTO::class,
+                context: [AbstractNormalizer::ALLOW_EXTRA_ATTRIBUTES => false],
+            );
+        } catch (\Throwable $exception) {
+            throw new ToolCallException('Bash arguments are invalid.', retryable: false, previous: $exception);
+        }
+        if (!$arguments instanceof BashArgumentsDTO) {
+            throw new ToolCallException('Bash arguments are invalid.', retryable: false);
+        }
+        $violations = $this->validator->validate($arguments);
+        if (\count($violations) > 0) {
+            throw new ToolCallException((string) $violations, retryable: false);
+        }
+
+        $existing = $this->deferred->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
+        $deferredId = $existing?->deferredId ?? UuidV7::v7()->toRfc4122();
+        if (null === $existing) {
+            $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($message, $deferredId));
+        }
+
+        $this->backgroundProcesses->prepareNativeLaunch(
+            $message->runId(),
+            $message->toolCallId,
+            $arguments->command,
+            $arguments->backgrounded,
+        );
+    }
+
+    private function prepareDirectShellNative(ExecuteShellToolCall $message): void
+    {
+        $this->backgroundProcesses->prepareNativeLaunch(
+            $message->runId(),
+            $message->toolCallId,
+            $message->commandText,
+            false,
+        );
     }
 
     private function retireFailedChildReservation(ToolCallResult $message): void
@@ -408,7 +595,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
     private function findEarlyDeferredRegistration(ToolCallResult $message): ?DeferredToolCompletionMetadataDTO
     {
         $metadata = $this->deferred->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
-        if (null === $metadata || 'pending' !== $metadata->status || 'code_mode' !== $metadata->reference->toolName) {
+        if (null === $metadata || 'pending' !== $metadata->status || !\in_array($metadata->reference->toolName, ['code_mode', 'bash'], true)) {
             return null;
         }
         $stored = $metadata->reference;

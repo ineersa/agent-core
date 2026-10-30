@@ -23,6 +23,8 @@ final readonly class NativeBashLaunchDTO
         public string $logPath,
         public string $statusPath,
         public \DateTimeImmutable $startedAt,
+        public ?int $recordId = null,
+        public ?string $deferredId = null,
     ) {
     }
 }

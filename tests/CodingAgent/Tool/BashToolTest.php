@@ -1063,6 +1063,8 @@ final class BashToolTest extends IsolatedKernelTestCase
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
             logger: $this->logger,
+            deferred: self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
+            normalizer: self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class),
             config: $this->bashConfig,
         );
     }

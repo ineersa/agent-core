@@ -8,9 +8,6 @@ use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
-use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessAcceptedDTO;
-use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessFinishedDTO;
-use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessStartedDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
@@ -47,7 +44,7 @@ final class ProcessStore
     public function insertRecord(array $fields): int
     {
         $entity = new BackgroundProcess();
-        $entity->pid = (int) ($fields['pid'] ?? 0);
+        $entity->pid = array_key_exists('pid', $fields) && null !== $fields['pid'] ? (int) $fields['pid'] : null;
         $entity->pgid = isset($fields['pgid']) ? (int) $fields['pgid'] : null;
         $entity->sessionId = (string) ($fields['session_id'] ?? '');
         $entity->command = (string) ($fields['command'] ?? '');
@@ -56,9 +53,14 @@ final class ProcessStore
         $entity->backgroundRequested = (bool) ($fields['background_requested'] ?? false);
         $entity->logPath = (string) ($fields['log_path'] ?? '');
         $entity->statusPath = (string) ($fields['status_path'] ?? '');
-        $entity->startedAt = $fields['started_at'] instanceof \DateTimeImmutable
-            ? $fields['started_at']
-            : new \DateTimeImmutable((string) ($fields['started_at'] ?? 'now'));
+        if (array_key_exists('started_at', $fields)) {
+            $started = $fields['started_at'];
+            $entity->startedAt = null === $started
+                ? null
+                : ($started instanceof \DateTimeImmutable ? $started : new \DateTimeImmutable((string) $started));
+        } else {
+            $entity->startedAt = null;
+        }
 
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
@@ -66,78 +68,89 @@ final class ProcessStore
         return $entity->id;
     }
 
-    /** Persist or refresh a native launch by its unique status_path. */
-    public function applyStarted(BashProcessStartedDTO $event): int
+    /**
+     * Owner-prepared native identity before launch.
+     *
+     * pid and started_at stay null until the worker launches against these paths.
+     *
+     * Reuses an existing prepared row for the same run/toolCallId so redelivery
+     * keeps the same paths and record id. Deadline stays null until launch/ack.
+     *
+     * @param array{session_id: string, command: string, tool_call_id: string, log_path: string, status_path: string, background_requested?: bool} $fields
+     */
+    public function prepareRecord(array $fields): int
     {
-        return $this->entityManager->getConnection()->transactional(function () use ($event): int {
-            $connection = $this->entityManager->getConnection();
-            $existing = $connection->fetchAssociative(
-                'SELECT id FROM background_process WHERE status_path = ?',
-                [$event->statusPath],
-            );
-            if (false !== $existing) {
-                $connection->executeStatement(
-                    'UPDATE background_process SET pid = ?, pgid = ?, session_id = ?, command = ?, tool_call_id = ?, deadline_nanoseconds = ?, background_requested = CASE WHEN background_requested = 1 THEN 1 ELSE ? END, log_path = ?, started_at = ?, updated_at = ? WHERE id = ?',
-                    [
-                        $event->pid,
-                        $event->pgid,
-                        $event->runId,
-                        $event->command,
-                        $event->toolCallId,
-                        $event->deadlineNanoseconds,
-                        $event->backgroundRequested ? 1 : 0,
-                        $event->logPath,
-                        $event->startedAt->format('Y-m-d H:i:s.u'),
-                        Clock::get()->now()->format('Y-m-d H:i:s'),
-                        (int) $existing['id'],
-                    ],
-                );
+        $existing = $this->findPreparedByRunAndToolCall($fields['session_id'], $fields['tool_call_id']);
+        if (null !== $existing) {
+            return $existing->id;
+        }
 
-                return (int) $existing['id'];
-            }
-
-            return $this->insertRecord([
-                'pid' => $event->pid,
-                'pgid' => $event->pgid,
-                'session_id' => $event->runId,
-                'command' => $event->command,
-                'tool_call_id' => $event->toolCallId,
-                'deadline_nanoseconds' => $event->deadlineNanoseconds,
-                'background_requested' => $event->backgroundRequested,
-                'log_path' => $event->logPath,
-                'status_path' => $event->statusPath,
-                'started_at' => $event->startedAt,
-            ]);
-        });
+        return $this->insertRecord([
+            'pid' => null,
+            'pgid' => null,
+            'session_id' => $fields['session_id'],
+            'command' => $fields['command'],
+            'tool_call_id' => $fields['tool_call_id'],
+            'deadline_nanoseconds' => null,
+            'background_requested' => (bool) ($fields['background_requested'] ?? false),
+            'log_path' => $fields['log_path'],
+            'status_path' => $fields['status_path'],
+            'started_at' => null,
+        ]);
     }
 
-    /** Apply native completion facts keyed by status_path. */
-    public function applyFinished(BashProcessFinishedDTO $event): void
+    public function findPreparedByRunAndToolCall(string $runId, string $toolCallId): ?BashProcessRecordDTO
+    {
+        $row = $this->entityManager->getConnection()->fetchAssociative(
+            'SELECT * FROM background_process WHERE session_id = ? AND tool_call_id = ? ORDER BY id DESC LIMIT 1',
+            [$runId, $toolCallId],
+        );
+
+        return false === $row ? null : $this->hydrateSnapshot($row);
+    }
+
+    /** Persist native launch facts onto an owner-prepared row. */
+    public function applyLaunch(int $recordId, string $runId, int $pid, ?int $pgid, \DateTimeImmutable $startedAt, ?int $deadlineNanoseconds = null): void
     {
         $this->entityManager->getConnection()->executeStatement(
-            'UPDATE background_process SET finished_at = COALESCE(finished_at, ?), exit_code = COALESCE(exit_code, ?), status = ?, stopped_by_user = CASE WHEN ? = 1 THEN 1 ELSE stopped_by_user END, updated_at = ? WHERE status_path = ? AND session_id = ?',
+            'UPDATE background_process SET pid = ?, pgid = ?, started_at = ?, deadline_nanoseconds = COALESCE(?, deadline_nanoseconds), updated_at = ? WHERE id = ? AND session_id = ?',
             [
-                $event->finishedAt->format('Y-m-d H:i:s'),
-                $event->exitCode,
-                $event->status->value,
-                $event->stoppedByUser ? 1 : 0,
+                $pid,
+                $pgid,
+                $startedAt->format('Y-m-d H:i:s.u'),
+                $deadlineNanoseconds,
                 Clock::get()->now()->format('Y-m-d H:i:s'),
-                $event->statusPath,
-                $event->runId,
+                $recordId,
+                $runId,
             ],
         );
     }
 
-    /** Apply background acceptance keyed by status_path. */
-    public function applyAccepted(BashProcessAcceptedDTO $event): void
+    public function applyFinishedByRecord(int $recordId, string $runId, ?int $exitCode, BackgroundProcessStatusEnum $status, bool $stoppedByUser, \DateTimeImmutable $finishedAt): void
     {
         $this->entityManager->getConnection()->executeStatement(
-            'UPDATE background_process SET backgrounded_at = COALESCE(backgrounded_at, ?), updated_at = ? WHERE status_path = ? AND session_id = ? AND finished_at IS NULL',
+            'UPDATE background_process SET finished_at = COALESCE(finished_at, ?), exit_code = COALESCE(exit_code, ?), status = ?, stopped_by_user = CASE WHEN ? = 1 THEN 1 ELSE stopped_by_user END, updated_at = ? WHERE id = ? AND session_id = ?',
             [
-                $event->acceptedAt->format('Y-m-d H:i:s'),
+                $finishedAt->format('Y-m-d H:i:s'),
+                $exitCode,
+                $status->value,
+                $stoppedByUser ? 1 : 0,
                 Clock::get()->now()->format('Y-m-d H:i:s'),
-                $event->statusPath,
-                $event->runId,
+                $recordId,
+                $runId,
+            ],
+        );
+    }
+
+    public function applyAcceptedByRecord(int $recordId, string $runId, \DateTimeImmutable $acceptedAt): void
+    {
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE background_process SET backgrounded_at = COALESCE(backgrounded_at, ?), updated_at = ? WHERE id = ? AND session_id = ?',
+            [
+                $acceptedAt->format('Y-m-d H:i:s'),
+                Clock::get()->now()->format('Y-m-d H:i:s'),
+                $recordId,
+                $runId,
             ],
         );
     }
@@ -158,7 +171,7 @@ final class ProcessStore
         $rows = $this->entityManager->getConnection()->fetchAllAssociative('SELECT id, pid, tool_call_id FROM background_process WHERE session_id = ? AND finished_at IS NULL AND tool_call_id IS NOT NULL AND backgrounded_at IS NULL AND background_requested = 0 ORDER BY id DESC', [$sessionId]);
 
         return array_map(static fn (array $row): ForegroundBashProcessDTO => new ForegroundBashProcessDTO(
-            (int) $row['id'], (int) $row['pid'], (string) $row['tool_call_id'],
+            (int) $row['id'], null === $row['pid'] ? null : (int) $row['pid'], (string) $row['tool_call_id'],
         ), $rows);
     }
 
@@ -184,7 +197,8 @@ final class ProcessStore
                 return false;
             }
             $exitCode = $lifecycle->readStatusFile((string) $row['status_path']);
-            if (null !== $exitCode || !$lifecycle->isAlive((int) $row['pid'])) {
+            $pid = null === $row['pid'] ? null : (int) $row['pid'];
+            if (null !== $exitCode || null === $pid || !$lifecycle->isAlive($pid)) {
                 $status = BackgroundProcessStatusEnum::Stopped->value === $row['status']
                     ? BackgroundProcessStatusEnum::Stopped
                     : (null !== $exitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean);
@@ -391,13 +405,14 @@ final class ProcessStore
                 }
                 $connection->delete('background_process', ['id' => $recordId, 'session_id' => $runId]);
 
-                return new BashProcessSnapshotDTO($recordId, $runId, (int) $row['pid'], null === $row['pgid'] ? null : (int) $row['pgid'], (string) $row['status_path'], true, $status, false);
+                return new BashProcessSnapshotDTO($recordId, $runId, null === $row['pid'] ? null : (int) $row['pid'], null === $row['pgid'] ? null : (int) $row['pgid'], (string) $row['status_path'], true, $status, false);
             }
             $now = Clock::get()->now()->format('Y-m-d H:i:s');
             $signalRequired = false;
             if (!$finished) {
                 $exitCode = $lifecycle->readStatusFile((string) $row['status_path']);
-                $gone = null === $exitCode && !$lifecycle->isAlive((int) $row['pid']);
+                $pid = null === $row['pid'] ? null : (int) $row['pid'];
+                $gone = null === $exitCode && (null === $pid || !$lifecycle->isAlive($pid));
                 $settledStop = (BashProcessActionEnum::SettleStop === $action && (bool) $row['stopped_by_user'])
                     || (BashProcessActionEnum::SettleTimeout === $action && BackgroundProcessStatusEnum::Stopped === $status);
                 if (null !== $exitCode || $gone || $settledStop) {
@@ -422,7 +437,7 @@ final class ProcessStore
                 }
             }
 
-            return new BashProcessSnapshotDTO($recordId, $runId, (int) $row['pid'], null === $row['pgid'] ? null : (int) $row['pgid'], (string) $row['status_path'], $finished, $status, $signalRequired);
+            return new BashProcessSnapshotDTO($recordId, $runId, null === $row['pid'] ? null : (int) $row['pid'], null === $row['pgid'] ? null : (int) $row['pgid'], (string) $row['status_path'], $finished, $status, $signalRequired);
         });
     }
 
@@ -430,9 +445,9 @@ final class ProcessStore
     private function hydrateSnapshot(array $row): BashProcessRecordDTO
     {
         return new BashProcessRecordDTO(
-            (int) $row['id'], (int) $row['pid'], null === $row['pgid'] ? null : (int) $row['pgid'],
+            (int) $row['id'], null === $row['pid'] ? null : (int) $row['pid'], null === $row['pgid'] ? null : (int) $row['pgid'],
             (string) $row['session_id'], (string) $row['command'], (string) $row['log_path'], (string) $row['status_path'],
-            new \DateTimeImmutable((string) $row['started_at']), null === $row['finished_at'] ? null : new \DateTimeImmutable((string) $row['finished_at']),
+            null === $row['started_at'] ? null : new \DateTimeImmutable((string) $row['started_at']), null === $row['finished_at'] ? null : new \DateTimeImmutable((string) $row['finished_at']),
             null === $row['exit_code'] ? null : (int) $row['exit_code'], (bool) $row['stopped_by_user'],
             null === $row['backgrounded_at'] ? null : new \DateTimeImmutable((string) $row['backgrounded_at']),
             null === $row['tool_call_id'] ? null : (string) $row['tool_call_id'], (bool) $row['background_requested'],

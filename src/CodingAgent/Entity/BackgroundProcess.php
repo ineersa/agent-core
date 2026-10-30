@@ -15,7 +15,7 @@ use Doctrine\ORM\Mapping as ORM;
  *
  * created_at / updated_at are \DateTimeImmutable maintained by
  * TimestampableLifecycleTrait.
- * Registration sets started_at. Owner decisions in ProcessStore update
+ * Owner preparation may leave pid/started_at null until launch. ProcessStore updates
  * terminal state and semantic process times through DBAL.
  */
 #[ORM\Entity(repositoryClass: BackgroundProcessRepository::class)]
@@ -46,8 +46,8 @@ class BackgroundProcess
      * @see ProcessStore::latestSnapshot() for public PID-based lookup semantics
      * @see BackgroundProcessManager::findByRecordId() for immutable lookup
      */
-    #[ORM\Column(type: 'integer')]
-    public int $pid = 0;
+    #[ORM\Column(type: 'integer', nullable: true)]
+    public ?int $pid = null;
 
     #[ORM\Column(type: 'integer', nullable: true)]
     public ?int $pgid = null;
@@ -64,8 +64,8 @@ class BackgroundProcess
     #[ORM\Column(name: 'status_path', type: 'string')]
     public string $statusPath = '';
 
-    #[ORM\Column(name: 'started_at', type: 'datetime_immutable')]
-    public \DateTimeImmutable $startedAt;
+    #[ORM\Column(name: 'started_at', type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $startedAt = null;
 
     #[ORM\Column(name: 'finished_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $finishedAt = null;
@@ -107,7 +107,7 @@ class BackgroundProcess
     /** No-arg constructor for Doctrine hydration. Sets timestamp defaults. */
     public function __construct()
     {
-        $this->startedAt = new \DateTimeImmutable();
+        $this->startedAt = null;
         $this->createdAt = new \DateTimeImmutable();
         $this->updatedAt = new \DateTimeImmutable();
     }
