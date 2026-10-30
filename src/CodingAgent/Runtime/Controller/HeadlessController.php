@@ -204,8 +204,8 @@ final class HeadlessController
 
         // Exclusive startup cleanup finished above while run_control was still
         // absent. Ordinary controller stop/observe/timeout metadata now uses
-        // one-way owner commands; shutdown retains run_control until lifecycle
-        // cleanup finishes.
+        // one-way owner commands. Session shutdown stops every consumer first,
+        // then switches to local lifecycle ownership for exclusive cleanup.
         $this->backgroundProcesses->useRemoteLifecycleOwner();
 
         // Same event type/payload as before; emission now follows consumer launch.
@@ -506,12 +506,14 @@ final class HeadlessController
         // Parent JsonlProcessAgentSessionClient stop budget is 7s. Share one
         // deadline across consumers and broker so sequential 5s+5s grace cannot
         // outlive that parent SIGKILL.
-        $this->consumerSupervisor->shutdownUntil($deadline, keepRunControl: true);
+        // Stop every consumer, including run_control, before exclusive local
+        // session cleanup. Shutdown listeners no longer need a live owner reply.
+        $this->consumerSupervisor->shutdownUntil($deadline);
 
         try {
-            // Consumers are already draining or kept only for lifecycle. Local
-            // finished-row deletion is required; one-way remote deletes cannot
-            // prove completion before this process exits.
+            // Consumers are already gone. Local finished-row deletion is
+            // required; one-way remote deletes cannot prove completion before
+            // this process exits.
             $this->backgroundProcesses->useLocalLifecycleOwner();
             $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
         } catch (\Throwable $exception) {
@@ -522,7 +524,6 @@ final class HeadlessController
                 'exception' => $exception,
             ]);
         } finally {
-            $this->consumerSupervisor->shutdownUntil($deadline);
             $this->brokerSupervisor->shutdownUntil($deadline);
             // Release only after consumers and lifecycle listeners finish so a
             // replacement controller cannot race against cleanup.

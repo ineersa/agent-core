@@ -116,9 +116,9 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Session lifecycle cleanup runs while consumers are already gone or about
-     * to leave. Finished-row deletion must write locally; one-way remote
-     * commands cannot prove the delete completed before the controller exits.
+     * Session lifecycle cleanup runs after every consumer has stopped.
+     * Finished-row deletion must write locally; one-way remote commands cannot
+     * prove the delete completed before the controller exits.
      */
     public function useLocalLifecycleOwner(): void
     {

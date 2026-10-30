@@ -93,6 +93,10 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $this->assertFileExists($foreign['log']);
         $this->assertTrue($this->store->existsByRecordId($unsafe['id']));
         $this->assertFileExists($unsafe['log']);
+
+        // Retention covers durable row/sidecars only. Stop the intentionally
+        // retained foreign OS process so the QA leak guard stays clean.
+        $this->manager->stopByRecordId($foreign['id'], 'foreign-run');
     }
 
     #[Test]
@@ -116,15 +120,25 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
      */
     private function startAccepted(string $sessionId, string $prefix): array
     {
-        $result = $this->manager->start('exec sleep 30', $sessionId);
+        $toolCallId = $prefix.'-tool';
+        $prepared = $this->manager->prepareNativeLaunch($sessionId, $toolCallId, 'exec sleep 30', true);
+        $result = $this->manager->start(
+            'exec sleep 30',
+            $sessionId,
+            $toolCallId,
+            preparedRecordId: $prepared->id,
+            preparedLogPath: $prepared->logPath,
+            preparedStatusPath: $prepared->statusPath,
+        );
+        $this->assertNotNull($result->id);
         $this->manager->markBackgroundedForRecord($result->id, $sessionId);
 
         return [
             'id' => $result->id,
             'pid' => $result->pid,
             'log' => $result->logPath,
-            'status' => substr($result->logPath, 0, -4).'.status',
-            'pid_file' => substr($result->logPath, 0, -4).'.pid',
+            'status' => $result->statusPath,
+            'pid_file' => preg_replace('/\.status$/', '.pid', $result->statusPath) ?? ($result->statusPath.'.pid'),
         ];
     }
 
@@ -153,7 +167,8 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $this->assertNotNull($entity);
         BackgroundProcessFixture::finish($entity, 0, new \DateTimeImmutable());
         self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->flush();
-        $this->manager->markBackgroundedForRecord($id, $sessionId);
+        // Finished fixtures cannot use native acceptance; stamp accepted_at directly.
+        $this->store->applyAcceptedByRecord($id, $sessionId, new \DateTimeImmutable());
 
         return ['id' => $id, 'log' => $logPath];
     }
