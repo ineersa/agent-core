@@ -66,7 +66,6 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\RegisterBashProcessHandler
 use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO;
-use Ineersa\CodingAgent\Application\Message\DTO\RegisterCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\ReserveChildInvocationDTO;
 use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleHandler;
@@ -396,11 +395,12 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         });
     }
 
-    public function testCodeModeRegistrationAndReadinessShareTheIndependentToolReplyPump(): void
+    public function testCodeModeReadinessSharesTheIndependentToolReplyPump(): void
     {
         $this->withBroker(function (SessionSqliteQueuePaths $paths, string $owner, RegisterBashProcessHandler $bash, BashRegistrationReplyPublisher $publisher): void {
             $invocation = new DeferredToolCompletionCorrelation('canonical-code-mode', $owner, 1, 'step', 1, 'key', 'call', 'code_mode', [], 0);
             TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(ToolBatchStoreInterface::class), $invocation);
+            self::getContainer()->get(DeferredToolCompletionRepository::class)->registerPending($invocation);
             $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
             $sender = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
             $sent = 0;
@@ -411,19 +411,19 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
                     $saturated->complete();
                 }
             });
-            $locator = new SendersLocator([RegisterCodeModeInvocationDTO::class => ['run_control'], ReadyCodeModeInvocationDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
+            $locator = new SendersLocator([ReadyCodeModeInvocationDTO::class => ['run_control']], new ServiceLocator(['run_control' => static fn () => $sender]));
             $client = new BashRegistrationClient(new MessageBus([new SendMessageMiddleware(new SerializedBrokerSendersLocator($locator), $events)]), $paths->endpointPath, $owner, self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(ValidatorInterface::class));
             $lifecycle = new CodeModeLifecycleService(self::getContainer()->get(DeferredToolCompletionRepository::class));
             $handler = new CodeModeLifecycleHandler($lifecycle, $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
             $ownerTask = async(static function () use ($saturated, $requests, $handler): void {
                 $saturated->getFuture()->await(new TimeoutCancellation(8));
-                for ($handled = 0; $handled < 32;) {
+                for ($handled = 0; $handled < 16;) {
                     foreach ($requests->get() as $delivery) {
                         $handler($delivery->getMessage());
                         $requests->ack($delivery);
                         ++$handled;
                     }
-                    if ($handled < 32) {
+                    if ($handled < 16) {
                         $requests->wait(3000, new TimeoutCancellation(8));
                     }
                 }
@@ -431,18 +431,15 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             try {
                 $tasks = [];
                 for ($i = 0; $i < 16; ++$i) {
-                    $tasks[] = async(static function () use ($client, $invocation): string {
-                        $id = $client->registerCodeMode($invocation);
-                        $client->readyCodeMode($invocation->runId, $id);
-
-                        return $id;
+                    $tasks[] = async(static function () use ($client, $invocation): void {
+                        $client->readyCodeMode($invocation->runId, $invocation->deferredId);
                     });
                 }
                 foreach ($tasks as $task) {
-                    $this->assertSame($invocation->deferredId, $task->await(new TimeoutCancellation(8)));
+                    $task->await(new TimeoutCancellation(8));
                 }
                 $ownerTask->await(new TimeoutCancellation(8));
-                $this->assertSame(32, $sent);
+                $this->assertSame(16, $sent);
                 $this->assertNotNull(self::getContainer()->get(DeferredToolCompletionRepository::class)->findMetadataByDeferredId($invocation->deferredId)?->readyAt);
             } finally {
                 $requests->close();
@@ -451,7 +448,7 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
         });
     }
 
-    public function testCodeModeLostRepliesRedeliverOnlyMetadataAndKeepCanonicalIdentity(): void
+    public function testCodeModeLostReadinessRepliesRedeliverOnlyMetadataAndKeepCanonicalIdentity(): void
     {
         // Native lease redelivery is the external contract; WAIT observes broker
         // eligibility and the test future deadline is only a failure cap.
@@ -459,27 +456,27 @@ final class BashRegistrationClientTest extends IsolatedKernelTestCase
             $invocation = new DeferredToolCompletionCorrelation('canonical-code-mode', $owner, 1, 'step', 1, 'key', 'call', 'code_mode', [], 0);
             TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(ToolBatchStoreInterface::class), $invocation);
             $repository = self::getContainer()->get(DeferredToolCompletionRepository::class);
+            $repository->registerPending($invocation);
             $handler = new CodeModeLifecycleHandler(new CodeModeLifecycleService($repository), $publisher, self::getContainer()->get(ValidatorInterface::class), $owner);
             $requests = (new TransportFactory())->createTransport('sqlite-queue://run_control?endpoint='.rawurlencode($paths->endpointPath), [], new PhpSerializer());
             $replies = (new TransportFactory())->createTransport('sqlite-queue://bash_registration_reply_tool?endpoint='.rawurlencode($paths->endpointPath), [], new Serializer(self::getContainer()->get(SerializerInterface::class)));
             try {
-                foreach ([new RegisterCodeModeInvocationDTO($invocation, str_repeat('b', 32), str_repeat('c', 32), BashRequesterRoleEnum::Tool), new ReadyCodeModeInvocationDTO($owner, $invocation->deferredId, str_repeat('b', 32), str_repeat('d', 32), BashRequesterRoleEnum::Tool)] as $command) {
-                    $requests->send(new Envelope($command));
-                    $delivery = iterator_to_array($requests->get())[0];
-                    $handler($delivery->getMessage());
-                    $first = iterator_to_array($replies->get())[0];
-                    $this->assertSame($invocation->deferredId, $first->getMessage()->deferredId);
-                    $replies->ack($first);
-                    $ready = $repository->findMetadataByDeferredId($invocation->deferredId)?->readyAt;
-                    $requests->wait(3000, new TimeoutCancellation(8));
-                    $redelivery = iterator_to_array($requests->get())[0];
-                    $handler($redelivery->getMessage());
-                    $second = iterator_to_array($replies->get())[0];
-                    $this->assertSame($invocation->deferredId, $second->getMessage()->deferredId);
-                    $this->assertEquals($ready, $repository->findMetadataByDeferredId($invocation->deferredId)?->readyAt);
-                    $replies->ack($second);
-                    $requests->ack($redelivery);
-                }
+                $command = new ReadyCodeModeInvocationDTO($owner, $invocation->deferredId, str_repeat('b', 32), str_repeat('d', 32), BashRequesterRoleEnum::Tool);
+                $requests->send(new Envelope($command));
+                $delivery = iterator_to_array($requests->get())[0];
+                $handler($delivery->getMessage());
+                $first = iterator_to_array($replies->get())[0];
+                $this->assertSame($invocation->deferredId, $first->getMessage()->deferredId);
+                $replies->ack($first);
+                $ready = $repository->findMetadataByDeferredId($invocation->deferredId)?->readyAt;
+                $requests->wait(3000, new TimeoutCancellation(8));
+                $redelivery = iterator_to_array($requests->get())[0];
+                $handler($redelivery->getMessage());
+                $second = iterator_to_array($replies->get())[0];
+                $this->assertSame($invocation->deferredId, $second->getMessage()->deferredId);
+                $this->assertEquals($ready, $repository->findMetadataByDeferredId($invocation->deferredId)?->readyAt);
+                $replies->ack($second);
+                $requests->ack($redelivery);
             } finally {
                 $requests->close();
                 $replies->close();

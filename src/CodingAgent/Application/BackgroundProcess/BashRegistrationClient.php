@@ -22,7 +22,6 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessDTO
 use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO;
-use Ineersa\CodingAgent\Application\Message\DTO\RegisterCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\ReserveChildInvocationDTO;
 use Ineersa\SqliteQueue\Messenger\TransportFactory;
@@ -83,12 +82,6 @@ final class BashRegistrationClient
             ?? throw new \UnexpectedValueException('Missing deferred registration identity.');
     }
 
-    public function registerCodeMode(DeferredToolCompletionCorrelation $invocation): string
-    {
-        return $this->request(new RegisterCodeModeInvocationDTO($invocation, $this->incarnation, bin2hex(random_bytes(16)), $this->role))->deferredId
-            ?? throw new \UnexpectedValueException('Missing code-mode registration identity.');
-    }
-
     public function readyCodeMode(string $runId, string $deferredId): void
     {
         $reply = $this->request(new ReadyCodeModeInvocationDTO($runId, $deferredId, $this->incarnation, bin2hex(random_bytes(16)), $this->role));
@@ -119,7 +112,7 @@ final class BashRegistrationClient
             ?? throw new \UnexpectedValueException('Missing Bash ownership result.');
     }
 
-    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO|RegisterCodeModeInvocationDTO|ReadyCodeModeInvocationDTO|ReserveChildInvocationDTO|RecordChildLaunchSuccessDTO|RecordChildLaunchFailureDTO|RegisterDeferredInvocationDTO $command): BashRegistrationReplyDTO
+    private function request(RegisterBashProcessCommandDTO|BashOwnershipCommandDTO|BashProcessCommandDTO|ReadyCodeModeInvocationDTO|ReserveChildInvocationDTO|RecordChildLaunchSuccessDTO|RecordChildLaunchFailureDTO|RegisterDeferredInvocationDTO $command): BashRegistrationReplyDTO
     {
         $errors = $this->validator->validate($command);
         if (0 !== \count($errors)) {

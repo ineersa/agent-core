@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
@@ -23,14 +24,18 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
+use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Session\CanonicalToolInvocationReader;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use Ineersa\CodingAgent\Tests\Runtime\Messenger\Support\ToolPayloadWorkerTransport;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
@@ -60,7 +65,7 @@ use Symfony\Component\Messenger\Worker;
 use Symfony\Component\Validator\ConstraintViolationList;
 use Symfony\Component\Validator\Validation;
 
-final class ToolPayloadMiddlewareTest extends TestCase
+final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
 {
     #[DataProvider('ackModes')]
     public function testNativeWorkerReleasesExactReferenceIdentityAndPreservesHandlerOutcome(bool $explicitAck): void
@@ -259,6 +264,64 @@ final class ToolPayloadMiddlewareTest extends TestCase
         $this->assertNotNull($result->last(HandledStamp::class));
     }
 
+    public function testProducerPreparesCodeModeBeforeSealingExecutionAndReusesIdentity(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('owner prepared code_mode');
+        $code = new ExecuteToolCall($run, 1, 'step', 1, 'key', 'code-call', 'code_mode', ['script' => 'return 1;'], 0, mode: 'parallel', maxParallelism: 2);
+        $other = new ExecuteToolCall($run, 1, 'step', 1, 'other-key', 'echo-call', 'echo', ['text' => 'hi'], 1, mode: 'parallel', maxParallelism: 2);
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        $admitted = TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'step',
+            [$code, $other],
+        );
+        $this->assertCount(2, $admitted);
+
+        $deferred = $container->get(DeferredToolCompletionRepository::class);
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'code-call'));
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'echo-call'));
+
+        $published = [];
+        $bus = new MessageBus([
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [function (ToolPayloadMessage $message) use (&$published, $deferred, $run): ToolPayloadMessage {
+                    $published[] = $message;
+                    if ('code-call' === $message->reference->toolCallId) {
+                        $metadata = $deferred->findMetadataByRunAndToolCall($run, 'code-call');
+                        $this->assertNotNull($metadata, 'Deferred row must exist inside the outgoing ToolPayloadMessage path.');
+                        $this->assertSame('code_mode', $metadata->reference->toolName);
+                    }
+
+                    return $message;
+                }],
+            ])),
+        ]);
+
+        $sealed = $bus->dispatch($code);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $sealed->getMessage());
+        $metadata = $deferred->findMetadataByRunAndToolCall($run, 'code-call');
+        $this->assertNotNull($metadata);
+        $firstId = $metadata->deferredId;
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'echo-call'));
+
+        $repeat = $bus->dispatch($code);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $repeat->getMessage());
+        $this->assertSame($firstId, $deferred->findMetadataByRunAndToolCall($run, 'code-call')?->deferredId);
+
+        $otherSealed = $bus->dispatch($other);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $otherSealed->getMessage());
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'echo-call'));
+
+        $this->assertGreaterThanOrEqual(2, \count($published));
+        $this->assertNull($published[0]->deferredId);
+        $this->assertSame($firstId, $container->get(CodeModeLifecycleService::class)->prepare($code));
+    }
+
     #[DataProvider('mismatchedIdentities')]
     public function testDeferredReceiverRefusesMismatchedIdentityEvenAfterCompletion(string $field): void
     {
@@ -320,6 +383,7 @@ final class ToolPayloadMiddlewareTest extends TestCase
         return new ToolPayloadMiddleware(
             $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class))), $deferred, $locks,
             Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(), $commands, $logger,
-            new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+            new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            self::getContainer()->get(CodeModeLifecycleService::class));
     }
 }

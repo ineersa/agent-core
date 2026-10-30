@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
@@ -266,10 +267,11 @@ PHP);
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
 
+        $runId = $this->prepareTopLevelRegistration('code-mode-bridge-test-request-cap');
         try {
             $accessor->with(
                 new ToolContext(
-                    runId: 'code-mode-bridge-test',
+                    runId: $runId,
                     turnNo: 1,
                     toolCallId: 'code-mode-bridge-test-request-cap',
                     toolName: 'code_mode',
@@ -372,9 +374,10 @@ PHP);
             self::getContainer()->get(CodeModeLifecycleService::class),
         );
 
+        $runId = $this->prepareTopLevelRegistration('code-mode-bridge-test-budget');
         $result = $accessor->with(
             new ToolContext(
-                runId: 'code-mode-bridge-test',
+                runId: $runId,
                 turnNo: 1,
                 toolCallId: 'code-mode-bridge-test-budget',
                 toolName: 'code_mode',
@@ -831,6 +834,58 @@ PHP);
         $this->assertFileDoesNotExist($marker);
     }
 
+    public function testMissingOwnerPreparationRefusesDispatchedTopLevelCall(): void
+    {
+        $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('missing code_mode preparation');
+        $call = new ExecuteToolCall($run, 1, 'code-mode-bridge-test-step', 1, 'key', 'code-mode-bridge-test-1', 'code_mode', ['script' => 'return 1;'], 0);
+        $batches = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::register(
+            new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'code-mode-bridge-test-step',
+            [$call],
+        );
+        $this->assertNull(self::getContainer()->get(DeferredToolCompletionRepository::class)->findMetadataByRunAndToolCall($run, 'code-mode-bridge-test-1'));
+
+        try {
+            $this->runScript($this->bridge(), 'return 1;', runId: $run, prepareRegistration: false);
+            $this->fail('Missing owner preparation must refuse.');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('Owner-prepared code_mode registration is missing', $exception->getMessage());
+            $this->assertFalse($exception->retryable());
+        }
+    }
+
+    public function testTopLevelContextWithoutCanonicalBatchIsRefused(): void
+    {
+        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
+
+        try {
+            $accessor->with(
+                new ToolContext(
+                    runId: 'unbatched-code-mode',
+                    turnNo: 1,
+                    toolCallId: 'code-mode-bridge-test-1',
+                    toolName: 'code_mode',
+                    cancellationToken: new NullCancellationToken(),
+                    timeoutSeconds: 10,
+                    orderIndex: 0,
+                    humanInputAnswer: null,
+                    stepId: 'code-mode-bridge-test-step',
+                    parentModel: null,
+                ),
+                fn (): mixed => $this->bridge()->execute('return 1;'),
+            );
+            $this->fail('Top-level code_mode without a canonical batch must refuse.');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('canonical batch invocation', $exception->getMessage());
+            $this->assertFalse($exception->retryable());
+        }
+    }
+
     private function bridge(): CodeModeHostBridge
     {
         $bridge = self::getContainer()->get('test.code_mode_host_bridge');
@@ -899,6 +954,7 @@ PHP);
         $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('retained diagnostics');
         $call = new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(Uuid::v7()->toRfc4122(), $run, 1, 'code-mode-bridge-test-step', 1, 'key', 'code-mode-bridge-test-1', 'code_mode', [], 0);
         \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class), $call);
+        self::getContainer()->get(DeferredToolCompletionRepository::class)->registerPending($call);
 
         return $run;
     }
@@ -911,9 +967,13 @@ PHP);
         ?int $parentTimeoutSeconds = 10,
         ?CancellationTokenInterface $cancelToken = null,
         string $runId = 'code-mode-bridge-test',
+        bool $prepareRegistration = true,
     ): mixed {
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $this->assertInstanceOf(StackToolExecutionContextAccessor::class, $accessor);
+        if ($prepareRegistration) {
+            $runId = $this->ensurePreparedRegistration($runId);
+        }
 
         return $accessor->with(
             new ToolContext(
@@ -930,6 +990,54 @@ PHP);
             ),
             static fn (): mixed => $bridge->execute($script, $timeoutSeconds, $memoryLimitMb),
         );
+    }
+
+    private function ensurePreparedRegistration(string $runId): string
+    {
+        $batches = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
+        $call = $batches->loadCall($runId, 1, 'code-mode-bridge-test-step', 'code-mode-bridge-test-1');
+        if (!$call instanceof ExecuteToolCall) {
+            if ('code-mode-bridge-test' === $runId) {
+                $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('code mode bridge fixture');
+            }
+            $call = new ExecuteToolCall($runId, 1, 'code-mode-bridge-test-step', 1, 'key', 'code-mode-bridge-test-1', 'code_mode', [], 0);
+            \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::register(
+                new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batches),
+                $batches,
+                $runId,
+                1,
+                'code-mode-bridge-test-step',
+                [$call],
+            );
+            $call = $batches->loadCall($runId, 1, 'code-mode-bridge-test-step', 'code-mode-bridge-test-1');
+            $this->assertInstanceOf(ExecuteToolCall::class, $call);
+        }
+        $repository = self::getContainer()->get(DeferredToolCompletionRepository::class);
+        if (null === $repository->findMetadataByRunAndToolCall($runId, 'code-mode-bridge-test-1')) {
+            self::getContainer()->get(CodeModeLifecycleService::class)->prepare($call);
+        }
+
+        return $runId;
+    }
+
+    private function prepareTopLevelRegistration(string $toolCallId): string
+    {
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('code mode bridge '.$toolCallId);
+        $call = new ExecuteToolCall($runId, 1, 'code-mode-bridge-test-step', 1, 'key-'.$toolCallId, $toolCallId, 'code_mode', [], 0);
+        $batches = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface::class);
+        \Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration::register(
+            new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batches),
+            $batches,
+            $runId,
+            1,
+            'code-mode-bridge-test-step',
+            [$call],
+        );
+        $call = $batches->loadCall($runId, 1, 'code-mode-bridge-test-step', $toolCallId);
+        $this->assertInstanceOf(ExecuteToolCall::class, $call);
+        self::getContainer()->get(CodeModeLifecycleService::class)->prepare($call);
+
+        return $runId;
     }
 
     private function waitUntilProcessExits(Process $process, float $timeoutSeconds = 2.0): void

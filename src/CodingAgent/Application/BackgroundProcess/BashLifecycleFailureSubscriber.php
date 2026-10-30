@@ -11,7 +11,6 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCom
 use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO;
-use Ineersa\CodingAgent\Application\Message\DTO\RegisterCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\ReserveChildInvocationDTO;
 use Psr\Container\ContainerInterface;
@@ -43,7 +42,7 @@ final readonly class BashLifecycleFailureSubscriber implements EventSubscriberIn
             return;
         }
         $command = $event->getEnvelope()->getMessage();
-        if (!$command instanceof RegisterBashProcessCommandDTO && !$command instanceof BashOwnershipCommandDTO && !$command instanceof BashProcessCommandDTO && !$command instanceof RegisterCodeModeInvocationDTO && !$command instanceof ReadyCodeModeInvocationDTO && !$command instanceof ReserveChildInvocationDTO && !$command instanceof RecordChildLaunchSuccessDTO && !$command instanceof RecordChildLaunchFailureDTO && !$command instanceof RegisterDeferredInvocationDTO) {
+        if (!$command instanceof RegisterBashProcessCommandDTO && !$command instanceof BashOwnershipCommandDTO && !$command instanceof BashProcessCommandDTO && !$command instanceof ReadyCodeModeInvocationDTO && !$command instanceof ReserveChildInvocationDTO && !$command instanceof RecordChildLaunchSuccessDTO && !$command instanceof RecordChildLaunchFailureDTO && !$command instanceof RegisterDeferredInvocationDTO) {
             return;
         }
         $this->container->get(BashRegistrationReplyPublisher::class)->publish(new BashRegistrationReplyDTO($this->sessionId, $command->incarnation, $command->correlation, failed: true, role: $command->role));

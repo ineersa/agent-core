@@ -4,11 +4,20 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
+use Symfony\Component\Uid\UuidV7;
 
+/**
+ * Owner-local code_mode deferred registration and readiness.
+ *
+ * Registration runs in run_control before ExecuteToolCall dispatch. The tool
+ * host resolves that prepared identity and never allocates or registers one.
+ * Readiness still uses the worker reply client until a later slice removes it.
+ */
 final class CodeModeLifecycleService
 {
     private ?BashRegistrationClient $owner = null;
@@ -22,15 +31,34 @@ final class CodeModeLifecycleService
         $this->owner = $owner;
     }
 
-    public function register(DeferredToolCompletionCorrelation $invocation): string
+    public function prepare(ExecuteToolCall $call): string
     {
-        if ('code_mode' !== $invocation->toolName) {
+        if ('code_mode' !== $call->toolName) {
             throw new ToolPayloadException('Code-mode registration requires a code_mode invocation.');
         }
 
-        // The invocation identity, not the requester incarnation or proposed ID,
-        // deduplicates retries. No process is launched by this metadata operation.
-        return null !== $this->owner ? $this->owner->registerCodeMode($invocation) : $this->deferred->registerPending($invocation)->deferredId;
+        $correlation = new DeferredToolCompletionCorrelation(
+            deferredId: UuidV7::v7()->toRfc4122(),
+            runId: $call->runId(),
+            turnNo: $call->turnNo(),
+            stepId: $call->stepId(),
+            attempt: $call->attempt(),
+            idempotencyKey: $call->idempotencyKey(),
+            toolCallId: $call->toolCallId,
+            toolName: $call->toolName,
+            arguments: $call->args,
+            orderIndex: $call->orderIndex,
+            toolIdempotencyKey: $call->toolIdempotencyKey,
+            mode: $call->mode,
+            timeoutSeconds: $call->timeoutSeconds,
+            maxParallelism: $call->maxParallelism,
+            argSchema: $call->argSchema,
+            toolsRef: $call->toolsRef,
+        );
+
+        // Producer/run_control never calls DeferredToolCompletionRepository::useOwner(),
+        // so registerPending() stays owner-local under the existing run lock.
+        return $this->deferred->registerPending($correlation)->deferredId;
     }
 
     public function ready(string $runId, string $deferredId): void

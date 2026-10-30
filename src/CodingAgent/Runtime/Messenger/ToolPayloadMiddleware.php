@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
+use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use Psr\Log\LoggerInterface;
@@ -53,6 +54,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         private readonly LoggerInterface $logger,
         private readonly CompleteDeferredToolCallHandler $deferredHandler,
         private readonly DenormalizerInterface $serializer,
+        private readonly CodeModeLifecycleService $codeModeLifecycle,
     ) {
     }
 
@@ -185,7 +187,18 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             [$deferredId, $reference] = $this->publishProcessedResult($message);
         } else {
             $deferredId = null;
-            $reference = $this->locks->synchronized($message->runId(), fn () => $this->admission->canPublish($message) ? $this->payloads->publish($message) : null);
+            $reference = $this->locks->synchronized($message->runId(), function () use ($message): ?ToolPayloadReferenceDTO {
+                if (!$this->admission->canPublish($message)) {
+                    return null;
+                }
+                // Prepare code_mode deferred identity before the execution
+                // reference is sealed and sent. Failure prevents dispatch.
+                if ($message instanceof ExecuteToolCall && 'code_mode' === $message->toolName) {
+                    $this->codeModeLifecycle->prepare($message);
+                }
+
+                return $this->payloads->publish($message);
+            });
         }
         if (null === $reference) {
             return $envelope->with(new HandledStamp(null, self::class));
