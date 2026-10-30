@@ -220,6 +220,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         if (!$message instanceof ExecuteToolCall && !$message instanceof ExecuteShellToolCall && !$message instanceof ToolCallResult && !$message instanceof CompleteDeferredToolCall) {
             return $stack->next()->handle($envelope, $stack);
         }
+        $nativeStamp = null;
         if ($message instanceof CompleteDeferredToolCall) {
             $deferredId = $message->deferredId;
             $reference = $this->publishDeferred($message);
@@ -227,7 +228,6 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             [$deferredId, $reference, $nativeStamp] = $this->publishProcessedResult($message);
         } else {
             $deferredId = null;
-            $nativeStamp = null;
             $reference = $this->locks->synchronized($message->runId(), function () use ($message, &$deferredId): ?ToolPayloadReferenceDTO {
                 if (!$this->admission->canPublish($message)) {
                     return null;

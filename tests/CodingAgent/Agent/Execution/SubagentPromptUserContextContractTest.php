@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
@@ -94,7 +95,21 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
                     instructions: 'Scout child instructions.',
                 ),
             ]),
-        );
+            prepare: new ExecuteToolCall(
+                $parentRunId,
+                1,
+                'gf05-scout-call-step',
+                1,
+                hash('sha256', 'gf05-scout-call'),
+                'gf05-scout-call',
+                'subagent',
+                [
+                    'agent' => 'gf05-scout',
+                    'task' => 'Inspect layout contract',
+                ],
+                0,
+                parentModel: 'test-model',
+            ));
 
         self::getContainer()->get(StackToolExecutionContextAccessor::class)->with(new ToolContext(
             runId: $parentRunId,
@@ -103,6 +118,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             toolName: 'subagent',
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
+            orderIndex: 0,
             parentModel: 'test-model',
             launchContext: new ToolLaunchContextDTO(
                 kind: ToolLaunchContextDTO::KIND_SUBAGENT,
@@ -206,7 +222,21 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
                 ),
             ]),
             registry: $registry,
-        );
+            prepare: new ExecuteToolCall(
+                'parent-mcp',
+                1,
+                'parent-mcp-call-step',
+                1,
+                hash('sha256', 'parent-mcp-call'),
+                'parent-mcp-call',
+                'subagent',
+                [
+                    'agent' => 'gf05-mcp',
+                    'task' => 'Use MCP tool',
+                ],
+                0,
+                parentModel: 'test-model',
+            ));
 
         self::getContainer()->get(StackToolExecutionContextAccessor::class)->with(new ToolContext(
             runId: 'parent-mcp',
@@ -215,6 +245,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             toolName: 'subagent',
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
+            orderIndex: 0,
             parentModel: 'test-model',
             launchContext: new ToolLaunchContextDTO(
                 kind: ToolLaunchContextDTO::KIND_SUBAGENT,
@@ -293,7 +324,21 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
                     instructions: 'Worker.',
                 ),
             ]),
-        );
+            prepare: new ExecuteToolCall(
+                'parent-no-agents-def',
+                1,
+                'parent-no-agents-call-step',
+                1,
+                hash('sha256', 'parent-no-agents-call'),
+                'parent-no-agents-call',
+                'subagent',
+                [
+                    'agent' => 'gf05-worker',
+                    'task' => 'Task',
+                ],
+                0,
+                parentModel: 'test-model',
+            ));
 
         self::getContainer()->get(StackToolExecutionContextAccessor::class)->with(new ToolContext(
             runId: 'parent-no-agents-def',
@@ -302,6 +347,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             toolName: 'subagent',
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
+            orderIndex: 0,
             parentModel: 'test-model',
             launchContext: new ToolLaunchContextDTO(
                 kind: ToolLaunchContextDTO::KIND_SUBAGENT,
@@ -327,6 +373,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         PipelineCapturingAgentRunner $agentRunner,
         AgentDefinitionCatalog $catalog,
         ?ToolRegistryInterface $registry = null,
+        ?ExecuteToolCall $prepare = null,
     ): SubagentExecutionService {
         $registry ??= self::getContainer()->get(ToolRegistryInterface::class);
         $policy = new AgentToolPolicyResolver($registry, $this->emptyMcpToolsResolver(), new AgentsConfig());
@@ -355,7 +402,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             'forkToolPolicyResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver::class),
             'childExtensionSelection' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
             'toolRegistry' => self::getContainer()->get(ToolRegistryInterface::class),
-        ]);
+        ], $prepare);
     }
 
     private function rebuildParentState(RunState $parentState): RunStateRebuilderInterface
