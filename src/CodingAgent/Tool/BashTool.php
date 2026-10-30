@@ -240,7 +240,7 @@ final class BashTool implements HatfieldToolProviderInterface
                 "\n".
                 "Next: inspect a bounded byte window as hexadecimal, e.g.\n".
                 "  read path=%s offset=0 limit=64\n".
-                "or use an explicit character window with a text encoding if you need readable text.",
+                'or use an explicit character window with a text encoding if you need readable text.',
                 $result->totalBytes,
                 $this->config->logTailChars,
                 $logPath,

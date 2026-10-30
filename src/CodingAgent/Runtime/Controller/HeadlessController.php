@@ -201,8 +201,11 @@ final class HeadlessController
             throw $exception;
         }
 
-        // Live stop and cleanup metadata now use the controller's reply role.
-        // Shutdown retains run_control until the lifecycle listener finishes.
+        // Exclusive startup cleanup finished above while run_control was still
+        // absent. Ordinary controller stop/observe/timeout metadata now uses
+        // one-way owner commands; shutdown retains run_control until lifecycle
+        // cleanup finishes.
+        $this->backgroundProcesses->useRemoteLifecycleOwner();
 
         // Same event type/payload as before; emission now follows consumer launch.
         $this->emitter->emit(new RuntimeEvent(

@@ -80,17 +80,6 @@ final class BackgroundProcessManager
 {
     private bool $shutdownRegistered = false;
 
-    /**
-     * Immutable record IDs launched via start() by THIS instance.
-     *
-     * Shutdown cleanup must address the exact rows this PHP process created.
-     * Tracking OS PIDs alone is unsafe: rows can be deleted while ownership
-     * remains, and PID reuse can make latestSnapshot() resolve a foreign row.
-     *
-     * @var array<int, true>
-     */
-    private array $ownedRecordIds = [];
-
     private ?MessageBusInterface $commandBus = null;
     private bool $remoteLifecycleOwner = false;
     /** @var array<string, NativeBashLaunchDTO> statusPath => native launch */
@@ -118,7 +107,8 @@ final class BackgroundProcessManager
 
     /**
      * Tool workers publish one-way process intents; they must not write SQL.
-     * Controllers and in-process owners keep local ProcessStore::decide().
+     * Controllers and schedulers use the same remote mode after exclusive
+     * startup cleanup so only run_control mutates durable process state.
      */
     public function useRemoteLifecycleOwner(): void
     {
@@ -287,8 +277,7 @@ final class BackgroundProcessManager
         ?string $preparedLogPath = null,
         ?string $preparedStatusPath = null,
         ?string $deferredId = null,
-    ): StartResult
-    {
+    ): StartResult {
         $resolvedSessionId = $sessionId ?? '';
         $usingPrepared = null !== $preparedRecordId
             && null !== $preparedLogPath
@@ -331,47 +320,8 @@ final class BackgroundProcessManager
         );
         $this->nativeLaunches[$statusFile] = $native;
 
-        try {
-            if ($usingPrepared) {
-                // Prepared rows are owner-owned. The worker keeps a local handle and
-                // reports launch/finish facts through the existing deferred completion.
-                $this->ownedRecordIds[$recordId] = true;
-            } elseif (null === $this->commandBus || '' === $resolvedSessionId) {
-                // In-process / nested tests insert locally without owner preparation.
-                $recordId = $this->store->insertRecord([
-                    'pid' => $pid,
-                    'pgid' => $pgid,
-                    'session_id' => $resolvedSessionId,
-                    'command' => $command,
-                    'tool_call_id' => $toolCallId,
-                    'deadline_nanoseconds' => $deadlineNanoseconds,
-                    'background_requested' => $backgroundRequested,
-                    'log_path' => $logFile,
-                    'status_path' => $statusFile,
-                    'started_at' => $now,
-                ]);
-                $this->ownedRecordIds[$recordId] = true;
-                $native = new NativeBashLaunchDTO(
-                    pid: $pid,
-                    pgid: $pgid,
-                    sessionId: $resolvedSessionId,
-                    command: $command,
-                    toolCallId: $toolCallId,
-                    deadlineNanoseconds: $deadlineNanoseconds,
-                    backgroundRequested: $backgroundRequested,
-                    logPath: $logFile,
-                    statusPath: $statusFile,
-                    startedAt: $now,
-                    recordId: $recordId,
-                    deferredId: $deferredId,
-                );
-                $this->nativeLaunches[$statusFile] = $native;
-            }
-        } catch (\Throwable $exception) {
-            unset($this->nativeLaunches[$statusFile]);
-            $this->lifecycle->sendKill($pid, $pgid);
-            throw $exception;
-        }
+        // Prepared rows stay owner-owned. Nested/unscoped launches stay local and
+        // unpersisted; nativeLaunches alone tracks live local foreground handles.
 
         $this->logger->info('background_process.started', [
             'component' => 'tool.background_process',
@@ -394,6 +344,9 @@ final class BackgroundProcessManager
         );
     }
 
+    /**
+     * @return list<BashProcessRecordDTO>
+     */
     public function list(string $sessionId): array
     {
         $records = [];
@@ -750,14 +703,16 @@ final class BackgroundProcessManager
     /**
      * Terminate background processes started by this manager instance.
      *
-     * This PHP-shutdown fallback queries only this instance's immutable record
-     * IDs. The controller lifecycle listener owns session-wide cleanup.
+     * This PHP-shutdown fallback stops only unaccepted local foreground
+     * launches still tracked in nativeLaunches. Accepted background jobs belong
+     * to the session owner; the controller lifecycle listener owns session-wide
+     * cleanup.
      *
      * @return int Number of processes terminated
      */
     public function shutdownCleanup(): int
     {
-        return $this->reapOwnedProcesses();
+        return $this->reapUnacceptedNativeLaunches();
     }
 
     /**
@@ -1096,6 +1051,10 @@ final class BackgroundProcessManager
                 return null;
             }
             $finished = null !== $snapshot->finishedAt;
+            $pid = $snapshot->pid;
+            if (null === $pid || $pid <= 0) {
+                $pid = $this->lifecycle->readPidFile($snapshot->statusPath);
+            }
             $signalRequired = !$finished && (
                 BashProcessActionEnum::Stop === $action
                 || BashProcessActionEnum::Timeout === $action
@@ -1104,48 +1063,17 @@ final class BackgroundProcessManager
             return new BashProcessSnapshotDTO(
                 $recordId,
                 $runId,
-                $snapshot->pid,
+                $pid,
                 $snapshot->pgid,
                 $snapshot->statusPath,
                 $finished,
                 $snapshot->status,
-                $signalRequired && null !== $snapshot->pid,
+                $signalRequired && null !== $pid,
             );
         }
-        // Owner/controller and in-process tests write durable decisions locally.
+
+        // In-process owner/tests write durable decisions locally.
         return $this->store->decide($recordId, $runId, $action, $this->lifecycle);
-    }
-
-    /**
-     * Reap only records started via start() on this manager instance.
-     *
-     * Used when shutdownCleanup() is called with no session id (PHP shutdown
-     * handler path). Never reads unfinished rows from the shared database.
-     */
-    private function reapOwnedProcesses(): int
-    {
-        $count = $this->reapUnacceptedNativeLaunches();
-        foreach (array_keys($this->ownedRecordIds) as $recordId) {
-            try {
-                $runId = $this->store->sessionForRecord($recordId);
-                if (null !== $runId) {
-                    $this->stopProcessRecord($recordId, $runId);
-                    ++$count;
-                }
-                // Missing rows were already removed by session/provisional cleanup.
-                // Keep ownership on failure so a later cleanup can retry.
-                unset($this->ownedRecordIds[$recordId]);
-            } catch (\Throwable $e) {
-                $this->logger->warning('background_process.shutdown_cleanup_error', [
-                    'component' => 'tool.background_process',
-                    'event_type' => 'background_process.shutdown_cleanup_error',
-                    'record_id' => $recordId,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        return $count;
     }
 
     /** Worker exit kills only unaccepted foreground launches it still owns. */

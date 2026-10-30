@@ -45,12 +45,12 @@ use Symfony\Component\Messenger\Stamp\AckStamp;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
+use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Uid\UuidV7;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Exception\ValidationFailedException as ValidatorValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
-use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
-use Symfony\Component\Uid\UuidV7;
 
 /** Seal before send_message; resolve only after owner initialization on consumption. */
 final class ToolPayloadMiddleware implements MiddlewareInterface
@@ -120,6 +120,9 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
 
                         return null;
                     }
+                } elseif ('bash' === $message->reference->toolName && 'result' === $message->reference->kind) {
+                    // Read Bash/shell physical results before freshness rejection so
+                    // owner-prepared native facts survive a stale caller.
                 } elseif (!$this->admission->accepts($message->reference, 'run_control' === $received->getTransportName())) {
                     return null;
                 }
@@ -165,6 +168,9 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                             $body->isError,
                             $body->error,
                         );
+                        if (!$this->admission->accepts($message->reference, true)) {
+                            return null;
+                        }
                     }
                 }
                 if (null !== $message->deferredId) {
@@ -301,13 +307,9 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         return $this->locks->synchronized($initial->reference->runId, function () use ($message, $initial): ?ToolPayloadReferenceDTO {
             $metadata = $this->deferredMetadata($message->deferredId);
             $this->assertDeferredReference($metadata, $initial->reference);
-            // Physical Bash completions must still seal so the owner can apply
-            // native facts even when the caller is already stale.
-            if ('bash' !== $metadata->reference->toolName
-                && ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, false))) {
-                $ref = $metadata->reference;
-                $this->deferredHandler->settle($metadata->deferredId, $ref->runId, $ref->turnNo, $ref->stepId);
-
+            // Producer must not mutate owner settlement. Stale/non-admitted
+            // completions are dropped here; the owner decides settlement.
+            if ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, false)) {
                 return null;
             }
             // Prefer the first accepted immutable result when present so failed
@@ -331,7 +333,24 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
     private function publishProcessedResult(ToolCallResult $message): array
     {
         return $this->locks->synchronized($message->runId(), fn (): array => $this->payloads->withStorage($message->runId(), function () use ($message): array {
-            if ('completed' === $this->deferred->statusForRunAndToolCall($message->runId(), $message->toolCallId)) {
+            $metadata = $this->deferred->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
+            $details = \is_array($message->result) ? ($message->result['details'] ?? null) : null;
+            $hasBashNative = \is_array($details) && isset($details['bash_native']);
+            if (null !== $metadata && 'bash' === $metadata->reference->toolName && $hasBashNative) {
+                $this->assertDeferredReference($metadata, $metadata->reference);
+                $stored = $metadata->reference;
+                if ([$stored->runId, $stored->turnNo, $stored->stepId, $stored->attempt, $stored->idempotencyKey, $stored->toolCallId, $stored->orderIndex]
+                    !== [$message->runId(), $message->turnNo(), $message->stepId(), $message->attempt(), $message->idempotencyKey(), $message->toolCallId, $message->orderIndex]) {
+                    throw new ToolPayloadException('Bash native result does not match its prepared deferred correlation.');
+                }
+                // Seal physical Bash facts even after caller completion/staleness.
+                $reference = null !== $metadata->acceptedResultReference
+                    ? $metadata->acceptedResultReference
+                    : $this->payloads->publishFirstResult($message, $metadata->reference);
+
+                return [$metadata->deferredId, $this->remoteResultOwner ? $reference : $this->acceptCodeModeResult($reference, false)];
+            }
+            if ('completed' === ($metadata?->status ?? $this->deferred->statusForRunAndToolCall($message->runId(), $message->toolCallId))) {
                 return [null, null];
             }
             $metadata = $this->findEarlyDeferredRegistration($message);

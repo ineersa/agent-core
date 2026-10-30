@@ -249,7 +249,23 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
     private function start(string $runId = 'visible', bool $accepted = true): StartResult
     {
         $command = 'read -r release < '.escapeshellarg($this->directory.'/release');
-        $process = $this->manager->start($command, $runId, 'call');
+        $prepared = $this->manager->prepareNativeLaunch($runId, 'call', $command, false);
+        $process = $this->manager->start(
+            $command,
+            $runId,
+            'call',
+            preparedRecordId: $prepared->id,
+            preparedLogPath: $prepared->logPath,
+            preparedStatusPath: $prepared->statusPath,
+        );
+        // Local UI fixture: persist launch facts without waiting for owner receipt.
+        self::getContainer()->get(\Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore::class)->applyLaunch(
+            $prepared->id,
+            $runId,
+            $process->pid,
+            null,
+            new \DateTimeImmutable(),
+        );
         if ($accepted) {
             $this->manager->markBackgroundedForRecord($process->id, $runId);
         }
@@ -265,8 +281,8 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $client->expects(null === $send ? $this->never() : $this->once())->method('send')->willReturnCallback($send ?? static fn () => null);
         $client->expects($this->never())->method('cancel');
         $client->method('backgroundWork')->willReturnCallback(function (string $runId, ?int $observedProcessId = null) use ($snapshot): BackgroundWorkSnapshotDTO {
-            // Count opening snapshots separately from exact-record stop revalidation
-            // and UI-only settlement; those must not refresh an open picker.
+            // Opening snapshots are counted separately from exact-record stop
+            // revalidation and UI-only settlement; those must not refresh an open picker.
             if (null === $observedProcessId) {
                 ++$this->reads;
             }

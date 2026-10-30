@@ -31,6 +31,12 @@ final readonly class BashWorkerLifecycleSubscriber implements EventSubscriberInt
     public function onStarted(WorkerStartedEvent $event): void
     {
         $transports = $event->getWorker()->getMetadata()->getTransportNames();
+        if (\in_array('scheduler_default', $transports, true)) {
+            // Scheduler maintenance must publish one-way process intents only.
+            $this->container->get(BackgroundProcessManager::class)->useRemoteLifecycleOwner();
+
+            return;
+        }
         if (!\in_array('tool', $transports, true)) {
             return;
         }

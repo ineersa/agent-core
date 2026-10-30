@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -23,6 +24,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
@@ -36,6 +38,7 @@ use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
@@ -97,8 +100,6 @@ use Symfony\Component\Validator\ValidatorBuilder;
  */
 final class BashToolTest extends IsolatedKernelTestCase
 {
-    private const string TEST_SESSION = 'bash-test-session';
-
     private const string COMPOSER_MARKER = 'COMPOSER_MARKER_PID_REUSE_REGRESSION';
     private const string DATETIME_MARKER = 'DATETIME_MARKER_PID_REUSE_REGRESSION';
 
@@ -111,6 +112,8 @@ final class BashToolTest extends IsolatedKernelTestCase
     private string $tmpDir;
 
     private bool $managerCreated = false;
+
+    private string $sessionId;
 
     protected function setUp(): void
     {
@@ -132,7 +135,8 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->toolRuntime = new ToolRuntime($this->contextAccessor);
         $this->logger = new TestLogger();
-        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(new RunState(self::TEST_SESSION, RunStatus::Running));
+        $this->sessionId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('BashToolTest');
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(new RunState($this->sessionId, RunStatus::Running));
     }
 
     protected function tearDown(): void
@@ -156,7 +160,7 @@ final class BashToolTest extends IsolatedKernelTestCase
     {
         $this->createManager();
 
-        $result = $this->withContext(self::TEST_SESSION, function (): string {
+        $result = $this->withContext($this->sessionId, function () {
             return ($this->makeBashTool())(new BashArgumentsDTO(command: "printf 'line1\\nline2\\nline3\\n'"));
         });
 
@@ -183,7 +187,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $call = ToolCallBuilder::create('bash-exit')
             ->withToolName('bash')
             ->withArguments(['command' => $command])
-            ->withRunId(self::TEST_SESSION)
+            ->withRunId($this->sessionId)
             ->build();
         $result = $executor->execute($call);
 
@@ -196,19 +200,19 @@ final class BashToolTest extends IsolatedKernelTestCase
         } else {
             $this->assertSame($text, $result->content[0]['text']);
         }
-        $records = $this->recordsForSession(self::TEST_SESSION);
+        $records = $this->recordsForSession($this->sessionId);
         $this->assertCount(1, $records, 'The command must execute exactly once');
         $this->assertNotNull($records[0]->finishedAt);
 
-        $message = new ExecuteToolCall(self::TEST_SESSION, 1, 'step-exit', 1, 'execute-bash-exit', $call->toolCallId, $call->toolName, $call->arguments, 0);
+        $message = new ExecuteToolCall($this->sessionId, 1, 'step-exit', 1, 'execute-bash-exit', $call->toolCallId, $call->toolName, $call->arguments, 0);
         $codec = self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec::class);
         $events = [
-            new RunEvent(self::TEST_SESSION, 1, 1, RunEventTypeEnum::ToolExecutionStart->value, [
+            new RunEvent($this->sessionId, 1, 1, RunEventTypeEnum::ToolExecutionStart->value, [
                 'tool_call_id' => $call->toolCallId,
                 'tool_name' => $call->toolName,
                 'arguments' => $call->arguments,
             ]),
-            new RunEvent(self::TEST_SESSION, 2, 1, RunEventTypeEnum::ToolExecutionEnd->value,
+            new RunEvent($this->sessionId, 2, 1, RunEventTypeEnum::ToolExecutionEnd->value,
                 $codec->toEventPayload(ToolCallResultFactory::fromExecuteToolCallAndToolResult($message, $result))),
         ];
         $translator = self::getContainer()->get(RuntimeEventTranslator::class);
@@ -223,7 +227,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         // Full output is visible when expanded. TuiCollapsedToolCardVirtualRenderTest
         // covers bounded failed previews and the Ctrl+O expansion/collapse cycle.
         $harness = new VirtualTuiHarness(
-            sessionId: self::TEST_SESSION,
+            sessionId: $this->sessionId,
             palette: $palette,
             displayState: new TranscriptDisplayState(previewableBlocksExpanded: true),
         );
@@ -260,7 +264,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Command failed with exit code 127.');
-        $this->withContext(self::TEST_SESSION, function (): string {
+        $this->withContext($this->sessionId, function () {
             return ($this->makeBashTool())(new BashArgumentsDTO(command: 'nonexistent_command_xyz_123'));
         });
     }
@@ -276,7 +280,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             logTailChars: 20000,
         );
 
-        $result = $this->withContext(self::TEST_SESSION, function (): string {
+        $result = $this->withContext($this->sessionId, function () {
             return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "partial" && sleep 10 && echo "should not see"'));
         });
 
@@ -304,7 +308,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             )),
         );
 
-        $result = $this->withContext(self::TEST_SESSION, function () use ($command): string {
+        $result = $this->withContext($this->sessionId, function () use ($command) {
             return ($this->makeBashTool())(new BashArgumentsDTO(command: $command, timeout: 1));
         });
 
@@ -357,7 +361,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             });
 
         $context = new ToolContext(
-            runId: self::TEST_SESSION,
+            runId: $this->sessionId,
             turnNo: 1,
             toolCallId: 'tc_bash',
             toolName: 'bash',
@@ -377,7 +381,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         try {
             $this->contextAccessor->with($context, function () use (&$storedPid): string {
                 // Capture the PID before cancellation triggers in the loop
-                $entities = $this->manager->list(self::TEST_SESSION);
+                $entities = $this->manager->list($this->sessionId);
                 if ([] !== $entities) {
                     $storedPid = $entities[0]->pid;
                 }
@@ -387,7 +391,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         } finally {
             // Verify the process was stopped by the cancellation path
             if (null !== $storedPid) {
-                $entity = $this->manager->find($storedPid, self::TEST_SESSION);
+                $entity = $this->manager->find($storedPid, $this->sessionId);
                 if (null !== $entity) {
                     $this->assertNotNull($entity->finishedAt, 'Cancelled process should be marked finished');
                 }
@@ -411,7 +415,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $result = $this->validationToolbox()->execute(new ToolCall('call-bash', 'bash', []));
         $this->assertStringContainsString('command', (string) $result->getResult());
 
-        $this->assertSame([], $this->manager->list(self::TEST_SESSION), 'Handler must not run for invalid arguments.');
+        $this->assertSame([], $this->manager->list($this->sessionId), 'Handler must not run for invalid arguments.');
     }
 
     public function testEmptyCommandBecomesFaultTolerantResult(): void
@@ -422,7 +426,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('The "command" argument is required and must be a non-empty string.', $message);
-        $this->assertSame([], $this->manager->list(self::TEST_SESSION), 'Handler must not run for invalid arguments.');
+        $this->assertSame([], $this->manager->list($this->sessionId), 'Handler must not run for invalid arguments.');
     }
 
     public function testInvalidTimeoutBecomesFaultTolerantResult(): void
@@ -433,7 +437,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('The "timeout" argument must be a positive integer.', $message);
-        $this->assertSame([], $this->manager->list(self::TEST_SESSION), 'Handler must not run for invalid arguments.');
+        $this->assertSame([], $this->manager->list($this->sessionId), 'Handler must not run for invalid arguments.');
     }
 
     public function testTimeoutExceedsConfiguredMaximumBecomesFaultTolerantResult(): void
@@ -450,7 +454,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $message = (string) $result->getResult();
         $this->assertStringContainsString('Timeout must not exceed 30 seconds (9999 provided).', $message);
-        $this->assertSame([], $this->manager->list(self::TEST_SESSION), 'Handler must not run for invalid arguments.');
+        $this->assertSame([], $this->manager->list($this->sessionId), 'Handler must not run for invalid arguments.');
     }
 
     public function testExplicitTimeoutAboveDefaultIsAccepted(): void
@@ -463,7 +467,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             logTailChars: 20000,
         );
 
-        $result = $this->withContext(self::TEST_SESSION, function (): string {
+        $result = $this->withContext($this->sessionId, function () {
             return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "ok"', timeout: 30));
         });
 
@@ -487,7 +491,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         // output unchanged, without embedding any cap notice in the result string.
         $this->createManager();
 
-        $result = $this->withContext(self::TEST_SESSION, function (): string {
+        $result = $this->withContext($this->sessionId, function () {
             return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "this is a very long output that should be truncated"'));
         });
 
@@ -512,7 +516,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->createManager();
 
         $totalBytes = 3_000_000;
-        $result = $this->withContext(self::TEST_SESSION, function () use ($totalBytes): string {
+        $result = $this->withContext($this->sessionId, function () use ($totalBytes) {
             // Write a large deterministic blob via PHP (project-contract runtime).
             return ($this->makeBashTool())(new BashArgumentsDTO(command: \sprintf(
                 "php -r 'echo str_repeat(\"X\", %d);'",
@@ -633,11 +637,11 @@ final class BashToolTest extends IsolatedKernelTestCase
     {
         $this->createManager();
 
-        $this->withContext(self::TEST_SESSION, function (): string {
+        $this->withContext($this->sessionId, function () {
             return ($this->makeBashTool())(new BashArgumentsDTO(command: 'echo "session test"'));
         });
 
-        $entities = $this->recordsForSession(self::TEST_SESSION);
+        $entities = $this->recordsForSession($this->sessionId);
         $this->assertCount(1, $entities);
 
         $otherEntities = $this->recordsForSession('other-session');
@@ -660,7 +664,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $staleId = $store->insertRecord([
             'pid' => 424242,
-            'session_id' => self::TEST_SESSION,
+            'session_id' => $this->sessionId,
             'command' => 'composer info --direct',
             'log_path' => $staleLogPath,
             'status_path' => $this->tmpDir.'/stale.status',
@@ -689,7 +693,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $released = false;
         $token->method('isCancellationRequested')
             ->willReturnCallback(function () use ($em, $staleId, $releaseEndpoint, &$released): bool {
-                $records = $this->recordsForSession(self::TEST_SESSION);
+                $records = $this->recordsForSession($this->sessionId);
                 $current = $records[0] ?? null;
                 if ($released || null === $current || $current->id === $staleId) {
                     return false;
@@ -711,7 +715,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             });
 
         try {
-            $result = $this->withContext(self::TEST_SESSION, function () use ($releaseArg): string {
+            $result = $this->withContext($this->sessionId, function () use ($releaseArg) {
                 return ($this->makeBashTool())(new BashArgumentsDTO(command: 'IFS= read -r release < '.$releaseArg.'; echo '.escapeshellarg(self::DATETIME_MARKER)));
             }, cancellationToken: $token);
         } finally {
@@ -721,7 +725,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString(self::DATETIME_MARKER, $result);
         $this->assertStringNotContainsString(self::COMPOSER_MARKER, $result);
 
-        $entities = $this->recordsForSession(self::TEST_SESSION);
+        $entities = $this->recordsForSession($this->sessionId);
         $this->assertGreaterThanOrEqual(2, \count($entities));
 
         $byId = [];
@@ -746,12 +750,12 @@ final class BashToolTest extends IsolatedKernelTestCase
     {
         $this->createManager();
         try {
-            $this->withContext(self::TEST_SESSION, fn (): mixed => $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO('echo must-not-run', backgrounded: true))));
+            $this->withContext($this->sessionId, fn (): mixed => $this->withContext($this->sessionId, fn () => ($this->makeBashTool())(new BashArgumentsDTO('echo must-not-run', backgrounded: true))));
             $this->fail('Nested Bash cannot detach independently of its script.');
         } catch (ToolCallException $exception) {
             $this->assertStringContainsString('top-level Bash', $exception->getMessage());
         }
-        $this->assertSame([], $this->recordsForSession(self::TEST_SESSION));
+        $this->assertSame([], $this->recordsForSession($this->sessionId));
     }
 
     #[TestWith([false], 'foreground')]
@@ -764,7 +768,22 @@ final class BashToolTest extends IsolatedKernelTestCase
         $address = 'tcp://'.stream_socket_get_name($server, false);
         $script = '$socket = stream_socket_client('.var_export($address, true).'); fwrite($socket, "ready\n"); fread($socket, 1);';
         $command = 'exec '.escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg($script);
-        $sibling = $this->manager->start($command, self::TEST_SESSION, 'sibling');
+        $siblingPrepared = $this->manager->prepareNativeLaunch($this->sessionId, 'sibling', $command, false);
+        $sibling = $this->manager->start(
+            $command,
+            $this->sessionId,
+            'sibling',
+            preparedRecordId: $siblingPrepared->id,
+            preparedLogPath: $siblingPrepared->logPath,
+            preparedStatusPath: $siblingPrepared->statusPath,
+        );
+        self::getContainer()->get(ProcessStore::class)->applyLaunch(
+            $siblingPrepared->id,
+            $this->sessionId,
+            $sibling->pid,
+            null,
+            new \DateTimeImmutable(),
+        );
         $siblingPeer = stream_socket_accept($server, 1);
         $this->assertIsResource($siblingPeer);
         stream_set_timeout($siblingPeer, 1);
@@ -808,7 +827,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger(), new LockFactory(new FlockStore()));
         try {
             try {
-                $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(new BashArgumentsDTO($command, backgrounded: $backgrounded)));
+                $this->withContext($this->sessionId, fn () => ($this->makeBashTool())(new BashArgumentsDTO($command, backgrounded: $backgrounded)));
                 $this->fail('A failed startup write must not return a tool result.');
             } catch (DbalException $exception) {
                 $this->assertSame($failure, $exception);
@@ -821,7 +840,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             $this->assertSame('', fread($peer, 1));
             $this->assertTrue(feof($peer));
             $this->assertTrue($lifecycle->isAlive($sibling->pid));
-            $this->assertCount(1, $this->recordsForSession(self::TEST_SESSION));
+            $this->assertCount(1, $this->recordsForSession($this->sessionId));
         } finally {
             $events->removeEventListener([Events::onFlush], $listener);
             $connection->executeStatement('PRAGMA query_only = OFF');
@@ -853,7 +872,10 @@ final class BashToolTest extends IsolatedKernelTestCase
         $originalDeadline = null;
         $token->method('isCancellationRequested')->willReturnCallback(function () use ($session, $backgrounded, &$selected, &$originalDeadline): bool {
             if (null === $selected) {
-                $records = $backgrounded ? $this->recordsForSession($session) : $this->manager->foregroundTools($session);
+                $records = $this->manager->foregroundTools($session);
+                if ([] === $records) {
+                    $records = $this->recordsForSession($session);
+                }
                 if ([] !== $records) {
                     $selected = $records[0];
                     $originalDeadline = BackgroundProcessFixture::record(self::getContainer(), $selected->id)?->deadlineNanoseconds;
@@ -885,8 +907,15 @@ final class BashToolTest extends IsolatedKernelTestCase
             $sibling = new ExecuteToolCall($session, 1, 'detach-step', 1, 'sibling', 'sibling', 'read', [], 1, mode: 'sequential');
             $initial = TestToolBatchRegistration::register($batch, $store, $session, 1, 'detach-step', [$first, $sibling]);
             $this->assertSame(['tc_bash'], array_column($initial, 'toolCallId'));
+            $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+            $deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($first, 'deferred-tc_bash'));
+            $this->manager->prepareNativeLaunch($session, 'tc_bash', (string) $arguments['command'], $backgrounded);
             $result = $executor->execute($call);
-            $acknowledgment = $result->content[0]['text'];
+            $raw = $result->details['raw_result'] ?? null;
+            $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $raw);
+            $this->assertNotNull($raw->completion);
+            $acknowledgment = $raw->completion->content[0]['text'] ?? $result->content[0]['text'];
+            $this->applyOwnerNativeMetadata($raw->completion->details ?? null);
             $receipt = ToolCallResultFactory::fromExecuteToolCallAndToolResult($first, $result);
             $collected = TestToolBatchCoordination::collect($batch, $store, $receipt);
             $this->assertTrue($collected->accepted);
@@ -961,15 +990,15 @@ final class BashToolTest extends IsolatedKernelTestCase
         $token = $this->createStub(CancellationTokenInterface::class);
         $requested = false;
         $token->method('isCancellationRequested')->willReturnCallback(function () use ($endpoint, &$requested): bool {
-            $records = $this->manager->foregroundTools(self::TEST_SESSION);
+            $records = $this->manager->foregroundTools($this->sessionId);
             if (!$requested && [] !== $records) {
                 $record = $records[0];
                 $requested = true;
-                $this->assertTrue($this->manager->requestBackground(self::TEST_SESSION, $record->id, 'tc_bash'));
+                $this->assertTrue($this->manager->requestBackground($this->sessionId, $record->id, 'tc_bash'));
                 $this->assertSame(8, fwrite($endpoint, "release\n"));
                 $deadline = hrtime(true) + 2_000_000_000;
                 do {
-                    $finished = $this->manager->findByRecordId($record->id, self::TEST_SESSION);
+                    $finished = $this->manager->findByRecordId($record->id, $this->sessionId);
                     if (null !== $finished?->finishedAt) {
                         break;
                     }
@@ -981,13 +1010,13 @@ final class BashToolTest extends IsolatedKernelTestCase
             return false;
         });
         try {
-            $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(
+            $result = $this->withContext($this->sessionId, fn () => ($this->makeBashTool())(
                 new BashArgumentsDTO(command: 'IFS= read -r release < '.escapeshellarg($fifo).'; printf done'),
             ), cancellationToken: $token);
             $this->assertSame('done', $result);
-            $this->assertCount(1, $this->recordsForSession(self::TEST_SESSION));
-            $this->assertNull($this->recordsForSession(self::TEST_SESSION)[0]->backgroundedAt);
-            $this->assertSame([], self::getContainer()->get(ProcessStore::class)->completionSnapshots([self::TEST_SESSION]));
+            $this->assertCount(1, $this->recordsForSession($this->sessionId));
+            $this->assertNull($this->recordsForSession($this->sessionId)[0]->backgroundedAt);
+            $this->assertSame([], self::getContainer()->get(ProcessStore::class)->completionSnapshots([$this->sessionId]));
         } finally {
             fclose($endpoint);
         }
@@ -997,7 +1026,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     public function testConfiguredChildBashCanDetachWithoutEndingNativeExecution(): void
     {
-        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(new RunState(self::TEST_SESSION, RunStatus::Running, parentRunId: 'parent'));
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(new RunState($this->sessionId, RunStatus::Running, parentRunId: 'parent'));
         $manager = self::getContainer()->get(BackgroundProcessManager::class);
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $tool = self::getContainer()->get(BashTool::class);
@@ -1008,21 +1037,21 @@ final class BashToolTest extends IsolatedKernelTestCase
         $token = $this->createStub(CancellationTokenInterface::class);
         $checked = false;
         $token->method('isCancellationRequested')->willReturnCallback(function () use ($manager, &$checked): bool {
-            $records = $this->recordsForSession(self::TEST_SESSION);
+            $records = $this->recordsForSession($this->sessionId);
             if (!$checked && [] !== $records) {
                 $checked = true;
-                $this->assertCount(1, $manager->foregroundTools(self::TEST_SESSION));
-                $this->assertTrue($manager->requestBackground(self::TEST_SESSION, $records[0]->id, 'tc_child'));
+                $this->assertCount(1, $manager->foregroundTools($this->sessionId));
+                $this->assertTrue($manager->requestBackground($this->sessionId, $records[0]->id, 'tc_child'));
             }
 
             return false;
         });
         try {
-            $context = new ToolContext(self::TEST_SESSION, 1, 'tc_child', 'bash', $token, 2, stepId: 'child-step');
-            $result = $accessor->with($context, static fn (): string => $tool(new BashArgumentsDTO(command: 'IFS= read -r release < '.escapeshellarg($fifo).'; printf child-finished', timeout: 2)));
+            $context = new ToolContext($this->sessionId, 1, 'tc_child', 'bash', $token, 2, stepId: 'child-step');
+            $result = $accessor->with($context, static fn () => $tool(new BashArgumentsDTO(command: 'IFS= read -r release < '.escapeshellarg($fifo).'; printf child-finished', timeout: 2)));
             $this->assertTrue($checked);
             $this->assertStringContainsString('Command moved to background.', $result);
-            $records = $this->recordsForSession(self::TEST_SESSION);
+            $records = $this->recordsForSession($this->sessionId);
             $this->assertCount(1, $records);
             $this->assertNotNull($records[0]->backgroundedAt);
             $this->assertNull($records[0]->finishedAt);
@@ -1063,7 +1092,7 @@ final class BashToolTest extends IsolatedKernelTestCase
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
             logger: $this->logger,
-            deferred: self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface::class),
+            deferred: self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
             normalizer: self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\NormalizerInterface::class),
             config: $this->bashConfig,
         );
@@ -1137,17 +1166,109 @@ final class BashToolTest extends IsolatedKernelTestCase
             $cancellationToken->method('isCancellationRequested')->willReturn(false);
         }
 
+        $toolCallId = 'tc_bash';
+        $stepId = 'test-model-step';
+        $this->prepareTopLevelBash($sessionId, $toolCallId, $stepId);
         $context = new ToolContext(
             runId: $sessionId,
             turnNo: 1,
-            toolCallId: 'tc_bash',
+            toolCallId: $toolCallId,
             toolName: 'bash',
             cancellationToken: $cancellationToken,
             timeoutSeconds: 30,
-            stepId: 'test-model-step',
+            stepId: $stepId,
         );
 
-        return $this->contextAccessor->with($context, $callback);
+        return $this->unwrapBashOutcome($this->contextAccessor->with($context, $callback));
+    }
+
+    private function prepareTopLevelBash(
+        string $sessionId,
+        string $toolCallId,
+        string $stepId,
+        string $command = 'true',
+        bool $backgrounded = false,
+    ): void {
+        $call = new ExecuteToolCall(
+            runId: $sessionId,
+            turnNo: 1,
+            stepId: $stepId,
+            attempt: 1,
+            idempotencyKey: 'bash-'.$toolCallId,
+            toolCallId: $toolCallId,
+            toolName: 'bash',
+            args: ['command' => $command, 'backgrounded' => $backgrounded],
+            orderIndex: 0,
+        );
+        $batches = self::getContainer()->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(new ToolBatchCollector($batches), $batches, $sessionId, 1, $stepId, [$call]);
+        $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+        if (null === $deferred->findMetadataByRunAndToolCall($sessionId, $toolCallId)) {
+            $deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($call, 'deferred-'.$toolCallId));
+        }
+        $this->manager->prepareNativeLaunch($sessionId, $toolCallId, $command, $backgrounded);
+    }
+
+    private function unwrapBashOutcome(mixed $outcome): mixed
+    {
+        if ($outcome instanceof DeferredToolCompletionOutcome) {
+            $this->assertNotNull($outcome->completion);
+            $this->applyOwnerNativeMetadata($outcome->completion->details ?? null);
+
+            return $outcome->completion->content[0]['text'] ?? '';
+        }
+
+        if (\is_array($outcome) && isset($outcome['content'], $outcome['bash_native']) && \is_string($outcome['content'])) {
+            $this->applyOwnerNativeMetadata(['bash_native' => $outcome['bash_native']]);
+
+            return $outcome['content'];
+        }
+
+        return $outcome;
+    }
+
+    /**
+     * Apply private bash_native facts the same way owner receipt does, without
+     * requiring full ToolPayloadAdmission history for unit fixtures.
+     *
+     * @param array<string, mixed>|null $details
+     */
+    private function applyOwnerNativeMetadata(?array $details): void
+    {
+        if (!\is_array($details) || !isset($details['bash_native']) || !\is_array($details['bash_native'])) {
+            return;
+        }
+        $native = $details['bash_native'];
+        $recordId = (int) ($native['recordId'] ?? 0);
+        $runId = (string) ($native['runId'] ?? '');
+        if ($recordId <= 0 || '' === $runId) {
+            return;
+        }
+        $store = self::getContainer()->get(ProcessStore::class);
+        if (isset($native['pid']) && \is_int($native['pid'])) {
+            $startedAt = isset($native['startedAt']) ? new \DateTimeImmutable((string) $native['startedAt']) : new \DateTimeImmutable();
+            $store->applyLaunch(
+                $recordId,
+                $runId,
+                $native['pid'],
+                isset($native['pgid']) && \is_int($native['pgid']) ? $native['pgid'] : null,
+                $startedAt,
+                isset($native['deadlineNanoseconds']) && \is_int($native['deadlineNanoseconds']) ? $native['deadlineNanoseconds'] : null,
+            );
+        }
+        if (isset($native['acceptedAt'])) {
+            $store->applyAcceptedByRecord($recordId, $runId, new \DateTimeImmutable((string) $native['acceptedAt']));
+        }
+        if (isset($native['finishedAt'], $native['status'])) {
+            $store->applyFinishedByRecord(
+                $recordId,
+                $runId,
+                isset($native['exitCode']) && \is_int($native['exitCode']) ? $native['exitCode'] : null,
+                BackgroundProcessStatusEnum::from((string) $native['status']),
+                (bool) ($native['stoppedByUser'] ?? false),
+                new \DateTimeImmutable((string) $native['finishedAt']),
+            );
+        }
     }
 
     /**

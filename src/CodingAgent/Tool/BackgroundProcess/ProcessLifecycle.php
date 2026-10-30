@@ -215,6 +215,51 @@ final class ProcessLifecycle
     }
 
     /**
+     * Read the wrapper PID from the exact .pid sibling of a status path.
+     *
+     * Owner-prepared rows keep pid null until result receipt. Controllers and
+     * owner decisions must recover a positive validated PID from this sidecar
+     * instead of treating null as process death. Missing/invalid evidence means
+     * not-yet-known, never a fabricated identity.
+     */
+    public function readPidFile(?string $statusPath): ?int
+    {
+        if (!\is_string($statusPath) || '' === $statusPath || !str_ends_with($statusPath, '.status')) {
+            return null;
+        }
+
+        $pidPath = substr($statusPath, 0, -7).'.pid';
+        if (!is_file($pidPath)) {
+            return null;
+        }
+
+        clearstatcache(true, $pidPath);
+        $raw = @file_get_contents($pidPath);
+        if (false === $raw) {
+            $error = error_get_last();
+            if (null !== $error) {
+                $this->logger->debug('background_process.pid_file_unreadable', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.pid_file_unreadable',
+                    'path' => $pidPath,
+                    'error' => $error['message'],
+                ]);
+            }
+
+            return null;
+        }
+
+        $trimmed = trim($raw);
+        if ('' === $trimmed || !ctype_digit($trimmed)) {
+            return null;
+        }
+
+        $pid = (int) $trimmed;
+
+        return $pid > 0 ? $pid : null;
+    }
+
+    /**
      * Write a user-stop marker to the status file.
      *
      * Only writes when the status file doesn't already exist (meaning
