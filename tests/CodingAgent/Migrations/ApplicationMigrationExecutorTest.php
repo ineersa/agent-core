@@ -6,6 +6,9 @@ namespace Ineersa\CodingAgent\Tests\Migrations;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Schema\Schema;
+use DoctrineMigrations\Version20260601152619;
+use DoctrineMigrations\Version20260607000000;
+use DoctrineMigrations\Version20261019185942;
 use DoctrineMigrations\Version20261021034317;
 use DoctrineMigrations\Version20261022235428;
 use Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor;
@@ -570,11 +573,17 @@ SQL);
         $connection = $this->createSqliteConnection($this->isolatedDir.'/legacy-reasoning-baseline.sqlite');
         // The recorded baseline includes these tables, even though this fixture
         // otherwise needs only the legacy session schema.
-        foreach ([new Version20261021034317($connection, new NullLogger()), new Version20261022235428($connection, new NullLogger())] as $migration) {
+        foreach ([
+            new Version20260601152619($connection, new NullLogger()),
+            new Version20260607000000($connection, new NullLogger()),
+            new Version20261019185942($connection, new NullLogger()),
+            new Version20261021034317($connection, new NullLogger()),
+            new Version20261022235428($connection, new NullLogger()),
+        ] as $migration) {
             $migration->up(new Schema());
             foreach ($migration->getSql() as $query) {
                 $sql = $query->getStatement();
-                if (str_starts_with($sql, 'CREATE TABLE background_completion_receipt ') || str_starts_with($sql, 'CREATE TABLE tool_deferred_completion ')) {
+                if (str_starts_with($sql, 'CREATE TABLE background_completion_receipt ') || str_starts_with($sql, 'CREATE TABLE tool_deferred_completion ') || str_starts_with($sql, 'CREATE TABLE background_process ') || str_starts_with($sql, 'ALTER TABLE background_process ADD COLUMN ')) {
                     $connection->executeStatement($sql);
                 }
             }
