@@ -5,15 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -148,37 +145,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             0,
             parentModel: 'test-model',
         ));
-    }
-
-    /**
-     * @template T
-     *
-     * @param callable(): T $callback
-     *
-     * @return T
-     */
-    private function withToolContext(string $parentRunId, string $toolCallId, callable $callback): mixed
-    {
-        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $context = new ToolContext(
-            runId: $parentRunId,
-            turnNo: 2,
-            toolCallId: $toolCallId,
-            toolName: 'subagent',
-            cancellationToken: new NullCancellationToken(),
-            timeoutSeconds: 120,
-            orderIndex: 0,
-            parentModel: 'test-model',
-            launchContext: new ToolLaunchContextDTO(
-                kind: ToolLaunchContextDTO::KIND_SUBAGENT,
-                producingRunId: $parentRunId,
-                producingTurnNo: 2,
-                producingModel: 'test-model',
-                agentsContext: '',
-            ),
-        );
-
-        return $accessor->with($context, $callback);
     }
 
     private function defaultPolicyResolver(): AgentToolPolicyResolver
