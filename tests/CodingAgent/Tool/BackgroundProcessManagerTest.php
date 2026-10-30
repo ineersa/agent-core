@@ -113,6 +113,51 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         fclose($endpoint);
     }
 
+    public function testFinishedNativeHandleSurvivesAcceptanceObservationUntilCallerRelease(): void
+    {
+        $this->createManager();
+        $session = $this->createSession('finish before accept observation');
+        $started = $this->startPrepared('printf finished-before-accept', $session, 'call-finish-race');
+        $this->waitUntilFinished($started->pid);
+        $this->assertFileExists($started->statusPath);
+
+        // Acceptance observation that sees completion must leave the launch for
+        // BashTool's next observe/consume path instead of discarding it.
+        $this->assertNull($this->manager->resolveBackgroundAcceptance($started->statusPath, $session));
+        $observed = $this->manager->observeNativeByStatusPath($started->statusPath, $session);
+        $this->assertNotNull($observed);
+        $this->assertNotNull($observed->finishedAt);
+        $this->assertSame(0, $observed->exitCode);
+        $this->assertStringContainsString('finished-before-accept', $this->manager->readLogTailForNativePaths($started->logPath, $started->statusPath)->content);
+
+        $this->manager->releaseNativeInvocation($started->statusPath);
+        $this->assertNull($this->manager->observeNativeByStatusPath($started->statusPath, $session));
+        $this->assertFileExists($started->logPath);
+        $this->assertFileExists($started->statusPath);
+    }
+
+    public function testReleaseNativeInvocationDeletesOnlyUnpersistedSidecars(): void
+    {
+        $this->createManager();
+        $session = $this->createSession('nested sidecar cleanup');
+        $nested = $this->manager->start('printf nested-sidecar', $session);
+        $this->assertNull($nested->id);
+        $this->waitUntilFinished($nested->pid);
+        $this->assertNotNull($this->manager->observeNativeByStatusPath($nested->statusPath, $session));
+        $this->manager->releaseNativeInvocation($nested->statusPath);
+        $this->assertFileDoesNotExist($nested->logPath);
+        $this->assertFileDoesNotExist($nested->statusPath);
+        $this->assertFileDoesNotExist(substr($nested->statusPath, 0, -7).'.pid');
+
+        $persisted = $this->startPrepared('printf persisted-sidecar', $session, 'call-persisted');
+        $this->waitUntilFinished($persisted->pid);
+        $this->assertNotNull($this->manager->observeNativeByStatusPath($persisted->statusPath, $session));
+        $this->manager->releaseNativeInvocation($persisted->statusPath);
+        $this->assertFileExists($persisted->logPath);
+        $this->assertFileExists($persisted->statusPath);
+        $this->assertFileExists(substr($persisted->statusPath, 0, -7).'.pid');
+    }
+
     public function testFindByRecordIdReturnsNullForNonexistentId(): void
     {
         $this->createManager();

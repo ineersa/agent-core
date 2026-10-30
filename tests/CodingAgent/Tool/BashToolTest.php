@@ -1110,15 +1110,6 @@ final class BashToolTest extends IsolatedKernelTestCase
                 $requested = true;
                 $this->assertTrue($this->manager->requestBackground($this->sessionId, $record->id, 'tc_bash'));
                 $this->assertSame(8, fwrite($endpoint, "release\n"));
-                $deadline = hrtime(true) + 2_000_000_000;
-                do {
-                    $finished = $this->manager->findByRecordId($record->id, $this->sessionId);
-                    if (null !== $finished?->finishedAt) {
-                        break;
-                    }
-                    usleep(10_000);
-                } while (hrtime(true) < $deadline);
-                $this->assertNotNull($finished?->finishedAt);
             }
 
             return false;
@@ -1128,12 +1119,82 @@ final class BashToolTest extends IsolatedKernelTestCase
                 new BashArgumentsDTO(command: 'IFS= read -r release < '.escapeshellarg($fifo).'; printf done'),
             ), cancellationToken: $token);
             $this->assertSame('done', $result);
+            $this->assertTrue($requested);
             $this->assertCount(1, $this->recordsForSession($this->sessionId));
             $this->assertNull($this->recordsForSession($this->sessionId)[0]->backgroundedAt);
             $this->assertSame([], self::getContainer()->get(ProcessStore::class)->completionSnapshots([$this->sessionId]));
         } finally {
             fclose($endpoint);
         }
+    }
+
+    public function testAcceptanceObservationOfFinishedLaunchStillReturnsForegroundOutput(): void
+    {
+        $this->createManager();
+        $fifo = $this->tmpDir.'/accept-observe-finish';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $endpoint = fopen($fifo, 'r+b');
+        $this->assertIsResource($endpoint);
+        $token = $this->createStub(CancellationTokenInterface::class);
+        $requested = false;
+        $forcedAcceptanceObservation = false;
+        $statusPath = null;
+        $token->method('isCancellationRequested')->willReturnCallback(function () use ($endpoint, &$requested, &$forcedAcceptanceObservation, &$statusPath): bool {
+            if (!$requested) {
+                $records = $this->manager->foregroundTools($this->sessionId);
+                if ([] === $records) {
+                    return false;
+                }
+                $record = $records[0];
+                $snapshot = $this->manager->findByRecordId($record->id, $this->sessionId);
+                $this->assertNotNull($snapshot);
+                $requested = true;
+                $statusPath = $snapshot->statusPath;
+                $this->assertTrue($this->manager->requestBackground($this->sessionId, $record->id, 'tc_bash'));
+                $this->assertSame(8, fwrite($endpoint, "release\n"));
+
+                return false;
+            }
+            if (!$forcedAcceptanceObservation && null !== $statusPath) {
+                $observed = $this->manager->observeNativeByStatusPath($statusPath, $this->sessionId);
+                if (null !== $observed?->finishedAt) {
+                    $forcedAcceptanceObservation = true;
+                    // Same race as resolveBackgroundAcceptance seeing Finished between
+                    // the Running check and acceptance, then continuing the loop.
+                    $this->assertNull($this->manager->resolveBackgroundAcceptance($statusPath, $this->sessionId));
+                }
+            }
+
+            return false;
+        });
+        try {
+            $result = $this->withContext($this->sessionId, fn () => ($this->makeBashTool())(
+                new BashArgumentsDTO(command: 'IFS= read -r release < '.escapeshellarg($fifo).'; printf accept-race-output'),
+            ), cancellationToken: $token);
+            $this->assertSame('accept-race-output', $result);
+            $this->assertTrue($requested);
+            $this->assertTrue($forcedAcceptanceObservation);
+            $records = $this->recordsForSession($this->sessionId);
+            $this->assertCount(1, $records);
+            $this->assertNull($records[0]->backgroundedAt);
+            $this->assertFileExists($records[0]->logPath);
+            $this->assertFileExists($records[0]->statusPath);
+        } finally {
+            fclose($endpoint);
+        }
+    }
+
+    public function testNestedBashRemovesUnpersistedSidecarsAfterCompletion(): void
+    {
+        $this->createManager();
+        $outer = new ToolContext($this->sessionId, 1, 'tc_code_mode', 'code_mode', $this->createStub(CancellationTokenInterface::class), 30, stepId: 'outer-step');
+        $inner = new ToolContext($this->sessionId, 1, 'tc_nested_bash', 'bash', $this->createStub(CancellationTokenInterface::class), 30, stepId: 'nested-step');
+        $before = glob($this->tmpDir.'/*.{log,status,pid}', \GLOB_BRACE) ?: [];
+        $result = $this->contextAccessor->with($outer, fn () => $this->contextAccessor->with($inner, fn () => ($this->makeBashTool())(new BashArgumentsDTO(command: 'printf nested-clean'))));
+        $this->assertSame('nested-clean', $result);
+        $after = glob($this->tmpDir.'/*.{log,status,pid}', \GLOB_BRACE) ?: [];
+        $this->assertSame($before, $after);
+        $this->assertSame([], $this->recordsForSession($this->sessionId));
     }
 
     /* ── Helpers ── */

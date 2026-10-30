@@ -125,6 +125,7 @@ final class BashTool implements HatfieldToolProviderInterface
                 if (hrtime(true) > $deadline) {
                     $this->manager->stopByStatusPath($statusPath, $sessionId);
                     $partialOutput = $this->readOutputForNativePaths($logPath, $statusPath);
+                    $this->manager->releaseNativeInvocation($statusPath);
                     $this->logger->info('bash_tool.timed_out', [
                         'component' => 'tool.bash',
                         'event_type' => 'bash_tool.timed_out',
@@ -224,6 +225,8 @@ final class BashTool implements HatfieldToolProviderInterface
         ?string $toolCallId,
     ): never {
         $this->manager->stopByStatusPath($statusPath, $sessionId);
+        // Stop supervision finishes before caller-owned unpersisted sidecar cleanup.
+        $this->manager->releaseNativeInvocation($statusPath);
         $this->logger->info('bash_tool.cancelled', [
             'component' => 'tool.bash',
             'event_type' => 'bash_tool.cancelled',
@@ -279,6 +282,7 @@ final class BashTool implements HatfieldToolProviderInterface
         ?string $toolCallId,
     ): string|ToolResult {
         $output = $this->readOutputForNativePaths($entity->logPath, $entity->statusPath);
+        $this->manager->releaseNativeInvocation($entity->statusPath);
         $pid = $entity->pid;
         $exitCode = $entity->exitCode;
         $status = $entity->status;

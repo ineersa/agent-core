@@ -669,6 +669,32 @@ final class BackgroundProcessManager
         return $this->lifecycle->readLogTail($logPath, $maxChars ?? $this->config->logTailChars, $finished);
     }
 
+    /**
+     * Release the local native launch after the caller finished consuming output.
+     *
+     * Persisted top-level/direct-shell rows keep owner sidecar retention.
+     * Unpersisted nested launches delete their exact .pid/.status/.log set.
+     * Accepted detached launches already released via {@see acceptResolvedBackground()}.
+     */
+    public function releaseNativeInvocation(string $statusPath): void
+    {
+        $native = $this->nativeLaunches[$statusPath] ?? null;
+        if (null === $native) {
+            return;
+        }
+
+        $logPath = $native->logPath;
+        $recordId = $native->recordId;
+        $this->releaseNativeLaunch($statusPath);
+        if (null !== $recordId) {
+            return;
+        }
+
+        $this->lifecycle->withSidecarLock($statusPath, function () use ($logPath, $statusPath): void {
+            $this->lifecycle->deleteLockedRecordSidecars($logPath, $statusPath);
+        });
+    }
+
     public function stopByRecordId(int $recordId, ?string $sessionId = null, bool $waitForExit = true): StopResult
     {
         if ($recordId <= 0) {
@@ -938,7 +964,6 @@ final class BackgroundProcessManager
             if (null === $native->deferredId) {
                 $this->publishFinished($native, $exitCode, $status, $stoppedByUser, $finishedAt);
             }
-            $this->releaseNativeLaunch($native->statusPath);
         }
 
         return new NativeBashObservationDTO(
