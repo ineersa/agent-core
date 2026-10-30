@@ -49,8 +49,9 @@ final class CodeModeLifecycleService
         );
 
         // Producer/run_control never calls DeferredToolCompletionRepository::useOwner(),
-        // so registerPending() stays owner-local under the existing run lock.
-        return $this->deferred->registerPending($correlation)->deferredId;
+        // so preparePending() stays owner-local under the existing run lock and
+        // leaves readyAt null until the host reports readiness.
+        return $this->deferred->preparePending($correlation)->deferredId;
     }
 
     public function ready(string $runId, string $deferredId): void

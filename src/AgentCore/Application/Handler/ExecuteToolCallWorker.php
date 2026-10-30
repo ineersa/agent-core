@@ -56,12 +56,6 @@ final readonly class ExecuteToolCallWorker
 
         try {
             $execute = function () use ($message): ?ToolCallResult {
-                $existing = $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId);
-                if (null !== $existing) {
-                    $this->execute($message);
-
-                    return null;
-                }
                 $outcome = $this->execute($message);
                 if (null === $outcome) {
                     if ('completed' === $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId)) {
@@ -113,16 +107,13 @@ final readonly class ExecuteToolCallWorker
 
     private function execute(ExecuteToolCall $message): ?ToolCallResult
     {
-        $status = $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId);
-        if (null !== $status) {
-            if ('pending' === $status) {
-                $existing = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
-                if (null !== $existing) {
-                    $this->dispatchDeferredRegistered($existing);
-                }
+        $metadata = $this->deferredToolCompletionRepository->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
+        if (null !== $metadata) {
+            // Prepared-but-not-ready rows still need first execution.
+            // Completed or ready pending rows are already deferred and must not rerun.
+            if ('completed' === $metadata->status || null !== $metadata->readyAt) {
+                return null;
             }
-
-            return null;
         }
 
         RunLogContext::enter(['event_type' => 'tool.execute.started']);

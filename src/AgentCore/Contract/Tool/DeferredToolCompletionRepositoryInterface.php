@@ -18,6 +18,12 @@ interface DeferredToolCompletionRepositoryInterface
      */
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation;
 
+    /**
+     * Owner preparation inserts a pending record without readiness.
+     * Existing rows keep their current readiness; late registerPending stamps readiness.
+     */
+    public function preparePending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation;
+
     /** Resolve pending data only. Completed markers never require a retained body. */
     public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation;
 

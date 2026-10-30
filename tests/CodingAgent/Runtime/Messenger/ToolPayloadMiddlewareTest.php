@@ -295,6 +295,7 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
                         $metadata = $deferred->findMetadataByRunAndToolCall($run, 'code-call');
                         $this->assertNotNull($metadata, 'Deferred row must exist inside the outgoing ToolPayloadMessage path.');
                         $this->assertSame('code_mode', $metadata->reference->toolName);
+                        $this->assertNull($metadata->readyAt, 'Owner preparation must leave readyAt null.');
                     }
 
                     return $message;

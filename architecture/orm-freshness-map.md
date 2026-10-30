@@ -78,7 +78,7 @@ Tool and run-control paths coordinate a tool result that arrives later.
 |---|---|---|---|
 | `findPendingByRunAndToolCall`, `status` | ORM SELECT, read completion status | **Refresh** | A different process can complete the tool. Current reads can return cached pending status. |
 | `findByDeferredId` | ORM SELECT, return correlation data | **No status refresh required** | Returns registration data, not completion status. This is safe while the registration is immutable and the row remains present. |
-| `registerPending`, private `resolveRegistrationConflict` | Read existing registration, or SQL INSERT and reload | **No refresh for immutable registration fields** | Database uniqueness handles duplicate registration. INSERT itself needs no refresh and does not stale an existing row's fields. |
+| `preparePending`, `registerPending`, private `resolveRegistrationConflict` | Read existing registration, or SQL INSERT and reload | **No refresh for immutable registration fields** | Database uniqueness handles duplicate registration. INSERT itself needs no refresh and does not stale an existing row's fields. `preparePending` leaves `ready_at` null; late `registerPending` stamps readiness on newly inserted rows and preserves existing readiness. |
 | `markCompleted`, successful SQL path | Conditional SQL UPDATE, then detach matching cached entity | **No refresh before SQL**; keep targeted detach afterwards | SQL tests the actual stored status. Detach stops this process reusing the old cached status. |
 | `markCompleted`, zero-row SQL fallback | ORM SELECT, check status, possibly UPDATE | **Refresh** before fallback decision | The cached entity may still say pending after another process completed it. Review this fallback separately; don't add a global clear. |
 

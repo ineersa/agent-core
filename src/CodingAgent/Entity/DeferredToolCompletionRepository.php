@@ -65,7 +65,13 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             return $this->findByDeferredId($id) ?? throw new ToolPayloadException('Committed deferred registration is missing.');
         }
 
-        return $this->locks->synchronized($correlation->runId, fn () => $this->payloads->withStorage($correlation->runId, fn () => $this->registerLocked($correlation)));
+        return $this->locks->synchronized($correlation->runId, fn () => $this->payloads->withStorage($correlation->runId, fn () => $this->registerLocked($correlation, stampReadyAt: true)));
+    }
+
+    public function preparePending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
+    {
+        // Owner preparation never uses the worker reply client.
+        return $this->locks->synchronized($correlation->runId, fn () => $this->payloads->withStorage($correlation->runId, fn () => $this->registerLocked($correlation, stampReadyAt: false)));
     }
 
     public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
@@ -315,7 +321,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         }
     }
 
-    private function registerLocked(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
+    private function registerLocked(DeferredToolCompletionCorrelation $correlation, bool $stampReadyAt): DeferredToolCompletionCorrelation
     {
         $existing = $this->findFreshOneBy([
             'runId' => $correlation->runId,
@@ -335,7 +341,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         $now = Clock::get()->now()->format('Y-m-d H:i:s');
 
         try {
-            $this->getEntityManager()->getConnection()->insert('tool_deferred_completion', [
+            $row = [
                 'deferred_id' => $correlation->deferredId,
                 'run_id' => $correlation->runId,
                 'turn_no' => $correlation->turnNo,
@@ -354,7 +360,12 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                 'status' => 'pending',
                 'created_at' => $now,
                 'updated_at' => $now,
-            ]);
+            ];
+            if ($stampReadyAt) {
+                // Late registrations after a DeferredToolCompletionOutcome are already ready.
+                $row['ready_at'] = $now;
+            }
+            $this->getEntityManager()->getConnection()->insert('tool_deferred_completion', $row);
         } catch (UniqueConstraintViolationException $exception) {
             return $this->resolveRegistrationConflict($correlation, $exception);
         }
