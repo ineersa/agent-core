@@ -348,7 +348,8 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                     ? $metadata->acceptedResultReference
                     : $this->payloads->publishFirstResult($message, $metadata->reference);
 
-                return [$metadata->deferredId, $this->remoteResultOwner ? $reference : $this->acceptCodeModeResult($reference, false)];
+                // Bash acknowledgments stay on the ordinary ToolCallResult path.
+                return [$metadata->deferredId, $reference];
             }
             $status = null !== $metadata
                 ? $metadata->status
@@ -617,7 +618,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
     private function findEarlyDeferredRegistration(ToolCallResult $message): ?DeferredToolCompletionMetadataDTO
     {
         $metadata = $this->deferred->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
-        if (null === $metadata || 'pending' !== $metadata->status || !\in_array($metadata->reference->toolName, ['code_mode', 'bash'], true)) {
+        if (null === $metadata || 'pending' !== $metadata->status || 'code_mode' !== $metadata->reference->toolName) {
             return null;
         }
         $stored = $metadata->reference;

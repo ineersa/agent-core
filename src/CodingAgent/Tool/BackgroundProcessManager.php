@@ -84,8 +84,6 @@ final class BackgroundProcessManager
     private bool $remoteLifecycleOwner = false;
     /** @var array<string, NativeBashLaunchDTO> statusPath => native launch */
     private array $nativeLaunches = [];
-    /** @var array<string, true> accepted launches still supervised by this instance */
-    private array $acceptedStatusPaths = [];
 
     /** @var array<int, int> Immutable record ID to monotonic TERM grace deadline. */
     private array $timeoutGraceDeadlines = [];
@@ -579,7 +577,6 @@ final class BackgroundProcessManager
     public function acceptResolvedBackground(array $candidate): bool
     {
         $statusPath = $candidate['statusPath'];
-        $this->acceptedStatusPaths[$statusPath] = true;
         if ('native' === $candidate['kind']) {
             // Model Bash persists acceptance through ordinary ToolResult on the owner.
             // Local/controller paths still write immediately.
@@ -1031,7 +1028,7 @@ final class BackgroundProcessManager
 
     private function releaseNativeLaunch(string $statusPath): void
     {
-        unset($this->nativeLaunches[$statusPath], $this->acceptedStatusPaths[$statusPath]);
+        unset($this->nativeLaunches[$statusPath]);
     }
 
     private function processDecision(int $recordId, string $runId, BashProcessActionEnum $action): ?BashProcessSnapshotDTO
@@ -1078,11 +1075,6 @@ final class BackgroundProcessManager
     {
         $count = 0;
         foreach ($this->nativeLaunches as $statusPath => $launch) {
-            if (isset($this->acceptedStatusPaths[$statusPath])) {
-                // Accepted jobs belong to the session, not this worker.
-                $this->releaseNativeLaunch($statusPath);
-                continue;
-            }
             try {
                 if (null !== $this->lifecycle->readStatusFile($launch->statusPath) || !$this->lifecycle->isAlive($launch->pid)) {
                     $this->releaseNativeLaunch($statusPath);

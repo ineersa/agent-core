@@ -85,8 +85,6 @@ final readonly class ExecuteShellToolCallWorker
             'is_error' => $result->isError,
         ]);
 
-        $details = $result->details;
-
         return (new ToolCallResult(
             runId: $message->runId(),
             turnNo: $message->turnNo(),

@@ -273,9 +273,10 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $deferred = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
         $deferred->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), 'pending'));
         $deferred->expects($this->never())->method('findByDeferredId');
-        $deferred->expects($this->once())->method('markCompleted')->with('deferred');
+        // Producer drops stale/non-admitted completions; owner settlement remains owner-side.
+        $deferred->expects($this->never())->method('markCompleted');
         $batches = $this->createMock(ToolBatchStoreInterface::class);
-        $batches->expects($this->once())->method('delete')->with('run', 1, 'step');
+        $batches->expects($this->never())->method('delete');
         $replay = $this->createMock(RunStateRebuilderInterface::class);
         $replay->expects($this->never())->method('rebuildIfStale');
         $registry = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
@@ -341,6 +342,123 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $this->assertGreaterThanOrEqual(2, \count($published));
         $this->assertNull($published[0]->deferredId);
         $this->assertSame($firstId, $container->get(CodeModeLifecycleService::class)->prepare($code));
+    }
+
+    public function testBashAcknowledgementSealsOrdinaryResultInsteadOfCodeModeBackgroundDelivery(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('bash ack routing');
+        $call = new ExecuteToolCall($run, 1, 'bash-ack-step', 1, hash('sha256', 'bash-ack'), 'bash-ack', 'bash', [
+            'command' => 'printf ok',
+            'backgrounded' => true,
+        ], 0);
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'bash-ack-step',
+            [$call],
+        );
+
+        $deferred = $container->get(DeferredToolCompletionRepository::class);
+        $registry = $container->get(ActiveRunContextInterface::class);
+        $middleware = $container->get(ToolPayloadMiddleware::class);
+        $transport = $container->get('messenger.transport.run_control');
+
+        $prepareBus = new MessageBus([
+            $middleware,
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+            ])),
+        ]);
+        $sealedCall = $prepareBus->dispatch($call);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $sealedCall->getMessage());
+
+        $metadata = $deferred->findMetadataByRunAndToolCall($run, 'bash-ack');
+        $this->assertNotNull($metadata);
+        $this->assertSame('bash', $metadata->reference->toolName);
+        $deferred->markReady($metadata->deferredId);
+        $acceptedAt = new \DateTimeImmutable('2026-10-30T18:00:00+00:00');
+        $deferred->markBackgrounded($metadata->deferredId, $acceptedAt);
+
+        $registry->loadRecovered(new RunState(
+            $run,
+            RunStatus::Running,
+            turnNo: 1,
+            activeStepId: 'bash-ack-step',
+            pendingToolCalls: ['bash-ack' => false],
+        ));
+
+        $ack = new ToolCallResult(
+            $run,
+            1,
+            'bash-ack-step',
+            1,
+            hash('sha256', 'bash-ack'),
+            'bash-ack',
+            0,
+            [
+                'tool_name' => 'bash',
+                'content' => [['type' => 'text', 'text' => 'Backgrounded bash acknowledgment']],
+                'details' => ['mode' => 'background'],
+                'arguments' => ['command' => 'printf ok', 'backgrounded' => true],
+            ],
+            false,
+        );
+
+        $handledResults = [];
+        $ackBus = new MessageBus([
+            $middleware,
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+                ToolCallResult::class => [static function (ToolCallResult $message) use (&$handledResults): ToolCallResult {
+                    $handledResults[] = $message;
+
+                    return $message;
+                }],
+            ])),
+        ]);
+
+        $pre = $deferred->findMetadataByRunAndToolCall($run, 'bash-ack');
+        $this->assertNotNull($pre);
+        $this->assertSame('pending', $pre->status);
+        $this->assertNotNull($pre->backgroundedAt);
+        $this->assertSame($metadata->deferredId, $pre->deferredId);
+
+        // CompleteDeferred re-entry publishes an ordinary ToolCallResult without bash_native.
+        $sealedAck = $ackBus->dispatch($ack);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $sealedAck->getMessage());
+        $this->assertSame('result', $sealedAck->getMessage()->reference->kind);
+        $this->assertSame(['run_control'], $sealedAck->last(TransportNamesStamp::class)?->getTransportNames());
+        $this->assertNull(
+            $sealedAck->getMessage()->deferredId,
+            'Ordinary Bash ACK without bash_native must not reuse the code_mode deferred transport stamp.',
+        );
+        $ownerBus = new MessageBus([
+            $middleware,
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolCallResult::class => [static function (ToolCallResult $message) use (&$handledResults): ToolCallResult {
+                    $handledResults[] = $message;
+
+                    return $message;
+                }],
+            ])),
+        ]);
+        // Transports do not retain producer HandledStamp; strip it before owner receive.
+        $ownerBus->dispatch($sealedAck->withoutAll(HandledStamp::class)->with(new ReceivedStamp('run_control')));
+        $this->assertNotEmpty($handledResults, 'Bash ACK must reach the ordinary ToolCallResult handler.');
+        $this->assertSame('Backgrounded bash acknowledgment', $handledResults[0]->result['content'][0]['text'] ?? null);
+        $deliveries = array_values(array_filter(
+            array_map(static fn ($envelope) => $envelope->getMessage(), $transport->getSent()),
+            static fn (object $message): bool => $message instanceof \Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO,
+        ));
+        $this->assertSame(
+            [],
+            $deliveries,
+            'Bash ACK must not be rewritten into a code_mode background delivery.',
+        );
     }
 
     public function testProducerPreparesAgentResumeAndRoutesRefusalToRunControlDespiteAgentStamp(): void
