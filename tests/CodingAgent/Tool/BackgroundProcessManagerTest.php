@@ -102,7 +102,9 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $foreground = $this->startPrepared('cat '.escapeshellarg($fifo), $session, 'call-foreground');
         $accepted = $this->startPrepared('cat '.escapeshellarg($fifo), $session, 'call-accepted');
         // Marks the local native handle accepted so worker shutdown leaves it alone.
-        $this->assertTrue($this->manager->tryMarkBackgroundedForRecord($accepted->id, $session));
+        $candidate = $this->manager->resolveBackgroundAcceptance($accepted->statusPath, $session);
+        $this->assertNotNull($candidate);
+        $this->assertTrue($this->manager->acceptResolvedBackground($candidate));
 
         $cleaned = $this->manager->shutdownCleanup();
         $this->assertGreaterThanOrEqual(1, $cleaned);
@@ -115,12 +117,6 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     {
         $this->createManager();
         $this->assertNull($this->manager->findByRecordId(9999999, $this->createSession()));
-    }
-
-    public function testExistsByPidReturnsFalseForNonexistentPid(): void
-    {
-        $this->createManager();
-        $this->assertFalse($this->manager->existsByPid(9999999));
     }
 
     public function testExistsByRecordIdReturnsFalseForNonexistentId(): void

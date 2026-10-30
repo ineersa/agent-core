@@ -47,7 +47,7 @@ final class DeferredSubagentBatchRuntimeStartService
         } catch (\Throwable $e) {
             $this->abortAfterRuntimeFailure($parentRunId, $toolCallId, $identity, $this->lifecyclePolicy, $e);
 
-            throw new DeferredSubagentBatchRuntimeStartFailure($prepared->identity->batchIndex, $e);
+            throw new DeferredSubagentBatchRuntimeStartFailure($e);
         }
     }
 

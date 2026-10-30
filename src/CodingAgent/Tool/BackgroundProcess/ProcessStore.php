@@ -284,30 +284,6 @@ final class ProcessStore
     }
 
     /**
-     * Check whether a row exists for the given PID.
-     *
-     * Delegates to BackgroundProcessRepository::existsByPid() which uses an
-     * ORM COUNT query that always hits the database, bypassing the identity
-     * map.  This allows distinguishing "row does not exist" from "row exists
-     * but ORM/identity map did not return it."
-     */
-    public function existsByPid(int $pid): bool
-    {
-        try {
-            return $this->repository->existsByPid($pid);
-        } catch (\Throwable $e) {
-            $this->logger->warning('background_process.exists_by_pid_failed', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.exists_by_pid_failed',
-                'process_pid' => $pid,
-                'error' => $e->getMessage(),
-            ]);
-
-            return false;
-        }
-    }
-
-    /**
      * Check whether a row exists for the given record ID.
      *
      * Delegates to BackgroundProcessRepository::existsByRecordId() which

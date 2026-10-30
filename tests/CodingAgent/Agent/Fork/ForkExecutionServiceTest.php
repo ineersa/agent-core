@@ -490,11 +490,6 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         ));
     }
 
-    /**
-     * @template T
-     *
-     * @return T
-     */
     private function prepareFork(string $parentRunId, string $toolCallId, string $task, ?string $model = null, ?string $thinking = null, ?ToolLaunchContextDTO $launchContext = null): void
     {
         $launchContext ??= $this->forkLaunchContext($parentRunId);

@@ -78,7 +78,6 @@ final class BashTool implements HatfieldToolProviderInterface
                         logPath: $prepared->logPath,
                         statusPath: $prepared->statusPath,
                         deferredId: $deferredId,
-                        backgroundEligible: true,
                         deadlineNanoseconds: $prepared->deadlineNanoseconds,
                     );
                 } elseif (null === $prepared && (null !== $context?->stepId() || 1 === $this->contextAccessor->depth())) {
@@ -373,7 +372,6 @@ final class BashTool implements HatfieldToolProviderInterface
             finishedAt: Clock::get()->now(),
             exitCode: $timedOut ? -1 : 0,
             stoppedByUser: $timedOut,
-            accepted: false,
             toolCallId: $prepared->toolCallId,
             backgroundRequested: false,
             status: $timedOut ? BackgroundProcessStatusEnum::Stopped : BackgroundProcessStatusEnum::Finished,

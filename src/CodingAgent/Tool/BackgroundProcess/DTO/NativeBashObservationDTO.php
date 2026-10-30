@@ -25,7 +25,6 @@ final readonly class NativeBashObservationDTO
         public ?\DateTimeImmutable $finishedAt,
         public ?int $exitCode,
         public bool $stoppedByUser,
-        public bool $accepted,
         public ?string $toolCallId,
         public bool $backgroundRequested,
         public BackgroundProcessStatusEnum $status,

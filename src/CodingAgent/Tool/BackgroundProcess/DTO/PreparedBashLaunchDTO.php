@@ -20,7 +20,6 @@ final readonly class PreparedBashLaunchDTO
         public string $logPath,
         public string $statusPath,
         public ?string $deferredId,
-        public bool $backgroundEligible,
         public ?int $deadlineNanoseconds = null,
     ) {
     }

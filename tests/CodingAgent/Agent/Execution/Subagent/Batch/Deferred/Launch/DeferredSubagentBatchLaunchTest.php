@@ -470,11 +470,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         );
     }
 
-    /**
-     * @template T
-     *
-     * @return T
-     */
     private function prepareLaunch(DeferredSubagentBatchLaunchService $service, string $parentRunId, string $toolCallId, string $agentName, string $task, string $toolName = 'subagent'): void
     {
         self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(

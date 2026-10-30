@@ -131,7 +131,16 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
             preparedStatusPath: $prepared->statusPath,
         );
         $this->assertNotNull($result->id);
-        $this->manager->markBackgroundedForRecord($result->id, $sessionId);
+        $this->store->applyLaunch(
+            $prepared->id,
+            $sessionId,
+            $result->pid,
+            posix_getpgid($result->pid) ?: null,
+            new \DateTimeImmutable(),
+        );
+        $candidate = $this->manager->resolveBackgroundAcceptance($result->statusPath, $sessionId);
+        $this->assertNotNull($candidate);
+        $this->manager->acceptResolvedBackground($candidate);
 
         return [
             'id' => $result->id,

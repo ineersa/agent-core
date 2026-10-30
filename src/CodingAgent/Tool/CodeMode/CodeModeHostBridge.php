@@ -20,7 +20,6 @@ use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
-use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
@@ -163,7 +162,7 @@ final readonly class CodeModeHostBridge
             || [$stored->runId, $stored->turnNo, $stored->stepId, $stored->attempt, $stored->idempotencyKey, $stored->toolCallId, $stored->orderIndex]
             !== [$call->runId(), $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->orderIndex]
         ) {
-            throw new ToolPayloadException('Prepared code_mode registration does not match its canonical batch invocation.');
+            throw new ToolCallException('Prepared code_mode registration does not match its canonical batch invocation.', retryable: false);
         }
 
         return $metadata->deferredId;

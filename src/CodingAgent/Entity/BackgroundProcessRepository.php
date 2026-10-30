@@ -42,23 +42,6 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
     }
 
     /**
-     * Check whether a row exists for the given PID.
-     *
-     * Uses an ORM COUNT query that always hits the database, bypassing the
-     * identity map. This allows callers to distinguish "row does not exist"
-     * from "row exists but ORM/identity map did not return it."
-     */
-    public function existsByPid(int $pid): bool
-    {
-        return (bool) $this->createQueryBuilder('bp')
-            ->select('COUNT(bp.id)')
-            ->where('bp.pid = :pid')
-            ->setParameter('pid', $pid)
-            ->getQuery()
-            ->getSingleScalarResult();
-    }
-
-    /**
      * Check whether a row exists for the given auto-increment record ID.
      *
      * Uses an ORM COUNT query that always hits the database, bypassing the

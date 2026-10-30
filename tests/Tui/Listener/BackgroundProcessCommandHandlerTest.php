@@ -249,11 +249,12 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
     private function start(string $runId = 'visible', bool $accepted = true): StartResult
     {
         $command = 'read -r release < '.escapeshellarg($this->directory.'/release');
-        $prepared = $this->manager->prepareNativeLaunch($runId, 'call', $command, false);
+        $toolCallId = 'call-'.bin2hex(random_bytes(4));
+        $prepared = $this->manager->prepareNativeLaunch($runId, $toolCallId, $command, true);
         $process = $this->manager->start(
             $command,
             $runId,
-            'call',
+            $toolCallId,
             preparedRecordId: $prepared->id,
             preparedLogPath: $prepared->logPath,
             preparedStatusPath: $prepared->statusPath,
@@ -263,11 +264,13 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
             $prepared->id,
             $runId,
             $process->pid,
-            null,
+            posix_getpgid($process->pid) ?: null,
             new \DateTimeImmutable(),
         );
         if ($accepted) {
-            $this->manager->markBackgroundedForRecord($process->id, $runId);
+            $candidate = $this->manager->resolveBackgroundAcceptance($process->statusPath, $runId);
+            $this->assertNotNull($candidate);
+            $this->manager->acceptResolvedBackground($candidate);
         }
 
         return $process;

@@ -187,7 +187,6 @@ final class BackgroundProcessManager
                 logPath: $existing->logPath,
                 statusPath: $existing->statusPath,
                 deferredId: null,
-                backgroundEligible: $backgroundRequested || $existing->backgroundRequested,
                 deadlineNanoseconds: null,
             );
         }
@@ -213,7 +212,6 @@ final class BackgroundProcessManager
             logPath: $logPath,
             statusPath: $statusPath,
             deferredId: null,
-            backgroundEligible: $backgroundRequested,
             deadlineNanoseconds: null,
         );
     }
@@ -233,7 +231,6 @@ final class BackgroundProcessManager
             logPath: $existing->logPath,
             statusPath: $existing->statusPath,
             deferredId: null,
-            backgroundEligible: $existing->backgroundRequested,
             deadlineNanoseconds: $existing->deadlineNanoseconds,
         );
     }
@@ -370,12 +367,6 @@ final class BackgroundProcessManager
         return $records;
     }
 
-    /** Scalar COUNT bypasses ORM identity-map state, including retained aliases. */
-    public function existsByPid(int $pid): bool
-    {
-        return $this->store->existsByPid($pid);
-    }
-
     /** Scalar COUNT distinguishes a missing row from a filtered lookup. */
     public function existsByRecordId(int $id): bool
     {
@@ -384,8 +375,7 @@ final class BackgroundProcessManager
 
     /**
      * Public PID lookup selects the newest retained row before filtering
-     * ownership. Null covers both absence and a different session; callers
-     * needing to distinguish them can query existsByPid(). Immutable record
+     * ownership. Null covers both absence and a different session. Immutable record
      * IDs, not reusable PIDs, address foreground supervision.
      */
     public function find(int $pid, ?string $sessionId = null): ?BashProcessRecordDTO
@@ -529,21 +519,6 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Mark the exact background-process record as user-backgrounded.
-     *
-     * Used by BashTool when its worker accepts the background request for the
-     * current invocation (immutable record ID from start()).
-     *
-     * @throws \RuntimeException when record not found or session mismatches
-     */
-    public function markBackgroundedForRecord(int $recordId, ?string $sessionId = null): void
-    {
-        if (!$this->tryMarkBackgroundedForRecord($recordId, $sessionId)) {
-            throw new \RuntimeException('Bash process finished before background acceptance.');
-        }
-    }
-
-    /**
      * Resolve a still-running background acceptance candidate.
      *
      * Callers must perform the freshest cancellation check after this returns
@@ -643,27 +618,6 @@ final class BackgroundProcessManager
         return true;
     }
 
-    public function tryMarkBackgroundedForStatusPath(string $statusPath, ?string $sessionId = null): bool
-    {
-        $candidate = $this->resolveBackgroundAcceptance($statusPath, $sessionId);
-        if (null === $candidate) {
-            return false;
-        }
-
-        return $this->acceptResolvedBackground($candidate);
-    }
-
-    /** A completion observed before acceptance belongs to the foreground result. */
-    public function tryMarkBackgroundedForRecord(int $recordId, ?string $sessionId = null): bool
-    {
-        $record = $this->store->snapshot($recordId);
-        if (null === $record || (null !== $sessionId && $record->sessionId !== $sessionId)) {
-            throw new \RuntimeException('Bash background acceptance record/session mismatch.');
-        }
-
-        return $this->tryMarkBackgroundedForStatusPath($record->statusPath, $sessionId);
-    }
-
     /**
      * Stop a background process by immutable record ID.
      *
@@ -704,26 +658,6 @@ final class BackgroundProcessManager
         }
 
         return $this->stopByRecordId($record->id, $sessionId, $waitForExit);
-    }
-
-    public function readLogTailForStatusPath(string $statusPath, ?int $maxChars = null, ?string $sessionId = null): LogTailResult
-    {
-        $native = $this->nativeLaunches[$statusPath] ?? null;
-        if (null !== $native) {
-            if (null !== $sessionId && $native->sessionId !== $sessionId) {
-                throw new \RuntimeException(\sprintf('No background process found with status path %s for this session.', $statusPath));
-            }
-            $finished = null !== $this->lifecycle->readStatusFile($statusPath) || !$this->lifecycle->isAlive($native->pid);
-
-            return $this->lifecycle->readLogTail($native->logPath, $maxChars ?? $this->config->logTailChars, $finished);
-        }
-
-        $record = $this->findByStatusPath($statusPath, $sessionId);
-        if (null === $record) {
-            throw new \RuntimeException(\sprintf('No background process found with status path %s for this session.', $statusPath));
-        }
-
-        return $this->lifecycle->readLogTail($record->logPath, $maxChars ?? $this->config->logTailChars, null !== $record->finishedAt);
     }
 
     /**
@@ -1021,7 +955,6 @@ final class BackgroundProcessManager
             finishedAt: $finishedAt,
             exitCode: $exitCode,
             stoppedByUser: $stoppedByUser,
-            accepted: isset($this->acceptedStatusPaths[$native->statusPath]),
             toolCallId: $native->toolCallId,
             backgroundRequested: $backgroundRequested,
             status: $status,
@@ -1047,6 +980,12 @@ final class BackgroundProcessManager
         $status = -1 === $exitCode
             ? BackgroundProcessStatusEnum::Stopped
             : (null !== $exitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean);
+        // Timeout/stop intents mark Stopped before native exit evidence arrives.
+        // Preserve that classification when the sidecar later reports completion,
+        // matching ProcessStore::decide()'s settle path.
+        if (BackgroundProcessStatusEnum::Stopped === $record->status) {
+            $status = BackgroundProcessStatusEnum::Stopped;
+        }
         $this->publishFinished(
             new NativeBashLaunchDTO(
                 pid: $record->pid,
