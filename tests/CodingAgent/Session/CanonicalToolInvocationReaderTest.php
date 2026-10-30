@@ -205,7 +205,7 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
     }
 
     #[DataProvider('deferredProducerScenarios')]
-    public function testUnloadedDeferredProducerPublishesActiveAndSettlesRetiredWithoutStateReplay(bool $approvalRetry): void
+    public function testUnloadedDeferredProducerPublishesActiveAndDiscardsRetiredWithoutOwnerWritesOrStateReplay(bool $approvalRetry): void
     {
         $this->append('llm_step_completed', ['assistant_message' => ['tool_calls' => [['id' => 'call']]]]);
         $call = $approvalRetry ? $this->approvedCall() : new ExecuteToolCall('indexed', 1, 'model-step', 1, 'key', 'call', 'subagent', [], 0);
@@ -213,11 +213,11 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         $resultReference = new ToolPayloadReferenceDTO('result', 'indexed', 1, 'model-step', $call->attempt(), $call->idempotencyKey(), 'call', 0, 'subagent', str_repeat('b', 64), 100);
         $batches = $this->createMock(ToolBatchStoreInterface::class);
         $batches->method('loadCallReference')->willReturn($reference);
-        $batches->expects($this->once())->method('delete')->with('indexed', 1, 'model-step');
+        $batches->expects($this->never())->method('delete');
         $deferred = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
         $deferred->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('deferred', $reference, 'pending'));
         $deferred->expects($this->once())->method('findByDeferredId')->willReturn(new DeferredToolCompletionCorrelation('deferred', 'indexed', 1, 'model-step', $call->attempt(), $call->idempotencyKey(), 'call', 'subagent', [], 0));
-        $deferred->expects($this->once())->method('markCompleted')->with('deferred');
+        $deferred->expects($this->never())->method('markCompleted');
         $payloads = $this->createMock(ToolPayloadStoreInterface::class);
         $payloads->expects($this->once())->method('publish')->willReturn($resultReference);
         $payloads->expects($this->never())->method('read');
