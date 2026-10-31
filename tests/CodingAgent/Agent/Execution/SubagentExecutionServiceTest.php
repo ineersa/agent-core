@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -84,21 +83,11 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'appConfig' => self::getContainer()->get(AppConfig::class),
             'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
-        ], new ExecuteToolCall(
-            'parent-child-run',
-            2,
-            'nested-step',
-            1,
-            hash('sha256', 'call-nested'),
-            'call-nested',
-            'subagent',
-            [
-                'agent' => 'nested',
-                'task' => 'Go deeper',
-            ],
-            0,
-            parentModel: 'test-model',
-        ));
+        ]);
+        self::getContainer()->get(StackToolExecutionContextAccessor::class)->with(
+            new \Ineersa\AgentCore\Application\Tool\ToolContext('parent-child-run', 2, 'call-nested', 'subagent', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30, stepId: 'nested-step', parentModel: 'test-model'),
+            static fn () => $service->execute('parent-child-run', 'nested', 'Go deeper'),
+        );
     }
 
     public function testMissingAgentDefinitionThrowsNonRetryable(): void
@@ -130,21 +119,11 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'appConfig' => self::getContainer()->get(AppConfig::class),
-        ], new ExecuteToolCall(
-            'parent-4',
-            2,
-            'missing-step',
-            1,
-            hash('sha256', 'call-missing'),
-            'call-missing',
-            'subagent',
-            [
-                'agent' => 'nonexistent-agent',
-                'task' => 'Do something',
-            ],
-            0,
-            parentModel: 'test-model',
-        ));
+        ]);
+        self::getContainer()->get(StackToolExecutionContextAccessor::class)->with(
+            new \Ineersa\AgentCore\Application\Tool\ToolContext('parent-4', 2, 'call-missing', 'subagent', new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), 30, stepId: 'missing-step', parentModel: 'test-model'),
+            static fn () => $service->execute('parent-4', 'nonexistent-agent', 'Do something'),
+        );
     }
 
     private function defaultPolicyResolver(): AgentToolPolicyResolver
@@ -164,7 +143,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         return new AgentMcpToolsResolver($catalogStore, $loader);
     }
 
-    private function makeService(array $overrides, ?ExecuteToolCall $prepare = null): SubagentExecutionService
+    private function makeService(array $overrides): SubagentExecutionService
     {
         $defaults = [
             'catalog' => new AgentDefinitionCatalog([]),
@@ -196,7 +175,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'toolRegistry' => self::getContainer()->get(ToolRegistryInterface::class),
         ];
 
-        return SubagentExecutionServiceFactory::build(array_merge($defaults, $overrides), $prepare);
+        return SubagentExecutionServiceFactory::build(array_merge($defaults, $overrides));
     }
 }
 

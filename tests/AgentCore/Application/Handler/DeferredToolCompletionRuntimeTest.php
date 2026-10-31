@@ -450,7 +450,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->assertNotNull($repo->findMetadataByDeferredId($registered->deferredId)?->readyAt);
     }
 
-    public function testOwnerPreparedCodeModeWorkerExecutesRealHostAndReturnsOrdinaryResult(): void
+    public function testCodeModeWorkerPreparesInsideRealHostAndReturnsOrdinaryResult(): void
     {
         $container = self::getContainer();
         $runId = $container->get(HatfieldSessionStore::class)->createSession('owner prepared code_mode worker');
@@ -480,10 +480,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $call = $batches->loadCall($runId, 1, 'code-mode-worker-step', 'code-mode-worker-call');
         $this->assertInstanceOf(ExecuteToolCall::class, $call);
 
-        $deferredId = $container->get(\Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService::class)->prepare($call);
-        $metadata = $container->get(DeferredToolCompletionRepository::class)->findMetadataByDeferredId($deferredId);
-        $this->assertNotNull($metadata);
-        $this->assertNull($metadata->readyAt, 'Owner preparation must leave readyAt null.');
+        $this->assertNull($container->get(DeferredToolCompletionRepository::class)->findMetadataByRunAndToolCall($runId, $call->toolCallId));
 
         $host = $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge::class);
         $toolbox = new class($host) implements \Symfony\AI\Agent\Toolbox\ToolboxInterface {

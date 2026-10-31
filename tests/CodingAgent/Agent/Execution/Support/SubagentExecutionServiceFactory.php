@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Support;
 
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
-use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
@@ -20,7 +19,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentCh
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
-use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 
@@ -29,7 +27,7 @@ final class SubagentExecutionServiceFactory
     /**
      * @param array<string, mixed> $overrides
      */
-    public static function build(array $overrides, ?ExecuteToolCall $prepare = null): SubagentExecutionService
+    public static function build(array $overrides): SubagentExecutionService
     {
         $defaults = [
             'catalog' => new AgentDefinitionCatalog([]),
@@ -112,13 +110,14 @@ final class SubagentExecutionServiceFactory
 
         $identityFactory = new DeferredSubagentBatchIdentityFactory();
         $runtimeStart = new DeferredSubagentBatchRuntimeStartService(
+            $args['operationalStatusReader'] ?? new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             $args['agentRunner'],
-            $artifactLifecycle,
             $batchLaunchService,
             $lifecyclePolicy,
             $args['logger'],
         );
         $batchPreparation = new DeferredSubagentBatchPreparationService(
+            $args['operationalStatusReader'] ?? new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             $launchPreparation,
             $identityFactory,
             $artifactLifecycle,
@@ -133,15 +132,7 @@ final class SubagentExecutionServiceFactory
             $args['contextAccessor'],
             $args['agentsConfig'],
             $args['logger'],
-            new ChildInvocationLifecycleService($args['batchRepository']),
-            $identityFactory,
-            $args['denormalizer'] ?? \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-            $args['validator'] ?? \Symfony\Component\Validator\Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(),
         );
-
-        if (null !== $prepare) {
-            $deferredBatchLaunch->prepare($prepare);
-        }
 
         return new SubagentExecutionService($deferredBatchLaunch);
     }

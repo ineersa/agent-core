@@ -22,7 +22,6 @@ final readonly class NativeBashLaunchDTO
         public bool $backgroundRequested,
         public string $logPath,
         public string $statusPath,
-        public \DateTimeImmutable $startedAt,
     ) {
     }
 }

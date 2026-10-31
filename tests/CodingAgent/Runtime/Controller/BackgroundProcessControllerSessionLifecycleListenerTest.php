@@ -81,17 +81,17 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $this->dispatcher->dispatch(new ControllerSessionStartingEvent('parent-run'));
         $this->dispatcher->dispatch(new ControllerSessionStartingEvent('parent-run'));
 
-        $this->assertTrue($this->store->existsByRecordId($parent['id']));
-        $this->assertTrue($this->store->existsByRecordId($child['id']));
+        $this->assertTrue(null !== $this->store->snapshot($parent['id']));
+        $this->assertTrue(null !== $this->store->snapshot($child['id']));
         $this->assertFileExists($parent['log']);
         $this->assertFileExists($child['status']);
         $this->assertFalse($this->lifecycle->isAlive($parent['pid']));
         $this->assertFalse($this->lifecycle->isAlive($child['pid']));
 
-        $this->assertTrue($this->store->existsByRecordId($foreign['id']));
+        $this->assertTrue(null !== $this->store->snapshot($foreign['id']));
         $this->assertFileExists($foreign['log']);
         $this->assertTrue($this->lifecycle->isAlive($foreign['pid']));
-        $this->assertTrue($this->store->existsByRecordId($unsafe['id']));
+        $this->assertTrue(null !== $this->store->snapshot($unsafe['id']));
         $this->assertFileExists($unsafe['log']);
 
         // Retention covers durable row/sidecars only. Stop the intentionally
@@ -108,11 +108,11 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $this->dispatcher->dispatch(new ControllerSessionShutdownEvent('shutdown-run', permanentDeletion: true));
         $this->dispatcher->dispatch(new ControllerSessionShutdownEvent('shutdown-run', permanentDeletion: true));
 
-        $this->assertFalse($this->store->existsByRecordId($accepted['id']));
+        $this->assertFalse(null !== $this->store->snapshot($accepted['id']));
         $this->assertFileDoesNotExist($accepted['log']);
         $this->assertFileDoesNotExist($accepted['status']);
         $this->assertFileDoesNotExist($accepted['pid_file']);
-        $this->assertTrue($this->store->existsByRecordId($foreign['id']));
+        $this->assertTrue(null !== $this->store->snapshot($foreign['id']));
         $this->assertFileExists($foreign['log']);
         $this->manager->stopByRecordId($foreign['id'], 'foreign-run');
         // OS liveness after stop is covered by ProcessLifecycleTest and

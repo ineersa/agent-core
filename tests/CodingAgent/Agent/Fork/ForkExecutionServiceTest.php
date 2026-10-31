@@ -41,11 +41,9 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
 use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
-use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
@@ -119,7 +117,6 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $compaction->method('compactMessages')->willReturnCallback(static fn (string $runId, int $turnNo, array $history): MessageSnapshotCompactionResult => MessageSnapshotCompactionResult::structuralNoOp($history));
         $container->set(CompactionServiceInterface::class, $compaction);
         $fork = $container->get(ForkExecutionService::class);
-        $this->prepareFork($parent, 'native-fork', 'Continue independently', 'openai-codex/gpt-5.5', 'low', $snapshot);
         $launch = $this->withToolContext($parent, 'native-fork', static fn () => $fork->execute($parent, 'Continue independently', $snapshot, modelOverride: 'openai-codex/gpt-5.5', reasoningOverride: 'low'), launchContext: $snapshot);
         $this->assertCount(1, $commandBus->messages);
         $command = $commandBus->messages[0];
@@ -185,7 +182,8 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
                 return $input->runId;
             },
         );
-        $runner->expects($this->once())->method('followUp');
+        $resumeCommands = new TestMessageBus();
+        $container->set('agent.command.bus', $resumeCommands);
         $container->set(AgentRunnerInterface::class, $runner);
         $compaction = $this->createStub(CompactionServiceInterface::class);
         $compaction->method('compactMessages')->willReturnCallback(
@@ -195,7 +193,6 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $this->appendCanonicalParentRun($parent, 'deepseek/deepseek-v4-flash', 2);
         $container->get(RunOperationalProjectionRepository::class)->replace(new RunState($parent, RunStatus::Running));
         $fork = $container->get(ForkExecutionService::class);
-        $this->prepareFork($parent, 'fork-cache-one', 'first fork', 'openai-codex/gpt-5.5');
         $launch = $this->withToolContext($parent, 'fork-cache-one', fn () => $fork->execute(
             $parent, 'first fork', $this->forkLaunchContext($parent), modelOverride: 'openai-codex/gpt-5.5',
         ));
@@ -260,28 +257,17 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
                     orderIndex: 0,
                 ),
             ]);
-            $resume->prepare(new ExecuteToolCall(
-                runId: $parent,
-                turnNo: 2,
-                stepId: $stepId,
-                attempt: 1,
-                idempotencyKey: 'cache-resume',
-                toolCallId: 'cache-resume',
-                toolName: 'agent_resume',
-                args: ['artifact_id' => $child->artifactId, 'task' => 'resume'],
-                orderIndex: 0,
-                parentModel: 'openai-codex/gpt-5.5',
-            ));
             $this->withToolContext($parent, 'cache-resume', static fn () => $resume->resume($parent,
                 new AgentResumeArgumentsDTO(artifact_id: $child->artifactId, task: 'resume'),
             ), toolName: 'agent_resume', stepId: $stepId);
+            $followUps = array_values(array_filter($resumeCommands->messages, static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\ApplyCommand && 'follow_up' === $message->kind));
+            $this->assertCount(1, $followUps);
+            $this->assertSame($child->childRunId, $followUps[0]->runId());
             $messages[] = new AgentMessage('assistant', [['type' => 'text', 'text' => $third->assistantMessage->asText()]]);
             $messages[] = new AgentMessage('user', [['type' => 'text', 'text' => 'resume']]);
             $resumed = $adapter->invoke(new ModelInvocationRequest('fallback/unused', new ModelInvocationInput(runId: $child->childRunId, messages: $messages)));
             $this->assertNotNull($resumed->assistantMessage);
             $this->assertSame($frames[0]['prompt_cache_key'], $frames[3]['prompt_cache_key']);
-
-            $this->prepareFork($parent, 'fork-cache-two', 'different fork', 'openai-codex/gpt-5.5');
             $other = $this->withToolContext($parent, 'fork-cache-two', fn () => $fork->execute(
                 $parent, 'different fork', $this->forkLaunchContext($parent), modelOverride: 'openai-codex/gpt-5.5',
             ));
@@ -338,7 +324,6 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $forkExecution = $container->get(ForkExecutionService::class);
 
         $launchContext = $this->forkLaunchContext($parentRunId);
-        $this->prepareFork($parentRunId, $toolCallId, 'Delegated integration task');
         $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $forkExecution->execute(
             $parentRunId,
             'Delegated integration task',
@@ -350,11 +335,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $batch = $container->get(DeferredSubagentBatchRepository::class)
             ->findByParentRunAndToolCall($parentRunId, $toolCallId);
         $this->assertNotNull($batch);
-        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $batch->launchStatus);
-        // Container launch publishes one-way success; apply it as the owner would before retry.
-        new ChildInvocationLifecycleService(
-            $container->get(DeferredSubagentBatchRepository::class),
-        )->applyLaunchSuccessState($parentRunId, $toolCallId, $batch->lifecycleId, new \DateTimeImmutable());
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batch->launchStatus);
 
         $retry = $this->withToolContext($parentRunId, $toolCallId, static fn () => $forkExecution->execute(
             $parentRunId,
@@ -375,7 +356,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $forkExecution = self::getContainer()->get(ForkExecutionService::class);
 
         try {
-            $this->prepareFork($parentRunId, 'call-missing-state', 'Delegated integration task');
+            $this->withToolContext($parentRunId, 'refused-fork', static fn () => $forkExecution->execute($parentRunId, 'must not launch', new ToolLaunchContextDTO(kind: ToolLaunchContextDTO::KIND_FORK, producingRunId: $parentRunId, producingTurnNo: 2, producingModel: 'deepseek/deepseek-v4-flash')));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             // Missing operational relationship fails closed before canonical replay.
@@ -423,7 +404,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $forkExecution = self::getContainer()->get(ForkExecutionService::class);
 
         try {
-            $this->prepareFork($childRunId, 'call-nested', 'nested', launchContext: $this->forkLaunchContext($childRunId));
+            $this->withToolContext($childRunId, 'refused-fork', static fn () => $forkExecution->execute($childRunId, 'must not launch', new ToolLaunchContextDTO(kind: ToolLaunchContextDTO::KIND_FORK, producingRunId: $childRunId, producingTurnNo: 2, producingModel: 'deepseek/deepseek-v4-flash')));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('is an agent child; nested launches are not supported', $e->getMessage());
@@ -487,30 +468,6 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             turnNo: $turnNo,
             type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::TurnAdvanced->value,
             payload: ['turn_no' => $turnNo, 'step_id' => 'parent-step'],
-        ));
-    }
-
-    private function prepareFork(string $parentRunId, string $toolCallId, string $task, ?string $model = null, ?string $thinking = null, ?ToolLaunchContextDTO $launchContext = null): void
-    {
-        $launchContext ??= $this->forkLaunchContext($parentRunId);
-        $args = ['task' => $task];
-        if (null !== $model) {
-            $args['model'] = $model;
-        }
-        if (null !== $thinking) {
-            $args['thinking'] = $thinking;
-        }
-        self::getContainer()->get(DeferredSubagentBatchLaunchService::class)->prepare(new ExecuteToolCall(
-            runId: $parentRunId,
-            turnNo: $launchContext->producingTurnNo,
-            stepId: 'step',
-            attempt: 1,
-            idempotencyKey: hash('sha256', $parentRunId.'|'.$toolCallId),
-            toolCallId: $toolCallId,
-            toolName: 'fork',
-            args: $args,
-            orderIndex: 0,
-            parentModel: $launchContext->producingModel,
         ));
     }
 

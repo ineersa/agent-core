@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Tests\Support;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
-use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -24,7 +23,7 @@ final class UnusedBackgroundProcessManagerFactory
         $logger = new NullLogger();
 
         return new BackgroundProcessManager(
-            new ProcessStore($entityManager, new BackgroundProcessRepository($registry), $logger),
+            new ProcessStore($entityManager),
             new ProcessLifecycle($config, $logger, new LockFactory(new FlockStore())),
             $config,
             $logger,

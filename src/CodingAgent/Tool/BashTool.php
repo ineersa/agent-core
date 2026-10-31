@@ -52,7 +52,8 @@ final class BashTool implements HatfieldToolProviderInterface
             $cancelToken = $context?->cancellationToken();
             $deadline = hrtime(true) + $timeout * 1_000_000_000;
 
-            $topLevelModel = null !== $context?->stepId() && 1 === $this->contextAccessor->depth();
+            $outerInvocation = 1 === $this->contextAccessor->depth();
+            $topLevelModel = null !== $context?->stepId() && $outerInvocation;
             $toolCallId = $context?->toolCallId();
             if ($arguments->backgrounded && (!$topLevelModel || null === $sessionId || '' === $sessionId || null === $toolCallId || '' === $toolCallId)) {
                 throw new ToolCallException('Background launch requires a top-level Bash tool invocation.', retryable: false);
@@ -60,10 +61,12 @@ final class BashTool implements HatfieldToolProviderInterface
             $startResult = $this->manager->start(
                 $command,
                 $sessionId,
-                $toolCallId,
+                $outerInvocation ? $toolCallId : null,
                 $deadline,
                 backgroundRequested: $arguments->backgrounded,
-                invocationKey: null !== $context ? json_encode([$context->turnNo(), $context->stepId(), $toolCallId], \JSON_THROW_ON_ERROR) : null,
+                // Nested code-mode calls have random IDs and are not replayed.
+                // Their caller retains output, but owns native-sidecar cleanup.
+                invocationKey: $outerInvocation && null !== $context ? json_encode([$context->turnNo(), $context->stepId(), $toolCallId], \JSON_THROW_ON_ERROR) : null,
             );
             $pid = $startResult->pid;
             $statusPath = $startResult->statusPath;

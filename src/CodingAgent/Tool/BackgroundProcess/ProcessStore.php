@@ -9,11 +9,9 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
-use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\ForegroundBashProcessDTO;
-use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
 
 /**
@@ -25,8 +23,6 @@ final class ProcessStore
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
-        private readonly BackgroundProcessRepository $repository,
-        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -221,28 +217,6 @@ final class ProcessStore
         }
 
         return null;
-    }
-
-    /**
-     * Check whether a row exists for the given record ID.
-     *
-     * Delegates to BackgroundProcessRepository::existsByRecordId() which
-     * uses an ORM COUNT query that always hits the database.
-     */
-    public function existsByRecordId(int $id): bool
-    {
-        try {
-            return $this->repository->existsByRecordId($id);
-        } catch (\Throwable $e) {
-            $this->logger->warning('background_process.exists_by_record_id_failed', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.exists_by_record_id_failed',
-                'record_id' => $id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return false;
-        }
     }
 
     /** @param list<string> $runIds

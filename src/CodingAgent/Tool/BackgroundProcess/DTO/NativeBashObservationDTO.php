@@ -16,19 +16,16 @@ final readonly class NativeBashObservationDTO
 {
     public function __construct(
         public int $pid,
-        public ?int $pgid,
         public string $sessionId,
         public string $command,
         public string $logPath,
         public string $statusPath,
-        public \DateTimeImmutable $startedAt,
         public ?\DateTimeImmutable $finishedAt,
         public ?int $exitCode,
         public bool $stoppedByUser,
         public ?string $toolCallId,
         public bool $backgroundRequested,
         public BackgroundProcessStatusEnum $status,
-        public ?int $deadlineNanoseconds,
     ) {
     }
 }

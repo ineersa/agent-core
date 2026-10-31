@@ -241,7 +241,7 @@ final class BackgroundProcessManager
                 pid: $pid, pgid: $pgid, sessionId: $runId, command: $command, toolCallId: $toolCallId,
                 deadlineNanoseconds: $deadline,
                 backgroundRequested: $record->backgroundRequested ?? $backgroundRequested,
-                logPath: $logFile, statusPath: $statusFile, startedAt: $startedAt,
+                logPath: $logFile, statusPath: $statusFile,
             );
             $accepted = null !== $record?->backgroundedAt;
             if (!$accepted) {
@@ -267,12 +267,6 @@ final class BackgroundProcessManager
         }
 
         return $records;
-    }
-
-    /** Scalar COUNT distinguishes a missing row from a filtered lookup. */
-    public function existsByRecordId(int $id): bool
-    {
-        return $this->store->existsByRecordId($id);
     }
 
     /**
@@ -327,7 +321,7 @@ final class BackgroundProcessManager
         if (null === $native && null !== $sessionId) {
             $record = $this->findByStatusPath($statusPath, $sessionId);
             if (null !== $record?->pid && null !== $record->startedAt) {
-                $native = new NativeBashLaunchDTO($record->pid, $record->pgid, $record->sessionId, $record->command, $record->toolCallId, $record->deadlineNanoseconds, $record->backgroundRequested, $record->logPath, $record->statusPath, $record->startedAt);
+                $native = new NativeBashLaunchDTO($record->pid, $record->pgid, $record->sessionId, $record->command, $record->toolCallId, $record->deadlineNanoseconds, $record->backgroundRequested, $record->logPath, $record->statusPath);
             }
         }
         if (null === $native) {
@@ -891,19 +885,16 @@ final class BackgroundProcessManager
 
         return new NativeBashObservationDTO(
             pid: $native->pid,
-            pgid: $native->pgid,
             sessionId: $native->sessionId,
             command: $native->command,
             logPath: $native->logPath,
             statusPath: $native->statusPath,
-            startedAt: $native->startedAt,
             finishedAt: $finishedAt,
             exitCode: $exitCode,
             stoppedByUser: $stoppedByUser,
             toolCallId: $native->toolCallId,
             backgroundRequested: $backgroundRequested,
             status: $status,
-            deadlineNanoseconds: $native->deadlineNanoseconds,
         );
     }
 
@@ -942,7 +933,6 @@ final class BackgroundProcessManager
                 backgroundRequested: $record->backgroundRequested,
                 logPath: $record->logPath,
                 statusPath: $record->statusPath,
-                startedAt: $record->startedAt,
             ),
             $exitCode,
             $status,

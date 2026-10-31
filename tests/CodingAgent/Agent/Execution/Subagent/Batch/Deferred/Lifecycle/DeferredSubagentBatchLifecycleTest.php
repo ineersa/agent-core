@@ -65,13 +65,9 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkChildBackgroundedDTO;
-use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO;
 use Ineersa\CodingAgent\Application\Pipeline\BackgroundChildInvocationHandler;
 use Ineersa\CodingAgent\Application\Pipeline\ChildBackgroundCoordinationHandler;
-use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleHandler;
-use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
-use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
@@ -84,7 +80,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Clock\MockClock;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 #[Group('db')]
 final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
@@ -883,12 +878,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         );
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
         $deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($original, $lifecycle));
-        $lifecycleHandler = new ChildInvocationLifecycleHandler(
-            self::getContainer()->get(ChildInvocationLifecycleService::class),
-            self::getContainer()->get(DeferredToolCompletionRepository::class),
-            self::getContainer()->get(ValidatorInterface::class),
-        );
-        $lifecycleHandler(new RecordChildLaunchSuccessDTO($parent, $tool, $lifecycle, new \DateTimeImmutable()));
+        $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable());
+        $deferred->markReady($lifecycle);
         $this->assertSame('pending', $deferred->status($lifecycle));
         $this->assertNotNull($deferred->findMetadataByDeferredId($lifecycle)?->readyAt);
         $this->ensureArtifactReserved($parent, $c1['childRunId'], $c1['artifactId'], 'fork', 'Fork task', AgentArtifactKindEnum::Fork);

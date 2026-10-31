@@ -36,15 +36,26 @@ use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeIpc;
+use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
+use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
+use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
+use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
+use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
+use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
+use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
+use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
@@ -53,6 +64,7 @@ use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Validator\Validation;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge
@@ -344,7 +356,7 @@ PHP);
                         return [];
                     }
 
-                    public function execute(\Symfony\AI\Platform\Result\ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
+                    public function execute(ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
                     {
                         $context = $this->accessor->current();
                         $this->seenTimeouts[] = $context?->timeoutSeconds();
@@ -425,7 +437,7 @@ PHP);
                         return [];
                     }
 
-                    public function execute(\Symfony\AI\Platform\Result\ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
+                    public function execute(ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
                     {
                         return new \Symfony\AI\Agent\Toolbox\ToolResult(
                             $toolCall,
@@ -830,6 +842,33 @@ PHP);
         $this->assertFileDoesNotExist($marker);
     }
 
+    public function testInvalidToolboxInvocationAllocatesNoDeferredExecution(): void
+    {
+        $run = $this->ensurePreparedRegistration('code-mode-bridge-test');
+        $repository = self::getContainer()->get(DeferredToolCompletionRepository::class);
+        $this->assertNull($repository->findMetadataByRunAndToolCall($run, 'code-mode-bridge-test-1'));
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'code_mode', description: 'code mode', handler: new CodeModeTool($this->bridge()), promptLine: 'code_mode');
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, new ValidateToolCallArgumentsListener(Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator()));
+        $toolbox = new FaultTolerantToolbox(new RegistryBackedToolbox(
+            registry: $registry,
+            argumentResolver: new RawAwareToolCallArgumentResolver(new ToolCallArgumentResolver()),
+            schemaFactory: NativeToolSchemaProbe::schemaFactory(),
+            eventDispatcher: $dispatcher,
+        ));
+        $marker = $this->tmpDir.'/invalid-must-not-run';
+        $context = new ToolContext($run, 1, 'code-mode-bridge-test-1', 'code_mode', new NullCancellationToken(), 10, stepId: 'code-mode-bridge-test-step');
+        $result = self::getContainer()->get(StackToolExecutionContextAccessor::class)->with($context, static fn () => $toolbox->execute(new ToolCall(
+            'code-mode-bridge-test-1',
+            'code_mode',
+            ['script' => 'file_put_contents('.var_export($marker, true).', "ran");', 'memory_limit_mb' => 0],
+        )));
+        $this->assertStringContainsString('memory_limit_mb', (string) $result->getResult());
+        $this->assertNull($repository->findMetadataByRunAndToolCall($run, 'code-mode-bridge-test-1'));
+        $this->assertFileDoesNotExist($marker);
+    }
+
     public function testTopLevelHandlerPreparesAndMarksReadyWithoutOwnerPreparation(): void
     {
         $run = self::getContainer()->get(HatfieldSessionStore::class)->createSession('missing code_mode preparation');
@@ -914,7 +953,7 @@ PHP);
                         return [];
                     }
 
-                    public function execute(\Symfony\AI\Platform\Result\ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
+                    public function execute(ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
                     {
                         ($this->executor)($toolCall->getName());
 
