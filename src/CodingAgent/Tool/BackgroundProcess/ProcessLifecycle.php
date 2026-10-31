@@ -438,6 +438,22 @@ final class ProcessLifecycle
      */
     public function deleteLockedRecordSidecars(string $logPath, string $statusPath): bool
     {
+        if (!$this->ownsSidecarPaths($logPath, $statusPath)) {
+            return false;
+        }
+        $pidPath = substr($statusPath, 0, -7).'.pid';
+        foreach ([$logPath, $statusPath, $pidPath] as $path) {
+            if ((is_file($path) || is_link($path)) && !@unlink($path)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** Validate the exact native sidecar set without deleting or signaling it. */
+    public function ownsSidecarPaths(string $logPath, string $statusPath): bool
+    {
         if (!str_ends_with($logPath, '.log')) {
             return false;
         }
@@ -470,7 +486,7 @@ final class ProcessLifecycle
         }
 
         foreach ([$logPath, $statusPath, $expectedPidPath] as $path) {
-            if ((is_file($path) || is_link($path)) && !@unlink($path)) {
+            if (is_link($path)) {
                 return false;
             }
         }

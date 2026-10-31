@@ -68,64 +68,6 @@ final class ProcessStore
         return $entity->id;
     }
 
-    /**
-     * Owner-prepared native identity before launch.
-     *
-     * pid and started_at stay null until the worker launches against these paths.
-     *
-     * Reuses an existing prepared row for the same run/toolCallId so redelivery
-     * keeps the same paths and record id. Deadline stays null until launch/ack.
-     *
-     * @param array{session_id: string, command: string, tool_call_id: string, log_path: string, status_path: string, background_requested?: bool} $fields
-     */
-    public function prepareRecord(array $fields): int
-    {
-        $existing = $this->findPreparedByRunAndToolCall($fields['session_id'], $fields['tool_call_id']);
-        if (null !== $existing) {
-            return $existing->id;
-        }
-
-        return $this->insertRecord([
-            'pid' => null,
-            'pgid' => null,
-            'session_id' => $fields['session_id'],
-            'command' => $fields['command'],
-            'tool_call_id' => $fields['tool_call_id'],
-            'deadline_nanoseconds' => null,
-            'background_requested' => (bool) ($fields['background_requested'] ?? false),
-            'log_path' => $fields['log_path'],
-            'status_path' => $fields['status_path'],
-            'started_at' => null,
-        ]);
-    }
-
-    public function findPreparedByRunAndToolCall(string $runId, string $toolCallId): ?BashProcessRecordDTO
-    {
-        $row = $this->entityManager->getConnection()->fetchAssociative(
-            'SELECT * FROM background_process WHERE session_id = ? AND tool_call_id = ? ORDER BY id DESC LIMIT 1',
-            [$runId, $toolCallId],
-        );
-
-        return false === $row ? null : $this->hydrateSnapshot($row);
-    }
-
-    /** Persist native launch facts onto an owner-prepared row. */
-    public function applyLaunch(int $recordId, string $runId, int $pid, ?int $pgid, \DateTimeImmutable $startedAt, ?int $deadlineNanoseconds = null): void
-    {
-        $this->entityManager->getConnection()->executeStatement(
-            'UPDATE background_process SET pid = ?, pgid = ?, started_at = ?, deadline_nanoseconds = COALESCE(?, deadline_nanoseconds), updated_at = ? WHERE id = ? AND session_id = ?',
-            [
-                $pid,
-                $pgid,
-                $startedAt->format('Y-m-d H:i:s.u'),
-                $deadlineNanoseconds,
-                Clock::get()->now()->format('Y-m-d H:i:s'),
-                $recordId,
-                $runId,
-            ],
-        );
-    }
-
     public function applyFinishedByRecord(int $recordId, string $runId, ?int $exitCode, BackgroundProcessStatusEnum $status, bool $stoppedByUser, \DateTimeImmutable $finishedAt): void
     {
         $this->entityManager->getConnection()->executeStatement(

@@ -28,10 +28,9 @@ use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
-use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashNativeCompletionMetadataDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
-use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\DelayedMessageHandlingException;
@@ -72,7 +71,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         private readonly SubmissionFactory $submissionFactory,
         private readonly ChildInvocationLifecycleService $childLifecycle,
         private readonly DeferredSubagentBatchRepository $childBatches,
-        private readonly BackgroundProcessManager $backgroundProcesses,
+        private readonly ProcessLifecycle $processLifecycle,
         private readonly ProcessStore $processStore,
     ) {
     }
@@ -112,7 +111,6 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                     $this->applyBashNativeCompletionStamp(
                         $message->reference,
                         $nativeStamp,
-                        $this->admission->accepts($message->reference, true),
                     );
                 }
                 if (null !== $message->deferredId) {
@@ -250,9 +248,6 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                         return $this->payloads->publish($failed);
                     }
                 }
-                if ($message instanceof ExecuteShellToolCall) {
-                    $this->prepareDirectShellNative($message);
-                }
 
                 return $this->payloads->publish($message);
             });
@@ -382,12 +377,6 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             return;
         }
 
-        if ('bash' === $message->toolName) {
-            $this->prepareModelBashNative($message);
-
-            return;
-        }
-
         if (\in_array($message->toolName, ['agent_steer', 'notify_parent'], true)) {
             try {
                 $receipt = $this->submissionFactory->prepare(
@@ -443,14 +432,12 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
     }
 
     /**
-     * Owner applies private native Bash facts from the envelope stamp before
-     * ordinary admission. Missing prepared rows after cleanup are no-ops for
-     * stale envelopes; active results still require matching preparation.
+     * Persist accepted background jobs before caller admission. Foreground
+     * execution never creates a process row or carries a native stamp.
      */
     private function applyBashNativeCompletionStamp(
         ToolPayloadReferenceDTO $reference,
         BashNativeCompletionStamp $stamp,
-        bool $activeCaller,
     ): void {
         $metadata = $stamp->metadata;
         if ('result' !== $reference->kind || 'bash' !== $reference->toolName) {
@@ -463,84 +450,35 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         if ($metadata->runId !== $reference->runId || $metadata->toolCallId !== $reference->toolCallId) {
             throw new ToolPayloadException('Bash native completion does not match the transport reference identity.');
         }
-        $prepared = $this->backgroundProcesses->findPreparedLaunch($metadata->runId, $metadata->toolCallId);
-        if (null === $prepared) {
-            if (!$activeCaller) {
-                // Stale envelope after process-row cleanup: preserve no-op.
-                return;
+        $this->processLifecycle->withSidecarLock($metadata->statusPath, function () use ($metadata): void {
+            if (!$this->processLifecycle->ownsSidecarPaths($metadata->logPath, $metadata->statusPath)
+                || $this->processLifecycle->readPidFile($metadata->statusPath) !== $metadata->pid) {
+                throw new ToolPayloadException('Background Bash result has invalid native sidecar identity.');
             }
-
-            throw new ToolPayloadException('Bash native completion has no prepared native row.');
-        }
-        if ($prepared->id !== $metadata->recordId) {
-            throw new ToolPayloadException('Bash native completion does not match its prepared native row.');
-        }
-        if (null !== $metadata->pid) {
-            if (null === $metadata->startedAt) {
-                throw new ToolPayloadException('Bash launch acknowledgment requires the actual started_at.');
+            $id = $this->processStore->recordIdForStatusPath($metadata->statusPath, $metadata->runId);
+            if (null === $id) {
+                $id = $this->processStore->insertRecord([
+                    'session_id' => $metadata->runId,
+                    'tool_call_id' => $metadata->toolCallId,
+                    'command' => $metadata->command,
+                    'log_path' => $metadata->logPath,
+                    'status_path' => $metadata->statusPath,
+                    'pid' => $metadata->pid,
+                    'pgid' => $metadata->pgid,
+                    'started_at' => $metadata->startedAt,
+                    'deadline_nanoseconds' => $metadata->deadlineNanoseconds,
+                    'background_requested' => true,
+                ]);
+            } else {
+                $record = $this->processStore->snapshot($id);
+                if (null === $record || $record->toolCallId !== $metadata->toolCallId
+                    || $record->logPath !== $metadata->logPath || $record->pid !== $metadata->pid
+                    || $record->pgid !== $metadata->pgid || $record->command !== $metadata->command) {
+                    throw new ToolPayloadException('Background Bash result conflicts with the recorded native identity.');
+                }
             }
-            $this->processStore->applyLaunch(
-                $metadata->recordId,
-                $metadata->runId,
-                $metadata->pid,
-                $metadata->pgid,
-                $metadata->startedAt,
-                $metadata->deadlineNanoseconds,
-            );
-        }
-        if (null !== $metadata->acceptedAt) {
-            $this->processStore->applyAcceptedByRecord($metadata->recordId, $metadata->runId, $metadata->acceptedAt);
-        }
-        if (null !== $metadata->finishedAt) {
-            if (null === $metadata->status) {
-                throw new ToolPayloadException('Bash finish acknowledgment requires a native status.');
-            }
-            $this->processStore->applyFinishedByRecord(
-                $metadata->recordId,
-                $metadata->runId,
-                $metadata->exitCode,
-                $metadata->status,
-                $metadata->stoppedByUser,
-                $metadata->finishedAt,
-            );
-        }
-    }
-
-    private function prepareModelBashNative(ExecuteToolCall $message): void
-    {
-        try {
-            $arguments = $this->serializer->denormalize(
-                $message->args,
-                BashArgumentsDTO::class,
-                context: [AbstractNormalizer::ALLOW_EXTRA_ATTRIBUTES => false],
-            );
-        } catch (\Throwable $exception) {
-            throw new ToolCallException('Bash arguments are invalid.', retryable: false, previous: $exception);
-        }
-        if (!$arguments instanceof BashArgumentsDTO) {
-            throw new ToolCallException('Bash arguments are invalid.', retryable: false);
-        }
-        $violations = $this->validator->validate($arguments);
-        if (\count($violations) > 0) {
-            throw new ToolCallException((string) $violations, retryable: false);
-        }
-
-        $this->backgroundProcesses->prepareNativeLaunch(
-            $message->runId(),
-            $message->toolCallId,
-            $arguments->command,
-            $arguments->backgrounded,
-        );
-    }
-
-    private function prepareDirectShellNative(ExecuteShellToolCall $message): void
-    {
-        $this->backgroundProcesses->prepareNativeLaunch(
-            $message->runId(),
-            $message->toolCallId,
-            $message->commandText,
-            false,
-        );
+            $this->processStore->applyAcceptedByRecord($id, $metadata->runId, $metadata->acceptedAt);
+        });
     }
 
     private function retireFailedChildReservation(ToolCallResult $message): void

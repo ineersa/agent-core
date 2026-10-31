@@ -7,13 +7,13 @@ description: Background process tracking, logs, stop behavior, and related setti
 
 Long-running shell work can detach into tracked background processes so the conversation loop stays responsive.
 
-Press **Ctrl+B** while a `bash`, `code_mode`, `subagent`, `fork` or `agent_resume` tool runs to move it to background.
+Press **Ctrl+B** while a `code_mode`, `subagent`, `fork` or `agent_resume` tool runs to move it to background.
 If several eligible invocations are running in the visible session, choose one in the
 picker. Enter or Ctrl+B confirms; Escape cancels. In child live view, the shortcut
 targets eligible work in that child's run rather than its parent's invocation.
 Questions, modal dialogs and completion overlays retain their keyboard handling.
 Without an eligible invocation, Ctrl+B keeps its editor cursor-left behavior.
-Models can set `backgrounded: true` on these five tools to request background launch after startup. Omitted or false keeps foreground behavior. There is no `bg_start` tool.
+Models can set `backgrounded: true` on these four tools or `bash` to request background launch after startup. Omitted or false keeps foreground behavior. Foreground Bash is not currently available through the Ctrl+B picker. There is no `bg_start` tool.
 
 ## Code-mode scripts
 
@@ -78,9 +78,9 @@ An already-finished or removed selection never targets another job with a reused
 
 ## Lifecycle
 
-1. `bash` starts each command with a private `background_process` supervision row and `.pid` / `.status` / `.log` sidecars so it can poll, stop, and read the exact foreground result.
-2. Ctrl+B requests backgrounding for one exact running invocation. Its foreground worker checks completion before accepting the request. Acceptance resolves the original tool call with an acknowledgment and marks the existing row `backgrounded_at`; only then is it visible to `bg_status` and eligible for completion notification. The command is not launched again.
-3. Finished private foreground rows remain available for one five-minute scheduler interval, then recurring maintenance removes their exact row-owned sidecars and row.
+1. `bash` launches and supervises each command locally through private `.pid` / `.status` / `.log` sidecars. Foreground execution creates no `background_process` row.
+2. With `backgrounded: true`, the worker checks completion before accepting background execution. Its ordinary acknowledgment carries the actual native launch facts. Owner receipt creates or reuses the exact session/status-path row and marks it accepted; only then is it visible to `bg_status` and eligible for completion notification. The command is not launched again.
+3. Foreground completion retains any referenced output in session attachments, then deletes its private sidecars. Accepted jobs transfer out of worker cleanup. A detached launch whose acknowledgment has not reached the owner is not discoverable by session cleanup.
 4. Accepted background rows and their exact sidecars live only while the controller owns the session. Controller **startup** and **shutdown** both stop unfinished accepted process groups and remove their rows/sidecars (startup repairs crash leftovers; shutdown cleans the live session). The provisional 300s sweep does **not** handle accepted rows.
 5. `bg_status stop` is the explicit operator/model path for an accepted job in the current session: `SIGTERM` to the process group, wait `tools.background_process.stop_grace_seconds`, then `SIGKILL` if still alive. Controller lifecycle cleanup can stop the same accepted jobs without a `bg_status` call.
 
