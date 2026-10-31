@@ -19,7 +19,6 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
@@ -61,6 +60,7 @@ use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
+use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 use Symfony\Component\Messenger\Worker;
 use Symfony\Component\Validator\ConstraintViolationList;
@@ -250,13 +250,13 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
     {
         $payloads = $this->createMock(ToolPayloadStoreInterface::class);
         $payloads->expects($this->never())->method('read');
-        $payloads->expects($this->once())->method('publish')->willReturn($this->reference('result'));
+        $payloads->expects($this->never())->method('publish');
         $completed = false;
         $deferred = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
         $deferred->method('findMetadataByDeferredId')->willReturnCallback(function () use (&$completed): DeferredToolCompletionMetadataDTO {
             return new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), $completed ? 'completed' : 'pending');
         });
-        $deferred->method('findByDeferredId')->willReturn(new DeferredToolCompletionCorrelation('deferred', 'run', 1, 'step', 1, 'key', 'call', 'echo', [], 0));
+        $deferred->expects($this->never())->method('findByDeferredId');
         $deferred->expects($this->exactly(2))->method('markCompleted')->willReturnCallback(static function () use (&$completed): void {
             $completed = true;
         });
@@ -267,8 +267,10 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $middleware = $this->middleware($payloads, $deferred, $batches, $registry);
         $producer = new MessageBus([$middleware]);
         $completion = new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'obsolete']]);
-        $sealed = $producer->dispatch($completion);
+        $sealed = $producer->dispatch(new Envelope($completion, [new TransportNamesStamp(['agent'])]));
         $this->assertInstanceOf(ToolPayloadMessage::class, $sealed->getMessage());
+        $this->assertEquals($this->reference('correlation'), $sealed->getMessage()->reference);
+        $this->assertSame(['run_control'], $sealed->last(TransportNamesStamp::class)?->getTransportNames());
         $this->assertFalse($completed, 'The producer must not settle owner state.');
         $owner = new MessageBus([$middleware, new HandleMessageMiddleware(new HandlersLocator([]), false)]);
         $received = $sealed->with(new ReceivedStamp('run_control'));

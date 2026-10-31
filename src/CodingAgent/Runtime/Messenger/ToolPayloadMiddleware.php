@@ -95,6 +95,9 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
 
                         return null;
                     }
+                    if ('correlation' === $message->reference->kind) {
+                        throw new ToolPayloadException('Active deferred completion requires result data.');
+                    }
                 } elseif (!$this->admission->accepts($message->reference, 'run_control' === $received->getTransportName())) {
                     return null;
                 }
@@ -223,6 +226,11 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             // caller is obsolete. Only completed redelivery is a producer no-op.
             if ('completed' === $metadata->status) {
                 return null;
+            }
+            if (!$this->admission->acceptsDeferred($metadata->reference, false)) {
+                // Obsolete owner settlement needs identity only, not files that
+                // may already be gone. Never invent a result reference here.
+                return $metadata->reference;
             }
             // Prefer the first accepted immutable result when present so failed
             // sends can redrive without rebuilding or re-executing the tool.
@@ -387,9 +395,9 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
 
     private function route(Envelope $envelope, ToolPayloadMessage $message): Envelope
     {
-        // Preparation refusals convert an agent/tool call stamp into a result.
-        // Result references always own run_control, even when a prior stamp remains.
-        if ('result' === $message->reference->kind) {
+        // Results and deferred settlement belong to run_control even when an
+        // execution transport stamp remains on the producer envelope.
+        if ('result' === $message->reference->kind || null !== $message->deferredId) {
             return $envelope->withoutAll(TransportNamesStamp::class)
                 ->with(new TransportNamesStamp(['run_control']));
         }
@@ -406,7 +414,8 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         if (0 !== \count($errors)) {
             throw new ValidationFailedException($message, $errors);
         }
-        if ('correlation' === $message->reference->kind || (null !== $message->deferredId && 'result' !== $message->reference->kind)) {
+        if (('correlation' === $message->reference->kind && null === $message->deferredId)
+            || (null !== $message->deferredId && !\in_array($message->reference->kind, ['result', 'correlation'], true))) {
             throw new ToolPayloadException('Tool transport reference has an unsupported data kind.');
         }
     }
