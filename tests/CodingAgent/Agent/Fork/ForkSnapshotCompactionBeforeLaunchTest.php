@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
@@ -20,7 +19,6 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
 use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -147,20 +145,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
             forkMessages: $parentMessages,
         );
 
-        $outcome = $this->withToolContext($parentRunId, $toolCallId, $launchContext, static function () use ($forkExecution, $parentRunId, $toolCallId, $launchContext) {
-            self::getContainer()->get(DeferredSubagentBatchLaunchService::class)->prepare(new ExecuteToolCall(
-                runId: $parentRunId,
-                turnNo: $launchContext->producingTurnNo,
-                stepId: 'step',
-                attempt: 1,
-                idempotencyKey: hash('sha256', $parentRunId.'|'.$toolCallId),
-                toolCallId: $toolCallId,
-                toolName: 'fork',
-                args: ['task' => 'Delegated snapshot task', 'model' => 'openai-codex/gpt-5.5', 'thinking' => 'low'],
-                orderIndex: 0,
-                parentModel: $launchContext->producingModel,
-            ));
-
+        $outcome = $this->withToolContext($parentRunId, $toolCallId, $launchContext, static function () use ($forkExecution, $parentRunId, $launchContext) {
             return $forkExecution->execute(
                 $parentRunId,
                 'Delegated snapshot task',
@@ -214,20 +199,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
 
         $failure = null;
         try {
-            $this->withToolContext($parentRunId, $toolCallId, $launchContext, static function () use ($forkExecution, $parentRunId, $toolCallId, $launchContext) {
-                self::getContainer()->get(DeferredSubagentBatchLaunchService::class)->prepare(new ExecuteToolCall(
-                    runId: $parentRunId,
-                    turnNo: $launchContext->producingTurnNo,
-                    stepId: 'step',
-                    attempt: 1,
-                    idempotencyKey: hash('sha256', $parentRunId.'|'.$toolCallId),
-                    toolCallId: $toolCallId,
-                    toolName: 'fork',
-                    args: ['task' => 'Should not launch'],
-                    orderIndex: 0,
-                    parentModel: $launchContext->producingModel,
-                ));
-
+            $this->withToolContext($parentRunId, $toolCallId, $launchContext, static function () use ($forkExecution, $parentRunId, $launchContext) {
                 return $forkExecution->execute(
                     $parentRunId,
                     'Should not launch',
@@ -244,12 +216,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
 
         $batchRepository = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $batch = $batchRepository->findByParentRunAndToolCall($parentRunId, $toolCallId);
-        $this->assertNotNull($batch, 'Owner preparation reserves before worker compaction.');
-        $this->assertSame(
-            DeferredSubagentBatchLaunchStatusEnum::Reserved,
-            $batch->launchStatus,
-            'Direct execute throw leaves Reserved until owner admits the sealed failure.',
-        );
+        $this->assertNull($batch, 'Failed compaction must not reserve a child execution.');
     }
 
     public function testStructuralNoOpStillLaunchesViaOrdinaryDeferredPath(): void
@@ -296,20 +263,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
             ],
         );
 
-        $outcome = $this->withToolContext($parentRunId, $toolCallId, $launchContext, static function () use ($forkExecution, $parentRunId, $toolCallId, $launchContext) {
-            self::getContainer()->get(DeferredSubagentBatchLaunchService::class)->prepare(new ExecuteToolCall(
-                runId: $parentRunId,
-                turnNo: $launchContext->producingTurnNo,
-                stepId: 'step',
-                attempt: 1,
-                idempotencyKey: hash('sha256', $parentRunId.'|'.$toolCallId),
-                toolCallId: $toolCallId,
-                toolName: 'fork',
-                args: ['task' => 'noop task'],
-                orderIndex: 0,
-                parentModel: $launchContext->producingModel,
-            ));
-
+        $outcome = $this->withToolContext($parentRunId, $toolCallId, $launchContext, static function () use ($forkExecution, $parentRunId, $launchContext) {
             return $forkExecution->execute(
                 $parentRunId,
                 'noop task',
