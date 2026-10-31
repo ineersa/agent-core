@@ -21,6 +21,7 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Application\AgentCommunication\SubmissionFactory;
+use Ineersa\CodingAgent\Application\Bash\NativeBashIdentity;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\SettleObsoleteDeferredCompletionDTO;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
@@ -513,6 +514,18 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         }
         if ($owned->statusPath !== $prepared->statusPath || $owned->logPath !== $prepared->logPath) {
             throw new ToolPayloadException('Bash native completion paths do not match the owned process record.');
+        }
+        $expectedPrefix = NativeBashIdentity::prefix(
+            $reference->runId,
+            $reference->turnNo,
+            $reference->stepId,
+            $reference->toolCallId,
+            $reference->attempt,
+            $reference->idempotencyKey,
+        );
+        if (!NativeBashIdentity::matchesStatusPath($owned->statusPath, $expectedPrefix)
+            || !NativeBashIdentity::matchesLogPath($owned->logPath, $expectedPrefix)) {
+            throw new ToolPayloadException('Bash native completion does not match the sealed invocation identity.');
         }
         if (null !== $metadata->pid) {
             if (null === $metadata->startedAt) {

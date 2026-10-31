@@ -30,6 +30,7 @@ use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
 use Ineersa\CodingAgent\Application\Bash\NativeBashIdentity;
@@ -873,7 +874,13 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $operation = $state->currentOperation;
         $standaloneShellOperation = false;
         foreach ($state->pendingShellToolCalls as $toolCallId => $_) {
-            $shellPlan = $this->prepareShellRepair($runId, $toolCallId, $events, $commandId, $apply);
+            $shellPlan = $this->prepareShellRepair(
+                $runId,
+                $toolCallId,
+                [...$events, ...$repairStartEvents],
+                $commandId,
+                $apply,
+            );
             if ($shellPlan instanceof RepairResult) {
                 return $shellPlan;
             }
@@ -918,7 +925,14 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                         continue;
                     }
                     if ('bash' === $call->toolName) {
-                        $bashPlan = $this->prepareModelBashRepair($runId, $batch, $call, $commandId, $apply, $events);
+                        $bashPlan = $this->prepareModelBashRepair(
+                            $runId,
+                            $batch,
+                            $call,
+                            $commandId,
+                            $apply,
+                            [...$events, ...$repairStartEvents],
+                        );
                         if ($bashPlan instanceof RepairResult) {
                             return $bashPlan;
                         }
@@ -1271,12 +1285,11 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     }
 
     /**
-     * @param \Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO $batch
-     * @param list<RunEvent>                                   $events
+     * @param list<RunEvent> $events
      *
      * @return array{effect: ExecuteToolCall|ToolCallResult, actions: list<object>, events: list<RunEvent>}|RepairResult
      */
-    private function prepareModelBashRepair(string $runId, object $batch, ExecuteToolCall $call, string $commandId, bool $apply, array $events): array|RepairResult
+    private function prepareModelBashRepair(string $runId, ToolBatchStateDTO $batch, ExecuteToolCall $call, string $commandId, bool $apply, array $events): array|RepairResult
     {
         $reference = $this->toolBatchStore->loadCallReference($runId, $call->turnNo(), $call->stepId(), $call->toolCallId);
         if (null !== $reference) {
@@ -1293,7 +1306,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             }
         }
 
-        $existing = $this->modelBashStartForRepairCommand($events, $call->toolCallId, $commandId, $runId, $call->stepId());
+        $existing = $this->modelBashStartForRepairCommand($events, $call->toolCallId, $commandId);
         if (null !== $existing) {
             $effect = new ExecuteToolCall(
                 runId: $call->runId(),
@@ -1452,7 +1465,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      *
      * @return array{attempt: int, idempotency_key: string}|null
      */
-    private function modelBashStartForRepairCommand(array $events, string $toolCallId, string $commandId, string $runId, string $stepId): ?array
+    private function modelBashStartForRepairCommand(array $events, string $toolCallId, string $commandId): ?array
     {
         foreach (array_reverse($events) as $event) {
             if (RunEventTypeEnum::ToolExecutionStart->value !== $event->type) {
@@ -1466,12 +1479,11 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             }
             $attempt = $event->payload['attempt'] ?? null;
             $key = $event->payload['idempotency_key'] ?? null;
-            if (!\is_int($attempt) || !\is_string($key) || '' === $key) {
-                $attempt = \is_int($attempt) ? $attempt : null;
-                if (null === $attempt) {
-                    return null;
-                }
-                $key = hash('sha256', \sprintf('%s|%s|%s|repair|%d|%s', $runId, $stepId, $toolCallId, $attempt, $commandId));
+            if (!\is_int($attempt)) {
+                throw new \UnexpectedValueException('Repair tool_execution_start is missing a valid attempt.');
+            }
+            if (!\is_string($key) || '' === $key) {
+                throw new \UnexpectedValueException('Repair tool_execution_start is missing its idempotency key.');
             }
 
             return ['attempt' => $attempt, 'idempotency_key' => $key];
@@ -1489,11 +1501,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             if (RunEventTypeEnum::ToolExecutionEnd->value !== $event->type) {
                 continue;
             }
-            try {
-                $result = $this->toolExecutionEndPayloadCodec->fromEventPayload($event->payload);
-            } catch (\Throwable) {
-                continue;
-            }
+            $result = $this->toolExecutionEndPayloadCodec->fromEventPayload($event->payload);
             if ($result->toolCallId === $shell->toolCallId
                 && $result->runId() === $shell->runId()
                 && $result->turnNo() === $shell->turnNo()

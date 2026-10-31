@@ -24,4 +24,14 @@ final class NativeBashIdentity
             \sprintf('%s|%d|%s|%s|%d|%s', $runId, $turnNo, $stepId, $toolCallId, $attempt, $idempotencyKey),
         );
     }
+
+    public static function matchesStatusPath(string $statusPath, string $expectedPrefix): bool
+    {
+        return basename($statusPath) === $expectedPrefix.'.status';
+    }
+
+    public static function matchesLogPath(string $logPath, string $expectedPrefix): bool
+    {
+        return basename($logPath) === $expectedPrefix.'.log';
+    }
 }

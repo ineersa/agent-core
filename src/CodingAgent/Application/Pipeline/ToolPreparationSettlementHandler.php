@@ -376,11 +376,7 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
             if (RunEventTypeEnum::ToolExecutionEnd->value !== $event->type) {
                 continue;
             }
-            try {
-                $result = $codec->fromEventPayload($event->payload);
-            } catch (\Throwable) {
-                continue;
-            }
+            $result = $codec->fromEventPayload($event->payload);
             if ('bash' !== $this->toolName($result) || !\is_array($result->result) || !\array_key_exists('standalone', $result->result)) {
                 continue;
             }
