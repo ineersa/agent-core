@@ -19,7 +19,6 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Messenger\RunCommandMessage;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Scheduler\Generator\MessageContext;
-use Symfony\Component\Scheduler\Messenger\ServiceCallMessage;
 use Symfony\Component\Yaml\Yaml;
 
 #[CoversClass(SessionResourceSamplerTask::class)]
@@ -255,7 +254,7 @@ final class SessionResourceSamplerTaskTest extends TestCase
                 $container = $kernel->getContainer()->get('test.service_container');
                 $provider = $container->get('scheduler.provider.default');
                 $jobs = $provider->getSchedule()->getRecurringMessages();
-                $this->assertCount(3, $jobs);
+                $this->assertCount(2, $jobs);
 
                 $payloadTypes = [];
                 foreach ($jobs as $job) {
@@ -275,7 +274,6 @@ final class SessionResourceSamplerTaskTest extends TestCase
                 $this->assertSame([
                     SessionResourceSampleMessage::class,
                     RunCommandMessage::class,
-                    ServiceCallMessage::class,
                 ], $payloadTypes);
 
                 $handlers = iterator_to_array(
@@ -317,7 +315,7 @@ final class SessionResourceSamplerTaskTest extends TestCase
                     ->get('scheduler.provider.default')
                     ->getSchedule()
                     ->getRecurringMessages();
-                $this->assertCount(2, $disabledJobs);
+                $this->assertCount(1, $disabledJobs);
                 foreach ($disabledJobs as $job) {
                     $messages = iterator_to_array($job->getMessages(new MessageContext(
                         'default',
