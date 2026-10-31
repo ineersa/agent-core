@@ -169,9 +169,9 @@ facts into a `BashNativeCompletionStamp` on the ordinary result envelope,
 seals visible content without the private key, and applies the stamp on
 `run_control` receive before ordinary admission. Bash does not register a
 deferred completion.
-Code-mode deferred registration is prepared by `ToolPayloadMiddleware` on the
-owner before ExecuteToolCall dispatch. Socket-ready reports are one-way
-`ReadyCodeModeInvocationDTO` commands; the host does not await a reply.
+The code-mode handler registers deferred correlation after permission and budget
+validation. It marks readiness locally after accepting the script socket.
+Publishing an intent does not allocate a code-mode execution record.
 Child reservation is also prepared before dispatch. Launch success is a one-way
 `RecordChildLaunchSuccessDTO` command; failed ordinary `ToolCallResult`s retire
 reserved child metadata on owner receive. Generic deferred registration still
@@ -199,7 +199,7 @@ They are not on the BashTool foreground completion path.
 | Domain | Serialized lifecycle operations | Work left in execution paths |
 |---|---|---|
 | Bash | Ordinary ToolResult + BashNativeCompletionStamp; background request intent; residual controller decide/stop/timeout writes | Launch, local status/log supervision, signals, grace supervision |
-| Code mode | Owner-prepared deferred registration before dispatch; one-way readiness; terminal acceptance/classification on owner receipt | Isolated PHP subprocess, IPC and result artifacts |
+| Code mode | Handler-local deferred registration and readiness; terminal acceptance/classification on owner receipt | Isolated PHP subprocess, IPC and result artifacts |
 | Child invocation | Owner-prepared reservation; one-way launch success; failed ToolCallResult retirement on owner receive; residual deferred-registration reply | Artifact preparation and runner `start()`/`followUp()` |
 
 Queries are observations, not write authority. Owner operations recheck identity

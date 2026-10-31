@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\CodeMode;
 
 use Amp\DeferredFuture;
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
@@ -17,7 +18,6 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
-use Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
@@ -37,6 +37,7 @@ use Symfony\Component\Process\Exception\ProcessStartFailedException;
 use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeException;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
+use Symfony\Component\Uid\UuidV7;
 
 use function Amp\delay;
 
@@ -82,7 +83,7 @@ final readonly class CodeModeHostBridge
             $cancelToken = $parentContext?->cancellationToken() ?? new NullCancellationToken();
             $timeoutSeconds = $this->resolveScriptWallSeconds($timeoutSeconds, $parentContext?->timeoutSeconds());
             $memoryLimit = $this->formatMemoryLimit($memoryLimitMb);
-            $deferredId = $this->resolvePreparedDeferred($parentContext);
+            $deferredId = $this->prepareDeferred($parentContext);
             if ($backgrounded && null === $deferredId) {
                 throw new ToolCallException('Background launch requires a top-level code_mode invocation.', retryable: false);
             }
@@ -102,9 +103,7 @@ final readonly class CodeModeHostBridge
                 $process = $this->startProcess($workspace, $cancelToken, $memoryLimit, $capture);
                 $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
                 if (null !== $deferredId) {
-                    // One-way readiness after the script socket is accepted.
-                    // Serve continues without waiting for owner acknowledgment.
-                    $this->commandBus->dispatch(new ReadyCodeModeInvocationDTO($parentContext->runId(), $deferredId));
+                    $this->deferred->markReady($deferredId);
                     if ($backgrounded) {
                         $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($parentContext->runId(), $deferredId, $parentContext->toolCallId()));
                     }
@@ -133,14 +132,12 @@ final readonly class CodeModeHostBridge
     }
 
     /**
-     * Resolve the owner-prepared deferred identity for this top-level call.
+     * Register only an actual top-level handler invocation, after budget validation.
      *
-     * Nested and no-context invocations remain unprepared and return null. A
-     * top-level code_mode context without a canonical batch call or without
-     * owner preparation is an invariant failure — never a worker-side
-     * registration fallback.
+     * Nested and no-context invocations have no deferred caller. Existing
+     * registrations retain their identity when the same intent is delivered again.
      */
-    private function resolvePreparedDeferred(?ToolContext $parentContext): ?string
+    private function prepareDeferred(?ToolContext $parentContext): ?string
     {
         if (null === $parentContext || '' === $parentContext->runId() || null === $parentContext->stepId() || 'code_mode' !== $parentContext->toolName()) {
             return null;
@@ -150,11 +147,11 @@ final readonly class CodeModeHostBridge
         }
         $call = $this->batches->loadCall($parentContext->runId(), $parentContext->turnNo(), $parentContext->stepId(), $parentContext->toolCallId());
         if (!$call instanceof ExecuteToolCall) {
-            throw new ToolCallException('Owner-prepared code_mode registration requires a canonical batch invocation.', retryable: false);
+            throw new ToolCallException('Code-mode registration requires a canonical batch invocation.', retryable: false);
         }
         $metadata = $this->deferred->findMetadataByRunAndToolCall($call->runId(), $call->toolCallId);
         if (null === $metadata) {
-            throw new ToolCallException('Owner-prepared code_mode registration is missing for this invocation.', retryable: false);
+            return $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($call, UuidV7::v7()->toRfc4122()))->deferredId;
         }
         $stored = $metadata->reference;
         if (
@@ -162,7 +159,7 @@ final readonly class CodeModeHostBridge
             || [$stored->runId, $stored->turnNo, $stored->stepId, $stored->attempt, $stored->idempotencyKey, $stored->toolCallId, $stored->orderIndex]
             !== [$call->runId(), $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->orderIndex]
         ) {
-            throw new ToolCallException('Prepared code_mode registration does not match its canonical batch invocation.', retryable: false);
+            throw new ToolCallException('Code-mode registration does not match its canonical batch invocation.', retryable: false);
         }
 
         return $metadata->deferredId;

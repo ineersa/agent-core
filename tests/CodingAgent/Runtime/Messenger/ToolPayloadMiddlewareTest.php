@@ -34,13 +34,11 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
-use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Messenger\SubagentExecuteToolCallRoutingMiddleware;
 use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
-use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
@@ -290,7 +288,7 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $this->assertNotNull($result->last(HandledStamp::class));
     }
 
-    public function testProducerPreparesCodeModeBeforeSealingExecutionAndReusesIdentity(): void
+    public function testProducerSealsCodeModeWithoutPreparingExecutionAndReusesIdentity(): void
     {
         $container = self::getContainer();
         $run = $container->get(HatfieldSessionStore::class)->createSession('owner prepared code_mode');
@@ -319,9 +317,7 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
                     $published[] = $message;
                     if ('code-call' === $message->reference->toolCallId) {
                         $metadata = $deferred->findMetadataByRunAndToolCall($run, 'code-call');
-                        $this->assertNotNull($metadata, 'Deferred row must exist inside the outgoing ToolPayloadMessage path.');
-                        $this->assertSame('code_mode', $metadata->reference->toolName);
-                        $this->assertNull($metadata->readyAt, 'Owner preparation must leave readyAt null.');
+                        $this->assertNull($metadata, 'Publishing intent must not allocate deferred execution.');
                     }
 
                     return $message;
@@ -332,13 +328,12 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         $sealed = $bus->dispatch($code);
         $this->assertInstanceOf(ToolPayloadMessage::class, $sealed->getMessage());
         $metadata = $deferred->findMetadataByRunAndToolCall($run, 'code-call');
-        $this->assertNotNull($metadata);
-        $firstId = $metadata->deferredId;
+        $this->assertNull($metadata);
         $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'echo-call'));
 
         $repeat = $bus->dispatch($code);
         $this->assertInstanceOf(ToolPayloadMessage::class, $repeat->getMessage());
-        $this->assertSame($firstId, $deferred->findMetadataByRunAndToolCall($run, 'code-call')?->deferredId);
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'code-call'));
 
         $otherSealed = $bus->dispatch($other);
         $this->assertInstanceOf(ToolPayloadMessage::class, $otherSealed->getMessage());
@@ -346,7 +341,6 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
 
         $this->assertGreaterThanOrEqual(2, \count($published));
         $this->assertNull($published[0]->deferredId);
-        $this->assertSame($firstId, $container->get(CodeModeLifecycleService::class)->prepare($code));
     }
 
     public function testBashAcknowledgementSealsOrdinaryResultInsteadOfCodeModeBackgroundDelivery(): void
@@ -1181,11 +1175,6 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
             $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class))), $deferred, $locks,
             Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(), $commands, $logger,
             new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
-            self::getContainer()->get(CodeModeLifecycleService::class),
-            self::getContainer()->get(AgentResumeExecutionService::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Application\AgentCommunication\SubmissionFactory::class),
-            self::getContainer()->get(ChildInvocationLifecycleService::class),
-            self::getContainer()->get(DeferredSubagentBatchRepository::class), self::getContainer()->get(BackgroundProcessManager::class), self::getContainer()->get(ProcessStore::class));
+        );
     }
 }
