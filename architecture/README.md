@@ -72,10 +72,11 @@ handler yields so another Fiber can run; synchronous CPU or blocking I/O still
 blocks its process. `tools.execution.max_parallelism` separately limits admission
 within a tool batch.
 
-Bash foreground work supervises natively and publishes one-way lifecycle events
-to `run_control` through an ordinary result envelope stamp. Code-mode
-registration and child launch-success are also one-way owner commands; generic
-deferred registration still uses a reply RPC.
+Run control sends an immutable tool intent and receives its result. The tool
+handler owns execution and same-intent idempotency. Bash persists native launch
+and background acceptance locally and returns an ordinary result. Agent and
+communication handlers prepare their execution locally; workers register deferred
+correlation from returned outcomes without a registration reply RPC.
 Tool context, log/trace scopes and run-lock reentrancy are isolated by
 Fiber. See the
 [persistence ownership flow](processes-and-queues.md#lifecycle-persistence-ownership)

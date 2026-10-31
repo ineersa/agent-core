@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception as DbalException;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
@@ -24,6 +26,8 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BashTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use PHPUnit\Framework\Attributes\TestWith;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -169,17 +173,100 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         }
     }
 
+    public function testInsertFailureStopsOwnedLaunchAndRetainsReplayEvidence(): void
+    {
+        $fifo = $this->directory.'/insert-release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $command = 'read -r release < '.escapeshellarg($fifo);
+        $connection = self::getContainer()->get(Connection::class);
+        $connection->executeStatement("CREATE TEMP TRIGGER reject_bash_insert BEFORE INSERT ON background_process BEGIN SELECT RAISE(FAIL, 'injected launch insert failure'); END");
+        try {
+            try {
+                $this->manager->start($command, $this->runId, 'call', invocationKey: 'failed-insert');
+                $this->fail('The database trigger must reject insertion.');
+            } catch (DbalException $error) {
+                $this->assertStringContainsString('injected launch insert failure', $error->getMessage());
+            }
+        } finally {
+            $connection->executeStatement('DROP TRIGGER reject_bash_insert');
+        }
+        $pidFiles = glob($this->directory.'/bg/*.pid');
+        $this->assertIsArray($pidFiles);
+        $this->assertCount(1, $pidFiles);
+        $pid = (int) file_get_contents($pidFiles[0]);
+        $status = substr($pidFiles[0], 0, -4).'.status';
+        $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $this->directory.'/bg'), new NullLogger(), new LockFactory(new FlockStore()));
+        $this->assertFalse($lifecycle->isAlive($pid), 'Failed storage must not leave an owned foreground process running.');
+        $this->assertFileExists(substr($pidFiles[0], 0, -4).'.log');
+        $this->assertSame([], $this->store->sessionSnapshots($this->runId));
+        $replay = $this->newManager()->start($command, $this->runId, 'call', invocationKey: 'failed-insert');
+        $this->assertSame($pid, $replay->pid, 'Retry must recover the stopped execution, never launch again.');
+        $this->assertSame($status, $replay->statusPath);
+        $this->assertCount(1, $this->store->sessionSnapshots($this->runId));
+    }
+
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testAcceptedLaunchSurvivesThrowingLogger(bool $recordCandidate): void
+    {
+        [$server, $command, $marker] = $this->blockedCommand();
+        $peer = null;
+        $logger = $this->createStub(LoggerInterface::class);
+        $logger->method('info')->willReturnCallback(static function (string $message): void {
+            if ('background_process.marked_backgrounded' === $message) {
+                throw new \RuntimeException('injected acceptance logging failure');
+            }
+        });
+        $manager = $this->newManager($logger);
+        try {
+            $launch = $manager->start($command, $this->runId, 'call', invocationKey: 'accepted-logger');
+            $peer = stream_socket_accept($server, 2);
+            $this->assertIsResource($peer);
+            $candidate = $manager->resolveBackgroundAcceptance($launch->statusPath, $this->runId);
+            $this->assertNotNull($candidate);
+            if ($recordCandidate) {
+                $candidate['kind'] = 'record';
+                $candidate['recordId'] = $this->store->recordIdForStatusPath($launch->statusPath, $this->runId);
+                $this->assertNotNull($candidate['recordId']);
+            }
+            try {
+                $manager->acceptResolvedBackground($candidate);
+                $this->fail('Acceptance logging must throw.');
+            } catch (\RuntimeException $error) {
+                $this->assertSame('injected acceptance logging failure', $error->getMessage());
+            }
+            $manager->releaseNativeInvocation($launch->statusPath);
+            $this->assertSame(0, $manager->shutdownCleanup());
+            $other = $this->newManager();
+            $replay = $other->start($command, $this->runId, 'call', invocationKey: 'accepted-logger');
+            $this->assertTrue($replay->accepted);
+            $this->assertSame($launch->pid, $replay->pid);
+            $this->assertSame(0, $other->shutdownCleanup());
+            $this->assertSame('x', file_get_contents($marker));
+            $this->assertNull($this->store->sessionSnapshots($this->runId)[0]->finishedAt);
+        } finally {
+            foreach ($this->store->sessionSnapshots($this->runId) as $record) {
+                $manager->stopByRecordId($record->id, $this->runId);
+            }
+            $manager->shutdownCleanup();
+            if (\is_resource($peer)) {
+                fclose($peer);
+            }
+            fclose($server);
+        }
+    }
+
     private function sessionListener(): BackgroundProcessControllerSessionLifecycleListener
     {
         return new BackgroundProcessControllerSessionLifecycleListener(self::getContainer()->get(BackgroundProcessCompletionPoller::class), $this->store, $this->manager, new NullLogger());
     }
 
-    private function newManager(): BackgroundProcessManager
+    private function newManager(?LoggerInterface $logger = null): BackgroundProcessManager
     {
         $config = new BackgroundProcessConfig(storageDir: $this->directory.'/bg', stopGraceSeconds: 0);
         $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
 
-        return new BackgroundProcessManager($this->store, $lifecycle, $config, new NullLogger());
+        return new BackgroundProcessManager($this->store, $lifecycle, $config, $logger ?? new NullLogger());
     }
 
     private function invoke(BackgroundProcessManager $manager, string $command, bool $backgrounded = false): string

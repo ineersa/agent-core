@@ -156,69 +156,58 @@ boundary. Memory-limit recycling is not a substitute for correct scope cleanup.
 
 ## Lifecycle persistence ownership
 
-`run_control` owns durable Bash, code-mode and child-invocation mutations.
-This is a lifecycle boundary, not a ban on Doctrine or a claim that every database
-write in the application goes through run control. TUI session metadata and other
-independent stores retain their existing ownership.
+`run_control` owns canonical run transitions. It sends an immutable intent to the
+tool consumer and awaits the ordinary result or deferred completion. Resending an
+unresolved intent preserves its identity; it is not a new execution attempt.
+Each tool owns its execution idempotency rather than waiting for lifecycle RPCs.
 
-Bash foreground completion is migrating off request/reply metadata waits:
-the tool consumer launches and supervises natively, then reports finished
-output or background acknowledgment through an ordinary `ToolResult` that
-carries private `bash_native` facts. `ToolPayloadMiddleware` validates those
-facts into a `BashNativeCompletionStamp` on the ordinary result envelope,
-seals visible content without the private key, and applies the stamp on
-`run_control` receive before ordinary admission. Bash does not register a
-deferred completion.
+Bash launches and supervises natively, writes actual launch facts through scalar
+DBAL, and persists background acceptance before returning an ordinary
+acknowledgment. It does not register a deferred completion or attach native facts
+to the result envelope. Replay reuses matching live or completed native evidence;
+unverifiable evidence fails closed instead of authorizing a second launch.
+
+Agent tools reserve or reuse child execution inside their validated handlers.
+Communication tools create submissions during invocation. After a handler
+returns a deferred outcome, the worker registers its correlation through
+`registerPending`. Neither intent publication nor owner receipt prepares child
+execution or performs a registration handshake.
+
 The code-mode handler registers deferred correlation after permission and budget
-validation. It marks readiness locally after accepting the script socket.
-Publishing an intent does not allocate a code-mode execution record.
-Child reservation is also prepared before dispatch. Launch success is a one-way
-`RecordChildLaunchSuccessDTO` command; failed ordinary `ToolCallResult`s retire
-reserved child metadata on owner receive. Generic deferred registration still
-uses a reply RPC. Controller/scheduler accepted-job `decide()` RPCs remain an
-incomplete intermediate checkpoint for Bash.
+validation and marks readiness locally after accepting the script socket. Its PHP
+host still depends on the original worker's private IPC connection. Readiness is
+not a liveness claim; the current ready-row skip prevents automatic script replay
+but does not recover a dead host or close duplicate delivery before readiness.
+Worker loss interrupts code-mode, including backgrounded scripts; it does not
+promise continuation on a replacement worker.
 
 ```mermaid
 sequenceDiagram
-    participant Tool as Bash execution Fiber
-    participant Native as Status/log sidecars
-    participant Broker as Session broker
     participant Owner as run_control
-    participant DB as Application state.sqlite
-
-    Tool->>Native: Launch and supervise
-    Tool->>Broker: Ordinary ToolCallResult + BashNativeCompletionStamp
-    Note over Tool: No metadata reply wait for foreground completion
-    Broker->>Owner: Deliver ToolCallResult
-    Owner->>DB: Apply stamp facts before ordinary admission
+    participant Tool as Tool execution Fiber
+    participant Native as Native execution and evidence
+    Owner->>Tool: Tool intent with stable identity
+    Tool->>Native: Execute or reuse same-intent execution
+    Native-->>Tool: Output or background acceptance
+    Tool->>Owner: Ordinary result or deferred completion
+    Owner->>Owner: Admit result and commit run transition
 ```
 
-Residual Bash controller/scheduler `decide()` paths remain one-way owner writes.
-They are not on the BashTool foreground completion path.
-
-| Domain | Serialized lifecycle operations | Work left in execution paths |
-|---|---|---|
-| Bash | Ordinary ToolResult + BashNativeCompletionStamp; background request intent; residual controller decide/stop/timeout writes | Launch, local status/log supervision, signals, grace supervision |
-| Code mode | Handler-local deferred registration and readiness; terminal acceptance/classification on owner receipt | Isolated PHP subprocess, IPC and result artifacts |
-| Child invocation | Owner-prepared reservation; one-way launch success; failed ToolCallResult retirement on owner receive; residual deferred-registration reply | Artifact preparation and runner `start()`/`followUp()` |
-
-Queries are observations, not write authority. Owner operations recheck identity
-and current state instead of writing back stale snapshots. Metadata redelivery
-does not repeat native child launch. Bash no longer depends on registration
-receipts for foreground completion. Cancel before background acceptance stops
-the foreground command; acceptance first keeps the acknowledgment and job.
-This does not imply exactly-once process signalling or universal crash recovery.
-
+Queries are observations, not permission to signal. Bash decisions validate exact
+native evidence and process-group ownership before signalling. Cancel before
+background acceptance stops foreground work; acceptance first releases foreground
+ownership and preserves the job. This does not imply exactly-once signalling or
+universal crash recovery.
 Resume rejects same-child duplicates by immutable registered tool-batch order,
 resolving artifact and run handles to the same child. Different children may
-proceed concurrently. After awaiting reservation, launch and resume read fresh
+proceed concurrently. After tool-local reservation, launch and resume read fresh
 interruption intent before starting child work. No child claim-settlement or
 reservation-refusal table is used.
 
 The authoritative route inventory is [messenger.yaml](../config/packages/messenger.yaml)
 together with [ToolPayloadMiddleware](../src/CodingAgent/Runtime/Messenger/ToolPayloadMiddleware.php).
-Lifecycle DTOs route through `agent.command.bus` to `run_control`; native execution
-uses `agent.execution.bus`. The common transport does not move CodingAgent policy
+Run commands and results use `agent.command.bus`; tool execution uses
+`agent.execution.bus`. The common transport does not move CodingAgent policy
 into AgentCore.
 
 ## Scheduled work is not delayed run control
@@ -227,8 +216,6 @@ into AgentCore.
 flowchart TB
     Clock["Symfony Scheduler<br/>Live in-memory default schedule"]
     Clock -->|Every 30 seconds| Index[completion:file-index:refresh]
-    Clock -->|Every 300 seconds| Cleanup[BackgroundProcessProvisionalCleanupTask]
-    Cleanup --> Private[Finished private foreground rows and sidecars]
 ```
 
 ```mermaid
@@ -239,8 +226,7 @@ flowchart TB
     Interrupt --> Children[Interrupt unfinished children and settle parent wait]
 ```
 
-The scheduler is not the durable deadline store. Accepted background processes are
-not the provisional cleanup task's target.
+The scheduler is not the durable deadline store. Bash replay evidence remains scoped to the session until permanent deletion.
 
 ## Shutdown and crashes
 
@@ -259,10 +245,8 @@ sequenceDiagram
     TUI->>Client: Close session client
     Client->>Controller: Close transport / terminate owned controller
     Controller->>Supervisor: Shutdown on EOF, fatal stdout failure, or stop
-    Supervisor->>Workers: Stop execution consumers; retain run_control
-    Controller->>BG: Clean accepted background processes for owned scopes
-    Note over Controller,BG: Owner and broker remain available for cleanup metadata
-    Controller->>Supervisor: Stop run_control
+    Supervisor->>Workers: Stop tracked consumers and verify launcher quiescence
+    Controller->>BG: Stop scoped jobs; retain rows and sidecars for replay
     Controller->>Broker: Stop broker and helper
     Note over Controller,Workers: MCP worker stop attempts graceful disconnect
     alt Abrupt process loss
@@ -285,7 +269,7 @@ Sources: [messenger.yaml](../config/packages/messenger.yaml),
 [HeadlessController](../src/CodingAgent/Runtime/Controller/HeadlessController.php),
 [Fiber consumer command](../src/CodingAgent/Runtime/Messenger/LlmFiberConsumeCommand.php),
 [Fiber execution strategy](../src/CodingAgent/Runtime/Messenger/FiberMessageExecutionStrategy.php),
-[lifecycle reply client](../src/CodingAgent/Application/BackgroundProcess/BashRegistrationClient.php),
+[Bash native manager](../src/CodingAgent/Tool/BackgroundProcessManager.php),
 [runtime settings](../docs/settings.md),
 [StepDispatcher](../src/AgentCore/Application/Handler/StepDispatcher.php),
 [runtime reference](../docs/async-runtime-architecture.md).

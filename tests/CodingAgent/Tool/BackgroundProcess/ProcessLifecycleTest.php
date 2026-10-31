@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -166,6 +167,67 @@ PHP;
 
         $this->assertSame(0, $this->lifecycle->readStatusFile($statusFile));
         $this->assertStringContainsString('done', (string) file_get_contents($logFile));
+    }
+
+    #[Test]
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function portableCommandLookupVerifiesExactWrapperWithSpacedPaths(bool $terminate): void
+    {
+        $directory = $this->tmpDir.'/native paths with spaces';
+        mkdir($directory);
+        $this->lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $directory, stopGraceSeconds: 1), new TestLogger(), new LockFactory(new FlockStore()));
+        $status = $directory.'/owned.status';
+        $pidFile = $directory.'/owned.pid';
+        $log = $directory.'/owned.log';
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        $this->assertIsResource($server);
+        $address = stream_socket_get_name($server, false);
+        $command = escapeshellarg(\PHP_BINARY).' -r '.escapeshellarg('$socket = stream_socket_client("tcp://'.$address.'"); fread($socket, 1);');
+        $launch = $this->lifecycle->launchProcess($command, $pidFile, $log, $status);
+        $peer = stream_socket_accept($server, 2);
+        $this->assertIsResource($peer);
+        try {
+            $this->assertSame($launch['pid'], $this->lifecycle->ownedPgid($launch['pid'], $status));
+            $wrongStatus = $directory.'/wrong.status';
+            file_put_contents($directory.'/wrong.pid', (string) $launch['pid']);
+            $this->assertNull($this->lifecycle->ownedPgid($launch['pid'], $wrongStatus), 'Matching PID alone cannot replace the wrapper marker.');
+            file_put_contents($pidFile, (string) getmypid());
+            $this->assertNull($this->lifecycle->ownedPgid($launch['pid'], $status), 'A mismatched PID sidecar refuses ownership.');
+            file_put_contents($pidFile, (string) $launch['pid']);
+            file_put_contents($status, '0');
+            $this->assertNull($this->lifecycle->ownedPgid($launch['pid'], $status), 'Completion evidence prevents signalling.');
+            unlink($status);
+            $this->assertSame($launch['pid'], $this->lifecycle->ownedPgid($launch['pid'], $status));
+            $path = getenv('PATH');
+            $lookupDirectory = $directory.'/lookup';
+            mkdir($lookupDirectory);
+            try {
+                putenv('PATH='.$lookupDirectory);
+                $this->assertNull($this->lifecycle->ownedPgid($launch['pid'], $status), 'Unavailable ps refuses ownership.');
+                file_put_contents($lookupDirectory.'/ps', "#!/bin/sh\nprintf '%s' ".escapeshellarg('STATUS_FILE='.escapeshellarg($status))."\nexit 1\n");
+                chmod($lookupDirectory.'/ps', 0700);
+                $this->assertNull($this->lifecycle->ownedPgid($launch['pid'], $status), 'Nonzero ps refuses even a matching marker.');
+            } finally {
+                false === $path ? putenv('PATH') : putenv('PATH='.$path);
+            }
+            $this->assertSame($launch['pid'], $this->lifecycle->ownedPgid($launch['pid'], $status));
+            if ($terminate) {
+                $stop = $this->lifecycle->withSidecarLock($status, fn () => $this->lifecycle->stopProcess($launch['pid'], $launch['pgid'], $status));
+                $this->assertSame('TERM', $stop->signalSent);
+                $this->assertSame(143, $this->lifecycle->readStatusFile($status));
+            }
+        } finally {
+            file_put_contents($pidFile, (string) $launch['pid']);
+            fclose($peer); // EOF releases the workload even if an assertion failed.
+            fclose($server);
+            $deadline = hrtime(true) + 2_000_000_000;
+            while ($this->lifecycle->isAlive($launch['pid']) && hrtime(true) < $deadline) {
+                usleep(1_000);
+            }
+            $this->assertFalse($this->lifecycle->isAlive($launch['pid']));
+            $this->assertSame($terminate ? 143 : 0, $this->lifecycle->readStatusFile($status));
+        }
     }
 
     #[Test]

@@ -69,7 +69,7 @@ final class ProcessLifecycle
         //  5. Waits for the child on the normal path, stores child RC
         //     in a variable before echo so exit reflects child outcome
         $shellCode = \sprintf(
-            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || exit 73; set +o noclobber; echo $$ || exit 74; exec >> %s 2>&1; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > $STATUS_FILE; exit $RC',
+            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || exit 73; set +o noclobber; echo $$ || exit 74; exec >> %s 2>&1; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > "$STATUS_FILE"; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > "$STATUS_FILE"; exit $RC',
             escapeshellarg($pidFile),
             escapeshellarg($logFile),
             escapeshellarg($command),
@@ -153,8 +153,23 @@ final class ProcessLifecycle
             || null !== $this->readStatusFile($statusPath) || $this->readPidFile($statusPath) !== $pid || !$this->isAlive($pid)) {
             return null;
         }
-        $command = @file_get_contents('/proc/'.$pid.'/cmdline');
-        if (false === $command || !str_contains($command, 'STATUS_FILE='.escapeshellarg($statusPath))) {
+        try {
+            $process = Process::start(['ps', '-ww', '-p', (string) $pid, '-o', 'command=']);
+            $command = buffer($process->getStdout());
+            $exitCode = $process->join();
+        } catch (\Throwable $error) {
+            $this->logger->warning('background_process.ownership_lookup_failed', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.ownership_lookup_failed',
+                'process_pid' => $pid,
+                'run_id' => null,
+                'session_id' => null,
+                'exception' => $error,
+            ]);
+
+            return null;
+        }
+        if (0 !== $exitCode || !str_contains($command, 'STATUS_FILE='.escapeshellarg($statusPath))) {
             return null;
         }
         $pgid = $this->resolvePgid($pid);

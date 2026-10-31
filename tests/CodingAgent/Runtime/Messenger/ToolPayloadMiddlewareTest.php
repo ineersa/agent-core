@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
@@ -245,24 +246,38 @@ final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testObsoleteDeferredProducerSettlesBeforeCorrelationOrResultPublication(): void
+    public function testObsoletePendingCompletionReachesOwnerAndCompletedReplayNeedsNoBodies(): void
     {
         $payloads = $this->createMock(ToolPayloadStoreInterface::class);
         $payloads->expects($this->never())->method('read');
-        $payloads->expects($this->never())->method('publish');
+        $payloads->expects($this->once())->method('publish')->willReturn($this->reference('result'));
+        $completed = false;
         $deferred = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
-        $deferred->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), 'pending'));
-        $deferred->expects($this->never())->method('findByDeferredId');
-        // Producer drops stale/non-admitted completions; owner settlement remains owner-side.
-        $deferred->expects($this->never())->method('markCompleted');
+        $deferred->method('findMetadataByDeferredId')->willReturnCallback(function () use (&$completed): DeferredToolCompletionMetadataDTO {
+            return new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), $completed ? 'completed' : 'pending');
+        });
+        $deferred->method('findByDeferredId')->willReturn(new DeferredToolCompletionCorrelation('deferred', 'run', 1, 'step', 1, 'key', 'call', 'echo', [], 0));
+        $deferred->expects($this->exactly(2))->method('markCompleted')->willReturnCallback(static function () use (&$completed): void {
+            $completed = true;
+        });
         $batches = $this->createMock(ToolBatchStoreInterface::class);
-        $batches->expects($this->never())->method('delete');
-        $replay = $this->createMock(RunStateRebuilderInterface::class);
-        $replay->expects($this->never())->method('rebuildIfStale');
-        $registry = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
-        $registry->loadRecovered(new RunState('run', RunStatus::Cancelled, turnNo: 1, lastSeq: 7));
-        $result = new MessageBus([$this->middleware($payloads, $deferred, $batches, registry: $registry, replay: $replay)])->dispatch(new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'discard']]));
-        $this->assertNotNull($result->last(HandledStamp::class));
+        $batches->expects($this->exactly(2))->method('delete')->with('run', 1, 'step');
+        $registry = $this->createStub(ActiveRunContextInterface::class);
+        $registry->method('requireLoaded')->willReturn(new RunState('run', RunStatus::Cancelled, turnNo: 1, lastSeq: 7));
+        $middleware = $this->middleware($payloads, $deferred, $batches, $registry);
+        $producer = new MessageBus([$middleware]);
+        $completion = new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'obsolete']]);
+        $sealed = $producer->dispatch($completion);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $sealed->getMessage());
+        $this->assertFalse($completed, 'The producer must not settle owner state.');
+        $owner = new MessageBus([$middleware, new HandleMessageMiddleware(new HandlersLocator([]), false)]);
+        $received = $sealed->with(new ReceivedStamp('run_control'));
+        $this->assertNotNull($owner->dispatch($received)->last(HandledStamp::class));
+        $this->assertTrue($completed);
+        // Payload mocks reject all reads. Redelivery after cleanup still settles
+        // without hydrating a body or forwarding a stale conversational result.
+        $owner->dispatch($received);
+        $this->assertSame($completion, $producer->dispatch($completion)->getMessage());
     }
 
     public function testProducerSealsCodeModeWithoutPreparingExecutionAndReusesIdentity(): void

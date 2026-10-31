@@ -185,72 +185,92 @@ final class BackgroundProcessManager
         $statusFile = $directory.'/'.$prefix.'.status';
         $logFile = $directory.'/'.$prefix.'.log';
 
-        return $this->lifecycle->withSidecarLock($statusFile, function () use ($command, $runId, $toolCallId, $deadlineNanoseconds, $backgroundRequested, $scoped, $pidFile, $statusFile, $logFile): StartResult {
-            if (!$this->lifecycle->ownsSidecarPaths($logFile, $statusFile)) {
-                throw new \RuntimeException('Bash native paths are not owned sidecars.');
-            }
-            $id = $scoped ? $this->store->recordIdForStatusPath($statusFile, $runId) : null;
-            $record = null === $id ? null : $this->store->snapshot($id);
-            if (null !== $record && ($record->command !== $command || $record->toolCallId !== $toolCallId || $record->logPath !== $logFile)) {
-                throw new \RuntimeException('Bash intent conflicts with its existing native execution.');
-            }
-            $evidence = null !== $record || file_exists($pidFile) || file_exists($statusFile) || file_exists($logFile);
-            $startedAt = $record?->startedAt;
-            if ($evidence) {
-                $pid = $this->lifecycle->readPidFile($statusFile);
-                if (null === $pid || (null !== $record?->pid && $record->pid !== $pid)) {
-                    throw new \RuntimeException('Bash execution has incomplete native identity; workload outcome is unknown.');
+        $ownsInvocation = false;
+        try {
+            return $this->lifecycle->withSidecarLock($statusFile, function () use ($command, $runId, $toolCallId, $deadlineNanoseconds, $backgroundRequested, $scoped, $pidFile, $statusFile, $logFile, &$ownsInvocation): StartResult {
+                if (!$this->lifecycle->ownsSidecarPaths($logFile, $statusFile)) {
+                    throw new \RuntimeException('Bash native paths are not owned sidecars.');
                 }
-                $pgid = $record?->pgid;
-                if (null === $this->lifecycle->readStatusFile($statusFile) && $this->lifecycle->isAlive($pid)) {
-                    $pgid = $this->lifecycle->ownedPgid($pid, $statusFile);
-                    if (null === $pgid || (null !== $record?->pgid && $record->pgid !== $pgid)) {
-                        throw new \RuntimeException('Bash execution has no recoverable owned process group; workload outcome is unknown.');
+                $id = $scoped ? $this->store->recordIdForStatusPath($statusFile, $runId) : null;
+                $record = null === $id ? null : $this->store->snapshot($id);
+                if (null !== $record && ($record->command !== $command || $record->toolCallId !== $toolCallId || $record->logPath !== $logFile)) {
+                    throw new \RuntimeException('Bash intent conflicts with its existing native execution.');
+                }
+                $evidence = null !== $record || file_exists($pidFile) || file_exists($statusFile) || file_exists($logFile);
+                $startedAt = $record?->startedAt;
+                if ($evidence) {
+                    $pid = $this->lifecycle->readPidFile($statusFile);
+                    if (null === $pid || (null !== $record?->pid && $record->pid !== $pid)) {
+                        throw new \RuntimeException('Bash execution has incomplete native identity; workload outcome is unknown.');
                     }
+                    $pgid = $record?->pgid;
+                    if (null === $this->lifecycle->readStatusFile($statusFile) && $this->lifecycle->isAlive($pid)) {
+                        $pgid = $this->lifecycle->ownedPgid($pid, $statusFile);
+                        if (null === $pgid || (null !== $record?->pgid && $record->pgid !== $pgid)) {
+                            throw new \RuntimeException('Bash execution has no recoverable owned process group; workload outcome is unknown.');
+                        }
+                    }
+                } else {
+                    $launched = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
+                    $pid = $launched['pid'];
+                    $pgid = $launched['pgid'];
                 }
-            } else {
-                $launched = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
-                $pid = $launched['pid'];
-                $pgid = $launched['pgid'];
-            }
-            if (null === $startedAt) {
-                clearstatcache(true, $pidFile);
-                $timestamp = filemtime($pidFile);
-                if (false === $timestamp) {
-                    throw new \RuntimeException('Bash execution has no recoverable native start time.');
+                $accepted = null !== $record?->backgroundedAt;
+                if (!$accepted) {
+                    // Own the native launch before timestamp lookup or persistence can
+                    // fail. Cleanup runs outside this lock and preserves replay evidence.
+                    $this->nativeLaunches[$statusFile] = new NativeBashLaunchDTO(
+                        pid: $pid, pgid: $pgid, sessionId: $runId, command: $command, toolCallId: $toolCallId,
+                        deadlineNanoseconds: $record->deadlineNanoseconds ?? $deadlineNanoseconds,
+                        backgroundRequested: $record->backgroundRequested ?? $backgroundRequested,
+                        logPath: $logFile, statusPath: $statusFile,
+                    );
+                    $ownsInvocation = true;
                 }
-                $startedAt = new \DateTimeImmutable('@'.$timestamp);
-            }
-            $deadline = null !== $record ? $record->deadlineNanoseconds : $deadlineNanoseconds;
-            if ($evidence && null === $record && null !== $deadlineNanoseconds) {
-                // Preserve the caller's budget when recovering a launch whose
-                // post-launch SQL insert was interrupted. The PID file dates
-                // the original launch; do not restart its timeout on replay.
-                $elapsed = max(0.0, (float) Clock::get()->now()->format('U.u') - (float) $startedAt->format('U.u'));
-                $deadline = $deadlineNanoseconds - (int) ($elapsed * 1_000_000_000);
-            }
-            if ($scoped && null === $id) {
-                $id = $this->store->insertRecord([
-                    'session_id' => $runId, 'tool_call_id' => $toolCallId, 'command' => $command,
-                    'pid' => $pid, 'pgid' => $pgid, 'log_path' => $logFile, 'status_path' => $statusFile,
-                    'started_at' => $startedAt, 'deadline_nanoseconds' => $deadline,
-                    'background_requested' => $backgroundRequested,
-                ]);
-            }
-            $native = new NativeBashLaunchDTO(
-                pid: $pid, pgid: $pgid, sessionId: $runId, command: $command, toolCallId: $toolCallId,
-                deadlineNanoseconds: $deadline,
-                backgroundRequested: $record->backgroundRequested ?? $backgroundRequested,
-                logPath: $logFile, statusPath: $statusFile,
-            );
-            $accepted = null !== $record?->backgroundedAt;
-            if (!$accepted) {
-                $this->nativeLaunches[$statusFile] = $native;
-                $this->observeNative($native);
+                if (null === $startedAt) {
+                    clearstatcache(true, $pidFile);
+                    $timestamp = filemtime($pidFile);
+                    if (false === $timestamp) {
+                        throw new \RuntimeException('Bash execution has no recoverable native start time.');
+                    }
+                    $startedAt = new \DateTimeImmutable('@'.$timestamp);
+                }
+                $deadline = null !== $record ? $record->deadlineNanoseconds : $deadlineNanoseconds;
+                if ($evidence && null === $record && null !== $deadlineNanoseconds) {
+                    // Preserve the caller's budget when recovering a launch whose
+                    // post-launch SQL insert was interrupted. The PID file dates
+                    // the original launch; do not restart its timeout on replay.
+                    $elapsed = max(0.0, (float) Clock::get()->now()->format('U.u') - (float) $startedAt->format('U.u'));
+                    $deadline = $deadlineNanoseconds - (int) ($elapsed * 1_000_000_000);
+                }
+                if ($scoped && null === $id) {
+                    $id = $this->store->insertRecord([
+                        'session_id' => $runId, 'tool_call_id' => $toolCallId, 'command' => $command,
+                        'pid' => $pid, 'pgid' => $pgid, 'log_path' => $logFile, 'status_path' => $statusFile,
+                        'started_at' => $startedAt, 'deadline_nanoseconds' => $deadline,
+                        'background_requested' => $backgroundRequested,
+                    ]);
+                }
+                $native = new NativeBashLaunchDTO(
+                    pid: $pid, pgid: $pgid, sessionId: $runId, command: $command, toolCallId: $toolCallId,
+                    deadlineNanoseconds: $deadline,
+                    backgroundRequested: $record->backgroundRequested ?? $backgroundRequested,
+                    logPath: $logFile, statusPath: $statusFile,
+                );
+                if (!$accepted) {
+                    $this->nativeLaunches[$statusFile] = $native;
+                    $this->observeNative($native);
+                }
+
+                return new StartResult($pid, $logFile, $statusFile, $native->deadlineNanoseconds, $accepted);
+            });
+        } catch (\Throwable $error) {
+            if ($ownsInvocation) {
+                $this->releaseNativeInvocation($statusFile);
             }
 
-            return new StartResult($pid, $logFile, $statusFile, $native->deadlineNanoseconds, $accepted);
-        });
+            throw $error;
+        }
     }
 
     /**
@@ -490,6 +510,7 @@ final class BackgroundProcessManager
             if (null === $id || !$this->store->acceptLocal($id, $candidate['sessionId'])) {
                 throw new \RuntimeException('Background acceptance requires the launched process record.');
             }
+            $this->releaseNativeLaunch($statusPath);
             $this->logger->info('background_process.marked_backgrounded', [
                 'component' => 'tool.background_process',
                 'event_type' => 'background_process.marked_backgrounded',
@@ -499,7 +520,6 @@ final class BackgroundProcessManager
                 'run_id' => $candidate['sessionId'],
                 'session_id' => $candidate['sessionId'],
             ]);
-            $this->releaseNativeLaunch($statusPath);
 
             return true;
         }
@@ -509,6 +529,7 @@ final class BackgroundProcessManager
                 throw new \RuntimeException('Bash background acceptance record/session mismatch.');
             }
         }
+        $this->releaseNativeLaunch($statusPath);
         $this->logger->info('background_process.marked_backgrounded', [
             'component' => 'tool.background_process',
             'event_type' => 'background_process.marked_backgrounded',
@@ -519,7 +540,6 @@ final class BackgroundProcessManager
             'run_id' => $candidate['sessionId'],
             'session_id' => $candidate['sessionId'],
         ]);
-        $this->releaseNativeLaunch($statusPath);
 
         return true;
     }

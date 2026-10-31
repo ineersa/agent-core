@@ -219,9 +219,9 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         return $this->locks->synchronized($initial->reference->runId, function () use ($message, $initial): ?ToolPayloadReferenceDTO {
             $metadata = $this->deferredMetadata($message->deferredId);
             $this->assertDeferredReference($metadata, $initial->reference);
-            // Producer must not mutate owner settlement. Stale/non-admitted
-            // completions are dropped here; the owner decides settlement.
-            if ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, false)) {
+            // Pending completions must reach owner settlement even when their
+            // caller is obsolete. Only completed redelivery is a producer no-op.
+            if ('completed' === $metadata->status) {
                 return null;
             }
             // Prefer the first accepted immutable result when present so failed
