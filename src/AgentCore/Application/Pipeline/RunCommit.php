@@ -44,7 +44,7 @@ final readonly class RunCommit
         $afterTurnActions = [];
         if ($dispatchAfterTurnHooks || \in_array(RunEventTypeEnum::HistoryTailDiscarded->value, array_column($events, 'type'), true)) {
             $afterTurnActions = $this->probe('commit.prepare_hooks', $attributes, fn () => $this->hookDispatcher?->prepareAfterTurnCommit(
-                AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects), $postCommitActions), $state->lastSeq,
+                AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)), $state->lastSeq,
             ) ?? []);
         }
         foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {
@@ -99,12 +99,7 @@ final readonly class RunCommit
 
             try {
                 $this->probe('commit.after_turn_observers', $attributes, fn () => $this->hookDispatcher?->dispatchAfterTurnCommit(
-                    AfterTurnCommitHookContext::fromRunState(
-                        $committedState,
-                        $persistedEvents,
-                        \count($effects),
-                        [...$postCommitActions, ...$afterTurnActions],
-                    ),
+                    AfterTurnCommitHookContext::fromRunState($committedState, $persistedEvents, \count($effects)),
                 ));
             } catch (\Throwable $exception) {
                 $this->logger->warning('After-turn commit hook failed (best-effort)', [

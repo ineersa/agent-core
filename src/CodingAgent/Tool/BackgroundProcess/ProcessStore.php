@@ -73,15 +73,14 @@ final class ProcessStore
      *
      * pid and started_at stay null until the worker launches against these paths.
      *
-     * Reuses an existing prepared row for the exact status/log identity so
-     * redelivery of the same invocation keeps the same paths and record id.
-     * Distinct attempts allocate distinct paths. Deadline stays null until launch/ack.
+     * Reuses an existing prepared row for the same run/toolCallId so redelivery
+     * keeps the same paths and record id. Deadline stays null until launch/ack.
      *
      * @param array{session_id: string, command: string, tool_call_id: string, log_path: string, status_path: string, background_requested?: bool} $fields
      */
     public function prepareRecord(array $fields): int
     {
-        $existing = $this->findPreparedByStatusPath($fields['session_id'], $fields['status_path']);
+        $existing = $this->findPreparedByRunAndToolCall($fields['session_id'], $fields['tool_call_id']);
         if (null !== $existing) {
             return $existing->id;
         }
@@ -100,52 +99,14 @@ final class ProcessStore
         ]);
     }
 
-    public function findPreparedByStatusPath(string $runId, string $statusPath): ?BashProcessRecordDTO
+    public function findPreparedByRunAndToolCall(string $runId, string $toolCallId): ?BashProcessRecordDTO
     {
         $row = $this->entityManager->getConnection()->fetchAssociative(
-            'SELECT * FROM background_process WHERE session_id = ? AND status_path = ? LIMIT 1',
-            [$runId, $statusPath],
+            'SELECT * FROM background_process WHERE session_id = ? AND tool_call_id = ? ORDER BY id DESC LIMIT 1',
+            [$runId, $toolCallId],
         );
 
         return false === $row ? null : $this->hydrateSnapshot($row);
-    }
-
-    /**
-     * Exact prepared row by record id, scoped to the owning run/toolCall.
-     */
-    public function findPreparedByRecordId(int $recordId, string $runId, string $toolCallId): ?BashProcessRecordDTO
-    {
-        $row = $this->entityManager->getConnection()->fetchAssociative(
-            'SELECT * FROM background_process WHERE id = ? AND session_id = ? AND tool_call_id = ?',
-            [$recordId, $runId, $toolCallId],
-        );
-
-        return false === $row ? null : $this->hydrateSnapshot($row);
-    }
-
-    /** @return list<BashProcessRecordDTO> */
-    public function sessionSnapshots(string $runId): array
-    {
-        return array_map(
-            $this->hydrateSnapshot(...),
-            $this->entityManager->getConnection()->fetchAllAssociative(
-                'SELECT * FROM background_process WHERE session_id = ? ORDER BY id ASC',
-                [$runId],
-            ),
-        );
-    }
-
-    /**
-     * Delete an unused owner-prepared native row that never launched.
-     *
-     * Metadata-only: requires null pid and started_at. Already-launched rows are untouched.
-     */
-    public function deleteUnusedPreparedRecord(int $recordId, string $runId): void
-    {
-        $this->entityManager->getConnection()->executeStatement(
-            'DELETE FROM background_process WHERE id = ? AND session_id = ? AND pid IS NULL AND started_at IS NULL AND backgrounded_at IS NULL AND finished_at IS NULL',
-            [$recordId, $runId],
-        );
     }
 
     /** Persist native launch facts onto an owner-prepared row. */
@@ -209,7 +170,6 @@ final class ProcessStore
     {
         // Direct shell also persists tool_call_id. Only model Bash has an active
         // tool_batch_call row, so join that table for Ctrl+B eligibility.
-        // Exclude older physical executions when a newer preparation exists.
         $rows = $this->entityManager->getConnection()->fetchAllAssociative(
             'SELECT p.id, p.pid, p.tool_call_id
              FROM background_process p
@@ -221,11 +181,6 @@ final class ProcessStore
                AND p.tool_call_id IS NOT NULL
                AND p.backgrounded_at IS NULL
                AND p.background_requested = 0
-               AND p.id = (
-                    SELECT MAX(p2.id) FROM background_process p2
-                    WHERE p2.session_id = p.session_id
-                      AND p2.tool_call_id = p.tool_call_id
-               )
              ORDER BY p.id DESC',
             [$sessionId],
         );

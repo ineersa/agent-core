@@ -58,7 +58,7 @@ final readonly class ExecuteShellToolCallWorker
 
                 return $result;
             }
-            $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, 'bash', null, $message->attempt().'|'.$message->idempotencyKey());
+            $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, 'bash', null);
 
             return $result;
         } finally {
@@ -75,13 +75,6 @@ final readonly class ExecuteShellToolCallWorker
             arguments: $arguments,
             orderIndex: 0,
             runId: $message->runId(),
-            context: [
-                'run_id' => $message->runId(),
-                'turn_no' => $message->turnNo(),
-                'step_id' => $message->stepId(),
-                'attempt' => $message->attempt(),
-                'idempotency_key' => $message->idempotencyKey(),
-            ],
         ));
 
         $this->logger->info('shell.tool_result_ready', [

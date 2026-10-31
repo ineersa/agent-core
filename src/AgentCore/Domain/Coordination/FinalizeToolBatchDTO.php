@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Coordination;
 
-use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 
@@ -27,7 +26,6 @@ final readonly class FinalizeToolBatchDTO
         public ?ToolCallResult $result = null,
         public ?string $revisedCallId = null,
         public ?ToolCallHumanInputAnswerDTO $answer = null,
-        public ?ExecuteToolCall $replacementCall = null,
     ) {
     }
 }

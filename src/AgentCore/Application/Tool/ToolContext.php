@@ -25,8 +25,6 @@ final readonly class ToolContext
         private ?string $stepId = null,
         private ?string $parentModel = null,
         private ?ToolLaunchContextDTO $launchContext = null,
-        private ?int $attempt = null,
-        private ?string $idempotencyKey = null,
     ) {
     }
 
@@ -94,15 +92,5 @@ final readonly class ToolContext
     public function launchContext(): ?ToolLaunchContextDTO
     {
         return $this->launchContext;
-    }
-
-    public function attempt(): ?int
-    {
-        return $this->attempt;
-    }
-
-    public function idempotencyKey(): ?string
-    {
-        return $this->idempotencyKey;
     }
 }

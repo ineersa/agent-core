@@ -404,12 +404,6 @@ final class ProcessLifecycle
         return $bgDir;
     }
 
-    /** Configured storage root without creating directories. */
-    public function configuredStorageDir(): string
-    {
-        return $this->config->storageDir;
-    }
-
     // ─── Cleanup ─────────────────────────────────────────────────────
 
     /**

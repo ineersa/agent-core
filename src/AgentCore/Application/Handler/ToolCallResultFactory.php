@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
-use Ineersa\AgentCore\Exception\ToolExecutionNotStartedException;
 
 /**
  * Maps tool execution outcomes to the canonical ToolCallResult envelope.
@@ -125,18 +124,47 @@ final class ToolCallResultFactory
 
     public static function fromExecuteToolCallAndThrowable(ExecuteToolCall $message, \Throwable $exception): ToolCallResult
     {
-        return self::failedFromExecuteToolCall($message, $exception);
-    }
+        $errorType = $exception::class;
+        $details = [
+            'error_type' => $errorType,
+        ];
 
-    /**
-     * Ordinary failed result with explicit unused-preparation evidence for owner settlement.
-     *
-     * Use only at proven pre-dispatch / pre-handler boundaries. Do not mark
-     * after-executor exceptions as unused.
-     */
-    public static function unusedPreparationFromExecuteToolCall(ExecuteToolCall $message, \Throwable $exception): ToolCallResult
-    {
-        return self::failedFromExecuteToolCall($message, $exception, unusedPreparation: true);
+        if ($exception instanceof ToolCallException) {
+            $details['retryable'] = $exception->retryable();
+            $details['hint'] = $exception->hint();
+        }
+
+        $error = [
+            'type' => $errorType,
+            'message' => $exception->getMessage(),
+        ];
+        if ($exception instanceof ToolCallException) {
+            $error['retryable'] = $exception->retryable();
+            $error['hint'] = $exception->hint();
+        }
+
+        return (new ToolCallResult(
+            runId: $message->runId(),
+            turnNo: $message->turnNo(),
+            stepId: $message->stepId(),
+            attempt: $message->attempt(),
+            idempotencyKey: $message->idempotencyKey(),
+            toolCallId: $message->toolCallId,
+            orderIndex: $message->orderIndex,
+            result: [
+                'tool_name' => $message->toolName,
+                'content' => [[
+                    'type' => 'text',
+                    'text' => $exception->getMessage(),
+                ]],
+                'details' => $details,
+                'tool_idempotency_key' => $message->toolIdempotencyKey,
+                'mode' => $message->mode,
+                'arguments' => $message->args,
+            ],
+            isError: true,
+            error: $error,
+        ))->finalized();
     }
 
     /**
@@ -174,57 +202,6 @@ final class ToolCallResultFactory
                 'arguments' => $correlation->arguments,
             ],
             isError: $isError,
-            error: $error,
-        ))->finalized();
-    }
-
-    private static function failedFromExecuteToolCall(ExecuteToolCall $message, \Throwable $exception, bool $unusedPreparation = false): ToolCallResult
-    {
-        $errorType = $exception::class;
-        $details = [
-            'error_type' => $errorType,
-        ];
-
-        if ($exception instanceof ToolCallException) {
-            $details['retryable'] = $exception->retryable();
-            $details['hint'] = $exception->hint();
-        }
-        if ($unusedPreparation || $exception instanceof ToolExecutionNotStartedException) {
-            $details['execution_not_started'] = true;
-            $details['execution_not_started_reason'] = $exception instanceof ToolExecutionNotStartedException
-                ? 'not_started'
-                : 'preparation_unused';
-        }
-
-        $error = [
-            'type' => $errorType,
-            'message' => $exception->getMessage(),
-        ];
-        if ($exception instanceof ToolCallException) {
-            $error['retryable'] = $exception->retryable();
-            $error['hint'] = $exception->hint();
-        }
-
-        return (new ToolCallResult(
-            runId: $message->runId(),
-            turnNo: $message->turnNo(),
-            stepId: $message->stepId(),
-            attempt: $message->attempt(),
-            idempotencyKey: $message->idempotencyKey(),
-            toolCallId: $message->toolCallId,
-            orderIndex: $message->orderIndex,
-            result: [
-                'tool_name' => $message->toolName,
-                'content' => [[
-                    'type' => 'text',
-                    'text' => $exception->getMessage(),
-                ]],
-                'details' => $details,
-                'tool_idempotency_key' => $message->toolIdempotencyKey,
-                'mode' => $message->mode,
-                'arguments' => $message->args,
-            ],
-            isError: true,
             error: $error,
         ))->finalized();
     }

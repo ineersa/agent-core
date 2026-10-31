@@ -17,7 +17,6 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
-use Ineersa\AgentCore\Exception\ToolExecutionNotStartedException;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Psr\Log\LoggerInterface;
@@ -99,7 +98,7 @@ final readonly class ExecuteToolCallWorker
 
                 return $result;
             }
-            $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, $message->toolName, $message->toolIdempotencyKey, $message->attempt().'|'.$message->idempotencyKey());
+            $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, $message->toolName, $message->toolIdempotencyKey);
 
             return $result;
         } finally {
@@ -135,11 +134,7 @@ final readonly class ExecuteToolCallWorker
                 if (null === $this->launchInputStore) {
                     throw new \LogicException('Child launch input store is required.');
                 }
-                try {
-                    $launchContext = $this->launchInputStore->read($reference);
-                } catch (\Throwable $exception) {
-                    throw new ToolExecutionNotStartedException('Tool launch input is missing or invalid.', $exception);
-                }
+                $launchContext = $this->launchInputStore->read($reference);
             }
 
             $cancelToken = new RunCancellationToken($this->statusReader, $message->runId());
@@ -163,8 +158,6 @@ final readonly class ExecuteToolCallWorker
                     'human_input_answer' => $message->humanInputAnswer,
                     'parent_model' => $message->parentModel,
                     'launch_context' => $launchContext,
-                    'attempt' => $message->attempt(),
-                    'idempotency_key' => $message->idempotencyKey(),
                 ],
             );
 
@@ -185,7 +178,12 @@ final readonly class ExecuteToolCallWorker
                     throw new \RuntimeException('Deferred tool outcome missing typed raw_result marker.');
                 }
                 $this->registerDeferredExecution($message, $raw);
-                $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, $message->toolName, $message->toolIdempotencyKey, $message->attempt().'|'.$message->idempotencyKey());
+                $this->resultStore->releaseCompleted(
+                    $message->runId(),
+                    $message->toolCallId,
+                    $message->toolName,
+                    $message->toolIdempotencyKey,
+                );
 
                 return null;
             }
