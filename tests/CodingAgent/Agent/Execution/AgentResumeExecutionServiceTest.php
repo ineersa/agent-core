@@ -853,14 +853,20 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $context = new StackToolExecutionContextAccessor();
         $commands = new TestMessageBus();
         $batches = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $canonical = [];
+        $events = $this->createConfiguredStub(EventStoreInterface::class, ['latestSequenceFor' => 1]);
+        $events->method('reverseFor')->willReturnCallback(static function () use (&$canonical): iterable { return array_reverse($canonical); });
+        $status = RunStatus::Completed;
+        $statuses = $this->createStub(RunOperationalStatusReaderInterface::class);
+        $statuses->method('findOperationalStatus')->willReturnCallback(static function () use (&$status): RunOperationalStatusDTO { return new RunOperationalStatusDTO($status, 1); });
         $service = new AgentResumeExecutionService(
             artifactRegistry: $this->registry(),
             batchRepository: $batches,
             childRepository: self::getContainer()->get(DeferredSubagentChildRepository::class),
             identityFactory: new DeferredSubagentBatchIdentityFactory(),
             commandBus: $commands,
-            operationalStatusReader: $this->createConfiguredStub(RunOperationalStatusReaderInterface::class, ['findOperationalStatus' => new RunOperationalStatusDTO(RunStatus::Completed, 1)]),
-            eventStore: $this->createConfiguredStub(EventStoreInterface::class, ['latestSequenceFor' => 1]),
+            operationalStatusReader: $statuses,
+            eventStore: $events,
             runLockManager: self::getContainer()->get(RunLockManager::class),
             relationshipReader: StubRunRelationshipReader::topLevel($parent),
             depthGuard: new AgentDepthGuard(),
@@ -900,6 +906,31 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $continued = self::getContainer()->get(CommandMailboxPolicy::class)->applyPendingTurnStartCommands($state);
         $this->assertCount(1, $continued->state->messages);
         $this->assertSame('continue', $continued->state->messages[0]->content[0]['text']);
+
+        // The mailbox has consumed the command, but its exact canonical identity
+        // still proves that this resume started even if the local write was lost.
+        $canonical = (new EventFactory())->eventsFromSpecs($child, 2, 2, $continued->eventSpecs);
+        $status = RunStatus::Running;
+        $connection = self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getConnection();
+        $connection->executeStatement("UPDATE deferred_subagent_batch SET launch_status = 'reserved' WHERE lifecycle_id = ?", [$first->deferredId]);
+        $this->assertSame($first->deferredId, $invoke()->deferredId);
+        $this->assertCount(2, $commands->messages);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batches->findByLifecycleId($first->deferredId)->launchStatus);
+
+        // Finishing the associated execution does not authorize another follow_up.
+        $canonical[] = new RunEvent($child, 3, 2, 'agent_end', ['status' => 'completed']);
+        $status = RunStatus::Completed;
+        $connection->executeStatement("UPDATE deferred_subagent_batch SET launch_status = 'reserved' WHERE lifecycle_id = ?", [$first->deferredId]);
+        $this->assertSame($first->deferredId, $invoke()->deferredId);
+        $this->assertCount(2, $commands->messages);
+
+        $this->registry()->update($parent, $artifact, AgentArtifactStatusEnum::Completed);
+        $later = new ExecuteToolCall($parent, 1, 'later-resume-step', 1, 'later-key', 'resume-later', 'agent_resume', ['artifact_id' => $artifact, 'task' => 'continue later'], 0, parentModel: 'test/model');
+        TestToolBatchRegistration::register(new ToolBatchCollector(self::getContainer()->get(ToolBatchStoreInterface::class)), self::getContainer()->get(ToolBatchStoreInterface::class), $parent, 1, 'later-resume-step', [$later]);
+        $laterOutcome = $context->with(new ToolContext($parent, 1, 'resume-later', 'agent_resume', new NullCancellationToken(), 30, 0, stepId: 'later-resume-step', parentModel: 'test/model'), static fn () => $service->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue later')));
+        $this->assertNotSame($first->deferredId, $laterOutcome->deferredId);
+        $this->assertCount(3, $commands->messages);
+        $this->assertNotSame($original->idempotencyKey(), $commands->messages[2]->idempotencyKey());
     }
 
     private function parentSession(string $label): string

@@ -123,6 +123,26 @@ final class AgentResumeExecutionService
             throw new ToolCallException('agent_resume agent_run_id does not match its prepared reservation.', retryable: false);
         }
 
+        $stepId = 'agent-resume-'.$lifecycleId;
+        $commandKey = hash('sha256', $child->childRunId.'|'.$stepId);
+        // A crash can lose local success recording after the child has accepted
+        // or consumed follow_up. Its exact canonical command is execution
+        // evidence for this intent; unrelated child status is not.
+        foreach ($this->eventStore->reverseFor($child->childRunId) as $event) {
+            if (($event->payload['idempotency_key'] ?? null) !== $commandKey
+                || ($event->payload['kind'] ?? null) !== CoreCommandKind::FollowUp) {
+                continue;
+            }
+            if ('agent_command_rejected' === $event->type) {
+                throw new ToolCallException('The resume follow_up command was rejected.', retryable: false);
+            }
+            if (\in_array($event->type, ['agent_command_queued', 'agent_command_applied'], true)) {
+                $this->batchRepository->applyLaunchSuccessState($parentRunId, $toolCallId, $lifecycleId, $event->createdAt);
+
+                return new DeferredToolCompletionOutcome($lifecycleId);
+            }
+        }
+
         $entry = $this->artifactRegistry->get($parentRunId, $child->artifactId);
         if (null === $entry || $entry->agentRunId !== $child->childRunId) {
             throw new ToolCallException(\sprintf('Prepared agent_resume artifact "%s" is unavailable.', $child->artifactId), retryable: false);
@@ -155,7 +175,6 @@ final class AgentResumeExecutionService
                 ]);
             }
             try {
-                $stepId = 'agent-resume-'.$lifecycleId;
                 $message = new AgentMessage(
                     role: 'user',
                     content: [['type' => 'text', 'text' => $requestedTask]],
@@ -166,7 +185,7 @@ final class AgentResumeExecutionService
                     turnNo: 0,
                     stepId: $stepId,
                     attempt: 1,
-                    idempotencyKey: hash('sha256', $child->childRunId.'|'.$stepId),
+                    idempotencyKey: $commandKey,
                     kind: CoreCommandKind::FollowUp,
                     payload: ['message' => $this->normalizer->normalize($message)],
                 ));
