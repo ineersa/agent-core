@@ -61,19 +61,16 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             throw new ToolCallException('Fork parent run id does not match active tool context.', retryable: false);
         }
 
-        // Owner preparation already reserved batch/child metadata. Skip costly
-        // compaction when this invocation is already launched or interrupted.
-        $projection = $this->deferredBatchLaunch->requirePreparedProjection(
+        // Reuse tool-local execution before repeating costly compaction.
+        $projection = $this->deferredBatchLaunch->findInvocation(
             $parentRunId,
             $toolContext->toolCallId(),
-            $toolContext->turnNo(),
-            $toolContext->orderIndex(),
         );
-        if (DeferredSubagentBatchLaunchStatusEnum::Failed === $projection->launchStatus) {
+        if (DeferredSubagentBatchLaunchStatusEnum::Failed === $projection?->launchStatus) {
             throw new ToolCallException('Subagent batch launch previously failed for this tool call.', retryable: false);
         }
-        if (DeferredSubagentBatchLaunchStatusEnum::Launched === $projection->launchStatus
-            || null !== $projection->interruptionKind) {
+        if (null !== $projection && (DeferredSubagentBatchLaunchStatusEnum::Launched === $projection->launchStatus
+            || null !== $projection->interruptionKind)) {
             return new DeferredToolCompletionOutcome($projection->lifecycleId);
         }
 

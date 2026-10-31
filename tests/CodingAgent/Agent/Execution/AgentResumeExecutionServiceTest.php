@@ -844,41 +844,62 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertCount(1, $commandBus->messages);
     }
 
-    public function testMissingOwnerPreparationRefusesWithoutFollowUp(): void
+    public function testSameResumeIntentRedispatchesOneStableFollowUpCommand(): void
     {
-        $parent = $this->parentSession('missing-prep');
-        $artifact = 'agent_missing_prep';
-        $child = 'child-missing-prep';
+        $parent = $this->parentSession('stable-resume');
+        $artifact = 'agent_stable_resume';
+        $child = 'child-stable-resume';
         $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
-        $runner = $this->createMock(AgentRunnerInterface::class);
-        $runner->expects($this->never())->method('followUp');
         $context = new StackToolExecutionContextAccessor();
-        $service = $this->service($runner, $parent, $context);
-        $stepId = 'missing-prep-step';
-        TestToolBatchRegistration::register(
-            new ToolBatchCollector(self::getContainer()->get(ToolBatchStoreInterface::class)),
-            self::getContainer()->get(ToolBatchStoreInterface::class),
-            $parent,
-            1,
-            $stepId,
-            [new ExecuteToolCall($parent, 1, $stepId, 1, hash('sha256', 'missing'), 'resume-missing', 'agent_resume', [
-                'artifact_id' => $artifact,
-                'task' => 'continue',
-            ], 0, parentModel: 'test/model')],
+        $commands = new TestMessageBus();
+        $batches = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $service = new AgentResumeExecutionService(
+            artifactRegistry: $this->registry(),
+            batchRepository: $batches,
+            childRepository: self::getContainer()->get(DeferredSubagentChildRepository::class),
+            identityFactory: new DeferredSubagentBatchIdentityFactory(),
+            commandBus: $commands,
+            operationalStatusReader: $this->createConfiguredStub(RunOperationalStatusReaderInterface::class, ['findOperationalStatus' => new RunOperationalStatusDTO(RunStatus::Completed, 1)]),
+            eventStore: $this->createConfiguredStub(EventStoreInterface::class, ['latestSequenceFor' => 1]),
+            runLockManager: self::getContainer()->get(RunLockManager::class),
+            relationshipReader: StubRunRelationshipReader::topLevel($parent),
+            depthGuard: new AgentDepthGuard(),
+            contextAccessor: $context,
+            agentsConfig: new AgentsConfig(),
+            logger: new NullLogger(),
+            toolBatches: self::getContainer()->get(ToolBatchStoreInterface::class),
+            normalizer: self::getContainer()->get(SerializerInterface::class),
+            denormalizer: self::getContainer()->get(SerializerInterface::class),
+            validator: self::getContainer()->get(ValidatorInterface::class),
         );
-
-        try {
-            $context->with(
-                new ToolContext($parent, 1, 'resume-missing', 'agent_resume', new NullCancellationToken(), 30, 0, stepId: $stepId, parentModel: 'test/model'),
-                static fn () => $service->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')),
-            );
-            $error = null;
-        } catch (\Throwable $caught) {
-            $error = $caught;
+        $step = 'stable-resume-step';
+        $call = new ExecuteToolCall($parent, 1, $step, 1, hash('sha256', 'stable'), 'resume-stable', 'agent_resume', ['artifact_id' => $artifact, 'task' => 'continue'], 0, parentModel: 'test/model');
+        TestToolBatchRegistration::register(new ToolBatchCollector(self::getContainer()->get(ToolBatchStoreInterface::class)), self::getContainer()->get(ToolBatchStoreInterface::class), $parent, 1, $step, [$call]);
+        $invoke = static fn () => $context->with(new ToolContext($parent, 1, 'resume-stable', 'agent_resume', new NullCancellationToken(), 30, 0, stepId: $step, parentModel: 'test/model'), static fn () => $service->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')));
+        $first = $invoke();
+        // Simulate process loss after dispatch, before local launch-success persistence.
+        self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getConnection()->executeStatement("UPDATE deferred_subagent_batch SET launch_status = 'reserved' WHERE lifecycle_id = ?", [$first->deferredId]);
+        $second = $invoke();
+        $this->assertSame($first->deferredId, $second->deferredId);
+        $this->assertCount(2, $commands->messages);
+        [$original, $replayed] = $commands->messages;
+        $this->assertInstanceOf(ApplyCommand::class, $original);
+        $this->assertEquals($original, $replayed);
+        $this->assertSame('follow_up', $original->kind);
+        $state = new RunState($child, RunStatus::Completed);
+        $handler = self::getContainer()->get(ApplyCommandHandler::class);
+        $store = self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class);
+        foreach ([$original, $replayed] as $command) {
+            $transition = $handler->handle($command, $state);
+            foreach ($transition->postCommitActions as $action) {
+                if ($action instanceof EnqueueCommandDTO) {
+                    $store->enqueue($action->command);
+                }
+            }
         }
-
-        $this->assertInstanceOf(ToolCallException::class, $error);
-        $this->assertStringContainsString('Owner-prepared agent_resume reservation is missing', $error->getMessage());
+        $continued = self::getContainer()->get(CommandMailboxPolicy::class)->applyPendingTurnStartCommands($state);
+        $this->assertCount(1, $continued->state->messages);
+        $this->assertSame('continue', $continued->state->messages[0]->content[0]['text']);
     }
 
     private function parentSession(string $label): string

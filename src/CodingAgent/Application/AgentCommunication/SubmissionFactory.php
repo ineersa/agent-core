@@ -14,7 +14,6 @@ use Ineersa\CodingAgent\Application\AgentCommunication\DTO\SubmissionInputDTO;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\SubmissionReceiptDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
-use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Session\CanonicalToolInvocationReader;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
@@ -29,7 +28,6 @@ final readonly class SubmissionFactory
         private AgentArtifactRegistry $artifacts,
         private DeferredSubagentChildRepository $children,
         private DeferredSubagentBatchRepository $batches,
-        private DeferredToolCompletionRepository $deferred,
         private RunOperationalStatusReaderInterface $statuses,
         private CanonicalToolInvocationReader $invocations,
         private SerializerInterface $serializer,
@@ -41,18 +39,9 @@ final readonly class SubmissionFactory
     /** @param array<string, mixed> $arguments */
     public function defer(ToolContext $context, array $arguments): DeferredToolCompletionOutcome
     {
-        $prepared = $this->deferred->findMetadataByRunAndToolCall($context->runId(), $context->toolCallId());
-        if (null === $prepared) {
-            throw new ToolCallException('Owner-prepared agent submission registration is missing for this invocation.', retryable: false);
-        }
-
-        // Revalidate the frozen generation against live activity evidence.
         $receipt = $this->prepare($context->runId(), $context->turnNo(), $context->stepId() ?? '', $context->toolCallId(), $context->toolName(), $arguments);
-        if ($prepared->deferredId !== $receipt->identity) {
-            throw new ToolCallException('Prepared agent submission identity no longer matches live activity evidence.', retryable: false);
-        }
 
-        return new DeferredToolCompletionOutcome($prepared->deferredId);
+        return new DeferredToolCompletionOutcome($receipt->identity);
     }
 
     /** @param array<string, mixed> $arguments */

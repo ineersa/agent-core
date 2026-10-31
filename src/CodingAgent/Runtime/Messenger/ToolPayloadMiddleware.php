@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
@@ -19,13 +18,8 @@ use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Notification\ModelNotificationCodec;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
-use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
-use Ineersa\CodingAgent\Application\AgentCommunication\SubmissionFactory;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
-use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
-use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use Psr\Log\LoggerInterface;
@@ -43,7 +37,6 @@ use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
-use Symfony\Component\Validator\Exception\ValidationFailedException as ValidatorValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /** Seal before send_message; resolve only after owner initialization on consumption. */
@@ -62,11 +55,6 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         private readonly CompleteDeferredToolCallHandler $deferredHandler,
         private readonly DenormalizerInterface $serializer,
         private readonly CodeModeLifecycleService $codeModeLifecycle,
-        private readonly AgentResumeExecutionService $agentResume,
-        private readonly DeferredSubagentBatchLaunchService $deferredChildLaunch,
-        private readonly SubmissionFactory $submissionFactory,
-        private readonly ChildInvocationLifecycleService $childLifecycle,
-        private readonly DeferredSubagentBatchRepository $childBatches,
     ) {
     }
 
@@ -130,14 +118,6 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                 }
                 if (!$body instanceof ExecuteToolCall && !$body instanceof ExecuteShellToolCall && !$body instanceof ToolCallResult) {
                     throw new ToolPayloadException('Transport reference does not identify tool invocation or result data.');
-                }
-                if ('run_control' === $received->getTransportName()
-                    && $body instanceof ToolCallResult
-                    && null === $message->deferredId) {
-                    // Owner-only: retire reserved subagent/fork metadata after
-                    // identity admission and body hydration, before converting
-                    // deferred results or handing the body to handlers.
-                    $this->retireFailedChildReservation($body);
                 }
                 if (null !== $message->deferredId) {
                     if (!$body instanceof ToolCallResult || !\is_array($body->result)) {
@@ -213,7 +193,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             [$deferredId, $reference] = $this->publishProcessedResult($message);
         } else {
             $deferredId = null;
-            $reference = $this->locks->synchronized($message->runId(), function () use ($message, &$deferredId): ?ToolPayloadReferenceDTO {
+            $reference = $this->locks->synchronized($message->runId(), function () use ($message): ?ToolPayloadReferenceDTO {
                 if (!$this->admission->canPublish($message)) {
                     return null;
                 }
@@ -221,18 +201,6 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                 // reference is sealed and sent. Failure prevents dispatch.
                 if ($message instanceof ExecuteToolCall && 'code_mode' === $message->toolName) {
                     $this->codeModeLifecycle->prepare($message);
-                }
-                if ($message instanceof ExecuteToolCall) {
-                    try {
-                        $this->prepareDeferredExecution($message);
-                    } catch (ToolCallException $exception) {
-                        // Preparation refusals settle as ordinary failed results.
-                        // Do not dispatch execution or throw into owner effect retries.
-                        $failed = ToolCallResultFactory::fromExecuteToolCallAndThrowable($message, $exception);
-                        $deferredId = null;
-
-                        return $this->payloads->publish($failed);
-                    }
                 }
 
                 return $this->payloads->publish($message);
@@ -307,67 +275,6 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
 
             return [null, $this->payloads->publish($message)];
         }));
-    }
-
-    /**
-     * Owner-side reservation and deferred correlation preparation before dispatch.
-     *
-     * Child tools reuse the reserved lifecycle id. Communication tools freeze the
-     * submission identity. Readiness stays unset until launch success or host ready.
-     */
-    private function prepareDeferredExecution(ExecuteToolCall $message): void
-    {
-        if ('agent_resume' === $message->toolName) {
-            $projection = $this->agentResume->prepare($message);
-            $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($message, $projection->lifecycleId));
-
-            return;
-        }
-
-        if (\in_array($message->toolName, ['subagent', 'fork'], true)) {
-            $projection = $this->deferredChildLaunch->prepare($message);
-            $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($message, $projection->lifecycleId));
-
-            return;
-        }
-
-        if (\in_array($message->toolName, ['agent_steer', 'notify_parent'], true)) {
-            try {
-                $receipt = $this->submissionFactory->prepare(
-                    $message->runId(),
-                    $message->turnNo(),
-                    $message->stepId(),
-                    $message->toolCallId,
-                    $message->toolName,
-                    $message->args,
-                );
-            } catch (ValidatorValidationFailedException $exception) {
-                throw new ToolCallException($exception->getMessage(), retryable: false, previous: $exception);
-            }
-            $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($message, $receipt->identity));
-        }
-    }
-
-    private function retireFailedChildReservation(ToolCallResult $message): void
-    {
-        if (!$message->isError || !\is_array($message->result)) {
-            return;
-        }
-        $toolName = $message->result['tool_name'] ?? null;
-        if (!\is_string($toolName) || !\in_array($toolName, ['subagent', 'fork', 'agent_resume'], true)) {
-            return;
-        }
-
-        $batch = $this->childBatches->findByParentRunAndToolCall($message->runId(), $message->toolCallId);
-        if (null === $batch) {
-            return;
-        }
-
-        $this->childLifecycle->applyLaunchFailurePreparation(
-            $message->runId(),
-            $message->toolCallId,
-            $batch->lifecycleId,
-        );
     }
 
     private function acceptCodeModeResult(ToolPayloadReferenceDTO $incoming, bool $owner = true): ?ToolPayloadReferenceDTO

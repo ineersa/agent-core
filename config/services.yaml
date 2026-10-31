@@ -889,7 +889,7 @@ services:
         execution: '@Ineersa\CodingAgent\Agent\Fork\ForkExecutionService'
 
   # code_mode: definition provider is tagged; toolbox resolves only at nested invoke time.
-  Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService:
+  Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService:
     arguments:
       $commandBus: '@agent.command.bus'
 

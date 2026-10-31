@@ -34,10 +34,11 @@ final class AgentCommunicationToolProof
         $target = $notice ? $f->parentState : $f->childState;
         $call = new ExecuteToolCall($state->runId, 1, 'step', 1, 'source-execution', $notice ? 'notice' : 'steer', $notice ? 'notify_parent' : 'agent_steer', $notice ? ['text' => 'Important guidance'] : ['text' => 'Important guidance', 'artifact_id' => $f->artifact], 0, toolsRef: 'current');
         TestToolBatchRegistration::register($c->get(ToolBatchCollector::class), $c->get(ToolBatchStoreInterface::class), $state->runId, 1, 'step', [$call]);
-        // Prepare on the configured producer before receiving the sealed call:
-        // worker -> executor -> toolbox -> real handler -> deferred subscriber.
+        // The producer seals intent only. The executing tool creates its own
+        // deferred outcome, then the worker publishes its existing registration.
         $executionBus = $c->get('agent.execution.bus');
         $sealed = $executionBus->dispatch($call);
+        Assert::assertNull($c->get(DeferredToolCompletionRepositoryInterface::class)->statusForRunAndToolCall($state->runId, $call->toolCallId));
         $handled = $executionBus->dispatch($sealed, [new ReceivedStamp('tool')]);
         Assert::assertNotNull($handled->last(HandledStamp::class));
         Assert::assertNull($handled->last(HandledStamp::class)->getResult());

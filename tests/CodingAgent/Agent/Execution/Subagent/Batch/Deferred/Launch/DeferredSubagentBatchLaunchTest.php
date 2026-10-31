@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
@@ -27,7 +26,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
-use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
@@ -61,6 +59,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             $this->definition('batch-retry'),
         ]);
         $this->prepareLaunch($service, $parentRunId, $toolCallId, 'batch-retry', 'Same task');
+        $this->assertNull(self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($parentRunId, $toolCallId));
 
         $first = $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch(
             $parentRunId,
@@ -430,13 +429,14 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         );
         $identityFactory = new DeferredSubagentBatchIdentityFactory();
         $runtimeStart = new \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService(
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class),
             $agentRunner,
-            $artifactLifecycle,
             $batchLaunchService,
             $lifecyclePolicyFactory,
             $logger,
         );
         $batchPreparation = new \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchPreparationService(
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class),
             $launchPreparation,
             $identityFactory,
             $artifactLifecycle,
@@ -451,12 +451,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             self::getContainer()->get(StackToolExecutionContextAccessor::class),
             $agentsConfig ?? self::getContainer()->get(AgentsConfig::class),
             $logger,
-            new ChildInvocationLifecycleService(
-                self::getContainer()->get(DeferredSubagentBatchRepository::class),
-            ),
-            $identityFactory,
-            self::getContainer()->get(\Symfony\Component\Serializer\Normalizer\DenormalizerInterface::class),
-            self::getContainer()->get(\Symfony\Component\Validator\Validator\ValidatorInterface::class),
         );
     }
 
@@ -475,21 +469,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
             new RunState($parentRunId, RunStatus::Running),
         );
-        $args = 'fork' === $toolName
-            ? ['task' => $task]
-            : ['agent' => $agentName, 'task' => $task];
-        $service->prepare(new ExecuteToolCall(
-            runId: $parentRunId,
-            turnNo: 2,
-            stepId: 'step',
-            attempt: 1,
-            idempotencyKey: hash('sha256', $parentRunId.'|'.$toolCallId),
-            toolCallId: $toolCallId,
-            toolName: $toolName,
-            args: $args,
-            orderIndex: 0,
-            parentModel: 'test-model',
-        ));
     }
 
     private function withToolContext(string $parentRunId, string $toolCallId, callable $callback): mixed
