@@ -47,7 +47,6 @@ use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
-use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -205,7 +204,7 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
     }
 
     #[DataProvider('deferredProducerScenarios')]
-    public function testUnloadedDeferredProducerPublishesActiveAndDiscardsRetiredWithoutOwnerWritesOrStateReplay(bool $approvalRetry): void
+    public function testUnloadedDeferredProducerPublishesActiveAndForwardsRetiredWithoutOwnerWritesOrStateReplay(bool $approvalRetry): void
     {
         $this->append('llm_step_completed', ['assistant_message' => ['tool_calls' => [['id' => 'call']]]]);
         $call = $approvalRetry ? $this->approvedCall() : new ExecuteToolCall('indexed', 1, 'model-step', 1, 'key', 'call', 'subagent', [], 0);
@@ -228,7 +227,10 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         $completion = new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'done']]);
         $this->assertInstanceOf(ToolPayloadMessage::class, $bus->dispatch($completion)->getMessage());
         $this->append('tool_batch_committed');
-        $this->assertNotNull($bus->dispatch($completion)->last(HandledStamp::class));
+        $retired = $bus->dispatch($completion)->getMessage();
+        $this->assertInstanceOf(ToolPayloadMessage::class, $retired);
+        $this->assertSame($reference, $retired->reference);
+        $this->assertSame('deferred', $retired->deferredId);
         $this->assertSame([], $commands->messages);
     }
 
