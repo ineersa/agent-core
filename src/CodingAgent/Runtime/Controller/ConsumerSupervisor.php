@@ -344,6 +344,12 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
             ]);
         }
 
+        foreach ($stopping as $process) {
+            if ($process->isRunning()) {
+                throw new \RuntimeException('Cannot clean native executions while a tracked consumer is still running.');
+            }
+        }
+
         $this->logger->info('Messenger consumer shutdown complete', [
             'component' => 'ConsumerSupervisor',
             'event_type' => 'consumer.shutdown_complete',

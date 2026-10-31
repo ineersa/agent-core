@@ -201,8 +201,6 @@ services:
     arguments:
       $sink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
 
-  Ineersa\CodingAgent\Application\BackgroundProcess\DecideBashProcessHandler:
-
   Ineersa\CodingAgent\Config\SettingsOverrideWriter:
     arguments:
       $propertyAccessor: '@coding_agent.settings.property_accessor'
@@ -408,13 +406,8 @@ services:
       $store: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore'
       $lifecycle: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle'
       $config: '@Ineersa\CodingAgent\Config\BackgroundProcessConfig'
-      $commandBus: '@agent.command.bus'
     calls:
       - registerShutdownHandler: []
-
-  Ineersa\CodingAgent\Tool\BackgroundProcessProvisionalCleanupTask:
-    arguments:
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
   # Startup database migrator — runs known migration classes at startup via DBAL.
   # Uses the app-owned ApplicationMigrationExecutor instead of the Symfony

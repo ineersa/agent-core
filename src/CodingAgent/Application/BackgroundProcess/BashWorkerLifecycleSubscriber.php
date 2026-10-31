@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Application\BackgroundProcess;
 
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
-use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
@@ -25,22 +24,15 @@ final readonly class BashWorkerLifecycleSubscriber implements EventSubscriberInt
 
     public static function getSubscribedServices(): array
     {
-        return [BackgroundProcessManager::class, ToolPayloadMiddleware::class];
+        return [ToolPayloadMiddleware::class];
     }
 
     public function onStarted(WorkerStartedEvent $event): void
     {
         $transports = $event->getWorker()->getMetadata()->getTransportNames();
-        if (\in_array('scheduler_default', $transports, true)) {
-            // Scheduler maintenance must publish one-way process intents only.
-            $this->container->get(BackgroundProcessManager::class)->useRemoteLifecycleOwner();
-
-            return;
-        }
         if (!\in_array('tool', $transports, true)) {
             return;
         }
-        $this->container->get(BackgroundProcessManager::class)->useRemoteLifecycleOwner();
         $this->container->get(ToolPayloadMiddleware::class)->useRemoteResultOwner();
     }
 }

@@ -15,6 +15,8 @@ final readonly class StartResult
         public int $pid,
         public string $logPath,
         public string $statusPath,
+        public ?int $deadlineNanoseconds = null,
+        public bool $accepted = false,
     ) {
     }
 }

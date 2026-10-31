@@ -9,24 +9,20 @@ use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashNativeCompletionMetadataDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\NativeBashObservationDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
-use Symfony\Component\Clock\Clock;
-use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 use function Amp\delay;
 
 /**
  * Execute a shell command with foreground supervision via BackgroundProcessManager.
  *
- * Foreground and nested calls supervise locally and return plain text. Only
- * accepted background jobs carry private native facts for owner persistence.
+ * Bash owns native execution, replay evidence and background metadata. Results
+ * contain ordinary output or acknowledgments, never owner lifecycle instructions.
  */
 final class BashTool implements HatfieldToolProviderInterface
 {
@@ -39,7 +35,6 @@ final class BashTool implements HatfieldToolProviderInterface
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolRuntime $toolRuntime,
         private readonly LoggerInterface $logger,
-        private readonly NormalizerInterface $normalizer,
         private readonly ToolPayloadStoreInterface $payloads,
         private readonly BashToolConfig $config = new BashToolConfig(),
     ) {
@@ -48,8 +43,8 @@ final class BashTool implements HatfieldToolProviderInterface
     public function __invoke(
         #[MapToolArguments]
         BashArgumentsDTO $arguments,
-    ): string|ToolResult {
-        return $this->toolRuntime->run(function () use ($arguments): string|ToolResult {
+    ): string {
+        return $this->toolRuntime->run(function () use ($arguments): string {
             $command = trim($arguments->command);
             $timeout = $this->resolveTimeout($arguments);
             $context = $this->contextAccessor->current();
@@ -68,11 +63,16 @@ final class BashTool implements HatfieldToolProviderInterface
                 $toolCallId,
                 $deadline,
                 backgroundRequested: $arguments->backgrounded,
+                invocationKey: null !== $context ? json_encode([$context->turnNo(), $context->stepId(), $toolCallId], \JSON_THROW_ON_ERROR) : null,
             );
             $pid = $startResult->pid;
             $statusPath = $startResult->statusPath;
             $logPath = $startResult->logPath;
             $retainedOutputPath = null;
+            $deadline = $startResult->deadlineNanoseconds ?? $deadline;
+            if ($startResult->accepted) {
+                return $this->backgroundAcknowledgment($pid);
+            }
 
             $this->logger->info('bash_tool.started', [
                 'component' => 'tool.bash',
@@ -88,6 +88,23 @@ final class BashTool implements HatfieldToolProviderInterface
             // reading throws (invalid UTF-8). Accepted detach already released.
             try {
                 while (true) {
+                    $record = $this->manager->observeNativeByStatusPath($statusPath, $sessionId);
+                    if (null === $record) {
+                        $this->logger->error('bash_tool.native_launch_vanished', [
+                            'component' => 'tool.bash',
+                            'event_type' => 'bash_tool.native_launch_vanished',
+                            'process_pid' => $pid,
+                            'status_path' => $statusPath,
+                            'session_id' => $sessionId ?? '',
+                        ]);
+
+                        throw new ToolCallException(\sprintf('Native Bash launch vanished unexpectedly (PID %d).', $pid), retryable: false);
+                    }
+
+                    if (BackgroundProcessStatusEnum::Running !== $record->status) {
+                        return $this->handleFinished($record, $sessionId, $toolCallId, $retainedOutputPath);
+                    }
+
                     if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
                         return $this->cancelNative($statusPath, $sessionId, $pid, $toolCallId);
                     }
@@ -115,23 +132,6 @@ final class BashTool implements HatfieldToolProviderInterface
                         throw new ToolCallException($text, retryable: false);
                     }
 
-                    $record = $this->manager->observeNativeByStatusPath($statusPath, $sessionId);
-                    if (null === $record) {
-                        $this->logger->error('bash_tool.native_launch_vanished', [
-                            'component' => 'tool.bash',
-                            'event_type' => 'bash_tool.native_launch_vanished',
-                            'process_pid' => $pid,
-                            'status_path' => $statusPath,
-                            'session_id' => $sessionId ?? '',
-                        ]);
-
-                        throw new ToolCallException(\sprintf('Native Bash launch vanished unexpectedly (PID %d).', $pid), retryable: false);
-                    }
-
-                    if (BackgroundProcessStatusEnum::Running !== $record->status) {
-                        return $this->handleFinished($record, $sessionId, $toolCallId, $retainedOutputPath);
-                    }
-
                     if ($record->backgroundRequested) {
                         $candidate = $this->manager->resolveBackgroundAcceptance($statusPath, $sessionId);
                         if (null === $candidate) {
@@ -142,13 +142,7 @@ final class BashTool implements HatfieldToolProviderInterface
                         if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
                             return $this->cancelNative($statusPath, $sessionId, $pid, $toolCallId);
                         }
-                        $text = \sprintf(
-                            "Command moved to background.\nPID: %d\n\nYou will be notified when the process finishes. Use bg_status log pid=%d to inspect output or bg_status stop pid=%d to stop it.",
-                            $pid,
-                            $pid,
-                            $pid,
-                        );
-                        $acknowledgment = $this->finishBackgroundAck($sessionId, $record, $text, $toolCallId);
+                        $acknowledgment = $this->backgroundAcknowledgment($pid);
                         if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
                             return $this->cancelNative($statusPath, $sessionId, $pid, $toolCallId);
                         }
@@ -353,36 +347,13 @@ final class BashTool implements HatfieldToolProviderInterface
         throw new ToolCallException($text);
     }
 
-    private function finishBackgroundAck(
-        ?string $sessionId,
-        NativeBashObservationDTO $entity,
-        string $text,
-        ?string $toolCallId,
-    ): ToolResult {
-        if (null === $sessionId || '' === $sessionId || null === $toolCallId || '' === $toolCallId) {
-            throw new ToolCallException('Background acknowledgment requires an invocation identity.', retryable: false);
-        }
-        $native = new BashNativeCompletionMetadataDTO(
-            runId: $sessionId,
-            toolCallId: $toolCallId,
-            command: $entity->command,
-            logPath: $entity->logPath,
-            statusPath: $entity->statusPath,
-            pid: $entity->pid,
-            pgid: $entity->pgid,
-            startedAt: $entity->startedAt,
-            deadlineNanoseconds: $entity->deadlineNanoseconds,
-            acceptedAt: Clock::get()->now(),
-        );
-
-        /** @var array<string, mixed> $normalized */
-        $normalized = $this->normalizer->normalize($native);
-
-        return new ToolResult(
-            toolCallId: $toolCallId,
-            toolName: self::NAME,
-            content: [['type' => 'text', 'text' => $text]],
-            details: ['bash_native' => $normalized],
+    private function backgroundAcknowledgment(int $pid): string
+    {
+        return \sprintf(
+            "Command moved to background.\nPID: %d\n\nYou will be notified when the process finishes. Use bg_status log pid=%d to inspect output or bg_status stop pid=%d to stop it.",
+            $pid,
+            $pid,
+            $pid,
         );
     }
 }

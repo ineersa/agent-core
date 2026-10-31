@@ -16,7 +16,6 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
-use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
@@ -83,7 +82,6 @@ final class HeadlessController
         private readonly LockFactory $sessionOwnerLockFactory,
         private readonly string $runtimeCwd,
         private readonly ExtensionAgentJobRegistry $extensionAgentJobRegistry,
-        private readonly BackgroundProcessManager $backgroundProcesses,
         /**
          * Optional background process completion poller for sending
          * follow-up notifications when a backgrounded process finishes.
@@ -186,7 +184,6 @@ final class HeadlessController
             $this->consumerSupervisor->shutdownUntil($deadline);
             $this->brokerSupervisor->shutdownUntil($deadline);
             try {
-                $this->backgroundProcesses->useLocalLifecycleOwner();
                 $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
             } catch (\Throwable $lifecycleException) {
                 $this->logger->error('Controller session shutdown lifecycle failed after partial consumer launch', [
@@ -201,12 +198,6 @@ final class HeadlessController
 
             throw $exception;
         }
-
-        // Exclusive startup cleanup finished above while run_control was still
-        // absent. Ordinary controller stop/observe/timeout metadata now uses
-        // one-way owner commands. Session shutdown stops every consumer first,
-        // then switches to local lifecycle ownership for exclusive cleanup.
-        $this->backgroundProcesses->useRemoteLifecycleOwner();
 
         // Same event type/payload as before; emission now follows consumer launch.
         $this->emitter->emit(new RuntimeEvent(
@@ -511,10 +502,6 @@ final class HeadlessController
         $this->consumerSupervisor->shutdownUntil($deadline);
 
         try {
-            // Consumers are already gone. Local finished-row deletion is
-            // required; one-way remote deletes cannot prove completion before
-            // this process exits.
-            $this->backgroundProcesses->useLocalLifecycleOwner();
             $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
         } catch (\Throwable $exception) {
             $this->logger->error('Controller session shutdown lifecycle failed', [

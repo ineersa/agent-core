@@ -60,7 +60,7 @@ final class ProcessLifecycle
         }
 
         // Build a shell wrapper that:
-        //  1. Records wrapper PID to pidFile
+        //  1. Exclusively claims pidFile before running the command
         //  2. Redirects stdout/stderr to logFile
         //  3. Backgrounds the user command as a child process (&) so
         //     the child inherits default SIGTERM (not ignored)
@@ -69,7 +69,7 @@ final class ProcessLifecycle
         //  5. Waits for the child on the normal path, stores child RC
         //     in a variable before echo so exit reflects child outcome
         $shellCode = \sprintf(
-            'echo $$ > %s || exit 1; echo $$; exec >> %s 2>&1; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > $STATUS_FILE; exit $RC',
+            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || exit 73; set +o noclobber; echo $$ || exit 74; exec >> %s 2>&1; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > $STATUS_FILE; exit $RC',
             escapeshellarg($pidFile),
             escapeshellarg($logFile),
             escapeshellarg($command),
@@ -90,6 +90,18 @@ final class ProcessLifecycle
         $output = preg_split('/\R/', trim(buffer($launcher->getStdout())));
         $exitCode = $launcher->join();
 
+        if (73 === $exitCode) {
+            $pid = $this->readPidFile($statusFile);
+            if (null === $pid) {
+                throw new \RuntimeException('Bash wrapper claim exists without a valid PID; workload outcome is unknown.');
+            }
+            $pgid = $this->ownedPgid($pid, $statusFile);
+            if (null === $this->readStatusFile($statusFile) && $this->isAlive($pid) && null === $pgid) {
+                throw new \RuntimeException('Bash wrapper claim cannot be validated; workload outcome is unknown.');
+            }
+
+            return ['pid' => $pid, 'pgid' => $pgid];
+        }
         if (0 !== $exitCode || [] === $output) {
             throw new \RuntimeException('Failed to launch background process: setsid returned exit code '.$exitCode.'. (pid file: '.$pidFile.')');
         }
@@ -109,27 +121,70 @@ final class ProcessLifecycle
     /**
      * Send SIGTERM to a process (or its process group).
      */
-    public function sendTerm(int $pid, ?int $pgid): void
+    public function sendTerm(int $pid, ?int $pgid, string $statusPath): void
     {
-        if (null !== $pgid && $pgid > 0) {
-            @exec(\sprintf('kill -TERM -%d 2>/dev/null', $pgid));
-        } else {
-            @exec(\sprintf('kill -TERM %d 2>/dev/null', $pid));
+        $ownedGroup = $this->ownedPgid($pid, $statusPath);
+        if (null === $ownedGroup || (null !== $pgid && $ownedGroup !== $pgid)) {
+            if (null !== $this->readStatusFile($statusPath) || !$this->isAlive($pid)) {
+                return;
+            }
+            throw new \RuntimeException('Refusing to signal a process without its owned native group.');
         }
+        @exec(\sprintf('kill -TERM -%d 2>/dev/null', $ownedGroup));
     }
 
-    /**
-     * Send SIGKILL to a process (or its process group).
-     */
-    public function sendKill(int $pid, ?int $pgid): void
+    /** Caller holds the exact sidecar lock through native validation and signal. */
+    public function sendKill(int $pid, ?int $pgid, string $statusPath): void
     {
-        if (null !== $pgid && $pgid > 0) {
-            @exec(\sprintf('kill -KILL -%d 2>/dev/null', $pgid));
-        } else {
-            @exec(\sprintf('kill -KILL %d 2>/dev/null', $pid));
+        $ownedGroup = $this->ownedPgid($pid, $statusPath);
+        if (null === $ownedGroup || (null !== $pgid && $ownedGroup !== $pgid)) {
+            if (null !== $this->readStatusFile($statusPath) || !$this->isAlive($pid)) {
+                return;
+            }
+            throw new \RuntimeException('Refusing to signal a process without its owned native group.');
         }
+        @exec(\sprintf('kill -KILL -%d 2>/dev/null', $ownedGroup));
     }
 
+    /** Validate the live setsid wrapper, not merely a reusable PID or SQL row. */
+    public function ownedPgid(int $pid, string $statusPath): ?int
+    {
+        if (!$this->ownsSidecarPaths(substr($statusPath, 0, -7).'.log', $statusPath)
+            || null !== $this->readStatusFile($statusPath) || $this->readPidFile($statusPath) !== $pid || !$this->isAlive($pid)) {
+            return null;
+        }
+        $command = @file_get_contents('/proc/'.$pid.'/cmdline');
+        if (false === $command || !str_contains($command, 'STATUS_FILE='.escapeshellarg($statusPath))) {
+            return null;
+        }
+        $pgid = $this->resolvePgid($pid);
+
+        return $pgid === $pid ? $pgid : null;
+    }
+
+    /** Caller holds the sidecar lock; every escalation revalidates native ownership. */
+    public function stopProcess(int $pid, ?int $pgid, string $statusPath, bool $waitForExit = true): StopResult
+    {
+        if (null !== $this->readStatusFile($statusPath) || !$this->isAlive($pid)) {
+            return new StopResult($pgid, true, 'none');
+        }
+        $this->sendTerm($pid, $pgid, $statusPath);
+        if (!$waitForExit) {
+            return new StopResult($pgid, false, 'TERM');
+        }
+        $deadline = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+        while (null === $this->readStatusFile($statusPath) && $this->isAlive($pid) && hrtime(true) < $deadline) {
+            delay(0.05);
+        }
+        $signal = 'TERM';
+        if (null === $this->readStatusFile($statusPath) && $this->isAlive($pid)) {
+            $this->sendKill($pid, $pgid, $statusPath);
+            $signal = 'KILL';
+        }
+        $this->writeStopMarker($statusPath);
+
+        return new StopResult($pgid, false, $signal);
+    }
     // ─── Liveness / status ───────────────────────────────────────────
 
     /**
@@ -217,9 +272,8 @@ final class ProcessLifecycle
     /**
      * Read the wrapper PID from the exact .pid sibling of a status path.
      *
-     * Owner-prepared rows keep pid null until result receipt. Controllers and
-     * owner decisions must recover a positive validated PID from this sidecar
-     * instead of treating null as process death. Missing/invalid evidence means
+     * Recovery reads the wrapper's exclusive claim before attaching to native
+     * execution. Missing/invalid evidence means
      * not-yet-known, never a fabricated identity.
      */
     public function readPidFile(?string $statusPath): ?int

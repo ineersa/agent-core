@@ -14,6 +14,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Process\ExecutableFinder;
+use Symfony\Component\Process\Process;
 
 /**
  * Thesis: isAlive must not treat PHP-stat-cached /proc rows or unreaped
@@ -42,6 +44,76 @@ final class ProcessLifecycleTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
 
         parent::tearDown();
+    }
+
+    #[Test]
+    public function delayedWrapperDoesNotExecuteAfterLaunchReaderDies(): void
+    {
+        if (0 === posix_geteuid()) {
+            $this->markTestSkipped('This proof never signals a root-owned process.');
+        }
+        $this->assertSame($this->tmpDir, realpath($this->tmpDir));
+        $setsid = (new ExecutableFinder())->find('setsid');
+        $this->assertNotNull($setsid);
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        $this->assertIsResource($server);
+        $address = stream_socket_get_name($server, false);
+        $this->assertIsString($address);
+        $shim = $this->tmpDir.'/setsid';
+        // Delay the actual wrapper behind a socket barrier. --wait lets the
+        // fixture report its termination, not merely the transient launcher exit.
+        $shimBody = <<<'PHP'
+$socket = stream_socket_client(ADDRESS);
+fwrite($socket, "entered\n");
+fgets($socket);
+$process = proc_open([SETSID, '--wait', ...array_slice($argv, 1)], [STDIN, STDOUT, STDERR], $pipes);
+$exit = proc_close($process);
+fwrite($socket, "done:$exit\n");
+PHP;
+        $shimBody = str_replace(['ADDRESS', 'SETSID'], [var_export('tcp://'.$address, true), var_export($setsid, true)], $shimBody);
+        file_put_contents($shim, '#!'.\PHP_BINARY."\n<?php\n".$shimBody);
+        chmod($shim, 0700);
+        $workerPath = $this->tmpDir.'/worker.php';
+        $marker = $this->tmpDir.'/must-not-execute';
+        $workerBody = <<<'PHP'
+<?php
+require AUTOLOAD;
+$config = new \Ineersa\CodingAgent\Config\BackgroundProcessConfig(storageDir: DIRECTORY);
+$lifecycle = new \Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle($config, new \Psr\Log\NullLogger(), new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()));
+$lifecycle->launchProcess(COMMAND, PIDFILE, LOGFILE, STATUSFILE);
+PHP;
+        $workerBody = str_replace(
+            ['AUTOLOAD', 'DIRECTORY', 'COMMAND', 'PIDFILE', 'LOGFILE', 'STATUSFILE'],
+            array_map(static fn (string $value): string => var_export($value, true), [\dirname(__DIR__, 4).'/vendor/autoload.php', $this->tmpDir, 'printf forbidden > '.escapeshellarg($marker), $this->tmpDir.'/late.pid', $this->tmpDir.'/late.log', $this->tmpDir.'/late.status']),
+            $workerBody,
+        );
+        file_put_contents($workerPath, $workerBody);
+        $worker = new Process([\PHP_BINARY, $workerPath], env: ['PATH' => $this->tmpDir.':'.getenv('PATH'), 'HATFIELD_SESSION_ID' => false], timeout: 5);
+        $connection = null;
+        try {
+            $worker->start();
+            $connection = stream_socket_accept($server, 2);
+            $this->assertIsResource($connection);
+            stream_set_timeout($connection, 2);
+            $this->assertSame("entered\n", fgets($connection));
+            $pid = $worker->getPid();
+            $this->assertNotNull($pid);
+            $this->assertStringNotContainsString('HATFIELD_SESSION_ID=', (string) file_get_contents('/proc/'.$pid.'/environ'));
+            $worker->signal(\SIGKILL);
+            $worker->wait();
+            fwrite($connection, "release\n");
+            $this->assertStringStartsWith('done:', (string) fgets($connection));
+            $this->assertFileExists($this->tmpDir.'/late.pid', 'The wrapper reached its native claim after the reader died.');
+            $this->assertFileDoesNotExist($marker, 'Failed readiness write must prevent workload execution.');
+        } finally {
+            if (\is_resource($connection)) {
+                fclose($connection);
+            }
+            fclose($server);
+            if ($worker->isRunning()) {
+                $worker->stop(0);
+            }
+        }
     }
 
     #[Test]
@@ -88,7 +160,7 @@ final class ProcessLifecycleTest extends TestCase
                 usleep(1_000);
             }
             if ($this->lifecycle->isAlive($launch['pid'])) {
-                $this->lifecycle->sendKill($launch['pid'], $launch['pgid']);
+                $this->lifecycle->withSidecarLock($statusFile, fn () => $this->lifecycle->sendKill($launch['pid'], $launch['pgid'], $statusFile));
             }
         }
 
@@ -111,7 +183,7 @@ final class ProcessLifecycleTest extends TestCase
             $this->assertSame("heredoc output\n", file_get_contents($logPath));
         } finally {
             if ($this->lifecycle->isAlive($launch['pid'])) {
-                $this->lifecycle->sendKill($launch['pid'], $launch['pgid']);
+                $this->lifecycle->withSidecarLock($statusPath, fn () => $this->lifecycle->sendKill($launch['pid'], $launch['pgid'], $statusPath));
             }
         }
     }

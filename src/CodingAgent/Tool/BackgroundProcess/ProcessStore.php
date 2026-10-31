@@ -9,7 +9,6 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
-use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
@@ -24,8 +23,6 @@ use Symfony\Component\Clock\Clock;
  */
 final class ProcessStore
 {
-    public const int PROVISIONAL_RETENTION_SECONDS = 300;
-
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly BackgroundProcessRepository $repository,
@@ -36,36 +33,38 @@ final class ProcessStore
     /**
      * Insert a new process record and return its auto-incremented ID.
      *
-     * Timestamps (created_at, updated_at) are maintained by
-     * TimestampableLifecycleTrait via lifecycle callbacks.
+     * Scalar inserts do not register managed entities across yielding executions.
+     * Metadata timestamps use the same format as the existing DBAL updates.
      *
      * @param array<string, mixed> $fields
      */
     public function insertRecord(array $fields): int
     {
-        $entity = new BackgroundProcess();
-        $entity->pid = \array_key_exists('pid', $fields) && null !== $fields['pid'] ? (int) $fields['pid'] : null;
-        $entity->pgid = isset($fields['pgid']) ? (int) $fields['pgid'] : null;
-        $entity->sessionId = (string) ($fields['session_id'] ?? '');
-        $entity->command = (string) ($fields['command'] ?? '');
-        $entity->toolCallId = $fields['tool_call_id'] ?? null;
-        $entity->deadlineNanoseconds = $fields['deadline_nanoseconds'] ?? null;
-        $entity->backgroundRequested = (bool) ($fields['background_requested'] ?? false);
-        $entity->logPath = (string) ($fields['log_path'] ?? '');
-        $entity->statusPath = (string) ($fields['status_path'] ?? '');
-        if (\array_key_exists('started_at', $fields)) {
-            $started = $fields['started_at'];
-            $entity->startedAt = null === $started
-                ? null
-                : ($started instanceof \DateTimeImmutable ? $started : new \DateTimeImmutable((string) $started));
-        } else {
-            $entity->startedAt = null;
-        }
+        $now = Clock::get()->now()->format('Y-m-d H:i:s');
+        $startedAt = $fields['started_at'] ?? null;
+        $connection = $this->entityManager->getConnection();
+        $connection->insert('background_process', [
+            'pid' => $fields['pid'] ?? null,
+            'pgid' => $fields['pgid'] ?? null,
+            'session_id' => $fields['session_id'] ?? '',
+            'command' => $fields['command'] ?? '',
+            'tool_call_id' => $fields['tool_call_id'] ?? null,
+            'deadline_nanoseconds' => $fields['deadline_nanoseconds'] ?? null,
+            'background_requested' => (int) ($fields['background_requested'] ?? false),
+            'log_path' => $fields['log_path'] ?? '',
+            'status_path' => $fields['status_path'] ?? '',
+            'started_at' => $startedAt instanceof \DateTimeImmutable ? $startedAt->format('Y-m-d H:i:s.u') : $startedAt,
+            'finished_at' => null,
+            'exit_code' => null,
+            'status' => BackgroundProcessStatusEnum::Running->value,
+            'stopped_by_user' => 0,
+            'backgrounded_at' => null,
+            'completion_notified_at' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
 
-        $this->entityManager->persist($entity);
-        $this->entityManager->flush();
-
-        return $entity->id;
+        return (int) $connection->lastInsertId();
     }
 
     public function applyFinishedByRecord(int $recordId, string $runId, ?int $exitCode, BackgroundProcessStatusEnum $status, bool $stoppedByUser, \DateTimeImmutable $finishedAt): void
@@ -258,23 +257,6 @@ final class ProcessStore
         return array_map($this->hydrateSnapshot(...), $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id IN (?) AND finished_at IS NULL ORDER BY id', [$runIds], [ArrayParameterType::STRING]));
     }
 
-    /**
-     * Fetch private foreground-supervision rows that are safely past their
-     * five-minute cleanup grace interval.
-     *
-     * @param list<string> $sessionIds Controller-owned runs
-     *
-     * @return list<BashProcessRecordDTO>
-     */
-    public function fetchFinishedProvisionalBefore(\DateTimeImmutable $cutoff, array $sessionIds): array
-    {
-        if ([] === $sessionIds) {
-            return [];
-        }
-
-        return array_map($this->hydrateSnapshot(...), $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id IN (?) AND backgrounded_at IS NULL AND finished_at IS NOT NULL AND finished_at <= ? ORDER BY id', [$sessionIds, $cutoff->format('Y-m-d H:i:s')], [ArrayParameterType::STRING]));
-    }
-
     public function snapshot(int $recordId): ?BashProcessRecordDTO
     {
         $row = $this->entityManager->getConnection()->fetchAssociative('SELECT * FROM background_process WHERE id = ?', [$recordId]);
@@ -286,6 +268,12 @@ final class ProcessStore
     public function backgroundSnapshots(string $runId): array
     {
         return array_map($this->hydrateSnapshot(...), $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id = ? AND backgrounded_at IS NOT NULL ORDER BY id DESC', [$runId]));
+    }
+
+    /** @return list<BashProcessRecordDTO> */
+    public function sessionSnapshots(string $runId): array
+    {
+        return array_map($this->hydrateSnapshot(...), $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id = ? ORDER BY id', [$runId]));
     }
 
     public function latestSnapshot(int $pid): ?BashProcessRecordDTO
@@ -337,11 +325,11 @@ final class ProcessStore
             }
             $status = BackgroundProcessStatusEnum::from((string) $row['status']);
             $finished = null !== $row['finished_at'];
-            if (BashProcessActionEnum::DeleteFinished === $action || BashProcessActionEnum::DeleteProvisional === $action) {
+            if (BashProcessActionEnum::DeleteFinished === $action) {
                 // Cleanup can only retire an immutable finished row. Recheck
                 // scope and classification on metadata retry, never trust the
                 // maintenance candidate as authority to delete another job.
-                if (!$finished || (BashProcessActionEnum::DeleteProvisional === $action && (null !== $row['backgrounded_at'] || (string) $row['finished_at'] > Clock::get()->now()->modify('-'.self::PROVISIONAL_RETENTION_SECONDS.' seconds')->format('Y-m-d H:i:s')))) {
+                if (!$finished) {
                     return null;
                 }
                 $connection->delete('background_process', ['id' => $recordId, 'session_id' => $runId]);
@@ -353,7 +341,7 @@ final class ProcessStore
             $pid = $this->resolveObservedPid($row, $lifecycle);
             if (!$finished) {
                 $exitCode = $lifecycle->readStatusFile((string) $row['status_path']);
-                // Null PID evidence is not proof of death for owner-prepared rows.
+                // Missing native identity is unknown, not proof of death.
                 $gone = null === $exitCode && null !== $pid && !$lifecycle->isAlive($pid);
                 $settledStop = (BashProcessActionEnum::SettleStop === $action && (bool) $row['stopped_by_user'])
                     || (BashProcessActionEnum::SettleTimeout === $action && BackgroundProcessStatusEnum::Stopped === $status);
@@ -368,9 +356,8 @@ final class ProcessStore
                     $signalRequired = true;
                     $connection->executeStatement('UPDATE background_process SET status = ?, updated_at = ? WHERE id = ?', [$status->value, $now, $recordId]);
                 } elseif (BashProcessActionEnum::Stop === $action) {
-                    // A committed stop intent is not proof that native TERM occurred.
-                    // Replaying the one-way owner command keeps the durable stop
-                    // obligation; local callers still perform native signalling.
+                    // Metadata records the request, not proof that TERM occurred.
+                    // ProcessLifecycle validates current native ownership before signalling.
                     $status = BackgroundProcessStatusEnum::Stopped;
                     $signalRequired = true;
                     if (!(bool) $row['stopped_by_user']) {
@@ -407,7 +394,7 @@ final class ProcessStore
 
     /**
      * Prefer the durable PID column; otherwise recover a positive validated PID
-     * from the exact prepared .pid sidecar. Missing evidence means unknown.
+     * from the exact native .pid sidecar. Missing evidence means unknown.
      *
      * @param array<string, mixed> $row
      */

@@ -23,8 +23,6 @@ services:
       $lifecycle: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle'
       $config: '@Ineersa\CodingAgent\Config\BackgroundProcessConfig'
       $logger: '@Psr\Log\LoggerInterface'
-      # Replay workers use remote ownership and need the production command bus.
-      $commandBus: '@agent.command.bus'
     # No calls: registerShutdownHandler is intentionally omitted.
 
   # Keep the default disabled diagnostics path deterministic in APP_ENV=test.

@@ -15,8 +15,8 @@ use Doctrine\ORM\Mapping as ORM;
  *
  * created_at / updated_at are \DateTimeImmutable maintained by
  * TimestampableLifecycleTrait.
- * Owner preparation may leave pid/started_at null until launch. ProcessStore updates
- * terminal state and semantic process times through DBAL.
+ * Bash inserts actual launch facts and updates terminal state through scalar
+ * DBAL operations. Nullable fields permit reading older incomplete records.
  */
 #[ORM\Entity(repositoryClass: BackgroundProcessRepository::class)]
 #[ORM\Table(name: 'background_process')]
@@ -35,10 +35,8 @@ class BackgroundProcess
 
     /**
      * OS process ID. Non-unique because records may outlive their processes
-     * and the OS reuses PIDs after a process exits. Finished provisional
-     * (backgrounded_at IS NULL) rows are removed by
-     * BackgroundProcessProvisionalCleanupTask; accepted rows are removed by
-     * controller lifecycle cleanup. Either kind can retain a PID temporarily.
+     * and the OS reuses PIDs after a process exits. Native records and sidecars
+     * remain available for intent replay until session lifecycle cleanup.
      *
      * The @ORM\Index on 'pid' is intentionally non-unique. Prefer the
      * auto-increment $id as the authoritative lifecycle key.

@@ -61,7 +61,7 @@ final class BackgroundProcessControllerSessionLifecycleListener
         foreach ($sessionIds as $sessionId) {
             ++$scopeCount;
             try {
-                foreach ($this->store->backgroundSnapshots($sessionId) as $entity) {
+                foreach ($this->store->sessionSnapshots($sessionId) as $entity) {
                     try {
                         if (null === $entity->finishedAt) {
                             $this->manager->stopByRecordId($entity->id, $sessionId);
@@ -93,6 +93,7 @@ final class BackgroundProcessControllerSessionLifecycleListener
                         ]);
                     }
                 }
+                $this->manager->cleanupSessionSidecars($sessionId);
             } catch (\Throwable $exception) {
                 ++$failed;
                 $this->logger->warning('background_process.session_cleanup_scope_failed', [
