@@ -140,23 +140,16 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         try {
             $exit = 'failure' === $mode ? 7 : 0;
             $command = 'printf ready; read -r release < '.escapeshellarg($fifo).'; printf done; exit '.$exit;
-            $prepared = $manager->prepareNativeLaunch('native-stop', 'call', $command, true);
+
             $process = $manager->start(
                 $command,
                 'native-stop',
                 'call',
-                preparedRecordId: $prepared->id,
-                preparedLogPath: $prepared->logPath,
-                preparedStatusPath: $prepared->statusPath,
             );
+            $process = $manager->findByStatusPath($process->statusPath);
+            $this->assertNotNull($process);
             $store = self::getContainer()->get(ProcessStore::class);
-            $store->applyLaunch(
-                $prepared->id,
-                'native-stop',
-                $process->pid,
-                posix_getpgid($process->pid) ?: null,
-                new \DateTimeImmutable(),
-            );
+
             $candidate = $manager->resolveBackgroundAcceptance($process->statusPath, 'native-stop');
             $this->assertNotNull($candidate);
             $manager->acceptResolvedBackground($candidate);
@@ -194,6 +187,10 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertStringContainsString('exit '.$observedExit, $this->sentCommands[0][1]->text ?? '');
         } finally {
             fclose($release);
+            if (isset($process)) {
+                $manager->stopByRecordId($process->id, $process->sessionId);
+                $manager->cleanupFinishedRecord($process->id, $process->sessionId);
+            }
             $manager->shutdownCleanup();
         }
     }
@@ -207,23 +204,15 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('stale Bash completion');
         PreparedEventStoreSeeder::append(self::getContainer()->get(PreparedTransitionEventStoreInterface::class), RunEvent::forAppend($runId, 0, 'run_started', ['payload' => ['messages' => []]]));
         try {
-            $prepared = $owner->prepareNativeLaunch($runId, 'call', 'sleep 60', true);
             $process = $owner->start(
                 'sleep 60',
                 $runId,
                 'call',
-                preparedRecordId: $prepared->id,
-                preparedLogPath: $prepared->logPath,
-                preparedStatusPath: $prepared->statusPath,
             );
+            $process = $owner->findByStatusPath($process->statusPath);
+            $this->assertNotNull($process);
             $store = self::getContainer()->get(ProcessStore::class);
-            $store->applyLaunch(
-                $prepared->id,
-                $runId,
-                $process->pid,
-                posix_getpgid($process->pid) ?: null,
-                new \DateTimeImmutable(),
-            );
+
             $candidate = $owner->resolveBackgroundAcceptance($process->statusPath, $runId);
             $this->assertNotNull($candidate);
             $owner->acceptResolvedBackground($candidate);
@@ -242,6 +231,10 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             self::getContainer()->get(BackgroundCompletionHandler::class)($duplicate);
             $this->assertCount(1, self::getContainer()->get(CommandStoreInterface::class)->pending($runId));
         } finally {
+            if (isset($process)) {
+                $owner->stopByRecordId($process->id, $process->sessionId);
+                $owner->cleanupFinishedRecord($process->id, $process->sessionId);
+            }
             $owner->shutdownCleanup();
         }
     }
@@ -661,26 +654,18 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             // re-enter cleanup and consume the one-shot FIFO release a second time.
             $cleanup = 'trap "" TERM; IFS= read -r release < '.escapeshellarg($fifo).'; printf cleaned; exit 0';
             $command = 'trap '.escapeshellarg($cleanup).' TERM; : > '.escapeshellarg($this->tmpDir.'/ready').'; while :; do sleep 0.05; done';
-            $prepared = $owner->prepareNativeLaunch('timeout-run', 'timeout-call', $command, true);
+
             $deadlineNanoseconds = hrtime(true) - 1;
             $process = $owner->start(
                 $command,
                 'timeout-run',
                 'timeout-call',
                 $deadlineNanoseconds,
-                preparedRecordId: $prepared->id,
-                preparedLogPath: $prepared->logPath,
-                preparedStatusPath: $prepared->statusPath,
             );
+            $process = $owner->findByStatusPath($process->statusPath);
+            $this->assertNotNull($process);
             $store = self::getContainer()->get(ProcessStore::class);
-            $store->applyLaunch(
-                $prepared->id,
-                'timeout-run',
-                $process->pid,
-                posix_getpgid($process->pid) ?: null,
-                new \DateTimeImmutable(),
-                $deadlineNanoseconds,
-            );
+
             $candidate = $owner->resolveBackgroundAcceptance($process->statusPath, 'timeout-run');
             $this->assertNotNull($candidate);
             $owner->acceptResolvedBackground($candidate);
@@ -727,6 +712,10 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertStringContainsString('cleaned', $this->sentCommands[0][1]->text ?? '');
         } finally {
             fclose($release);
+            if (isset($process)) {
+                $owner->stopByRecordId($process->id, $process->sessionId);
+                $owner->cleanupFinishedRecord($process->id, $process->sessionId);
+            }
             $owner->shutdownCleanup();
             $otherKernel->shutdown();
         }
@@ -737,24 +726,16 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $store = self::getContainer()->get(ProcessStore::class);
         $config = new BackgroundProcessConfig(storageDir: $this->tmpDir, stopGraceSeconds: 0);
         $manager = new BackgroundProcessManager($store, new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore())), $config, new NullLogger());
-        $prepared = $manager->prepareNativeLaunch('test-poller-run', 'zero-grace-call', 'sleep 10', true);
+
         $process = $manager->start(
             'sleep 10',
             'test-poller-run',
             'zero-grace-call',
             hrtime(true) - 1,
-            preparedRecordId: $prepared->id,
-            preparedLogPath: $prepared->logPath,
-            preparedStatusPath: $prepared->statusPath,
         );
-        $store->applyLaunch(
-            $prepared->id,
-            'test-poller-run',
-            $process->pid,
-            posix_getpgid($process->pid) ?: null,
-            new \DateTimeImmutable(),
-            hrtime(true) - 1,
-        );
+        $process = $manager->findByStatusPath($process->statusPath);
+        $this->assertNotNull($process);
+
         try {
             $candidate = $manager->resolveBackgroundAcceptance($process->statusPath, 'test-poller-run');
             $this->assertNotNull($candidate);
@@ -770,6 +751,10 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $observedExit = null !== $record->exitCode ? (string) $record->exitCode : '?';
             $this->assertStringContainsString('exit '.$observedExit, $this->sentCommands[0][1]->text ?? '');
         } finally {
+            if (isset($process)) {
+                $manager->stopByRecordId($process->id, $process->sessionId);
+                $manager->cleanupFinishedRecord($process->id, $process->sessionId);
+            }
             $manager->shutdownCleanup();
         }
     }

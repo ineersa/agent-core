@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -84,21 +85,13 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     protected function tearDown(): void
     {
-        // Direct SIGKILL via .pid files to avoid 1s grace sleep in shutdownCleanup
-        if (isset($this->manager)) {
-            $bgDir = $this->config->storageDir;
-            if (is_dir($bgDir)) {
-                foreach (new \FilesystemIterator($bgDir, \FilesystemIterator::SKIP_DOTS) as $file) {
-                    if ('pid' === $file->getExtension()) {
-                        $pid = (int) file_get_contents((string) $file);
-                        if ($pid > 0 && is_dir('/proc/'.$pid)) {
-                            @exec('kill -KILL -'.$pid.' 2>/dev/null');
-                            @exec('kill -KILL '.$pid.' 2>/dev/null');
-                        }
-                    }
-                }
+        foreach ([self::TEST_SESSION, 'session-A', 'session-B'] as $runId) {
+            foreach (self::getContainer()->get(ProcessStore::class)->sessionSnapshots($runId) as $record) {
+                $this->manager->stopByRecordId($record->id, $runId);
+                $this->manager->cleanupFinishedRecord($record->id, $runId);
             }
         }
+        $this->manager->shutdownCleanup();
 
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
 
@@ -396,30 +389,23 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $this->fail(\sprintf('Timed out waiting for pid %d to finish', $pid));
     }
 
-    private function startAcceptedProcess(string $command, string $sessionId = self::TEST_SESSION, ?string $toolCallId = null): \Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult
+    private function startAcceptedProcess(string $command, string $sessionId = self::TEST_SESSION, ?string $toolCallId = null): BashProcessRecordDTO
     {
         $toolCallId ??= 'call-'.bin2hex(random_bytes(4));
-        $prepared = $this->manager->prepareNativeLaunch($sessionId, $toolCallId, $command, true);
+
         $started = $this->manager->start(
             $command,
             $sessionId,
             $toolCallId,
-            preparedRecordId: $prepared->id,
-            preparedLogPath: $prepared->logPath,
-            preparedStatusPath: $prepared->statusPath,
         );
-        self::getContainer()->get(ProcessStore::class)->applyLaunch(
-            $prepared->id,
-            $sessionId,
-            $started->pid,
-            posix_getpgid($started->pid) ?: null,
-            new \DateTimeImmutable(),
-        );
+
+        $started = $this->manager->findByStatusPath($started->statusPath, $sessionId);
+        $this->assertNotNull($started);
         $candidate = $this->manager->resolveBackgroundAcceptance($started->statusPath, $sessionId);
         if (null === $candidate) {
             // Short commands can finish before acceptance; durable acceptance still applies.
             self::getContainer()->get(ProcessStore::class)->applyAcceptedByRecord(
-                $prepared->id,
+                $started->id,
                 $sessionId,
                 new \DateTimeImmutable(),
             );

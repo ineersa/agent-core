@@ -16,7 +16,8 @@ use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Listener\BackgroundProcessCommandRegistrar;
@@ -57,6 +58,12 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
     {
         if (isset($this->harness)) {
             $this->harness->stopInputLoop();
+        }
+        foreach (['visible', 'foreign', 'parent'] as $runId) {
+            foreach (self::getContainer()->get(ProcessStore::class)->sessionSnapshots($runId) as $record) {
+                $this->manager->stopByRecordId($record->id, $runId);
+                $this->manager->cleanupFinishedRecord($record->id, $runId);
+            }
         }
         $this->manager->shutdownCleanup();
         fclose($this->release);
@@ -111,9 +118,7 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
     #[DataProvider('clients')]
     public function testConfirmedStopRendersResultAndAcceptsInput(string $clientClass): void
     {
-        // Intent/UI only. Native TERM→KILL escalation is proved by
-        // BashRegistrationClientTest::testControllerAdoptsCommittedStopWhileFirstReplyIsLost
-        // and BashWorkerLifecycleSubscriberTest scenarios; do not wait on OS exit here.
+        // Intent/UI only. Do not wait on native exit in this virtual harness.
         $process = $this->start();
         $this->mount($clientClass);
         $this->open();
@@ -246,27 +251,19 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $this->assertFalse($this->harness->screen()->hasInputOverlay());
     }
 
-    private function start(string $runId = 'visible', bool $accepted = true): StartResult
+    private function start(string $runId = 'visible', bool $accepted = true): BashProcessRecordDTO
     {
         $command = 'read -r release < '.escapeshellarg($this->directory.'/release');
         $toolCallId = 'call-'.bin2hex(random_bytes(4));
-        $prepared = $this->manager->prepareNativeLaunch($runId, $toolCallId, $command, true);
+
         $process = $this->manager->start(
             $command,
             $runId,
             $toolCallId,
-            preparedRecordId: $prepared->id,
-            preparedLogPath: $prepared->logPath,
-            preparedStatusPath: $prepared->statusPath,
         );
-        // Local UI fixture: persist launch facts without waiting for owner receipt.
-        self::getContainer()->get(\Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore::class)->applyLaunch(
-            $prepared->id,
-            $runId,
-            $process->pid,
-            posix_getpgid($process->pid) ?: null,
-            new \DateTimeImmutable(),
-        );
+        $process = $this->manager->findByStatusPath($process->statusPath, $runId);
+        $this->assertNotNull($process);
+
         if ($accepted) {
             $candidate = $this->manager->resolveBackgroundAcceptance($process->statusPath, $runId);
             $this->assertNotNull($candidate);
