@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\CompleteSubmissionDTO;
 use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
@@ -41,6 +42,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         private \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry $artifacts,
         private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $transitionRecovery,
         private RunOperationalStatusReaderInterface $operationalStatus,
+        private AgentResumeCommandReader $resumeCommands,
         private ?RunTracer $tracer = null,
     ) {
     }
@@ -66,6 +68,13 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
             // Other maintenance performs recovery inside its response boundary.
             if (!$message instanceof RepairSession && !$message instanceof SelectHistoryEntry && !$message instanceof AttachRun) {
                 $this->initializeForOwner($runId, $message);
+            }
+
+            // Resume owns completed-command reuse at the same locked receive
+            // boundary as application. Stop duplicates before history-tail discard.
+            if ($message instanceof ApplyCommand && $this->resumeCommands->isResumeCommand($message)
+                && null !== $this->resumeCommands->find($runId, $message->idempotencyKey())) {
+                return $envelope;
             }
 
             $handled = $stack->next()->handle($envelope, $stack);

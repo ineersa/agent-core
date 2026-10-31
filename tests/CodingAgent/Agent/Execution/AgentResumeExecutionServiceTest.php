@@ -855,6 +855,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             normalizer: self::getContainer()->get(SerializerInterface::class),
             denormalizer: self::getContainer()->get(SerializerInterface::class),
             validator: self::getContainer()->get(ValidatorInterface::class),
+            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($events),
         );
         $step = 'stable-resume-step';
         $call = new ExecuteToolCall($parent, 1, $step, 1, hash('sha256', 'stable'), 'resume-stable', 'agent_resume', ['artifact_id' => $artifact, 'task' => 'continue'], 0, parentModel: 'test/model');
@@ -934,6 +935,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         string $parentRunId,
         ?StackToolExecutionContextAccessor $contextAccessor = null,
     ): AgentResumeExecutionService {
+        $eventStore = $this->createConfiguredStub(EventStoreInterface::class, ['latestSequenceFor' => 1]);
+
         return new AgentResumeExecutionService(
             artifactRegistry: $this->registry(),
             batchRepository: self::getContainer()->get(DeferredSubagentBatchRepository::class),
@@ -944,9 +947,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             operationalStatusReader: $this->createConfiguredStub(RunOperationalStatusReaderInterface::class, [
                 'findOperationalStatus' => new RunOperationalStatusDTO(RunStatus::Completed, 1),
             ]),
-            eventStore: $this->createConfiguredStub(EventStoreInterface::class, [
-                'latestSequenceFor' => 1,
-            ]),
+            eventStore: $eventStore,
             runLockManager: self::getContainer()->get(RunLockManager::class),
             relationshipReader: StubRunRelationshipReader::topLevel($parentRunId),
             depthGuard: new AgentDepthGuard(),
@@ -956,6 +957,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             toolBatches: self::getContainer()->get(ToolBatchStoreInterface::class),
             denormalizer: self::getContainer()->get(SerializerInterface::class),
             validator: self::getContainer()->get(ValidatorInterface::class),
+            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($eventStore),
         );
     }
 
@@ -1004,6 +1006,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             toolBatches: self::getContainer()->get(ToolBatchStoreInterface::class),
             denormalizer: self::getContainer()->get(SerializerInterface::class),
             validator: self::getContainer()->get(ValidatorInterface::class),
+            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($eventStore),
         );
 
         $stepId = 'resume-step-'.$toolCallId;

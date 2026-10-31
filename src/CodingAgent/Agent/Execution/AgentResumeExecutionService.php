@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -66,6 +67,7 @@ final class AgentResumeExecutionService
         private readonly NormalizerInterface $normalizer,
         private readonly DenormalizerInterface $denormalizer,
         private readonly ValidatorInterface $validator,
+        private readonly AgentResumeCommandReader $resumeCommands,
     ) {
     }
 
@@ -128,19 +130,14 @@ final class AgentResumeExecutionService
         // A crash can lose local success recording after the child has accepted
         // or consumed follow_up. Its exact canonical command is execution
         // evidence for this intent; unrelated child status is not.
-        foreach ($this->eventStore->reverseFor($child->childRunId) as $event) {
-            if (($event->payload['idempotency_key'] ?? null) !== $commandKey
-                || ($event->payload['kind'] ?? null) !== CoreCommandKind::FollowUp) {
-                continue;
-            }
-            if ('agent_command_rejected' === $event->type) {
+        $event = $this->resumeCommands->find($child->childRunId, $commandKey);
+        if (null !== $event) {
+            if (RunEventTypeEnum::AgentCommandRejected->value === $event->type) {
                 throw new ToolCallException('The resume follow_up command was rejected.', retryable: false);
             }
-            if (\in_array($event->type, ['agent_command_queued', 'agent_command_applied'], true)) {
-                $this->batchRepository->applyLaunchSuccessState($parentRunId, $toolCallId, $lifecycleId, $event->createdAt);
+            $this->batchRepository->applyLaunchSuccessState($parentRunId, $toolCallId, $lifecycleId, $event->createdAt);
 
-                return new DeferredToolCompletionOutcome($lifecycleId);
-            }
+            return new DeferredToolCompletionOutcome($lifecycleId);
         }
 
         $entry = $this->artifactRegistry->get($parentRunId, $child->artifactId);
