@@ -7,9 +7,9 @@ namespace Ineersa\CodingAgent\Extension;
 use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolExecutionNotStartedDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionNotStarted;
 use Ineersa\CodingAgent\Tool\Event\ToolCallFailedEvent;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerHookInterface;
@@ -588,6 +588,6 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 
     private function setNotStartedResult(ToolCallRequested $event, ToolCall $toolCall, mixed $result, string $reason): void
     {
-        $event->setResult(new ToolResult($toolCall, new ToolExecutionNotStarted($reason, $result)));
+        $event->setResult(new ToolResult($toolCall, new ToolExecutionNotStartedDTO($reason, $result)));
     }
 }

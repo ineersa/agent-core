@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionNotStartedException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -91,7 +92,7 @@ final class AgentResumeExecutionService
                 throw new ToolCallException('Prepared agent_resume reservation does not match its canonical batch invocation.', retryable: false);
             }
             if (DeferredSubagentBatchLaunchStatusEnum::Failed === $existing->launchStatus) {
-                throw new ToolCallException('agent_resume batch launch previously failed for this tool call.', retryable: false);
+                throw new ToolExecutionNotStartedException('agent_resume batch launch previously failed for this tool call.');
             }
 
             // Already prepared or launched for this exact invocation: reuse it.
@@ -140,19 +141,19 @@ final class AgentResumeExecutionService
     {
         $toolContext = $this->contextAccessor->requireCurrent();
         if ($parentRunId !== $toolContext->runId()) {
-            throw new ToolCallException('agent_resume parent run id does not match active tool context.', retryable: false);
+            throw new ToolExecutionNotStartedException('agent_resume parent run id does not match active tool context.');
         }
 
         $toolCallId = $toolContext->toolCallId();
         $lifecycleId = $this->identityFactory->batchLifecycleId($parentRunId, $toolCallId);
         $projection = $this->batchRepository->findByParentRunAndToolCall($parentRunId, $toolCallId);
         if (null === $projection) {
-            throw new ToolCallException('Owner-prepared agent_resume reservation is missing for this invocation.', retryable: false);
+            throw new ToolExecutionNotStartedException('Owner-prepared agent_resume reservation is missing for this invocation.');
         }
         if ($projection->lifecycleId !== $lifecycleId
             || $projection->parentTurnNo !== $toolContext->turnNo()
             || $projection->parentOrderIndex !== $toolContext->orderIndex()) {
-            throw new ToolCallException('Prepared agent_resume reservation does not match its active tool context.', retryable: false);
+            throw new ToolExecutionNotStartedException('Prepared agent_resume reservation does not match its active tool context.');
         }
 
         $child = $this->requirePreparedChild($projection);
@@ -166,21 +167,21 @@ final class AgentResumeExecutionService
 
         $requestedTask = trim($task->task);
         if ('' === $requestedTask) {
-            throw new ToolCallException('agent_resume task must be non-empty.', retryable: false);
+            throw new ToolExecutionNotStartedException('agent_resume task must be non-empty.');
         }
         if ($requestedTask !== trim($child->task)) {
-            throw new ToolCallException('agent_resume task does not match its prepared reservation.', retryable: false);
+            throw new ToolExecutionNotStartedException('agent_resume task does not match its prepared reservation.');
         }
         if (null !== $task->artifact_id && '' !== trim($task->artifact_id) && trim($task->artifact_id) !== $child->artifactId) {
-            throw new ToolCallException('agent_resume artifact_id does not match its prepared reservation.', retryable: false);
+            throw new ToolExecutionNotStartedException('agent_resume artifact_id does not match its prepared reservation.');
         }
         if (null !== $task->agent_run_id && '' !== trim($task->agent_run_id) && trim($task->agent_run_id) !== $child->childRunId) {
-            throw new ToolCallException('agent_resume agent_run_id does not match its prepared reservation.', retryable: false);
+            throw new ToolExecutionNotStartedException('agent_resume agent_run_id does not match its prepared reservation.');
         }
 
         $entry = $this->artifactRegistry->get($parentRunId, $child->artifactId);
         if (null === $entry || $entry->agentRunId !== $child->childRunId) {
-            throw new ToolCallException(\sprintf('Prepared agent_resume artifact "%s" is unavailable.', $child->artifactId), retryable: false);
+            throw new ToolExecutionNotStartedException(\sprintf('Prepared agent_resume artifact "%s" is unavailable.', $child->artifactId));
         }
         $priorStatus = $entry->status;
 

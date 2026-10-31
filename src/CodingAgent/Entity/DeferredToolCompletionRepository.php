@@ -287,15 +287,19 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         });
     }
 
-    public function reviseUnusedPreparation(DeferredToolCompletionCorrelation $correlation, ToolPayloadReferenceDTO $bodyReference): void
-    {
+    public function reviseUnusedPreparation(
+        DeferredToolCompletionCorrelation $correlation,
+        ToolPayloadReferenceDTO $bodyReference,
+        int $expectedOldAttempt,
+        string $expectedOldIdempotencyKey,
+    ): void {
         $this->validateReference($bodyReference);
         if ('correlation' !== $bodyReference->kind
             || [$bodyReference->runId, $bodyReference->turnNo, $bodyReference->stepId, $bodyReference->toolCallId, $bodyReference->attempt, $bodyReference->idempotencyKey, $bodyReference->orderIndex, $bodyReference->toolName]
             !== [$correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->toolCallId, $correlation->attempt, $correlation->idempotencyKey, $correlation->orderIndex, $correlation->toolName]) {
             throw new ToolPayloadException('Deferred preparation revision body does not match its correlation.');
         }
-        $this->locks->synchronized($correlation->runId, function () use ($correlation, $bodyReference): void {
+        $this->locks->synchronized($correlation->runId, function () use ($correlation, $bodyReference, $expectedOldAttempt, $expectedOldIdempotencyKey): void {
             $fresh = $this->require($correlation->deferredId);
             if ($fresh->runId !== $correlation->runId || $fresh->toolCallId !== $correlation->toolCallId) {
                 throw new ToolPayloadException('Deferred preparation revision does not match its invocation.');
@@ -309,6 +313,10 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             if ($fresh->attempt === $correlation->attempt && $fresh->idempotencyKey === $correlation->idempotencyKey) {
                 // Replay of the same captured revision.
                 return;
+            }
+            if ($fresh->attempt !== $expectedOldAttempt || $fresh->idempotencyKey !== $expectedOldIdempotencyKey) {
+                // Never overwrite a newer correlation than the captured old tuple.
+                throw new ToolPayloadException('Deferred preparation revision no longer matches its captured old identity.');
             }
             if ($fresh->turnNo !== $correlation->turnNo || $fresh->stepId !== $correlation->stepId) {
                 throw new ToolPayloadException('Deferred preparation revision changed turn or step identity.');

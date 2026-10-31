@@ -94,6 +94,8 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             $nativeStamp = $envelope->last(BashNativeCompletionStamp::class);
             $body = $this->locks->synchronized($message->runId(), function () use ($message, $received, $nativeStamp): ExecuteToolCall|ExecuteShellToolCall|ToolCallResult|CompleteDeferredToolCall|SettleObsoleteDeferredCompletionDTO|null {
                 if ('run_control' === $received->getTransportName() && null === $message->deferredId && 'result' === $message->reference->kind && 'code_mode' === $message->reference->toolName) {
+                    // Stale/admission checks happen inside acceptCodeModeResult after
+                    // identity validation. Human suspensions skip terminal acceptance.
                     $reference = $this->acceptCodeModeResult($message->reference);
                     if (null === $reference) {
                         return null;
@@ -247,7 +249,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                     } catch (ToolCallException $exception) {
                         // Preparation refusals settle as ordinary failed results.
                         // Do not dispatch execution or throw into owner effect retries.
-                        $failed = ToolCallResultFactory::fromExecuteToolCallAndThrowable($message, $exception);
+                        $failed = ToolCallResultFactory::unusedPreparationFromExecuteToolCall($message, $exception);
                         $deferredId = null;
 
                         return $this->payloads->publish($failed);
@@ -355,6 +357,15 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             if ('completed' === $status) {
                 return [null, null, null];
             }
+            if ($message->isHumanInputSuspension()) {
+                // Ordinary human suspension must reach ToolCallResultHandler without
+                // publishing/accepting a terminal deferred reference.
+                if (!$this->admission->canPublish($message)) {
+                    return [null, null, null];
+                }
+
+                return [null, $this->payloads->publish($message), null];
+            }
             $metadata = $this->findEarlyDeferredRegistration($message);
             if (null !== $metadata) {
                 // Seal the first immutable result here, but leave SQL acceptance
@@ -412,7 +423,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                     $message->args,
                 );
             } catch (ValidatorValidationFailedException $exception) {
-                throw new ToolCallException($exception->getMessage(), retryable: false, previous: $exception, hint: 'preparation_unused');
+                throw new ToolCallException($exception->getMessage(), retryable: false, previous: $exception);
             }
             $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($message, $receipt->identity));
         }
@@ -528,14 +539,14 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                 context: [AbstractNormalizer::ALLOW_EXTRA_ATTRIBUTES => false],
             );
         } catch (\Throwable $exception) {
-            throw new ToolCallException('Bash arguments are invalid.', retryable: false, previous: $exception, hint: 'preparation_unused');
+            throw new ToolCallException('Bash arguments are invalid.', retryable: false, previous: $exception);
         }
         if (!$arguments instanceof BashArgumentsDTO) {
-            throw new ToolCallException('Bash arguments are invalid.', retryable: false, hint: 'preparation_unused');
+            throw new ToolCallException('Bash arguments are invalid.', retryable: false);
         }
         $violations = $this->validator->validate($arguments);
         if (\count($violations) > 0) {
-            throw new ToolCallException((string) $violations, retryable: false, hint: 'preparation_unused');
+            throw new ToolCallException((string) $violations, retryable: false);
         }
 
         $this->backgroundProcesses->prepareNativeLaunch(
@@ -567,27 +578,41 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             return null;
         }
         if (\in_array($metadata->interruptionReason, ['stopped', 'cancelled', 'history_discarded'], true) && (null !== $metadata->backgroundedAt || 'history_discarded' === $metadata->interruptionReason)) {
-            $this->deferred->markCompleted($metadata->deferredId);
+            // Consolidate obsolete settlement into the captured owner metadata action.
+            $this->commandBus->dispatch(new SettleObsoleteDeferredCompletionDTO(
+                $metadata->reference->runId,
+                $metadata->reference->turnNo,
+                $metadata->reference->stepId,
+                $metadata->deferredId,
+            ));
 
             return null;
         }
         if (null === $metadata->backgroundedAt && 'controller_lost' !== $metadata->interruptionReason && !$this->admission->accepts($incoming, $owner)) {
             return null;
         }
-        $reference = $this->deferred->acceptResultReference($metadata->deferredId, $metadata->acceptedResultReference ?? $incoming);
+
+        $candidate = $metadata->acceptedResultReference ?? $incoming;
+        // Preserve stale checks before body reads. After identity admission, inspect
+        // hydrated human suspension before terminal acceptance.
+        $body = $this->payloads->read($candidate);
+        if ($body instanceof ToolCallResult && $body->isHumanInputSuspension()) {
+            return $candidate;
+        }
+        if (!$body instanceof ToolCallResult) {
+            throw new ToolPayloadException('Accepted deferred body is not a tool result.');
+        }
+
+        $reference = $this->deferred->acceptResultReference($metadata->deferredId, $candidate);
         if ($metadata->continuationRequired) {
             return null;
         }
         if (null !== $metadata->backgroundedAt) {
-            $accepted = $this->payloads->read($reference);
-            if (!$accepted instanceof ToolCallResult) {
-                throw new ToolPayloadException('Accepted deferred body is not a tool result.');
-            }
-            $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $accepted->result['details'] ?? null);
+            $notifications = ModelNotificationCodec::denormalizeFromDetails($this->serializer, $body->result['details'] ?? null);
             $delivery = new DeliverBackgroundCompletionDTO(
                 $metadata->reference->runId,
                 $metadata->deferredId,
-                (new AgentMessageNormalizer())->toolMessage($accepted, $notifications)->content[0]['text'],
+                (new AgentMessageNormalizer())->toolMessage($body, $notifications)->content[0]['text'],
                 $metadata->reference->runId,
                 $metadata->deferredId,
                 $metadata->reference,

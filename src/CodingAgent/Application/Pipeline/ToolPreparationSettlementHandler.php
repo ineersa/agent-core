@@ -4,20 +4,21 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
-use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkObsoleteDeferredCompletionDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\SettleUnusedToolPreparationDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
@@ -32,11 +33,12 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 final readonly class ToolPreparationSettlementHandler implements CoordinationActionValidatorInterface, EssentialAfterTurnHookInterface
 {
     public function __construct(
-        private DeferredToolCompletionRepositoryInterface $deferred,
+        private DeferredToolCompletionRepository $deferred,
         private DeferredSubagentBatchRepository $childBatches,
         private ChildInvocationLifecycleService $childLifecycle,
         private ProcessStore $processStore,
         private ToolPayloadStoreInterface $payloads,
+        private ToolBatchStoreInterface $batches,
         private ValidatorInterface $validator,
     ) {
     }
@@ -66,7 +68,15 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
             if (null === $action->revisedBodyReference) {
                 throw new \RuntimeException('Deferred preparation revision requires a published body reference.');
             }
-            $this->deferred->reviseUnusedPreparation($action->revisedCorrelation, $action->revisedBodyReference);
+            if (null === $action->expectedOldAttempt || null === $action->expectedOldIdempotencyKey) {
+                throw new \RuntimeException('Deferred preparation revision requires the captured old identity.');
+            }
+            $this->deferred->reviseUnusedPreparation(
+                $action->revisedCorrelation,
+                $action->revisedBodyReference,
+                $action->expectedOldAttempt,
+                $action->expectedOldIdempotencyKey,
+            );
         }
 
         foreach ($action->deferredIds as $deferredId) {
@@ -97,7 +107,8 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
         }
         if ($metadata->reference->runId !== $action->runId
             || $metadata->reference->turnNo !== $action->turnNo
-            || $metadata->reference->stepId !== $action->stepId) {
+            || $metadata->reference->stepId !== $action->stepId
+            || $metadata->reference->toolCallId !== $action->toolCallId) {
             throw new \RuntimeException('Obsolete deferred settlement does not match its captured identity.');
         }
         $this->deferred->markCompleted($action->deferredId);
@@ -184,6 +195,18 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
             return null;
         }
 
+        // Require original ToolCallRequested short-circuit approval evidence.
+        $payload = $action->answer->requestPayload;
+        if ((!isset($payload['hook_id']) && !isset($payload['hook_class']))
+            || !isset($payload['approval_context'])) {
+            return null;
+        }
+
+        $storedCall = $this->batches->loadCall($action->runId, $action->turnNo, $action->stepId, $toolCallId);
+        if (null === $storedCall) {
+            return null;
+        }
+
         $metadata = $this->deferred->findMetadataByRunAndToolCall($action->runId, $toolCallId);
         if (null === $metadata || 'pending' !== $metadata->status) {
             return null;
@@ -208,33 +231,8 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
             return null;
         }
 
-        // Capture the revised correlation body before the metadata transaction.
-        // DoctrineToolBatchStore applies withAuthorizedHumanAnswer under the same commit.
-        $revisedCorrelation = new DeferredToolCompletionCorrelation(
-            deferredId: $existing->deferredId,
-            runId: $existing->runId,
-            turnNo: $existing->turnNo,
-            stepId: $existing->stepId,
-            attempt: $existing->attempt + 1,
-            idempotencyKey: hash('sha256', \sprintf(
-                '%s|%s|%s|human|%d|%s',
-                $existing->runId,
-                $existing->stepId,
-                $existing->toolCallId,
-                $existing->attempt + 1,
-                $action->answer->questionId,
-            )),
-            toolCallId: $existing->toolCallId,
-            toolName: $existing->toolName,
-            arguments: $existing->arguments,
-            orderIndex: $existing->orderIndex,
-            toolIdempotencyKey: $existing->toolIdempotencyKey,
-            mode: $existing->mode,
-            timeoutSeconds: $existing->timeoutSeconds,
-            maxParallelism: $existing->maxParallelism,
-            argSchema: $existing->argSchema,
-            toolsRef: $existing->toolsRef,
-        );
+        $authorized = $storedCall->withAuthorizedHumanAnswer($action->answer);
+        $revisedCorrelation = ToolCallResultFactory::correlationFromExecuteToolCall($authorized, $existing->deferredId);
         $revisedBodyReference = $this->payloads->publishCorrelation($revisedCorrelation);
 
         return new SettleUnusedToolPreparationDTO(
@@ -244,6 +242,8 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
             revisedCorrelation: $revisedCorrelation,
             revisedBodyReference: $revisedBodyReference,
             revisedToolCallId: $toolCallId,
+            expectedOldAttempt: $storedCall->attempt(),
+            expectedOldIdempotencyKey: $storedCall->idempotencyKey(),
         );
     }
 
@@ -256,15 +256,8 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
         if (!\is_array($details)) {
             return false;
         }
-        if (true === ($details['execution_not_started'] ?? false)) {
-            return true;
-        }
-        // Preparation refusals sealed before dispatch carry this explicit marker.
-        if (true === ($details['preparation_unused'] ?? false)) {
-            return true;
-        }
 
-        return false;
+        return true === ($details['execution_not_started'] ?? false);
     }
 
     private function toolName(ToolCallResult $result): ?string

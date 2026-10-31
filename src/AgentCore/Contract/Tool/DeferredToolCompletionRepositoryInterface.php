@@ -55,12 +55,4 @@ interface DeferredToolCompletionRepositoryInterface
 
     /** First immutable processed result wins; later publications are no-ops when equal. */
     public function acceptResultReference(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO;
-
-    /**
-     * Revise an unused pending preparation to a new attempt/idempotency identity.
-     *
-     * Allowed only while readiness, backgrounding, and accepted results are absent.
-     * Replay with the same revised correlation is a no-op.
-     */
-    public function reviseUnusedPreparation(DeferredToolCompletionCorrelation $correlation, ToolPayloadReferenceDTO $bodyReference): void;
 }

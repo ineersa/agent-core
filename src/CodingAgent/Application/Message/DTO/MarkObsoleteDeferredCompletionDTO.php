@@ -19,6 +19,8 @@ final readonly class MarkObsoleteDeferredCompletionDTO
         public int $turnNo,
         #[Assert\NotBlank]
         public string $stepId,
+        #[Assert\NotBlank]
+        public string $toolCallId,
     ) {
     }
 }

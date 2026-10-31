@@ -99,7 +99,12 @@ final readonly class RunCommit
 
             try {
                 $this->probe('commit.after_turn_observers', $attributes, fn () => $this->hookDispatcher?->dispatchAfterTurnCommit(
-                    AfterTurnCommitHookContext::fromRunState($committedState, $persistedEvents, \count($effects)),
+                    AfterTurnCommitHookContext::fromRunState(
+                        $committedState,
+                        $persistedEvents,
+                        \count($effects),
+                        [...$postCommitActions, ...$afterTurnActions],
+                    ),
                 ));
             } catch (\Throwable $exception) {
                 $this->logger->warning('After-turn commit hook failed (best-effort)', [

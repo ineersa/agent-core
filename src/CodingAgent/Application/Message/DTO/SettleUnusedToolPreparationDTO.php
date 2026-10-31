@@ -36,6 +36,8 @@ final readonly class SettleUnusedToolPreparationDTO
         public ?DeferredToolCompletionCorrelation $revisedCorrelation = null,
         public ?ToolPayloadReferenceDTO $revisedBodyReference = null,
         public ?string $revisedToolCallId = null,
+        public ?int $expectedOldAttempt = null,
+        public ?string $expectedOldIdempotencyKey = null,
     ) {
     }
 }

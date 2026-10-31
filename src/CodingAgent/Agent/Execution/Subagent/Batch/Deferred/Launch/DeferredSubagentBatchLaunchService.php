@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionNotStartedException;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
@@ -73,7 +74,7 @@ final class DeferredSubagentBatchLaunchService
                 throw new ToolCallException('Prepared child reservation does not match its canonical batch invocation.', retryable: false);
             }
             if (DeferredSubagentBatchLaunchStatusEnum::Failed === $existing->launchStatus) {
-                throw new ToolCallException('Subagent batch launch previously failed for this tool call.', retryable: false);
+                throw new ToolExecutionNotStartedException('Subagent batch launch previously failed for this tool call.');
             }
 
             // Already prepared or launched for this exact invocation: reuse it.
@@ -104,14 +105,14 @@ final class DeferredSubagentBatchLaunchService
     ): DeferredToolCompletionOutcome {
         $toolContext = $this->contextAccessor->requireCurrent();
         if ($parentRunId !== $toolContext->runId()) {
-            throw new ToolCallException('Subagent parent run id does not match active tool context.', retryable: false);
+            throw new ToolExecutionNotStartedException('Subagent parent run id does not match active tool context.');
         }
 
         $toolCallId = $toolContext->toolCallId();
         $projection = $this->requirePreparedProjection($parentRunId, $toolCallId, $toolContext->turnNo(), $toolContext->orderIndex());
         $child = $this->requirePreparedChild($projection);
         if (trim($agentName) !== $child->agentName || trim($task) !== $child->task) {
-            throw new ToolCallException('Deferred invocation reservation does not match its launch intent.', retryable: false);
+            throw new ToolExecutionNotStartedException('Deferred invocation reservation does not match its launch intent.');
         }
 
         $plan = $this->batchPreparation->buildLaunchPlan(
@@ -150,19 +151,19 @@ final class DeferredSubagentBatchLaunchService
     ): DeferredToolCompletionOutcome {
         $task = trim($task);
         if ('' === $task) {
-            throw new ToolCallException('Profiled single-child launch requires a non-empty task.', retryable: false);
+            throw new ToolExecutionNotStartedException('Profiled single-child launch requires a non-empty task.');
         }
 
         $toolContext = $this->contextAccessor->requireCurrent();
         if ($parentRunId !== $toolContext->runId()) {
-            throw new ToolCallException('Subagent parent run id does not match active tool context.', retryable: false);
+            throw new ToolExecutionNotStartedException('Subagent parent run id does not match active tool context.');
         }
 
         $toolCallId = $toolContext->toolCallId();
         $projection = $this->requirePreparedProjection($parentRunId, $toolCallId, $toolContext->turnNo(), $toolContext->orderIndex());
         $child = $this->requirePreparedChild($projection);
         if ($task !== $child->task || $profile->displayAgentName !== $child->agentName) {
-            throw new ToolCallException('Deferred invocation reservation does not match its launch intent.', retryable: false);
+            throw new ToolExecutionNotStartedException('Deferred invocation reservation does not match its launch intent.');
         }
 
         $plan = $this->batchPreparation->buildSingleChildProfiledLaunchPlan(
@@ -198,12 +199,12 @@ final class DeferredSubagentBatchLaunchService
         $lifecycleId = $this->identityFactory->batchLifecycleId($parentRunId, $toolCallId);
         $projection = $this->batchRepository->findByParentRunAndToolCall($parentRunId, $toolCallId);
         if (null === $projection) {
-            throw new ToolCallException('Owner-prepared child reservation is missing for this invocation.', retryable: false);
+            throw new ToolExecutionNotStartedException('Owner-prepared child reservation is missing for this invocation.');
         }
         if ($projection->lifecycleId !== $lifecycleId
             || $projection->parentTurnNo !== $turnNo
             || $projection->parentOrderIndex !== $orderIndex) {
-            throw new ToolCallException('Prepared child reservation does not match its active tool context.', retryable: false);
+            throw new ToolExecutionNotStartedException('Prepared child reservation does not match its active tool context.');
         }
 
         return $projection;
@@ -221,7 +222,7 @@ final class DeferredSubagentBatchLaunchService
     ): DeferredToolCompletionOutcome {
         $lifecycleId = $plan->lifecycleId;
         if (DeferredSubagentBatchLaunchStatusEnum::Failed === $projection->launchStatus) {
-            throw new ToolCallException('Subagent batch launch previously failed for this tool call.', retryable: false);
+            throw new ToolExecutionNotStartedException('Subagent batch launch previously failed for this tool call.');
         }
         if (DeferredSubagentBatchLaunchStatusEnum::Launched === $projection->launchStatus) {
             // Already launched for this invocation: never prepare/start again.
@@ -246,7 +247,7 @@ final class DeferredSubagentBatchLaunchService
                 $e->failureBatchIndex,
             );
 
-            throw $this->launchFailedException($e->getPrevious() ?? $e);
+            throw $this->notStartedLaunchFailedException($e->getPrevious() ?? $e);
         }
 
         if (null === $prepared) {
@@ -376,10 +377,10 @@ final class DeferredSubagentBatchLaunchService
             || $intent->task !== $child->task
             || $intent->launchModel !== $child->launchModel
             || $intent->launchReasoning !== $child->launchReasoning) {
-            throw new ToolCallException('Deferred invocation reservation does not match its launch intent.', retryable: false);
+            throw new ToolExecutionNotStartedException('Deferred invocation reservation does not match its launch intent.');
         }
         if ($plan->identity->childRunId !== $child->childRunId || $plan->identity->artifactId !== $child->artifactId) {
-            throw new ToolCallException('Deferred invocation reservation does not match its launch intent.', retryable: false);
+            throw new ToolExecutionNotStartedException('Deferred invocation reservation does not match its launch intent.');
         }
     }
 
@@ -393,6 +394,16 @@ final class DeferredSubagentBatchLaunchService
         $projection = $this->batchRepository->findByLifecycleId($lifecycleId);
 
         return null !== $projection && null !== $projection->interruptionKind;
+    }
+
+    private function notStartedLaunchFailedException(\Throwable $cause): ToolCallException
+    {
+        $detail = DiagnosticMessageSanitizer::sanitize($cause->getMessage());
+        $message = '' === $detail
+            ? 'Subagent batch launch failed before child start.'
+            : \sprintf('Subagent batch launch failed before child start: %s', $detail);
+
+        return new ToolExecutionNotStartedException($message, $cause);
     }
 
     private function launchFailedException(\Throwable $cause): ToolCallException

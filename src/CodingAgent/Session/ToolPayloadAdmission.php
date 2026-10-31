@@ -146,11 +146,33 @@ final readonly class ToolPayloadAdmission
             }
         }
 
-        return (new ToolCallResult(
+        $failed = (new ToolCallResult(
             $reference->runId, $reference->turnNo, $reference->stepId,
             $reference->attempt, $reference->idempotencyKey,
             $reference->toolCallId, $reference->orderIndex, $result,
         ))->withRepresentationFailure('Tool invocation data is missing or invalid.');
+        // Body-read failures happen before the worker/handler is invoked.
+        if (\is_array($failed->result)) {
+            $details = \is_array($failed->result['details'] ?? null) ? $failed->result['details'] : [];
+            $details['execution_not_started'] = true;
+            $details['execution_not_started_reason'] = 'invocation_read_failed';
+            $result = $failed->result;
+            $result['details'] = $details;
+            $failed = new ToolCallResult(
+                $failed->runId(),
+                $failed->turnNo(),
+                $failed->stepId(),
+                $failed->attempt(),
+                $failed->idempotencyKey(),
+                $failed->toolCallId,
+                $failed->orderIndex,
+                $result,
+                true,
+                $failed->error,
+            );
+        }
+
+        return $failed;
     }
 
     /** Match the ordinary run processor's terminal-child release on owner no-ops. */

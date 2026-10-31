@@ -11,15 +11,16 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionNotStartedException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolExecutionNotStartedDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionNotStarted;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
@@ -173,6 +174,10 @@ final class ToolExecutor implements ToolExecutorInterface
                         ? DiagnosticMessageSanitizer::redact($exception->hint())
                         : null,
                 ];
+                if ($exception instanceof ToolExecutionNotStartedException) {
+                    $details['execution_not_started'] = true;
+                    $details['execution_not_started_reason'] = 'not_started';
+                }
                 if ($this->probe('cancel_error', $toolCall, fn () => $this->cancellationToken($toolCall)->isCancellationRequested())) {
                     $details['cancelled'] = true;
                 }
@@ -196,6 +201,10 @@ final class ToolExecutor implements ToolExecutorInterface
                     || \in_array($message, [ToolResultText::FAILURE_MESSAGE, ToolResultText::INSPECTION_FAILURE_MESSAGE], true)) {
                     $details['retryable'] = false;
                 }
+                if ($exception instanceof InvalidToolCallArgumentsException) {
+                    $details['execution_not_started'] = true;
+                    $details['execution_not_started_reason'] = 'invalid_tool_arguments';
+                }
                 $result = $this->errorResult(
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
@@ -208,7 +217,11 @@ final class ToolExecutor implements ToolExecutorInterface
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
                     message: \sprintf('Tool "%s" was not found, please use one of these: %s', $toolCall->toolName, implode(', ', $names)),
-                    details: ['error_type' => $exception::class],
+                    details: [
+                        'error_type' => $exception::class,
+                        'execution_not_started' => true,
+                        'execution_not_started_reason' => 'tool_not_found',
+                    ],
                 );
             } else {
                 $result = $this->errorResult(
@@ -289,7 +302,7 @@ final class ToolExecutor implements ToolExecutorInterface
     {
         $argumentFailure = ToolResultText::failureMessage($toolCall->arguments);
         if (null !== $argumentFailure) {
-            throw new ToolCallException('Tool arguments could not be admitted. Execution was not started.', retryable: false);
+            throw new ToolExecutionNotStartedException('Tool arguments could not be admitted. Execution was not started.');
         }
 
         if (null === $this->toolbox) {
@@ -448,6 +461,10 @@ final class ToolExecutor implements ToolExecutorInterface
             if (\is_array($references) && ToolResultText::isValid($references)) {
                 $failureDetails['raw_result'] = ['attachment_refs' => $references];
             }
+            if (\is_array($result->details) && true === ($result->details['execution_not_started'] ?? false)) {
+                $failureDetails['execution_not_started'] = true;
+                $failureDetails['execution_not_started_reason'] = $result->details['execution_not_started_reason'] ?? 'not_started';
+            }
             $result = $this->errorResult($toolCall->toolCallId, $toolCall->toolName, $message, $failureDetails);
         }
 
@@ -560,19 +577,6 @@ final class ToolExecutor implements ToolExecutorInterface
             );
         }
 
-        if ($rawResult instanceof ToolResult) {
-            if ($rawResult->toolCallId !== $toolCall->toolCallId || $rawResult->toolName !== $toolCall->toolName) {
-                throw new ToolCallException('Typed tool result identity does not match its invocation.', retryable: false);
-            }
-            $failure = ToolResultText::failureMessage($rawResult->content)
-                ?? ToolResultText::failureMessage($rawResult->details);
-            if (null !== $failure) {
-                throw new ToolCallException($failure, retryable: false);
-            }
-
-            return $rawResult;
-        }
-
         if ($rawResult instanceof ToolExecutionHumanInputSuspension) {
             $failure = ToolResultText::failureMessage($rawResult->request->waitingHumanEventPayload())
                 ?? ToolResultText::failureMessage($rawResult->request->questionId);
@@ -594,67 +598,56 @@ final class ToolExecutor implements ToolExecutorInterface
             );
         }
 
-        if ($rawResult instanceof ToolExecutionNotStarted) {
-            $inner = $rawResult->result;
-            if ($inner instanceof ToolResult) {
-                if ($inner->toolCallId !== $toolCall->toolCallId || $inner->toolName !== $toolCall->toolName) {
-                    throw new ToolCallException('Typed tool result identity does not match its invocation.', retryable: false);
-                }
-                $failure = ToolResultText::failureMessage($inner->content)
-                    ?? ToolResultText::failureMessage($inner->details);
-                if (null !== $failure) {
-                    throw new ToolCallException($failure, retryable: false);
-                }
-                $details = \is_array($inner->details) ? $inner->details : [];
-                $details['execution_not_started'] = true;
-                $details['execution_not_started_reason'] = $rawResult->reason;
-                if (!\array_key_exists('raw_result', $details)) {
-                    $details['raw_result'] = null;
-                }
+        $notStarted = null;
+        if ($rawResult instanceof ToolExecutionNotStartedDTO) {
+            $notStarted = $rawResult;
+            $rawResult = $rawResult->result;
+        }
 
-                return new ToolResult(
-                    toolCallId: $inner->toolCallId,
-                    toolName: $inner->toolName,
-                    content: $inner->content,
-                    details: $details,
-                    isError: $inner->isError,
-                );
+        if ($rawResult instanceof ToolResult) {
+            if ($rawResult->toolCallId !== $toolCall->toolCallId || $rawResult->toolName !== $toolCall->toolName) {
+                throw new ToolCallException('Typed tool result identity does not match its invocation.', retryable: false);
             }
+            $failure = ToolResultText::failureMessage($rawResult->content)
+                ?? ToolResultText::failureMessage($rawResult->details);
+            if (null !== $failure) {
+                if (null !== $notStarted) {
+                    $details = \is_array($rawResult->details) ? $rawResult->details : [];
+                    $details['execution_not_started'] = true;
+                    $details['execution_not_started_reason'] = $notStarted->reason;
+                    if (!\array_key_exists('raw_result', $details)) {
+                        $details['raw_result'] = null;
+                    }
 
-            $payload = $inner;
-            if ($payload instanceof \BackedEnum) {
-                $payload = $payload->value;
-            } elseif ($payload instanceof \UnitEnum) {
-                $payload = $payload->name;
-            } elseif ($payload instanceof \Stringable) {
-                $payload = (string) $payload;
+                    return new ToolResult(
+                        toolCallId: $rawResult->toolCallId,
+                        toolName: $rawResult->toolName,
+                        content: [[
+                            'type' => 'text',
+                            'text' => $failure,
+                        ]],
+                        details: $details,
+                        isError: true,
+                    );
+                }
+                throw new ToolCallException($failure, retryable: false);
             }
-            $representationFailure = ToolResultText::failureMessage($payload);
-            if (null !== $representationFailure) {
-                throw new ToolCallException($representationFailure, retryable: false);
+            if (null === $notStarted) {
+                return $rawResult;
             }
-            $details = [
-                'raw_result' => $payload,
-                'execution_not_started' => true,
-                'execution_not_started_reason' => $rawResult->reason,
-            ];
-            if (\is_array($payload)) {
-                $details = array_replace($details, $payload, [
-                    'raw_result' => $payload,
-                    'execution_not_started' => true,
-                    'execution_not_started_reason' => $rawResult->reason,
-                ]);
+            $details = \is_array($rawResult->details) ? $rawResult->details : [];
+            $details['execution_not_started'] = true;
+            $details['execution_not_started_reason'] = $notStarted->reason;
+            if (!\array_key_exists('raw_result', $details)) {
+                $details['raw_result'] = null;
             }
 
             return new ToolResult(
-                toolCallId: $toolCall->toolCallId,
-                toolName: $toolCall->toolName,
-                content: [[
-                    'type' => 'text',
-                    'text' => $this->normalizeResultText($payload),
-                ]],
+                toolCallId: $rawResult->toolCallId,
+                toolName: $rawResult->toolName,
+                content: $rawResult->content,
                 details: $details,
-                isError: \is_array($payload) && true === ($payload['denied'] ?? false),
+                isError: $rawResult->isError,
             );
         }
 
@@ -669,12 +662,34 @@ final class ToolExecutor implements ToolExecutorInterface
         }
         $representationFailure = ToolResultText::failureMessage($rawResult);
         if (null !== $representationFailure) {
+            if (null !== $notStarted) {
+                // Preserve skipped-handler evidence even when the replacement payload is malformed.
+                return new ToolResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    content: [[
+                        'type' => 'text',
+                        'text' => $representationFailure,
+                    ]],
+                    details: [
+                        'raw_result' => null,
+                        'execution_not_started' => true,
+                        'execution_not_started_reason' => $notStarted->reason,
+                        'representation_failure' => $representationFailure,
+                    ],
+                    isError: true,
+                );
+            }
             throw new ToolCallException($representationFailure, retryable: false);
         }
 
         $details = [
             'raw_result' => $rawResult,
         ];
+        if (null !== $notStarted) {
+            $details['execution_not_started'] = true;
+            $details['execution_not_started_reason'] = $notStarted->reason;
+        }
 
         $sources = $this->normalizeSources($toolboxResult->getSources());
         if ([] !== $sources) {

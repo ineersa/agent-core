@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionNotStartedException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
@@ -134,7 +135,11 @@ final readonly class ExecuteToolCallWorker
                 if (null === $this->launchInputStore) {
                     throw new \LogicException('Child launch input store is required.');
                 }
-                $launchContext = $this->launchInputStore->read($reference);
+                try {
+                    $launchContext = $this->launchInputStore->read($reference);
+                } catch (\Throwable $exception) {
+                    throw new ToolExecutionNotStartedException('Tool launch input is missing or invalid.', $exception);
+                }
             }
 
             $cancelToken = new RunCancellationToken($this->statusReader, $message->runId());

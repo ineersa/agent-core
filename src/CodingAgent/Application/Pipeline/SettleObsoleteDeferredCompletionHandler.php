@@ -11,12 +11,14 @@ use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkObsoleteDeferredCompletionDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\SettleObsoleteDeferredCompletionDTO;
+use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 
 /** Event-free owner settlement for obsolete deferred completions. */
 final readonly class SettleObsoleteDeferredCompletionHandler implements RunMessageHandler
 {
     public function __construct(
         private DeferredToolCompletionRepositoryInterface $deferred,
+        private ToolPayloadAdmission $admission,
     ) {
     }
 
@@ -43,6 +45,11 @@ final readonly class SettleObsoleteDeferredCompletionHandler implements RunMessa
             || $metadata->reference->stepId !== $message->stepId()) {
             throw new \RuntimeException('Obsolete deferred settlement does not match its correlation identity.');
         }
+        // Recheck obsolescence against live owner admission. A newly active
+        // invocation must never be settled from a stale producer classification.
+        if ($this->admission->acceptsDeferred($metadata->reference, true)) {
+            return new HandlerResult();
+        }
 
         return new HandlerResult(postCommitActions: [
             new DispatchLocalMetadataMessageDTO(new MarkObsoleteDeferredCompletionDTO(
@@ -50,6 +57,7 @@ final readonly class SettleObsoleteDeferredCompletionHandler implements RunMessa
                 $message->runId(),
                 $message->turnNo(),
                 $message->stepId(),
+                $metadata->reference->toolCallId,
             )),
         ]);
     }
