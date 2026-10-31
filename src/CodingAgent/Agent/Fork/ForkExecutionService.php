@@ -6,9 +6,9 @@ namespace Ineersa\CodingAgent\Agent\Fork;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionNotStartedException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
+use Ineersa\AgentCore\Exception\ToolExecutionNotStartedException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;

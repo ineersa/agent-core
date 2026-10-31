@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Contract\Tool;
+namespace Ineersa\AgentCore\Exception;
+
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 
 /**
  * Typed pre-handler / pre-launch failure: the tool handler was never invoked.

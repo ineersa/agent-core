@@ -61,7 +61,20 @@ final class BashTool implements HatfieldToolProviderInterface
             $toolCallId = $context?->toolCallId();
             $prepared = null;
             if (null !== $sessionId && null !== $toolCallId && '' !== $toolCallId) {
-                $prepared = $this->manager->findPreparedLaunch($sessionId, $toolCallId);
+                $turnNo = $context?->turnNo();
+                $stepId = $context?->stepId();
+                $attempt = $context?->attempt();
+                $idempotencyKey = $context?->idempotencyKey();
+                if (null !== $turnNo && null !== $stepId && '' !== $stepId && null !== $attempt && null !== $idempotencyKey && '' !== $idempotencyKey) {
+                    $prepared = $this->manager->findPreparedLaunch(
+                        $sessionId,
+                        $toolCallId,
+                        $turnNo,
+                        $stepId,
+                        $attempt,
+                        $idempotencyKey,
+                    );
+                }
                 if (null === $prepared && (null !== $context?->stepId() || 1 === $this->contextAccessor->depth())) {
                     // Top-level model Bash and direct shell must be owner-prepared.
                     // Nested code_mode Bash has depth > 1 and no prepared row.

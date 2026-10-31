@@ -509,6 +509,13 @@ final class HeadlessController
         // Stop every consumer, including run_control, before exclusive local
         // session cleanup. Shutdown listeners no longer need a live owner reply.
         $this->consumerSupervisor->shutdownUntil($deadline);
+        if (!$this->consumerSupervisor->areLaunchersQuiescent()) {
+            $this->logger->error('Controller session shutdown launchers are not quiescent', [
+                'component' => 'HeadlessController',
+                'event_type' => 'controller.session_shutdown_launchers_not_quiescent',
+                'session_id' => $this->sessionId,
+            ]);
+        }
 
         try {
             // Consumers are already gone. Local finished-row deletion is

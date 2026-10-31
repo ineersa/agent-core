@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
+use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -23,6 +24,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\CurrentOperationDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -30,7 +32,10 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
+use Ineersa\CodingAgent\Application\Bash\NativeBashIdentity;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkCodeModeBackgroundedDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\PrepareNativeBashLaunchDTO;
+use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
@@ -65,6 +70,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private DeferredToolCompletionRepository $deferred,
         private ToolPayloadStoreInterface $payloads,
         private BackgroundCompletionReceiptRepository $receipts,
+        private BackgroundProcessConfig $backgroundProcessConfig,
     ) {
         $this->toolExecutionEndPayloadCodec = new ToolExecutionEndPayloadCodec($this->serializer);
     }
@@ -206,7 +212,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         }
 
         if (RunStatus::Cancelling !== $replayed->status) {
-            $redrive = $this->currentOperationRedrive($runId, $apply, $sorted, $replayed, $leadingActions);
+            $redrive = $this->currentOperationRedrive($runId, $apply, $sorted, $replayed, $leadingActions, $commandId);
             if (null !== $redrive) {
                 return $redrive;
             }
@@ -858,19 +864,25 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      * @param list<RunEvent> $events
      * @param list<object>   $leadingActions
      */
-    private function currentOperationRedrive(string $runId, bool $apply, array $events, RunState $state, array $leadingActions): RepairResult|SessionRepairPlan|null
+    private function currentOperationRedrive(string $runId, bool $apply, array $events, RunState $state, array $leadingActions, string $commandId): RepairResult|SessionRepairPlan|null
     {
         $events = $this->historyReplayFilter->filter($events);
         $effects = [];
+        $actions = $leadingActions;
+        $repairStartEvents = [];
         $operation = $state->currentOperation;
         $standaloneShellOperation = false;
         foreach ($state->pendingShellToolCalls as $toolCallId => $_) {
-            $shell = $this->shellEffectFromEvents($runId, $toolCallId, $events);
-            if (null === $shell) {
-                return $this->refusalResult($runId, 'Session repair refused: current shell command cannot be reconstructed.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+            $shellPlan = $this->prepareShellRepair($runId, $toolCallId, $events, $commandId, $apply);
+            if ($shellPlan instanceof RepairResult) {
+                return $shellPlan;
             }
-            $effects[] = $shell;
+            $effects[] = $shellPlan['effect'];
+            $actions = [...$actions, ...$shellPlan['actions']];
             $standaloneShellOperation = $standaloneShellOperation || (null !== $operation && $this->isStandaloneShellOperation($operation, $toolCallId, $events));
+            if ([] !== $shellPlan['events']) {
+                $repairStartEvents = [...$repairStartEvents, ...$shellPlan['events']];
+            }
         }
         if (RunStatus::Compacting === $state->status) {
             $request = null;
@@ -900,7 +912,24 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                     }
                     // Collected siblings are reused, not re-executed. Queued calls
                     // remain behind the collector's capacity and sequential barriers.
-                    $effects[] = $batch->results[$id] ?? $batch->calls[$id] ?? throw new \RuntimeException('Stored tool batch call is missing.');
+                    $call = $batch->calls[$id] ?? throw new \RuntimeException('Stored tool batch call is missing.');
+                    if (isset($batch->results[$id])) {
+                        $effects[] = $batch->results[$id];
+                        continue;
+                    }
+                    if ('bash' === $call->toolName) {
+                        $bashPlan = $this->prepareModelBashRepair($runId, $batch, $call, $commandId, $apply, $events);
+                        if ($bashPlan instanceof RepairResult) {
+                            return $bashPlan;
+                        }
+                        $effects[] = $bashPlan['effect'];
+                        $actions = [...$actions, ...$bashPlan['actions']];
+                        if ([] !== ($bashPlan['events'] ?? [])) {
+                            $repairStartEvents = [...$repairStartEvents, ...$bashPlan['events']];
+                        }
+                        continue;
+                    }
+                    $effects[] = $call;
                 }
             }
         }
@@ -917,7 +946,13 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
         // Explicit repair authorizes these ordinary sends. Canonical start events
         // establish identity and input, not whether an external tool already acted.
-        return new SessionRepairPlan($stored, $state->with(['version' => $stored->version]), [], $leadingActions, new RepairResult(false, false, 'Active operation redrive requested. Sends run after owner-lock release; failed sends produce a runtime error notification. External effects may already have occurred.', activeOperationsRedriven: \count($effects)), $effects);
+        $eventsToCommit = $repairStartEvents;
+        $next = $state->with(['version' => $stored->version]);
+        if ([] !== $eventsToCommit) {
+            $next = $this->retainedReplay($runId, [...$events, ...$eventsToCommit])->with(['version' => $stored->version + 1]);
+        }
+
+        return new SessionRepairPlan($stored, $next, $eventsToCommit, $actions, new RepairResult(false, false, 'Active operation redrive requested. Sends run after owner-lock release; failed sends produce a runtime error notification. External effects may already have occurred.', activeOperationsRedriven: \count($effects)), $effects);
     }
 
     /** @param list<RunEvent> $events
@@ -1109,11 +1144,13 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 return null;
             }
 
+            $attempt = $this->latestShellStartAttempt($events, $toolCallId) ?? $operation->attempt;
+
             return new ExecuteShellToolCall(
                 runId: $runId,
                 turnNo: $operation->turnNo,
                 stepId: $operation->stepId,
-                attempt: $operation->attempt,
+                attempt: $attempt,
                 toolCallId: $toolCallId,
                 commandText: ltrim(substr($text, 1)),
                 standalone: $standalone,
@@ -1121,6 +1158,372 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         }
 
         return null;
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     *
+     * @return array{effect: ExecuteShellToolCall|ToolCallResult, actions: list<object>, events: list<RunEvent>}|RepairResult
+     */
+    private function prepareShellRepair(string $runId, string $toolCallId, array $events, string $commandId, bool $apply): array|RepairResult
+    {
+        $shell = $this->shellEffectFromEvents($runId, $toolCallId, $events);
+        if (null === $shell) {
+            return $this->refusalResult($runId, 'Session repair refused: current shell command cannot be reconstructed.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+        }
+
+        $existingForCommand = $this->shellStartForRepairCommand($events, $toolCallId, $commandId);
+        if (null !== $existingForCommand) {
+            $effect = new ExecuteShellToolCall(
+                runId: $runId,
+                turnNo: $shell->turnNo(),
+                stepId: $shell->stepId(),
+                attempt: $existingForCommand['attempt'],
+                toolCallId: $toolCallId,
+                commandText: $shell->commandText,
+                standalone: $shell->standalone,
+            );
+            $paths = $this->nativePathsForIdentity(
+                $effect->runId(),
+                $effect->turnNo(),
+                $effect->stepId(),
+                $effect->toolCallId,
+                $effect->attempt(),
+                $effect->idempotencyKey(),
+            );
+
+            return [
+                'effect' => $effect,
+                'actions' => [new DispatchLocalMetadataMessageDTO(new PrepareNativeBashLaunchDTO(
+                    runId: $effect->runId(),
+                    turnNo: $effect->turnNo(),
+                    stepId: $effect->stepId(),
+                    toolCallId: $effect->toolCallId,
+                    attempt: $effect->attempt(),
+                    idempotencyKey: $effect->idempotencyKey(),
+                    command: $effect->commandText,
+                    logPath: $paths['log_path'],
+                    statusPath: $paths['status_path'],
+                    backgroundRequested: false,
+                ))],
+                'events' => [],
+            ];
+        }
+
+        $retained = $this->retainedShellResult($events, $shell);
+        if (null !== $retained) {
+            return [
+                'effect' => $retained,
+                'actions' => [],
+                'events' => [],
+            ];
+        }
+
+        $nextAttempt = ($this->latestShellStartAttempt($events, $toolCallId) ?? $shell->attempt()) + 1;
+        $effect = new ExecuteShellToolCall(
+            runId: $runId,
+            turnNo: $shell->turnNo(),
+            stepId: $shell->stepId(),
+            attempt: $nextAttempt,
+            toolCallId: $toolCallId,
+            commandText: $shell->commandText,
+            standalone: $shell->standalone,
+        );
+        $paths = $this->nativePathsForIdentity(
+            $effect->runId(),
+            $effect->turnNo(),
+            $effect->stepId(),
+            $effect->toolCallId,
+            $effect->attempt(),
+            $effect->idempotencyKey(),
+        );
+        $startEvents = $apply
+            ? $this->eventFactory->eventsFromSpecs($runId, $effect->turnNo(), $this->replayEventPreparer->maxSequence($events) + 1, [[
+                'type' => RunEventTypeEnum::ToolExecutionStart->value,
+                'turn_no' => $effect->turnNo(),
+                'payload' => [
+                    'tool_call_id' => $effect->toolCallId,
+                    'tool_name' => 'bash',
+                    'order_index' => 0,
+                    'attempt' => $effect->attempt(),
+                    'arguments' => ['command' => $effect->commandText],
+                    'repair_command_id' => $commandId,
+                ],
+            ]])
+            : [];
+
+        return [
+            'effect' => $effect,
+            'actions' => [new DispatchLocalMetadataMessageDTO(new PrepareNativeBashLaunchDTO(
+                runId: $effect->runId(),
+                turnNo: $effect->turnNo(),
+                stepId: $effect->stepId(),
+                toolCallId: $effect->toolCallId,
+                attempt: $effect->attempt(),
+                idempotencyKey: $effect->idempotencyKey(),
+                command: $effect->commandText,
+                logPath: $paths['log_path'],
+                statusPath: $paths['status_path'],
+                backgroundRequested: false,
+            ))],
+            'events' => $startEvents,
+        ];
+    }
+
+    /**
+     * @param \Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO $batch
+     * @param list<RunEvent>                                   $events
+     *
+     * @return array{effect: ExecuteToolCall|ToolCallResult, actions: list<object>, events: list<RunEvent>}|RepairResult
+     */
+    private function prepareModelBashRepair(string $runId, object $batch, ExecuteToolCall $call, string $commandId, bool $apply, array $events): array|RepairResult
+    {
+        $reference = $this->toolBatchStore->loadCallReference($runId, $call->turnNo(), $call->stepId(), $call->toolCallId);
+        if (null !== $reference) {
+            $first = $this->payloads->findFirstResult($reference);
+            if (null !== $first) {
+                $retained = $this->payloads->read($first);
+                if ($retained instanceof ToolCallResult) {
+                    return [
+                        'effect' => $retained,
+                        'actions' => [],
+                        'events' => [],
+                    ];
+                }
+            }
+        }
+
+        $existing = $this->modelBashStartForRepairCommand($events, $call->toolCallId, $commandId, $runId, $call->stepId());
+        if (null !== $existing) {
+            $effect = new ExecuteToolCall(
+                runId: $call->runId(),
+                turnNo: $call->turnNo(),
+                stepId: $call->stepId(),
+                attempt: $existing['attempt'],
+                idempotencyKey: $existing['idempotency_key'],
+                toolCallId: $call->toolCallId,
+                toolName: $call->toolName,
+                args: $call->args,
+                orderIndex: $call->orderIndex,
+                toolIdempotencyKey: $call->toolIdempotencyKey,
+                mode: $call->mode,
+                timeoutSeconds: $call->timeoutSeconds,
+                maxParallelism: $call->maxParallelism,
+                argSchema: $call->argSchema,
+                toolsRef: $call->toolsRef,
+                humanInputAnswer: $call->humanInputAnswer,
+                parentModel: $call->parentModel,
+                launchContext: $call->launchContext,
+            );
+            $startEvents = [];
+        } else {
+            $attempt = $call->attempt() + 1;
+            $idempotencyKey = hash('sha256', \sprintf('%s|%s|%s|repair|%d|%s', $call->runId(), $call->stepId(), $call->toolCallId, $attempt, $commandId));
+            $effect = new ExecuteToolCall(
+                runId: $call->runId(),
+                turnNo: $call->turnNo(),
+                stepId: $call->stepId(),
+                attempt: $attempt,
+                idempotencyKey: $idempotencyKey,
+                toolCallId: $call->toolCallId,
+                toolName: $call->toolName,
+                args: $call->args,
+                orderIndex: $call->orderIndex,
+                toolIdempotencyKey: $call->toolIdempotencyKey,
+                mode: $call->mode,
+                timeoutSeconds: $call->timeoutSeconds,
+                maxParallelism: $call->maxParallelism,
+                argSchema: $call->argSchema,
+                toolsRef: $call->toolsRef,
+                humanInputAnswer: $call->humanInputAnswer,
+                parentModel: $call->parentModel,
+                launchContext: $call->launchContext,
+            );
+            $startEvents = $apply
+                ? $this->eventFactory->eventsFromSpecs($runId, $effect->turnNo(), $this->replayEventPreparer->maxSequence($events) + 1, [[
+                    'type' => RunEventTypeEnum::ToolExecutionStart->value,
+                    'payload' => [
+                        'tool_call_id' => $effect->toolCallId,
+                        'tool_name' => $effect->toolName,
+                        'order_index' => $effect->orderIndex,
+                        'attempt' => $effect->attempt(),
+                        'idempotency_key' => $effect->idempotencyKey(),
+                        'mode' => $effect->mode,
+                        'repair_command_id' => $commandId,
+                    ],
+                ]])
+                : [];
+        }
+
+        $rawCommand = $effect->args['command'] ?? null;
+        $command = \is_string($rawCommand) ? trim($rawCommand) : '';
+        if ('' === $command) {
+            return $this->refusalResult($runId, 'Session repair refused: bash command cannot be reconstructed.', SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+        }
+        $paths = $this->nativePathsForIdentity(
+            $effect->runId(),
+            $effect->turnNo(),
+            $effect->stepId(),
+            $effect->toolCallId,
+            $effect->attempt(),
+            $effect->idempotencyKey(),
+        );
+
+        return [
+            'effect' => $effect,
+            'actions' => [
+                new FinalizeToolBatchDTO(
+                    runId: $effect->runId(),
+                    turnNo: $effect->turnNo(),
+                    stepId: $effect->stepId(),
+                    pendingQueue: $batch->pendingQueue,
+                    inFlight: $batch->inFlight,
+                    awaitingHumanInput: $batch->awaitingHumanInput,
+                    finalized: $batch->finalized,
+                    replacementCall: $effect,
+                ),
+                new DispatchLocalMetadataMessageDTO(new PrepareNativeBashLaunchDTO(
+                    runId: $effect->runId(),
+                    turnNo: $effect->turnNo(),
+                    stepId: $effect->stepId(),
+                    toolCallId: $effect->toolCallId,
+                    attempt: $effect->attempt(),
+                    idempotencyKey: $effect->idempotencyKey(),
+                    command: $command,
+                    logPath: $paths['log_path'],
+                    statusPath: $paths['status_path'],
+                    backgroundRequested: true === ($effect->args['backgrounded'] ?? false),
+                )),
+            ],
+            'events' => $startEvents,
+        ];
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     */
+    private function latestShellStartAttempt(array $events, string $toolCallId): ?int
+    {
+        foreach (array_reverse($events) as $event) {
+            if (RunEventTypeEnum::ToolExecutionStart->value !== $event->type) {
+                continue;
+            }
+            if (($event->payload['tool_call_id'] ?? null) !== $toolCallId) {
+                continue;
+            }
+            $attempt = $event->payload['attempt'] ?? null;
+
+            return \is_int($attempt) ? $attempt : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     *
+     * @return array{attempt: int}|null
+     */
+    private function shellStartForRepairCommand(array $events, string $toolCallId, string $commandId): ?array
+    {
+        foreach (array_reverse($events) as $event) {
+            if (RunEventTypeEnum::ToolExecutionStart->value !== $event->type) {
+                continue;
+            }
+            if (($event->payload['tool_call_id'] ?? null) !== $toolCallId) {
+                continue;
+            }
+            if (($event->payload['repair_command_id'] ?? null) !== $commandId) {
+                continue;
+            }
+            $attempt = $event->payload['attempt'] ?? null;
+            if (!\is_int($attempt)) {
+                return null;
+            }
+
+            return ['attempt' => $attempt];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     *
+     * @return array{attempt: int, idempotency_key: string}|null
+     */
+    private function modelBashStartForRepairCommand(array $events, string $toolCallId, string $commandId, string $runId, string $stepId): ?array
+    {
+        foreach (array_reverse($events) as $event) {
+            if (RunEventTypeEnum::ToolExecutionStart->value !== $event->type) {
+                continue;
+            }
+            if (($event->payload['tool_call_id'] ?? null) !== $toolCallId) {
+                continue;
+            }
+            if (($event->payload['repair_command_id'] ?? null) !== $commandId) {
+                continue;
+            }
+            $attempt = $event->payload['attempt'] ?? null;
+            $key = $event->payload['idempotency_key'] ?? null;
+            if (!\is_int($attempt) || !\is_string($key) || '' === $key) {
+                $attempt = \is_int($attempt) ? $attempt : null;
+                if (null === $attempt) {
+                    return null;
+                }
+                $key = hash('sha256', \sprintf('%s|%s|%s|repair|%d|%s', $runId, $stepId, $toolCallId, $attempt, $commandId));
+            }
+
+            return ['attempt' => $attempt, 'idempotency_key' => $key];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     */
+    private function retainedShellResult(array $events, ExecuteShellToolCall $shell): ?ToolCallResult
+    {
+        foreach (array_reverse($events) as $event) {
+            if (RunEventTypeEnum::ToolExecutionEnd->value !== $event->type) {
+                continue;
+            }
+            try {
+                $result = $this->toolExecutionEndPayloadCodec->fromEventPayload($event->payload);
+            } catch (\Throwable) {
+                continue;
+            }
+            if ($result->toolCallId === $shell->toolCallId
+                && $result->runId() === $shell->runId()
+                && $result->turnNo() === $shell->turnNo()
+                && $result->stepId() === $shell->stepId()
+                && $result->attempt() === $shell->attempt()) {
+                return $result;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{log_path: string, status_path: string}
+     */
+    private function nativePathsForIdentity(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $toolCallId,
+        int $attempt,
+        string $idempotencyKey,
+    ): array {
+        $prefix = NativeBashIdentity::prefix($runId, $turnNo, $stepId, $toolCallId, $attempt, $idempotencyKey);
+        $bgDir = $this->backgroundProcessConfig->storageDir;
+
+        return [
+            'log_path' => $bgDir.'/'.$prefix.'.log',
+            'status_path' => $bgDir.'/'.$prefix.'.status',
+        ];
     }
 
     private function shellOperationFromEvent(RunEvent $event): ?CurrentOperationDTO

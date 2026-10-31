@@ -11,7 +11,6 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\DiagnosticMessageSanitizer;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionNotStartedException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
@@ -25,6 +24,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
+use Ineersa\AgentCore\Exception\ToolExecutionNotStartedException;
 use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
@@ -99,8 +99,9 @@ final class ToolExecutor implements ToolExecutorInterface
         $cancelToken = $this->cancellationToken($toolCall);
         $toolIdempotencyKey = $toolCall->toolIdempotencyKey;
 
+        $invocationKey = $this->invocationKey($toolCall);
         if (null !== $runId) {
-            $existingByCall = $this->resultStore->findByRunToolCall($runId, $toolCall->toolCallId);
+            $existingByCall = $this->resultStore->findByRunToolCall($runId, $toolCall->toolCallId, $invocationKey);
             if (null !== $existingByCall) {
                 return $this->reuseResult(
                     toolCall: $toolCall,
@@ -124,7 +125,7 @@ final class ToolExecutor implements ToolExecutorInterface
                 );
 
                 if (null !== $runId) {
-                    $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $reused);
+                    $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $reused, $invocationKey);
                 }
 
                 return $reused;
@@ -379,6 +380,12 @@ final class ToolExecutor implements ToolExecutorInterface
         $launchContext = ($toolCall->context['launch_context'] ?? null) instanceof ToolLaunchContextDTO
             ? $toolCall->context['launch_context']
             : null;
+        $attempt = isset($toolCall->context['attempt']) && \is_int($toolCall->context['attempt'])
+            ? $toolCall->context['attempt']
+            : null;
+        $idempotencyKey = \is_string($toolCall->context['idempotency_key'] ?? null)
+            ? $toolCall->context['idempotency_key']
+            : null;
         if (null !== $launchContext) {
             $this->assertLaunchContextMatchesEnvelope(
                 toolName: $toolCall->toolName,
@@ -401,6 +408,8 @@ final class ToolExecutor implements ToolExecutorInterface
             stepId: \is_string($stepId) && '' !== $stepId ? $stepId : null,
             parentModel: $parentModel,
             launchContext: $launchContext,
+            attempt: $attempt,
+            idempotencyKey: $idempotencyKey,
         );
 
         /** @var SymfonyToolResult $result */
@@ -484,7 +493,7 @@ final class ToolExecutor implements ToolExecutorInterface
             $coordinationResult = $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
             $runId = $this->runId($toolCall);
             if (null !== $runId) {
-                $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $coordinationResult);
+                $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $coordinationResult, $this->invocationKey($toolCall));
             }
 
             return $coordinationResult;
@@ -493,7 +502,7 @@ final class ToolExecutor implements ToolExecutorInterface
 
         $runId = $this->runId($toolCall);
         if (null !== $runId) {
-            $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $normalized);
+            $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $normalized, $this->invocationKey($toolCall));
         }
 
         return $normalized;
@@ -915,5 +924,17 @@ final class ToolExecutor implements ToolExecutorInterface
         $micro = (int) $instant->format('u');
 
         return ($seconds * 1_000_000) + $micro;
+    }
+
+    private function invocationKey(ToolCall $toolCall): string
+    {
+        $attempt = $toolCall->context['attempt'] ?? null;
+        $idempotencyKey = $toolCall->context['idempotency_key'] ?? null;
+        if (\is_int($attempt) && \is_string($idempotencyKey) && '' !== $idempotencyKey) {
+            return $attempt.'|'.$idempotencyKey;
+        }
+
+        // Nested toolbox calls lack top-level attempt/key; their toolCallId is already unique.
+        return 'nested|'.$toolCall->toolCallId.'|'.$toolCall->orderIndex;
     }
 }

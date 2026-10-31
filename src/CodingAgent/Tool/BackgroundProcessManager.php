@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessCommandDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
+use Ineersa\CodingAgent\Application\Bash\NativeBashIdentity;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
@@ -158,40 +159,40 @@ final class BackgroundProcessManager
     /**
      * Owner-prepared native identity for a top-level model Bash or direct shell call.
      *
-     * Allocates sidecar paths once and reuses them for the same run/toolCallId.
+     * Allocates sidecar paths once for the exact invocation identity and reuses
+     * them on redelivery of that same attempt. Distinct attempts get distinct paths.
      * PID and started_at remain null until local launch reports them.
      */
     public function prepareNativeLaunch(
         string $runId,
         string $toolCallId,
         string $command,
+        int $turnNo,
+        string $stepId,
+        int $attempt,
+        string $idempotencyKey,
         bool $backgroundRequested = false,
     ): PreparedBashLaunchDTO {
         if ('' === $runId || '' === $toolCallId) {
             throw new \InvalidArgumentException('Native Bash preparation requires run and tool-call identity.');
+        }
+        if ('' === $stepId || '' === $idempotencyKey) {
+            throw new \InvalidArgumentException('Native Bash preparation requires step and idempotency identity.');
         }
         $command = trim($command);
         if ('' === $command) {
             throw new \InvalidArgumentException('Native Bash preparation requires a non-empty command.');
         }
 
-        $existing = $this->store->findPreparedByRunAndToolCall($runId, $toolCallId);
-        if (null !== $existing) {
-            return new PreparedBashLaunchDTO(
-                id: $existing->id,
-                runId: $existing->sessionId,
-                toolCallId: (string) $existing->toolCallId,
-                command: $existing->command,
-                logPath: $existing->logPath,
-                statusPath: $existing->statusPath,
-                deadlineNanoseconds: null,
-            );
-        }
-
         $bgDir = $this->lifecycle->ensureStorageDir();
-        $prefix = bin2hex(random_bytes(16));
+        $prefix = NativeBashIdentity::prefix($runId, $turnNo, $stepId, $toolCallId, $attempt, $idempotencyKey);
         $logPath = $bgDir.'/'.$prefix.'.log';
         $statusPath = $bgDir.'/'.$prefix.'.status';
+        $existing = $this->findPreparedLaunch($runId, $toolCallId, $turnNo, $stepId, $attempt, $idempotencyKey);
+        if (null !== $existing) {
+            return $existing;
+        }
+
         $id = $this->store->prepareRecord([
             'session_id' => $runId,
             'command' => $command,
@@ -212,9 +213,111 @@ final class BackgroundProcessManager
         );
     }
 
-    public function findPreparedLaunch(string $runId, string $toolCallId): ?PreparedBashLaunchDTO
+    /**
+     * Metadata-only insert/reuse for a captured PrepareNativeBashLaunchDTO.
+     *
+     * Paths must already be captured outside the metadata transaction.
+     */
+    public function prepareCapturedNativeLaunch(
+        string $runId,
+        string $toolCallId,
+        string $command,
+        string $logPath,
+        string $statusPath,
+        bool $backgroundRequested = false,
+    ): PreparedBashLaunchDTO {
+        if ('' === $runId || '' === $toolCallId || '' === $command || '' === $logPath || '' === $statusPath) {
+            throw new \InvalidArgumentException('Captured native Bash preparation requires complete identity and paths.');
+        }
+        $existing = $this->store->findPreparedByStatusPath($runId, $statusPath);
+        if (null !== $existing && null !== $existing->toolCallId) {
+            if ($existing->toolCallId !== $toolCallId || $existing->logPath !== $logPath) {
+                throw new \RuntimeException('Captured native Bash preparation conflicts with an existing path identity.');
+            }
+
+            return new PreparedBashLaunchDTO(
+                id: $existing->id,
+                runId: $existing->sessionId,
+                toolCallId: $existing->toolCallId,
+                command: $existing->command,
+                logPath: $existing->logPath,
+                statusPath: $existing->statusPath,
+                deadlineNanoseconds: $existing->deadlineNanoseconds,
+            );
+        }
+
+        $id = $this->store->prepareRecord([
+            'session_id' => $runId,
+            'command' => $command,
+            'tool_call_id' => $toolCallId,
+            'log_path' => $logPath,
+            'status_path' => $statusPath,
+            'background_requested' => $backgroundRequested,
+        ]);
+
+        return new PreparedBashLaunchDTO(
+            id: $id,
+            runId: $runId,
+            toolCallId: $toolCallId,
+            command: $command,
+            logPath: $logPath,
+            statusPath: $statusPath,
+            deadlineNanoseconds: null,
+        );
+    }
+
+    /**
+     * Deterministic sidecar paths for an exact invocation identity.
+     *
+     * @return array{log_path: string, status_path: string}
+     */
+    public function nativePathsForIdentity(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $toolCallId,
+        int $attempt,
+        string $idempotencyKey,
+    ): array {
+        $prefix = NativeBashIdentity::prefix($runId, $turnNo, $stepId, $toolCallId, $attempt, $idempotencyKey);
+        $bgDir = $this->lifecycle->ensureStorageDir();
+
+        return [
+            'log_path' => $bgDir.'/'.$prefix.'.log',
+            'status_path' => $bgDir.'/'.$prefix.'.status',
+        ];
+    }
+
+    public function findPreparedLaunch(
+        string $runId,
+        string $toolCallId,
+        int $turnNo,
+        string $stepId,
+        int $attempt,
+        string $idempotencyKey,
+    ): ?PreparedBashLaunchDTO {
+        $prefix = NativeBashIdentity::prefix($runId, $turnNo, $stepId, $toolCallId, $attempt, $idempotencyKey);
+        // Lookup uses basename identity only; do not create storage during reads.
+        $statusPath = $this->lifecycle->configuredStorageDir().'/'.$prefix.'.status';
+        $existing = $this->store->findPreparedByStatusPath($runId, $statusPath);
+        if (null === $existing || null === $existing->toolCallId) {
+            return null;
+        }
+
+        return new PreparedBashLaunchDTO(
+            id: $existing->id,
+            runId: $existing->sessionId,
+            toolCallId: $existing->toolCallId,
+            command: $existing->command,
+            logPath: $existing->logPath,
+            statusPath: $existing->statusPath,
+            deadlineNanoseconds: $existing->deadlineNanoseconds,
+        );
+    }
+
+    public function findPreparedLaunchByRecordId(int $recordId, string $runId, string $toolCallId): ?PreparedBashLaunchDTO
     {
-        $existing = $this->store->findPreparedByRunAndToolCall($runId, $toolCallId);
+        $existing = $this->store->findPreparedByRecordId($recordId, $runId, $toolCallId);
         if (null === $existing || null === $existing->toolCallId) {
             return null;
         }
@@ -302,7 +405,24 @@ final class BackgroundProcessManager
         }
 
         $now = Clock::get()->now();
-        $launchResult = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
+        $launchResult = $usingPrepared
+            ? $this->lifecycle->withSidecarLock($statusFile, function () use ($command, $pidFile, $logFile, $statusFile, $resolvedSessionId, $recordId, $toolCallId): array {
+                $owned = null !== $recordId && '' !== $resolvedSessionId && null !== $toolCallId
+                    ? $this->store->findPreparedByRecordId($recordId, $resolvedSessionId, $toolCallId)
+                    : null;
+                if (null !== $owned && (null !== $owned->pid || null !== $owned->startedAt || null !== $owned->finishedAt)) {
+                    $pid = $owned->pid ?? $this->lifecycle->readPidFile($statusFile);
+                    throw new \RuntimeException(\sprintf('Prepared Bash launch %d already has durable evidence (pid=%s); refusing silent relaunch.', $owned->id, null === $pid ? 'null' : (string) $pid));
+                }
+                $exitCode = $this->lifecycle->readStatusFile($statusFile);
+                $pid = $this->lifecycle->readPidFile($statusFile);
+                if (null !== $exitCode || (null !== $pid && $pid > 0)) {
+                    throw new \RuntimeException(\sprintf('Prepared Bash launch already has sidecar evidence (pid=%s, exit=%s); refusing silent relaunch.', null === $pid ? 'null' : (string) $pid, null === $exitCode ? 'null' : (string) $exitCode));
+                }
+
+                return $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
+            })
+            : $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
         $pid = $launchResult['pid'];
         $pgid = $launchResult['pgid'];
         $native = new NativeBashLaunchDTO(
@@ -424,6 +544,18 @@ final class BackgroundProcessManager
         }
 
         return $this->observeNative($native);
+    }
+
+    /** Sidecar PID evidence without mutating ownership state. */
+    public function readPidEvidence(string $statusPath): ?int
+    {
+        return $this->lifecycle->readPidFile($statusPath);
+    }
+
+    /** Sidecar exit-status evidence without mutating ownership state. */
+    public function readStatusEvidence(string $statusPath): ?int
+    {
+        return $this->lifecycle->readStatusFile($statusPath);
     }
 
     public function readLogTail(string $sessionId, int $pid, ?int $maxChars = null): LogTailResult

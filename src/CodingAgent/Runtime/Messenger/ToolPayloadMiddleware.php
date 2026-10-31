@@ -487,7 +487,11 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         if ($metadata->runId !== $reference->runId || $metadata->toolCallId !== $reference->toolCallId) {
             throw new ToolPayloadException('Bash native completion does not match the transport reference identity.');
         }
-        $prepared = $this->backgroundProcesses->findPreparedLaunch($metadata->runId, $metadata->toolCallId);
+        $prepared = $this->backgroundProcesses->findPreparedLaunchByRecordId(
+            $metadata->recordId,
+            $metadata->runId,
+            $metadata->toolCallId,
+        );
         if (null === $prepared) {
             if (!$activeCaller) {
                 // Stale envelope after process-row cleanup: preserve no-op.
@@ -498,6 +502,17 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         }
         if ($prepared->id !== $metadata->recordId) {
             throw new ToolPayloadException('Bash native completion does not match its prepared native row.');
+        }
+        $owned = $this->processStore->snapshot($metadata->recordId);
+        if (null === $owned || $owned->sessionId !== $metadata->runId || $owned->toolCallId !== $metadata->toolCallId) {
+            if (!$activeCaller) {
+                return;
+            }
+
+            throw new ToolPayloadException('Bash native completion does not match its owned process record.');
+        }
+        if ($owned->statusPath !== $prepared->statusPath || $owned->logPath !== $prepared->logPath) {
+            throw new ToolPayloadException('Bash native completion paths do not match the owned process record.');
         }
         if (null !== $metadata->pid) {
             if (null === $metadata->startedAt) {
@@ -553,6 +568,10 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             $message->runId(),
             $message->toolCallId,
             $arguments->command,
+            $message->turnNo(),
+            $message->stepId(),
+            $message->attempt(),
+            $message->idempotencyKey(),
             $arguments->backgrounded,
         );
     }
@@ -563,6 +582,10 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             $message->runId(),
             $message->toolCallId,
             $message->commandText,
+            $message->turnNo(),
+            $message->stepId(),
+            $message->attempt(),
+            $message->idempotencyKey(),
             false,
         );
     }

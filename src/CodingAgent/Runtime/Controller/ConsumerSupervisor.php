@@ -356,6 +356,20 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     }
 
     /**
+     * True when no tracked messenger consumer process remains running.
+     */
+    public function areLaunchersQuiescent(): bool
+    {
+        foreach ($this->consumers as $process) {
+            if ($process->isRunning()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Set a callback that is invoked when a consumer is abandoned after the
      * restart limit is reached.  The callback receives the consumer key and
      * transport name so the controller can emit a diagnostic runtime event.

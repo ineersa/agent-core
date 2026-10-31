@@ -242,6 +242,34 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
                     $calls[$key][$id] = $call;
                     $callWrites[$key][$id] = $this->encodeCall($call);
                 }
+
+                if (null !== $action->replacementCall) {
+                    $replacement = $action->replacementCall;
+                    if ($replacement->runId() !== $action->runId
+                        || $replacement->turnNo() !== $action->turnNo
+                        || $replacement->stepId() !== $action->stepId) {
+                        throw new \RuntimeException('Replacement tool call does not match its batch identity.');
+                    }
+                    $id = $replacement->toolCallId;
+                    $call = $calls[$key][$id] ?? $this->loadCall($action->runId, $action->turnNo, $action->stepId, $id);
+                    if (null === $call) {
+                        throw new \RuntimeException('Replacement tool call is missing from its batch.');
+                    }
+                    if (!isset($schedule->expectedOrder[$id]) || $schedule->expectedOrder[$id] !== $replacement->orderIndex) {
+                        throw new \RuntimeException('Replacement tool call does not match its batch membership.');
+                    }
+                    if ($call->toolName !== $replacement->toolName || $call->orderIndex !== $replacement->orderIndex) {
+                        throw new \RuntimeException('Replacement tool call cannot change tool membership.');
+                    }
+                    if ($call->attempt() === $replacement->attempt() && $call->idempotencyKey() === $replacement->idempotencyKey()) {
+                        $calls[$key][$id] = $replacement;
+                    } elseif ($replacement->attempt() > $call->attempt()) {
+                        $calls[$key][$id] = $replacement;
+                    } else {
+                        throw new \RuntimeException('Replacement tool call cannot overwrite a newer batch identity.');
+                    }
+                    $callWrites[$key][$id] = $this->encodeCall($calls[$key][$id]);
+                }
                 $schedule->pendingQueue = $action->pendingQueue;
                 $schedule->inFlight = $action->inFlight;
                 $schedule->awaitingHumanInput = $action->awaitingHumanInput;

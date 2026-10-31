@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionNotStartedException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
@@ -18,6 +17,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Exception\ToolExecutionNotStartedException;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Psr\Log\LoggerInterface;
@@ -99,7 +99,7 @@ final readonly class ExecuteToolCallWorker
 
                 return $result;
             }
-            $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, $message->toolName, $message->toolIdempotencyKey);
+            $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, $message->toolName, $message->toolIdempotencyKey, $message->attempt().'|'.$message->idempotencyKey());
 
             return $result;
         } finally {
@@ -163,6 +163,8 @@ final readonly class ExecuteToolCallWorker
                     'human_input_answer' => $message->humanInputAnswer,
                     'parent_model' => $message->parentModel,
                     'launch_context' => $launchContext,
+                    'attempt' => $message->attempt(),
+                    'idempotency_key' => $message->idempotencyKey(),
                 ],
             );
 
@@ -183,12 +185,7 @@ final readonly class ExecuteToolCallWorker
                     throw new \RuntimeException('Deferred tool outcome missing typed raw_result marker.');
                 }
                 $this->registerDeferredExecution($message, $raw);
-                $this->resultStore->releaseCompleted(
-                    $message->runId(),
-                    $message->toolCallId,
-                    $message->toolName,
-                    $message->toolIdempotencyKey,
-                );
+                $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, $message->toolName, $message->toolIdempotencyKey, $message->attempt().'|'.$message->idempotencyKey());
 
                 return null;
             }

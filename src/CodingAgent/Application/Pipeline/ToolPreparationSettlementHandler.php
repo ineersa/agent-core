@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
+use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Contract\CoordinationActionValidatorInterface;
 use Ineersa\AgentCore\Contract\Extension\EssentialAfterTurnHookInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
@@ -12,15 +13,21 @@ use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Coordination\FinalizeToolBatchDTO;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
+use Ineersa\CodingAgent\Application\Bash\NativeBashIdentity;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkObsoleteDeferredCompletionDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\PrepareNativeBashLaunchDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\SettleUnusedToolPreparationDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
@@ -40,6 +47,8 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
         private ToolPayloadStoreInterface $payloads,
         private ToolBatchStoreInterface $batches,
         private ValidatorInterface $validator,
+        private NormalizerInterface&DenormalizerInterface $serializer,
+        private BackgroundProcessManager $backgroundProcesses,
     ) {
     }
 
@@ -53,6 +62,11 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
                     $actions[] = new DispatchLocalMetadataMessageDTO($settlement);
                 }
             }
+        }
+
+        $shellSettlement = $this->prepareFromShellExecutionEnd($context);
+        if (null !== $shellSettlement) {
+            $actions[] = new DispatchLocalMetadataMessageDTO($shellSettlement);
         }
 
         return $actions;
@@ -76,6 +90,32 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
                 $action->revisedBodyReference,
                 $action->expectedOldAttempt,
                 $action->expectedOldIdempotencyKey,
+            );
+        }
+
+        if (null !== $action->revisedNativeLaunch) {
+            if (null === $action->expectedOldAttempt || null === $action->expectedOldIdempotencyKey) {
+                throw new \RuntimeException('Native preparation revision requires the captured old identity.');
+            }
+            $launch = $action->revisedNativeLaunch;
+            $old = $this->backgroundProcesses->findPreparedLaunch(
+                $launch->runId,
+                $launch->toolCallId,
+                $launch->turnNo,
+                $launch->stepId,
+                $action->expectedOldAttempt,
+                $action->expectedOldIdempotencyKey,
+            );
+            if (null !== $old) {
+                $this->processStore->deleteUnusedPreparedRecord($old->id, $action->runId);
+            }
+            $this->backgroundProcesses->prepareCapturedNativeLaunch(
+                $launch->runId,
+                $launch->toolCallId,
+                $launch->command,
+                $launch->logPath,
+                $launch->statusPath,
+                $launch->backgroundRequested,
             );
         }
 
@@ -114,10 +154,38 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
         $this->deferred->markCompleted($action->deferredId);
     }
 
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function prepareNativeLaunch(PrepareNativeBashLaunchDTO $action, VerifiedTransitionDTO $pending): void
+    {
+        $this->assertCaptured($action, $pending);
+        $this->validate($action);
+        $expected = NativeBashIdentity::prefix(
+            $action->runId,
+            $action->turnNo,
+            $action->stepId,
+            $action->toolCallId,
+            $action->attempt,
+            $action->idempotencyKey,
+        );
+        if (!str_ends_with($action->statusPath, '/'.$expected.'.status')
+            || !str_ends_with($action->logPath, '/'.$expected.'.log')) {
+            throw new \RuntimeException('Captured native Bash paths do not match the invocation identity.');
+        }
+        $this->backgroundProcesses->prepareCapturedNativeLaunch(
+            $action->runId,
+            $action->toolCallId,
+            $action->command,
+            $action->logPath,
+            $action->statusPath,
+            $action->backgroundRequested,
+        );
+    }
+
     public function supports(object $action): bool
     {
         return $action instanceof SettleUnusedToolPreparationDTO
-            || $action instanceof MarkObsoleteDeferredCompletionDTO;
+            || $action instanceof MarkObsoleteDeferredCompletionDTO
+            || $action instanceof PrepareNativeBashLaunchDTO;
     }
 
     public function validate(object $action): void
@@ -168,7 +236,7 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
         }
 
         if ($unused && 'bash' === $this->toolName($result)) {
-            $prepared = $this->processStore->findPreparedByRunAndToolCall($result->runId(), $result->toolCallId);
+            $prepared = $this->exactPreparedNative($result);
             if (null !== $prepared && null === $prepared->pid && null === $prepared->startedAt) {
                 $unusedNativeRecordIds[] = $prepared->id;
             }
@@ -207,33 +275,82 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
             return null;
         }
 
-        $metadata = $this->deferred->findMetadataByRunAndToolCall($action->runId, $toolCallId);
-        if (null === $metadata || 'pending' !== $metadata->status) {
-            return null;
-        }
-        if (null !== $metadata->readyAt || null !== $metadata->backgroundedAt || null !== $metadata->acceptedResultReference) {
-            // Execution identity is immutable once callbacks or results can arrive.
-            return null;
-        }
-
         $batch = $this->childBatches->findByParentRunAndToolCall($action->runId, $toolCallId);
         if (null !== $batch && DeferredSubagentBatchLaunchStatusEnum::Reserved !== $batch->launchStatus) {
             return null;
         }
 
-        $preparedNative = $this->processStore->findPreparedByRunAndToolCall($action->runId, $toolCallId);
-        if (null !== $preparedNative && (null !== $preparedNative->pid || null !== $preparedNative->startedAt)) {
-            return null;
-        }
-
-        $existing = $this->deferred->findByDeferredId($metadata->deferredId);
-        if (null === $existing) {
-            return null;
+        $preparedNative = $this->backgroundProcesses->findPreparedLaunch(
+            $action->runId,
+            $toolCallId,
+            $storedCall->turnNo(),
+            $storedCall->stepId(),
+            $storedCall->attempt(),
+            $storedCall->idempotencyKey(),
+        );
+        if (null !== $preparedNative) {
+            $owned = $this->processStore->findPreparedByRecordId($preparedNative->id, $action->runId, $toolCallId);
+            if (null !== $owned && (null !== $owned->pid || null !== $owned->startedAt)) {
+                return null;
+            }
         }
 
         $authorized = $storedCall->withAuthorizedHumanAnswer($action->answer);
-        $revisedCorrelation = ToolCallResultFactory::correlationFromExecuteToolCall($authorized, $existing->deferredId);
-        $revisedBodyReference = $this->payloads->publishCorrelation($revisedCorrelation);
+        $revisedCorrelation = null;
+        $revisedBodyReference = null;
+        $metadata = $this->deferred->findMetadataByRunAndToolCall($action->runId, $toolCallId);
+        if (null !== $metadata) {
+            if ('pending' !== $metadata->status) {
+                return null;
+            }
+            if (null !== $metadata->readyAt || null !== $metadata->backgroundedAt || null !== $metadata->acceptedResultReference) {
+                // Execution identity is immutable once callbacks or results can arrive.
+                return null;
+            }
+            $existing = $this->deferred->findByDeferredId($metadata->deferredId);
+            if (null === $existing) {
+                return null;
+            }
+            $revisedCorrelation = ToolCallResultFactory::correlationFromExecuteToolCall($authorized, $existing->deferredId);
+            $revisedBodyReference = $this->payloads->publishCorrelation($revisedCorrelation);
+        }
+
+        $revisedNativeLaunch = null;
+        if ('bash' === $authorized->toolName) {
+            $rawCommand = $authorized->args['command'] ?? null;
+            $command = \is_string($rawCommand) ? trim($rawCommand) : '';
+            if ('' === $command) {
+                return null;
+            }
+            if (null === $preparedNative) {
+                // Approval revision only rewrites an already-prepared unused native row.
+                return null;
+            }
+            $paths = $this->backgroundProcesses->nativePathsForIdentity(
+                $authorized->runId(),
+                $authorized->turnNo(),
+                $authorized->stepId(),
+                $authorized->toolCallId,
+                $authorized->attempt(),
+                $authorized->idempotencyKey(),
+            );
+            $revisedNativeLaunch = new PrepareNativeBashLaunchDTO(
+                runId: $authorized->runId(),
+                turnNo: $authorized->turnNo(),
+                stepId: $authorized->stepId(),
+                toolCallId: $authorized->toolCallId,
+                attempt: $authorized->attempt(),
+                idempotencyKey: $authorized->idempotencyKey(),
+                command: $command,
+                logPath: $paths['log_path'],
+                statusPath: $paths['status_path'],
+                backgroundRequested: true === ($authorized->args['backgrounded'] ?? false),
+            );
+        }
+
+        if (null === $revisedCorrelation && null === $revisedNativeLaunch) {
+            return null;
+        }
 
         return new SettleUnusedToolPreparationDTO(
             runId: $action->runId,
@@ -244,7 +361,72 @@ final readonly class ToolPreparationSettlementHandler implements CoordinationAct
             revisedToolCallId: $toolCallId,
             expectedOldAttempt: $storedCall->attempt(),
             expectedOldIdempotencyKey: $storedCall->idempotencyKey(),
+            revisedNativeLaunch: $revisedNativeLaunch,
         );
+    }
+
+    private function prepareFromShellExecutionEnd(AfterTurnCommitHookContext $context): ?SettleUnusedToolPreparationDTO
+    {
+        $codec = new ToolExecutionEndPayloadCodec($this->serializer);
+        $unusedNativeRecordIds = [];
+        $runId = null;
+        $turnNo = null;
+        $stepId = null;
+        foreach ($context->events as $event) {
+            if (RunEventTypeEnum::ToolExecutionEnd->value !== $event->type) {
+                continue;
+            }
+            try {
+                $result = $codec->fromEventPayload($event->payload);
+            } catch (\Throwable) {
+                continue;
+            }
+            if ('bash' !== $this->toolName($result) || !\is_array($result->result) || !\array_key_exists('standalone', $result->result)) {
+                continue;
+            }
+            if (!$this->isUnusedPreparationEvidence($result)) {
+                continue;
+            }
+            $prepared = $this->exactPreparedNative($result);
+            if (null === $prepared || null !== $prepared->pid || null !== $prepared->startedAt) {
+                continue;
+            }
+            $runId ??= $result->runId();
+            $turnNo ??= $result->turnNo();
+            $stepId ??= $result->stepId();
+            if ($runId !== $result->runId() || $turnNo !== $result->turnNo() || $stepId !== $result->stepId()) {
+                throw new \RuntimeException('Direct-shell unused settlement mixed distinct owner identities.');
+            }
+            $unusedNativeRecordIds[] = $prepared->id;
+        }
+
+        if (null === $runId || null === $turnNo || null === $stepId || [] === $unusedNativeRecordIds) {
+            return null;
+        }
+
+        return new SettleUnusedToolPreparationDTO(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $stepId,
+            unusedNativeRecordIds: array_values(array_unique($unusedNativeRecordIds)),
+        );
+    }
+
+    private function exactPreparedNative(ToolCallResult $result): ?\Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO
+    {
+        $prepared = $this->backgroundProcesses->findPreparedLaunch(
+            $result->runId(),
+            $result->toolCallId,
+            $result->turnNo(),
+            $result->stepId(),
+            $result->attempt(),
+            $result->idempotencyKey(),
+        );
+        if (null === $prepared) {
+            return null;
+        }
+
+        return $this->processStore->findPreparedByRecordId($prepared->id, $result->runId(), $result->toolCallId);
     }
 
     private function isUnusedPreparationEvidence(ToolCallResult $result): bool

@@ -38,6 +38,7 @@ final readonly class SettleUnusedToolPreparationDTO
         public ?string $revisedToolCallId = null,
         public ?int $expectedOldAttempt = null,
         public ?string $expectedOldIdempotencyKey = null,
+        public ?PrepareNativeBashLaunchDTO $revisedNativeLaunch = null,
     ) {
     }
 }
