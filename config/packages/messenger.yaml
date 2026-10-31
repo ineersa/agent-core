@@ -104,20 +104,15 @@ framework:
                 dsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 
         routing:
-            Ineersa\CodingAgent\Application\Message\DTO\RegisterDeferredInvocationDTO: run_control
-            Ineersa\CodingAgent\Application\Message\DTO\ReserveChildInvocationDTO: run_control
             Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO: run_control
-            Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchFailureDTO: run_control
-            Ineersa\CodingAgent\Application\Message\DTO\RegisterCodeModeInvocationDTO: run_control
             Ineersa\CodingAgent\Application\Message\DTO\ReadyCodeModeInvocationDTO: run_control
             Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessCommandDTO: run_control
             Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO: run_control
-            Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashOwnershipCommandDTO: run_control
-            Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RegisterBashProcessCommandDTO: run_control
             # ToolPayloadMiddleware selects tool/agent/mcp/run_control through
             # TransportNamesStamp. Inline tool messages have no fallback route.
             Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO: run_control
             Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO: run_control
+            Ineersa\CodingAgent\Application\Message\DTO\SettleObsoleteDeferredCompletionDTO: run_control
             Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO: run_control
             Ineersa\CodingAgent\Application\AgentCommunication\DTO\AcceptSubmissionDTO: run_control
             Ineersa\CodingAgent\Application\AgentCommunication\DTO\CompleteSubmissionDTO: run_control

@@ -7,8 +7,10 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Exception\ToolExecutionNotStartedException;
 
 /**
  * Maps tool execution outcomes to the canonical ToolCallResult envelope.
@@ -19,6 +21,31 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
  */
 final class ToolCallResultFactory
 {
+    /**
+     * Owner-prepared deferred correlation fields from an ExecuteToolCall envelope.
+     */
+    public static function correlationFromExecuteToolCall(ExecuteToolCall $call, string $deferredId): DeferredToolCompletionCorrelation
+    {
+        return new DeferredToolCompletionCorrelation(
+            deferredId: $deferredId,
+            runId: $call->runId(),
+            turnNo: $call->turnNo(),
+            stepId: $call->stepId(),
+            attempt: $call->attempt(),
+            idempotencyKey: $call->idempotencyKey(),
+            toolCallId: $call->toolCallId,
+            toolName: $call->toolName,
+            arguments: $call->args,
+            orderIndex: $call->orderIndex,
+            toolIdempotencyKey: $call->toolIdempotencyKey,
+            mode: $call->mode,
+            timeoutSeconds: $call->timeoutSeconds,
+            maxParallelism: $call->maxParallelism,
+            argSchema: $call->argSchema,
+            toolsRef: $call->toolsRef,
+        );
+    }
+
     public static function fromExecuteToolCallAndToolResult(ExecuteToolCall $message, ToolResult $toolResult): ToolCallResult
     {
         $raw = \is_array($toolResult->details) ? ($toolResult->details['raw_result'] ?? null) : null;
@@ -98,6 +125,61 @@ final class ToolCallResultFactory
 
     public static function fromExecuteToolCallAndThrowable(ExecuteToolCall $message, \Throwable $exception): ToolCallResult
     {
+        return self::failedFromExecuteToolCall($message, $exception);
+    }
+
+    /**
+     * Ordinary failed result with explicit unused-preparation evidence for owner settlement.
+     *
+     * Use only at proven pre-dispatch / pre-handler boundaries. Do not mark
+     * after-executor exceptions as unused.
+     */
+    public static function unusedPreparationFromExecuteToolCall(ExecuteToolCall $message, \Throwable $exception): ToolCallResult
+    {
+        return self::failedFromExecuteToolCall($message, $exception, unusedPreparation: true);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $content
+     * @param array<string, mixed>|null        $details
+     * @param array<string, mixed>|null        $error
+     */
+    public static function fromDeferredCorrelationAndCompletion(
+        DeferredToolCompletionCorrelation $correlation,
+        array $content,
+        ?array $details = null,
+        bool $isError = false,
+        ?array $error = null,
+    ): ToolCallResult {
+        $toolIdempotencyKey = \is_array($details)
+            && \is_string($details['tool_idempotency_key'] ?? null)
+                ? $details['tool_idempotency_key']
+                : $correlation->toolIdempotencyKey;
+
+        return (new ToolCallResult(
+            runId: $correlation->runId,
+            turnNo: $correlation->turnNo,
+            stepId: $correlation->stepId,
+            attempt: $correlation->attempt,
+            // Publish against the authorized invocation identity captured at deferred registration.
+            idempotencyKey: $correlation->idempotencyKey,
+            toolCallId: $correlation->toolCallId,
+            orderIndex: $correlation->orderIndex,
+            result: [
+                'tool_name' => $correlation->toolName,
+                'content' => $content,
+                'details' => $details,
+                'tool_idempotency_key' => $toolIdempotencyKey,
+                'mode' => $correlation->mode,
+                'arguments' => $correlation->arguments,
+            ],
+            isError: $isError,
+            error: $error,
+        ))->finalized();
+    }
+
+    private static function failedFromExecuteToolCall(ExecuteToolCall $message, \Throwable $exception, bool $unusedPreparation = false): ToolCallResult
+    {
         $errorType = $exception::class;
         $details = [
             'error_type' => $errorType,
@@ -106,6 +188,12 @@ final class ToolCallResultFactory
         if ($exception instanceof ToolCallException) {
             $details['retryable'] = $exception->retryable();
             $details['hint'] = $exception->hint();
+        }
+        if ($unusedPreparation || $exception instanceof ToolExecutionNotStartedException) {
+            $details['execution_not_started'] = true;
+            $details['execution_not_started_reason'] = $exception instanceof ToolExecutionNotStartedException
+                ? 'not_started'
+                : 'preparation_unused';
         }
 
         $error = [
@@ -137,45 +225,6 @@ final class ToolCallResultFactory
                 'arguments' => $message->args,
             ],
             isError: true,
-            error: $error,
-        ))->finalized();
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $content
-     * @param array<string, mixed>|null        $details
-     * @param array<string, mixed>|null        $error
-     */
-    public static function fromDeferredCorrelationAndCompletion(
-        \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation $correlation,
-        array $content,
-        ?array $details = null,
-        bool $isError = false,
-        ?array $error = null,
-    ): ToolCallResult {
-        $toolIdempotencyKey = \is_array($details)
-            && \is_string($details['tool_idempotency_key'] ?? null)
-                ? $details['tool_idempotency_key']
-                : $correlation->toolIdempotencyKey;
-
-        return (new ToolCallResult(
-            runId: $correlation->runId,
-            turnNo: $correlation->turnNo,
-            stepId: $correlation->stepId,
-            attempt: $correlation->attempt,
-            // Publish against the authorized invocation identity captured at deferred registration.
-            idempotencyKey: $correlation->idempotencyKey,
-            toolCallId: $correlation->toolCallId,
-            orderIndex: $correlation->orderIndex,
-            result: [
-                'tool_name' => $correlation->toolName,
-                'content' => $content,
-                'details' => $details,
-                'tool_idempotency_key' => $toolIdempotencyKey,
-                'mode' => $correlation->mode,
-                'arguments' => $correlation->arguments,
-            ],
-            isError: $isError,
             error: $error,
         ))->finalized();
     }

@@ -11,7 +11,7 @@ final readonly class BashProcessSnapshotDTO
     public function __construct(
         public int $id,
         public string $runId,
-        public int $pid,
+        public ?int $pid,
         public ?int $pgid,
         public string $statusPath,
         public bool $finished,

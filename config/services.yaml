@@ -201,60 +201,7 @@ services:
     arguments:
       $sink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
 
-  Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationReplyPublisher:
-    arguments:
-      $endpoint: '%env(HATFIELD_SQLITE_QUEUE_ENDPOINT)%'
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
-
-  Ineersa\CodingAgent\Application\BackgroundProcess\RegisterBashProcessHandler:
-    arguments:
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
-
-  Ineersa\CodingAgent\Application\BackgroundProcess\ChangeBashOwnershipHandler:
-    arguments:
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
-
-  Ineersa\CodingAgent\Application\BackgroundProcess\BashLifecycleFailureSubscriber:
-    arguments:
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
-
   Ineersa\CodingAgent\Application\BackgroundProcess\DecideBashProcessHandler:
-    arguments:
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
-
-  Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleHandler:
-    arguments:
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
-
-  Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleHandler:
-    arguments:
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
-
-  Ineersa\CodingAgent\Application\Pipeline\RegisterDeferredInvocationHandler:
-    arguments:
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
-
-  coding_agent.bash_scheduler_client:
-    class: Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient
-    arguments:
-      $commandBus: '@agent.command.bus'
-      $endpoint: '%env(HATFIELD_SQLITE_QUEUE_ENDPOINT)%'
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
-      $role: !php/enum Ineersa\CodingAgent\Application\BackgroundProcess\BashRequesterRoleEnum::Scheduler
-
-  coding_agent.bash_controller_client:
-    class: Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient
-    arguments:
-      $commandBus: '@agent.command.bus'
-      $endpoint: '%env(HATFIELD_SQLITE_QUEUE_ENDPOINT)%'
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
-      $role: !php/enum Ineersa\CodingAgent\Application\BackgroundProcess\BashRequesterRoleEnum::Controller
-
-  Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient:
-    arguments:
-      $commandBus: '@agent.command.bus'
-      $endpoint: '%env(HATFIELD_SQLITE_QUEUE_ENDPOINT)%'
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
   Ineersa\CodingAgent\Config\SettingsOverrideWriter:
     arguments:
@@ -461,6 +408,7 @@ services:
       $store: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore'
       $lifecycle: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle'
       $config: '@Ineersa\CodingAgent\Config\BackgroundProcessConfig'
+      $commandBus: '@agent.command.bus'
     calls:
       - registerShutdownHandler: []
 
@@ -727,7 +675,6 @@ services:
 
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
-      $bashControllerClient: '@coding_agent.bash_controller_client'
       $dispatcher: '@event_dispatcher'
       # Canonical project CWD for single-owner session lock key (not process getcwd()).
       $runtimeCwd: '%app.cwd%'
@@ -949,6 +896,10 @@ services:
         execution: '@Ineersa\CodingAgent\Agent\Fork\ForkExecutionService'
 
   # code_mode: definition provider is tagged; toolbox resolves only at nested invoke time.
+  Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
   Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge:
     arguments:
       $commandBus: '@agent.command.bus'

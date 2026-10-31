@@ -10,13 +10,13 @@ final readonly class BashProcessRecordDTO
 {
     public function __construct(
         public int $id,
-        public int $pid,
+        public ?int $pid,
         public ?int $pgid,
         public string $sessionId,
         public string $command,
         public string $logPath,
         public string $statusPath,
-        public \DateTimeImmutable $startedAt,
+        public ?\DateTimeImmutable $startedAt,
         public ?\DateTimeImmutable $finishedAt,
         public ?int $exitCode,
         public bool $stoppedByUser,

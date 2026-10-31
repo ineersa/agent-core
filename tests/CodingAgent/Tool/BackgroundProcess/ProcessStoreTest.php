@@ -136,7 +136,7 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testStopCommitsSuppressionBeforeSignalAndRecognizesReplayWithoutHydration(): void
+    public function testStopCommitsCauseBeforeSignalWithoutSuppressingCompletionAndRecognizesReplayWithoutHydration(): void
     {
         $directory = TestDirectoryIsolation::createProjectTempDir('bash-stop-decision');
         try {
@@ -158,7 +158,7 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $first->status);
             $row = $manager->getConnection()->fetchAssociative('SELECT * FROM background_process WHERE id = ?', [$process->id]);
             $this->assertSame(1, (int) $row['stopped_by_user']);
-            $this->assertNotNull($row['completion_notified_at']);
+            $this->assertNull($row['completion_notified_at'], 'Stop records cause without suppressing later completion delivery.');
             for ($i = 0; $i < 32; ++$i) {
                 $this->assertTrue($store->decide($process->id, 'stop-owner', BashProcessActionEnum::Stop, $lifecycle)->signalRequired, 'Reply loss must reconstruct the committed stop obligation, not assume TERM occurred.');
             }
@@ -216,5 +216,36 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
         $this->assertNull($store->ownerSessionForRun('unknown'));
         $this->assertNull($store->ownerSessionForRun('cycle-a'));
         $this->assertSame($before, $manager->getUnitOfWork()->size());
+    }
+
+    public function testApplyAcceptedSurvivesEarlierFinished(): void
+    {
+        $directory = TestDirectoryIsolation::createProjectTempDir('bash-accept-after-finish');
+        try {
+            $manager = self::getContainer()->get(EntityManagerInterface::class);
+            $store = self::getContainer()->get(ProcessStore::class);
+            $statusPath = $directory.'/launch.status';
+            $process = new BackgroundProcess();
+            $process->sessionId = 'accept-owner';
+            $process->pid = getmypid();
+            $process->statusPath = $statusPath;
+            $process->toolCallId = 'call_accept';
+            $manager->persist($process);
+            $manager->flush();
+
+            $finishedAt = new \DateTimeImmutable('2026-10-30 12:00:00');
+            $acceptedAt = new \DateTimeImmutable('2026-10-30 12:00:01');
+            $store->applyFinishedByRecord($process->id, 'accept-owner', 0, BackgroundProcessStatusEnum::Finished, false, $finishedAt);
+            $store->applyAcceptedByRecord($process->id, 'accept-owner', $acceptedAt);
+
+            $snapshot = $store->snapshot($process->id);
+            $this->assertNotNull($snapshot);
+            $this->assertNotNull($snapshot->finishedAt);
+            $this->assertNotNull($snapshot->backgroundedAt);
+            $this->assertSame($acceptedAt->format('Y-m-d H:i:s'), $snapshot->backgroundedAt->format('Y-m-d H:i:s'));
+            $this->assertCount(1, $store->completionSnapshots(['accept-owner']));
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
     }
 }

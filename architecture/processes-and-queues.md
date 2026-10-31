@@ -156,52 +156,58 @@ boundary. Memory-limit recycling is not a substitute for correct scope cleanup.
 
 ## Lifecycle persistence ownership
 
-`run_control` owns the migrated Bash, code-mode and child-invocation mutations.
+`run_control` owns durable Bash, code-mode and child-invocation mutations.
 This is a lifecycle boundary, not a ban on Doctrine or a claim that every database
 write in the application goes through run control. TUI session metadata and other
 independent stores retain their existing ownership.
 
+Bash foreground completion is migrating off request/reply metadata waits:
+the tool consumer launches and supervises natively, then reports finished
+output or background acknowledgment through an ordinary `ToolResult` that
+carries private `bash_native` facts. `ToolPayloadMiddleware` validates those
+facts into a `BashNativeCompletionStamp` on the ordinary result envelope,
+seals visible content without the private key, and applies the stamp on
+`run_control` receive before ordinary admission. Bash does not register a
+deferred completion.
+Code-mode deferred registration is prepared by `ToolPayloadMiddleware` on the
+owner before ExecuteToolCall dispatch. Socket-ready reports are one-way
+`ReadyCodeModeInvocationDTO` commands; the host does not await a reply.
+Child reservation is also prepared before dispatch. Launch success is a one-way
+`RecordChildLaunchSuccessDTO` command; failed ordinary `ToolCallResult`s retire
+reserved child metadata on owner receive. Generic deferred registration still
+uses a reply RPC. Controller/scheduler accepted-job `decide()` RPCs remain an
+incomplete intermediate checkpoint for Bash.
+
 ```mermaid
 sequenceDiagram
-    participant Tool as Execution Fiber
-    participant Client as Lifecycle client
+    participant Tool as Bash execution Fiber
+    participant Native as Status/log sidecars
     participant Broker as Session broker
     participant Owner as run_control
     participant DB as Application state.sqlite
-    participant Pump as Requester reply pump
 
-    Tool->>Client: Typed lifecycle operation
-    Client->>Broker: Command with request and incarnation identity
-    Note over Tool,Client: Await reply; other Fibers can run
-    Broker->>Owner: Deliver command
-    Owner->>DB: Short transaction; current-state checks and mutation
-    DB-->>Owner: Commit
-    Owner->>Broker: Typed reply on fixed requester-role queue
-    Broker->>Pump: Reply notification
-    Pump->>Client: Resolve matching waiter
-    Client-->>Tool: Scalar DTO result
-    Tool->>Tool: Recheck interruption before starting child work
+    Tool->>Native: Launch and supervise
+    Tool->>Broker: Ordinary ToolCallResult + BashNativeCompletionStamp
+    Note over Tool: No metadata reply wait for foreground completion
+    Broker->>Owner: Deliver ToolCallResult
+    Owner->>DB: Apply stamp facts before ordinary admission
 ```
 
-`BashRegistrationClient` carries these typed operations despite its historical
-name. Tool, Controller and Scheduler requesters have separate fixed reply roles.
-Each reply pump runs independently of tool admission, so full execution capacity
-does not prevent replies from releasing waiting slots. Requester incarnations
-fence stale replies. Owner-local and serialized in-process paths invoke the same
-decisions directly rather than requesting themselves.
+Residual Bash controller/scheduler `decide()` paths remain one-way owner writes.
+They are not on the BashTool foreground completion path.
 
 | Domain | Serialized lifecycle operations | Work left in execution paths |
 |---|---|---|
-| Bash | Registration, acceptance/retirement, background and stop intent, timeout/settlement, completion admission, cleanup metadata | Launch, output, signals, status-sidecar evidence and grace supervision |
-| Code mode | Deferred registration, readiness and terminal acceptance/classification on owner receipt | Isolated PHP subprocess, IPC and result artifacts |
-| Child invocation | Batch reservation, launch-success/failure metadata and deferred registration | Artifact preparation and runner `start()`/`followUp()` |
+| Bash | Ordinary ToolResult + BashNativeCompletionStamp; background request intent; residual controller decide/stop/timeout writes | Launch, local status/log supervision, signals, grace supervision |
+| Code mode | Owner-prepared deferred registration before dispatch; one-way readiness; terminal acceptance/classification on owner receipt | Isolated PHP subprocess, IPC and result artifacts |
+| Child invocation | Owner-prepared reservation; one-way launch success; failed ToolCallResult retirement on owner receive; residual deferred-registration reply | Artifact preparation and runner `start()`/`followUp()` |
 
 Queries are observations, not write authority. Owner operations recheck identity
 and current state instead of writing back stale snapshots. Metadata redelivery
-does not repeat native child launch. Bash registration retains its committed
-receipt; this does not imply exactly-once process signalling or universal crash
-recovery. Sidecar locks stay outside owner metadata decisions to avoid circular
-waits with native cleanup.
+does not repeat native child launch. Bash no longer depends on registration
+receipts for foreground completion. Cancel before background acceptance stops
+the foreground command; acceptance first keeps the acknowledgment and job.
+This does not imply exactly-once process signalling or universal crash recovery.
 
 Resume rejects same-child duplicates by immutable registered tool-batch order,
 resolving artifact and run handles to the same child. Different children may

@@ -46,7 +46,9 @@ final readonly class BackgroundCompletionHandler
                 // Candidate selection and log reads are not admission. Serialize
                 // this current decision with explicit stop under the same owner
                 // lock. A retained receipt survives a lost acknowledgement.
-                if (null === $previousReceipt && (null === $record->finishedAt || null === $record->backgroundedAt || null !== $record->completionNotifiedAt || $record->stoppedByUser)) {
+                // A stop request does not establish the cause of exit or suppress
+                // completion delivery, even when the exit races the request.
+                if (null === $previousReceipt && (null === $record->finishedAt || null === $record->backgroundedAt || null !== $record->completionNotifiedAt)) {
                     return;
                 }
             }

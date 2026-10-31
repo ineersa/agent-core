@@ -5,14 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -63,6 +61,9 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $eventStore->expects($this->never())->method('firstFor');
         $metadataReader = new RunStartedMetadataReader($eventStore, AttributeSerializerValidatorTestFactory::denormalizer());
 
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('is an agent child; nested launches are not supported');
+
         $service = $this->makeService([
             'catalog' => $catalog,
             'depthGuard' => new AgentDepthGuard(),
@@ -83,12 +84,21 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'appConfig' => self::getContainer()->get(AppConfig::class),
             'modelResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
-        ]);
-
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('is an agent child; nested launches are not supported');
-
-        $this->withToolContext('parent-child-run', 'call-nested', static fn () => $service->execute('parent-child-run', 'nested', 'Go deeper'));
+        ], new ExecuteToolCall(
+            'parent-child-run',
+            2,
+            'nested-step',
+            1,
+            hash('sha256', 'call-nested'),
+            'call-nested',
+            'subagent',
+            [
+                'agent' => 'nested',
+                'task' => 'Go deeper',
+            ],
+            0,
+            parentModel: 'test-model',
+        ));
     }
 
     public function testMissingAgentDefinitionThrowsNonRetryable(): void
@@ -97,6 +107,9 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $directory = self::getContainer()->get(AgentChildRunDirectory::class);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $eventStore = $this->createStub(EventStoreInterface::class);
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('not available');
 
         $service = $this->makeService([
             'catalog' => $catalog,
@@ -117,43 +130,21 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(),
             'appConfig' => self::getContainer()->get(AppConfig::class),
-        ]);
-
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('not available');
-
-        $this->withToolContext('parent-4', 'call-missing', static fn () => $service->execute('parent-4', 'nonexistent-agent', 'Do something'));
-    }
-
-    /**
-     * @template T
-     *
-     * @param callable(): T $callback
-     *
-     * @return T
-     */
-    private function withToolContext(string $parentRunId, string $toolCallId, callable $callback): mixed
-    {
-        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
-        $context = new ToolContext(
-            runId: $parentRunId,
-            turnNo: 2,
-            toolCallId: $toolCallId,
-            toolName: 'subagent',
-            cancellationToken: new NullCancellationToken(),
-            timeoutSeconds: 120,
-            orderIndex: 0,
+        ], new ExecuteToolCall(
+            'parent-4',
+            2,
+            'missing-step',
+            1,
+            hash('sha256', 'call-missing'),
+            'call-missing',
+            'subagent',
+            [
+                'agent' => 'nonexistent-agent',
+                'task' => 'Do something',
+            ],
+            0,
             parentModel: 'test-model',
-            launchContext: new ToolLaunchContextDTO(
-                kind: ToolLaunchContextDTO::KIND_SUBAGENT,
-                producingRunId: $parentRunId,
-                producingTurnNo: 2,
-                producingModel: 'test-model',
-                agentsContext: '',
-            ),
-        );
-
-        return $accessor->with($context, $callback);
+        ));
     }
 
     private function defaultPolicyResolver(): AgentToolPolicyResolver
@@ -173,7 +164,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         return new AgentMcpToolsResolver($catalogStore, $loader);
     }
 
-    private function makeService(array $overrides): SubagentExecutionService
+    private function makeService(array $overrides, ?ExecuteToolCall $prepare = null): SubagentExecutionService
     {
         $defaults = [
             'catalog' => new AgentDefinitionCatalog([]),
@@ -205,7 +196,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'toolRegistry' => self::getContainer()->get(ToolRegistryInterface::class),
         ];
 
-        return SubagentExecutionServiceFactory::build(array_merge($defaults, $overrides));
+        return SubagentExecutionServiceFactory::build(array_merge($defaults, $overrides), $prepare);
     }
 }
 

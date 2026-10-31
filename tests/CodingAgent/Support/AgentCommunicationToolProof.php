@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Support;
 
-use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
@@ -22,6 +21,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\History\HistoryPromptTextExtractor;
 use PHPUnit\Framework\Assert;
 use Psr\Container\ContainerInterface;
+use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
 final class AgentCommunicationToolProof
@@ -34,9 +34,13 @@ final class AgentCommunicationToolProof
         $target = $notice ? $f->parentState : $f->childState;
         $call = new ExecuteToolCall($state->runId, 1, 'step', 1, 'source-execution', $notice ? 'notice' : 'steer', $notice ? 'notify_parent' : 'agent_steer', $notice ? ['text' => 'Important guidance'] : ['text' => 'Important guidance', 'artifact_id' => $f->artifact], 0, toolsRef: 'current');
         TestToolBatchRegistration::register($c->get(ToolBatchCollector::class), $c->get(ToolBatchStoreInterface::class), $state->runId, 1, 'step', [$call]);
-        // Configured worker -> executor -> native Symfony toolbox -> mapped DTO
-        // validation -> real handler -> native deferred registration and subscriber.
-        Assert::assertNull(($c->get(ExecuteToolCallWorker::class))($call));
+        // Prepare on the configured producer before receiving the sealed call:
+        // worker -> executor -> toolbox -> real handler -> deferred subscriber.
+        $executionBus = $c->get('agent.execution.bus');
+        $sealed = $executionBus->dispatch($call);
+        $handled = $executionBus->dispatch($sealed, [new ReceivedStamp('tool')]);
+        Assert::assertNotNull($handled->last(HandledStamp::class));
+        Assert::assertNull($handled->last(HandledStamp::class)->getResult());
         $sent = $transport->getSent();
         Assert::assertCount(1, $sent);
         $accept = $sent[0]->getMessage();

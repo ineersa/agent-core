@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Support;
 
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
@@ -28,7 +29,7 @@ final class SubagentExecutionServiceFactory
     /**
      * @param array<string, mixed> $overrides
      */
-    public static function build(array $overrides): SubagentExecutionService
+    public static function build(array $overrides, ?ExecuteToolCall $prepare = null): SubagentExecutionService
     {
         $defaults = [
             'catalog' => new AgentDefinitionCatalog([]),
@@ -133,7 +134,14 @@ final class SubagentExecutionServiceFactory
             $args['agentsConfig'],
             $args['logger'],
             new ChildInvocationLifecycleService($args['batchRepository']),
+            $identityFactory,
+            $args['denormalizer'] ?? \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            $args['validator'] ?? \Symfony\Component\Validator\Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(),
         );
+
+        if (null !== $prepare) {
+            $deferredBatchLaunch->prepare($prepare);
+        }
 
         return new SubagentExecutionService($deferredBatchLaunch);
     }

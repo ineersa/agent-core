@@ -103,7 +103,8 @@ function check(): void
 {
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
     // Absolute 210s wall starts at task entry — before lock wait and QA init.
-    $checkWallDeadline = (hrtime(true) / 1e9) + castor_test_runner_max_seconds();
+    $checkStartedAt = hrtime(true) / 1e9;
+    $checkWallDeadline = $checkStartedAt + castor_test_runner_max_seconds();
     /** @var LockInterface|null $checkLock */
     $checkLock = null;
 
@@ -120,7 +121,7 @@ function check(): void
         }
         echo 'QA run: '.$qaRunId."\n";
 
-        _run_castor_check_body($root, $qaRunId, $checkWallDeadline);
+        _run_castor_check_body($root, $qaRunId, $checkWallDeadline, $checkStartedAt);
     } finally {
         if (null !== $checkLock) {
             release_castor_check_lock($checkLock, $root);
@@ -161,7 +162,7 @@ function castor_check_remaining_wall_seconds(float $checkWallDeadline): int
  *
  * @param float $checkWallDeadline absolute hrtime-seconds deadline from check() entry
  */
-function _run_castor_check_body(string $root, string $qaRunId, float $checkWallDeadline): void
+function _run_castor_check_body(string $root, string $qaRunId, float $checkWallDeadline, float $checkStartedAt): void
 {
     castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before preflight');
     $llamaProxyCacheBaseline = begin_castor_check_llama_proxy_cache_guard($checkWallDeadline);
@@ -322,6 +323,7 @@ function _run_castor_check_body(string $root, string $qaRunId, float $checkWallD
         array_keys($allCheckCommands),
         $llamaProxyCacheBaseline,
         $checkWallDeadline,
+        $checkStartedAt,
     );
 }
 
@@ -348,6 +350,7 @@ function finalize_castor_check_run(
     array $laneSteps,
     ?int $llamaProxyCacheBaseline,
     float $checkWallDeadline,
+    float $checkStartedAt,
 ): void {
     assert_castor_check_lane_artifacts_integrity($laneSteps);
     // Only delete exact-run cache roots after process/tmux leak assertion returns.
@@ -367,8 +370,8 @@ function finalize_castor_check_run(
 
     echo sprintf('
 
-quality: ok (%.1fs)
-', array_sum($timings));
+quality: ok (cumulative lanes: %.1fs; elapsed: %.1fs)
+', array_sum($timings), (hrtime(true) / 1e9) - $checkStartedAt);
 }
 
 // ─── Stale worker cleanup ────────────────────────────────────────

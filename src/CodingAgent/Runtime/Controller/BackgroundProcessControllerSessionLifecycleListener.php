@@ -61,9 +61,21 @@ final class BackgroundProcessControllerSessionLifecycleListener
         foreach ($sessionIds as $sessionId) {
             ++$scopeCount;
             try {
-                foreach ($this->store->backgroundSnapshots($sessionId) as $entity) {
+                foreach ($this->store->sessionSnapshots($sessionId) as $entity) {
                     try {
                         if (null === $entity->finishedAt) {
+                            $hasLaunchEvidence = null !== $entity->pid
+                                || null !== $entity->startedAt
+                                || null !== $this->manager->readPidEvidence($entity->statusPath)
+                                || null !== $this->manager->readStatusEvidence($entity->statusPath);
+                            if (!$hasLaunchEvidence) {
+                                // After launcher quiescence, unused prepared rows
+                                // never launched and can be retired without signalling.
+                                $this->store->deleteUnusedPreparedRecord($entity->id, $sessionId);
+                                ++$cleaned;
+
+                                continue;
+                            }
                             $this->manager->stopByRecordId($entity->id, $sessionId);
                         }
 

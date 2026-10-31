@@ -9,9 +9,11 @@ use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Coordination\DTO\DispatchLocalMetadataMessageDTO;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Application\Message\DTO\MarkObsoleteDeferredCompletionDTO;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -79,6 +81,28 @@ final class ToolBatchSnapshotCleanupHookSubscriber implements HookSubscriberInte
         }
 
         $this->tryDeleteLaunchInputs($context->runId, array_values(array_unique($launchInputIds)));
+
+        foreach ($context->postCommitActions as $action) {
+            $message = $action instanceof DispatchLocalMetadataMessageDTO ? $action->message : $action;
+            if (!$message instanceof MarkObsoleteDeferredCompletionDTO) {
+                continue;
+            }
+            // Captured obsolete settlement already completed the deferred row in
+            // the metadata transaction. Clean retained files after commit only.
+            try {
+                $this->payloads->deleteCall($message->runId, $message->toolCallId);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('tool_payload.obsolete_cleanup_failed', [
+                    'run_id' => $message->runId,
+                    'session_id' => $message->runId,
+                    'deferred_id' => $message->deferredId,
+                    'tool_call_id' => $message->toolCallId,
+                    'component' => 'tool_batch_snapshot_cleanup',
+                    'event_type' => 'tool_payload.obsolete_cleanup_failed',
+                    'exception_class' => $exception::class,
+                ]);
+            }
+        }
 
         if ($this->shouldDeleteAllSnapshotsAfterTerminalCommit($context)) {
             $this->tryDeleteAllForRun($context->runId);

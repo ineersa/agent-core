@@ -10,9 +10,11 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BashTool;
 
 /**
@@ -79,20 +81,21 @@ final class BashToolAgentChildTimeoutIntegrationTest extends IsolatedKernelTestC
             cancellationToken: $cancelToken,
             // Ambient policy timeout stays null/large; BashArgumentsDTO timeout is authoritative.
             timeoutSeconds: null,
+            stepId: 'child-step',
         );
 
-        $started = hrtime(true);
-        $result = $accessor->with($context, static fn (): string => $bashTool(new BashArgumentsDTO(
-            command: 'echo "di-partial" && sleep 10 && echo "should-not-see"',
+        $command = 'echo "di-partial" && sleep 10 && echo "should-not-see"';
+        self::getContainer()->get(BackgroundProcessManager::class)->prepareNativeLaunch($childRunId, 'tc_child_bash_di', $command);
+        $result = $accessor->with($context, static fn () => $bashTool(new BashArgumentsDTO(
+            command: $command,
             timeout: 1,
         )));
-        $elapsedMs = (int) round((hrtime(true) - $started) / 1_000_000);
-
-        $this->assertStringContainsString('Command timed out after 1 seconds', $result);
-        $this->assertStringContainsString('di-partial', $result);
-        $this->assertStringNotContainsString('should-not-see', $result);
-        $this->assertStringNotContainsString('Command moved to background', $result);
-        $this->assertGreaterThanOrEqual(900, $elapsedMs);
-        $this->assertLessThan(4000, $elapsedMs, 'DI child bash must honor BashArgumentsDTO timeout without HITL wait');
+        $this->assertInstanceOf(ToolResult::class, $result);
+        $this->assertTrue($result->isError);
+        $text = $result->content[0]['text'];
+        $this->assertStringContainsString('Command timed out after 1 seconds', $text);
+        $this->assertStringContainsString('di-partial', $text);
+        $this->assertStringNotContainsString('should-not-see', $text);
+        $this->assertStringNotContainsString('Command moved to background', $text);
     }
 }

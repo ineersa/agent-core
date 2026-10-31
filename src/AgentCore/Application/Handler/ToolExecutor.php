@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Domain\Tool\DTO\ToolExecutionNotStartedDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
@@ -23,6 +24,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Domain\Tool\ToolResultText;
+use Ineersa\AgentCore\Exception\ToolExecutionNotStartedException;
 use Symfony\AI\Agent\Toolbox\Exception\InvalidToolCallArgumentsException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionExceptionInterface;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
@@ -97,8 +99,9 @@ final class ToolExecutor implements ToolExecutorInterface
         $cancelToken = $this->cancellationToken($toolCall);
         $toolIdempotencyKey = $toolCall->toolIdempotencyKey;
 
+        $invocationKey = $this->invocationKey($toolCall);
         if (null !== $runId) {
-            $existingByCall = $this->resultStore->findByRunToolCall($runId, $toolCall->toolCallId);
+            $existingByCall = $this->resultStore->findByRunToolCall($runId, $toolCall->toolCallId, $invocationKey);
             if (null !== $existingByCall) {
                 return $this->reuseResult(
                     toolCall: $toolCall,
@@ -122,7 +125,7 @@ final class ToolExecutor implements ToolExecutorInterface
                 );
 
                 if (null !== $runId) {
-                    $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $reused);
+                    $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $reused, $invocationKey);
                 }
 
                 return $reused;
@@ -172,6 +175,10 @@ final class ToolExecutor implements ToolExecutorInterface
                         ? DiagnosticMessageSanitizer::redact($exception->hint())
                         : null,
                 ];
+                if ($exception instanceof ToolExecutionNotStartedException) {
+                    $details['execution_not_started'] = true;
+                    $details['execution_not_started_reason'] = 'not_started';
+                }
                 if ($this->probe('cancel_error', $toolCall, fn () => $this->cancellationToken($toolCall)->isCancellationRequested())) {
                     $details['cancelled'] = true;
                 }
@@ -195,6 +202,10 @@ final class ToolExecutor implements ToolExecutorInterface
                     || \in_array($message, [ToolResultText::FAILURE_MESSAGE, ToolResultText::INSPECTION_FAILURE_MESSAGE], true)) {
                     $details['retryable'] = false;
                 }
+                if ($exception instanceof InvalidToolCallArgumentsException) {
+                    $details['execution_not_started'] = true;
+                    $details['execution_not_started_reason'] = 'invalid_tool_arguments';
+                }
                 $result = $this->errorResult(
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
@@ -207,7 +218,11 @@ final class ToolExecutor implements ToolExecutorInterface
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
                     message: \sprintf('Tool "%s" was not found, please use one of these: %s', $toolCall->toolName, implode(', ', $names)),
-                    details: ['error_type' => $exception::class],
+                    details: [
+                        'error_type' => $exception::class,
+                        'execution_not_started' => true,
+                        'execution_not_started_reason' => 'tool_not_found',
+                    ],
                 );
             } else {
                 $result = $this->errorResult(
@@ -249,7 +264,10 @@ final class ToolExecutor implements ToolExecutorInterface
             // interruption can register, cancel owned children, and complete.
             // Overwriting them with a stale error leaves children running and
             // parent deferred completion waiting forever for registration.
-            if (!$alreadyCancelled && !$this->isDeferredOutcomeResult($result)) {
+            // Successful completed results also survive a later cancel signal;
+            // handlers that lose to cancel before returning must throw/return
+            // an explicit cancellation outcome themselves.
+            if (!$alreadyCancelled && $result->isError && !$this->isDeferredOutcomeResult($result)) {
                 $errorType = \is_array($details) ? ($details['error_type'] ?? null) : null;
                 if (ToolCallException::class === $errorType) {
                     $details['cancelled'] = true;
@@ -285,7 +303,7 @@ final class ToolExecutor implements ToolExecutorInterface
     {
         $argumentFailure = ToolResultText::failureMessage($toolCall->arguments);
         if (null !== $argumentFailure) {
-            throw new ToolCallException('Tool arguments could not be admitted. Execution was not started.', retryable: false);
+            throw new ToolExecutionNotStartedException('Tool arguments could not be admitted. Execution was not started.');
         }
 
         if (null === $this->toolbox) {
@@ -362,6 +380,12 @@ final class ToolExecutor implements ToolExecutorInterface
         $launchContext = ($toolCall->context['launch_context'] ?? null) instanceof ToolLaunchContextDTO
             ? $toolCall->context['launch_context']
             : null;
+        $attempt = isset($toolCall->context['attempt']) && \is_int($toolCall->context['attempt'])
+            ? $toolCall->context['attempt']
+            : null;
+        $idempotencyKey = \is_string($toolCall->context['idempotency_key'] ?? null)
+            ? $toolCall->context['idempotency_key']
+            : null;
         if (null !== $launchContext) {
             $this->assertLaunchContextMatchesEnvelope(
                 toolName: $toolCall->toolName,
@@ -384,6 +408,8 @@ final class ToolExecutor implements ToolExecutorInterface
             stepId: \is_string($stepId) && '' !== $stepId ? $stepId : null,
             parentModel: $parentModel,
             launchContext: $launchContext,
+            attempt: $attempt,
+            idempotencyKey: $idempotencyKey,
         );
 
         /** @var SymfonyToolResult $result */
@@ -444,6 +470,10 @@ final class ToolExecutor implements ToolExecutorInterface
             if (\is_array($references) && ToolResultText::isValid($references)) {
                 $failureDetails['raw_result'] = ['attachment_refs' => $references];
             }
+            if (\is_array($result->details) && true === ($result->details['execution_not_started'] ?? false)) {
+                $failureDetails['execution_not_started'] = true;
+                $failureDetails['execution_not_started_reason'] = $result->details['execution_not_started_reason'] ?? 'not_started';
+            }
             $result = $this->errorResult($toolCall->toolCallId, $toolCall->toolName, $message, $failureDetails);
         }
 
@@ -463,7 +493,7 @@ final class ToolExecutor implements ToolExecutorInterface
             $coordinationResult = $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
             $runId = $this->runId($toolCall);
             if (null !== $runId) {
-                $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $coordinationResult);
+                $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $coordinationResult, $this->invocationKey($toolCall));
             }
 
             return $coordinationResult;
@@ -472,7 +502,7 @@ final class ToolExecutor implements ToolExecutorInterface
 
         $runId = $this->runId($toolCall);
         if (null !== $runId) {
-            $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $normalized);
+            $this->resultStore->remember($runId, $toolCall->toolCallId, $toolCall->toolName, $toolIdempotencyKey, $normalized, $this->invocationKey($toolCall));
         }
 
         return $normalized;
@@ -577,6 +607,59 @@ final class ToolExecutor implements ToolExecutorInterface
             );
         }
 
+        $notStarted = null;
+        if ($rawResult instanceof ToolExecutionNotStartedDTO) {
+            $notStarted = $rawResult;
+            $rawResult = $rawResult->result;
+        }
+
+        if ($rawResult instanceof ToolResult) {
+            if ($rawResult->toolCallId !== $toolCall->toolCallId || $rawResult->toolName !== $toolCall->toolName) {
+                throw new ToolCallException('Typed tool result identity does not match its invocation.', retryable: false);
+            }
+            $failure = ToolResultText::failureMessage($rawResult->content)
+                ?? ToolResultText::failureMessage($rawResult->details);
+            if (null !== $failure) {
+                if (null !== $notStarted) {
+                    $details = \is_array($rawResult->details) ? $rawResult->details : [];
+                    $details['execution_not_started'] = true;
+                    $details['execution_not_started_reason'] = $notStarted->reason;
+                    if (!\array_key_exists('raw_result', $details)) {
+                        $details['raw_result'] = null;
+                    }
+
+                    return new ToolResult(
+                        toolCallId: $rawResult->toolCallId,
+                        toolName: $rawResult->toolName,
+                        content: [[
+                            'type' => 'text',
+                            'text' => $failure,
+                        ]],
+                        details: $details,
+                        isError: true,
+                    );
+                }
+                throw new ToolCallException($failure, retryable: false);
+            }
+            if (null === $notStarted) {
+                return $rawResult;
+            }
+            $details = \is_array($rawResult->details) ? $rawResult->details : [];
+            $details['execution_not_started'] = true;
+            $details['execution_not_started_reason'] = $notStarted->reason;
+            if (!\array_key_exists('raw_result', $details)) {
+                $details['raw_result'] = null;
+            }
+
+            return new ToolResult(
+                toolCallId: $rawResult->toolCallId,
+                toolName: $rawResult->toolName,
+                content: $rawResult->content,
+                details: $details,
+                isError: $rawResult->isError,
+            );
+        }
+
         // Supported top-level values are converted once. The same concrete
         // data feeds display and raw_result; no opaque object reaches storage.
         if ($rawResult instanceof \BackedEnum) {
@@ -588,12 +671,34 @@ final class ToolExecutor implements ToolExecutorInterface
         }
         $representationFailure = ToolResultText::failureMessage($rawResult);
         if (null !== $representationFailure) {
+            if (null !== $notStarted) {
+                // Preserve skipped-handler evidence even when the replacement payload is malformed.
+                return new ToolResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    content: [[
+                        'type' => 'text',
+                        'text' => $representationFailure,
+                    ]],
+                    details: [
+                        'raw_result' => null,
+                        'execution_not_started' => true,
+                        'execution_not_started_reason' => $notStarted->reason,
+                        'representation_failure' => $representationFailure,
+                    ],
+                    isError: true,
+                );
+            }
             throw new ToolCallException($representationFailure, retryable: false);
         }
 
         $details = [
             'raw_result' => $rawResult,
         ];
+        if (null !== $notStarted) {
+            $details['execution_not_started'] = true;
+            $details['execution_not_started_reason'] = $notStarted->reason;
+        }
 
         $sources = $this->normalizeSources($toolboxResult->getSources());
         if ([] !== $sources) {
@@ -677,6 +782,8 @@ final class ToolExecutor implements ToolExecutorInterface
                 'reason' => 'not_in_active_allowlist',
                 'tools_ref' => $toolsRef,
                 'available_tools' => $activeSet->allowListNames,
+                'execution_not_started' => true,
+                'execution_not_started_reason' => 'not_in_active_allowlist',
             ],
         );
     }
@@ -817,5 +924,17 @@ final class ToolExecutor implements ToolExecutorInterface
         $micro = (int) $instant->format('u');
 
         return ($seconds * 1_000_000) + $micro;
+    }
+
+    private function invocationKey(ToolCall $toolCall): string
+    {
+        $attempt = $toolCall->context['attempt'] ?? null;
+        $idempotencyKey = $toolCall->context['idempotency_key'] ?? null;
+        if (\is_int($attempt) && \is_string($idempotencyKey) && '' !== $idempotencyKey) {
+            return $attempt.'|'.$idempotencyKey;
+        }
+
+        // Nested toolbox calls lack top-level attempt/key; their toolCallId is already unique.
+        return 'nested|'.$toolCall->toolCallId.'|'.$toolCall->orderIndex;
     }
 }

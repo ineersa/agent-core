@@ -88,7 +88,7 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         $deferred = $this->createStub(DeferredToolCompletionRepositoryInterface::class);
         $locks = $container->get(RunLockManager::class);
         $commands = new TestMessageBus();
-        $middleware = new ToolPayloadMiddleware($payloads, $admission, $deferred, $locks, $container->get(ValidatorInterface::class), $commands, $this->logger, new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $this->logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $middleware = new ToolPayloadMiddleware($payloads, $admission, $deferred, $locks, $container->get(ValidatorInterface::class), $commands, $this->logger, new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $this->logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $container->get(\Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService::class), $container->get(\Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService::class), $container->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService::class), $container->get(\Ineersa\CodingAgent\Application\AgentCommunication\SubmissionFactory::class), $container->get(\Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService::class), $container->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class), $container->get(\Ineersa\CodingAgent\Tool\BackgroundProcessManager::class), $container->get(\Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore::class));
         $receivedCalls = [];
         $handler = static function (ExecuteShellToolCall $message) use (&$receivedCalls): void {
             $receivedCalls[] = $message;
@@ -205,7 +205,7 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
     }
 
     #[DataProvider('deferredProducerScenarios')]
-    public function testUnloadedDeferredProducerPublishesActiveAndSettlesRetiredWithoutStateReplay(bool $approvalRetry): void
+    public function testUnloadedDeferredProducerPublishesActiveAndDiscardsRetiredWithoutOwnerWritesOrStateReplay(bool $approvalRetry): void
     {
         $this->append('llm_step_completed', ['assistant_message' => ['tool_calls' => [['id' => 'call']]]]);
         $call = $approvalRetry ? $this->approvedCall() : new ExecuteToolCall('indexed', 1, 'model-step', 1, 'key', 'call', 'subagent', [], 0);
@@ -213,17 +213,17 @@ final class CanonicalToolInvocationReaderTest extends IsolatedKernelTestCase
         $resultReference = new ToolPayloadReferenceDTO('result', 'indexed', 1, 'model-step', $call->attempt(), $call->idempotencyKey(), 'call', 0, 'subagent', str_repeat('b', 64), 100);
         $batches = $this->createMock(ToolBatchStoreInterface::class);
         $batches->method('loadCallReference')->willReturn($reference);
-        $batches->expects($this->once())->method('delete')->with('indexed', 1, 'model-step');
+        $batches->expects($this->never())->method('delete');
         $deferred = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
         $deferred->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('deferred', $reference, 'pending'));
         $deferred->expects($this->once())->method('findByDeferredId')->willReturn(new DeferredToolCompletionCorrelation('deferred', 'indexed', 1, 'model-step', $call->attempt(), $call->idempotencyKey(), 'call', 'subagent', [], 0));
-        $deferred->expects($this->once())->method('markCompleted')->with('deferred');
+        $deferred->expects($this->never())->method('markCompleted');
         $payloads = $this->createMock(ToolPayloadStoreInterface::class);
         $payloads->expects($this->once())->method('publish')->willReturn($resultReference);
         $payloads->expects($this->never())->method('read');
         $commands = new TestMessageBus();
         $locks = self::getContainer()->get(RunLockManager::class);
-        $middleware = new ToolPayloadMiddleware($payloads, $this->admission($batches), $deferred, $locks, self::getContainer()->get(ValidatorInterface::class), $commands, $this->logger, new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $this->logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $middleware = new ToolPayloadMiddleware($payloads, $this->admission($batches), $deferred, $locks, self::getContainer()->get(ValidatorInterface::class), $commands, $this->logger, new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $this->logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), self::getContainer()->get(\Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService::class), self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService::class), self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService::class), self::getContainer()->get(\Ineersa\CodingAgent\Application\AgentCommunication\SubmissionFactory::class), self::getContainer()->get(\Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService::class), self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class), self::getContainer()->get(\Ineersa\CodingAgent\Tool\BackgroundProcessManager::class), self::getContainer()->get(\Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore::class));
         $bus = new MessageBus([$middleware]);
         $completion = new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'done']]);
         $this->assertInstanceOf(ToolPayloadMessage::class, $bus->dispatch($completion)->getMessage());

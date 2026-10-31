@@ -16,7 +16,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
-use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -28,8 +27,6 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  */
 final class DeferredToolCompletionRepository extends ServiceEntityRepository implements DeferredToolCompletionRepositoryInterface
 {
-    private ?BashRegistrationClient $owner = null;
-
     public function __construct(
         ManagerRegistry $registry,
         private readonly ToolPayloadStoreInterface $payloads,
@@ -39,11 +36,6 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         private readonly ValidatorInterface $validator,
     ) {
         parent::__construct($registry, DeferredToolCompletion::class);
-    }
-
-    public function useOwner(BashRegistrationClient $owner): void
-    {
-        $this->owner = $owner;
     }
 
     /** @param list<string> $runIds
@@ -58,14 +50,12 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
     {
-        if (null !== $this->owner) {
-            // Do not hold the run/storage locks while the owner acquires them.
-            $id = $this->owner->registerDeferred($correlation);
+        return $this->locks->synchronized($correlation->runId, fn () => $this->payloads->withStorage($correlation->runId, fn () => $this->registerLocked($correlation, stampReadyAt: true)));
+    }
 
-            return $this->findByDeferredId($id) ?? throw new ToolPayloadException('Committed deferred registration is missing.');
-        }
-
-        return $this->locks->synchronized($correlation->runId, fn () => $this->payloads->withStorage($correlation->runId, fn () => $this->registerLocked($correlation)));
+    public function preparePending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
+    {
+        return $this->locks->synchronized($correlation->runId, fn () => $this->payloads->withStorage($correlation->runId, fn () => $this->registerLocked($correlation, stampReadyAt: false)));
     }
 
     public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
@@ -297,6 +287,48 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         });
     }
 
+    public function reviseUnusedPreparation(
+        DeferredToolCompletionCorrelation $correlation,
+        ToolPayloadReferenceDTO $bodyReference,
+        int $expectedOldAttempt,
+        string $expectedOldIdempotencyKey,
+    ): void {
+        $this->validateReference($bodyReference);
+        if ('correlation' !== $bodyReference->kind
+            || [$bodyReference->runId, $bodyReference->turnNo, $bodyReference->stepId, $bodyReference->toolCallId, $bodyReference->attempt, $bodyReference->idempotencyKey, $bodyReference->orderIndex, $bodyReference->toolName]
+            !== [$correlation->runId, $correlation->turnNo, $correlation->stepId, $correlation->toolCallId, $correlation->attempt, $correlation->idempotencyKey, $correlation->orderIndex, $correlation->toolName]) {
+            throw new ToolPayloadException('Deferred preparation revision body does not match its correlation.');
+        }
+        $this->locks->synchronized($correlation->runId, function () use ($correlation, $bodyReference, $expectedOldAttempt, $expectedOldIdempotencyKey): void {
+            $fresh = $this->require($correlation->deferredId);
+            if ($fresh->runId !== $correlation->runId || $fresh->toolCallId !== $correlation->toolCallId) {
+                throw new ToolPayloadException('Deferred preparation revision does not match its invocation.');
+            }
+            if ('pending' !== $fresh->status) {
+                throw new ToolPayloadException('Deferred preparation revision requires a pending correlation.');
+            }
+            if (null !== $fresh->readyAt || null !== $fresh->backgroundedAt || null !== $fresh->acceptedResultReferenceJson) {
+                throw new ToolPayloadException('Deferred preparation revision requires an unused preparation.');
+            }
+            if ($fresh->attempt === $correlation->attempt && $fresh->idempotencyKey === $correlation->idempotencyKey) {
+                // Replay of the same captured revision.
+                return;
+            }
+            if ($fresh->attempt !== $expectedOldAttempt || $fresh->idempotencyKey !== $expectedOldIdempotencyKey) {
+                // Never overwrite a newer correlation than the captured old tuple.
+                throw new ToolPayloadException('Deferred preparation revision no longer matches its captured old identity.');
+            }
+            if ($fresh->turnNo !== $correlation->turnNo || $fresh->stepId !== $correlation->stepId) {
+                throw new ToolPayloadException('Deferred preparation revision changed turn or step identity.');
+            }
+            $fresh->attempt = $correlation->attempt;
+            $fresh->idempotencyKey = $correlation->idempotencyKey;
+            $fresh->bodyReferenceJson = $this->serializer->serialize($bodyReference, 'json');
+            $fresh->updatedAt = Clock::get()->now();
+            $this->getEntityManager()->flush();
+        });
+    }
+
     private function require(string $deferredId): DeferredToolCompletion
     {
         $entity = $this->findFreshOneBy(['deferredId' => $deferredId]);
@@ -315,7 +347,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         }
     }
 
-    private function registerLocked(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
+    private function registerLocked(DeferredToolCompletionCorrelation $correlation, bool $stampReadyAt): DeferredToolCompletionCorrelation
     {
         $existing = $this->findFreshOneBy([
             'runId' => $correlation->runId,
@@ -335,7 +367,7 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         $now = Clock::get()->now()->format('Y-m-d H:i:s');
 
         try {
-            $this->getEntityManager()->getConnection()->insert('tool_deferred_completion', [
+            $row = [
                 'deferred_id' => $correlation->deferredId,
                 'run_id' => $correlation->runId,
                 'turn_no' => $correlation->turnNo,
@@ -354,7 +386,12 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
                 'status' => 'pending',
                 'created_at' => $now,
                 'updated_at' => $now,
-            ]);
+            ];
+            if ($stampReadyAt) {
+                // Late registrations after a DeferredToolCompletionOutcome are already ready.
+                $row['ready_at'] = $now;
+            }
+            $this->getEntityManager()->getConnection()->insert('tool_deferred_completion', $row);
         } catch (UniqueConstraintViolationException $exception) {
             return $this->resolveRegistrationConflict($correlation, $exception);
         }

@@ -7,7 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -70,6 +72,12 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         $parent = $sessions->createSession('Mixed worker snapshots');
         $sessions->updateMetadata($parent, ['reasoning' => 'high']);
         $record = $store->insertRecord(['pid' => 1, 'session_id' => $parent, 'tool_call_id' => 'shell', 'started_at' => new \DateTimeImmutable()]);
+        TestToolBatchRegistration::register(
+            self::getContainer()->get(ToolBatchCollector::class),
+            self::getContainer()->get(ToolBatchStoreInterface::class),
+            $parent, 1, 'shell-step',
+            [new ExecuteToolCall($parent, 1, 'shell-step', 1, 'shell-key', 'shell', 'bash', [], 0)],
+        );
         $batches = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $batches->reserveBatch('mixed-batch', $parent, 1, 'child-call', 0, new \DateTimeImmutable('+1 minute'), new DeferredSubagentBatchChildIntentDTO(1, 'mixed-child', 'agent_mixed', 'scout', 'task', 'test/model', 'medium'));
         $children = self::getContainer()->get(DeferredSubagentChildRepository::class);
@@ -80,6 +88,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         $models = self::getContainer()->get(ModelResolver::class);
         $relationships = self::getContainer()->get(RunOperationalProjectionRepository::class);
         $relationships->replace(new RunState($parent, RunStatus::Running));
+        $this->assertSame([$record], array_column($store->fetchForegroundTools($parent), 'id'));
         $manager->clear();
         $release = new DeferredFuture();
         $held = null;

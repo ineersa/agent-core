@@ -14,9 +14,9 @@ final class ToolExecutionResultStore
     /** @var array<string, ToolResult> */
     private array $resultsByToolIdempotency = [];
 
-    public function findByRunToolCall(string $runId, string $toolCallId): ?ToolResult
+    public function findByRunToolCall(string $runId, string $toolCallId, ?string $invocationKey = null): ?ToolResult
     {
-        return $this->resultsByRunToolCall[$this->runToolCallKey($runId, $toolCallId)] ?? null;
+        return $this->resultsByRunToolCall[$this->runToolCallKey($runId, $toolCallId, $invocationKey)] ?? null;
     }
 
     public function findByToolAndIdempotencyKey(string $toolName, string $toolIdempotencyKey): ?ToolResult
@@ -24,9 +24,15 @@ final class ToolExecutionResultStore
         return $this->resultsByToolIdempotency[$this->toolIdempotencyKey($toolName, $toolIdempotencyKey)] ?? null;
     }
 
-    public function remember(string $runId, string $toolCallId, string $toolName, ?string $toolIdempotencyKey, ToolResult $result): void
-    {
-        $this->resultsByRunToolCall[$this->runToolCallKey($runId, $toolCallId)] = $result;
+    public function remember(
+        string $runId,
+        string $toolCallId,
+        string $toolName,
+        ?string $toolIdempotencyKey,
+        ToolResult $result,
+        ?string $invocationKey = null,
+    ): void {
+        $this->resultsByRunToolCall[$this->runToolCallKey($runId, $toolCallId, $invocationKey)] = $result;
 
         if (null === $toolIdempotencyKey || '' === $toolIdempotencyKey) {
             return;
@@ -35,9 +41,14 @@ final class ToolExecutionResultStore
         $this->resultsByToolIdempotency[$this->toolIdempotencyKey($toolName, $toolIdempotencyKey)] = $result;
     }
 
-    public function releaseCompleted(string $runId, string $toolCallId, string $toolName, ?string $toolIdempotencyKey): void
-    {
-        unset($this->resultsByRunToolCall[$this->runToolCallKey($runId, $toolCallId)]);
+    public function releaseCompleted(
+        string $runId,
+        string $toolCallId,
+        string $toolName,
+        ?string $toolIdempotencyKey,
+        ?string $invocationKey = null,
+    ): void {
+        unset($this->resultsByRunToolCall[$this->runToolCallKey($runId, $toolCallId, $invocationKey)]);
 
         if (null === $toolIdempotencyKey || '' === $toolIdempotencyKey) {
             return;
@@ -46,9 +57,13 @@ final class ToolExecutionResultStore
         unset($this->resultsByToolIdempotency[$this->toolIdempotencyKey($toolName, $toolIdempotencyKey)]);
     }
 
-    private function runToolCallKey(string $runId, string $toolCallId): string
+    private function runToolCallKey(string $runId, string $toolCallId, ?string $invocationKey): string
     {
-        return $runId.'|'.$toolCallId;
+        if (null === $invocationKey || '' === $invocationKey) {
+            throw new \InvalidArgumentException('Tool execution result store requires an invocation key.');
+        }
+
+        return $runId.'|'.$toolCallId.'|'.$invocationKey;
     }
 
     private function toolIdempotencyKey(string $toolName, string $toolIdempotencyKey): string

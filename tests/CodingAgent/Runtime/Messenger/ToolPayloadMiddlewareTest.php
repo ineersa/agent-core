@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
@@ -13,24 +14,50 @@ use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\DTO\DeferredToolCompletionMetadataDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
+use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchCoordination;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
+use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Messenger\SubagentExecuteToolCallRoutingMiddleware;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
+use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
+use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Runtime\Messenger\BashNativeCompletionStamp;
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Session\CanonicalToolInvocationReader;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use Ineersa\CodingAgent\Tests\Runtime\Messenger\Support\ToolPayloadWorkerTransport;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
@@ -55,12 +82,15 @@ use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
+use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 use Symfony\Component\Messenger\Worker;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\ConstraintViolationList;
 use Symfony\Component\Validator\Validation;
 
-final class ToolPayloadMiddlewareTest extends TestCase
+final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
 {
     #[DataProvider('ackModes')]
     public function testNativeWorkerReleasesExactReferenceIdentityAndPreservesHandlerOutcome(bool $explicitAck): void
@@ -248,15 +278,635 @@ final class ToolPayloadMiddlewareTest extends TestCase
         $deferred = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
         $deferred->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), 'pending'));
         $deferred->expects($this->never())->method('findByDeferredId');
-        $deferred->expects($this->once())->method('markCompleted')->with('deferred');
+        // Producer drops stale/non-admitted completions; owner settlement remains owner-side.
+        $deferred->expects($this->never())->method('markCompleted');
         $batches = $this->createMock(ToolBatchStoreInterface::class);
-        $batches->expects($this->once())->method('delete')->with('run', 1, 'step');
+        $batches->expects($this->never())->method('delete');
         $replay = $this->createMock(RunStateRebuilderInterface::class);
         $replay->expects($this->never())->method('rebuildIfStale');
         $registry = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
         $registry->loadRecovered(new RunState('run', RunStatus::Cancelled, turnNo: 1, lastSeq: 7));
         $result = new MessageBus([$this->middleware($payloads, $deferred, $batches, registry: $registry, replay: $replay)])->dispatch(new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'discard']]));
         $this->assertNotNull($result->last(HandledStamp::class));
+    }
+
+    public function testProducerPreparesCodeModeBeforeSealingExecutionAndReusesIdentity(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('owner prepared code_mode');
+        $code = new ExecuteToolCall($run, 1, 'step', 1, 'key', 'code-call', 'code_mode', ['script' => 'return 1;'], 0, mode: 'parallel', maxParallelism: 2);
+        $other = new ExecuteToolCall($run, 1, 'step', 1, 'other-key', 'echo-call', 'echo', ['text' => 'hi'], 1, mode: 'parallel', maxParallelism: 2);
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        $admitted = TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'step',
+            [$code, $other],
+        );
+        $this->assertCount(2, $admitted);
+
+        $deferred = $container->get(DeferredToolCompletionRepository::class);
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'code-call'));
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'echo-call'));
+
+        $published = [];
+        $bus = new MessageBus([
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [function (ToolPayloadMessage $message) use (&$published, $deferred, $run): ToolPayloadMessage {
+                    $published[] = $message;
+                    if ('code-call' === $message->reference->toolCallId) {
+                        $metadata = $deferred->findMetadataByRunAndToolCall($run, 'code-call');
+                        $this->assertNotNull($metadata, 'Deferred row must exist inside the outgoing ToolPayloadMessage path.');
+                        $this->assertSame('code_mode', $metadata->reference->toolName);
+                        $this->assertNull($metadata->readyAt, 'Owner preparation must leave readyAt null.');
+                    }
+
+                    return $message;
+                }],
+            ])),
+        ]);
+
+        $sealed = $bus->dispatch($code);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $sealed->getMessage());
+        $metadata = $deferred->findMetadataByRunAndToolCall($run, 'code-call');
+        $this->assertNotNull($metadata);
+        $firstId = $metadata->deferredId;
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'echo-call'));
+
+        $repeat = $bus->dispatch($code);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $repeat->getMessage());
+        $this->assertSame($firstId, $deferred->findMetadataByRunAndToolCall($run, 'code-call')?->deferredId);
+
+        $otherSealed = $bus->dispatch($other);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $otherSealed->getMessage());
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'echo-call'));
+
+        $this->assertGreaterThanOrEqual(2, \count($published));
+        $this->assertNull($published[0]->deferredId);
+        $this->assertSame($firstId, $container->get(CodeModeLifecycleService::class)->prepare($code));
+    }
+
+    public function testBashAcknowledgementSealsOrdinaryResultInsteadOfCodeModeBackgroundDelivery(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('bash ack routing');
+        $call = new ExecuteToolCall($run, 1, 'bash-ack-step', 1, hash('sha256', 'bash-ack'), 'bash-ack', 'bash', [
+            'command' => 'printf ok',
+            'backgrounded' => true,
+        ], 0);
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'bash-ack-step',
+            [$call],
+        );
+
+        $registry = $container->get(ActiveRunContextInterface::class);
+        $middleware = $container->get(ToolPayloadMiddleware::class);
+        $transport = $container->get('messenger.transport.run_control');
+        $processes = $container->get(BackgroundProcessManager::class);
+        $store = $container->get(ProcessStore::class);
+
+        $prepareBus = new MessageBus([
+            $middleware,
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+            ])),
+        ]);
+        $sealedCall = $prepareBus->dispatch($call);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $sealedCall->getMessage());
+        $prepared = $processes->findPreparedLaunch($run, 'bash-ack');
+        $this->assertNotNull($prepared);
+        $this->assertNull($container->get(DeferredToolCompletionRepository::class)->findMetadataByRunAndToolCall($run, 'bash-ack'));
+
+        $registry->loadRecovered(new RunState(
+            $run,
+            RunStatus::Running,
+            turnNo: 1,
+            activeStepId: 'bash-ack-step',
+            pendingToolCalls: ['bash-ack' => false],
+        ));
+
+        $acceptedAt = new \DateTimeImmutable('2026-10-30T18:00:00+00:00');
+        $ack = new ToolCallResult(
+            $run,
+            1,
+            'bash-ack-step',
+            1,
+            hash('sha256', 'bash-ack'),
+            'bash-ack',
+            0,
+            [
+                'tool_name' => 'bash',
+                'content' => [['type' => 'text', 'text' => 'Backgrounded bash acknowledgment']],
+                'details' => [
+                    'mode' => 'background',
+                    'bash_native' => [
+                        'record_id' => $prepared->id,
+                        'run_id' => $run,
+                        'tool_call_id' => 'bash-ack',
+                        'pid' => 4242,
+                        'pgid' => 4242,
+                        'started_at' => $acceptedAt->format(\DATE_ATOM),
+                        'accepted_at' => $acceptedAt->format(\DATE_ATOM),
+                    ],
+                ],
+                'arguments' => ['command' => 'printf ok', 'backgrounded' => true],
+            ],
+            false,
+        );
+
+        $handledResults = [];
+        $ackBus = new MessageBus([
+            $middleware,
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+                ToolCallResult::class => [static function (ToolCallResult $message) use (&$handledResults): ToolCallResult {
+                    $handledResults[] = $message;
+
+                    return $message;
+                }],
+            ])),
+        ]);
+
+        $sealedAck = $ackBus->dispatch($ack);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $sealedAck->getMessage());
+        $this->assertSame('result', $sealedAck->getMessage()->reference->kind);
+        $this->assertSame(['run_control'], $sealedAck->last(TransportNamesStamp::class)?->getTransportNames());
+        $this->assertNull($sealedAck->getMessage()->deferredId);
+        $this->assertInstanceOf(BashNativeCompletionStamp::class, $sealedAck->last(BashNativeCompletionStamp::class));
+        $ownerBus = new MessageBus([
+            $middleware,
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolCallResult::class => [static function (ToolCallResult $message) use (&$handledResults): ToolCallResult {
+                    $handledResults[] = $message;
+
+                    return $message;
+                }],
+            ])),
+        ]);
+        // Transports do not retain producer HandledStamp; strip it before owner receive.
+        $ownerBus->dispatch($sealedAck->withoutAll(HandledStamp::class)->with(new ReceivedStamp('run_control')));
+        $this->assertNotEmpty($handledResults, 'Bash ACK must reach the ordinary ToolCallResult handler.');
+        $this->assertSame('Backgrounded bash acknowledgment', $handledResults[0]->result['content'][0]['text'] ?? null);
+        $this->assertArrayNotHasKey('bash_native', $handledResults[0]->result['details'] ?? []);
+        $owned = $store->snapshot($prepared->id);
+        $this->assertNotNull($owned);
+        $this->assertSame(4242, $owned->pid);
+        $this->assertNotNull($owned->backgroundedAt);
+        $deliveries = array_values(array_filter(
+            array_map(static fn ($envelope) => $envelope->getMessage(), $transport->getSent()),
+            static fn (object $message): bool => $message instanceof \Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO,
+        ));
+        $this->assertSame(
+            [],
+            $deliveries,
+            'Bash ACK must not be rewritten into a code_mode background delivery.',
+        );
+    }
+
+    public function testBashNativeStampSurvivesApprovalAttemptChangeAndStaleDuplicate(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('bash stamp approval');
+        $call = new ExecuteToolCall($run, 1, 'bash-stamp-step', 1, hash('sha256', 'bash-stamp-1'), 'bash-stamp', 'bash', [
+            'command' => 'printf stamp-ok',
+        ], 0);
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        $collector = new ToolBatchCollector($batches);
+        TestToolBatchRegistration::register($collector, $batches, $run, 1, 'bash-stamp-step', [$call]);
+        $middleware = $container->get(ToolPayloadMiddleware::class);
+        $processes = $container->get(BackgroundProcessManager::class);
+        $store = $container->get(ProcessStore::class);
+        $payloads = $container->get(ToolPayloadStoreInterface::class);
+        $registry = $container->get(ActiveRunContextInterface::class);
+        $serializer = $container->get('messenger.transport.native_php_serializer');
+
+        $prepareBus = new MessageBus([
+            $middleware,
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+            ])),
+        ]);
+        $prepareBus->dispatch($call);
+        $prepared = $processes->findPreparedLaunch($run, 'bash-stamp');
+        $this->assertNotNull($prepared);
+        $this->assertNull($container->get(DeferredToolCompletionRepository::class)->findMetadataByRunAndToolCall($run, 'bash-stamp'));
+
+        // Approval updates the batch attempt/key, then re-preparation reuses the same native row.
+        TestToolBatchCoordination::suspend($collector, $batches, $run, 1, 'bash-stamp-step', 'bash-stamp', 'q-bash-stamp');
+        $answer = new ToolCallHumanInputAnswerDTO(
+            questionId: 'q-bash-stamp',
+            answer: 'allow',
+            continuationRef: ['run_id' => $run, 'turn_no' => 1, 'step_id' => 'bash-stamp-step', 'tool_call_id' => 'bash-stamp'],
+            requestPayload: ['question_id' => 'q-bash-stamp'],
+        );
+        $resumed = TestToolBatchCoordination::resume($collector, $batches, $run, 1, 'bash-stamp-step', 'bash-stamp', 'q-bash-stamp', $answer);
+        $this->assertCount(1, $resumed);
+        $this->assertSame(2, $resumed[0]->attempt());
+        $prepareBus->dispatch($resumed[0]);
+        $preparedAfterApproval = $processes->findPreparedLaunch($run, 'bash-stamp');
+        $this->assertNotNull($preparedAfterApproval);
+        $this->assertSame($prepared->id, $preparedAfterApproval->id);
+        $this->assertSame($prepared->logPath, $preparedAfterApproval->logPath);
+        $this->assertSame($prepared->statusPath, $preparedAfterApproval->statusPath);
+        $this->assertNull($container->get(DeferredToolCompletionRepository::class)->findMetadataByRunAndToolCall($run, 'bash-stamp'));
+
+        $registry->loadRecovered(new RunState(
+            $run,
+            RunStatus::Running,
+            turnNo: 1,
+            activeStepId: 'bash-stamp-step',
+            pendingToolCalls: ['bash-stamp' => false],
+        ));
+        $finishedAt = new \DateTimeImmutable('2026-10-30T18:05:00+00:00');
+        $result = new ToolCallResult(
+            $run,
+            1,
+            'bash-stamp-step',
+            $resumed[0]->attempt(),
+            $resumed[0]->idempotencyKey(),
+            'bash-stamp',
+            0,
+            [
+                'tool_name' => 'bash',
+                'content' => [['type' => 'text', 'text' => "stamp-ok\n"]],
+                'details' => [
+                    'bash_native' => [
+                        'record_id' => $prepared->id,
+                        'run_id' => $run,
+                        'tool_call_id' => 'bash-stamp',
+                        'pid' => 5151,
+                        'pgid' => 5151,
+                        'started_at' => $finishedAt->modify('-1 second')->format(\DATE_ATOM),
+                        'finished_at' => $finishedAt->format(\DATE_ATOM),
+                        'exit_code' => 0,
+                        'status' => 'finished',
+                    ],
+                ],
+            ],
+            false,
+        );
+        $handledResults = [];
+        $resultBus = new MessageBus([
+            $middleware,
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+                ToolCallResult::class => [static function (ToolCallResult $message) use (&$handledResults): ToolCallResult {
+                    $handledResults[] = $message;
+
+                    return $message;
+                }],
+            ])),
+        ]);
+        $sealed = $resultBus->dispatch($result);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $sealed->getMessage());
+        $this->assertNull($sealed->getMessage()->deferredId);
+        $stamp = $sealed->last(BashNativeCompletionStamp::class);
+        $this->assertInstanceOf(BashNativeCompletionStamp::class, $stamp);
+        $this->assertSame(2, $sealed->getMessage()->reference->attempt);
+        $this->assertSame($resumed[0]->idempotencyKey(), $sealed->getMessage()->reference->idempotencyKey);
+
+        $encoded = $serializer->encode($sealed->withoutAll(HandledStamp::class));
+        $decoded = $serializer->decode($encoded);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $decoded->getMessage());
+        $this->assertInstanceOf(BashNativeCompletionStamp::class, $decoded->last(BashNativeCompletionStamp::class));
+
+        $resultBus->dispatch($decoded->with(new ReceivedStamp('run_control')));
+        $this->assertCount(1, $handledResults);
+        $this->assertSame("stamp-ok\n", $handledResults[0]->result['content'][0]['text'] ?? null);
+        $this->assertSame(2, $handledResults[0]->attempt());
+        $this->assertArrayNotHasKey('bash_native', $handledResults[0]->result['details'] ?? []);
+        $owned = $store->snapshot($prepared->id);
+        $this->assertSame(5151, $owned?->pid);
+        $this->assertSame(0, $owned?->exitCode);
+
+        // Duplicate after payload deletion must not reopen the deleted body.
+        $payloads->deleteCall($run, 'bash-stamp');
+        $registry->loadRecovered(new RunState(
+            $run,
+            RunStatus::Running,
+            turnNo: 1,
+            activeStepId: 'bash-stamp-step',
+            pendingToolCalls: [],
+        ));
+        $duplicate = $resultBus->dispatch($decoded->with(new ReceivedStamp('run_control')));
+        $this->assertNull($duplicate->last(HandledStamp::class)?->getResult());
+        $this->assertCount(1, $handledResults, 'Stale duplicate must not invoke the ordinary result handler again.');
+        $this->assertSame(5151, $store->snapshot($prepared->id)?->pid);
+
+        // Late accepted-background ACK after caller cancellation still persists acceptedAt.
+        $lateRun = $container->get(HatfieldSessionStore::class)->createSession('bash stamp late ack');
+        $lateCall = new ExecuteToolCall($lateRun, 1, 'bash-late-step', 1, hash('sha256', 'bash-late'), 'bash-late', 'bash', [
+            'command' => 'sleep 1',
+            'backgrounded' => true,
+        ], 0);
+        TestToolBatchRegistration::register($collector, $batches, $lateRun, 1, 'bash-late-step', [$lateCall]);
+        $prepareBus->dispatch($lateCall);
+        $latePrepared = $processes->findPreparedLaunch($lateRun, 'bash-late');
+        $this->assertNotNull($latePrepared);
+        $registry->loadRecovered(new RunState(
+            $lateRun,
+            RunStatus::Cancelling,
+            turnNo: 1,
+            activeStepId: 'bash-late-step',
+            pendingToolCalls: [],
+        ));
+        $acceptedAt = new \DateTimeImmutable('2026-10-30T18:06:00+00:00');
+        $lateAck = new ToolCallResult(
+            $lateRun,
+            1,
+            'bash-late-step',
+            1,
+            hash('sha256', 'bash-late'),
+            'bash-late',
+            0,
+            [
+                'tool_name' => 'bash',
+                'content' => [['type' => 'text', 'text' => 'Backgrounded bash acknowledgment']],
+                'details' => [
+                    'mode' => 'background',
+                    'bash_native' => [
+                        'record_id' => $latePrepared->id,
+                        'run_id' => $lateRun,
+                        'tool_call_id' => 'bash-late',
+                        'pid' => 6161,
+                        'pgid' => 6161,
+                        'started_at' => $acceptedAt->format(\DATE_ATOM),
+                        'accepted_at' => $acceptedAt->format(\DATE_ATOM),
+                    ],
+                ],
+            ],
+            false,
+        );
+        $lateHandled = [];
+        $lateBus = new MessageBus([
+            $middleware,
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+                ToolCallResult::class => [static function (ToolCallResult $message) use (&$lateHandled): ToolCallResult {
+                    $lateHandled[] = $message;
+
+                    return $message;
+                }],
+            ])),
+        ]);
+        $sealedLate = $lateBus->dispatch($lateAck);
+        $this->assertInstanceOf(BashNativeCompletionStamp::class, $sealedLate->last(BashNativeCompletionStamp::class));
+        $lateBus->dispatch($sealedLate->withoutAll(HandledStamp::class)->with(new ReceivedStamp('run_control')));
+        $this->assertSame([], $lateHandled, 'Obsolete caller must not receive the ordinary result.');
+        $lateOwned = $store->snapshot($latePrepared->id);
+        $this->assertNotNull($lateOwned);
+        $this->assertSame(6161, $lateOwned->pid);
+        $this->assertNotNull($lateOwned->backgroundedAt);
+
+        // Terminal error without bash_native creates no Bash deferred marker.
+        $errorRun = $container->get(HatfieldSessionStore::class)->createSession('bash stamp error');
+        $errorCall = new ExecuteToolCall($errorRun, 1, 'bash-error-step', 1, hash('sha256', 'bash-error'), 'bash-error', 'bash', [
+            'command' => 'false',
+        ], 0);
+        TestToolBatchRegistration::register($collector, $batches, $errorRun, 1, 'bash-error-step', [$errorCall]);
+        $prepareBus->dispatch($errorCall);
+        $this->assertNotNull($processes->findPreparedLaunch($errorRun, 'bash-error'));
+        $registry->loadRecovered(new RunState(
+            $errorRun,
+            RunStatus::Running,
+            turnNo: 1,
+            activeStepId: 'bash-error-step',
+            pendingToolCalls: ['bash-error' => false],
+        ));
+        $error = new ToolCallResult(
+            $errorRun,
+            1,
+            'bash-error-step',
+            1,
+            hash('sha256', 'bash-error'),
+            'bash-error',
+            0,
+            [
+                'tool_name' => 'bash',
+                'content' => [['type' => 'text', 'text' => 'boom']],
+                'details' => null,
+            ],
+            true,
+        );
+        $errorHandled = [];
+        $errorBus = new MessageBus([
+            $middleware,
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+                ToolCallResult::class => [static function (ToolCallResult $message) use (&$errorHandled): ToolCallResult {
+                    $errorHandled[] = $message;
+
+                    return $message;
+                }],
+            ])),
+        ]);
+        $sealedError = $errorBus->dispatch($error);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $sealedError->getMessage());
+        $this->assertNull($sealedError->getMessage()->deferredId);
+        $this->assertNull($sealedError->last(BashNativeCompletionStamp::class));
+        $this->assertNull($container->get(DeferredToolCompletionRepository::class)->findMetadataByRunAndToolCall($errorRun, 'bash-error'));
+        $errorBus->dispatch($sealedError->withoutAll(HandledStamp::class)->with(new ReceivedStamp('run_control')));
+        $this->assertCount(1, $errorHandled);
+        $this->assertSame('boom', $errorHandled[0]->result['content'][0]['text'] ?? null);
+        $this->assertTrue($errorHandled[0]->isError);
+    }
+
+    public function testProducerPreparesAgentResumeAndRoutesRefusalToRunControlDespiteAgentStamp(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('owner prepared agent_resume');
+        $artifact = 'agent_resume_prepare';
+        $child = 'child-resume-prepare';
+        $registry = $container->get(AgentArtifactRegistry::class);
+        $registry->create($run, $artifact, $child, 'scout', AgentArtifactKindEnum::Subagent);
+        $registry->update($run, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done');
+        $this->seedPreparedChildProjection($run, $artifact, $child);
+        $container->get(RunOperationalProjectionRepository::class)->replace(new RunState($run, RunStatus::Running));
+
+        $winner = new ExecuteToolCall($run, 1, 'resume-step', 1, hash('sha256', 'winner'), 'resume-winner', 'agent_resume', [
+            'artifact_id' => $artifact,
+            'task' => 'continue',
+        ], 0, mode: 'parallel', maxParallelism: 3, parentModel: 'test/model');
+        $duplicate = new ExecuteToolCall($run, 1, 'resume-step', 1, hash('sha256', 'dup'), 'resume-dup', 'agent_resume', [
+            'artifact_id' => $artifact,
+            'task' => 'duplicate',
+        ], 1, mode: 'parallel', maxParallelism: 3, parentModel: 'test/model');
+        $invalid = new ExecuteToolCall($run, 1, 'resume-step', 1, hash('sha256', 'missing'), 'resume-missing', 'agent_resume', [
+            'artifact_id' => 'agent_missing',
+            'task' => 'continue',
+        ], 2, mode: 'parallel', maxParallelism: 3, parentModel: 'test/model');
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'resume-step',
+            [$winner, $duplicate, $invalid],
+        );
+
+        $published = [];
+        $bus = new MessageBus([
+            new SubagentExecuteToolCallRoutingMiddleware(),
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [function (ToolPayloadMessage $message) use (&$published, $container, $run, $artifact, $child): ToolPayloadMessage {
+                    $published[] = $message;
+                    if ('resume-winner' === $message->reference->toolCallId) {
+                        $this->assertSame('call', $message->reference->kind);
+                        $batch = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-winner');
+                        $this->assertNotNull($batch, 'Reserved batch must exist inside the outgoing call path.');
+                        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $batch->launchStatus);
+                        $this->assertCount(1, $batch->children);
+                        $this->assertSame($child, $batch->children[0]->childRunId);
+                        $this->assertSame($artifact, $batch->children[0]->artifactId);
+                    }
+
+                    return $message;
+                }],
+            ])),
+        ]);
+
+        $winnerSealed = $bus->dispatch($winner);
+        $winnerMessage = $winnerSealed->getMessage();
+        $this->assertInstanceOf(ToolPayloadMessage::class, $winnerMessage);
+        $this->assertSame('call', $winnerMessage->reference->kind);
+        $this->assertSame(['agent'], $winnerSealed->last(TransportNamesStamp::class)?->getTransportNames());
+
+        $duplicateSealed = $bus->dispatch($duplicate);
+        $duplicateMessage = $duplicateSealed->getMessage();
+        $this->assertInstanceOf(ToolPayloadMessage::class, $duplicateMessage);
+        $this->assertSame('result', $duplicateMessage->reference->kind);
+        $this->assertSame(['run_control'], $duplicateSealed->last(TransportNamesStamp::class)?->getTransportNames());
+        $duplicateBody = $container->get(\Ineersa\CodingAgent\Session\SessionToolPayloadStore::class)->read($duplicateMessage->reference);
+        $this->assertInstanceOf(ToolCallResult::class, $duplicateBody);
+        $this->assertTrue($duplicateBody->isError);
+        $this->assertStringContainsString('Duplicate agent_resume', (string) ($duplicateBody->result['content'][0]['text'] ?? ''));
+        $this->assertNull($container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-dup'));
+
+        $invalidSealed = $bus->dispatch($invalid);
+        $invalidMessage = $invalidSealed->getMessage();
+        $this->assertInstanceOf(ToolPayloadMessage::class, $invalidMessage);
+        $this->assertSame('result', $invalidMessage->reference->kind);
+        $this->assertSame(['run_control'], $invalidSealed->last(TransportNamesStamp::class)?->getTransportNames());
+        $invalidBody = $container->get(\Ineersa\CodingAgent\Session\SessionToolPayloadStore::class)->read($invalidMessage->reference);
+        $this->assertInstanceOf(ToolCallResult::class, $invalidBody);
+        $this->assertTrue($invalidBody->isError);
+        $this->assertStringContainsString('Unknown artifact_id', (string) ($invalidBody->result['content'][0]['text'] ?? ''));
+
+        $this->assertGreaterThanOrEqual(3, \count($published));
+    }
+
+    public function testProducerPreparesSubagentAndForkBeforeSealingExecutionAndRetiresFailedReservation(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('owner prepared subagent fork');
+        $container->get(RunOperationalProjectionRepository::class)->replace(new RunState($run, RunStatus::Running));
+        $subagent = new ExecuteToolCall($run, 1, 'child-step', 1, hash('sha256', 'sub'), 'sub-call', 'subagent', [
+            'agent' => 'scout',
+            'task' => 'inspect',
+        ], 0, mode: 'parallel', maxParallelism: 2, parentModel: 'test/model');
+        $fork = new ExecuteToolCall($run, 1, 'child-step', 1, hash('sha256', 'fork'), 'fork-call', 'fork', [
+            'task' => 'continue',
+        ], 1, mode: 'parallel', maxParallelism: 2, parentModel: 'test/model');
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'child-step',
+            [$subagent, $fork],
+        );
+        $published = [];
+        $bus = new MessageBus([
+            new SubagentExecuteToolCallRoutingMiddleware(),
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [function (ToolPayloadMessage $message) use (&$published, $container, $run): ToolPayloadMessage {
+                    $published[] = $message;
+                    if ('call' === $message->reference->kind) {
+                        $batch = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, $message->reference->toolCallId);
+                        $this->assertNotNull($batch, 'Reserved batch must exist inside the outgoing call path.');
+                        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $batch->launchStatus);
+                        $deferred = $container->get(DeferredToolCompletionRepositoryInterface::class)
+                            ->findMetadataByRunAndToolCall($run, $message->reference->toolCallId);
+                        $this->assertNotNull($deferred, 'Prepared deferred correlation must exist before send.');
+                        $this->assertSame($batch->lifecycleId, $deferred->deferredId);
+                        $this->assertNull($deferred->readyAt);
+                    }
+
+                    return $message;
+                }],
+            ])),
+        ]);
+        $subagentSealed = $bus->dispatch($subagent);
+        $this->assertSame('call', $subagentSealed->getMessage()->reference->kind);
+        $this->assertSame(['agent'], $subagentSealed->last(TransportNamesStamp::class)?->getTransportNames());
+        $forkSealed = $bus->dispatch($fork);
+        $this->assertSame('call', $forkSealed->getMessage()->reference->kind);
+        $failed = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromExecuteToolCallAndThrowable(
+            $subagent,
+            new \Ineersa\AgentCore\Contract\Tool\ToolCallException('Fork compaction failed before child launch: boom', retryable: false),
+        );
+        // Force tool_name to subagent for retirement path coverage of reserved row.
+        $failed = new ToolCallResult(
+            $failed->runId(),
+            $failed->turnNo(),
+            $failed->stepId(),
+            $failed->attempt(),
+            $failed->idempotencyKey(),
+            $failed->toolCallId,
+            $failed->orderIndex,
+            [
+                'tool_name' => 'subagent',
+                'content' => [['type' => 'text', 'text' => 'Fork compaction failed before child launch: boom']],
+                'details' => ['retryable' => false],
+            ],
+            true,
+            ['message' => 'Fork compaction failed before child launch: boom', 'retryable' => false],
+        );
+        $resultBus = new MessageBus([
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+            ])),
+        ]);
+        $resultSealed = $resultBus->dispatch($failed);
+        $this->assertSame('result', $resultSealed->getMessage()->reference->kind);
+        $this->assertSame(['run_control'], $resultSealed->last(TransportNamesStamp::class)?->getTransportNames());
+        $batchAfterPublish = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'sub-call');
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Reserved,
+            $batchAfterPublish?->launchStatus,
+            'Remote/worker publication must leave the reserved batch untouched.',
+        );
+
+        $container->get(ActiveRunContextInterface::class)->loadRecovered(new RunState(
+            $run,
+            RunStatus::Running,
+            turnNo: 1,
+            activeStepId: 'child-step',
+            pendingToolCalls: ['sub-call' => false, 'fork-call' => false],
+        ));
+        $ownerBus = new MessageBus([
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolCallResult::class => [static fn (ToolCallResult $message): ToolCallResult => $message],
+            ])),
+        ]);
+        $ownerBus->dispatch($resultSealed->with(new ReceivedStamp('run_control')));
+        $batch = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'sub-call');
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch?->launchStatus);
+        $this->assertGreaterThanOrEqual(2, \count($published));
     }
 
     #[DataProvider('mismatchedIdentities')]
@@ -275,12 +925,222 @@ final class ToolPayloadMiddlewareTest extends TestCase
         new MessageBus([$this->middleware($payloads, $deferred)])->dispatch(new Envelope($message, [new ReceivedStamp('run_control')]));
     }
 
+    public function testOwnerReceiveRetiresReservedAgentResumeAndIgnoresDelayedFailureAfterLaunch(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('owner retire agent_resume');
+        $artifact = 'agent_resume_retire';
+        $child = 'child-resume-retire';
+        $registry = $container->get(AgentArtifactRegistry::class);
+        $registry->create($run, $artifact, $child, 'scout', AgentArtifactKindEnum::Subagent);
+        $registry->update($run, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done');
+        $this->seedPreparedChildProjection($run, $artifact, $child);
+        $container->get(RunOperationalProjectionRepository::class)->replace(new RunState($run, RunStatus::Running));
+
+        $call = new ExecuteToolCall($run, 1, 'resume-retire-step', 1, hash('sha256', 'resume-retire'), 'resume-retire', 'agent_resume', [
+            'artifact_id' => $artifact,
+            'task' => 'continue',
+        ], 0, parentModel: 'test/model');
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'resume-retire-step',
+            [$call],
+        );
+
+        $bus = new MessageBus([
+            new SubagentExecuteToolCallRoutingMiddleware(),
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+            ])),
+        ]);
+        $sealedCall = $bus->dispatch($call);
+        $this->assertSame('call', $sealedCall->getMessage()->reference->kind);
+
+        $failed = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromExecuteToolCallAndThrowable(
+            $call,
+            new \Ineersa\AgentCore\Contract\Tool\ToolCallException('agent_resume followUp failed', retryable: false),
+        );
+        $failed = new ToolCallResult(
+            $failed->runId(),
+            $failed->turnNo(),
+            $failed->stepId(),
+            $failed->attempt(),
+            $failed->idempotencyKey(),
+            $failed->toolCallId,
+            $failed->orderIndex,
+            [
+                'tool_name' => 'agent_resume',
+                'content' => [['type' => 'text', 'text' => 'agent_resume followUp failed']],
+                'details' => ['retryable' => false],
+            ],
+            true,
+            ['message' => 'agent_resume followUp failed', 'retryable' => false],
+        );
+
+        $resultBus = new MessageBus([
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [static fn (ToolPayloadMessage $message): ToolPayloadMessage => $message],
+            ])),
+        ]);
+        $resultSealed = $resultBus->dispatch($failed);
+        $this->assertSame('result', $resultSealed->getMessage()->reference->kind);
+        $batchAfterPublish = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-retire');
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Reserved,
+            $batchAfterPublish?->launchStatus,
+            'Remote/worker publication must leave the reserved resume batch untouched.',
+        );
+
+        $container->get(ActiveRunContextInterface::class)->loadRecovered(new RunState(
+            $run,
+            RunStatus::Running,
+            turnNo: 1,
+            activeStepId: 'resume-retire-step',
+            pendingToolCalls: ['resume-retire' => false],
+        ));
+        $ownerBus = new MessageBus([
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolCallResult::class => [static fn (ToolCallResult $message): ToolCallResult => $message],
+            ])),
+        ]);
+        $ownerBus->dispatch($resultSealed->with(new ReceivedStamp('run_control')));
+        $failedBatch = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-retire');
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $failedBatch?->launchStatus);
+
+        $launchedCall = new ExecuteToolCall($run, 1, 'resume-launched-step', 1, hash('sha256', 'resume-launched'), 'resume-launched', 'agent_resume', [
+            'artifact_id' => $artifact,
+            'task' => 'continue',
+        ], 0, parentModel: 'test/model');
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'resume-launched-step',
+            [$launchedCall],
+        );
+        $bus->dispatch($launchedCall);
+        $lifecycle = new ChildInvocationLifecycleService(
+            $container->get(DeferredSubagentBatchRepository::class),
+        );
+        $batch = $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-launched');
+        $this->assertNotNull($batch);
+        $lifecycle->applyLaunchSuccessState($run, 'resume-launched', $batch->lifecycleId, new \DateTimeImmutable());
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Launched,
+            $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-launched')?->launchStatus,
+        );
+
+        $delayed = \Ineersa\AgentCore\Application\Handler\ToolCallResultFactory::fromExecuteToolCallAndThrowable(
+            $launchedCall,
+            new \Ineersa\AgentCore\Contract\Tool\ToolCallException('late failure after launch', retryable: false),
+        );
+        $delayed = new ToolCallResult(
+            $delayed->runId(),
+            $delayed->turnNo(),
+            $delayed->stepId(),
+            $delayed->attempt(),
+            $delayed->idempotencyKey(),
+            $delayed->toolCallId,
+            $delayed->orderIndex,
+            [
+                'tool_name' => 'agent_resume',
+                'content' => [['type' => 'text', 'text' => 'late failure after launch']],
+                'details' => ['retryable' => false],
+            ],
+            true,
+            ['message' => 'late failure after launch', 'retryable' => false],
+        );
+        $delayedSealed = $resultBus->dispatch($delayed);
+        $container->get(ActiveRunContextInterface::class)->loadRecovered(new RunState(
+            $run,
+            RunStatus::Running,
+            turnNo: 1,
+            activeStepId: 'resume-launched-step',
+            pendingToolCalls: ['resume-launched' => false],
+        ));
+        $ownerBus->dispatch($delayedSealed->with(new ReceivedStamp('run_control')));
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Launched,
+            $container->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($run, 'resume-launched')?->launchStatus,
+            'Delayed failed results must not overwrite Launched reservations.',
+        );
+    }
+
     /** @return iterable<array{string}> */
     public static function mismatchedIdentities(): iterable
     {
         foreach (['runId', 'turnNo', 'stepId', 'attempt', 'idempotencyKey', 'toolCallId', 'orderIndex', 'toolName'] as $field) {
             yield $field => [$field];
         }
+    }
+
+    protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
+    {
+        // Isolated CWD starts without installed agents; seed the bundled scout
+        // definition so owner-prepared subagent preparation can reserve metadata.
+        $agentsDir = $classCwd.'/.hatfield/agents';
+        TestDirectoryIsolation::ensureDirectory($agentsDir);
+        $source = \dirname(__DIR__, 4).'/src/CodingAgent/Resources/agents/scout.md';
+        if (!is_file($source)) {
+            throw new \RuntimeException('Bundled scout agent definition is missing: '.$source);
+        }
+        if (!copy($source, $agentsDir.'/scout.md')) {
+            throw new \RuntimeException('Failed to install scout agent fixture into '.$agentsDir);
+        }
+    }
+
+    private function seedPreparedChildProjection(string $parent, string $artifactId, string $childRunId): void
+    {
+        $serializer = self::getContainer()->get(SerializerInterface::class);
+        $projection = new DeferredChildRunLifecycleProjectionDTO(
+            childStatus: RunStatus::Completed,
+            childTurnNo: 2,
+            lastCommittedSeq: 5,
+            model: 'test/model',
+            reasoning: 'medium',
+            latestInputTokens: 10,
+            contextWindow: 200_000,
+        );
+        $projectionArray = $serializer->normalize(
+            $projection,
+            null,
+            [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+        );
+        if (!\is_array($projectionArray)) {
+            throw new \RuntimeException('Expected normalized lifecycle projection array.');
+        }
+
+        $em = self::getContainer()->get('doctrine')->getManager();
+        $row = new DeferredSubagentChild();
+        $row->batchLifecycleId = 'batch-'.$childRunId;
+        $row->batchIndex = 1;
+        $row->childRunId = $childRunId;
+        $row->artifactId = $artifactId;
+        $row->agentName = 'scout';
+        $row->task = 'seed';
+        $row->launchModel = 'test/model';
+        $row->launchReasoning = 'medium';
+        $row->launchStatus = DeferredSubagentChildLaunchStatusEnum::Launched;
+        $row->childEventCursor = 5;
+        $row->childLifecycleProjection = $projectionArray;
+        $row->terminalCompletedAt = new \DateTimeImmutable('2026-08-21T00:01:00Z');
+        $row->terminalStatus = 'completed';
+        $em->persist($row);
+        $em->flush();
+        $store = self::getContainer()->get(AgentChildRunEventStoreFactory::class)->create($parent, $childRunId, $artifactId);
+        PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childRunId, 1, 'run_started'));
+        $terminal = PreparedEventStoreSeeder::append($store, RunEvent::forAppend($childRunId, 1, 'agent_end', ['status' => 'completed']));
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(
+            new RunState($childRunId, RunStatus::Completed, parentRunId: $parent, lastSeq: $terminal->seq),
+        );
     }
 
     private function reference(string $kind): ToolPayloadReferenceDTO
@@ -320,6 +1180,12 @@ final class ToolPayloadMiddlewareTest extends TestCase
         return new ToolPayloadMiddleware(
             $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class))), $deferred, $locks,
             Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(), $commands, $logger,
-            new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+            new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+            self::getContainer()->get(CodeModeLifecycleService::class),
+            self::getContainer()->get(AgentResumeExecutionService::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Application\AgentCommunication\SubmissionFactory::class),
+            self::getContainer()->get(ChildInvocationLifecycleService::class),
+            self::getContainer()->get(DeferredSubagentBatchRepository::class), self::getContainer()->get(BackgroundProcessManager::class), self::getContainer()->get(ProcessStore::class));
     }
 }

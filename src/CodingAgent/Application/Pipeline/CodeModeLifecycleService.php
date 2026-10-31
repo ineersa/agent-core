@@ -4,42 +4,40 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Application\Pipeline;
 
-use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
-use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
+use Symfony\Component\Uid\UuidV7;
 
+/**
+ * Owner-local code_mode deferred registration and readiness.
+ *
+ * Registration runs in run_control before ExecuteToolCall dispatch. The tool
+ * host resolves that prepared identity and never allocates or registers one.
+ * Readiness is applied from one-way ReadyCodeModeInvocationDTO messages.
+ */
 final class CodeModeLifecycleService
 {
-    private ?BashRegistrationClient $owner = null;
-
     public function __construct(private readonly DeferredToolCompletionRepository $deferred)
     {
     }
 
-    public function useOwner(BashRegistrationClient $owner): void
+    public function prepare(ExecuteToolCall $call): string
     {
-        $this->owner = $owner;
-    }
-
-    public function register(DeferredToolCompletionCorrelation $invocation): string
-    {
-        if ('code_mode' !== $invocation->toolName) {
+        if ('code_mode' !== $call->toolName) {
             throw new ToolPayloadException('Code-mode registration requires a code_mode invocation.');
         }
 
-        // The invocation identity, not the requester incarnation or proposed ID,
-        // deduplicates retries. No process is launched by this metadata operation.
-        return null !== $this->owner ? $this->owner->registerCodeMode($invocation) : $this->deferred->registerPending($invocation)->deferredId;
+        $correlation = ToolCallResultFactory::correlationFromExecuteToolCall($call, UuidV7::v7()->toRfc4122());
+
+        // preparePending() stays owner-local under the existing run lock and
+        // leaves readyAt null until the host reports readiness.
+        return $this->deferred->preparePending($correlation)->deferredId;
     }
 
     public function ready(string $runId, string $deferredId): void
     {
-        if (null !== $this->owner) {
-            $this->owner->readyCodeMode($runId, $deferredId);
-
-            return;
-        }
         $metadata = $this->deferred->findMetadataByDeferredId($deferredId);
         if (null === $metadata || $metadata->reference->runId !== $runId || 'code_mode' !== $metadata->reference->toolName) {
             throw new ToolPayloadException('Code-mode readiness does not match its registration.');

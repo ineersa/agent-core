@@ -166,7 +166,6 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
         $calls = [];
         $results = [];
         $validatedBodies = [];
-        $deferredSettlements = [];
         foreach ($actions as $action) {
             $key = $this->encodeJson([$action->runId, $action->turnNo, $action->stepId]);
             if (!\array_key_exists($key, $records)) {
@@ -232,7 +231,6 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
                         $schedule->completedIds[$result->toolCallId] = true;
                     }
                     $results[$key][$result->toolCallId] = $result;
-                    $deferredSettlements[] = [$action->runId, $action->turnNo, $action->stepId, $result->toolCallId];
                 }
                 if (null !== $action->revisedCallId) {
                     $id = $action->revisedCallId;
@@ -243,6 +241,34 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
                     $call = null === $action->answer ? $call->withHumanInputAnswer(null) : $call->withAuthorizedHumanAnswer($action->answer);
                     $calls[$key][$id] = $call;
                     $callWrites[$key][$id] = $this->encodeCall($call);
+                }
+
+                if (null !== $action->replacementCall) {
+                    $replacement = $action->replacementCall;
+                    if ($replacement->runId() !== $action->runId
+                        || $replacement->turnNo() !== $action->turnNo
+                        || $replacement->stepId() !== $action->stepId) {
+                        throw new \RuntimeException('Replacement tool call does not match its batch identity.');
+                    }
+                    $id = $replacement->toolCallId;
+                    $call = $calls[$key][$id] ?? $this->loadCall($action->runId, $action->turnNo, $action->stepId, $id);
+                    if (null === $call) {
+                        throw new \RuntimeException('Replacement tool call is missing from its batch.');
+                    }
+                    if (!isset($schedule->expectedOrder[$id]) || $schedule->expectedOrder[$id] !== $replacement->orderIndex) {
+                        throw new \RuntimeException('Replacement tool call does not match its batch membership.');
+                    }
+                    if ($call->toolName !== $replacement->toolName || $call->orderIndex !== $replacement->orderIndex) {
+                        throw new \RuntimeException('Replacement tool call cannot change tool membership.');
+                    }
+                    if ($call->attempt() === $replacement->attempt() && $call->idempotencyKey() === $replacement->idempotencyKey()) {
+                        $calls[$key][$id] = $replacement;
+                    } elseif ($replacement->attempt() > $call->attempt()) {
+                        $calls[$key][$id] = $replacement;
+                    } else {
+                        throw new \RuntimeException('Replacement tool call cannot overwrite a newer batch identity.');
+                    }
+                    $callWrites[$key][$id] = $this->encodeCall($calls[$key][$id]);
                 }
                 $schedule->pendingQueue = $action->pendingQueue;
                 $schedule->inFlight = $action->inFlight;
@@ -255,7 +281,7 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
             $headers[$key] = $this->encodeHeader($action->runId, $action->turnNo, $action->stepId, $schedule, $transition->identity);
         }
 
-        return function () use ($headers, $records, $callWrites, $resultWrites, $deferredSettlements): void {
+        return function () use ($headers, $records, $callWrites, $resultWrites): void {
             foreach ($headers as $batchKey => $row) {
                 $key = ['run_id' => $row['run_id'], 'turn_no' => $row['turn_no'], 'step_id' => $row['step_id']];
                 $changes = array_diff_key($row, $key);
@@ -282,14 +308,6 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
                 foreach ($resultWrites[$batchKey] ?? [] as $resultRow) {
                     $this->connection->insert('tool_batch_result', $resultRow);
                 }
-            }
-            foreach ($deferredSettlements as [$runId, $turnNo, $stepId, $toolCallId]) {
-                // Early code_mode registrations stay pending until this
-                // verified batch-result admission commits.
-                $this->connection->executeStatement(
-                    "UPDATE tool_deferred_completion SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE run_id = ? AND turn_no = ? AND step_id = ? AND tool_call_id = ? AND status = 'pending' AND backgrounded_at IS NULL AND accepted_result_reference_json IS NOT NULL",
-                    [$runId, $turnNo, $stepId, $toolCallId],
-                );
             }
         };
     }

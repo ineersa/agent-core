@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Lifecycle;
 
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
+use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
+use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
@@ -62,9 +65,13 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Message\DTO\MarkChildBackgroundedDTO;
+use Ineersa\CodingAgent\Application\Message\DTO\RecordChildLaunchSuccessDTO;
 use Ineersa\CodingAgent\Application\Pipeline\BackgroundChildInvocationHandler;
 use Ineersa\CodingAgent\Application\Pipeline\ChildBackgroundCoordinationHandler;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleHandler;
+use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
@@ -77,6 +84,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 #[Group('db')]
 final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
@@ -847,7 +855,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     }
 
     #[DataProvider('launchInputCleanupFailures')]
-    public function testOriginalForkExecutionRedeliveryAcrossTerminalRegistrationAndCompletion(bool $failCleanup): void
+    public function testOwnerPreparedReadyForkExecutionRedeliveryEmitsRegistrationWithoutRelaunch(bool $failCleanup): void
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
@@ -873,7 +881,16 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             parentModel: 'deepseek/deepseek-v4-flash',
             childIntent: new DeferredSubagentBatchChildIntentDTO(batchIndex: 1, childRunId: $c1['childRunId'], artifactId: $c1['artifactId'], agentName: 'fork', task: 'Fork task', launchModel: 'deepseek/deepseek-v4-flash', launchReasoning: 'medium'),
         );
-        $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable());
+        $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+        $deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($original, $lifecycle));
+        $lifecycleHandler = new ChildInvocationLifecycleHandler(
+            self::getContainer()->get(ChildInvocationLifecycleService::class),
+            self::getContainer()->get(DeferredToolCompletionRepository::class),
+            self::getContainer()->get(ValidatorInterface::class),
+        );
+        $lifecycleHandler(new RecordChildLaunchSuccessDTO($parent, $tool, $lifecycle, new \DateTimeImmutable()));
+        $this->assertSame('pending', $deferred->status($lifecycle));
+        $this->assertNotNull($deferred->findMetadataByDeferredId($lifecycle)?->readyAt);
         $this->ensureArtifactReserved($parent, $c1['childRunId'], $c1['artifactId'], 'fork', 'Fork task', AgentArtifactKindEnum::Fork);
 
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
@@ -890,7 +907,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
         ]));
 
-        $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
         $commandBus = new TestMessageBus();
         $logger = new TestLogger();
         $cleanupStore = null;
@@ -899,40 +915,31 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $cleanupStore->expects($this->once())->method('delete')->willThrowException(new \RuntimeException('SECRET PATH AND INPUT CONTENT'));
         }
         $delivery = $this->buildLifecycleDelivery($commandBus, launchInputStore: $cleanupStore, completionLogger: $logger);
-        $delivery->deliver($lifecycle);
-        $this->assertNull($deferred->status($lifecycle));
-        $this->assertFileExists($inputPath, 'Unregistered execution still needs input.');
-        $this->assertCount(0, $commandBus->messages);
-
         self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(new RunState($parent, RunStatus::Running, model: 'deepseek/deepseek-v4-flash'));
-        $accessor = self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class);
-        $launch = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService::class);
         $executor = $this->createMock(\Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface::class);
-        $executor->expects($this->once())->method('execute')->willReturnCallback(static function ($call) use ($accessor, $launch, $parent, $tool): \Ineersa\AgentCore\Domain\Tool\ToolResult {
-            // Real profiled fork launch/idempotency path after worker input resolution.
-            // Provider compaction is outside this registration/redelivery contract.
-            $context = new \Ineersa\AgentCore\Application\Tool\ToolContext(
-                runId: $parent, turnNo: 2, toolCallId: $tool, toolName: 'fork',
-                cancellationToken: new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken(), timeoutSeconds: 120,
-                parentModel: 'deepseek/deepseek-v4-flash', launchContext: $call->context['launch_context'],
-            );
-            $outcome = $accessor->with($context, static fn () => $launch->launchSingleChildProfile($parent, 'Fork task', new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO(
-                \Ineersa\CodingAgent\Agent\Fork\ForkInternalAgentDefinition::create('deepseek/deepseek-v4-flash'),
-                AgentArtifactKindEnum::Fork, 'fork', $call->context['launch_context']->forkMessages, 'medium',
-            )));
-
-            return new \Ineersa\AgentCore\Domain\Tool\ToolResult($tool, 'fork', [], ['raw_result' => $outcome]);
-        });
+        $executor->expects($this->never())->method('execute');
+        $launchInputs = $this->createMock(ToolLaunchInputStoreInterface::class);
+        $launchInputs->expects($this->never())->method('read');
         $notifications = 0;
         $events = new \Symfony\Component\EventDispatcher\EventDispatcher();
         $events->addListener(DeferredToolCompletionRegisteredEvent::class, static function () use (&$notifications): void { ++$notifications; });
         $workerBus = new TestMessageBus();
-        $worker = new \Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker(new TestMessageBus(), new TestLogger(), $executor, $deferred, new \Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $events, launchInputStore: $inputStore);
+        $worker = new ExecuteToolCallWorker(
+            $workerBus,
+            new TestLogger(),
+            $executor,
+            $deferred,
+            new ToolExecutionResultStore(),
+            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+            eventDispatcher: $events,
+            launchInputStore: $launchInputs,
+        );
         $worker($original);
         $this->assertCount(0, $workerBus->messages, json_encode($workerBus->messages, \JSON_THROW_ON_ERROR));
         $this->assertSame('pending', $deferred->status($lifecycle));
         $this->assertSame(1, $notifications);
         $this->assertCount(0, $workerBus->messages);
+        $this->assertFileExists($inputPath, 'Owner-prepared ready execution still retains launch input until delivery cleanup.');
         $delivery->deliver($lifecycle);
         $this->assertCount(1, $commandBus->messages);
         $complete = $commandBus->messages[0];

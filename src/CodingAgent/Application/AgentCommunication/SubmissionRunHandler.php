@@ -58,6 +58,9 @@ final readonly class SubmissionRunHandler implements RunMessageHandler
         if ('completed' === $metadata->status) {
             return new HandlerResult();
         }
+        if (null === $metadata->readyAt) {
+            $this->deferred->markReady($message->identity);
+        }
         $source = $this->deferred->findByDeferredId($message->identity);
         if (null === $source || $source->runId !== $state->runId
             || !\in_array($source->toolName, ['agent_steer', 'notify_parent'], true)) {

@@ -98,6 +98,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
 
         $message = $this->executeMessage(toolCallId: 'call-deferred');
+        $repo->preparePending($this->sampleCorrelation(deferredId: 'def-outcome-1', toolCallId: 'call-deferred'));
 
         $this->assertNull($worker($message));
 
@@ -139,8 +140,12 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $repo = new InMemoryDeferredToolCompletionRepository();
         $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
         $message = $this->executeMessage(toolCallId: 'call-retry');
+        $repo->preparePending($this->sampleCorrelation(deferredId: 'def-outcome-1', toolCallId: 'call-retry'));
 
         $this->assertNull($worker($message));
+        // Owner readiness (launch success / host ready / communication accept)
+        // is what prevents a second execution on redelivery.
+        $repo->markReady('def-outcome-1');
         $this->assertNull($worker($message));
 
         $this->assertSame(1, $toolExecutor->calls);
@@ -264,6 +269,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $commandBus = new TestMessageBus();
         $repo = new InMemoryDeferredToolCompletionRepository();
         $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $dispatcher);
+        $repo->preparePending($this->sampleCorrelation(deferredId: 'lifecycle-exact-1', toolCallId: 'call-exact-id'));
 
         $worker($this->executeMessage(toolCallId: 'call-exact-id'));
 
@@ -305,11 +311,236 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $repo = new InMemoryDeferredToolCompletionRepository();
         $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(), eventDispatcher: $dispatcher);
         $message = $this->executeMessage(toolCallId: 'call-redelivery-event');
+        $repo->preparePending($this->sampleCorrelation(deferredId: 'lifecycle-redelivery-1', toolCallId: 'call-redelivery-event'));
         $worker($message);
+        $repo->markReady('lifecycle-redelivery-1');
         $worker($message);
 
         $this->assertSame(1, $toolExecutor->calls);
         $this->assertSame(2, $count);
+    }
+
+    public function testPreparedPendingWithoutReadyAtExecutesThroughWorkerAndPublishesResult(): void
+    {
+        $toolExecutor = new class implements ToolExecutorInterface {
+            public int $calls = 0;
+
+            public function execute(ToolCall $toolCall): ToolResult
+            {
+                ++$this->calls;
+
+                return new ToolResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    content: [['type' => 'text', 'text' => 'prepared-host-ran']],
+                    details: ['path' => 'worker'],
+                    isError: false,
+                );
+            }
+        };
+
+        $repo = new InMemoryDeferredToolCompletionRepository();
+        $prepared = $repo->preparePending($this->sampleCorrelation(deferredId: 'prepared-1', toolCallId: 'call-prepared'));
+        $this->assertNull($repo->findMetadataByDeferredId($prepared->deferredId)?->readyAt);
+
+        $commandBus = new TestMessageBus();
+        $worker = new ExecuteToolCallWorker($commandBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
+        $result = $worker($this->executeMessage(toolCallId: 'call-prepared'));
+
+        $this->assertSame(1, $toolExecutor->calls);
+        $this->assertInstanceOf(ToolCallResult::class, $result);
+        $this->assertSame('prepared-host-ran', $result->result['content'][0]['text'] ?? null);
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertSame($result, $commandBus->messages[0]);
+    }
+
+    public function testReadyPendingAndCompletedSkipWorkerExecution(): void
+    {
+        $toolExecutor = new class implements ToolExecutorInterface {
+            public int $calls = 0;
+
+            public function execute(ToolCall $toolCall): ToolResult
+            {
+                ++$this->calls;
+
+                return new ToolResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    content: [['type' => 'text', 'text' => 'should-not-run']],
+                    details: null,
+                    isError: false,
+                );
+            }
+        };
+
+        $repo = new InMemoryDeferredToolCompletionRepository();
+        $ready = $repo->registerPending($this->sampleCorrelation(deferredId: 'ready-1', toolCallId: 'call-ready'));
+        $this->assertNotNull($repo->findMetadataByDeferredId($ready->deferredId)?->readyAt);
+
+        $worker = new ExecuteToolCallWorker(new TestMessageBus(), new \Ineersa\AgentCore\Tests\Support\TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
+        $this->assertNull($worker($this->executeMessage(toolCallId: 'call-ready')));
+        $this->assertSame(0, $toolExecutor->calls);
+
+        $completed = $repo->preparePending($this->sampleCorrelation(deferredId: 'completed-1', toolCallId: 'call-completed'));
+        $repo->markCompleted($completed->deferredId);
+        $this->assertNull($worker($this->executeMessage(toolCallId: 'call-completed')));
+        $this->assertSame(0, $toolExecutor->calls);
+    }
+
+    public function testFailureBeforeReadyPublishesFailedToolCallResult(): void
+    {
+        $toolExecutor = new class implements ToolExecutorInterface {
+            public function execute(ToolCall $toolCall): ToolResult
+            {
+                throw new \RuntimeException('host failed before ready');
+            }
+        };
+
+        $repo = new InMemoryDeferredToolCompletionRepository();
+        $repo->preparePending($this->sampleCorrelation(deferredId: 'fail-1', toolCallId: 'call-fail'));
+        $commandBus = new TestMessageBus();
+        $worker = new ExecuteToolCallWorker($commandBus, new \Ineersa\AgentCore\Tests\Support\TestLogger(), $toolExecutor, $repo, new ToolExecutionResultStore(), new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader());
+        $result = $worker($this->executeMessage(toolCallId: 'call-fail'));
+
+        $this->assertInstanceOf(ToolCallResult::class, $result);
+        $this->assertTrue($result->isError);
+        $this->assertStringContainsString('host failed before ready', (string) ($result->result['content'][0]['text'] ?? ''));
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertNull($repo->findMetadataByDeferredId('fail-1')?->readyAt);
+    }
+
+    public function testDoctrinePreparePendingLeavesReadyAtNullAndRegisterPendingStampsReadyAt(): void
+    {
+        /** @var DeferredToolCompletionRepository $repo */
+        $repo = self::getContainer()->get(DeferredToolCompletionRepository::class);
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('prepare vs register readiness');
+
+        $prepared = new DeferredToolCompletionCorrelation(
+            deferredId: '880e8400-e29b-41d4-a716-446655440010',
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'turn-1-tools-1',
+            attempt: 1,
+            idempotencyKey: 'idemp-prepare',
+            toolCallId: 'call-prepare',
+            toolName: 'code_mode',
+            arguments: ['script' => 'return 1;'],
+            orderIndex: 0,
+        );
+        TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(ToolBatchStoreInterface::class), $prepared);
+        $repo->preparePending($prepared);
+        $this->assertNull($repo->findMetadataByDeferredId($prepared->deferredId)?->readyAt);
+
+        $registered = new DeferredToolCompletionCorrelation(
+            deferredId: '990e8400-e29b-41d4-a716-446655440011',
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'turn-1-tools-2',
+            attempt: 1,
+            idempotencyKey: 'idemp-register',
+            toolCallId: 'call-register',
+            toolName: 'notify_parent',
+            arguments: ['text' => 'hi'],
+            orderIndex: 0,
+        );
+        TestToolBatchRegistration::registerDeferredInvocation(self::getContainer()->get(ToolBatchStoreInterface::class), $registered);
+        $repo->preparePending($registered);
+        $this->assertNull($repo->findMetadataByDeferredId($registered->deferredId)?->readyAt);
+        $repo->markReady($registered->deferredId);
+        $this->assertNotNull($repo->findMetadataByDeferredId($registered->deferredId)?->readyAt);
+    }
+
+    public function testOwnerPreparedCodeModeWorkerExecutesRealHostAndReturnsOrdinaryResult(): void
+    {
+        $container = self::getContainer();
+        $runId = $container->get(HatfieldSessionStore::class)->createSession('owner prepared code_mode worker');
+        $call = new ExecuteToolCall(
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'code-mode-worker-step',
+            attempt: 1,
+            idempotencyKey: 'code-mode-worker-key',
+            toolCallId: 'code-mode-worker-call',
+            toolName: 'code_mode',
+            args: ['script' => 'return 42;'],
+            orderIndex: 0,
+            mode: 'parallel',
+            maxParallelism: 2,
+            timeoutSeconds: 10,
+        );
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(
+            new \Ineersa\AgentCore\Application\Handler\ToolBatchCollector($batches),
+            $batches,
+            $runId,
+            1,
+            'code-mode-worker-step',
+            [$call],
+        );
+        $call = $batches->loadCall($runId, 1, 'code-mode-worker-step', 'code-mode-worker-call');
+        $this->assertInstanceOf(ExecuteToolCall::class, $call);
+
+        $deferredId = $container->get(\Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService::class)->prepare($call);
+        $metadata = $container->get(DeferredToolCompletionRepository::class)->findMetadataByDeferredId($deferredId);
+        $this->assertNotNull($metadata);
+        $this->assertNull($metadata->readyAt, 'Owner preparation must leave readyAt null.');
+
+        $host = $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge::class);
+        $toolbox = new class($host) implements \Symfony\AI\Agent\Toolbox\ToolboxInterface {
+            public function __construct(private readonly \Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge $host)
+            {
+            }
+
+            public function getTools(): array
+            {
+                return [];
+            }
+
+            public function execute(\Symfony\AI\Platform\Result\ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
+            {
+                $arguments = $toolCall->getArguments();
+                $result = $this->host->execute(
+                    (string) ($arguments['script'] ?? ''),
+                    isset($arguments['timeout_seconds']) ? (int) $arguments['timeout_seconds'] : \Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO::DEFAULT_TIMEOUT_SECONDS,
+                    isset($arguments['memory_limit_mb']) ? (int) $arguments['memory_limit_mb'] : \Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO::DEFAULT_MEMORY_LIMIT_MB,
+                    (bool) ($arguments['backgrounded'] ?? false),
+                );
+
+                return new \Symfony\AI\Agent\Toolbox\ToolResult($toolCall, [
+                    'code_mode_value' => $result instanceof \Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult ? $result->result : $result,
+                    'code_mode_diagnostics' => $result instanceof \Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult ? $result->diagnostics : [],
+                ]);
+            }
+        };
+
+        $executor = new \Ineersa\AgentCore\Application\Handler\ToolExecutor(
+            defaultMode: 'parallel',
+            maxParallelism: 2,
+            resultStore: new ToolExecutionResultStore(),
+            toolbox: $toolbox,
+            contextAccessor: $container->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
+            toolResultProcessors: [
+                $container->get(\Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor::class),
+                $container->get(\Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor::class),
+            ],
+        );
+        $commandBus = new TestMessageBus();
+        $worker = new ExecuteToolCallWorker(
+            $commandBus,
+            new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            $executor,
+            $container->get(DeferredToolCompletionRepository::class),
+            new ToolExecutionResultStore(),
+            new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
+        );
+
+        $result = $worker($call);
+        $this->assertInstanceOf(ToolCallResult::class, $result);
+        $this->assertFalse($result->isError, (string) ($result->result['content'][0]['text'] ?? json_encode($result->result)));
+        $text = (string) ($result->result['content'][0]['text'] ?? '');
+        $this->assertStringContainsString('42', $text);
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertSame($result, $commandBus->messages[0]);
     }
 
     private function registerDoctrineCorrelation(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation

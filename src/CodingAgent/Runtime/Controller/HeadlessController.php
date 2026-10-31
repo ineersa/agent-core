@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
-use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
@@ -85,7 +84,6 @@ final class HeadlessController
         private readonly string $runtimeCwd,
         private readonly ExtensionAgentJobRegistry $extensionAgentJobRegistry,
         private readonly BackgroundProcessManager $backgroundProcesses,
-        private readonly BashRegistrationClient $bashControllerClient,
         /**
          * Optional background process completion poller for sending
          * follow-up notifications when a backgrounded process finishes.
@@ -188,6 +186,7 @@ final class HeadlessController
             $this->consumerSupervisor->shutdownUntil($deadline);
             $this->brokerSupervisor->shutdownUntil($deadline);
             try {
+                $this->backgroundProcesses->useLocalLifecycleOwner();
                 $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
             } catch (\Throwable $lifecycleException) {
                 $this->logger->error('Controller session shutdown lifecycle failed after partial consumer launch', [
@@ -203,9 +202,11 @@ final class HeadlessController
             throw $exception;
         }
 
-        // Live stop and cleanup metadata now use the controller's reply role.
-        // Shutdown retains run_control until the lifecycle listener finishes.
-        $this->backgroundProcesses->useProcessOwner($this->bashControllerClient);
+        // Exclusive startup cleanup finished above while run_control was still
+        // absent. Ordinary controller stop/observe/timeout metadata now uses
+        // one-way owner commands. Session shutdown stops every consumer first,
+        // then switches to local lifecycle ownership for exclusive cleanup.
+        $this->backgroundProcesses->useRemoteLifecycleOwner();
 
         // Same event type/payload as before; emission now follows consumer launch.
         $this->emitter->emit(new RuntimeEvent(
@@ -505,9 +506,22 @@ final class HeadlessController
         // Parent JsonlProcessAgentSessionClient stop budget is 7s. Share one
         // deadline across consumers and broker so sequential 5s+5s grace cannot
         // outlive that parent SIGKILL.
-        $this->consumerSupervisor->shutdownUntil($deadline, keepRunControl: true);
+        // Stop every consumer, including run_control, before exclusive local
+        // session cleanup. Shutdown listeners no longer need a live owner reply.
+        $this->consumerSupervisor->shutdownUntil($deadline);
+        if (!$this->consumerSupervisor->areLaunchersQuiescent()) {
+            $this->logger->error('Controller session shutdown launchers are not quiescent', [
+                'component' => 'HeadlessController',
+                'event_type' => 'controller.session_shutdown_launchers_not_quiescent',
+                'session_id' => $this->sessionId,
+            ]);
+        }
 
         try {
+            // Consumers are already gone. Local finished-row deletion is
+            // required; one-way remote deletes cannot prove completion before
+            // this process exits.
+            $this->backgroundProcesses->useLocalLifecycleOwner();
             $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
         } catch (\Throwable $exception) {
             $this->logger->error('Controller session shutdown lifecycle failed', [
@@ -517,7 +531,6 @@ final class HeadlessController
                 'exception' => $exception,
             ]);
         } finally {
-            $this->consumerSupervisor->shutdownUntil($deadline);
             $this->brokerSupervisor->shutdownUntil($deadline);
             // Release only after consumers and lifecycle listeners finish so a
             // replacement controller cannot race against cleanup.

@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolLaunchInputStoreInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
@@ -16,6 +17,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Exception\ToolExecutionNotStartedException;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Psr\Log\LoggerInterface;
@@ -56,12 +58,6 @@ final readonly class ExecuteToolCallWorker
 
         try {
             $execute = function () use ($message): ?ToolCallResult {
-                $existing = $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId);
-                if (null !== $existing) {
-                    $this->execute($message);
-
-                    return null;
-                }
                 $outcome = $this->execute($message);
                 if (null === $outcome) {
                     if ('completed' === $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId)) {
@@ -103,7 +99,7 @@ final readonly class ExecuteToolCallWorker
 
                 return $result;
             }
-            $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, $message->toolName, $message->toolIdempotencyKey);
+            $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, $message->toolName, $message->toolIdempotencyKey, $message->attempt().'|'.$message->idempotencyKey());
 
             return $result;
         } finally {
@@ -113,16 +109,13 @@ final readonly class ExecuteToolCallWorker
 
     private function execute(ExecuteToolCall $message): ?ToolCallResult
     {
-        $status = $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId);
-        if (null !== $status) {
-            if ('pending' === $status) {
-                $existing = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
-                if (null !== $existing) {
-                    $this->dispatchDeferredRegistered($existing);
-                }
+        $metadata = $this->deferredToolCompletionRepository->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
+        if (null !== $metadata) {
+            // Prepared-but-not-ready rows still need first execution.
+            // Completed or ready pending rows are already deferred and must not rerun.
+            if ('completed' === $metadata->status || null !== $metadata->readyAt) {
+                return null;
             }
-
-            return null;
         }
 
         RunLogContext::enter(['event_type' => 'tool.execute.started']);
@@ -142,7 +135,11 @@ final readonly class ExecuteToolCallWorker
                 if (null === $this->launchInputStore) {
                     throw new \LogicException('Child launch input store is required.');
                 }
-                $launchContext = $this->launchInputStore->read($reference);
+                try {
+                    $launchContext = $this->launchInputStore->read($reference);
+                } catch (\Throwable $exception) {
+                    throw new ToolExecutionNotStartedException('Tool launch input is missing or invalid.', $exception);
+                }
             }
 
             $cancelToken = new RunCancellationToken($this->statusReader, $message->runId());
@@ -166,6 +163,8 @@ final readonly class ExecuteToolCallWorker
                     'human_input_answer' => $message->humanInputAnswer,
                     'parent_model' => $message->parentModel,
                     'launch_context' => $launchContext,
+                    'attempt' => $message->attempt(),
+                    'idempotency_key' => $message->idempotencyKey(),
                 ],
             );
 
@@ -181,13 +180,12 @@ final readonly class ExecuteToolCallWorker
                 ], $executeTool, level: LogLevel::INFO);
 
             if ($this->isDeferredOutcome($toolResult)) {
-                $this->registerDeferredExecution($message, $toolResult);
-                $this->resultStore->releaseCompleted(
-                    $message->runId(),
-                    $message->toolCallId,
-                    $message->toolName,
-                    $message->toolIdempotencyKey,
-                );
+                $raw = $toolResult->details['raw_result'] ?? null;
+                if (!$raw instanceof DeferredToolCompletionOutcome) {
+                    throw new \RuntimeException('Deferred tool outcome missing typed raw_result marker.');
+                }
+                $this->registerDeferredExecution($message, $raw);
+                $this->resultStore->releaseCompleted($message->runId(), $message->toolCallId, $message->toolName, $message->toolIdempotencyKey, $message->attempt().'|'.$message->idempotencyKey());
 
                 return null;
             }
@@ -210,33 +208,39 @@ final readonly class ExecuteToolCallWorker
         return ($details['raw_result'] ?? null) instanceof DeferredToolCompletionOutcome;
     }
 
-    private function registerDeferredExecution(ExecuteToolCall $message, ToolResult $toolResult): DeferredToolCompletionCorrelation
+    private function registerDeferredExecution(ExecuteToolCall $message, DeferredToolCompletionOutcome $raw): DeferredToolCompletionCorrelation
     {
-        $raw = $toolResult->details['raw_result'] ?? null;
-        if (!$raw instanceof DeferredToolCompletionOutcome) {
-            throw new \RuntimeException('Deferred tool outcome missing typed raw_result marker.');
+        $metadata = $this->deferredToolCompletionRepository->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
+        if (null === $metadata) {
+            throw new ToolCallException('Owner-prepared deferred registration is missing for this invocation.', retryable: false);
         }
 
-        $correlation = new DeferredToolCompletionCorrelation(
-            deferredId: $raw->deferredId,
-            runId: $message->runId(),
-            turnNo: $message->turnNo(),
-            stepId: $message->stepId(),
-            attempt: $message->attempt(),
-            idempotencyKey: $message->idempotencyKey(),
-            toolCallId: $message->toolCallId,
-            toolName: $message->toolName,
-            arguments: $message->args,
-            orderIndex: $message->orderIndex,
-            toolIdempotencyKey: $message->toolIdempotencyKey,
-            mode: $message->mode,
-            timeoutSeconds: $message->timeoutSeconds,
-            maxParallelism: $message->maxParallelism,
-            argSchema: $message->argSchema,
-            toolsRef: $message->toolsRef,
-        );
+        $reference = $metadata->reference;
+        if (
+            $metadata->deferredId !== $raw->deferredId
+            || $reference->runId !== $message->runId()
+            || $reference->turnNo !== $message->turnNo()
+            || $reference->stepId !== $message->stepId()
+            || $reference->attempt !== $message->attempt()
+            || $reference->idempotencyKey !== $message->idempotencyKey()
+            || $reference->toolCallId !== $message->toolCallId
+            || $reference->orderIndex !== $message->orderIndex
+            || $reference->toolName !== $message->toolName
+        ) {
+            throw new ToolCallException('Prepared deferred registration does not match its deferred outcome.', retryable: false);
+        }
 
-        return $this->deferredToolCompletionRepository->registerPending($correlation);
+        if ('completed' === $metadata->status) {
+            // Terminal no-op: do not reopen a deleted correlation body.
+            return ToolCallResultFactory::correlationFromExecuteToolCall($message, $metadata->deferredId);
+        }
+
+        $correlation = $this->deferredToolCompletionRepository->findByDeferredId($metadata->deferredId);
+        if (null === $correlation) {
+            throw new ToolCallException('Owner-prepared deferred registration body is unavailable.', retryable: false);
+        }
+
+        return $correlation;
     }
 
     private function dispatchDeferredRegistered(DeferredToolCompletionCorrelation $correlation): void

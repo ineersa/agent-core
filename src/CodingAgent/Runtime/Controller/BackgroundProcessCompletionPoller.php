@@ -278,11 +278,14 @@ final class BackgroundProcessCompletionPoller
 
         // Build notification message matching pi's bg-process.ts format.
         $exitCode = $process->exitCode;
-        $statusLabel = match ($process->status) {
-            \Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum::Stopped => 'stopped',
-            \Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum::FinishedUnclean => 'unclean exit',
-            default => null !== $exitCode ? (string) $exitCode : '?',
-        };
+        // Prefer the observed exit code. Stop/Timeout may mark status=Stopped, but
+        // notification reports what the process recorded, not an inferred cause.
+        $statusLabel = null !== $exitCode
+            ? (string) $exitCode
+            : match ($process->status) {
+                \Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum::FinishedUnclean => 'unclean exit',
+                default => '?',
+            };
 
         $commandPreview = u($process->command)->truncate(200, '...')->toString();
 

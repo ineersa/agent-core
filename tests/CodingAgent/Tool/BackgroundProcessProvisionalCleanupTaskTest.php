@@ -124,8 +124,28 @@ PHP);
             // before starting cleanup so it cannot reenter this trap. The PHP
             // child restores default TERM before publishing its ready barrier.
             $command = 'trap '.escapeshellarg('trap "" TERM; '.$invoke.' cleanup; result=$?; '.$invoke.' result "$result"; exit "$result"').' TERM; '.$invoke.' running';
-            $process = $owner->start($command, 'accepted-cleanup', 'timeout-call', hrtime(true) - 1);
-            $owner->markBackgroundedForRecord($process->id, 'accepted-cleanup');
+            $prepared = $owner->prepareNativeLaunch('accepted-cleanup', 'timeout-call', $command, true);
+            $deadlineNanoseconds = hrtime(true) - 1;
+            $process = $owner->start(
+                $command,
+                'accepted-cleanup',
+                'timeout-call',
+                $deadlineNanoseconds,
+                preparedRecordId: $prepared->id,
+                preparedLogPath: $prepared->logPath,
+                preparedStatusPath: $prepared->statusPath,
+            );
+            $this->store->applyLaunch(
+                $prepared->id,
+                'accepted-cleanup',
+                $process->pid,
+                posix_getpgid($process->pid) ?: null,
+                new \DateTimeImmutable(),
+                $deadlineNanoseconds,
+            );
+            $candidate = $owner->resolveBackgroundAcceptance($process->statusPath, 'accepted-cleanup');
+            $this->assertNotNull($candidate);
+            $owner->acceptResolvedBackground($candidate);
             $running = stream_socket_accept($server, 3);
             $this->assertIsResource($running, 'The owned command must reach its initial IPC barrier.');
             stream_set_timeout($running, 3);
@@ -437,7 +457,9 @@ PHP);
         BackgroundProcessFixture::finish($entity, 0, $finishedAt);
         self::getContainer()->get(EntityManagerInterface::class)->flush();
         if ($accepted) {
-            $this->manager->markBackgroundedForRecord($id, $sessionId);
+            // Fixture rows are already finished; resolveBackgroundAcceptance only
+            // accepts still-running launches. Stamp durable acceptance directly.
+            $this->store->applyAcceptedByRecord($id, $sessionId, $finishedAt);
         }
 
         return ['id' => $id] + $paths;
