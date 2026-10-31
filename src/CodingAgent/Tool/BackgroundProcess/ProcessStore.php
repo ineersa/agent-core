@@ -109,6 +109,19 @@ final class ProcessStore
         return false === $row ? null : $this->hydrateSnapshot($row);
     }
 
+    /**
+     * Delete an unused owner-prepared native row that never launched.
+     *
+     * Metadata-only: requires null pid and started_at. Already-launched rows are untouched.
+     */
+    public function deleteUnusedPreparedRecord(int $recordId, string $runId): void
+    {
+        $this->entityManager->getConnection()->executeStatement(
+            'DELETE FROM background_process WHERE id = ? AND session_id = ? AND pid IS NULL AND started_at IS NULL AND backgrounded_at IS NULL AND finished_at IS NULL',
+            [$recordId, $runId],
+        );
+    }
+
     /** Persist native launch facts onto an owner-prepared row. */
     public function applyLaunch(int $recordId, string $runId, int $pid, ?int $pgid, \DateTimeImmutable $startedAt, ?int $deadlineNanoseconds = null): void
     {

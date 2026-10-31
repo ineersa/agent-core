@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionNotStarted;
 use Ineersa\CodingAgent\Tool\Event\ToolCallFailedEvent;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerHookInterface;
@@ -82,7 +83,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                 try {
                     $this->applyResumedAnswer($event, $toolCall, $hook, $humanInputAnswer, $context);
                 } catch (\Throwable $exception) {
-                    $event->setResult(new ToolResult($toolCall, [
+                    $this->setNotStartedResult($event, $toolCall, [
                         'denied' => true,
                         'reason' => 'approval_resume_failed',
                         'message' => \sprintf(
@@ -90,7 +91,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                             $toolCall->getName(),
                         ),
                         'error_type' => $exception::class,
-                    ]));
+                    ], 'denied');
 
                     $this->logger?->error('tool.approval_resume_failed', [
                         'component' => 'extension.tool_hook_subscriber',
@@ -117,12 +118,12 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
             try {
                 $decision = $hook->onToolCall($context);
             } catch (\Throwable $exception) {
-                $event->setResult(new ToolResult($toolCall, [
+                $this->setNotStartedResult($event, $toolCall, [
                     'denied' => true,
                     'reason' => 'extension_tool_call_hook_failed',
                     'message' => \sprintf('Extension tool-call hook failed: %s', $exception->getMessage()),
                     'error_type' => $exception::class,
-                ]));
+                ], 'denied');
 
                 return;
             }
@@ -133,20 +134,20 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 
             if (ToolCallDecisionKindEnum::Block === $decision->kind) {
                 $reason = $decision->reason ?? 'blocked_by_extension_hook';
-                $event->setResult(new ToolResult($toolCall, array_replace(
+                $this->setNotStartedResult($event, $toolCall, array_replace(
                     [
                         'denied' => true,
                         'reason' => $reason,
                         'message' => \sprintf('Tool "%s" was blocked by extension hook: %s', $toolCall->getName(), $reason),
                     ],
                     $decision->details,
-                )));
+                ), 'denied');
 
                 return;
             }
 
             if (ToolCallDecisionKindEnum::ReplaceResult === $decision->kind) {
-                $event->setResult(new ToolResult($toolCall, $decision->result));
+                $this->setNotStartedResult($event, $toolCall, $decision->result, 'replaced');
 
                 return;
             }
@@ -157,7 +158,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 
                     return;
                 } catch (\Throwable $exception) {
-                    $event->setResult(new ToolResult($toolCall, [
+                    $this->setNotStartedResult($event, $toolCall, [
                         'denied' => true,
                         'reason' => 'approval_handler_failed',
                         'message' => \sprintf(
@@ -165,7 +166,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                             $toolCall->getName(),
                         ),
                         'error_type' => $exception::class,
-                    ]));
+                    ], 'denied');
 
                     $this->logger?->error('tool.approval_handler_failed', [
                         'component' => 'extension.tool_hook_subscriber',
@@ -184,14 +185,14 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         // Resumed answer must be consumed by its originating hook. If no registered hook
         // matched (hook unloaded/disabled), fail closed — never fall through to the real handler.
         if ($humanInputAnswer instanceof ToolCallHumanInputAnswerDTO) {
-            $event->setResult(new ToolResult($toolCall, Toon::encode([
+            $this->setNotStartedResult($event, $toolCall, Toon::encode([
                 'denied' => true,
                 'reason' => 'approval_origin_hook_unavailable',
                 'message' => \sprintf(
                     'Tool "%s" was denied: the originating approval hook is unavailable.',
                     $toolCall->getName(),
                 ),
-            ])));
+            ]), 'denied');
 
             $payloadHookId = $humanInputAnswer->requestPayload['hook_id'] ?? null;
             $payloadHookClass = $humanInputAnswer->requestPayload['hook_class'] ?? null;
@@ -246,7 +247,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
     ): void {
         if (true === ($context->metadata['noninteractive_child_run'] ?? false)) {
             $reason = $decision->reason ?? 'approval_denied_noninteractive_child';
-            $event->setResult(new ToolResult($toolCall, array_replace(
+            $this->setNotStartedResult($event, $toolCall, array_replace(
                 [
                     'denied' => true,
                     'reason' => $reason,
@@ -258,7 +259,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                     'noninteractive_child_run' => true,
                 ],
                 $decision->details,
-            )));
+            ), 'denied');
 
             $this->logger?->info('tool.approval_denied_noninteractive_child', [
                 'run_id' => $context->runId ?? '',
@@ -364,12 +365,12 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
             ToolCallDecisionKindEnum::Allow => null,
             // Encode denial as TOON so transcript/tool output is human-readable
             // (raw PHP arrays become JSON via Symfony AI serialization).
-            ToolCallDecisionKindEnum::Block => $event->setResult(new ToolResult($toolCall, Toon::encode([
+            ToolCallDecisionKindEnum::Block => $this->setNotStartedResult($event, $toolCall, Toon::encode([
                 'denied' => true,
                 'reason' => $outcome->reason ?? 'denied',
                 'message' => $outcome->details['message'] ?? \sprintf('Tool "%s" was denied.', $toolCall->getName()),
-            ]))),
-            ToolCallDecisionKindEnum::ReplaceResult => $event->setResult(new ToolResult($toolCall, $outcome->result)),
+            ]), 'denied'),
+            ToolCallDecisionKindEnum::ReplaceResult => $this->setNotStartedResult($event, $toolCall, $outcome->result, 'replaced'),
             ToolCallDecisionKindEnum::RequireApproval => throw new \LogicException('resolveApprovalAnswer must not return RequireApproval.'),
         };
     }
@@ -583,5 +584,10 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         $encoded = json_encode($result, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
 
         return false === $encoded ? '{}' : $encoded;
+    }
+
+    private function setNotStartedResult(ToolCallRequested $event, ToolCall $toolCall, mixed $result, string $reason): void
+    {
+        $event->setResult(new ToolResult($toolCall, new ToolExecutionNotStarted($reason, $result)));
     }
 }

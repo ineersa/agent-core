@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionNotStarted;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
@@ -593,6 +594,70 @@ final class ToolExecutor implements ToolExecutorInterface
             );
         }
 
+        if ($rawResult instanceof ToolExecutionNotStarted) {
+            $inner = $rawResult->result;
+            if ($inner instanceof ToolResult) {
+                if ($inner->toolCallId !== $toolCall->toolCallId || $inner->toolName !== $toolCall->toolName) {
+                    throw new ToolCallException('Typed tool result identity does not match its invocation.', retryable: false);
+                }
+                $failure = ToolResultText::failureMessage($inner->content)
+                    ?? ToolResultText::failureMessage($inner->details);
+                if (null !== $failure) {
+                    throw new ToolCallException($failure, retryable: false);
+                }
+                $details = \is_array($inner->details) ? $inner->details : [];
+                $details['execution_not_started'] = true;
+                $details['execution_not_started_reason'] = $rawResult->reason;
+                if (!\array_key_exists('raw_result', $details)) {
+                    $details['raw_result'] = null;
+                }
+
+                return new ToolResult(
+                    toolCallId: $inner->toolCallId,
+                    toolName: $inner->toolName,
+                    content: $inner->content,
+                    details: $details,
+                    isError: $inner->isError,
+                );
+            }
+
+            $payload = $inner;
+            if ($payload instanceof \BackedEnum) {
+                $payload = $payload->value;
+            } elseif ($payload instanceof \UnitEnum) {
+                $payload = $payload->name;
+            } elseif ($payload instanceof \Stringable) {
+                $payload = (string) $payload;
+            }
+            $representationFailure = ToolResultText::failureMessage($payload);
+            if (null !== $representationFailure) {
+                throw new ToolCallException($representationFailure, retryable: false);
+            }
+            $details = [
+                'raw_result' => $payload,
+                'execution_not_started' => true,
+                'execution_not_started_reason' => $rawResult->reason,
+            ];
+            if (\is_array($payload)) {
+                $details = array_replace($details, $payload, [
+                    'raw_result' => $payload,
+                    'execution_not_started' => true,
+                    'execution_not_started_reason' => $rawResult->reason,
+                ]);
+            }
+
+            return new ToolResult(
+                toolCallId: $toolCall->toolCallId,
+                toolName: $toolCall->toolName,
+                content: [[
+                    'type' => 'text',
+                    'text' => $this->normalizeResultText($payload),
+                ]],
+                details: $details,
+                isError: \is_array($payload) && true === ($payload['denied'] ?? false),
+            );
+        }
+
         // Supported top-level values are converted once. The same concrete
         // data feeds display and raw_result; no opaque object reaches storage.
         if ($rawResult instanceof \BackedEnum) {
@@ -693,6 +758,8 @@ final class ToolExecutor implements ToolExecutorInterface
                 'reason' => 'not_in_active_allowlist',
                 'tools_ref' => $toolsRef,
                 'available_tools' => $activeSet->allowListNames,
+                'execution_not_started' => true,
+                'execution_not_started_reason' => 'not_in_active_allowlist',
             ],
         );
     }

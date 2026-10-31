@@ -287,7 +287,7 @@ final readonly class DoctrineToolBatchStore implements ToolBatchStoreInterface
                 // Early code_mode registrations stay pending until this
                 // verified batch-result admission commits.
                 $this->connection->executeStatement(
-                    "UPDATE tool_deferred_completion SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE run_id = ? AND turn_no = ? AND step_id = ? AND tool_call_id = ? AND status = 'pending' AND backgrounded_at IS NULL AND accepted_result_reference_json IS NOT NULL",
+                    "UPDATE tool_deferred_completion SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE run_id = ? AND turn_no = ? AND step_id = ? AND tool_call_id = ? AND status = 'pending' AND backgrounded_at IS NULL",
                     [$runId, $turnNo, $stepId, $toolCallId],
                 );
             }

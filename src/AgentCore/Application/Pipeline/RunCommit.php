@@ -44,7 +44,7 @@ final readonly class RunCommit
         $afterTurnActions = [];
         if ($dispatchAfterTurnHooks || \in_array(RunEventTypeEnum::HistoryTailDiscarded->value, array_column($events, 'type'), true)) {
             $afterTurnActions = $this->probe('commit.prepare_hooks', $attributes, fn () => $this->hookDispatcher?->prepareAfterTurnCommit(
-                AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)), $state->lastSeq,
+                AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects), $postCommitActions), $state->lastSeq,
             ) ?? []);
         }
         foreach ([...$postCommitActions, ...$afterTurnActions] as $action) {

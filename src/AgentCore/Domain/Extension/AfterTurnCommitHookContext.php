@@ -14,6 +14,7 @@ final readonly class AfterTurnCommitHookContext
 
     /**
      * @param list<AfterTurnCommitEventSummary> $events
+     * @param list<object>                      $postCommitActions
      */
     public function __construct(
         public string $runId,
@@ -22,6 +23,7 @@ final readonly class AfterTurnCommitHookContext
         array $events,
         public int $effectsCount,
         public RunState $runState,
+        public array $postCommitActions = [],
     ) {
         foreach ($events as $event) {
             if (!$event instanceof AfterTurnCommitEventSummary) {
@@ -34,8 +36,9 @@ final readonly class AfterTurnCommitHookContext
 
     /**
      * @param list<RunEvent> $events
+     * @param list<object>   $postCommitActions
      */
-    public static function fromRunState(RunState $runState, array $events, int $effectsCount): self
+    public static function fromRunState(RunState $runState, array $events, int $effectsCount, array $postCommitActions = []): self
     {
         return new self(
             runId: $runState->runId,
@@ -53,6 +56,7 @@ final readonly class AfterTurnCommitHookContext
             )),
             effectsCount: $effectsCount,
             runState: $runState,
+            postCommitActions: array_values($postCommitActions),
         );
     }
 }

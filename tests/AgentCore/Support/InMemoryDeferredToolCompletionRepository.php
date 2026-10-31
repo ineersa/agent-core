@@ -132,6 +132,18 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         throw new \LogicException('Native result retention requires the persistent repository.');
     }
 
+    public function reviseUnusedPreparation(DeferredToolCompletionCorrelation $correlation, ToolPayloadReferenceDTO $bodyReference): void
+    {
+        $row = $this->byDeferredId[$correlation->deferredId] ?? null;
+        if (null === $row || 'pending' !== $row['status']) {
+            throw new \RuntimeException('Deferred preparation revision requires a pending correlation.');
+        }
+        if ($row['correlation']->attempt === $correlation->attempt && $row['correlation']->idempotencyKey === $correlation->idempotencyKey) {
+            return;
+        }
+        $this->byDeferredId[$correlation->deferredId]['correlation'] = $correlation;
+    }
+
     private function store(DeferredToolCompletionCorrelation $correlation, bool $stampReadyAt): DeferredToolCompletionCorrelation
     {
         $key = $correlation->runId.'|'.$correlation->toolCallId;

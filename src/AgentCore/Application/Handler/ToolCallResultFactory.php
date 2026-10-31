@@ -132,6 +132,9 @@ final class ToolCallResultFactory
         if ($exception instanceof ToolCallException) {
             $details['retryable'] = $exception->retryable();
             $details['hint'] = $exception->hint();
+            if ('preparation_unused' === $exception->hint()) {
+                $details['preparation_unused'] = true;
+            }
         }
 
         $error = [

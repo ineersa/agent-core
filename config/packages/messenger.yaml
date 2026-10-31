@@ -112,6 +112,7 @@ framework:
             # TransportNamesStamp. Inline tool messages have no fallback route.
             Ineersa\CodingAgent\Application\Message\DTO\BackgroundChildInvocationDTO: run_control
             Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO: run_control
+            Ineersa\CodingAgent\Application\Message\DTO\SettleObsoleteDeferredCompletionDTO: run_control
             Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO: run_control
             Ineersa\CodingAgent\Application\AgentCommunication\DTO\AcceptSubmissionDTO: run_control
             Ineersa\CodingAgent\Application\AgentCommunication\DTO\CompleteSubmissionDTO: run_control

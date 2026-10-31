@@ -361,8 +361,11 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     {
         $now = Clock::get()->now()->format('Y-m-d H:i:s');
         $conn = $this->getEntityManager()->getConnection();
+        $ownTransaction = !$conn->isTransactionActive();
 
-        $conn->beginTransaction();
+        if ($ownTransaction) {
+            $conn->beginTransaction();
+        }
         try {
             $conn->executeStatement(
                 'UPDATE deferred_subagent_batch SET launch_status = :failed, updated_at = :now, projection_version = projection_version + 1
@@ -385,16 +388,20 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                     'reserved' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
                 ],
             );
-            $conn->commit();
+            if ($ownTransaction) {
+                $conn->commit();
+            }
         } catch (\Throwable $e) {
-            if ($conn->isTransactionActive()) {
+            if ($ownTransaction && $conn->isTransactionActive()) {
                 $conn->rollBack();
             }
 
             throw $e;
         }
 
-        $this->getEntityManager()->clear();
+        if ($ownTransaction) {
+            $this->getEntityManager()->clear();
+        }
     }
 
     public function applyLaunchSuccessState(
