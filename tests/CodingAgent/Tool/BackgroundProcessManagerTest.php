@@ -10,6 +10,10 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
+use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
+use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessControllerSessionLifecycleListener;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -58,6 +62,9 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $marker = $this->directory.'/execution-count';
         $command = 'printf x >> '.escapeshellarg($marker).'; printf ordinary-output';
         $this->assertSame('ordinary-output', $this->invoke($this->manager, $command));
+        $listener = $this->sessionListener();
+        $listener->onSessionShutdown(new ControllerSessionShutdownEvent($this->runId));
+        $listener->onSessionStarting(new ControllerSessionStartingEvent($this->runId));
         $this->assertSame('ordinary-output', $this->invoke($this->newManager(), $command));
         $this->assertSame('x', file_get_contents($marker));
         $records = $this->store->sessionSnapshots($this->runId);
@@ -65,6 +72,17 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertSame(0, $records[0]->exitCode);
         $this->assertFileExists($records[0]->logPath);
         $this->assertFileExists($records[0]->statusPath);
+        // A crash before the SQL insert must retain the same native evidence too.
+        $this->assertTrue(BackgroundProcessFixture::delete(self::getContainer(), $records[0]->id));
+        $listener->onSessionShutdown(new ControllerSessionShutdownEvent($this->runId));
+        $listener->onSessionStarting(new ControllerSessionStartingEvent($this->runId));
+        $this->assertSame('ordinary-output', $this->invoke($this->newManager(), $command));
+        $this->assertSame('x', file_get_contents($marker));
+
+        $listener->onSessionShutdown(new ControllerSessionShutdownEvent($this->runId, permanentDeletion: true));
+        $this->assertSame([], $this->store->sessionSnapshots($this->runId));
+        $this->assertFileDoesNotExist($records[0]->logPath);
+        $this->assertFileDoesNotExist($records[0]->statusPath);
     }
 
     public function testRunningIntentReattachesWithoutSecondLaunch(): void
@@ -72,7 +90,9 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         [$server, $command, $marker] = $this->blockedCommand();
         $peer = null;
         try {
-            $first = $this->manager->start($command, $this->runId, 'call', hrtime(true) + 30_000_000_000, invocationKey: 'same-intent');
+            $deadline = hrtime(true) + 30_000_000_000;
+            $first = $this->manager->start($command, $this->runId, 'call', $deadline, invocationKey: 'same-intent');
+            $this->assertSame($deadline, $first->deadlineNanoseconds, 'Fresh launch retains the exact supplied deadline.');
             $peer = stream_socket_accept($server, 2);
             $this->assertIsResource($peer, 'The child connects after recording its launch.');
             $other = $this->newManager();
@@ -108,6 +128,12 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             $this->assertSame($acknowledgment, $this->invoke($other, $command, true));
             $this->assertSame(0, $other->shutdownCleanup(), 'Replayed acceptance never takes foreground ownership.');
             $this->assertSame('x', file_get_contents($marker));
+            $this->sessionListener()->onSessionShutdown(new ControllerSessionShutdownEvent($this->runId));
+            $stopped = $this->store->sessionSnapshots($this->runId);
+            $this->assertCount(1, $stopped);
+            $this->assertNotNull($stopped[0]->finishedAt);
+            $this->assertFileExists($stopped[0]->logPath);
+            $this->assertFileExists($stopped[0]->statusPath);
         } finally {
             if (\is_resource($peer)) {
                 fclose($peer);
@@ -141,6 +167,11 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             }
             fclose($server);
         }
+    }
+
+    private function sessionListener(): BackgroundProcessControllerSessionLifecycleListener
+    {
+        return new BackgroundProcessControllerSessionLifecycleListener(self::getContainer()->get(BackgroundProcessCompletionPoller::class), $this->store, $this->manager, new NullLogger());
     }
 
     private function newManager(): BackgroundProcessManager

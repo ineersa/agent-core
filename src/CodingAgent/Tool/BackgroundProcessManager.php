@@ -221,8 +221,8 @@ final class BackgroundProcessManager
                 }
                 $startedAt = new \DateTimeImmutable('@'.$timestamp);
             }
-            $deadline = $record?->deadlineNanoseconds;
-            if (null === $record && null !== $deadlineNanoseconds) {
+            $deadline = null !== $record ? $record->deadlineNanoseconds : $deadlineNanoseconds;
+            if ($evidence && null === $record && null !== $deadlineNanoseconds) {
                 // Preserve the caller's budget when recovering a launch whose
                 // post-launch SQL insert was interrupted. The PID file dates
                 // the original launch; do not restart its timeout on replay.
@@ -239,7 +239,7 @@ final class BackgroundProcessManager
             }
             $native = new NativeBashLaunchDTO(
                 pid: $pid, pgid: $pgid, sessionId: $runId, command: $command, toolCallId: $toolCallId,
-                deadlineNanoseconds: $deadline ?? $deadlineNanoseconds,
+                deadlineNanoseconds: $deadline,
                 backgroundRequested: $record->backgroundRequested ?? $backgroundRequested,
                 logPath: $logFile, statusPath: $statusFile, startedAt: $startedAt,
             );
@@ -652,15 +652,15 @@ final class BackgroundProcessManager
         return $this->reapUnacceptedNativeLaunches();
     }
 
-    /** Sweep only this session's unreported wrappers, after launchers have stopped. */
-    public function cleanupSessionSidecars(string $runId): void
+    /** Stop unreported wrappers after launchers stop; only deletion erases replay evidence. */
+    public function cleanupSessionSidecars(string $runId, bool $permanentDeletion = false): void
     {
         $directory = $this->lifecycle->ensureStorageDir();
         $prefix = hash('sha256', $runId).'-';
         foreach ((new Finder())->files()->in($directory)->depth('== 0')->name('/^'.preg_quote($prefix, '/').'[a-f0-9]{64}\.pid$/') as $file) {
             $statusPath = substr($file->getPathname(), 0, -4).'.status';
             $logPath = substr($file->getPathname(), 0, -4).'.log';
-            $this->lifecycle->withSidecarLock($statusPath, function () use ($runId, $statusPath, $logPath): void {
+            $this->lifecycle->withSidecarLock($statusPath, function () use ($runId, $statusPath, $logPath, $permanentDeletion): void {
                 if (null !== $this->store->recordIdForStatusPath($statusPath, $runId)) {
                     return; // A failed row cleanup must retain its native evidence.
                 }
@@ -672,7 +672,7 @@ final class BackgroundProcessManager
                     throw new \RuntimeException('Session native cleanup cannot establish wrapper ownership.');
                 }
                 $this->lifecycle->stopProcess($pid, $this->lifecycle->ownedPgid($pid, $statusPath), $statusPath);
-                if (!$this->lifecycle->deleteLockedRecordSidecars($logPath, $statusPath)) {
+                if ($permanentDeletion && !$this->lifecycle->deleteLockedRecordSidecars($logPath, $statusPath)) {
                     throw new \RuntimeException('Session native sidecar cleanup failed.');
                 }
             });
@@ -680,7 +680,7 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Session cleanup removes finished metadata and its exact native sidecars
+     * Permanent deletion removes finished metadata and its exact native sidecars
      * under the same lock used for launch, attachment and acceptance.
      */
     public function cleanupFinishedRecord(int $recordId, string $runId): bool

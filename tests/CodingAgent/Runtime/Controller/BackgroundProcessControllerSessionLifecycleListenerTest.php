@@ -25,8 +25,7 @@ use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
 /**
- * Thesis: controller lifecycle events remove accepted process state only for
- * their parent session and registered child runs, including a running process.
+ * Controller lifecycle stops scoped jobs; only permanent deletion removes evidence.
  */
 #[CoversClass(BackgroundProcessControllerSessionLifecycleListener::class)]
 #[CoversClass(ControllerSessionStartingEvent::class)]
@@ -69,7 +68,7 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
     }
 
     #[Test]
-    public function startingEventCleansParentAndChildAcceptedStateButRetainsForeignAndUnsafeRows(): void
+    public function startingEventStopsParentAndChildAndRetainsEvidence(): void
     {
         $registry = static::getContainer()->get(AgentArtifactRegistry::class);
         $registry->create('parent-run', 'child-artifact', 'child-run', 'scout', AgentArtifactKindEnum::Subagent);
@@ -82,15 +81,16 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         $this->dispatcher->dispatch(new ControllerSessionStartingEvent('parent-run'));
         $this->dispatcher->dispatch(new ControllerSessionStartingEvent('parent-run'));
 
-        $this->assertFalse($this->store->existsByRecordId($parent['id']));
-        $this->assertFalse($this->store->existsByRecordId($child['id']));
-        $this->assertFileDoesNotExist($parent['log']);
-        $this->assertFileDoesNotExist($child['status']);
-        // OS liveness after stop is covered by ProcessLifecycleTest and
-        // BackgroundProcessManagerTest; this case owns session-scoped row/sidecar cleanup.
+        $this->assertTrue($this->store->existsByRecordId($parent['id']));
+        $this->assertTrue($this->store->existsByRecordId($child['id']));
+        $this->assertFileExists($parent['log']);
+        $this->assertFileExists($child['status']);
+        $this->assertFalse($this->lifecycle->isAlive($parent['pid']));
+        $this->assertFalse($this->lifecycle->isAlive($child['pid']));
 
         $this->assertTrue($this->store->existsByRecordId($foreign['id']));
         $this->assertFileExists($foreign['log']);
+        $this->assertTrue($this->lifecycle->isAlive($foreign['pid']));
         $this->assertTrue($this->store->existsByRecordId($unsafe['id']));
         $this->assertFileExists($unsafe['log']);
 
@@ -100,17 +100,21 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
     }
 
     #[Test]
-    public function shutdownEventCleansAcceptedState(): void
+    public function permanentDeletionRemovesOnlyScopedEvidence(): void
     {
         $accepted = $this->startAccepted('shutdown-run', 'shutdown');
+        $foreign = $this->startAccepted('foreign-run', 'foreign');
 
-        $this->dispatcher->dispatch(new ControllerSessionShutdownEvent('shutdown-run'));
-        $this->dispatcher->dispatch(new ControllerSessionShutdownEvent('shutdown-run'));
+        $this->dispatcher->dispatch(new ControllerSessionShutdownEvent('shutdown-run', permanentDeletion: true));
+        $this->dispatcher->dispatch(new ControllerSessionShutdownEvent('shutdown-run', permanentDeletion: true));
 
         $this->assertFalse($this->store->existsByRecordId($accepted['id']));
         $this->assertFileDoesNotExist($accepted['log']);
         $this->assertFileDoesNotExist($accepted['status']);
         $this->assertFileDoesNotExist($accepted['pid_file']);
+        $this->assertTrue($this->store->existsByRecordId($foreign['id']));
+        $this->assertFileExists($foreign['log']);
+        $this->manager->stopByRecordId($foreign['id'], 'foreign-run');
         // OS liveness after stop is covered by ProcessLifecycleTest and
         // BackgroundProcessManagerTest; this case owns session-scoped row/sidecar cleanup.
     }
@@ -121,29 +125,15 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
     private function startAccepted(string $sessionId, string $prefix): array
     {
         $toolCallId = $prefix.'-tool';
-        $prepared = $this->manager->prepareNativeLaunch($sessionId, $toolCallId, 'exec sleep 30', true);
-        $result = $this->manager->start(
-            'exec sleep 30',
-            $sessionId,
-            $toolCallId,
-            preparedRecordId: $prepared->id,
-            preparedLogPath: $prepared->logPath,
-            preparedStatusPath: $prepared->statusPath,
-        );
-        $this->assertNotNull($result->id);
-        $this->store->applyLaunch(
-            $prepared->id,
-            $sessionId,
-            $result->pid,
-            posix_getpgid($result->pid) ?: null,
-            new \DateTimeImmutable(),
-        );
+        $result = $this->manager->start('exec sleep 30', $sessionId, $toolCallId, backgroundRequested: true);
+        $id = $this->store->recordIdForStatusPath($result->statusPath, $sessionId);
+        $this->assertNotNull($id);
         $candidate = $this->manager->resolveBackgroundAcceptance($result->statusPath, $sessionId);
         $this->assertNotNull($candidate);
         $this->manager->acceptResolvedBackground($candidate);
 
         return [
-            'id' => $result->id,
+            'id' => $id,
             'pid' => $result->pid,
             'log' => $result->logPath,
             'status' => $result->statusPath,
