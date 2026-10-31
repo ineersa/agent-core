@@ -79,5 +79,4 @@ final readonly class CompleteDeferredToolCallHandler
             RunLogContext::leave();
         }
     }
-
 }
