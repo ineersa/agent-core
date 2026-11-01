@@ -167,7 +167,7 @@ final class BackgroundProcessControllerSessionLifecycleListenerTest extends Isol
         BackgroundProcessFixture::finish($entity, 0, new \DateTimeImmutable());
         self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->flush();
         // Finished fixtures cannot use native acceptance; stamp accepted_at directly.
-        $this->store->applyAcceptedByRecord($id, $sessionId, new \DateTimeImmutable());
+        $this->assertTrue($this->store->acceptLocal($id, $sessionId));
 
         return ['id' => $id, 'log' => $logPath];
     }

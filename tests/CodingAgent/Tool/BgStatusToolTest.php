@@ -404,11 +404,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $candidate = $this->manager->resolveBackgroundAcceptance($started->statusPath, $sessionId);
         if (null === $candidate) {
             // Short commands can finish before acceptance; durable acceptance still applies.
-            self::getContainer()->get(ProcessStore::class)->applyAcceptedByRecord(
-                $started->id,
-                $sessionId,
-                new \DateTimeImmutable(),
-            );
+            $this->assertTrue(self::getContainer()->get(ProcessStore::class)->acceptLocal($started->id, $sessionId));
         } else {
             $this->manager->acceptResolvedBackground($candidate);
         }

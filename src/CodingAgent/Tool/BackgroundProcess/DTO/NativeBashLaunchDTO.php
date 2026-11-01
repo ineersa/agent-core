@@ -8,7 +8,7 @@ namespace Ineersa\CodingAgent\Tool\BackgroundProcess\DTO;
  * Local native launch facts retained by the supervising worker.
  *
  * Distinct from the durable background_process row. Foreground completion
- * uses these paths and PIDs directly; persistence is one-way to run_control.
+ * uses these paths and PIDs directly; Bash persists native facts locally.
  */
 final readonly class NativeBashLaunchDTO
 {

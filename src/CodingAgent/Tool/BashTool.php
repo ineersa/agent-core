@@ -104,6 +104,10 @@ final class BashTool implements HatfieldToolProviderInterface
                         throw new ToolCallException(\sprintf('Native Bash launch vanished unexpectedly (PID %d).', $pid), retryable: false);
                     }
 
+                    if ($record->accepted) {
+                        return $this->backgroundAcknowledgment($pid);
+                    }
+
                     if (BackgroundProcessStatusEnum::Running !== $record->status) {
                         return $this->handleFinished($record, $sessionId, $toolCallId, $retainedOutputPath);
                     }
@@ -113,7 +117,9 @@ final class BashTool implements HatfieldToolProviderInterface
                     }
 
                     if (hrtime(true) > $deadline) {
-                        $this->manager->stopByStatusPath($statusPath, $sessionId);
+                        if (!$this->manager->stopForegroundByStatusPath($statusPath, $sessionId)) {
+                            return $this->backgroundAcknowledgment($pid);
+                        }
                         $partialOutput = $this->readOutputForNativePaths(
                             $logPath,
                             $statusPath,
@@ -141,7 +147,7 @@ final class BashTool implements HatfieldToolProviderInterface
                             continue;
                         }
                         // Freshest cancel check after observation/identity resolution
-                        // and immediately before the local acceptance transition.
+                        // and again under its sidecar lock before acceptance.
                         if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
                             return $this->cancelNative($statusPath, $sessionId, $pid, $toolCallId);
                         }
@@ -149,7 +155,7 @@ final class BashTool implements HatfieldToolProviderInterface
                         if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
                             return $this->cancelNative($statusPath, $sessionId, $pid, $toolCallId);
                         }
-                        if (!$this->manager->acceptResolvedBackground($candidate)) {
+                        if (!$this->manager->acceptResolvedBackground($candidate, $cancelToken)) {
                             continue;
                         }
 
@@ -198,8 +204,10 @@ final class BashTool implements HatfieldToolProviderInterface
         ?string $sessionId,
         int $pid,
         ?string $toolCallId,
-    ): never {
-        $this->manager->stopByStatusPath($statusPath, $sessionId);
+    ): string {
+        if (!$this->manager->stopForegroundByStatusPath($statusPath, $sessionId)) {
+            return $this->backgroundAcknowledgment($pid);
+        }
         $this->logger->info('bash_tool.cancelled', [
             'component' => 'tool.bash',
             'event_type' => 'bash_tool.cancelled',

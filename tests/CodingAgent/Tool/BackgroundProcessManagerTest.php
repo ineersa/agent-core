@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception as DbalException;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
@@ -170,6 +171,132 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
                 fclose($peer);
             }
             fclose($server);
+        }
+    }
+
+    #[TestWith(['cancel'])]
+    #[TestWith(['timeout'])]
+    #[TestWith(['release'])]
+    #[TestWith(['reap'])]
+    #[TestWith(['observe'])]
+    public function testOverlappingDeliveryPreservesOtherDeliveryAcceptance(string $mode): void
+    {
+        [$server, $command, $marker] = $this->blockedCommand();
+        $peer = null;
+        $other = $this->newManager();
+        $key = json_encode([1, 'step', 'call'], \JSON_THROW_ON_ERROR);
+        try {
+            $first = $this->manager->start($command, $this->runId, 'call', hrtime(true) - 1, invocationKey: $key);
+            $peer = stream_socket_accept($server, 2);
+            $this->assertIsResource($peer);
+            $second = $other->start($command, $this->runId, 'call', invocationKey: $key);
+            $this->assertSame($first->pid, $second->pid);
+            $accept = function () use ($first): void {
+                $candidate = $this->manager->resolveBackgroundAcceptance($first->statusPath, $this->runId);
+                $this->assertNotNull($candidate);
+                $this->assertTrue($this->manager->acceptResolvedBackground($candidate));
+            };
+            if (\in_array($mode, ['cancel', 'timeout'], true)) {
+                $token = $this->createStub(CancellationTokenInterface::class);
+                // Acceptance happens after the second delivery's observation but
+                // before its foreground cancellation/timeout decision.
+                $checks = 0;
+                $token->method('isCancellationRequested')->willReturnCallback(static function () use ($accept, $mode, &$checks): bool {
+                    if (1 === ++$checks) {
+                        return false; // ToolRuntime's pre-start checkpoint.
+                    }
+                    $accept();
+
+                    return 'cancel' === $mode;
+                });
+                $accessor = new StackToolExecutionContextAccessor();
+                $tool = new BashTool($other, $accessor, new ToolRuntime($accessor), new NullLogger(), self::getContainer()->get(ToolPayloadStoreInterface::class), new BashToolConfig());
+                $ack = $accessor->with(new ToolContext($this->runId, 1, 'call', 'bash', $token, 30, stepId: 'step'), static fn () => $tool(new BashArgumentsDTO(command: $command)));
+                $this->assertStringContainsString('Command moved to background.', $ack);
+            } else {
+                $accept();
+                if ('release' === $mode) {
+                    $other->releaseNativeInvocation($second->statusPath);
+                } elseif ('reap' === $mode) {
+                    $this->assertSame(0, $other->shutdownCleanup());
+                } else {
+                    $this->assertTrue($other->observeNativeByStatusPath($second->statusPath, $this->runId)?->accepted);
+                }
+            }
+            $this->assertSame(0, $other->shutdownCleanup());
+            $this->assertSame('x', file_get_contents($marker));
+            $record = $this->manager->findByStatusPath($first->statusPath, $this->runId);
+            $this->assertNotNull($record);
+            $this->assertNotNull($record->backgroundedAt);
+            $this->assertNull($record->finishedAt);
+            $this->manager->stopByRecordId($record->id, $this->runId);
+            $this->assertNotNull($this->manager->findByRecordId($record->id, $this->runId)?->finishedAt);
+        } finally {
+            if (\is_resource($peer)) {
+                fclose($peer);
+            }
+            fclose($server);
+            $other->shutdownCleanup();
+            $this->manager->shutdownCleanup();
+        }
+    }
+
+    public function testForegroundStopPreventsStaleCandidateAcceptance(): void
+    {
+        [$server, $command] = $this->blockedCommand();
+        $peer = null;
+        $other = $this->newManager();
+        try {
+            $first = $this->manager->start($command, $this->runId, 'call', invocationKey: 'stop-first');
+            $peer = stream_socket_accept($server, 2);
+            $this->assertIsResource($peer);
+            $other->start($command, $this->runId, 'call', invocationKey: 'stop-first');
+            $candidate = $this->manager->resolveBackgroundAcceptance($first->statusPath, $this->runId);
+            $this->assertNotNull($candidate);
+            $cancel = $this->createStub(CancellationTokenInterface::class);
+            $cancel->method('isCancellationRequested')->willReturn(true);
+            $this->assertFalse($this->manager->acceptResolvedBackground($candidate, $cancel));
+            $this->assertTrue($other->stopForegroundByStatusPath($first->statusPath, $this->runId));
+            $this->assertFalse($this->manager->acceptResolvedBackground($candidate));
+            $this->assertNull($this->manager->findByStatusPath($first->statusPath, $this->runId)?->backgroundedAt);
+        } finally {
+            if (\is_resource($peer)) {
+                fclose($peer);
+            }
+            fclose($server);
+            $other->shutdownCleanup();
+            $this->manager->shutdownCleanup();
+        }
+    }
+
+    public function testSessionSweepFindsNestedLaunchWithoutOriginalManager(): void
+    {
+        [$server, $command] = $this->blockedCommand();
+        $peers = [];
+        $foreign = 'other-session';
+        try {
+            $local = $this->manager->start($command, $this->runId);
+            $peers[] = stream_socket_accept($server, 2);
+            $this->assertIsResource($peers[0]);
+            $other = $this->manager->start($command, $foreign);
+            $peers[] = stream_socket_accept($server, 2);
+            $this->assertIsResource($peers[1]);
+            $this->assertSame([], $this->store->sessionSnapshots($this->runId));
+            $this->assertSame([], $this->store->sessionSnapshots($foreign));
+            $sweeper = $this->newManager();
+            $sweeper->cleanupSessionSidecars($this->runId);
+            $this->assertNotNull($this->manager->observeNativeByStatusPath($local->statusPath, $this->runId)?->finishedAt);
+            $this->assertNull($this->manager->observeNativeByStatusPath($other->statusPath, $foreign)?->finishedAt);
+            $this->manager->releaseNativeInvocation($local->statusPath);
+            $this->assertFileDoesNotExist($local->statusPath);
+        } finally {
+            foreach ($peers as $peer) {
+                if (\is_resource($peer)) {
+                    fclose($peer);
+                }
+            }
+            fclose($server);
+            $this->manager->shutdownCleanup();
         }
     }
 

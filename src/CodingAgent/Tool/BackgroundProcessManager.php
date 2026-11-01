@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
 use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
@@ -25,7 +26,7 @@ use Symfony\Component\Finder\Finder;
 use function Amp\delay;
 
 /**
- * Native process supervision with owner-backed durable metadata.
+ * Native process supervision with tool-local durable metadata.
  *
  * This is a facade that delegates database operations to ProcessStore
  * and OS/filesystem operations to ProcessLifecycle.
@@ -177,9 +178,8 @@ final class BackgroundProcessManager
     ): StartResult {
         $runId = $sessionId ?? '';
         $scoped = '' !== $runId && null !== $toolCallId && '' !== $toolCallId;
-        $prefix = $scoped
-            ? hash('sha256', $runId).'-'.hash('sha256', $invocationKey ?? $toolCallId)
-            : bin2hex(random_bytes(16));
+        $suffix = $scoped ? hash('sha256', $invocationKey ?? $toolCallId) : bin2hex(random_bytes(32));
+        $prefix = '' !== $runId ? hash('sha256', $runId).'-'.$suffix : $suffix;
         $directory = $this->lifecycle->ensureStorageDir();
         $pidFile = $directory.'/'.$prefix.'.pid';
         $statusFile = $directory.'/'.$prefix.'.status';
@@ -498,17 +498,54 @@ final class BackgroundProcessManager
      *
      * @param array{kind: 'native', statusPath: string, pid: int, sessionId: string}|array{kind: 'record', statusPath: string, recordId: int, pid: ?int, sessionId: string} $candidate
      */
-    public function acceptResolvedBackground(array $candidate): bool
+    public function acceptResolvedBackground(array $candidate, ?CancellationTokenInterface $cancellationToken = null): bool
     {
         $statusPath = $candidate['statusPath'];
-        if ('native' === $candidate['kind']) {
-            $native = $this->nativeLaunches[$statusPath] ?? null;
-            if (null === $native || $native->pid !== $candidate['pid'] || $native->sessionId !== $candidate['sessionId']) {
-                throw new \RuntimeException('Bash background acceptance native/session mismatch.');
-            }
+
+        return $this->lifecycle->withSidecarLock($statusPath, function () use ($candidate, $statusPath, $cancellationToken): bool {
             $id = $this->store->recordIdForStatusPath($statusPath, $candidate['sessionId']);
-            if (null === $id || !$this->store->acceptLocal($id, $candidate['sessionId'])) {
-                throw new \RuntimeException('Background acceptance requires the launched process record.');
+            $record = null === $id ? null : $this->store->snapshot($id);
+            if (null !== $record?->backgroundedAt) {
+                $this->releaseNativeLaunch($statusPath);
+
+                return true;
+            }
+            // Lock acquisition can yield. Recheck cancellation after acquiring
+            // it; an acceptance already committed by another delivery still wins.
+            if ($cancellationToken?->isCancellationRequested()) {
+                return false;
+            }
+            if (null !== $record?->finishedAt || null !== $this->lifecycle->readStatusFile($statusPath)
+                || null === $record?->pid || !$this->lifecycle->isAlive($record->pid)) {
+                return false;
+            }
+            if ('native' === $candidate['kind']) {
+                $native = $this->nativeLaunches[$statusPath] ?? null;
+                if (null === $native || $native->pid !== $candidate['pid'] || $native->sessionId !== $candidate['sessionId']) {
+                    throw new \RuntimeException('Bash background acceptance native/session mismatch.');
+                }
+                $id = $this->store->recordIdForStatusPath($statusPath, $candidate['sessionId']);
+                if (null === $id || !$this->store->acceptLocal($id, $candidate['sessionId'])) {
+                    throw new \RuntimeException('Background acceptance requires the launched process record.');
+                }
+                $this->releaseNativeLaunch($statusPath);
+                $this->logger->info('background_process.marked_backgrounded', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.marked_backgrounded',
+                    'process_pid' => $candidate['pid'],
+                    'status_path' => $statusPath,
+                    'process_session_id' => $candidate['sessionId'],
+                    'run_id' => $candidate['sessionId'],
+                    'session_id' => $candidate['sessionId'],
+                ]);
+
+                return true;
+            }
+
+            if ($candidate['recordId'] > 0) {
+                if (!$this->store->acceptLocal($candidate['recordId'], $candidate['sessionId'])) {
+                    throw new \RuntimeException('Bash background acceptance record/session mismatch.');
+                }
             }
             $this->releaseNativeLaunch($statusPath);
             $this->logger->info('background_process.marked_backgrounded', [
@@ -516,64 +553,43 @@ final class BackgroundProcessManager
                 'event_type' => 'background_process.marked_backgrounded',
                 'process_pid' => $candidate['pid'],
                 'status_path' => $statusPath,
+                'record_id' => $candidate['recordId'],
                 'process_session_id' => $candidate['sessionId'],
                 'run_id' => $candidate['sessionId'],
                 'session_id' => $candidate['sessionId'],
             ]);
 
             return true;
-        }
-
-        if ($candidate['recordId'] > 0) {
-            if (!$this->store->acceptLocal($candidate['recordId'], $candidate['sessionId'])) {
-                throw new \RuntimeException('Bash background acceptance record/session mismatch.');
-            }
-        }
-        $this->releaseNativeLaunch($statusPath);
-        $this->logger->info('background_process.marked_backgrounded', [
-            'component' => 'tool.background_process',
-            'event_type' => 'background_process.marked_backgrounded',
-            'process_pid' => $candidate['pid'],
-            'status_path' => $statusPath,
-            'record_id' => $candidate['recordId'],
-            'process_session_id' => $candidate['sessionId'],
-            'run_id' => $candidate['sessionId'],
-            'session_id' => $candidate['sessionId'],
-        ]);
-
-        return true;
+        });
     }
 
     /**
-     * Stop an exact local native launch or an accepted background record.
+     * Stop foreground work unless durable background acceptance already won.
      *
-     * Same TERM → grace → KILL lifecycle as stop(), without creating metadata
-     * for a foreground invocation.
-     * Nonblocking callers leave grace and escalation to the owning controller.
+     * @return bool true when stopped; false when accepted ownership is preserved
      *
      * @throws \RuntimeException when record not found, session mismatch, or invalid state
      */
-    public function stopByStatusPath(string $statusPath, ?string $sessionId = null, bool $waitForExit = true): StopResult
+    public function stopForegroundByStatusPath(string $statusPath, ?string $sessionId = null): bool
     {
-        $native = $this->nativeLaunches[$statusPath] ?? null;
-        if (null !== $native) {
-            if (null !== $sessionId && $native->sessionId !== $sessionId) {
-                throw new \RuntimeException(\sprintf('No background process found with status path %s for this session.', $statusPath));
+        return $this->lifecycle->withSidecarLock($statusPath, function () use ($statusPath, $sessionId): bool {
+            $native = $this->nativeLaunches[$statusPath] ?? null;
+            $record = null === $sessionId ? null : $this->findByStatusPath($statusPath, $sessionId);
+            if (null !== $record?->backgroundedAt) {
+                $this->releaseNativeLaunch($statusPath);
+
+                return false;
             }
+            if (null === $native || (null !== $sessionId && $native->sessionId !== $sessionId)) {
+                throw new \RuntimeException('No locally owned foreground Bash invocation for this session.');
+            }
+            // Acceptance uses this same lock. Keep it through native ownership
+            // lookup and signalling, including cooperative ps waits.
+            $this->lifecycle->stopProcess($native->pid, $native->pgid, $statusPath);
+            $this->observeNative($native);
 
-            return $this->lifecycle->withSidecarLock($statusPath, function () use ($native, $statusPath, $waitForExit): StopResult {
-                $result = $this->lifecycle->stopProcess($native->pid, $native->pgid, $statusPath, $waitForExit);
-                $this->observeNative($native);
-
-                return $result;
-            });
-        }
-        $record = $this->findByStatusPath($statusPath, $sessionId);
-        if (null === $record || $record->id <= 0) {
-            throw new \RuntimeException(\sprintf('No background process found with status path %s for this session.', $statusPath));
-        }
-
-        return $this->stopByRecordId($record->id, $sessionId, $waitForExit);
+            return true;
+        });
     }
 
     /**
@@ -603,10 +619,10 @@ final class BackgroundProcessManager
 
         // Exceptional paths may still own a running unaccepted launch. Stop it
         // with existing native supervision before dropping the handle. Accepted
-        // detach already released, so this path never signals those jobs.
+        // detach in another delivery is rechecked under the signalling lock.
         $exitCode = $this->lifecycle->readStatusFile($statusPath);
         if (null === $exitCode && $this->lifecycle->isAlive($native->pid)) {
-            $this->stopByStatusPath($statusPath, '' !== $native->sessionId ? $native->sessionId : null);
+            $this->stopForegroundByStatusPath($statusPath, '' !== $native->sessionId ? $native->sessionId : null);
             $native = $this->nativeLaunches[$statusPath] ?? null;
             if (null === $native) {
                 return;
@@ -890,6 +906,10 @@ final class BackgroundProcessManager
         $id = '' === $native->sessionId ? null : $this->store->recordIdForStatusPath($native->statusPath, $native->sessionId);
         $record = null === $id ? null : $this->store->snapshot($id);
         $backgroundRequested = $native->backgroundRequested || ($record->backgroundRequested ?? false);
+        $accepted = null !== $record?->backgroundedAt;
+        if ($accepted) {
+            $this->releaseNativeLaunch($native->statusPath);
+        }
         if ($finished) {
             if (-1 === $exitCode) {
                 $status = BackgroundProcessStatusEnum::Stopped;
@@ -915,6 +935,7 @@ final class BackgroundProcessManager
             toolCallId: $native->toolCallId,
             backgroundRequested: $backgroundRequested,
             status: $status,
+            accepted: $accepted,
         );
     }
 
@@ -995,9 +1016,10 @@ final class BackgroundProcessManager
                     $this->releaseNativeLaunch($statusPath);
                     continue;
                 }
-                $this->stopByStatusPath($statusPath, '' !== $launch->sessionId ? $launch->sessionId : null);
+                if ($this->stopForegroundByStatusPath($statusPath, '' !== $launch->sessionId ? $launch->sessionId : null)) {
+                    ++$count;
+                }
                 $this->releaseNativeLaunch($statusPath);
-                ++$count;
             } catch (\Throwable $error) {
                 $this->logger->error('background_process.native_reap_failed', [
                     'component' => 'tool.background_process',

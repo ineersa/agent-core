@@ -26,6 +26,7 @@ final readonly class NativeBashObservationDTO
         public ?string $toolCallId,
         public bool $backgroundRequested,
         public BackgroundProcessStatusEnum $status,
+        public bool $accepted = false,
     ) {
     }
 }

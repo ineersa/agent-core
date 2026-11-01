@@ -179,15 +179,16 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
             $manager->flush();
 
             $finishedAt = new \DateTimeImmutable('2026-10-30 12:00:00');
-            $acceptedAt = new \DateTimeImmutable('2026-10-30 12:00:01');
             $store->applyFinishedByRecord($process->id, 'accept-owner', 0, BackgroundProcessStatusEnum::Finished, false, $finishedAt);
-            $store->applyAcceptedByRecord($process->id, 'accept-owner', $acceptedAt);
+            $this->assertTrue($store->acceptLocal($process->id, 'accept-owner'));
 
             $snapshot = $store->snapshot($process->id);
             $this->assertNotNull($snapshot);
             $this->assertNotNull($snapshot->finishedAt);
             $this->assertNotNull($snapshot->backgroundedAt);
-            $this->assertSame($acceptedAt->format('Y-m-d H:i:s'), $snapshot->backgroundedAt->format('Y-m-d H:i:s'));
+            $acceptedAt = $snapshot->backgroundedAt;
+            $this->assertTrue($store->acceptLocal($process->id, 'accept-owner'));
+            $this->assertEquals($acceptedAt, $store->snapshot($process->id)?->backgroundedAt);
             $this->assertCount(1, $store->completionSnapshots(['accept-owner']));
         } finally {
             TestDirectoryIsolation::removeDirectory($directory);

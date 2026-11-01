@@ -79,19 +79,6 @@ final class ProcessStore
         );
     }
 
-    public function applyAcceptedByRecord(int $recordId, string $runId, \DateTimeImmutable $acceptedAt): void
-    {
-        $this->entityManager->getConnection()->executeStatement(
-            'UPDATE background_process SET backgrounded_at = COALESCE(backgrounded_at, ?), updated_at = ? WHERE id = ? AND session_id = ?',
-            [
-                $acceptedAt->format('Y-m-d H:i:s'),
-                Clock::get()->now()->format('Y-m-d H:i:s'),
-                $recordId,
-                $runId,
-            ],
-        );
-    }
-
     public function recordIdForStatusPath(string $statusPath, string $runId): ?int
     {
         $id = $this->entityManager->getConnection()->fetchOne(
