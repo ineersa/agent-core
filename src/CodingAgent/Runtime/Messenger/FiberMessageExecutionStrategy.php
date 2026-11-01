@@ -17,11 +17,12 @@ use function Amp\async;
 use function Amp\Future\awaitFirst;
 
 /**
- * Same-process cooperative Messenger strategy for overlapping LLM handlers.
+ * Same-process cooperative Messenger strategy for overlapping execution handlers.
  *
  * Schedules bus dispatch inside Amp futures and yields through wait() so the
- * unmodified Symfony 8.2 Worker can admit up to the configured capacity without
- * spawning ParallelExecutionStrategy child processes.
+ * unmodified Symfony 8.2 Worker can overlap handlers without spawning
+ * ParallelExecutionStrategy child processes. A null limit disables admission
+ * pausing; a positive limit bounds in-flight handlers.
  */
 final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInterface
 {
@@ -35,9 +36,9 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
 
     public function __construct(
         private readonly MessageBusInterface $bus,
-        private readonly int $concurrencyLimit = 4,
+        private readonly ?int $concurrencyLimit = 4,
     ) {
-        if ($this->concurrencyLimit < 1) {
+        if (null !== $this->concurrencyLimit && $this->concurrencyLimit < 1) {
             throw new \InvalidArgumentException('FiberMessageExecutionStrategy concurrency limit must be a positive integer.');
         }
     }
@@ -76,7 +77,7 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
 
     public function shouldPauseConsumption(): bool
     {
-        return \count($this->pending) >= $this->concurrencyLimit;
+        return null !== $this->concurrencyLimit && \count($this->pending) >= $this->concurrencyLimit;
     }
 
     /**

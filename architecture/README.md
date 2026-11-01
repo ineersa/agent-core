@@ -47,7 +47,7 @@ flowchart TB
     Broker -->|Commands and results| RC["run_control process<br/>serialized transitions and lifecycle writes"]
     RC -->|Execution effects and replies| Broker
     Broker -->|llm queue| LLM["One LLM process<br/>up to 10 concurrent handlers by default"]
-    Broker -->|tool and agent queues| Tool["One tool process<br/>up to 16 concurrent handlers by default"]
+    Broker -->|tool and agent queues| Tool["One tool process<br/>no worker admission cap"]
     Broker -->|mcp queue| MCP["One MCP process<br/>serialized connection ownership"]
     LLM -->|Results| Broker
     Tool -->|Results and lifecycle commands| Broker
@@ -67,7 +67,7 @@ The `agent` queue still exists, but has no separate consumer process. Scheduler 
 optional extension-agent workers are detailed in [processes and queues](processes-and-queues.md).
 
 `runtime.llm_concurrency` bounds active LLM handlers, not process counts.
-`runtime.tool_concurrency` still exists for the shared tool consumer. A waiting
+The shared tool consumer has no worker-level admission cap. A waiting
 handler yields so another Fiber can run; synchronous CPU or blocking I/O still
 blocks its process. `tools.execution.max_parallelism` separately limits admission
 within a tool batch.
