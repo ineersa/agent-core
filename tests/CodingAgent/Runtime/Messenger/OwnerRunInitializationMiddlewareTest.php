@@ -94,6 +94,46 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
         $this->assertCount(3, array_filter($all, static fn (RunEvent $event): bool => 'turn_advanced' === $event->type));
     }
 
+    #[\PHPUnit\Framework\Attributes\TestWith([true])]
+    #[\PHPUnit\Framework\Attributes\TestWith([false])]
+    public function testConsumedResumeReleasesReconstructedTerminalChildOnly(bool $terminal): void
+    {
+        $container = self::getContainer();
+        $parent = $this->reserve();
+        $run = 'resume-recovered-child';
+        $container->get(AgentArtifactRegistry::class)->create($parent, 'agent_resume_target', $run, 'scout', AgentArtifactKindEnum::Subagent);
+        $bus = $container->get('agent.command.bus');
+        $receive = static fn (object $message) => $bus->dispatch(new Envelope($message, [new ReceivedStamp('run_control')]));
+        $receive($this->childStart($run, $parent));
+        $resume = static fn (string $key): ApplyCommand => new ApplyCommand($run, 0, $key, 1, $key, 'follow_up', [
+            'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'task']], 'metadata' => ['agent_task' => ['artifact_id' => 'agent_resume_target']]],
+        ]);
+        $receive($resume('same-resume'));
+        $state = $this->registry()->requireLoaded($run);
+        $result = $container->get(AdvanceRunHandler::class)->handle(new AdvanceRun($run, $state->turnNo, 'drain', 1, 'drain'), $state->with(['currentOperation' => null, 'activeStepId' => null]));
+        $container->get(PreparedTransitionEventStoreInterface::class)->appendTransition($result->events, ['run_id' => $run, 'predecessor_seq' => $state->lastSeq, 'actions' => $result->postCommitActions]);
+        $container->get(PendingTransitionRecovery::class)->recover($run);
+        $events = $container->get(EventStoreInterface::class);
+        if ($terminal) {
+            PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'agent_end', ['reason' => 'completed']));
+        }
+        $this->registry()->release($run);
+        $before = iterator_to_array($events->rangeFor($run, 1, \PHP_INT_MAX));
+        $downstream = $this->createMock(MiddlewareInterface::class);
+        $downstream->expects($this->never())->method('handle');
+        $container->get(OwnerRunInitializationMiddleware::class)->handle(new Envelope($resume('same-resume'), [new ReceivedStamp('run_control')]), new StackMiddleware($downstream));
+        $this->assertEquals($before, iterator_to_array($events->rangeFor($run, 1, \PHP_INT_MAX)));
+        $this->assertSame([], $container->get(CommandStoreInterface::class)->pending($run));
+        if ($terminal) {
+            $this->expectException(RunContextNotLoadedException::class);
+            $this->registry()->requireLoaded($run);
+        } else {
+            $this->assertSame(RunStatus::Running, $this->registry()->requireLoaded($run)->status);
+            $receive($resume('distinct-resume'));
+            $this->assertCount(1, $container->get(CommandStoreInterface::class)->pending($run));
+        }
+    }
+
     #[\PHPUnit\Framework\Attributes\DataProvider('launchKinds')]
     public function testEnqueuedChildStartIsAcceptedByFreshOwnerDirectory(AgentArtifactKindEnum $kind): void
     {

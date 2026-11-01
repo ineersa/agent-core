@@ -74,6 +74,8 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
             // boundary as application. Stop duplicates before history-tail discard.
             if ($message instanceof ApplyCommand && $this->resumeCommands->isResumeCommand($message)
                 && null !== $this->resumeCommands->find($runId, $message->idempotencyKey())) {
+                $this->releaseTerminalChild($runId);
+
                 return $envelope;
             }
 
@@ -96,14 +98,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
             }
 
             if ($message instanceof StartRun || $message instanceof CompleteSubmissionDTO) {
-                $child = $this->children->locate($runId);
-                $status = $this->operationalStatus->findOperationalStatus($runId)?->status;
-                // These handlers can settle a late envelope without entering
-                // RunMessageProcessor's terminal no-op release. Owner recovery
-                // must not leave that finished child's execution graph resident.
-                if (null !== $child && null !== $status && $status->isTerminal()) {
-                    $this->registry->release($runId);
-                }
+                $this->releaseTerminalChild($runId);
             }
 
             return $handled;
@@ -165,5 +160,15 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
                 }
             }
         });
+    }
+
+    /** Late no-op handlers bypass RunMessageProcessor's terminal child release. */
+    private function releaseTerminalChild(string $runId): void
+    {
+        $child = $this->children->locate($runId);
+        $status = $this->operationalStatus->findOperationalStatus($runId)?->status;
+        if (null !== $child && null !== $status && $status->isTerminal()) {
+            $this->registry->release($runId);
+        }
     }
 }
