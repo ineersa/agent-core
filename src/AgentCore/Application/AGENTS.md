@@ -41,7 +41,7 @@ Workers post results (`LlmStepResult`, `ToolCallResult`, `CompactionStepResult`)
 
 The controller runs one Fiber execution consumer for `tool` and `agent` together.
 The agent transport remains a durable routing destination, not a separate process.
-`runtime.tool_concurrency` limits shared admission; `tools.execution.max_parallelism`
+Shared worker admission has no concurrency cap; `tools.execution.max_parallelism`
 still limits each batch. Run-lock reentrancy and release callbacks belong to the
 calling Fiber, not every invocation in the process.
 

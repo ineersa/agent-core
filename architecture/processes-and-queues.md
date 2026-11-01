@@ -95,7 +95,7 @@ The `agent` and `tool` transports are distinct queues consumed by the same proce
 |---|---|---|
 | `run_control` | 1 | Serialized commands, results, state transitions, canonical commits and lifecycle metadata mutations |
 | `llm` | 1 | `runtime.llm_concurrency`, default **10** overlapping model or compaction handlers |
-| `tool` + `agent` | 1 shared | `runtime.tool_concurrency`, default **16** overlapping generic-tool, shell, fork, subagent and resume handlers |
+| `tool` + `agent` | 1 shared | No worker admission cap for overlapping generic-tool, shell, fork, subagent and resume handlers |
 | `mcp` | 1 | Serialized MCP tools and connection lifecycle |
 | `extension_agent` | 0 or 1 | Extension-owned jobs; omitted when no handlers are registered |
 | `scheduler_default` | 1 | Symfony Scheduler recurring messages; not a durable broker queue |
@@ -113,21 +113,22 @@ execution uses child processes instead and is not this topology.
 ```mermaid
 flowchart LR
     Queue["llm queue or tool + agent queues"] --> Worker[Symfony Messenger Worker]
-    Worker --> Capacity{Capacity available?}
+    Worker --> Capacity{LLM capacity available<br/>or tool role?}
     Capacity -->|Yes| Strategy[FiberMessageExecutionStrategy]
     Strategy --> A[Handler Fiber A]
     Strategy --> B[Handler Fiber B]
     A -->|Await HTTP, subprocess I/O or owner reply| Loop[Amp / Revolt event loop]
     B -->|Await cooperative work| Loop
-    Capacity -->|No: pause consumption| Loop
+    Capacity -->|LLM full: pause consumption| Loop
     Loop -->|Ready future| Settle[Report handled envelope to Worker]
     Settle -->|ACK or failure handling; release slot| Worker
 ```
 
-Capacity counts in-flight handlers, not all active child runs. A deferred child
-launch returns before the child finishes, releasing its tool slot. The child's
-later LLM and tool messages use the same workers. `tools.execution.max_parallelism`
-still limits admission within each tool batch, independently of worker capacity.
+LLM capacity counts in-flight handlers, not all active child runs. Tools have no
+worker-level concurrency cap; finite receiver fetches do not bound in-flight work.
+A deferred child launch returns before the child finishes. The child's later LLM
+and tool messages use the same workers. `tools.execution.max_parallelism` still
+limits admission within each tool batch, independently of worker capacity.
 HTTP connection limits also remain separate from LLM handler capacity.
 
 Amp HTTP and retry waits yield; Bash and code-mode supervision also yield while

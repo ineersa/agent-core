@@ -187,8 +187,6 @@ final class ControllerReplayParallelToolOverlapTest extends ControllerReplayE2eT
     protected function extraSettingsYaml(): string
     {
         return <<<'YAML'
-runtime:
-    tool_concurrency: 2
 tools:
     execution:
         max_parallelism: 2
