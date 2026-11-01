@@ -11,9 +11,11 @@ use DoctrineMigrations\Version20260607000000;
 use DoctrineMigrations\Version20261019185942;
 use DoctrineMigrations\Version20261021034317;
 use DoctrineMigrations\Version20261022235428;
+use DoctrineMigrations\Version20261030155748;
 use Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\TestWith;
 use Psr\Log\NullLogger;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -41,6 +43,31 @@ final class ApplicationMigrationExecutorTest extends IsolatedKernelTestCase
     {
         TestDirectoryIsolation::removeDirectory($this->isolatedDir);
         parent::tearDown();
+    }
+
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testBashRebuildPreservesRetiredRecordHighWater(bool $survivingRow): void
+    {
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/bash-high-water.sqlite');
+        (new ApplicationMigrationExecutor($connection, new NullLogger()))();
+        $row = ['pid' => 12345, 'session_id' => 'historical', 'command' => 'finished', 'log_path' => 'log', 'status_path' => 'status', 'started_at' => '2026-10-31 00:00:00', 'stopped_by_user' => 0, 'status' => 'finished', 'created_at' => '2026-10-31 00:00:00', 'updated_at' => '2026-10-31 00:00:00'];
+        if ($survivingRow) {
+            $connection->insert('background_process', ['id' => 41, ...$row]);
+        }
+        $connection->insert('background_process', ['id' => 900, ...$row]);
+        $connection->delete('background_process', ['id' => 900]);
+        foreach (['down', 'up'] as $direction) {
+            $migration = new Version20261030155748($connection, new NullLogger());
+            $migration->$direction(new Schema());
+            foreach ($migration->getSql() as $query) {
+                $connection->executeStatement($query->getStatement());
+            }
+            $this->assertSame(900, (int) $connection->fetchOne("SELECT seq FROM sqlite_sequence WHERE name = 'background_process'"));
+            $this->assertSame($survivingRow ? [41] : [], array_map('intval', $connection->fetchFirstColumn('SELECT id FROM background_process')));
+        }
+        $connection->insert('background_process', $row);
+        $this->assertSame(901, (int) $connection->lastInsertId(), 'A retained receipt for record 900 must never name a new job.');
     }
 
     public function testEmptySqliteDatabaseGetsAppSchemaAfterStartupExecutor(): void

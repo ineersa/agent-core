@@ -47,6 +47,8 @@ final class Version20261030155748 extends AbstractMigration
             FROM
               background_process
         SQL);
+        // Preserve retired record IDs: retained completion receipts reference them.
+        $this->addSql('CREATE TEMPORARY TABLE __temp__background_process_seq AS SELECT seq FROM sqlite_sequence WHERE name = \'background_process\'');
         $this->addSql('DROP TABLE background_process');
         $this->addSql(<<<'SQL'
             CREATE TABLE background_process (
@@ -104,6 +106,9 @@ final class Version20261030155748 extends AbstractMigration
               __temp__background_process
         SQL);
         $this->addSql('DROP TABLE __temp__background_process');
+        $this->addSql('UPDATE sqlite_sequence SET seq = (SELECT MAX(v) FROM (SELECT seq AS v FROM sqlite_sequence WHERE name = \'background_process\' UNION ALL SELECT seq AS v FROM __temp__background_process_seq)) WHERE name = \'background_process\'');
+        $this->addSql('INSERT INTO sqlite_sequence (name, seq) SELECT \'background_process\', seq FROM __temp__background_process_seq WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = \'background_process\')');
+        $this->addSql('DROP TABLE __temp__background_process_seq');
         $this->addSql('CREATE INDEX idx_bg_process_finished_at ON background_process (finished_at)');
         $this->addSql('CREATE INDEX idx_bg_process_session_id ON background_process (session_id)');
         $this->addSql('CREATE INDEX idx_bg_process_pid ON background_process (pid)');
@@ -164,6 +169,8 @@ final class Version20261030155748 extends AbstractMigration
             FROM
               background_process
         SQL);
+        // Preserve retired record IDs: retained completion receipts reference them.
+        $this->addSql('CREATE TEMPORARY TABLE __temp__background_process_seq AS SELECT seq FROM sqlite_sequence WHERE name = \'background_process\'');
         $this->addSql('DROP TABLE background_process');
         $this->addSql(<<<'SQL'
             CREATE TABLE background_process (
@@ -221,6 +228,9 @@ final class Version20261030155748 extends AbstractMigration
               __temp__background_process
         SQL);
         $this->addSql('DROP TABLE __temp__background_process');
+        $this->addSql('UPDATE sqlite_sequence SET seq = (SELECT MAX(v) FROM (SELECT seq AS v FROM sqlite_sequence WHERE name = \'background_process\' UNION ALL SELECT seq AS v FROM __temp__background_process_seq)) WHERE name = \'background_process\'');
+        $this->addSql('INSERT INTO sqlite_sequence (name, seq) SELECT \'background_process\', seq FROM __temp__background_process_seq WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = \'background_process\')');
+        $this->addSql('DROP TABLE __temp__background_process_seq');
         $this->addSql('CREATE INDEX idx_bg_process_pid ON background_process (pid)');
         $this->addSql('CREATE INDEX idx_bg_process_session_id ON background_process (session_id)');
         $this->addSql('CREATE INDEX idx_bg_process_finished_at ON background_process (finished_at)');
