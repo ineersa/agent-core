@@ -275,13 +275,11 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
      * Sequential Process::stop(grace) per child would delay the last consumer
      * by N×grace and orphan the tail of a large pool under parent timeout.
      */
-    public function shutdownUntil(float $deadline, bool $keepRunControl = false): void
+    public function shutdownUntil(float $deadline): void
     {
         $this->shuttingDown = true;
 
-        // Tools may need committed lifecycle replies while draining. Keep the
-        // owner alive until execution shutdown and session cleanup complete.
-        $stopping = array_filter($this->consumers, fn (string $key): bool => !$keepRunControl || 'run_control' !== $this->extractTransportName($key), \ARRAY_FILTER_USE_KEY);
+        $stopping = $this->consumers;
         if ([] === $stopping) {
             return;
         }
@@ -344,6 +342,12 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
                 'key' => $key,
                 'pid' => $pid,
             ]);
+        }
+
+        foreach ($stopping as $process) {
+            if ($process->isRunning()) {
+                throw new \RuntimeException('Cannot clean native executions while a tracked consumer is still running.');
+            }
         }
 
         $this->logger->info('Messenger consumer shutdown complete', [

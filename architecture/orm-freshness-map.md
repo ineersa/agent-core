@@ -40,18 +40,17 @@ The footer branch adds refresh to the shared point-lookup helper. That covers mo
 
 Sources: [ProcessStore](../src/CodingAgent/Tool/BackgroundProcess/ProcessStore.php), [BackgroundProcessManager](../src/CodingAgent/Tool/BackgroundProcessManager.php) and [BackgroundCompletionHandler](../src/CodingAgent/Application/Pipeline/BackgroundCompletionHandler.php).
 
-Runtime process reads use DBAL rows hydrated into immutable snapshots, not managed entity aliases. `run_control` owns registration, background acceptance, stop/timeout decisions, settlement and deletion. Serialized in-process execution and exclusive startup cleanup use the same owner-local decisions directly.
+Runtime process reads use DBAL rows hydrated into immutable snapshots, not managed entity aliases. Bash owns native launch persistence, background acceptance and local supervision. Controller operations use the same scalar store for background requests, stop/timeout decisions and session cleanup. Run control owns conversational results and completion notification admission, not native execution registration.
 
 | Method or operation | Database work | Freshness boundary | Invariant |
 |---|---|---|---|
 | `snapshot`, `latestSnapshot`, `acceptedRecordId` | SELECT by immutable record ID or PID | **Scalar SQL read** | PID lookup selects a record; later owner decisions recheck record and run identity. |
-| `fetchForegroundTools`, `backgroundSnapshots`, `unfinishedSnapshots`, `completionSnapshots`, `fetchFinishedProvisionalBefore` | SELECT candidate rows | **Scalar SQL read** | Candidates are observations, not permission to mutate or signal. |
-| `existsByPid`, `existsByRecordId` | SELECT existence | **No entity refresh** | Existence does not depend on the identity map. |
-| `insertRecord` | ORM INSERT during registration | **Owner transaction** | Registration commits the process and its stable receipt atomically. No managed record crosses a worker wait. |
-| `requestBackground`, `acceptLocal`, `decide` | Conditioned DBAL reads and updates | **Owner decision** | Stop, timeout, settlement and deletion recheck current identity and state rather than writing back a candidate snapshot. |
-| `BackgroundCompletionHandler` → `markCompletionNotified` | Recheck authority, admit retained receipt, update notification marker | **Owner admission** | Enqueuing a notification candidate is not acknowledgement. Explicit-stop suppression and duplicate delivery use current owner state. |
+| `fetchForegroundTools`, `backgroundSnapshots`, `unfinishedSnapshots`, `completionSnapshots` | SELECT candidate rows | **Scalar SQL read** | Candidates are observations, not permission to mutate or signal. |
+| `insertRecord` | Scalar DBAL INSERT after native launch | **Tool-local persistence** | Native ownership precedes fallible persistence. Matching sidecars retain execution identity if insertion fails. No managed record crosses a worker wait. |
+| `requestBackground`, `acceptLocal`, `decide` | Conditioned DBAL reads and updates | **Current scalar decision** | Stop, timeout, settlement and deletion recheck current identity and state rather than writing back a candidate snapshot. |
+| `BackgroundCompletionHandler` → `markCompletionNotified` | Recheck authority, admit retained receipt, update notification marker | **Owner admission** | Enqueuing a notification candidate is not acknowledgement. Explicit stop records cause without suppressing delivery; duplicate receipts prevent a second notification. |
 
-Native launch, output reads, signalling and cooperative grace waits remain in the manager/controller paths, outside metadata transactions. The scheduler's passive refresh never signals. Immutable record/run identity and exact status-sidecar evidence protect against PID reuse. Stop and cleanup retain the sidecar lock through their owner decision and native action; those owner operations do not acquire that lock, avoiding a circular wait. Session shutdown keeps the owner available until cleanup mutations finish. Accepted background jobs survive worker exit, not session shutdown or restart.
+Native launch, output reads, signalling and cooperative grace waits remain in the manager/controller paths, outside metadata transactions. The scheduler's passive refresh never signals. Immutable record/run identity and exact status-sidecar evidence protect against PID reuse. Stop and cleanup use the existing sidecar lock and current scalar evidence for native actions. Session shutdown stops tracked consumers before sweeping session-owned execution. Ordinary shutdown retains replay evidence; permanent deletion removes it. Accepted background jobs survive worker exit, not session shutdown or restart.
 
 There is no process-entity refresh or shared `flush` step in runtime supervision. Do not add per-message EntityManager clears beneath overlapping Fibers.
 
@@ -78,7 +77,7 @@ Tool and run-control paths coordinate a tool result that arrives later.
 |---|---|---|---|
 | `findPendingByRunAndToolCall`, `status` | ORM SELECT, read completion status | **Refresh** | A different process can complete the tool. Current reads can return cached pending status. |
 | `findByDeferredId` | ORM SELECT, return correlation data | **No status refresh required** | Returns registration data, not completion status. This is safe while the registration is immutable and the row remains present. |
-| `registerPending`, private `resolveRegistrationConflict` | Read existing registration, or SQL INSERT and reload | **No refresh for immutable registration fields** | Database uniqueness handles duplicate registration. INSERT itself needs no refresh and does not stale an existing row's fields. |
+| `preparePending`, `registerPending`, private `resolveRegistrationConflict` | Read existing registration, or SQL INSERT and reload | **No refresh for immutable registration fields** | Database uniqueness handles duplicate registration. INSERT itself needs no refresh and does not stale an existing row's fields. `preparePending` leaves `ready_at` null; late `registerPending` stamps readiness on newly inserted rows and preserves existing readiness. |
 | `markCompleted`, successful SQL path | Conditional SQL UPDATE, then detach matching cached entity | **No refresh before SQL**; keep targeted detach afterwards | SQL tests the actual stored status. Detach stops this process reusing the old cached status. |
 | `markCompleted`, zero-row SQL fallback | ORM SELECT, check status, possibly UPDATE | **Refresh** before fallback decision | The cached entity may still say pending after another process completed it. Review this fallback separately; don't add a global clear. |
 
@@ -133,6 +132,6 @@ Event logs and session snapshot files are not database queries and are outside t
 3. **Deferred status reads:** address the historical rows marked Refresh. Background-process reads now use the snapshot boundary above. Keep existing SQL concurrency checks.
 4. **Global clears:** audit helper callers before changing them. Never clear while another operation has unsaved changes.
 
-Shared Fiber execution workers do not clear or reset services between messages. Their process reads use scalar snapshots and their metadata writes go to the owner. Other lifecycle boundaries do not make cached entities fresh during a long-running operation.
+Shared Fiber execution workers do not clear or reset services between messages. Their process reads use scalar snapshots; Bash native writes and tool-local execution metadata do not require owner reply RPCs. Other lifecycle boundaries do not make cached entities fresh during a long-running operation.
 
 Open checks: deletion/lifetime assumptions marked above, callers that retain objects across a clear, actual compiled worker reset wiring, and query cost. This map makes no blanket claim that every SQLite query needs refresh.

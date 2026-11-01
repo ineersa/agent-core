@@ -7,9 +7,10 @@ namespace Ineersa\AgentCore\Domain\Tool;
 /**
  * Typed return value from a tool handler that opts into deferred completion.
  *
- * The execution worker persists the original ExecuteToolCall correlation using
- * {@see self::$deferredId} and returns without dispatching ToolCallResult until
- * CompleteDeferredToolCall runs.
+ * The execution worker resolves the owner-prepared ExecuteToolCall correlation
+ * using {@see self::$deferredId} and returns without dispatching ToolCallResult
+ * until CompleteDeferredToolCall runs. Immediate finished/background Bash
+ * outcomes use ordinary {@see ToolResult} instead of an optional completion.
  */
 final readonly class DeferredToolCompletionOutcome
 {

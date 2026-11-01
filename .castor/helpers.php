@@ -929,23 +929,8 @@ function remove_path_checked(string $path): void
         throw new \RuntimeException('Refusing to remove non-file/non-dir path: '.$path);
     }
 
-    $iterator = new \RecursiveIteratorIterator(
-        new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS),
-        \RecursiveIteratorIterator::CHILD_FIRST,
-    );
-    foreach ($iterator as $entry) {
-        $entryPath = (string) $entry;
-        if ($entry->isDir()) {
-            if (!rmdir($entryPath)) {
-                throw new \RuntimeException('Failed to remove directory: '.$entryPath);
-            }
-        } elseif (!unlink($entryPath)) {
-            throw new \RuntimeException('Failed to remove file: '.$entryPath);
-        }
-    }
-    if (!rmdir($path)) {
-        throw new \RuntimeException('Failed to remove directory: '.$path);
-    }
+    // Filesystem removes directory symlinks themselves, never their targets.
+    (new Filesystem())->remove($path);
 }
 
 /**

@@ -10,8 +10,8 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Thesis: the real controller dispatches accepted background-process cleanup
- * before runtime.ready at startup and before its owned process exits on EOF.
+ * Thesis: ordinary controller startup and shutdown retain completed native
+ * execution evidence needed for same-intent replay.
  *
  * This is intentionally a controller-process proof rather than listener-only
  * dispatch: each seed uses the same isolated app SQLite database and
@@ -32,17 +32,17 @@ final class HeadlessControllerBackgroundProcessLifecycleProcessTest extends Cont
         \PHPUnit\Framework\TestCase::tearDown();
     }
 
-    public function testControllerCleansAcceptedStateAtStartupAndShutdown(): void
+    public function testControllerRetainsAcceptedEvidenceAtStartupAndShutdown(): void
     {
         $startup = $this->seedAcceptedFinished('startup');
 
         $this->spawnController();
         $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
-        $this->assertSeedRemoved($startup);
+        $this->assertSeedRetained($startup);
 
         $shutdown = $this->seedAcceptedFinished('shutdown');
         $this->signalOwnedControllerAndWaitForExit();
-        $this->assertSeedRemoved($shutdown);
+        $this->assertSeedRetained($shutdown);
     }
 
     /**
@@ -74,18 +74,18 @@ final class HeadlessControllerBackgroundProcessLifecycleProcessTest extends Cont
     /**
      * @param array{id: int, log: string, status: string, pid: string} $seed
      */
-    private function assertSeedRemoved(array $seed): void
+    private function assertSeedRetained(array $seed): void
     {
-        $this->assertFalse(
+        $this->assertTrue(
             ControllerReplayBackgroundProcessSeeder::recordExists(
                 $this->tempDir,
                 $this->appDatabaseFilename(),
                 $seed['id'],
             ),
         );
-        $this->assertFileDoesNotExist($seed['log']);
-        $this->assertFileDoesNotExist($seed['status']);
-        $this->assertFileDoesNotExist($seed['pid']);
+        $this->assertFileExists($seed['log']);
+        $this->assertFileExists($seed['status']);
+        $this->assertFileExists($seed['pid']);
     }
 
     private function signalOwnedControllerAndWaitForExit(): void

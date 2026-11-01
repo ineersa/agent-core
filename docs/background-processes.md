@@ -58,7 +58,8 @@ Opening the picker does not call the model.
 
 The status panel shows cancellation requested until operational state confirms the outcome.
 The terminal notice clears on the next nonempty submission. Unavailable records do not
-count as confirmed termination. Quiet explicit Bash stops do not generate a model follow-up.
+count as confirmed termination. Explicit Bash stops still deliver the ordinary completion
+follow-up with the observed exit status; stop does not suppress that notification.
 In process mode, Bash stop requests go through the live session controller. If the
 controller is unavailable, the request is refused without starting or restarting it.
 A lost stop reply is an unknown outcome, not permission to repeat native signalling.
@@ -77,10 +78,10 @@ An already-finished or removed selection never targets another job with a reused
 
 ## Lifecycle
 
-1. `bash` starts each command with a private `background_process` supervision row and `.pid` / `.status` / `.log` sidecars so it can poll, stop, and read the exact foreground result.
-2. Ctrl+B requests backgrounding for one exact running invocation. Its foreground worker checks completion before accepting the request. Acceptance resolves the original tool call with an acknowledgment and marks the existing row `backgrounded_at`; only then is it visible to `bg_status` and eligible for completion notification. The command is not launched again.
-3. Finished private foreground rows remain available for one five-minute scheduler interval, then recurring maintenance removes their exact row-owned sidecars and row.
-4. Accepted background rows and their exact sidecars live only while the controller owns the session. Controller **startup** and **shutdown** both stop unfinished accepted process groups and remove their rows/sidecars (startup repairs crash leftovers; shutdown cleans the live session). The provisional 300s sweep does **not** handle accepted rows.
+1. Bash derives stable native paths from the invocation identity. Its wrapper exclusively claims `.pid` and publishes readiness before running the command. Actual launch facts are stored after startup, without owner preparation or reply messages.
+2. Redelivery of the same invocation reattaches to the live wrapper or returns its retained output. Existing but unverifiable execution evidence fails closed rather than launching again. A different invocation uses different native paths.
+3. Ctrl+B records a request against an actual launched process. The supervising worker checks completion/cancellation, persists acceptance, and returns an ordinary acknowledgment. Replayed accepted invocations return that acknowledgment without taking foreground ownership again.
+4. Startup and shutdown stop owned processes but retain scoped process rows and sidecars so the same unresolved intent can return its existing outcome after restart. Retained evidence does not keep a background job running. Permanent session deletion removes the scoped rows and sidecars. Cleanup also checks exact session-prefixed native sidecars for launches whose SQL insert was interrupted. Unverifiable process ownership is not permission to signal another process. A post-launch persistence failure stops the locally owned foreground process while retaining scoped native evidence, so retry does not silently launch it again.
 5. `bg_status stop` is the explicit operator/model path for an accepted job in the current session: `SIGTERM` to the process group, wait `tools.background_process.stop_grace_seconds`, then `SIGKILL` if still alive. Controller lifecycle cleanup can stop the same accepted jobs without a `bg_status` call.
 
 Backgrounding preserves the original monotonic timeout deadline. The existing controller
@@ -89,15 +90,16 @@ and the configured termination grace period. Timeout handling sends TERM without
 the controller; subsequent polls observe exit or send KILL after grace. Explicit stop and
 shutdown still wait for termination. Completion uses the existing follow-up queue.
 
-Successful explicit stops do not send another completion follow-up: the stop result
-already acknowledges the outcome. Natural completion, failure and timeout still
-notify. Stopping an already-finished job preserves its ordinary completion notification.
+Explicit stops do not suppress completion delivery. When the command finishes around the
+same time as a stop request, the ordinary completion follow-up still reports the observed
+exit status without claiming stop caused it. Duplicate delivery receipts still prevent a
+second notification. Natural completion, failure, and timeout keep the same path.
 
 Tracking is **session-scoped**. `bg_status` exposes only rows explicitly accepted as background work; private foreground supervision is never listed, tailed, or stopped through that tool. Durable records live in `.hatfield/state.sqlite`; filesystem sidecars (PID/status/log) live under the configured tool path.
 
 ### PID identity
 
-Launch uses `setsid -f`. The wrapper publishes its PID on the launch pipe and in the `.pid` sidecar before starting the command. Status and stop use that PID, not the transient launcher PID. The command runs in a separate `bash -c`, so command syntax cannot bypass the wrapper's status recording. An unclean exit means the tracked wrapper exited without recording a status. Its result includes log and status paths for inspection, not a claim that the workload succeeded. Do not rerun a side-effecting command merely because its exit status is unavailable.
+Launch uses `setsid -f`. The wrapper publishes its PID on the launch pipe and in the `.pid` sidecar before starting the command. Status and stop use that PID, not the transient launcher PID. The command runs in a separate `bash -c`, so command syntax cannot bypass the wrapper's status recording. Ownership checks require the exact sidecar PID, a live wrapper command containing its status-path marker, and a process group led by that PID. Command inspection uses untruncated `ps` output; failed or unverifiable inspection refuses ownership. An unclean exit means the tracked wrapper exited without recording a status. The result states that absence inline, retains any existing command log through the session attachment store, and reports the PID. Do not rerun a side-effecting command merely because its exit status is unavailable. Truncated completed output also retains the full log through that same attachment path so the referenced file outlives disposable batch bodies and private sidecar cleanup.
 
 ## Settings
 

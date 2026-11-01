@@ -75,6 +75,7 @@ final readonly class ExecuteShellToolCallWorker
             arguments: $arguments,
             orderIndex: 0,
             runId: $message->runId(),
+            context: ['turn_no' => $message->turnNo(), 'step_id' => $message->stepId()],
         ));
 
         $this->logger->info('shell.tool_result_ready', [

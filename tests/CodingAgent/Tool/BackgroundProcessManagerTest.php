@@ -4,777 +4,420 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception as DbalException;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
-use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Config\BashToolConfig;
+use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
+use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessControllerSessionLifecycleListener;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
+use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
+use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
+use Ineersa\CodingAgent\Tool\BashTool;
+use Ineersa\CodingAgent\Tool\ToolRuntime;
+use PHPUnit\Framework\Attributes\TestWith;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
-/**
- * @covers \Ineersa\CodingAgent\Tool\BackgroundProcessManager
- * @covers \Ineersa\CodingAgent\Config\BackgroundProcessConfig
- * @covers \Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore
- * @covers \Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle
- *
- * @requires extension pdo_sqlite
- * @requires OS Linux
- *
- * DB is provided by the Symfony test container (IsolatedKernelTestCase).
- * ProcessStore and BackgroundProcessRepository come from the container.
- * Only BackgroundProcessConfig / ProcessLifecycle / BackgroundProcessManager
- * are constructed with test-specific temp dirs — no manual EntityManager setup.
- */
+/** Native execution/replay proofs. Socket barriers hold commands without scheduling races. */
 final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 {
-    private const string TEST_SESSION = 'test-session-001';
-
+    private string $directory;
+    private string $runId;
+    private ProcessStore $store;
     private BackgroundProcessManager $manager;
-    private string $tmpDir;
-    private TestLogger $logger;
 
     protected function setUp(): void
     {
         parent::setUp();
-
-        // Temp dir for process output files (log, status, pid files).
-        // subprocess I/O, not ORM proxy directories.
-        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_bg_test');
+        $this->directory = TestDirectoryIsolation::createProjectTempDir('bash-native-replay');
+        $this->assertSame($this->directory, realpath($this->directory));
+        $this->runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('native replay');
+        $this->store = self::getContainer()->get(ProcessStore::class);
+        $this->manager = $this->newManager();
     }
 
     protected function tearDown(): void
     {
-        $this->cleanupProcesses();
-        $this->rmDir($this->tmpDir);
-
+        foreach ($this->store->sessionSnapshots($this->runId) as $record) {
+            $this->manager->stopByRecordId($record->id, $this->runId);
+            $this->assertTrue($this->manager->cleanupFinishedRecord($record->id, $this->runId));
+        }
+        $this->manager->cleanupSessionSidecars($this->runId);
+        TestDirectoryIsolation::removeDirectory($this->directory);
         parent::tearDown();
     }
 
-    /* ── start() ── */
-
-    public function testStartCreatesProcess(): void
+    public function testOrdinaryOutputAndCompletedIntentReplay(): void
     {
-        $this->createManager();
-        $result = $this->manager->start('echo "hello"', self::TEST_SESSION);
+        $marker = $this->directory.'/execution-count';
+        $command = 'printf x >> '.escapeshellarg($marker).'; printf ordinary-output';
+        $this->assertSame('ordinary-output', $this->invoke($this->manager, $command));
+        $listener = $this->sessionListener();
+        $listener->onSessionShutdown(new ControllerSessionShutdownEvent($this->runId));
+        $listener->onSessionStarting(new ControllerSessionStartingEvent($this->runId));
+        $this->assertSame('ordinary-output', $this->invoke($this->newManager(), $command));
+        $this->assertSame('x', file_get_contents($marker));
+        $records = $this->store->sessionSnapshots($this->runId);
+        $this->assertCount(1, $records);
+        $this->assertSame(0, $records[0]->exitCode);
+        $this->assertFileExists($records[0]->logPath);
+        $this->assertFileExists($records[0]->statusPath);
+        // A crash before the SQL insert must retain the same native evidence too.
+        $this->assertTrue(BackgroundProcessFixture::delete(self::getContainer(), $records[0]->id));
+        $listener->onSessionShutdown(new ControllerSessionShutdownEvent($this->runId));
+        $listener->onSessionStarting(new ControllerSessionStartingEvent($this->runId));
+        $this->assertSame('ordinary-output', $this->invoke($this->newManager(), $command));
+        $this->assertSame('x', file_get_contents($marker));
 
-        $this->assertInstanceOf(StartResult::class, $result);
-        $this->assertGreaterThan(0, $result->id);
-        $this->assertGreaterThan(0, $result->pid);
-        $this->assertFileExists($result->logPath);
-
-        $this->manager->shutdownCleanup();
+        $listener->onSessionShutdown(new ControllerSessionShutdownEvent($this->runId, permanentDeletion: true));
+        $this->assertSame([], $this->store->sessionSnapshots($this->runId));
+        $this->assertFileDoesNotExist($records[0]->logPath);
+        $this->assertFileDoesNotExist($records[0]->statusPath);
     }
 
-    /* ── list() ── */
-
-    public function testGeneralReadsRetainNoManagedProcessRecords(): void
+    public function testRunningIntentReattachesWithoutSecondLaunch(): void
     {
-        $this->createManager();
-        $store = self::getContainer()->get(ProcessStore::class);
-        $log = $this->tmpDir.'/snapshot.log';
-        file_put_contents($log, 'snapshot output');
-        $id = $store->insertRecord(['pid' => 9900123, 'session_id' => self::TEST_SESSION, 'command' => 'completed', 'log_path' => $log, 'started_at' => new \DateTimeImmutable()]);
-        $em = self::getContainer()->get(EntityManagerInterface::class);
-        $now = new \DateTimeImmutable()->format('Y-m-d H:i:s');
-        $em->getConnection()->update('background_process', ['backgrounded_at' => $now, 'finished_at' => $now, 'exit_code' => 0, 'status' => 'finished'], ['id' => $id]);
-        $em->clear();
-        $this->assertSame(0, $em->getUnitOfWork()->size());
-        for ($iteration = 0; $iteration < 20; ++$iteration) {
-            $this->assertSame($id, $this->manager->list(self::TEST_SESSION)[0]->id);
-            $this->assertSame($id, $this->manager->find(9900123, self::TEST_SESSION)?->id);
-            $this->assertSame(0, $this->manager->findByRecordId($id, self::TEST_SESSION)?->exitCode);
-            $this->assertSame('snapshot output', $this->manager->readLogTail(self::TEST_SESSION, 9900123)->content);
-            $this->assertSame('snapshot output', $this->manager->readLogTailForRecord($id, sessionId: self::TEST_SESSION)->content);
-        }
-        $this->assertSame(0, $em->getUnitOfWork()->size());
-    }
-
-    public function testListReturnsAcceptedRunningAndFinished(): void
-    {
-        $this->createManager();
-        $running = $this->manager->start('sleep 3', self::TEST_SESSION);
-        $finished = $this->manager->start('echo "done"', self::TEST_SESSION);
-        $this->manager->markBackgroundedForRecord($running->id, self::TEST_SESSION);
-        $this->manager->markBackgroundedForRecord($finished->id, self::TEST_SESSION);
-
-        $this->waitUntilFinished($finished->pid);
-
-        $entities = $this->manager->list(self::TEST_SESSION);
-
-        $this->assertCount(2, $entities);
-
-        $byPid = [];
-        foreach ($entities as $entity) {
-            $byPid[$entity->pid] = $entity;
-        }
-
-        $this->assertSame('running', $byPid[$running->pid]->status->value);
-        $this->assertSame('finished', $byPid[$finished->pid]->status->value);
-        $this->assertSame(0, $byPid[$finished->pid]->exitCode);
-
-        $this->manager->shutdownCleanup();
-    }
-
-    public function testListExcludesPrivateForegroundRows(): void
-    {
-        $this->createManager();
-        $private = $this->manager->start('echo "private"', self::TEST_SESSION);
-        $accepted = $this->manager->start('echo "accepted"', self::TEST_SESSION);
-        $foreign = $this->manager->start('echo "foreign"', 'other-session');
-        $this->manager->markBackgroundedForRecord($accepted->id, self::TEST_SESSION);
-        $this->manager->markBackgroundedForRecord($foreign->id, 'other-session');
-
-        $entities = $this->manager->list(self::TEST_SESSION);
-
-        $this->assertCount(1, $entities);
-        $this->assertSame($accepted->id, $entities[0]->id);
-        $this->assertNotSame($private->id, $entities[0]->id);
-
-        $this->manager->shutdownCleanup();
-    }
-
-    public function testPidOperationsRequireAcceptedRowInOwningSession(): void
-    {
-        $this->createManager();
-        $private = $this->manager->start('echo "private"', self::TEST_SESSION);
-        $foreign = $this->manager->start('echo "foreign"', 'other-session');
-        $this->manager->markBackgroundedForRecord($foreign->id, 'other-session');
-
+        [$server, $command, $marker] = $this->blockedCommand();
+        $peer = null;
         try {
-            $this->manager->readLogTail(self::TEST_SESSION, $private->pid);
-            $this->fail('Private foreground supervision must be invisible to PID log lookup.');
-        } catch (\RuntimeException $e) {
-            $this->assertSame(\sprintf('No background process found with PID %d for this session.', $private->pid), $e->getMessage());
+            $deadline = hrtime(true) + 30_000_000_000;
+            $first = $this->manager->start($command, $this->runId, 'call', $deadline, invocationKey: 'same-intent');
+            $this->assertSame($deadline, $first->deadlineNanoseconds, 'Fresh launch retains the exact supplied deadline.');
+            $peer = stream_socket_accept($server, 2);
+            $this->assertIsResource($peer, 'The child connects after recording its launch.');
+            $other = $this->newManager();
+            $second = $other->start($command, $this->runId, 'call', hrtime(true) + 60_000_000_000, invocationKey: 'same-intent');
+            $this->assertSame($first->pid, $second->pid);
+            $this->assertSame($first->statusPath, $second->statusPath);
+            $this->assertSame($first->deadlineNanoseconds, $second->deadlineNanoseconds);
+            $this->assertSame('x', file_get_contents($marker));
+            $this->assertCount(1, $this->store->sessionSnapshots($this->runId));
+            $this->assertSame(1, $other->shutdownCleanup());
+        } finally {
+            if (\is_resource($peer)) {
+                fclose($peer);
+            }
+            fclose($server);
         }
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage(\sprintf('No background process found with PID %d for this session.', $foreign->pid));
-        $this->manager->stop($foreign->pid, self::TEST_SESSION);
     }
 
-    /* ── readLogTail() ── */
-
-    public function testReadLogTailReturnsContent(): void
+    public function testBackgroundAcknowledgmentIsDurableWithoutOwnerReceipt(): void
     {
-        $this->createManager();
-        $result = $this->manager->start('printf "line1\nline2\n"', self::TEST_SESSION);
-
-        $this->waitUntilLogContains($result->logPath, 'line2');
-
-        $this->manager->markBackgroundedForRecord($result->id, self::TEST_SESSION);
-        $logResult = $this->manager->readLogTail(self::TEST_SESSION, $result->pid);
-
-        $this->assertInstanceOf(LogTailResult::class, $logResult);
-        $this->assertFalse($logResult->truncated);
-        $this->assertStringContainsString('line1', $logResult->content);
-        $this->assertStringContainsString('line2', $logResult->content);
-
-        $this->manager->shutdownCleanup();
-    }
-
-    public function testReadLogTailThrowsOnUnknownPid(): void
-    {
-        $this->createManager();
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('No background process found');
-
-        $this->manager->readLogTail(self::TEST_SESSION, 999999);
-    }
-
-    /* ── stop() ── */
-
-    public function testStopTerminatesWithTerm(): void
-    {
-        // Large grace proves stop returns as soon as the process dies after TERM
-        // instead of blocking the full unconditional sleep (pre-fix path).
-        $this->createManager(stopGraceSeconds: 5);
-
-        $sentinel = $this->tmpDir.'/term_sentinel';
-        $readySentinel = $this->tmpDir.'/term_ready';
-        $scriptPath = $this->tmpDir.'/term_test.sh';
-        file_put_contents(
-            $scriptPath,
-            "#!/bin/bash\ntrap 'echo term_received > ".escapeshellarg($sentinel)."; exit 0' TERM\necho ready > ".escapeshellarg($readySentinel)."\nsleep 3\n",
-        );
-        chmod($scriptPath, 0755);
-
-        $result = $this->manager->start($scriptPath, self::TEST_SESSION);
-
-        // Bounded readiness: fixture writes after TERM trap is installed.
-        $readyDeadlineNs = hrtime(true) + 2_000_000_000;
-        while (!is_file($readySentinel) && hrtime(true) < $readyDeadlineNs) {
-            usleep(10_000);
-        }
-        $this->assertFileExists($readySentinel, 'TERM trap fixture must signal ready before stop()');
-
-        $this->manager->markBackgroundedForRecord($result->id, self::TEST_SESSION);
-        $startedNs = hrtime(true);
-        $stopResult = $this->manager->stop($result->pid, self::TEST_SESSION);
-        $elapsedSeconds = (hrtime(true) - $startedNs) / 1_000_000_000;
-
-        $this->assertInstanceOf(StopResult::class, $stopResult);
-        $this->assertFalse($stopResult->alreadyFinished);
-        $this->assertSame('term', $stopResult->signalSent);
-        $this->assertFileExists($sentinel);
-        $this->assertStringContainsString('term_received', file_get_contents($sentinel));
-        // Cooperative exit must not burn the 5s grace; 1.5s leaves headroom under load.
-        $this->assertLessThan(1.5, $elapsedSeconds, 'stop() must return once TERM is honored, not after full grace');
-    }
-
-    public function testStopEscalatesToKill(): void
-    {
-        $this->createManager(stopGraceSeconds: 0);
-        $result = $this->manager->start('trap "" TERM; sleep 3', self::TEST_SESSION);
-
-        $this->manager->markBackgroundedForRecord($result->id, self::TEST_SESSION);
-        $stopResult = $this->manager->stop($result->pid, self::TEST_SESSION);
-
-        $this->assertFalse($stopResult->alreadyFinished);
-        $this->assertSame('term+kill', $stopResult->signalSent);
-    }
-
-    public function testStopOnAlreadyFinishedProcess(): void
-    {
-        $this->createManager();
-        $result = $this->manager->start('echo "quick"', self::TEST_SESSION);
-
-        $this->waitUntilFinished($result->pid);
-
-        $this->manager->markBackgroundedForRecord($result->id, self::TEST_SESSION);
-        $stopResult = $this->manager->stop($result->pid, self::TEST_SESSION);
-
-        $this->assertTrue($stopResult->alreadyFinished);
-    }
-
-    public function testStopThrowsOnUnknownPid(): void
-    {
-        $this->createManager();
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('No background process found');
-
-        $this->manager->stop(999999, self::TEST_SESSION);
-    }
-
-    /* ── shutdownCleanup() ── */
-
-    public function testShutdownCleanupStopsAllRunning(): void
-    {
-        $this->createManager(stopGraceSeconds: 0);
-        $result = $this->manager->start('sleep 3', self::TEST_SESSION);
-
-        $count = $this->manager->shutdownCleanup();
-
-        $this->assertSame(1, $count);
-
-        $entity = $this->manager->findByRecordId($result->id);
-        $this->assertNotNull($entity);
-        $this->assertNotNull($entity->finishedAt);
-    }
-
-    public function testShutdownCleanupWithNoRunningProcesses(): void
-    {
-        $this->createManager();
-        $this->assertSame(0, $this->manager->shutdownCleanup());
-    }
-
-    public function testShutdownCleanupDoesNotReapProcessesStartedByAnotherInstance(): void
-    {
-        $this->createManager(stopGraceSeconds: 0);
-        $result = $this->manager->start('sleep 30', self::TEST_SESSION);
-        $pid = $result->pid;
-        // start() already persists ownership; no fixed delay before other-instance cleanup.
-
-        $otherManager = $this->createOtherManager(stopGraceSeconds: 0);
-        $this->assertSame(0, $otherManager->shutdownCleanup());
-
-        $entity = $this->manager->findByRecordId($result->id);
-        $this->assertNotNull($entity);
-        $this->assertNull($entity->finishedAt);
-
-        $this->assertSame(1, $this->manager->shutdownCleanup());
-    }
-
-    public function testShutdownCleanupIsQuietAfterOwnedRowIsStoppedAndDeleted(): void
-    {
-        $this->createManager(stopGraceSeconds: 0);
-        $result = $this->manager->start('echo "completed"', self::TEST_SESSION);
-        $this->waitUntilFinished($result->pid);
-
-        $this->manager->stopByRecordId($result->id, self::TEST_SESSION);
-        $store = static::getContainer()->get(ProcessStore::class);
-        $this->assertTrue(BackgroundProcessFixture::delete(self::getContainer(), $result->id));
-
-        $this->assertSame(0, $this->manager->shutdownCleanup());
-        $this->assertSame(0, $this->manager->shutdownCleanup());
-        $this->assertShutdownCleanupErrors([]);
-    }
-
-    public function testShutdownCleanupIsQuietForAlreadyFinishedOwnedRow(): void
-    {
-        $this->createManager(stopGraceSeconds: 0);
-        $result = $this->manager->start('echo "finished-owned"', self::TEST_SESSION);
-        $this->waitUntilFinished($result->pid);
-
-        $this->assertSame(1, $this->manager->shutdownCleanup());
-        $this->assertSame(0, $this->manager->shutdownCleanup());
-        $this->assertShutdownCleanupErrors([]);
-    }
-
-    public function testShutdownCleanupDoesNotTargetReusedPidAfterOwnedRowDeleted(): void
-    {
-        $this->createManager(stopGraceSeconds: 0);
-        $owned = $this->manager->start('echo "completed"', self::TEST_SESSION);
-        $this->waitUntilFinished($owned->pid);
-        $pid = $owned->pid;
-        $ownedId = $owned->id;
-
-        $this->manager->stopByRecordId($owned->id, self::TEST_SESSION);
-        $store = static::getContainer()->get(ProcessStore::class);
-        $this->assertTrue(BackgroundProcessFixture::delete(self::getContainer(), $owned->id));
-
-        $foreignId = $store->insertRecord([
-            'pid' => $pid,
-            'pgid' => $pid,
-            'session_id' => 'foreign-reuse-session',
-            'command' => 'sleep 30',
-            'log_path' => $this->tmpDir.'/foreign-reuse.log',
-            'status_path' => $this->tmpDir.'/foreign-reuse.status',
-            'started_at' => new \DateTimeImmutable(),
-        ]);
-        $this->assertNotSame($ownedId, $foreignId);
-
-        $this->assertSame(0, $this->manager->shutdownCleanup());
-        $this->assertShutdownCleanupErrors([]);
-
-        // Read through ProcessStore so resolveEntityStatus() does not mutate the
-        // synthetic foreign row (no live process / status sidecar).
-        $foreign = BackgroundProcessFixture::record(self::getContainer(), $foreignId);
-        $this->assertNotNull($foreign);
-        $this->assertSame('foreign-reuse-session', $foreign->sessionId);
-        $this->assertSame($pid, $foreign->pid);
-        $this->assertNull($foreign->finishedAt);
-        $this->assertFalse($foreign->stoppedByUser);
-
-        $this->assertTrue(BackgroundProcessFixture::delete(self::getContainer(), $foreignId));
-    }
-
-    public function testShutdownCleanupLogsFailureAndRetainsOwnershipForRetry(): void
-    {
-        $this->createManager(stopGraceSeconds: 0);
-        $result = $this->manager->start('echo "completed"', self::TEST_SESSION);
-        $this->waitUntilFinished($result->pid);
-
-        $connection = static::getContainer()->get(EntityManagerInterface::class)->getConnection();
-        // Restore the unobserved state so cleanup must commit terminal evidence.
-        // A real database refusal replaces the former ORM-flush-only injection.
-        $connection->executeStatement('UPDATE background_process SET finished_at = NULL WHERE id = ?', [$result->id]);
-        $connection->executeStatement("CREATE TRIGGER fail_cleanup BEFORE UPDATE ON background_process BEGIN SELECT RAISE(ABORT, 'cleanup write failed'); END");
+        [$server, $command, $marker] = $this->blockedCommand();
+        $peer = null;
         try {
+            $acknowledgment = $this->invoke($this->manager, $command, true);
+            $peer = stream_socket_accept($server, 2);
+            $this->assertIsResource($peer);
+            $this->assertStringContainsString('Command moved to background.', $acknowledgment);
+            $records = $this->store->backgroundSnapshots($this->runId);
+            $this->assertCount(1, $records, 'No owner bus or receipt is involved.');
+            $this->assertNotNull($records[0]->backgroundedAt);
             $this->assertSame(0, $this->manager->shutdownCleanup());
-            $errors = array_values(array_filter($this->logger->records, static fn (array $record): bool => 'background_process.shutdown_cleanup_error' === $record['message']));
-            $this->assertCount(1, $errors);
-            $error = (string) $errors[0]['context']['error'];
-            $this->assertStringContainsString('cleanup write failed', $error);
+            $other = $this->newManager();
+            $this->assertSame($acknowledgment, $this->invoke($other, $command, true));
+            $this->assertSame(0, $other->shutdownCleanup(), 'Replayed acceptance never takes foreground ownership.');
+            $this->assertSame('x', file_get_contents($marker));
+            $this->sessionListener()->onSessionShutdown(new ControllerSessionShutdownEvent($this->runId));
+            $stopped = $this->store->sessionSnapshots($this->runId);
+            $this->assertCount(1, $stopped);
+            $this->assertNotNull($stopped[0]->finishedAt);
+            $this->assertFileExists($stopped[0]->logPath);
+            $this->assertFileExists($stopped[0]->statusPath);
         } finally {
-            $connection->executeStatement('DROP TRIGGER fail_cleanup');
-        }
-
-        $this->assertSame(1, $this->manager->shutdownCleanup());
-        $this->assertSame(0, $this->manager->shutdownCleanup());
-        $this->assertShutdownCleanupErrors([$error]);
-    }
-
-    /* ── Session scoping ── */
-
-    public function testListFiltersBySession(): void
-    {
-        $this->createManager();
-        $a = $this->manager->start('echo "session-a"', 'session-A');
-        $b = $this->manager->start('echo "session-b"', 'session-B');
-        $this->manager->markBackgroundedForRecord($a->id, 'session-A');
-        $this->manager->markBackgroundedForRecord($b->id, 'session-B');
-        // Session scoping is on persisted rows; wait only for both rows to finish so list() is stable.
-        $this->waitUntilFinished($a->pid);
-        $this->waitUntilFinished($b->pid);
-
-        $sessionA = $this->manager->list('session-A');
-        $this->assertCount(1, $sessionA);
-        $this->assertSame('session-A', $sessionA[0]->sessionId);
-
-        $this->manager->shutdownCleanup();
-    }
-
-    public function testStopAndCleanupRespectSessionScope(): void
-    {
-        $this->createManager(stopGraceSeconds: 1);
-        $resX = $this->manager->start('sleep 3', 'session-X');
-        $this->manager->start('sleep 3', 'session-Y');
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('for this session');
-        $this->manager->stop($resX->pid, 'session-Y');
-    }
-
-    /* ── Store-level record ID and existence lookups ── */
-
-    public function testFindByRecordIdReturnsProcess(): void
-    {
-        $this->createManager();
-        $result = $this->manager->start('echo "record-id-test"', self::TEST_SESSION);
-        // start() persists the record id synchronously.
-
-        $entity = $this->manager->findByRecordId($result->id);
-        $this->assertNotNull($entity);
-        $this->assertSame($result->pid, $entity->pid);
-        $this->assertSame($result->id, $entity->id);
-
-        $this->manager->shutdownCleanup();
-    }
-
-    public function testFindByRecordIdRespectsSessionScope(): void
-    {
-        $this->createManager();
-        $result = $this->manager->start('echo "session-scope"', 'session-A');
-        // start() persists session scope synchronously.
-
-        // Same session → found
-        $entity = $this->manager->findByRecordId($result->id, 'session-A');
-        $this->assertNotNull($entity);
-        $this->assertSame($result->id, $entity->id);
-
-        // Different session → null
-        $otherSession = $this->manager->findByRecordId($result->id, 'session-B');
-        $this->assertNull($otherSession);
-
-        // Null session → found (unscoped)
-        $unscoped = $this->manager->findByRecordId($result->id);
-        $this->assertNotNull($unscoped);
-
-        $this->manager->shutdownCleanup();
-    }
-
-    public function testFindByRecordIdReturnsNullForNonexistentId(): void
-    {
-        $this->createManager();
-
-        $entity = $this->manager->findByRecordId(9999999);
-        $this->assertNull($entity);
-    }
-
-    public function testExistsByPidReturnsTrueForExistingProcess(): void
-    {
-        $this->createManager();
-        $result = $this->manager->start('echo "exists-test"', self::TEST_SESSION);
-        // start() persists the pid row synchronously.
-
-        $this->assertTrue($this->manager->existsByPid($result->pid));
-
-        $this->manager->shutdownCleanup();
-    }
-
-    public function testExistsByPidReturnsFalseForNonexistentPid(): void
-    {
-        $this->createManager();
-
-        $this->assertFalse($this->manager->existsByPid(9999999));
-    }
-
-    public function testExistsByRecordIdReturnsTrueForExistingProcess(): void
-    {
-        $this->createManager();
-        $result = $this->manager->start('echo "exists-record-id"', self::TEST_SESSION);
-        // start() persists the record id synchronously.
-
-        $this->assertTrue($this->manager->existsByRecordId($result->id));
-
-        $this->manager->shutdownCleanup();
-    }
-
-    public function testExistsByRecordIdReturnsFalseForNonexistentId(): void
-    {
-        $this->createManager();
-
-        $this->assertFalse($this->manager->existsByRecordId(9999999));
-    }
-
-    public function testBackgroundRequestTargetsOnlyCurrentRunModelToolsAndDoesNotNotify(): void
-    {
-        $this->createManager();
-        $fifo = $this->tmpDir.'/command-release';
-        $this->assertTrue(posix_mkfifo($fifo, 0600));
-        $command = 'cat '.escapeshellarg($fifo);
-        $first = $this->manager->start($command, self::TEST_SESSION, 'call-first');
-        $second = $this->manager->start($command, self::TEST_SESSION, 'call-second');
-        $shell = $this->manager->start($command, self::TEST_SESSION);
-        $foreign = $this->manager->start($command, 'other-run', 'call-foreign');
-
-        $controllerManager = $this->createOtherManager();
-        $this->assertFalse($controllerManager->requestBackground(self::TEST_SESSION, $foreign->id, 'call-foreign'));
-        $this->assertFalse($controllerManager->requestBackground(self::TEST_SESSION, $shell->id, 'call-shell'));
-        $this->assertFalse($controllerManager->requestBackground(self::TEST_SESSION, $first->id, 'wrong-call'));
-        $this->assertTrue($controllerManager->requestBackground(self::TEST_SESSION, $first->id, 'call-first'));
-        $this->assertFalse($this->manager->findByRecordId($second->id)?->backgroundRequested);
-        $this->assertTrue($controllerManager->requestBackground(self::TEST_SESSION, $first->id, 'call-first'));
-        $this->assertTrue($controllerManager->requestBackground(self::TEST_SESSION, $second->id, 'call-second'));
-        $this->assertFalse($controllerManager->requestBackground('', $first->id, 'call-first'));
-
-        foreach ([$first, $second] as $started) {
-            $record = $this->manager->findByRecordId($started->id, self::TEST_SESSION);
-            $this->assertNotNull($record);
-            $this->assertTrue($record->backgroundRequested);
-            $this->assertNull($record->backgroundedAt);
-            $this->assertNull($record->finishedAt);
-            $this->assertSame($started->pid, $record->pid);
-        }
-        $this->assertFalse($this->manager->findByRecordId($shell->id)?->backgroundRequested);
-        $this->assertFalse($this->manager->findByRecordId($foreign->id)?->backgroundRequested);
-        $this->assertSame([], $this->manager->list(self::TEST_SESSION));
-        foreach (static::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]) as $candidate) {
-            $this->assertNull($candidate->backgroundedAt);
-            $this->assertNull($candidate->completionNotifiedAt);
-        }
-    }
-
-    public function testBackgroundRequestLeavesFinishedAndAlreadyBackgroundedCommandsAlone(): void
-    {
-        $this->createManager();
-        $finished = $this->manager->start('printf done', self::TEST_SESSION, 'call-finished');
-        $this->waitUntilFinished($finished->pid);
-        $fifo = $this->tmpDir.'/background-release';
-        $this->assertTrue(posix_mkfifo($fifo, 0600));
-        $backgrounded = $this->manager->start('cat '.escapeshellarg($fifo), self::TEST_SESSION, 'call-background');
-        $this->manager->markBackgroundedForRecord($backgrounded->id, self::TEST_SESSION);
-
-        $this->assertFalse($this->manager->requestBackground(self::TEST_SESSION, $finished->id, 'call-finished'));
-        $this->assertFalse($this->manager->requestBackground(self::TEST_SESSION, $backgrounded->id, 'call-background'));
-        $this->assertFalse($this->manager->findByRecordId($finished->id)?->backgroundRequested);
-        $this->assertFalse($this->manager->findByRecordId($backgrounded->id)?->backgroundRequested);
-    }
-
-    /* ── Helpers ── */
-
-    public function testDetachedProcessKeepsOriginalMonotonicDeadlineAndStops(): void
-    {
-        $this->createManager();
-        $fifo = $this->tmpDir.'/deadline-release';
-        $this->assertTrue(posix_mkfifo($fifo, 0600));
-        // This short real deadline is the product delay under test, not a readiness sleep.
-        $originalDeadline = hrtime(true) + 500_000_000;
-        $process = $this->manager->start('cat '.escapeshellarg($fifo), self::TEST_SESSION, 'deadline-call', $originalDeadline);
-        $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
-        $safetyDeadline = hrtime(true) + 2_000_000_000;
-        do {
-            $this->manager->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]));
-            $record = $this->manager->findByRecordId($process->id, self::TEST_SESSION);
-            if (null !== $record?->finishedAt) {
-                break;
+            if (\is_resource($peer)) {
+                fclose($peer);
             }
-            usleep(10_000);
-        } while (hrtime(true) < $safetyDeadline);
-
-        $this->assertNotNull($record?->finishedAt);
-        $this->assertGreaterThanOrEqual($originalDeadline, hrtime(true));
-        $this->assertSame($originalDeadline, BackgroundProcessFixture::record(self::getContainer(), $record->id)?->deadlineNanoseconds);
-        $this->assertSame($process->pid, $record->pid);
-        $this->assertFalse($record->stoppedByUser);
+            fclose($server);
+        }
     }
 
-    public function testExpiredProcessesReceiveTermTogetherWithoutWaitingForGrace(): void
+    public function testLaunchWithoutSqlRowIsRecoveredFromItsNativeClaim(): void
     {
-        $this->createManager(stopGraceSeconds: 1);
-        $processes = [];
-        foreach ([1, 2] as $index) {
-            $ready = $this->tmpDir.'/ready-'.$index;
-            $term = $this->tmpDir.'/term-'.$index;
-            $command = 'trap '.escapeshellarg('echo term >> '.escapeshellarg($term)).' TERM; : > '.escapeshellarg($ready).'; while :; do sleep 0.05; done';
-            $process = $this->manager->start($command, self::TEST_SESSION, 'call-'.$index, hrtime(true) - 1);
-            $processes[] = $process;
-            $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
-            $deadline = hrtime(true) + 2_000_000_000;
-            while (!is_file($ready) && hrtime(true) < $deadline) {
-                $this->assertTrue(posix_kill($process->pid, 0));
-                usleep(10_000);
-            }
-            $this->assertFileExists($ready);
-        }
-        $this->manager->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]));
-        foreach ($processes as $index => $process) {
-            $term = $this->tmpDir.'/term-'.($index + 1);
-            $deadline = hrtime(true) + 500_000_000;
-            while (!is_file($term) && hrtime(true) < $deadline) {
-                usleep(10_000);
-            }
-            $this->assertFileExists($term);
-            $this->assertNull($this->manager->findByRecordId($process->id)?->finishedAt, 'Both processes must still be in grace after one refresh.');
-        }
-        $deadline = hrtime(true) + 2_000_000_000;
-        do {
-            $this->manager->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]));
-            $unfinished = array_filter($processes, fn (StartResult $process): bool => null === $this->manager->findByRecordId($process->id)?->finishedAt);
-            if ([] === $unfinished) {
-                break;
-            }
-            usleep(10_000);
-        } while (hrtime(true) < $deadline);
-        $this->assertSame([], $unfinished, 'Later passes must escalate all resistant commands.');
-    }
-
-    public function testDeletedTimeoutRecordRetiresOutstandingGrace(): void
-    {
-        $this->createManager();
-        $process = $this->manager->start('sleep 10', self::TEST_SESSION, 'deleted-call', hrtime(true) - 1);
-        $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
-        $this->manager->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]));
-        $store = self::getContainer()->get(ProcessStore::class);
-        $record = BackgroundProcessFixture::record(self::getContainer(), $process->id);
-        $this->assertNotNull($record);
-        $grace = new \ReflectionProperty($this->manager, 'timeoutGraceDeadlines');
-        $this->assertArrayHasKey($process->id, $grace->getValue($this->manager));
+        [$server, $command, $marker] = $this->blockedCommand();
+        $peer = null;
         try {
-            $this->assertTrue(BackgroundProcessFixture::delete(self::getContainer(), $process->id));
-            $this->manager->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]));
-            $this->assertSame([], $grace->getValue($this->manager));
+            $first = $this->manager->start($command, $this->runId, 'call', hrtime(true) + 30_000_000_000, invocationKey: 'same-intent');
+            $peer = stream_socket_accept($server, 2);
+            $this->assertIsResource($peer);
+            $id = $this->store->recordIdForStatusPath($first->statusPath, $this->runId);
+            $this->assertNotNull($id);
+            $this->assertTrue(BackgroundProcessFixture::delete(self::getContainer(), $id));
+            $other = $this->newManager();
+            $recovered = $other->start($command, $this->runId, 'call', hrtime(true) + 30_000_000_000, invocationKey: 'same-intent');
+            $this->assertSame($first->pid, $recovered->pid);
+            $this->assertSame('x', file_get_contents($marker));
+            $records = $this->store->sessionSnapshots($this->runId);
+            $this->assertCount(1, $records);
+            $this->assertSame(filemtime(substr($first->statusPath, 0, -7).'.pid'), $records[0]->startedAt?->getTimestamp());
+            $other->shutdownCleanup();
         } finally {
-            // The removed row cannot supervise this test-owned group anymore.
-            (new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger(), new LockFactory(new FlockStore())))->sendKill($process->pid, $record->pgid);
-        }
-    }
-
-    public function testLateObservationWithoutTermKeepsSuccessfulExit(): void
-    {
-        $this->createManager();
-        $process = $this->manager->start('printf done', self::TEST_SESSION, 'finished-call', hrtime(true) - 1);
-        $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
-        $record = BackgroundProcessFixture::record(self::getContainer(), $process->id);
-        $this->assertNotNull($record);
-        $deadline = hrtime(true) + 2_000_000_000;
-        while (!is_file($record->statusPath) && hrtime(true) < $deadline) {
-            usleep(10_000);
-        }
-        $this->assertFileExists($record->statusPath);
-        $this->manager->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots([self::TEST_SESSION]));
-        $record = self::getContainer()->get(ProcessStore::class)->snapshot($process->id);
-        $this->assertSame(BackgroundProcessStatusEnum::Finished, $record->status);
-        $this->assertSame(0, $record->exitCode);
-    }
-
-    private function waitUntilFinished(int $pid, float $timeoutSeconds = 2.0): void
-    {
-        $deadline = microtime(true) + $timeoutSeconds;
-        while (microtime(true) < $deadline) {
-            $entity = $this->manager->find($pid);
-            if (null !== $entity && null !== $entity->finishedAt) {
-                return;
+            if (\is_resource($peer)) {
+                fclose($peer);
             }
-            usleep(10_000);
+            fclose($server);
         }
-
-        $this->fail(\sprintf('Timed out waiting for pid %d to finish', $pid));
     }
 
-    private function waitUntilLogContains(string $logPath, string $needle, float $timeoutSeconds = 2.0): void
+    #[TestWith(['cancel'])]
+    #[TestWith(['timeout'])]
+    #[TestWith(['release'])]
+    #[TestWith(['reap'])]
+    #[TestWith(['observe'])]
+    public function testOverlappingDeliveryPreservesOtherDeliveryAcceptance(string $mode): void
     {
-        $deadline = microtime(true) + $timeoutSeconds;
-        while (microtime(true) < $deadline) {
-            if (is_file($logPath)) {
-                $content = (string) @file_get_contents($logPath);
-                if (str_contains($content, $needle)) {
-                    return;
+        [$server, $command, $marker] = $this->blockedCommand();
+        $peer = null;
+        $other = $this->newManager();
+        $key = json_encode([1, 'step', 'call'], \JSON_THROW_ON_ERROR);
+        try {
+            $first = $this->manager->start($command, $this->runId, 'call', hrtime(true) - 1, invocationKey: $key);
+            $peer = stream_socket_accept($server, 2);
+            $this->assertIsResource($peer);
+            $second = $other->start($command, $this->runId, 'call', invocationKey: $key);
+            $this->assertSame($first->pid, $second->pid);
+            $accept = function () use ($first): void {
+                $candidate = $this->manager->resolveBackgroundAcceptance($first->statusPath, $this->runId);
+                $this->assertNotNull($candidate);
+                $this->assertTrue($this->manager->acceptResolvedBackground($candidate));
+            };
+            if (\in_array($mode, ['cancel', 'timeout'], true)) {
+                $token = $this->createStub(CancellationTokenInterface::class);
+                // Acceptance happens after the second delivery's observation but
+                // before its foreground cancellation/timeout decision.
+                $checks = 0;
+                $token->method('isCancellationRequested')->willReturnCallback(static function () use ($accept, $mode, &$checks): bool {
+                    if (1 === ++$checks) {
+                        return false; // ToolRuntime's pre-start checkpoint.
+                    }
+                    $accept();
+
+                    return 'cancel' === $mode;
+                });
+                $accessor = new StackToolExecutionContextAccessor();
+                $tool = new BashTool($other, $accessor, new ToolRuntime($accessor), new NullLogger(), self::getContainer()->get(ToolPayloadStoreInterface::class), new BashToolConfig());
+                $ack = $accessor->with(new ToolContext($this->runId, 1, 'call', 'bash', $token, 30, stepId: 'step'), static fn () => $tool(new BashArgumentsDTO(command: $command)));
+                $this->assertStringContainsString('Command moved to background.', $ack);
+            } else {
+                $accept();
+                if ('release' === $mode) {
+                    $other->releaseNativeInvocation($second->statusPath);
+                } elseif ('reap' === $mode) {
+                    $this->assertSame(0, $other->shutdownCleanup());
+                } else {
+                    $this->assertTrue($other->observeNativeByStatusPath($second->statusPath, $this->runId)?->accepted);
                 }
             }
-            usleep(10_000);
+            $this->assertSame(0, $other->shutdownCleanup());
+            $this->assertSame('x', file_get_contents($marker));
+            $record = $this->manager->findByStatusPath($first->statusPath, $this->runId);
+            $this->assertNotNull($record);
+            $this->assertNotNull($record->backgroundedAt);
+            $this->assertNull($record->finishedAt);
+            $this->manager->stopByRecordId($record->id, $this->runId);
+            $this->assertNotNull($this->manager->findByRecordId($record->id, $this->runId)?->finishedAt);
+        } finally {
+            if (\is_resource($peer)) {
+                fclose($peer);
+            }
+            fclose($server);
+            $other->shutdownCleanup();
+            $this->manager->shutdownCleanup();
         }
-
-        $this->fail(\sprintf('Timed out waiting for log %s to contain %s', $logPath, $needle));
     }
 
-    /**
-     * Create a BackgroundProcessManager using the container's Doctrine
-     * EntityManager and BackgroundProcessRepository (shared, real schema),
-     * but with a test-specific BackgroundProcessConfig that points storageDir
-     * to a temporary directory for subprocess output files.
-     */
-    private function createManager(?string $storageDir = null, int $stopGraceSeconds = 1, int $logTailChars = 5000): void
+    public function testForegroundStopPreventsStaleCandidateAcceptance(): void
     {
-        $config = new BackgroundProcessConfig(
-            storageDir: $storageDir ?? $this->tmpDir,
-            stopGraceSeconds: $stopGraceSeconds,
-            logTailChars: $logTailChars,
-        );
-
-        // ProcessStore uses the container's EntityManager — no manual ORM setup.
-        $store = static::getContainer()->get(ProcessStore::class);
-        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
-        $this->logger = new TestLogger();
-        $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, $this->logger);
+        [$server, $command] = $this->blockedCommand();
+        $peer = null;
+        $other = $this->newManager();
+        try {
+            $first = $this->manager->start($command, $this->runId, 'call', invocationKey: 'stop-first');
+            $peer = stream_socket_accept($server, 2);
+            $this->assertIsResource($peer);
+            $other->start($command, $this->runId, 'call', invocationKey: 'stop-first');
+            $candidate = $this->manager->resolveBackgroundAcceptance($first->statusPath, $this->runId);
+            $this->assertNotNull($candidate);
+            $cancel = $this->createStub(CancellationTokenInterface::class);
+            $cancel->method('isCancellationRequested')->willReturn(true);
+            $this->assertFalse($this->manager->acceptResolvedBackground($candidate, $cancel));
+            $this->assertTrue($other->stopForegroundByStatusPath($first->statusPath, $this->runId));
+            $this->assertFalse($this->manager->acceptResolvedBackground($candidate));
+            $this->assertNull($this->manager->findByStatusPath($first->statusPath, $this->runId)?->backgroundedAt);
+        } finally {
+            if (\is_resource($peer)) {
+                fclose($peer);
+            }
+            fclose($server);
+            $other->shutdownCleanup();
+            $this->manager->shutdownCleanup();
+        }
     }
 
-    private function createOtherManager(int $stopGraceSeconds = 1): BackgroundProcessManager
+    public function testSessionSweepFindsNestedLaunchWithoutOriginalManager(): void
     {
-        $config = new BackgroundProcessConfig(
-            storageDir: $this->tmpDir,
-            stopGraceSeconds: $stopGraceSeconds,
-            logTailChars: 5000,
-        );
-
-        $store = static::getContainer()->get(ProcessStore::class);
-        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
-
-        return new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
+        [$server, $command] = $this->blockedCommand();
+        $peers = [];
+        $foreign = 'other-session';
+        try {
+            $local = $this->manager->start($command, $this->runId);
+            $peers[] = stream_socket_accept($server, 2);
+            $this->assertIsResource($peers[0]);
+            $other = $this->manager->start($command, $foreign);
+            $peers[] = stream_socket_accept($server, 2);
+            $this->assertIsResource($peers[1]);
+            $this->assertSame([], $this->store->sessionSnapshots($this->runId));
+            $this->assertSame([], $this->store->sessionSnapshots($foreign));
+            $sweeper = $this->newManager();
+            $sweeper->cleanupSessionSidecars($this->runId);
+            $this->assertNotNull($this->manager->observeNativeByStatusPath($local->statusPath, $this->runId)?->finishedAt);
+            $this->assertNull($this->manager->observeNativeByStatusPath($other->statusPath, $foreign)?->finishedAt);
+            $this->manager->releaseNativeInvocation($local->statusPath);
+            $this->assertFileDoesNotExist($local->statusPath);
+        } finally {
+            foreach ($peers as $peer) {
+                if (\is_resource($peer)) {
+                    fclose($peer);
+                }
+            }
+            fclose($server);
+            $this->manager->shutdownCleanup();
+        }
     }
 
-    private function cleanupProcesses(): void
+    public function testInsertFailureStopsOwnedLaunchAndRetainsReplayEvidence(): void
     {
-        if (isset($this->manager)) {
+        $fifo = $this->directory.'/insert-release';
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $command = 'read -r release < '.escapeshellarg($fifo);
+        $connection = self::getContainer()->get(Connection::class);
+        $connection->executeStatement("CREATE TEMP TRIGGER reject_bash_insert BEFORE INSERT ON background_process BEGIN SELECT RAISE(FAIL, 'injected launch insert failure'); END");
+        try {
             try {
-                $this->manager->shutdownCleanup();
-            } catch (\RuntimeException) {
-                // ignore cleanup errors in teardown
+                $this->manager->start($command, $this->runId, 'call', invocationKey: 'failed-insert');
+                $this->fail('The database trigger must reject insertion.');
+            } catch (DbalException $error) {
+                $this->assertStringContainsString('injected launch insert failure', $error->getMessage());
             }
+        } finally {
+            $connection->executeStatement('DROP TRIGGER reject_bash_insert');
+        }
+        $pidFiles = glob($this->directory.'/bg/*.pid');
+        $this->assertIsArray($pidFiles);
+        $this->assertCount(1, $pidFiles);
+        $pid = (int) file_get_contents($pidFiles[0]);
+        $status = substr($pidFiles[0], 0, -4).'.status';
+        $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(storageDir: $this->directory.'/bg'), new NullLogger(), new LockFactory(new FlockStore()));
+        $this->assertFalse($lifecycle->isAlive($pid), 'Failed storage must not leave an owned foreground process running.');
+        $this->assertFileExists(substr($pidFiles[0], 0, -4).'.log');
+        $this->assertSame([], $this->store->sessionSnapshots($this->runId));
+        $replay = $this->newManager()->start($command, $this->runId, 'call', invocationKey: 'failed-insert');
+        $this->assertSame($pid, $replay->pid, 'Retry must recover the stopped execution, never launch again.');
+        $this->assertSame($status, $replay->statusPath);
+        $this->assertCount(1, $this->store->sessionSnapshots($this->runId));
+    }
+
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testAcceptedLaunchSurvivesThrowingLogger(bool $recordCandidate): void
+    {
+        [$server, $command, $marker] = $this->blockedCommand();
+        $peer = null;
+        $logger = $this->createStub(LoggerInterface::class);
+        $logger->method('info')->willReturnCallback(static function (string $message): void {
+            if ('background_process.marked_backgrounded' === $message) {
+                throw new \RuntimeException('injected acceptance logging failure');
+            }
+        });
+        $manager = $this->newManager($logger);
+        try {
+            $launch = $manager->start($command, $this->runId, 'call', invocationKey: 'accepted-logger');
+            $peer = stream_socket_accept($server, 2);
+            $this->assertIsResource($peer);
+            $candidate = $manager->resolveBackgroundAcceptance($launch->statusPath, $this->runId);
+            $this->assertNotNull($candidate);
+            if ($recordCandidate) {
+                $candidate['kind'] = 'record';
+                $candidate['recordId'] = $this->store->recordIdForStatusPath($launch->statusPath, $this->runId);
+                $this->assertNotNull($candidate['recordId']);
+            }
+            try {
+                $manager->acceptResolvedBackground($candidate);
+                $this->fail('Acceptance logging must throw.');
+            } catch (\RuntimeException $error) {
+                $this->assertSame('injected acceptance logging failure', $error->getMessage());
+            }
+            $manager->releaseNativeInvocation($launch->statusPath);
+            $this->assertSame(0, $manager->shutdownCleanup());
+            $other = $this->newManager();
+            $replay = $other->start($command, $this->runId, 'call', invocationKey: 'accepted-logger');
+            $this->assertTrue($replay->accepted);
+            $this->assertSame($launch->pid, $replay->pid);
+            $this->assertSame(0, $other->shutdownCleanup());
+            $this->assertSame('x', file_get_contents($marker));
+            $this->assertNull($this->store->sessionSnapshots($this->runId)[0]->finishedAt);
+        } finally {
+            foreach ($this->store->sessionSnapshots($this->runId) as $record) {
+                $manager->stopByRecordId($record->id, $this->runId);
+            }
+            $manager->shutdownCleanup();
+            if (\is_resource($peer)) {
+                fclose($peer);
+            }
+            fclose($server);
         }
     }
 
-    /**
-     * @param list<string> $expectedMessages
-     */
-    private function assertShutdownCleanupErrors(array $expectedMessages): void
+    private function sessionListener(): BackgroundProcessControllerSessionLifecycleListener
     {
-        $messages = [];
-        foreach ($this->logger->records as $record) {
-            if ('background_process.shutdown_cleanup_error' === $record['message']) {
-                $messages[] = (string) ($record['context']['error'] ?? '');
-            }
-        }
-
-        $this->assertSame($expectedMessages, $messages);
+        return new BackgroundProcessControllerSessionLifecycleListener(self::getContainer()->get(BackgroundProcessCompletionPoller::class), $this->store, $this->manager, new NullLogger());
     }
 
-    private function rmDir(string $dir): void
+    private function newManager(?LoggerInterface $logger = null): BackgroundProcessManager
     {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $it = new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS);
-        $files = new \RecursiveIteratorIterator($it, \RecursiveIteratorIterator::CHILD_FIRST);
-        foreach ($files as $file) {
-            if ($file->isDir()) {
-                rmdir((string) $file);
-            } else {
-                unlink((string) $file);
-            }
-        }
-        rmdir($dir);
+        $config = new BackgroundProcessConfig(storageDir: $this->directory.'/bg', stopGraceSeconds: 0);
+        $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
+
+        return new BackgroundProcessManager($this->store, $lifecycle, $config, $logger ?? new NullLogger());
+    }
+
+    private function invoke(BackgroundProcessManager $manager, string $command, bool $backgrounded = false): string
+    {
+        $accessor = new StackToolExecutionContextAccessor();
+        $tool = new BashTool($manager, $accessor, new ToolRuntime($accessor), new NullLogger(), self::getContainer()->get(ToolPayloadStoreInterface::class), new BashToolConfig(pollIntervalMicros: 1_000));
+
+        return $accessor->with(
+            new ToolContext($this->runId, 1, 'call', 'bash', new NullCancellationToken(), 30, stepId: 'step'),
+            static fn (): string => $tool(new BashArgumentsDTO(command: $command, backgrounded: $backgrounded)),
+        );
+    }
+
+    /** @return array{resource, string, string} */
+    private function blockedCommand(): array
+    {
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        $this->assertIsResource($server);
+        $address = stream_socket_get_name($server, false);
+        $this->assertIsString($address);
+        $port = substr($address, strrpos($address, ':') + 1);
+        $marker = $this->directory.'/execution-count';
+        $command = 'printf x >> '.escapeshellarg($marker).'; exec 3<>/dev/tcp/127.0.0.1/'.$port.'; IFS= read -r release <&3; printf released';
+
+        return [$server, $command, $marker];
     }
 }

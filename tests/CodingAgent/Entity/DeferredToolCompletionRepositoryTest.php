@@ -75,7 +75,7 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
     }
 
     #[DataProvider('completionBoundaries')]
-    public function testObsoleteCompletionSettlesMetadataAndRemovesRetainedBatchWithoutBodies(bool $producer): void
+    public function testOnlyOwnerSettlesObsoleteCompletionAndRemovesRetainedBatchWithoutBodies(bool $producer): void
     {
         [$runId, $reference, $directory] = $this->fixture(false);
         $container = self::getContainer();
@@ -90,8 +90,16 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
 
         $state = new RunState($runId, RunStatus::Cancelled, turnNo: 1);
         $bus = $this->bus($state);
-        $message = $producer ? new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'discard']])
-            : new Envelope(new ToolPayloadMessage($reference, 'deferred'), [new ReceivedStamp('run_control')]);
+        $message = new Envelope(new ToolPayloadMessage($reference, 'deferred'));
+        if ($producer) {
+            $message = $bus->dispatch(new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'discard']]));
+            $this->assertInstanceOf(ToolPayloadMessage::class, $message->getMessage());
+            $this->assertEquals($metadata->reference, $message->getMessage()->reference);
+            $this->assertSame('pending', $repository->status('deferred'), 'A stale producer must not write owner settlement.');
+            $this->assertNotNull($batches->loadSchedule($runId, 1, 'step'));
+            $this->assertDirectoryExists($directory);
+        }
+        $message = $message->with(new ReceivedStamp('run_control'));
         $bus->dispatch($message);
         $this->assertSame('completed', $repository->status('deferred'));
         $this->assertNull($batches->loadSchedule($runId, 1, 'step'));
@@ -118,6 +126,37 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
             $this->assertSame('pending', self::getContainer()->get(DeferredToolCompletionRepository::class)->status('deferred'));
             $this->assertDirectoryExists($directory);
         }
+    }
+
+    #[DataProvider('invalidCorrelationReceipts')]
+    public function testCorrelationReceiptFailsClosedBeforeReadingBodies(string $case, string $error): void
+    {
+        [$runId, , $directory] = $this->fixture('active' === $case);
+        $repository = self::getContainer()->get(DeferredToolCompletionRepository::class);
+        $metadata = $repository->findMetadataByDeferredId('deferred');
+        $this->assertNotNull($metadata);
+        $reference = $metadata->reference;
+        if ('mismatch' === $case) {
+            $reference = new ToolPayloadReferenceDTO('correlation', $runId, 1, 'other-step', 1, 'key', 'call', 0, 'subagent', $reference->sha256, $reference->bytes);
+        }
+        $state = new RunState($runId, 'active' === $case ? RunStatus::Running : RunStatus::Cancelled, turnNo: 1, pendingToolCalls: ['call' => false], activeStepId: 'step');
+        $message = new ToolPayloadMessage($reference, 'without-deferred' === $case ? null : 'deferred');
+        $this->expectException(ToolPayloadException::class);
+        $this->expectExceptionMessage($error);
+        try {
+            $this->bus($state)->dispatch(new Envelope($message, [new ReceivedStamp('run_control')]));
+        } finally {
+            $this->assertSame('pending', $repository->status('deferred'));
+            $this->assertDirectoryExists($directory);
+        }
+    }
+
+    /** @return iterable<array{string, string}> */
+    public static function invalidCorrelationReceipts(): iterable
+    {
+        yield 'active identity without result' => ['active', 'Active deferred completion requires result data.'];
+        yield 'mismatched identity' => ['mismatch', 'Deferred completion reference has a different correlation.'];
+        yield 'no deferred identity' => ['without-deferred', 'Tool transport reference has an unsupported data kind.'];
     }
 
     /** @return iterable<array{bool}> */
@@ -180,7 +219,7 @@ final class DeferredToolCompletionRepositoryTest extends IsolatedKernelTestCase
         $container->get(Filesystem::class)->dumpFile($directory.'/sentinel.txt', 'retained');
         $resultReference = new ToolPayloadReferenceDTO('result', $runId, 1, 'step', 1, 'key', 'call', 0, 'subagent', str_repeat('c', 64), 100);
 
-        return [$runId, $resultReference, $directory];
+        return [$runId, $active ? $resultReference : $reference, $directory];
     }
 
     private function bus(RunState $state, bool $expectNoBodyRead = true): MessageBus

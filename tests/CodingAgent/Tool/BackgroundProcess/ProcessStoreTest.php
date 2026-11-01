@@ -5,13 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool\BackgroundProcess;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -19,60 +15,6 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 
 final class ProcessStoreTest extends IsolatedKernelTestCase
 {
-    public function testCleanupRechecksFinishedScopeClassificationAndRetention(): void
-    {
-        $manager = self::getContainer()->get(EntityManagerInterface::class);
-        $store = self::getContainer()->get(ProcessStore::class);
-        $lifecycle = self::getContainer()->get(ProcessLifecycle::class);
-        $record = new BackgroundProcess();
-        $record->sessionId = 'cleanup-owner';
-        $record->pid = getmypid();
-        $manager->persist($record);
-        $manager->flush();
-        $before = $manager->getUnitOfWork()->size();
-        $this->assertNull($store->decide($record->id, 'cleanup-owner', BashProcessActionEnum::DeleteFinished, $lifecycle));
-        BackgroundProcessFixture::finish($record, 0, new \DateTimeImmutable());
-        $manager->flush();
-        $this->assertNull($store->decide($record->id, 'foreign-owner', BashProcessActionEnum::DeleteFinished, $lifecycle));
-        $this->assertNull($store->decide($record->id, 'cleanup-owner', BashProcessActionEnum::DeleteProvisional, $lifecycle));
-        $manager->getConnection()->executeStatement('UPDATE background_process SET finished_at = ? WHERE id = ?', ['2000-01-01 00:00:00', $record->id]);
-        $this->assertCount(1, $store->fetchFinishedProvisionalBefore(new \DateTimeImmutable(), ['cleanup-owner']));
-        $this->assertTrue($store->acceptLocal($record->id, 'cleanup-owner'));
-        $this->assertNull($store->decide($record->id, 'cleanup-owner', BashProcessActionEnum::DeleteProvisional, $lifecycle), 'An old foreground candidate is not authority after acceptance.');
-        $this->assertCount(0, $store->fetchFinishedProvisionalBefore(new \DateTimeImmutable(), ['cleanup-owner']));
-        $this->assertNotNull($store->decide($record->id, 'cleanup-owner', BashProcessActionEnum::DeleteFinished, $lifecycle));
-        $this->assertNull($store->decide($record->id, 'cleanup-owner', BashProcessActionEnum::DeleteFinished, $lifecycle), 'Metadata redelivery cannot delete another row.');
-        $this->assertSame($before, $manager->getUnitOfWork()->size());
-    }
-
-    public function testCleanupWriteRefusalCanRetryWithoutClosingTheManager(): void
-    {
-        $manager = self::getContainer()->get(EntityManagerInterface::class);
-        $store = self::getContainer()->get(ProcessStore::class);
-        $lifecycle = self::getContainer()->get(ProcessLifecycle::class);
-        $record = new BackgroundProcess();
-        $record->sessionId = 'cleanup-retry';
-        BackgroundProcessFixture::finish($record, 0, new \DateTimeImmutable('2000-01-01'));
-        $manager->persist($record);
-        $manager->flush();
-        $connection = $manager->getConnection();
-        $connection->executeStatement("CREATE TEMP TRIGGER refuse_cleanup BEFORE DELETE ON background_process BEGIN SELECT RAISE(ABORT, 'cleanup refused'); END");
-        try {
-            try {
-                $store->decide($record->id, 'cleanup-retry', BashProcessActionEnum::DeleteProvisional, $lifecycle);
-                $this->fail('Expected the database to refuse cleanup.');
-            } catch (\Doctrine\DBAL\Exception $exception) {
-                $this->assertStringContainsString('cleanup refused', $exception->getMessage());
-                $this->assertNotNull($store->snapshot($record->id));
-                $this->assertTrue($manager->isOpen());
-            }
-        } finally {
-            $connection->executeStatement('DROP TRIGGER refuse_cleanup');
-        }
-        $this->assertNotNull($store->decide($record->id, 'cleanup-retry', BashProcessActionEnum::DeleteProvisional, $lifecycle));
-        $this->assertNull($store->snapshot($record->id));
-    }
-
     public function testMaintenanceSnapshotsObserveCommittedChangesWithoutGrowingTheIdentityMap(): void
     {
         $manager = self::getContainer()->get(EntityManagerInterface::class);
@@ -93,7 +35,7 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
         $this->assertNotSame('external change', $first->command);
         $connection->executeStatement('UPDATE background_process SET finished_at = ? WHERE id = ?', ['2000-01-01 00:00:00', $record->id]);
         $this->assertCount(0, $store->unfinishedSnapshots(['snapshot-maintenance']));
-        $this->assertCount(1, $store->fetchFinishedProvisionalBefore(new \DateTimeImmutable(), ['snapshot-maintenance']));
+        $this->assertNotNull($store->snapshot($record->id)?->finishedAt);
         $this->assertSame($before, $manager->getUnitOfWork()->size());
     }
 
@@ -136,7 +78,7 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testStopCommitsSuppressionBeforeSignalAndRecognizesReplayWithoutHydration(): void
+    public function testStopCommitsCauseBeforeSignalWithoutSuppressingCompletionAndRecognizesReplayWithoutHydration(): void
     {
         $directory = TestDirectoryIsolation::createProjectTempDir('bash-stop-decision');
         try {
@@ -158,7 +100,7 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $first->status);
             $row = $manager->getConnection()->fetchAssociative('SELECT * FROM background_process WHERE id = ?', [$process->id]);
             $this->assertSame(1, (int) $row['stopped_by_user']);
-            $this->assertNotNull($row['completion_notified_at']);
+            $this->assertNull($row['completion_notified_at'], 'Stop records cause without suppressing later completion delivery.');
             for ($i = 0; $i < 32; ++$i) {
                 $this->assertTrue($store->decide($process->id, 'stop-owner', BashProcessActionEnum::Stop, $lifecycle)->signalRequired, 'Reply loss must reconstruct the committed stop obligation, not assume TERM occurred.');
             }
@@ -199,22 +141,35 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testOwnerSnapshotUsesRetainedSessionAndParentProjectionWithoutHydratingEntities(): void
+    public function testApplyAcceptedSurvivesEarlierFinished(): void
     {
-        $owner = self::getContainer()->get(HatfieldSessionStore::class)->createSession();
-        $projection = self::getContainer()->get('test.run_operational_projection_repository');
-        $projection->replace(new RunState('child', RunStatus::Running, parentRunId: $owner));
-        $projection->replace(new RunState('cycle-a', RunStatus::Running, parentRunId: 'cycle-b'));
-        $projection->replace(new RunState('cycle-b', RunStatus::Running, parentRunId: 'cycle-a'));
-        $store = self::getContainer()->get(ProcessStore::class);
-        $manager = self::getContainer()->get(EntityManagerInterface::class);
-        $before = $manager->getUnitOfWork()->size();
-        for ($i = 0; $i < 32; ++$i) {
-            $this->assertSame($owner, $store->ownerSessionForRun($owner));
-            $this->assertSame($owner, $store->ownerSessionForRun('child'));
+        $directory = TestDirectoryIsolation::createProjectTempDir('bash-accept-after-finish');
+        try {
+            $manager = self::getContainer()->get(EntityManagerInterface::class);
+            $store = self::getContainer()->get(ProcessStore::class);
+            $statusPath = $directory.'/launch.status';
+            $process = new BackgroundProcess();
+            $process->sessionId = 'accept-owner';
+            $process->pid = getmypid();
+            $process->statusPath = $statusPath;
+            $process->toolCallId = 'call_accept';
+            $manager->persist($process);
+            $manager->flush();
+
+            $finishedAt = new \DateTimeImmutable('2026-10-30 12:00:00');
+            $store->applyFinishedByRecord($process->id, 'accept-owner', 0, BackgroundProcessStatusEnum::Finished, false, $finishedAt);
+            $this->assertTrue($store->acceptLocal($process->id, 'accept-owner'));
+
+            $snapshot = $store->snapshot($process->id);
+            $this->assertNotNull($snapshot);
+            $this->assertNotNull($snapshot->finishedAt);
+            $this->assertNotNull($snapshot->backgroundedAt);
+            $acceptedAt = $snapshot->backgroundedAt;
+            $this->assertTrue($store->acceptLocal($process->id, 'accept-owner'));
+            $this->assertEquals($acceptedAt, $store->snapshot($process->id)?->backgroundedAt);
+            $this->assertCount(1, $store->completionSnapshots(['accept-owner']));
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
         }
-        $this->assertNull($store->ownerSessionForRun('unknown'));
-        $this->assertNull($store->ownerSessionForRun('cycle-a'));
-        $this->assertSame($before, $manager->getUnitOfWork()->size());
     }
 }

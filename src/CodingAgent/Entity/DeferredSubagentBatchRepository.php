@@ -280,17 +280,12 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         DeferredSubagentBatchChildIntentDTO $childIntent,
         ?string $parentModel = null,
     ): DeferredSubagentBatchProjectionDTO {
-        $existing = $this->findFreshOneBy([
-            'parentRunId' => $parentRunId,
-            'parentToolCallId' => $parentToolCallId,
-        ]);
-
-        if ($existing instanceof DeferredSubagentBatch) {
+        $existing = $this->findByParentRunAndToolCall($parentRunId, $parentToolCallId);
+        if (null !== $existing) {
             $this->assertBatchMatchesIntent($existing, $lifecycleId, $childIntent);
 
-            return $this->toDto($existing);
+            return $existing;
         }
-
         $now = Clock::get()->now()->format('Y-m-d H:i:s');
         $conn = $this->getEntityManager()->getConnection();
 
@@ -319,18 +314,13 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             if ($conn->isTransactionActive()) {
                 $conn->rollBack();
             }
-            $row = $this->findFreshOneBy([
-                'parentRunId' => $parentRunId,
-                'parentToolCallId' => $parentToolCallId,
-            ]);
-
-            if (!$row instanceof DeferredSubagentBatch) {
-                throw new \RuntimeException(\sprintf('Deferred subagent batch reserve conflict for parent "%s" tool call "%s" but row missing.', $parentRunId, $parentToolCallId));
+            $row = $this->findByParentRunAndToolCall($parentRunId, $parentToolCallId);
+            if (null === $row) {
+                throw new \RuntimeException('Deferred child reservation conflict has no matching batch.');
             }
-
             $this->assertBatchMatchesIntent($row, $lifecycleId, $childIntent);
 
-            return $this->toDto($row);
+            return $row;
         } catch (\Throwable $e) {
             if ($conn->isTransactionActive()) {
                 $conn->rollBack();
@@ -339,19 +329,8 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             throw $e;
         }
 
-        $this->getEntityManager()->clear();
-
-        // Identity map was cleared after the SQL reservation; plain find is fine.
-        $row = $this->findOneBy([
-            'parentRunId' => $parentRunId,
-            'parentToolCallId' => $parentToolCallId,
-        ]);
-
-        if (!$row instanceof DeferredSubagentBatch) {
-            throw new \RuntimeException(\sprintf('Deferred subagent batch reserve for parent "%s" tool call "%s" succeeded but row could not be loaded.', $parentRunId, $parentToolCallId));
-        }
-
-        return $this->toDto($row);
+        return $this->findByParentRunAndToolCall($parentRunId, $parentToolCallId)
+            ?? throw new \RuntimeException('Reserved child invocation could not be loaded.');
     }
 
     /**
@@ -586,7 +565,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     }
 
     private function assertBatchMatchesIntent(
-        DeferredSubagentBatch $row,
+        DeferredSubagentBatchProjectionDTO $row,
         string $lifecycleId,
         DeferredSubagentBatchChildIntentDTO $childIntent,
     ): void {
@@ -594,7 +573,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             throw new ToolCallException('Deferred subagent batch for this tool call uses a different lifecycle id than the deterministic launch.', retryable: false);
         }
 
-        $children = $this->childRepository->findOrderedByBatchLifecycleId($row->lifecycleId);
+        $children = $row->children;
         if (1 !== \count($children)) {
             throw new ToolCallException('Deferred invocation requires exactly one reserved child.', retryable: false);
         }

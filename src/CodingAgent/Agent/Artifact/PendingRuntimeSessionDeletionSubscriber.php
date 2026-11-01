@@ -7,8 +7,6 @@ namespace Ineersa\CodingAgent\Agent\Artifact;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Infrastructure\Doctrine\CommandRecord;
 use Ineersa\CodingAgent\Entity\BackgroundCompletionReceipt;
-use Ineersa\CodingAgent\Entity\BashLaunchOwnership;
-use Ineersa\CodingAgent\Entity\BashRegistrationReceipt;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletion;
 use Ineersa\CodingAgent\Entity\ToolBatchCall;
 use Ineersa\CodingAgent\Entity\ToolBatchResult;
@@ -48,10 +46,6 @@ final readonly class PendingRuntimeSessionDeletionSubscriber
             ->where('b.runId IN (:runs)')->setParameter('runs', $runs)->getQuery()->execute();
         $this->entityManager->createQueryBuilder()->delete(BackgroundCompletionReceipt::class, 'r')
             ->where('r.rootRunId IN (:runs)')->setParameter('runs', $runs)->getQuery()->execute();
-        $this->entityManager->createQueryBuilder()->delete(BashRegistrationReceipt::class, 'r')
-            ->where('IDENTITY(r.owner) = :owner')->setParameter('owner', (int) $event->sessionId)->getQuery()->execute();
-        $this->entityManager->createQueryBuilder()->delete(BashLaunchOwnership::class, 'r')
-            ->where('IDENTITY(r.owner) = :owner')->setParameter('owner', (int) $event->sessionId)->getQuery()->execute();
         // HatfieldSessionStore removes these paths and the owner tree only after
         // this metadata transaction succeeds. No filesystem deletion happens here.
     }

@@ -304,7 +304,7 @@ final class BackgroundCodeModeInvocationHandlerTest extends PerMethodIsolatedKer
         $batches = $container->get(ToolBatchStoreInterface::class);
         TestToolBatchRegistration::registerDeferredInvocation($batches, $correlation);
         $repository = $container->get(DeferredToolCompletionRepository::class);
-        $repository->registerPending($correlation);
+        $repository->preparePending($correlation);
         if ($ready) {
             $repository->markReady($id);
         }

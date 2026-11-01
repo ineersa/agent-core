@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 
 /**
- * Shared runtime helper for tool authors providing cancellable execution checkpoints.
+ * Shared runtime helper for tool authors providing a pre-start cancellation checkpoint.
  *
- * {@see run()} checks cancellation before and after the callback and throws a clear
+ * {@see run()} checks cancellation before the callback and throws a clear
  * RuntimeException if cancelled so ToolExecutor converts it to a structured error.
+ * Completed results are not rewritten here after the callback returns.
  *
  * Designed for use inside invokable tool handler implementations.
  * The ambient ToolContext (populated by ToolExecutor) provides the cancellation token.
@@ -24,21 +24,20 @@ final readonly class ToolRuntime
     }
 
     /**
-     * Execute a callback with cancellation checkpoints.
+     * Execute a callback with a pre-start cancellation checkpoint.
      *
-     * Checks the ambient ToolContext cancellation token both before and after
-     * the callback. If cancelled before execution, throws immediately. If
-     * cancelled during execution (detected after the callback), throws with
-     * a stale-result message — except for deferred completion outcomes, which
-     * must remain available so parent interruption can register and cancel
-     * owned child runs.
+     * Checks the ambient ToolContext cancellation token before the callback.
+     * If cancelled before execution, throws immediately. Successful or typed
+     * results returned by the callback are left intact; handlers that observe
+     * cancellation during work must return or throw an explicit cancellation
+     * outcome themselves.
      *
      * @param callable(): mixed $callback the tool logic to execute
      *
      * @return mixed the callback return value
      *
-     * @throws \RuntimeException when cancellation is detected before or after
-     *                           the callback. ToolExecutor catches this and
+     * @throws \RuntimeException when cancellation is detected before the
+     *                           callback. ToolExecutor catches this and
      *                           returns a structured error result.
      */
     public function run(callable $callback): mixed
@@ -49,16 +48,6 @@ final readonly class ToolRuntime
             throw new \RuntimeException(\sprintf('Tool execution "%s" cancelled before start.', $context->toolName()));
         }
 
-        $result = $callback();
-
-        if (
-            null !== $context
-            && $context->cancellationToken()->isCancellationRequested()
-            && !$result instanceof DeferredToolCompletionOutcome
-        ) {
-            throw new \RuntimeException(\sprintf('A result for tool "%s" was produced but is already stale due to run cancellation.', $context->toolName()));
-        }
-
-        return $result;
+        return $callback();
     }
 }

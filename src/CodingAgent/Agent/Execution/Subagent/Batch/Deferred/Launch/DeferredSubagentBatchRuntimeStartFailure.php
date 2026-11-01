@@ -10,7 +10,6 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
 final class DeferredSubagentBatchRuntimeStartFailure extends \RuntimeException
 {
     public function __construct(
-        public readonly int $failureBatchIndex,
         \Throwable $previous,
     ) {
         parent::__construct('Deferred subagent batch runtime start failed.', 0, $previous);

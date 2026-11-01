@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\CodeMode;
 
 use Amp\DeferredFuture;
+use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
@@ -14,11 +15,9 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
-use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\CodingAgent\Application\Message\DTO\BackgroundCodeModeInvocationDTO;
-use Ineersa\CodingAgent\Application\Pipeline\CodeModeLifecycleService;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tool\Arguments\CodeModeArgumentsDTO;
@@ -68,7 +67,6 @@ final readonly class CodeModeHostBridge
         private ToolBatchStoreInterface $batches,
         private ToolPayloadStoreInterface $payloads,
         private MessageBusInterface $commandBus,
-        private CodeModeLifecycleService $lifecycle,
         private Filesystem $filesystem = new Filesystem(),
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -85,7 +83,7 @@ final readonly class CodeModeHostBridge
             $cancelToken = $parentContext?->cancellationToken() ?? new NullCancellationToken();
             $timeoutSeconds = $this->resolveScriptWallSeconds($timeoutSeconds, $parentContext?->timeoutSeconds());
             $memoryLimit = $this->formatMemoryLimit($memoryLimitMb);
-            $deferredId = $this->registerOuterDeferred($parentContext);
+            $deferredId = $this->prepareDeferred($parentContext);
             if ($backgrounded && null === $deferredId) {
                 throw new ToolCallException('Background launch requires a top-level code_mode invocation.', retryable: false);
             }
@@ -105,7 +103,7 @@ final readonly class CodeModeHostBridge
                 $process = $this->startProcess($workspace, $cancelToken, $memoryLimit, $capture);
                 $connection = $this->acceptConnection($server, $process, $cancelToken, $timeoutSeconds, $workspace['startedAtNs']);
                 if (null !== $deferredId) {
-                    $this->lifecycle->ready($parentContext->runId(), $deferredId);
+                    $this->deferred->markReady($deferredId);
                     if ($backgrounded) {
                         $this->commandBus->dispatch(new BackgroundCodeModeInvocationDTO($parentContext->runId(), $deferredId, $parentContext->toolCallId()));
                     }
@@ -133,35 +131,38 @@ final readonly class CodeModeHostBridge
         });
     }
 
-    private function registerOuterDeferred(?ToolContext $parentContext): ?string
+    /**
+     * Register only an actual top-level handler invocation, after budget validation.
+     *
+     * Nested and no-context invocations have no deferred caller. Existing
+     * registrations retain their identity when the same intent is delivered again.
+     */
+    private function prepareDeferred(?ToolContext $parentContext): ?string
     {
         if (null === $parentContext || '' === $parentContext->runId() || null === $parentContext->stepId() || 'code_mode' !== $parentContext->toolName()) {
             return null;
         }
-        $call = $this->batches->loadCall($parentContext->runId(), $parentContext->turnNo(), $parentContext->stepId(), $parentContext->toolCallId());
-        if (!$call instanceof ExecuteToolCall) {
+        if ($this->contextAccessor->depth() > 1) {
             return null;
         }
-        $deferredId = UuidV7::v7()->toRfc4122();
+        $call = $this->batches->loadCall($parentContext->runId(), $parentContext->turnNo(), $parentContext->stepId(), $parentContext->toolCallId());
+        if (!$call instanceof ExecuteToolCall) {
+            throw new ToolCallException('Code-mode registration requires a canonical batch invocation.', retryable: false);
+        }
+        $metadata = $this->deferred->findMetadataByRunAndToolCall($call->runId(), $call->toolCallId);
+        if (null === $metadata) {
+            return $this->deferred->preparePending(ToolCallResultFactory::correlationFromExecuteToolCall($call, UuidV7::v7()->toRfc4122()))->deferredId;
+        }
+        $stored = $metadata->reference;
+        if (
+            'code_mode' !== $stored->toolName
+            || [$stored->runId, $stored->turnNo, $stored->stepId, $stored->attempt, $stored->idempotencyKey, $stored->toolCallId, $stored->orderIndex]
+            !== [$call->runId(), $call->turnNo(), $call->stepId(), $call->attempt(), $call->idempotencyKey(), $call->toolCallId, $call->orderIndex]
+        ) {
+            throw new ToolCallException('Code-mode registration does not match its canonical batch invocation.', retryable: false);
+        }
 
-        return $this->lifecycle->register(new DeferredToolCompletionCorrelation(
-            deferredId: $deferredId,
-            runId: $call->runId(),
-            turnNo: $call->turnNo(),
-            stepId: $call->stepId(),
-            attempt: $call->attempt(),
-            idempotencyKey: $call->idempotencyKey(),
-            toolCallId: $call->toolCallId,
-            toolName: $call->toolName,
-            arguments: $call->args,
-            orderIndex: $call->orderIndex,
-            toolIdempotencyKey: $call->toolIdempotencyKey,
-            mode: $call->mode,
-            timeoutSeconds: $call->timeoutSeconds,
-            maxParallelism: $call->maxParallelism,
-            argSchema: $call->argSchema,
-            toolsRef: $call->toolsRef,
-        ));
+        return $metadata->deferredId;
     }
 
     /**
