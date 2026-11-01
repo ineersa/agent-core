@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 
 final class InMemoryDeferredToolCompletionRepository implements DeferredToolCompletionRepositoryInterface
 {
-    /** @var array<string, array{correlation: DeferredToolCompletionCorrelation, status: string}> */
+    /** @var array<string, array{correlation: DeferredToolCompletionCorrelation, status: string, readyAt: ?\DateTimeImmutable}> */
     private array $byDeferredId = [];
 
     /** @var array<string, string> runId|toolCallId => deferredId */
@@ -19,24 +19,12 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
 
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
     {
-        $key = $correlation->runId.'|'.$correlation->toolCallId;
-        if (isset($this->byRunToolCall[$key])) {
-            $deferredId = $this->byRunToolCall[$key];
+        return $this->store($correlation, stampReadyAt: true);
+    }
 
-            return $this->byDeferredId[$deferredId]['correlation'];
-        }
-
-        if (isset($this->byDeferredId[$correlation->deferredId])) {
-            throw new \RuntimeException(\sprintf('Deferred id "%s" already registered.', $correlation->deferredId));
-        }
-
-        $this->byDeferredId[$correlation->deferredId] = [
-            'correlation' => $correlation,
-            'status' => 'pending',
-        ];
-        $this->byRunToolCall[$key] = $correlation->deferredId;
-
-        return $correlation;
+    public function preparePending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
+    {
+        return $this->store($correlation, stampReadyAt: false);
     }
 
     public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
@@ -82,7 +70,8 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
             $correlation->orderIndex, $correlation->toolName, hash('sha256', $body), \strlen($body),
         );
 
-        return new DeferredToolCompletionMetadataDTO($deferredId, $reference, $row['status']);
+        // Keep readiness visible for worker skip decisions.
+        return new DeferredToolCompletionMetadataDTO($deferredId, $reference, $row['status'], $row['readyAt']);
     }
 
     public function findMetadataByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionMetadataDTO
@@ -109,9 +98,60 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
         }
     }
 
+    public function markReady(string $deferredId): void
+    {
+        if (!isset($this->byDeferredId[$deferredId])) {
+            throw new \RuntimeException(\sprintf('Deferred id "%s" is not registered.', $deferredId));
+        }
+        if ('pending' !== $this->byDeferredId[$deferredId]['status']) {
+            throw new \RuntimeException(\sprintf('Deferred id "%s" is no longer pending for readiness.', $deferredId));
+        }
+        if (null === $this->byDeferredId[$deferredId]['readyAt']) {
+            $this->byDeferredId[$deferredId]['readyAt'] = new \DateTimeImmutable();
+        }
+    }
+
+    public function markBackgrounded(string $deferredId, \DateTimeImmutable $acceptedAt): void
+    {
+        if (!isset($this->byDeferredId[$deferredId])) {
+            throw new \RuntimeException(\sprintf('Deferred id "%s" is not registered.', $deferredId));
+        }
+        $row = &$this->byDeferredId[$deferredId];
+        if (isset($row['backgroundedAt'])) {
+            return;
+        }
+        if ('pending' !== $row['status'] || null === $row['readyAt']) {
+            throw new \RuntimeException(\sprintf('Deferred id "%s" is not ready for backgrounding.', $deferredId));
+        }
+        $row['backgroundedAt'] = $acceptedAt;
+    }
+
     // Native host state is exercised with the real repository, not this core fake.
     public function acceptResultReference(string $deferredId, ToolPayloadReferenceDTO $reference): ToolPayloadReferenceDTO
     {
         throw new \LogicException('Native result retention requires the persistent repository.');
+    }
+
+    private function store(DeferredToolCompletionCorrelation $correlation, bool $stampReadyAt): DeferredToolCompletionCorrelation
+    {
+        $key = $correlation->runId.'|'.$correlation->toolCallId;
+        if (isset($this->byRunToolCall[$key])) {
+            $deferredId = $this->byRunToolCall[$key];
+
+            return $this->byDeferredId[$deferredId]['correlation'];
+        }
+
+        if (isset($this->byDeferredId[$correlation->deferredId])) {
+            throw new \RuntimeException(\sprintf('Deferred id "%s" already registered.', $correlation->deferredId));
+        }
+
+        $this->byDeferredId[$correlation->deferredId] = [
+            'correlation' => $correlation,
+            'status' => 'pending',
+            'readyAt' => $stampReadyAt ? new \DateTimeImmutable() : null,
+        ];
+        $this->byRunToolCall[$key] = $correlation->deferredId;
+
+        return $correlation;
     }
 }

@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
+use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
+use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
+use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
 use Ineersa\AgentCore\Contract\RunContextNotLoadedException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
@@ -23,11 +28,112 @@ use Ineersa\CodingAgent\Runtime\Messenger\OwnerRunInitializationMiddleware;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
 use Symfony\Component\Messenger\Middleware\StackMiddleware;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
 final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernelTestCase
 {
+    public function testConsumedResumeRedeliveryDoesNotReapplyOrDisturbLaterWork(): void
+    {
+        $container = self::getContainer();
+        $run = $this->reserve();
+        $bus = $container->get('agent.command.bus');
+        $receive = static fn (object $message) => $bus->dispatch(new Envelope($message, [new ReceivedStamp('run_control')]));
+        $receive($this->start($run));
+        $events = $container->get(EventStoreInterface::class);
+        $commands = $container->get(CommandStoreInterface::class);
+        $command = static fn (string $key, bool $tagged = true): ApplyCommand => new ApplyCommand(
+            $run, 0, $key, 1, $key, 'follow_up',
+            ['message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => $key]], 'metadata' => $tagged ? ['agent_task' => ['artifact_id' => 'agent_resume_target']] : []]],
+        );
+        $drain = function (string $key) use ($container, $run): void {
+            // Exercise the real mailbox boundary without invoking an LLM worker.
+            $state = $this->registry()->requireLoaded($run);
+            $result = $container->get(AdvanceRunHandler::class)->handle(
+                new AdvanceRun($run, $state->turnNo, $key, 1, $key),
+                $state->with(['currentOperation' => null, 'activeStepId' => null]),
+            );
+            $container->get(PreparedTransitionEventStoreInterface::class)->appendTransition($result->events, ['run_id' => $run, 'predecessor_seq' => $state->lastSeq, 'actions' => $result->postCommitActions]);
+            $container->get(PendingTransitionRecovery::class)->recover($run);
+            $this->registry()->release($run);
+        };
+        $receive($command('resume-first'));
+        $drain('drain-first');
+        $this->assertSame([], $commands->pending($run));
+        $before = iterator_to_array($events->rangeFor($run, 1, \PHP_INT_MAX));
+        $receive($command('resume-first'));
+        $downstream = $this->createMock(MiddlewareInterface::class);
+        $downstream->expects($this->never())->method('handle');
+        $container->get(OwnerRunInitializationMiddleware::class)->handle(
+            new Envelope($command('resume-first'), [new ReceivedStamp('run_control')]),
+            new StackMiddleware($downstream),
+        );
+        $this->assertEquals($before, iterator_to_array($events->rangeFor($run, 1, \PHP_INT_MAX)));
+        $this->assertSame([], $commands->pending($run));
+
+        $receive($command('resume-later'));
+        $pending = $commands->pending($run);
+        $this->assertCount(1, $pending);
+        $before = iterator_to_array($events->rangeFor($run, 1, \PHP_INT_MAX));
+        $state = $this->registry()->requireLoaded($run);
+        $receive($command('resume-first'));
+        $this->assertSame($state, $this->registry()->requireLoaded($run));
+        $this->assertEquals($pending, $commands->pending($run));
+        $this->assertEquals($before, iterator_to_array($events->rangeFor($run, 1, \PHP_INT_MAX)));
+        $drain('drain-later');
+
+        $receive($command('ordinary', false));
+        $drain('drain-ordinary');
+        $this->assertSame([], $commands->pending($run));
+        $receive($command('ordinary', false));
+        $this->assertCount(1, $commands->pending($run), 'Untagged completed command IDs remain reusable.');
+        $all = iterator_to_array($events->rangeFor($run, 1, \PHP_INT_MAX));
+        $applied = array_values(array_filter($all, static fn (RunEvent $event): bool => 'agent_command_applied' === $event->type));
+        $this->assertSame(['resume-first', 'resume-later', 'ordinary'], array_column(array_map(static fn (RunEvent $event): array => $event->payload, $applied), 'idempotency_key'));
+        $this->assertCount(3, array_filter($all, static fn (RunEvent $event): bool => 'turn_advanced' === $event->type));
+    }
+
+    #[\PHPUnit\Framework\Attributes\TestWith([true])]
+    #[\PHPUnit\Framework\Attributes\TestWith([false])]
+    public function testConsumedResumeReleasesReconstructedTerminalChildOnly(bool $terminal): void
+    {
+        $container = self::getContainer();
+        $parent = $this->reserve();
+        $run = 'resume-recovered-child';
+        $container->get(AgentArtifactRegistry::class)->create($parent, 'agent_resume_target', $run, 'scout', AgentArtifactKindEnum::Subagent);
+        $bus = $container->get('agent.command.bus');
+        $receive = static fn (object $message) => $bus->dispatch(new Envelope($message, [new ReceivedStamp('run_control')]));
+        $receive($this->childStart($run, $parent));
+        $resume = static fn (string $key): ApplyCommand => new ApplyCommand($run, 0, $key, 1, $key, 'follow_up', [
+            'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'task']], 'metadata' => ['agent_task' => ['artifact_id' => 'agent_resume_target']]],
+        ]);
+        $receive($resume('same-resume'));
+        $state = $this->registry()->requireLoaded($run);
+        $result = $container->get(AdvanceRunHandler::class)->handle(new AdvanceRun($run, $state->turnNo, 'drain', 1, 'drain'), $state->with(['currentOperation' => null, 'activeStepId' => null]));
+        $container->get(PreparedTransitionEventStoreInterface::class)->appendTransition($result->events, ['run_id' => $run, 'predecessor_seq' => $state->lastSeq, 'actions' => $result->postCommitActions]);
+        $container->get(PendingTransitionRecovery::class)->recover($run);
+        $events = $container->get(EventStoreInterface::class);
+        if ($terminal) {
+            PreparedEventStoreSeeder::append($events, RunEvent::forAppend($run, 0, 'agent_end', ['reason' => 'completed']));
+        }
+        $this->registry()->release($run);
+        $before = iterator_to_array($events->rangeFor($run, 1, \PHP_INT_MAX));
+        $downstream = $this->createMock(MiddlewareInterface::class);
+        $downstream->expects($this->never())->method('handle');
+        $container->get(OwnerRunInitializationMiddleware::class)->handle(new Envelope($resume('same-resume'), [new ReceivedStamp('run_control')]), new StackMiddleware($downstream));
+        $this->assertEquals($before, iterator_to_array($events->rangeFor($run, 1, \PHP_INT_MAX)));
+        $this->assertSame([], $container->get(CommandStoreInterface::class)->pending($run));
+        if ($terminal) {
+            $this->expectException(RunContextNotLoadedException::class);
+            $this->registry()->requireLoaded($run);
+        } else {
+            $this->assertSame(RunStatus::Running, $this->registry()->requireLoaded($run)->status);
+            $receive($resume('distinct-resume'));
+            $this->assertCount(1, $container->get(CommandStoreInterface::class)->pending($run));
+        }
+    }
+
     #[\PHPUnit\Framework\Attributes\DataProvider('launchKinds')]
     public function testEnqueuedChildStartIsAcceptedByFreshOwnerDirectory(AgentArtifactKindEnum $kind): void
     {
@@ -154,7 +260,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
         $this->assertCount(1, iterator_to_array($events->rangeFor($run, 1, \PHP_INT_MAX)));
         $sent = self::getContainer()->get('messenger.transport.run_control')->getSent();
         $this->assertCount(1, $sent);
-        $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $sent[0]->getMessage());
+        $this->assertInstanceOf(AdvanceRun::class, $sent[0]->getMessage());
     }
 
     public function testEmptyRecoveryProductIsRejectedWithoutPublishingQueuedState(): void
@@ -168,7 +274,7 @@ final class OwnerRunInitializationMiddlewareTest extends PerMethodIsolatedKernel
             self::getContainer()->get(HatfieldSessionStore::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
-            new \Psr\Log\NullLogger(), self::getContainer()->get(AgentArtifactRegistry::class), self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class), self::getContainer()->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class));
+            new \Psr\Log\NullLogger(), self::getContainer()->get(AgentArtifactRegistry::class), self::getContainer()->get(PendingTransitionRecovery::class), self::getContainer()->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class), self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader::class));
         try {
             $middleware->handle(new Envelope($this->start($run), [new ReceivedStamp('run_control')]), new StackMiddleware());
             $this->fail('Empty recovery must not admit queued state.');

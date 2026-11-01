@@ -26,7 +26,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
-use Ineersa\CodingAgent\Application\Pipeline\ChildInvocationLifecycleService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
@@ -59,6 +58,8 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $service = $this->buildBatchLaunchService($agentRunner, [
             $this->definition('batch-retry'),
         ]);
+        $this->prepareLaunch($service, $parentRunId, $toolCallId, 'batch-retry', 'Same task');
+        $this->assertNull(self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($parentRunId, $toolCallId));
 
         $first = $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch(
             $parentRunId,
@@ -103,6 +104,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         });
         $agentRunner->expects($this->once())->method('cancel')->with($child['childRunId'], $this->anything());
         $service = $this->buildBatchLaunchService($agentRunner, [$this->definition('batch-one')]);
+        $this->prepareLaunch($service, $parentRunId, $toolCallId, 'batch-one', 'One');
         try {
             $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch($parentRunId, 'batch-one', 'One'));
             $this->fail('Expected ToolCallException');
@@ -111,9 +113,14 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         }
         $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($parentRunId, $toolCallId);
         $this->assertNotNull($batch);
-        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch->launchStatus);
-        $this->assertCount(1, $batch->children);
-        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $batch->children[0]->launchStatus);
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Failed,
+            $batch->launchStatus,
+        );
+        $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch?->launchStatus);
+        $this->assertCount(1, $batch?->children ?? []);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $batch?->children[0]->launchStatus);
         $this->assertSame(AgentArtifactStatusEnum::Failed, $registry->get($parentRunId, $child['artifactId'])?->status);
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('previously failed');
@@ -137,6 +144,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
 
         $batchLaunch = $this->buildBatchLaunchService($agentRunner, [$foregroundOnly]);
         $execution = new SubagentExecutionService($batchLaunch);
+        $this->prepareLaunch($batchLaunch, $parentRunId, $toolCallId, 'fg-only', 'Single task');
 
         $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $execution->execute(
             $parentRunId,
@@ -198,6 +206,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             [$brokenSecond],
         );
         $execution = new SubagentExecutionService($batchLaunch);
+        $this->prepareLaunch($batchLaunch, $parentRunId, $toolCallId, 'second-agent', 'boom');
 
         try {
             $this->withToolContext($parentRunId, $toolCallId, static fn () => $execution->execute(
@@ -215,7 +224,13 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $batch = $batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId);
         $this->assertNotNull($batch);
-        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch->launchStatus);
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Failed,
+            $batch->launchStatus,
+        );
+        $batch = $batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch?->launchStatus);
+        $this->assertNotNull($batch);
         $this->assertCount(1, $batch->children);
         foreach ($batch->children as $child) {
             $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $child->launchStatus);
@@ -406,13 +421,14 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         );
         $identityFactory = new DeferredSubagentBatchIdentityFactory();
         $runtimeStart = new \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService(
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class),
             $agentRunner,
-            $artifactLifecycle,
             $batchLaunchService,
             $lifecyclePolicyFactory,
             $logger,
         );
         $batchPreparation = new \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchPreparationService(
+            self::getContainer()->get(\Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface::class),
             $launchPreparation,
             $identityFactory,
             $artifactLifecycle,
@@ -427,7 +443,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             self::getContainer()->get(StackToolExecutionContextAccessor::class),
             $agentsConfig ?? self::getContainer()->get(AgentsConfig::class),
             $logger,
-            self::getContainer()->get(ChildInvocationLifecycleService::class),
         );
     }
 
@@ -441,13 +456,13 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         );
     }
 
-    /**
-     * @template T
-     *
-     * @param callable(): T $callback
-     *
-     * @return T
-     */
+    private function prepareLaunch(DeferredSubagentBatchLaunchService $service, string $parentRunId, string $toolCallId, string $agentName, string $task, string $toolName = 'subagent'): void
+    {
+        self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(
+            new RunState($parentRunId, RunStatus::Running),
+        );
+    }
+
     private function withToolContext(string $parentRunId, string $toolCallId, callable $callback): mixed
     {
         self::getContainer()->get(\Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository::class)->replace(

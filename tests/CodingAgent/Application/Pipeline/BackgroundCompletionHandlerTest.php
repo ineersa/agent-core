@@ -65,7 +65,6 @@ final class BackgroundCompletionHandlerTest extends IsolatedKernelTestCase
         $this->assertCount(1, self::getContainer()->get(CommandStoreInterface::class)->pending($message->runId()));
     }
 
-    #[TestWith(['stopped_by_user', 1])]
     #[TestWith(['completion_notified_at', '2026-10-28 00:00:00'])]
     #[TestWith(['backgrounded_at', null])]
     #[TestWith(['finished_at', null])]
@@ -78,6 +77,20 @@ final class BackgroundCompletionHandlerTest extends IsolatedKernelTestCase
         self::getContainer()->get(BackgroundCompletionHandler::class)($message);
         $this->assertNull(self::getContainer()->get(BackgroundCompletionReceiptRepository::class)->receipt($message->identity));
         $this->assertCount(0, self::getContainer()->get(CommandStoreInterface::class)->pending($message->runId()));
+    }
+
+    public function testExplicitStopDoesNotSuppressObservedCompletion(): void
+    {
+        [$message, $record] = $this->completion();
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->update(
+            'background_process',
+            ['stopped_by_user' => 1, 'status' => BackgroundProcessStatusEnum::Stopped->value],
+            ['id' => $record->id],
+        );
+        self::getContainer()->get(BackgroundCompletionHandler::class)($message);
+        $this->assertNotNull(self::getContainer()->get(BackgroundCompletionReceiptRepository::class)->receipt($message->identity));
+        $this->assertNotNull(self::getContainer()->get(ProcessStore::class)->snapshot($record->id)?->completionNotifiedAt);
+        $this->assertCount(1, self::getContainer()->get(CommandStoreInterface::class)->pending($message->runId()));
     }
 
     /** @return array{DeliverBackgroundCompletionDTO, BackgroundProcess} */

@@ -140,6 +140,9 @@ across tool waits or recycle after a fixed number of messages. Services are not
 reset beneath active Fibers. The normal worker memory limit remains in effect.
 Metadata redelivery does not repeat an external launch or resume action; it does
 not guarantee exactly-once external tool effects.
+The code-mode handler registers deferred correlation when execution begins and
+marks readiness locally after accepting the script socket. Permission refusals
+do not allocate execution metadata.
 
 ### Tool execution
 

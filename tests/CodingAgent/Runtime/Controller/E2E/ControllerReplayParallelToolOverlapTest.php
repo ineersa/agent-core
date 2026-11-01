@@ -402,7 +402,8 @@ YAML;
             }
 
             $toolCallId = (string) ($toolResult['tool_call_id'] ?? '');
-            $mode = $toolResult['result']['details']['mode'] ?? null;
+            // ToolCallResultFactory stores mode on result.mode, not details.mode.
+            $mode = $toolResult['result']['mode'] ?? null;
             if ('' === $toolCallId || !\is_string($mode)) {
                 continue;
             }

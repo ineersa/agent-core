@@ -24,6 +24,7 @@ final class SubmissionFactoryTest extends IsolatedKernelTestCase
     {
         $f = new SubmissionFixture(self::getContainer());
         $first = $f->prepare();
+        $f->register($first);
         $outcome = self::getContainer()->get(SubmissionFactory::class)->defer(new ToolContext($f->parent, 1, 'steer', 'agent_steer', new NullCancellationToken(), null, stepId: 'step'), ['text' => 'Important guidance', 'artifact_id' => $f->artifact]);
         Assert::assertSame($first->identity, $outcome->deferredId);
         Assert::assertEquals($first, $f->prepare());

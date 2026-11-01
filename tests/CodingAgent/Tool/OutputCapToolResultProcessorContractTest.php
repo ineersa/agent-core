@@ -171,7 +171,9 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
             toolCallId: 'call-g1',
             toolName: 'bash',
             content: [['type' => 'text', 'text' => $largeText]],
-            details: ['raw_result' => $largeText],
+            details: [
+                'raw_result' => $largeText,
+            ],
             isError: false,
         );
 

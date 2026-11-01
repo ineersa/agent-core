@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
 
@@ -51,30 +52,40 @@ final class ToolRuntimeTest extends TestCase
         );
     }
 
-    public function testRunThrowsWhenCancelledAfter(): void
+    public function testRunKeepsCompletedResultWhenCancelledAfter(): void
     {
         $token = $this->createMock(CancellationTokenInterface::class);
-        $token->expects($this->exactly(2))
+        $token->expects($this->once())
             ->method('isCancellationRequested')
-            ->willReturnOnConsecutiveCalls(false, true);
+            ->willReturn(false);
 
-        $this->contextAccessor->with(
+        $result = $this->contextAccessor->with(
             $this->contextWithToken($token),
-            function (): void {
-                $this->expectException(\RuntimeException::class);
-                $this->expectExceptionMessage('stale due to run cancellation');
-                $this->toolRuntime->run(static fn (): string => 'result');
-            },
+            fn (): string => $this->toolRuntime->run(static fn (): string => 'result'),
         );
+
+        $this->assertSame('result', $result);
     }
 
-    public function testRunReturnsDeferredOutcomeWhenCancelledAfter(): void
+    public function testRunKeepsTypedToolResultWhenCancelledAfter(): void
     {
         $token = $this->createMock(CancellationTokenInterface::class);
-        $token->expects($this->exactly(2))
+        $token->expects($this->once())
             ->method('isCancellationRequested')
-            ->willReturnOnConsecutiveCalls(false, true);
+            ->willReturn(false);
 
+        $typed = new ToolResult('call_1', 'test_tool', [['type' => 'text', 'text' => 'ok']], ['bash_native' => ['record_id' => 1]]);
+        $result = $this->contextAccessor->with(
+            $this->contextWithToken($token),
+            fn (): ToolResult => $this->toolRuntime->run(static fn (): ToolResult => $typed),
+        );
+
+        $this->assertSame($typed, $result);
+    }
+
+    public function testRunReturnsDeferredOutcome(): void
+    {
+        $token = $this->createToken(false);
         $outcome = new DeferredToolCompletionOutcome('deferred-1');
         $result = $this->contextAccessor->with(
             $this->contextWithToken($token),

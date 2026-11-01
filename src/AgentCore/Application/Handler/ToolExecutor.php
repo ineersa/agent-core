@@ -249,7 +249,10 @@ final class ToolExecutor implements ToolExecutorInterface
             // interruption can register, cancel owned children, and complete.
             // Overwriting them with a stale error leaves children running and
             // parent deferred completion waiting forever for registration.
-            if (!$alreadyCancelled && !$this->isDeferredOutcomeResult($result)) {
+            // Successful completed results also survive a later cancel signal;
+            // handlers that lose to cancel before returning must throw/return
+            // an explicit cancellation outcome themselves.
+            if (!$alreadyCancelled && $result->isError && !$this->isDeferredOutcomeResult($result)) {
                 $errorType = \is_array($details) ? ($details['error_type'] ?? null) : null;
                 if (ToolCallException::class === $errorType) {
                     $details['cancelled'] = true;
@@ -554,6 +557,19 @@ final class ToolExecutor implements ToolExecutorInterface
                 ],
                 isError: false,
             );
+        }
+
+        if ($rawResult instanceof ToolResult) {
+            if ($rawResult->toolCallId !== $toolCall->toolCallId || $rawResult->toolName !== $toolCall->toolName) {
+                throw new ToolCallException('Typed tool result identity does not match its invocation.', retryable: false);
+            }
+            $failure = ToolResultText::failureMessage($rawResult->content)
+                ?? ToolResultText::failureMessage($rawResult->details);
+            if (null !== $failure) {
+                throw new ToolCallException($failure, retryable: false);
+            }
+
+            return $rawResult;
         }
 
         if ($rawResult instanceof ToolExecutionHumanInputSuspension) {

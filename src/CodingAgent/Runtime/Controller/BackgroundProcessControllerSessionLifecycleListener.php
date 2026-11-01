@@ -12,7 +12,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
 /**
- * Removes user-accepted background process state for the controller session.
+ * Stops session processes while retaining their execution evidence for replay.
  *
  * Shutdown handles the ordinary end of controller ownership. Starting repairs
  * rows and exact sidecars left behind when a prior controller crashed.
@@ -36,10 +36,10 @@ final class BackgroundProcessControllerSessionLifecycleListener
     #[AsEventListener(event: ControllerSessionShutdownEvent::class)]
     public function onSessionShutdown(ControllerSessionShutdownEvent $event): void
     {
-        $this->cleanup($event->sessionId, 'shutdown');
+        $this->cleanup($event->sessionId, 'shutdown', $event->permanentDeletion);
     }
 
-    private function cleanup(string $controllerSessionId, string $phase): void
+    private function cleanup(string $controllerSessionId, string $phase, bool $permanentDeletion = false): void
     {
         $cleaned = 0;
         $failed = 0;
@@ -61,13 +61,13 @@ final class BackgroundProcessControllerSessionLifecycleListener
         foreach ($sessionIds as $sessionId) {
             ++$scopeCount;
             try {
-                foreach ($this->store->backgroundSnapshots($sessionId) as $entity) {
+                foreach ($this->store->sessionSnapshots($sessionId) as $entity) {
                     try {
                         if (null === $entity->finishedAt) {
                             $this->manager->stopByRecordId($entity->id, $sessionId);
                         }
 
-                        if (!$this->manager->cleanupFinishedRecord($entity->id, $sessionId)) {
+                        if ($permanentDeletion && !$this->manager->cleanupFinishedRecord($entity->id, $sessionId)) {
                             ++$failed;
                             $this->logger->warning('background_process.session_cleanup_row_failed', [
                                 'component' => 'tool.background_process',
@@ -93,6 +93,7 @@ final class BackgroundProcessControllerSessionLifecycleListener
                         ]);
                     }
                 }
+                $this->manager->cleanupSessionSidecars($sessionId, $permanentDeletion);
             } catch (\Throwable $exception) {
                 ++$failed;
                 $this->logger->warning('background_process.session_cleanup_scope_failed', [

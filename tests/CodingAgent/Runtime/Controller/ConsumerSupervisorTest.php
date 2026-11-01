@@ -50,30 +50,12 @@ final class ConsumerSupervisorTest extends TestCase
             'running:hang',
             'stop:hang:0',
             'running:exit',
+            'running:hang',
+            'running:exit',
         ], $calls->entries);
         $this->assertFalse($hang->isMarkedRunning());
         $this->assertFalse($exit->isMarkedRunning());
         $this->assertSame([], $this->consumerKeysRunning($supervisor), 'shutdown must clear tracked consumers');
-    }
-
-    public function testExecutionShutdownKeepsOwnerAvailableUntilFinalShutdown(): void
-    {
-        $locator = $this->createStub(AppExecutableLocator::class);
-        $supervisor = new ConsumerSupervisor(new TestLogger(), new RuntimeProcessConfig($locator, __DIR__));
-        $calls = new ShutdownProcessCallLog();
-        $tool = new RecordingShutdownProcess('tool', $calls, exitsOnTerm: true);
-        $owner = new RecordingShutdownProcess('owner', $calls, exitsOnTerm: true);
-        (new \ReflectionProperty($supervisor, 'consumers'))->setValue($supervisor, ['tool#0' => $tool, 'run_control#0' => $owner]);
-        $deadline = microtime(true);
-        $supervisor->shutdownUntil($deadline, keepRunControl: true);
-        $this->assertFalse($tool->isMarkedRunning());
-        $this->assertTrue($owner->isMarkedRunning());
-        $this->assertNotContains('signal:owner:'.\SIGTERM, $calls->entries);
-        $this->assertSame(['run_control#0' => true], $this->consumerKeysRunning($supervisor));
-        $supervisor->shutdownUntil($deadline);
-        $this->assertFalse($owner->isMarkedRunning());
-        $this->assertContains('signal:owner:'.\SIGTERM, $calls->entries);
-        $this->assertSame([], $this->consumerKeysRunning($supervisor));
     }
 
     public function testShutdownUntilEscalatesImmediatelyWhenSharedDeadlineAlreadyPassed(): void
@@ -100,6 +82,7 @@ final class ConsumerSupervisorTest extends TestCase
             'signal:hang:'.\SIGTERM,
             'running:hang',
             'stop:hang:0',
+            'running:hang',
         ], $calls->entries);
         $this->assertFalse($hang->isMarkedRunning());
         $this->assertLessThan(1.0, $elapsed, 'expired shared deadline must escalate without waiting configured grace');

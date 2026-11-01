@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
-use Ineersa\CodingAgent\Application\BackgroundProcess\BashRegistrationClient;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
@@ -17,7 +16,6 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
-use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
@@ -84,8 +82,6 @@ final class HeadlessController
         private readonly LockFactory $sessionOwnerLockFactory,
         private readonly string $runtimeCwd,
         private readonly ExtensionAgentJobRegistry $extensionAgentJobRegistry,
-        private readonly BackgroundProcessManager $backgroundProcesses,
-        private readonly BashRegistrationClient $bashControllerClient,
         /**
          * Optional background process completion poller for sending
          * follow-up notifications when a backgrounded process finishes.
@@ -202,10 +198,6 @@ final class HeadlessController
 
             throw $exception;
         }
-
-        // Live stop and cleanup metadata now use the controller's reply role.
-        // Shutdown retains run_control until the lifecycle listener finishes.
-        $this->backgroundProcesses->useProcessOwner($this->bashControllerClient);
 
         // Same event type/payload as before; emission now follows consumer launch.
         $this->emitter->emit(new RuntimeEvent(
@@ -505,7 +497,9 @@ final class HeadlessController
         // Parent JsonlProcessAgentSessionClient stop budget is 7s. Share one
         // deadline across consumers and broker so sequential 5s+5s grace cannot
         // outlive that parent SIGKILL.
-        $this->consumerSupervisor->shutdownUntil($deadline, keepRunControl: true);
+        // Stop every consumer, including run_control, before exclusive local
+        // session cleanup. Shutdown listeners no longer need a live owner reply.
+        $this->consumerSupervisor->shutdownUntil($deadline);
 
         try {
             $this->dispatcher->dispatch(new ControllerSessionShutdownEvent($this->sessionId));
@@ -517,7 +511,6 @@ final class HeadlessController
                 'exception' => $exception,
             ]);
         } finally {
-            $this->consumerSupervisor->shutdownUntil($deadline);
             $this->brokerSupervisor->shutdownUntil($deadline);
             // Release only after consumers and lifecycle listeners finish so a
             // replacement controller cannot race against cleanup.

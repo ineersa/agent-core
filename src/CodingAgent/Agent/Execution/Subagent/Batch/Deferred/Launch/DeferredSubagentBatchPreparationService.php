@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
 
+use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
@@ -24,6 +24,7 @@ use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
 final class DeferredSubagentBatchPreparationService
 {
     public function __construct(
+        private readonly RunOperationalStatusReaderInterface $statuses,
         private readonly SubagentLaunchPreparationService $launchPreparation,
         private readonly DeferredSubagentBatchIdentityFactory $identityFactory,
         private readonly ChildRunArtifactLifecycleService $artifactLifecycle,
@@ -150,8 +151,7 @@ final class DeferredSubagentBatchPreparationService
             return null;
         }
 
-        $artifactStatus = $this->artifactLifecycle->getArtifactStatus($parentRunId, $intent->artifactId);
-        if ($this->isArtifactBeyondPending($artifactStatus)) {
+        if (null !== $this->statuses->findOperationalStatus($intent->childRunId)) {
             return null;
         }
 
@@ -200,8 +200,7 @@ final class DeferredSubagentBatchPreparationService
             return null;
         }
 
-        $artifactStatus = $this->artifactLifecycle->getArtifactStatus($parentRunId, $intent->artifactId);
-        if ($this->isArtifactBeyondPending($artifactStatus)) {
+        if (null !== $this->statuses->findOperationalStatus($intent->childRunId)) {
             return null;
         }
 
@@ -232,14 +231,7 @@ final class DeferredSubagentBatchPreparationService
         DeferredSubagentBatchLaunchPlanDTO $plan,
         ?PreparedAgentChildRunDTO $prepared,
     ): bool {
-        $child = $this->childProjectionForIndex($projection->children, $plan->childIntent->batchIndex);
-        if (null !== $child && DeferredSubagentChildLaunchStatusEnum::Launched === $child->launchStatus) {
-            return true;
-        }
-
-        return null !== $prepared || $this->isArtifactBeyondPending(
-            $this->artifactLifecycle->getArtifactStatus($parentRunId, $plan->childIntent->artifactId),
-        );
+        return null !== $prepared || null !== $this->statuses->findOperationalStatus($plan->childIntent->childRunId);
     }
 
     /**
@@ -254,14 +246,5 @@ final class DeferredSubagentBatchPreparationService
         }
 
         return null;
-    }
-
-    private function isArtifactBeyondPending(?AgentArtifactStatusEnum $status): bool
-    {
-        if (null === $status) {
-            return false;
-        }
-
-        return AgentArtifactStatusEnum::Pending !== $status;
     }
 }

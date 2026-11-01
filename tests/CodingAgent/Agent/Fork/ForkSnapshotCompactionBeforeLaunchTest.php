@@ -34,7 +34,8 @@ use PHPUnit\Framework\Attributes\Group;
  *    messages—not a parent archive replay—reach fork child preparation;
  *    the immutable launch snapshot remains unchanged.
  * 2. Failure/no-op: structural no-op still launches; hard compaction failure
- *    launches/reserves nothing and surfaces immediately as ToolCallException.
+ *    surfaces immediately as ToolCallException. Owner preparation already
+ *    reserved batch metadata; owner admission of the failed result retires it.
  * 3. Generic compaction reuse: ForkExecutionService calls the existing
  *    CompactionServiceInterface::compactMessages (no fork-specific compactor).
  */
@@ -132,6 +133,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
             $container->get(RunRelationshipReader::class),
             $container->get(ForkSnapshotSanitizer::class),
             $compaction,
+            $container->get(StackToolExecutionContextAccessor::class),
         );
 
         $launchContext = new ToolLaunchContextDTO(
@@ -143,11 +145,15 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
             forkMessages: $parentMessages,
         );
 
-        $outcome = $this->withToolContext($parentRunId, $toolCallId, $launchContext, static fn () => $forkExecution->execute(
-            $parentRunId,
-            'Delegated snapshot task',
-            $launchContext,
-        ));
+        $outcome = $this->withToolContext($parentRunId, $toolCallId, $launchContext, static function () use ($forkExecution, $parentRunId, $launchContext) {
+            return $forkExecution->execute(
+                $parentRunId,
+                'Delegated snapshot task',
+                $launchContext,
+                modelOverride: 'openai-codex/gpt-5.5',
+                reasoningOverride: 'low',
+            );
+        });
 
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
         $this->assertSame(1, $compactCalls);
@@ -191,23 +197,26 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
             ],
         );
 
+        $failure = null;
         try {
-            $this->withToolContext($parentRunId, $toolCallId, $launchContext, static fn () => $forkExecution->execute(
-                $parentRunId,
-                'Should not launch',
-                $launchContext,
-            ));
+            $this->withToolContext($parentRunId, $toolCallId, $launchContext, static function () use ($forkExecution, $parentRunId, $launchContext) {
+                return $forkExecution->execute(
+                    $parentRunId,
+                    'Should not launch',
+                    $launchContext,
+                );
+            });
             $this->fail('Expected ToolCallException on hard compaction failure');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('Fork compaction failed', $e->getMessage());
-            $this->assertStringContainsString('Summarization model call failed.', $e->getMessage());
+        } catch (ToolCallException $exception) {
+            $failure = $exception;
+            $this->assertStringContainsString('Fork compaction failed', $exception->getMessage());
+            $this->assertStringContainsString('Summarization model call failed.', $exception->getMessage());
         }
+        $this->assertInstanceOf(ToolCallException::class, $failure);
 
         $batchRepository = self::getContainer()->get(DeferredSubagentBatchRepository::class);
-        $this->assertNull(
-            $batchRepository->findByParentRunAndToolCall($parentRunId, $toolCallId),
-            'Hard compaction failure must reserve zero deferred batches',
-        );
+        $batch = $batchRepository->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $this->assertNull($batch, 'Failed compaction must not reserve a child execution.');
     }
 
     public function testStructuralNoOpStillLaunchesViaOrdinaryDeferredPath(): void
@@ -254,11 +263,13 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
             ],
         );
 
-        $outcome = $this->withToolContext($parentRunId, $toolCallId, $launchContext, static fn () => $forkExecution->execute(
-            $parentRunId,
-            'noop task',
-            $launchContext,
-        ));
+        $outcome = $this->withToolContext($parentRunId, $toolCallId, $launchContext, static function () use ($forkExecution, $parentRunId, $launchContext) {
+            return $forkExecution->execute(
+                $parentRunId,
+                'noop task',
+                $launchContext,
+            );
+        });
 
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
     }

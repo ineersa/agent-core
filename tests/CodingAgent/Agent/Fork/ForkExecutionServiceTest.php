@@ -41,6 +41,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\RunStartedMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SessionAwareModelResolver;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
 use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
@@ -52,6 +53,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
@@ -180,7 +182,8 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
                 return $input->runId;
             },
         );
-        $runner->expects($this->once())->method('followUp');
+        $resumeCommands = new TestMessageBus();
+        $container->set('agent.command.bus', $resumeCommands);
         $container->set(AgentRunnerInterface::class, $runner);
         $compaction = $this->createStub(CompactionServiceInterface::class);
         $compaction->method('compactMessages')->willReturnCallback(
@@ -257,12 +260,14 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             $this->withToolContext($parent, 'cache-resume', static fn () => $resume->resume($parent,
                 new AgentResumeArgumentsDTO(artifact_id: $child->artifactId, task: 'resume'),
             ), toolName: 'agent_resume', stepId: $stepId);
+            $followUps = array_values(array_filter($resumeCommands->messages, static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\ApplyCommand && 'follow_up' === $message->kind));
+            $this->assertCount(1, $followUps);
+            $this->assertSame($child->childRunId, $followUps[0]->runId());
             $messages[] = new AgentMessage('assistant', [['type' => 'text', 'text' => $third->assistantMessage->asText()]]);
             $messages[] = new AgentMessage('user', [['type' => 'text', 'text' => 'resume']]);
             $resumed = $adapter->invoke(new ModelInvocationRequest('fallback/unused', new ModelInvocationInput(runId: $child->childRunId, messages: $messages)));
             $this->assertNotNull($resumed->assistantMessage);
             $this->assertSame($frames[0]['prompt_cache_key'], $frames[3]['prompt_cache_key']);
-
             $other = $this->withToolContext($parent, 'fork-cache-two', fn () => $fork->execute(
                 $parent, 'different fork', $this->forkLaunchContext($parent), modelOverride: 'openai-codex/gpt-5.5',
             ));
@@ -327,6 +332,11 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
 
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
 
+        $batch = $container->get(DeferredSubagentBatchRepository::class)
+            ->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $this->assertNotNull($batch);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batch->launchStatus);
+
         $retry = $this->withToolContext($parentRunId, $toolCallId, static fn () => $forkExecution->execute(
             $parentRunId,
             'Delegated integration task',
@@ -346,12 +356,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $forkExecution = self::getContainer()->get(ForkExecutionService::class);
 
         try {
-            $missingLaunchContext = $this->forkLaunchContext($parentRunId);
-            $this->withToolContext($parentRunId, 'call-missing-state', static fn () => $forkExecution->execute(
-                $parentRunId,
-                'Delegated integration task',
-                $missingLaunchContext,
-            ));
+            $this->withToolContext($parentRunId, 'refused-fork', static fn () => $forkExecution->execute($parentRunId, 'must not launch', new ToolLaunchContextDTO(kind: ToolLaunchContextDTO::KIND_FORK, producingRunId: $parentRunId, producingTurnNo: 2, producingModel: 'deepseek/deepseek-v4-flash')));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             // Missing operational relationship fails closed before canonical replay.
@@ -399,12 +404,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $forkExecution = self::getContainer()->get(ForkExecutionService::class);
 
         try {
-            $nestedLaunchContext = $this->forkLaunchContext($childRunId);
-            $this->withToolContext($childRunId, 'call-nested', static fn () => $forkExecution->execute(
-                $childRunId,
-                'nested',
-                $nestedLaunchContext,
-            ));
+            $this->withToolContext($childRunId, 'refused-fork', static fn () => $forkExecution->execute($childRunId, 'must not launch', new ToolLaunchContextDTO(kind: ToolLaunchContextDTO::KIND_FORK, producingRunId: $childRunId, producingTurnNo: 2, producingModel: 'deepseek/deepseek-v4-flash')));
             $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertStringContainsString('is an agent child; nested launches are not supported', $e->getMessage());
@@ -471,13 +471,6 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         ));
     }
 
-    /**
-     * @template T
-     *
-     * @param callable(): T $callback
-     *
-     * @return T
-     */
     private function withToolContext(string $parentRunId, string $toolCallId, callable $callback, string $toolName = 'fork', ?ToolLaunchContextDTO $launchContext = null, ?string $stepId = null): mixed
     {
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);

@@ -95,6 +95,9 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
 
                         return null;
                     }
+                    if ('correlation' === $message->reference->kind) {
+                        throw new ToolPayloadException('Active deferred completion requires result data.');
+                    }
                 } elseif (!$this->admission->accepts($message->reference, 'run_control' === $received->getTransportName())) {
                     return null;
                 }
@@ -122,7 +125,13 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                         throw new ToolPayloadException('Deferred completion data is not a tool result.');
                     }
 
-                    return new CompleteDeferredToolCall($message->deferredId, $body->result['content'], $body->result['details'] ?? null, $body->isError, $body->error);
+                    return new CompleteDeferredToolCall(
+                        $message->deferredId,
+                        $body->result['content'],
+                        $body->result['details'] ?? null,
+                        $body->isError,
+                        $body->error,
+                    );
                 }
 
                 return $body;
@@ -185,7 +194,13 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             [$deferredId, $reference] = $this->publishProcessedResult($message);
         } else {
             $deferredId = null;
-            $reference = $this->locks->synchronized($message->runId(), fn () => $this->admission->canPublish($message) ? $this->payloads->publish($message) : null);
+            $reference = $this->locks->synchronized($message->runId(), function () use ($message): ?ToolPayloadReferenceDTO {
+                if (!$this->admission->canPublish($message)) {
+                    return null;
+                }
+
+                return $this->payloads->publish($message);
+            });
         }
         if (null === $reference) {
             return $envelope->with(new HandledStamp(null, self::class));
@@ -195,7 +210,9 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
 
         // Sending remains outside the run lock. Cleanup can race the send, but
         // the receiver checks existing admission before requiring the file.
-        return $stack->next()->handle($this->route(new Envelope($transported, array_merge(...array_values($envelope->all()))), $transported), $stack);
+        $stamps = array_merge(...array_values($envelope->all()));
+
+        return $stack->next()->handle($this->route(new Envelope($transported, $stamps), $transported), $stack);
     }
 
     private function publishDeferred(CompleteDeferredToolCall $message): ?ToolPayloadReferenceDTO
@@ -205,11 +222,15 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         return $this->locks->synchronized($initial->reference->runId, function () use ($message, $initial): ?ToolPayloadReferenceDTO {
             $metadata = $this->deferredMetadata($message->deferredId);
             $this->assertDeferredReference($metadata, $initial->reference);
-            if ('completed' === $metadata->status || !$this->admission->acceptsDeferred($metadata->reference, false)) {
-                $ref = $metadata->reference;
-                $this->deferredHandler->settle($metadata->deferredId, $ref->runId, $ref->turnNo, $ref->stepId);
-
+            // Pending completions must reach owner settlement even when their
+            // caller is obsolete. Only completed redelivery is a producer no-op.
+            if ('completed' === $metadata->status) {
                 return null;
+            }
+            if (!$this->admission->acceptsDeferred($metadata->reference, false)) {
+                // Obsolete owner settlement needs identity only, not files that
+                // may already be gone. Never invent a result reference here.
+                return $metadata->reference;
             }
             // Prefer the first accepted immutable result when present so failed
             // sends can redrive without rebuilding or re-executing the tool.
@@ -232,7 +253,11 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
     private function publishProcessedResult(ToolCallResult $message): array
     {
         return $this->locks->synchronized($message->runId(), fn (): array => $this->payloads->withStorage($message->runId(), function () use ($message): array {
-            if ('completed' === $this->deferred->statusForRunAndToolCall($message->runId(), $message->toolCallId)) {
+            $metadata = $this->deferred->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
+            $status = null !== $metadata
+                ? $metadata->status
+                : $this->deferred->statusForRunAndToolCall($message->runId(), $message->toolCallId);
+            if ('completed' === $status) {
                 return [null, null];
             }
             $metadata = $this->findEarlyDeferredRegistration($message);
@@ -245,7 +270,11 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                 return [null, $this->remoteResultOwner ? $reference : $this->acceptCodeModeResult($reference, false)];
             }
 
-            return [null, $this->admission->canPublish($message) ? $this->payloads->publish($message) : null];
+            if (!$this->admission->canPublish($message)) {
+                return [null, null];
+            }
+
+            return [null, $this->payloads->publish($message)];
         }));
     }
 
@@ -366,11 +395,17 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
 
     private function route(Envelope $envelope, ToolPayloadMessage $message): Envelope
     {
+        // Results and deferred settlement belong to run_control even when an
+        // execution transport stamp remains on the producer envelope.
+        if ('result' === $message->reference->kind || null !== $message->deferredId) {
+            return $envelope->withoutAll(TransportNamesStamp::class)
+                ->with(new TransportNamesStamp(['run_control']));
+        }
         if (null !== $envelope->last(TransportNamesStamp::class)) {
             return $envelope;
         }
 
-        return $envelope->with(new TransportNamesStamp(['result' === $message->reference->kind ? 'run_control' : 'tool']));
+        return $envelope->with(new TransportNamesStamp(['tool']));
     }
 
     private function validate(ToolPayloadMessage $message): void
@@ -379,7 +414,8 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         if (0 !== \count($errors)) {
             throw new ValidationFailedException($message, $errors);
         }
-        if ('correlation' === $message->reference->kind || (null !== $message->deferredId && 'result' !== $message->reference->kind)) {
+        if (('correlation' === $message->reference->kind && null === $message->deferredId)
+            || (null !== $message->deferredId && !\in_array($message->reference->kind, ['result', 'correlation'], true))) {
             throw new ToolPayloadException('Tool transport reference has an unsupported data kind.');
         }
     }
