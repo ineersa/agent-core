@@ -127,7 +127,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
             $receivers[$name] = $receiver;
         }
         $concurrency = 'tool' === $transport
-            ? $this->appConfig->runtime->toolConcurrency
+            ? null
             : $this->appConfig->runtime->llmConcurrency;
         $strategy = new FiberMessageExecutionStrategy($this->routableBus, $concurrency);
 
@@ -138,7 +138,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
             $this->logger,
         ));
         $io = new SymfonyStyle($input, $output);
-        $io->success(\sprintf('Consuming messages from transports "%s" with Fiber concurrency %d.', implode(', ', $transportNames), $concurrency));
+        $io->success(\sprintf('Consuming messages from transports "%s" with Fiber concurrency %s.', implode(', ', $transportNames), null === $concurrency ? 'unlimited' : (string) $concurrency));
         $io->comment('Per-message service reset is disabled for overlapping handlers.');
         $io->comment('Quit the worker with CONTROL-C.');
 
@@ -184,11 +184,13 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
             }
 
             // sleep=0: LlmFiberConsumeWaitSubscriber owns idle WAIT (Amp-safe).
-            // fetch_size matches admission so the Worker can fill capacity quickly.
-            $this->worker->run([
-                'sleep' => 0,
-                'fetch_size' => $concurrency,
-            ]);
+            // LLM fetch size matches admission. Tools use Worker's finite default
+            // fetch size without imposing a limit on in-flight handlers.
+            $options = ['sleep' => 0];
+            if (null !== $concurrency) {
+                $options['fetch_size'] = $concurrency;
+            }
+            $this->worker->run($options);
         } finally {
             if (null !== $keepaliveWatcher) {
                 EventLoop::cancel($keepaliveWatcher);

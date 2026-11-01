@@ -64,6 +64,16 @@ use function Amp\async;
  */
 final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
 {
+    public function testToolWorkerAdmitsThirtyTwoBlockedHandlersAcrossBothQueues(): void
+    {
+        $this->assertWorkerAdmission('tool', 32, 32);
+    }
+
+    public function testLlmWorkerStillBoundsSimultaneouslyBlockedHandlers(): void
+    {
+        $this->assertWorkerAdmission('llm', 12, 6);
+    }
+
     public function testToolConsumerRetainsOnlySnapshotsBeyondFormerRecycleBoundary(): void
     {
         $manager = self::getContainer()->get(EntityManagerInterface::class);
@@ -100,7 +110,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
                 $release->complete();
             }
         });
-        $acknowledged = $this->runSnapshotConsumer(300, 16, $dispatcher, static function (int $id) use ($store, $manager, $sessions, $parent, $record, $batches, $children, $deferred, $models, $relationships, $release, &$held, &$calls): void {
+        $acknowledged = $this->runSnapshotConsumer(300, $dispatcher, static function (int $id) use ($store, $manager, $sessions, $parent, $record, $batches, $children, $deferred, $models, $relationships, $release, &$held, &$calls): void {
             ++$calls;
             $processes = $store->fetchForegroundTools($parent);
             self::assertSame($record, $processes[0]->id);
@@ -182,7 +192,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             });
             $buses = new ServiceLocator(['default' => static fn () => $bus]);
             $config = clone self::getContainer()->get(AppConfig::class);
-            $config->runtime = new RuntimeConfigDTO(toolConcurrency: 2);
+            $config->runtime = new RuntimeConfigDTO();
             $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), $receivers, $dispatcher, $config, $logger);
             // Earlier kernels in this PHPUnit process are outside the worker's
             // lease/drain contract; do not let their retained memory stop it.
@@ -393,7 +403,112 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         );
     }
 
-    private function runSnapshotConsumer(int $messages, int $concurrency, EventDispatcher $dispatcher, \Closure $handle): int
+    private function assertWorkerAdmission(string $role, int $total, int $capacity): void
+    {
+        $release = new DeferredFuture();
+        $entered = [];
+        $completed = [];
+        $active = 0;
+        $peak = 0;
+        $bus = new class($release, $entered, $completed, $active, $peak, $capacity) implements MessageBusInterface {
+            /**
+             * @param list<string> $entered
+             * @param list<string> $completed
+             */
+            public function __construct(
+                private DeferredFuture $release,
+                private array &$entered,
+                private array &$completed,
+                private int &$active,
+                private int &$peak,
+                private int $capacity,
+            ) {
+            }
+
+            public function dispatch(object $message, array $stamps = []): Envelope
+            {
+                $envelope = Envelope::wrap($message, $stamps);
+                $id = $envelope->getMessage()->id;
+                $this->entered[] = $id;
+                ++$this->active;
+                $this->peak = max($this->peak, $this->active);
+                if ($this->capacity === \count($this->entered)) {
+                    Assert::assertSame([], $this->completed, 'Every initial handler must enter before any is released.');
+                    $this->release->complete();
+                }
+                try {
+                    // Safety cap only: the last admitted handler opens the barrier.
+                    $this->release->getFuture()->await(new TimeoutCancellation(2));
+                    $this->completed[] = $id;
+                } finally {
+                    --$this->active;
+                }
+
+                return $envelope;
+            }
+        };
+        $receivers = [];
+        $factories = [];
+        $names = 'tool' === $role ? ['tool', 'agent'] : ['llm'];
+        foreach ($names as $name) {
+            $receiver = new class($name, intdiv($total, \count($names))) implements ReceiverInterface {
+                /** @var list<string> */
+                public array $acknowledged = [];
+                private int $next = 0;
+
+                public function __construct(private string $name, private int $total)
+                {
+                }
+
+                public function get(): iterable
+                {
+                    if ($this->next < $this->total) {
+                        yield new Envelope((object) ['id' => $this->name.'-'.++$this->next]);
+                    }
+                }
+
+                public function ack(Envelope $envelope): void
+                {
+                    $this->acknowledged[] = $envelope->getMessage()->id;
+                }
+
+                public function reject(Envelope $envelope): void
+                {
+                    Assert::fail('Blocked handler was rejected: '.$envelope->getMessage()->id);
+                }
+            };
+            $receivers[$name] = $receiver;
+            $factories[$name] = static fn () => $receiver;
+        }
+        $dispatcher = new EventDispatcher();
+        $handled = [];
+        $dispatcher->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use (&$handled): void {
+            $handled[] = $event->getEnvelope()->getMessage()->id;
+        });
+        $dispatcher->addListener(WorkerRunningEvent::class, static function (WorkerRunningEvent $event): void {
+            if ($event->isWorkerIdle()) {
+                $event->getWorker()->stop();
+            }
+        });
+        $config = clone self::getContainer()->get(AppConfig::class);
+        $config->runtime = new RuntimeConfigDTO(llmConcurrency: 6);
+        $buses = new ServiceLocator(['default' => static fn () => $bus]);
+        $command = new LlmFiberConsumeCommand(new RoutableMessageBus($buses, $bus), new ServiceLocator($factories), $dispatcher, $config);
+        $input = new ArrayInput(['--transport' => $role, '--memory-limit' => (string) (memory_get_usage(true) + 64 * 1024 * 1024)]);
+        $input->bind($command->getDefinition());
+        $output = new BufferedOutput();
+        $this->assertSame(0, $command->run($input, $output));
+        $this->assertSame($capacity, $peak);
+        $this->assertCount($total, $entered);
+        $this->assertCount($total, array_unique($entered));
+        $this->assertEqualsCanonicalizing($entered, $completed);
+        $this->assertEqualsCanonicalizing($entered, $handled);
+        $acknowledged = array_merge(...array_values(array_map(static fn ($receiver): array => $receiver->acknowledged, $receivers)));
+        $this->assertEqualsCanonicalizing($entered, $acknowledged);
+        $this->assertStringContainsString('Fiber concurrency '.('tool' === $role ? 'unlimited' : '6'), $output->fetch());
+    }
+
+    private function runSnapshotConsumer(int $messages, EventDispatcher $dispatcher, \Closure $handle): int
     {
         $receiver = new class($messages) implements ReceiverInterface {
             public int $acknowledged = 0;
@@ -440,7 +555,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             }
         });
         $config = clone self::getContainer()->get(AppConfig::class);
-        $config->runtime = new RuntimeConfigDTO(toolConcurrency: $concurrency);
+        $config->runtime = new RuntimeConfigDTO();
         $receivers = new ServiceLocator(['tool' => static fn () => $receiver, 'agent' => static fn () => new class implements ReceiverInterface {
             public function get(): iterable
             {
