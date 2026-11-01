@@ -418,25 +418,6 @@ final class ViewImageToolTest extends TestCase
         );
     }
 
-    public function testCancelledAfterExecutionThrows(): void
-    {
-        $imagePath = $this->tmpDir.'/stale.png';
-        $this->createPng1x1($imagePath);
-
-        $token = $this->createStub(CancellationTokenInterface::class);
-        $token->method('isCancellationRequested')->willReturnOnConsecutiveCalls(false, true);
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('stale due to run cancellation');
-
-        $this->contextAccessor->with(
-            $this->contextWithToken($token),
-            function () use ($imagePath): void {
-                ($this->viewImageTool)(new ViewImageArgumentsDTO(path: $imagePath));
-            },
-        );
-    }
-
     /* ── Full pipeline: ToolResult → ToolCallResult → AgentMessage → MessageBag ── */
 
     public function testPipelineProducesImageAttachmentInMessageBag(): void

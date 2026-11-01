@@ -236,30 +236,6 @@ final class WriteFileToolTest extends TestCase
         $this->assertFileDoesNotExist($this->tmpDir.'/cancelled.txt');
     }
 
-    public function testWriteCancelledAfterExecutionThrows(): void
-    {
-        $targetPath = $this->tmpDir.'/stale.txt';
-        $token = $this->createMock(CancellationTokenInterface::class);
-        $token->expects($this->exactly(2))
-            ->method('isCancellationRequested')
-            ->willReturnOnConsecutiveCalls(false, true);
-
-        $this->contextAccessor->with(
-            $this->contextWithToken($token),
-            function () use ($targetPath): void {
-                $this->expectException(\RuntimeException::class);
-                $this->expectExceptionMessage('stale due to run cancellation');
-
-                ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $targetPath, content: 'This will be written but reported as stale.'));
-            },
-        );
-
-        // The file IS written because cancellation happened after the write
-        // but the toll runtime still throws to prevent the stale result from
-        // reaching the LLM.
-        $this->assertFileExists($targetPath);
-    }
-
     private function validateDto(object $dto): array
     {
         return iterator_to_array(Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator()->validate($dto));

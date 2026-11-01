@@ -59,7 +59,7 @@ final class CodeModeTool implements HatfieldToolProviderInterface
             name: self::NAME,
             description: self::DESCRIPTION,
             handler: $this,
-            executionMode: ToolExecutionMode::Sequential,
+            executionMode: ToolExecutionMode::Parallel,
             promptLine: 'code_mode script — run PHP that calls existing tools via tool(name, arguments)',
             promptGuidelines: [
                 'Prefer code_mode for multi-step tool work when intermediate results do not need model interpretation. Batch related reads and lookups, filter or compare inside the script, and return the evidence needed for the next decision. Use direct tools for single calls, images, human input, and child-agent operations. Do not wrap a single call or dump entire intermediate results merely to use code_mode.',

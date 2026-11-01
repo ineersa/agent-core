@@ -99,7 +99,7 @@ final class PromptCacheDiagnosticsStore
             return null;
         }
 
-        if (null !== $this->hatfieldSessionStore->findSession($runId)) {
+        if ($this->hatfieldSessionStore->exists($runId)) {
             return $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$runId.'/'.self::RELATIVE_FILE;
         }
 

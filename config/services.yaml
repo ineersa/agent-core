@@ -194,6 +194,14 @@ services:
 
   Symfony\Component\Filesystem\Filesystem: ~
 
+  Ineersa\CodingAgent\Application\BackgroundProcess\RequestBashBackgroundHandler:
+    arguments:
+      $sink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
+
+  Ineersa\CodingAgent\Application\Pipeline\BackgroundCompletionHandler:
+    arguments:
+      $sink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
+
   Ineersa\CodingAgent\Config\SettingsOverrideWriter:
     arguments:
       $propertyAccessor: '@coding_agent.settings.property_accessor'
@@ -401,10 +409,6 @@ services:
       $config: '@Ineersa\CodingAgent\Config\BackgroundProcessConfig'
     calls:
       - registerShutdownHandler: []
-
-  Ineersa\CodingAgent\Tool\BackgroundProcessProvisionalCleanupTask:
-    arguments:
-      $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
   # Startup database migrator — runs known migration classes at startup via DBAL.
   # Uses the app-owned ApplicationMigrationExecutor instead of the Symfony
@@ -648,6 +652,21 @@ services:
     arguments:
       - '@hatfield.controller.session_owner.lock_store'
 
+  hatfield.bash.sidecar_lock_store:
+    class: Symfony\Component\Lock\Store\FlockStore
+    arguments:
+      - '%app.cwd%/.hatfield/locks/bash-sidecars'
+
+  hatfield.bash.sidecar_lock_factory:
+    class: Symfony\Component\Lock\LockFactory
+    arguments:
+      - '@hatfield.bash.sidecar_lock_store'
+
+  Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle:
+    arguments:
+      # Share sidecar locks across worker/cache/install identities in this project.
+      $lockFactory: '@hatfield.bash.sidecar_lock_factory'
+
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
       $dispatcher: '@event_dispatcher'
@@ -871,6 +890,10 @@ services:
         execution: '@Ineersa\CodingAgent\Agent\Fork\ForkExecutionService'
 
   # code_mode: definition provider is tagged; toolbox resolves only at nested invoke time.
+  Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
   Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge:
     arguments:
       $commandBus: '@agent.command.bus'

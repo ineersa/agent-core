@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader;
 use Ineersa\CodingAgent\Application\AgentCommunication\DTO\CompleteSubmissionDTO;
 use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
@@ -41,6 +42,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
         private \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry $artifacts,
         private \Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery $transitionRecovery,
         private RunOperationalStatusReaderInterface $operationalStatus,
+        private AgentResumeCommandReader $resumeCommands,
         private ?RunTracer $tracer = null,
     ) {
     }
@@ -68,6 +70,15 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
                 $this->initializeForOwner($runId, $message);
             }
 
+            // Resume owns completed-command reuse at the same locked receive
+            // boundary as application. Stop duplicates before history-tail discard.
+            if ($message instanceof ApplyCommand && $this->resumeCommands->isResumeCommand($message)
+                && null !== $this->resumeCommands->find($runId, $message->idempotencyKey())) {
+                $this->releaseTerminalChild($runId);
+
+                return $envelope;
+            }
+
             $handled = $stack->next()->handle($envelope, $stack);
             // Enqueue is not acceptance. Promote only after the owner committed
             // StartRun; deterministic launch redelivery can safely reach here again.
@@ -87,14 +98,7 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
             }
 
             if ($message instanceof StartRun || $message instanceof CompleteSubmissionDTO) {
-                $child = $this->children->locate($runId);
-                $status = $this->operationalStatus->findOperationalStatus($runId)?->status;
-                // These handlers can settle a late envelope without entering
-                // RunMessageProcessor's terminal no-op release. Owner recovery
-                // must not leave that finished child's execution graph resident.
-                if (null !== $child && null !== $status && $status->isTerminal()) {
-                    $this->registry->release($runId);
-                }
+                $this->releaseTerminalChild($runId);
             }
 
             return $handled;
@@ -156,5 +160,15 @@ final readonly class OwnerRunInitializationMiddleware implements MiddlewareInter
                 }
             }
         });
+    }
+
+    /** Late no-op handlers bypass RunMessageProcessor's terminal child release. */
+    private function releaseTerminalChild(string $runId): void
+    {
+        $child = $this->children->locate($runId);
+        $status = $this->operationalStatus->findOperationalStatus($runId)?->status;
+        if (null !== $child && null !== $status && $status->isTerminal()) {
+            $this->registry->release($runId);
+        }
     }
 }

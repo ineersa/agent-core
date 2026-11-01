@@ -26,17 +26,17 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\EventDispatcher\ListenerIntrospectionInterface;
 
 /**
- * Controller-owned llm consumer with same-process Fiber concurrency.
+ * Controller-owned execution consumer with same-process Fiber concurrency.
  *
  * Stock messenger:consume --concurrency still uses Amp child processes. This
- * command keeps overlapping ExecuteLlmStep handlers in one PHP runtime, omits
+ * command keeps overlapping execution handlers in one PHP runtime, omits
  * ResetServicesListener so shared services survive overlap, renews sqlite-queue
  * leases with a Revolt timer (not SIGALRM), and relies on
  * LlmFiberConsumeWaitSubscriber for sqlite-queue native idle WAIT.
  */
 #[AsCommand(
     name: 'hatfield:messenger:consume-llm',
-    description: 'Consume llm transport messages with same-process Fiber concurrency',
+    description: 'Consume execution transport messages with same-process Fiber concurrency',
 )]
 final class LlmFiberConsumeCommand extends Command implements SignalableCommandInterface
 {
@@ -62,6 +62,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
         // Supervisor keeps these explicit in argv; configure them here so their
         // registration does not depend on the framework's protected hook.
         $this
+            ->addOption('transport', null, InputOption::VALUE_REQUIRED, 'Execution role: llm or tool (includes agent)', 'llm')
             ->addOption('memory-limit', 'm', InputOption::VALUE_REQUIRED, 'The memory limit the worker can consume', self::MEMORY_LIMIT)
             ->addOption('keepalive', null, InputOption::VALUE_OPTIONAL, 'Keepalive interval in seconds', self::KEEPALIVE_SECONDS);
     }
@@ -109,13 +110,25 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        if (!$this->receiverLocator->has('llm')) {
-            throw new \RuntimeException('The receiver "llm" does not exist.');
+        $transport = $input->getOption('transport');
+        if (!\in_array($transport, ['llm', 'tool'], true)) {
+            throw new \InvalidArgumentException('--transport must be llm or tool.');
         }
-
-        /** @var ReceiverInterface $receiver */
-        $receiver = $this->receiverLocator->get('llm');
-        $concurrency = $this->appConfig->runtime->llmConcurrency;
+        // Keep consuming the durable agent queue after consolidation, including
+        // messages accepted by an older controller before its last shutdown.
+        $transportNames = 'tool' === $transport ? ['tool', 'agent'] : ['llm'];
+        $receivers = [];
+        foreach ($transportNames as $name) {
+            if (!$this->receiverLocator->has($name)) {
+                throw new \RuntimeException(\sprintf('The receiver "%s" does not exist.', $name));
+            }
+            /** @var ReceiverInterface $receiver */
+            $receiver = $this->receiverLocator->get($name);
+            $receivers[$name] = $receiver;
+        }
+        $concurrency = 'tool' === $transport
+            ? null
+            : $this->appConfig->runtime->llmConcurrency;
         $strategy = new FiberMessageExecutionStrategy($this->routableBus, $concurrency);
 
         $memoryLimit = (string) ($input->getOption('memory-limit') ?? self::MEMORY_LIMIT);
@@ -124,14 +137,13 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
             self::memoryLimitBytes($memoryLimit),
             $this->logger,
         ));
-
         $io = new SymfonyStyle($input, $output);
-        $io->success(\sprintf('Consuming messages from transport "llm" with Fiber concurrency %d.', $concurrency));
+        $io->success(\sprintf('Consuming messages from transports "%s" with Fiber concurrency %s.', implode(', ', $transportNames), null === $concurrency ? 'unlimited' : (string) $concurrency));
         $io->comment('Per-message service reset is disabled for overlapping handlers.');
         $io->comment('Quit the worker with CONTROL-C.');
 
         $this->worker = new Worker(
-            ['llm' => $receiver],
+            $receivers,
             $this->routableBus,
             $eventDispatcher,
             $this->logger,
@@ -154,7 +166,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
             if (null !== $keepaliveSeconds) {
                 $this->logger?->info('Arming Revolt keepalive timer.', [
                     'interval_seconds' => $keepaliveSeconds,
-                    'transport_names' => ['llm'],
+                    'transport_names' => $transportNames,
                 ]);
                 // Revolt timer renews while Amp HTTP Fibers are suspended.
                 $keepaliveWatcher = EventLoop::repeat((float) $keepaliveSeconds, function () use ($keepaliveSeconds): void {
@@ -163,7 +175,7 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
                     }
                     // Distinct from Worker::keepalive's "Sending keepalive request." so tests
                     // can prove the Revolt timer fired, not only the native Worker path.
-                    $this->logger?->debug('Renewing Fiber llm leases via Revolt timer.', [
+                    $this->logger?->debug('Renewing Fiber execution leases via Revolt timer.', [
                         'transport_names' => $this->worker->getMetadata()->getTransportNames(),
                     ]);
                     $this->worker->keepalive($keepaliveSeconds);
@@ -172,11 +184,13 @@ final class LlmFiberConsumeCommand extends Command implements SignalableCommandI
             }
 
             // sleep=0: LlmFiberConsumeWaitSubscriber owns idle WAIT (Amp-safe).
-            // fetch_size matches admission so the Worker can fill capacity quickly.
-            $this->worker->run([
-                'sleep' => 0,
-                'fetch_size' => $concurrency,
-            ]);
+            // LLM fetch size matches admission. Tools use Worker's finite default
+            // fetch size without imposing a limit on in-flight handlers.
+            $options = ['sleep' => 0];
+            if (null !== $concurrency) {
+                $options['fetch_size'] = $concurrency;
+            }
+            $this->worker->run($options);
         } finally {
             if (null !== $keepaliveWatcher) {
                 EventLoop::cancel($keepaliveWatcher);

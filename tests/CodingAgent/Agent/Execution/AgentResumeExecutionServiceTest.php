@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\AgentRunner;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
@@ -15,18 +16,21 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunOperationalStatusDTO;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Coordination\EnqueueCommandDTO;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
@@ -60,6 +64,7 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Focused eligibility coverage for agent_resume (no deferred wait / messenger loop).
@@ -75,14 +80,14 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->expectExceptionMessage('Unknown artifact_id "agent_missing"');
 
         $this->resume(
-            parentRunId: 'parent-unknown',
+            parentRunId: $this->parentSession('unknown'),
             task: new AgentResumeArgumentsDTO(artifact_id: 'agent_missing', task: 'continue'),
         );
     }
 
     public function testResumesForkWithUnmodifiedFollowUpAndPreservesHandoffHistory(): void
     {
-        $parent = 'parent-fork-kind';
+        $parent = $this->parentSession('fork-kind');
         $artifactId = 'agent_fork_kind';
         $childRunId = 'child-fork-kind';
         $this->seedTerminalChild(
@@ -178,7 +183,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testSubagentResumeKeepsRawFollowUpTaskText(): void
     {
-        $parent = 'parent-subagent-raw';
+        $parent = $this->parentSession('subagent-raw');
         $artifactId = 'agent_subagent_raw';
         $childRunId = 'child-subagent-raw';
         $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000);
@@ -204,7 +209,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testRejectsInFlightRunningArtifact(): void
     {
-        $parent = 'parent-running';
+        $parent = $this->parentSession('running');
         $artifactId = 'agent_running';
         $childRunId = 'child-running';
         $this->registry()->create($parent, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
@@ -222,7 +227,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testRejectsNeedsClarificationArtifact(): void
     {
-        $parent = 'parent-clarify';
+        $parent = $this->parentSession('clarify');
         $artifactId = 'agent_clarify';
         $childRunId = 'child-clarify';
         $this->registry()->create($parent, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
@@ -245,7 +250,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testRejectsChildMidCancellationFromOperationalStatus(): void
     {
-        $parent = 'parent-mid-cancel';
+        $parent = $this->parentSession('mid-cancel');
         $artifactId = 'agent-mid-cancel';
         $childRunId = 'child-mid-cancel';
         $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000);
@@ -268,7 +273,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testRejectsRunningForkDespiteTerminalArtifact(): void
     {
-        $parent = 'parent-stale-fork';
+        $parent = $this->parentSession('stale-fork');
         $artifactId = 'agent_stale_fork';
         $childRunId = 'child-stale-fork';
         $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000, agentName: 'fork', kind: AgentArtifactKindEnum::Fork);
@@ -288,7 +293,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testRejectsOversizeContextWithUnknownWindowCutoff(): void
     {
-        $parent = 'parent-oversize-unknown-window';
+        $parent = $this->parentSession('oversize-unknown-window');
         $artifactId = 'agent_oversize_unknown_window';
         $childRunId = 'child-oversize-unknown-window';
         $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 200_000, contextWindow: null);
@@ -306,7 +311,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testRejectsOversizeContextAtSeventyFivePercentOfWindow(): void
     {
-        $parent = 'parent-oversize-window';
+        $parent = $this->parentSession('oversize-window');
         $artifactId = 'agent_oversize_window';
         $childRunId = 'child-oversize-window';
         // 75% of a 240k window (180k) stays below the 200k absolute cap.
@@ -325,7 +330,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testRejectsOversizeContextWhenLargeWindowIsCappedAtTwoHundredThousandTokens(): void
     {
-        $parent = 'parent-oversize-capped';
+        $parent = $this->parentSession('oversize-capped');
         $artifactId = 'agent_oversize_capped';
         $childRunId = 'child-oversize-capped';
         $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 250_000, contextWindow: 1_050_000);
@@ -343,7 +348,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testResumesBelowTwoHundredThousandTokenCapWithLargeWindow(): void
     {
-        $parent = 'parent-below-cap';
+        $parent = $this->parentSession('below-cap');
         $artifactId = 'agent_below_cap';
         $childRunId = 'child-below-cap';
         $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 199_999, contextWindow: 1_050_000);
@@ -363,7 +368,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testIndependentCallsResumeFailedAndCancelledArtifactsViaBothIdentifiers(): void
     {
-        $parent = 'parent-parallel';
+        $parent = $this->parentSession('parallel');
         $failedArtifactId = 'agent_failed';
         $failedChildRunId = 'child-failed';
         $cancelledArtifactId = 'agent_cancelled';
@@ -405,13 +410,13 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testRejectsNestedParentCaller(): void
     {
-        $parent = 'parent-nested';
+        $parent = $this->parentSession('nested');
         $artifactId = 'agent_nested';
         $childRunId = 'child-nested';
         $this->registry()->create($parent, $artifactId, $childRunId, 'scout', AgentArtifactKindEnum::Subagent);
         $this->registry()->update($parent, $artifactId, status: AgentArtifactStatusEnum::Completed, summary: 'done');
 
-        $this->expectException(ToolCallException::class);
+        $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('is an agent child; nested launches are not supported');
 
         $this->resume(
@@ -422,9 +427,9 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         );
     }
 
-    public function testFollowUpFailureMarksBatchFailedAndRevertsChildToPriorTerminal(): void
+    public function testFollowUpFailureRetainsRecoverableReservationAndRevertsChildToPriorTerminal(): void
     {
-        $parent = 'parent-followup-fail';
+        $parent = $this->parentSession('followup-fail');
         $artifactId = 'agent_followup_fail';
         $childRunId = 'child-followup-fail';
         $toolCallId = 'tc-followup-fail';
@@ -452,28 +457,21 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $batch = self::getContainer()->get(DeferredSubagentBatchRepository::class)
             ->findByParentRunAndToolCall($parent, $toolCallId);
         $this->assertNotNull($batch);
-        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Failed, $batch->launchStatus);
+        $this->assertSame(
+            DeferredSubagentBatchLaunchStatusEnum::Reserved,
+            $batch->launchStatus,
+            'Failed dispatch leaves the reservation available for retry.',
+        );
 
         $entry = $this->registry()->get($parent, $artifactId);
         $this->assertNotNull($entry);
         // followUp failure reverts the Running mark back to the prior terminal status.
         $this->assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
-
-        $this->expectException(ToolCallException::class);
-        // Same tool_call_id still short-circuits on the previously failed batch.
-        $this->expectExceptionMessage('batch launch previously failed');
-        $this->resume(
-            parentRunId: $parent,
-            task: new AgentResumeArgumentsDTO(artifact_id: $artifactId, task: 'continue again'),
-            childRunId: $childRunId,
-            runStatus: RunStatus::Completed,
-            toolCallId: $toolCallId,
-        );
     }
 
     public function testLaunchSuccessPersistenceFailureLeavesDeferredResumeRecoverable(): void
     {
-        $parent = 'parent-launch-success-persist-failure';
+        $parent = $this->parentSession('launch-success-persist-failure');
         $artifactId = 'agent_launch_success_persist_failure';
         $childRunId = 'child-launch-success-persist-failure';
         $toolCallId = 'tc-launch-success-persist-failure';
@@ -511,7 +509,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testArtifactCanResumeDuringCurrentParentLifetimeButNotAfterAttach(): void
     {
-        $parent = self::getContainer()->get(HatfieldSessionStore::class)->createSession();
+        $parent = $this->parentSession('lifetime');
         $artifactId = 'agent_lifetime';
         $childRunId = 'child-lifetime';
         $this->seedTerminalChild($parent, $artifactId, $childRunId, latestInputTokens: 10, contextWindow: 200_000);
@@ -538,7 +536,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testMissingOperationalStatusFailsClosed(): void
     {
-        $parent = 'parent-missing-status';
+        $parent = $this->parentSession('missing-status');
         $child = 'child-missing-status';
         $artifact = 'agent_missing_status';
         $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
@@ -552,7 +550,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testUnavailableOperationalStatusFailsClosed(): void
     {
-        $parent = 'parent-unavailable-status';
+        $parent = $this->parentSession('unavailable-status');
         $this->seedTerminalChild($parent, 'agent_unavailable', 'child-unavailable', latestInputTokens: 10, contextWindow: 200_000);
         $reader = $this->createMock(RunOperationalStatusReaderInterface::class);
         $reader->expects($this->once())->method('findOperationalStatus')->willThrowException(new \RuntimeException('projection unavailable'));
@@ -565,7 +563,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testConfiguredOperationalReaderObservesTerminalStatusThenFreshRunningStatus(): void
     {
-        $parent = 'parent-fresh-status';
+        $parent = $this->parentSession('fresh-status');
         $child = 'child-fresh-status';
         $artifact = 'agent_fresh_status';
         $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
@@ -580,12 +578,13 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             'UPDATE run_operational_state SET status = ? WHERE run_id = ?', [RunStatus::Running->value, $child]);
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('is not terminal (status=running)');
-        $this->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue'), agentRunner: $runner, operationalStatusReader: $reader);
+        // A later batch must re-run eligibility; reusing the launched invocation skips it.
+        $this->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue'), agentRunner: $runner, operationalStatusReader: $reader, toolCallId: 'tc-resume-2');
     }
 
     public function testCanonicalAppendWithoutProjectionPublicationRejectsResume(): void
     {
-        $parent = 'parent-behind-canonical';
+        $parent = $this->parentSession('behind-canonical');
         $child = 'child-behind-canonical';
         $artifact = 'agent_behind_canonical';
         $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
@@ -638,7 +637,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
     public function testActualTerminalTailAcceptsDespiteAllocationHoles(): void
     {
-        $parent = 'parent-allocation-holes';
+        $parent = $this->parentSession('allocation-holes');
         $child = 'child-allocation-holes';
         $artifact = 'agent_allocation_holes';
         $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
@@ -659,6 +658,307 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $outcome = $this->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue'),
             agentRunner: $runner, operationalStatusReader: self::getContainer()->get(RunOperationalStatusReaderInterface::class), eventStore: $store);
         $this->assertNotNull(self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByLifecycleId($outcome->deferredId));
+    }
+
+    public function testSameChildBatchDuplicatesRefuseBeforeReservationRegardlessOfArrivalOrder(): void
+    {
+        $parent = $this->parentSession('batch-dup');
+        $artifact = 'agent_batch_dup';
+        $child = 'child-batch-dup';
+        $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
+        $followUps = 0;
+        $runner = $this->createStub(AgentRunnerInterface::class);
+        $runner->method('followUp')->willReturnCallback(static function () use (&$followUps): void {
+            ++$followUps;
+        });
+
+        $stepId = 'dup-step';
+        $store = self::getContainer()->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($store),
+            $store,
+            $parent,
+            1,
+            $stepId,
+            [
+                new ExecuteToolCall($parent, 1, $stepId, 1, hash('sha256', 'first'), 'resume-first', 'agent_resume', [
+                    'artifact_id' => $artifact,
+                    'task' => 'continue',
+                ], 0, parentModel: 'test/model'),
+                new ExecuteToolCall($parent, 1, $stepId, 1, hash('sha256', 'second'), 'resume-second', 'agent_resume', [
+                    'agent_run_id' => $child,
+                    'task' => 'continue alias',
+                ], 1, parentModel: 'test/model'),
+                new ExecuteToolCall($parent, 1, $stepId, 1, hash('sha256', 'other'), 'resume-other', 'agent_resume', [
+                    'artifact_id' => 'agent_other',
+                    'task' => 'other child',
+                ], 2, parentModel: 'test/model'),
+            ],
+        );
+        $this->seedTerminalChild($parent, 'agent_other', 'child-other', latestInputTokens: 10, contextWindow: 200_000);
+
+        $context = new StackToolExecutionContextAccessor();
+        $service = $this->service($runner, $parent, $context);
+        $secondCall = new ExecuteToolCall($parent, 1, $stepId, 1, hash('sha256', 'second'), 'resume-second', 'agent_resume', [
+            'agent_run_id' => $child,
+            'task' => 'continue alias',
+        ], 1, parentModel: 'test/model');
+        try {
+            $context->with(new ToolContext($parent, 1, $secondCall->toolCallId, 'agent_resume', new NullCancellationToken(), 30, $secondCall->orderIndex, stepId: $stepId, parentModel: 'test/model'), static fn () => $service->resume($parent, self::getContainer()->get(SerializerInterface::class)->denormalize($secondCall->args, AgentResumeArgumentsDTO::class)));
+            $second = null;
+        } catch (\Throwable $error) {
+            $second = $error;
+        }
+        $this->assertInstanceOf(ToolCallException::class, $second);
+        $this->assertStringContainsString('Duplicate agent_resume', $second->getMessage());
+        $this->assertSame(0, $followUps);
+        $this->assertNull(self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($parent, 'resume-second'));
+
+        $firstCall = new ExecuteToolCall($parent, 1, $stepId, 1, hash('sha256', 'first'), 'resume-first', 'agent_resume', [
+            'artifact_id' => $artifact,
+            'task' => 'continue',
+        ], 0, parentModel: 'test/model');
+        $first = $context->with(
+            new ToolContext($parent, 1, 'resume-first', 'agent_resume', new NullCancellationToken(), 30, 0, stepId: $stepId, parentModel: 'test/model'),
+            static fn () => $service->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')),
+        );
+        $this->assertSame(1, $followUps);
+        $this->assertSame($first->deferredId, self::getContainer()->get(DeferredSubagentChildRepository::class)->findByChildRunId($child)?->batchLifecycleId);
+
+        $otherCall = new ExecuteToolCall($parent, 1, $stepId, 1, hash('sha256', 'other'), 'resume-other', 'agent_resume', [
+            'artifact_id' => 'agent_other',
+            'task' => 'other child',
+        ], 2, parentModel: 'test/model');
+        $other = $context->with(
+            new ToolContext($parent, 1, 'resume-other', 'agent_resume', new NullCancellationToken(), 30, 2, stepId: $stepId, parentModel: 'test/model'),
+            static fn () => $service->resume($parent, new AgentResumeArgumentsDTO(artifact_id: 'agent_other', task: 'other child')),
+        );
+        $this->assertSame(2, $followUps);
+        $this->assertNotSame($first->deferredId, $other->deferredId);
+
+        // Completing the winner does not make the same-batch duplicate eligible.
+        self::getContainer()->get(AgentArtifactRegistry::class)->update($parent, $artifact, status: AgentArtifactStatusEnum::Completed, summary: 'done again');
+        try {
+            $context->with(new ToolContext($parent, 1, $secondCall->toolCallId, 'agent_resume', new NullCancellationToken(), 30, $secondCall->orderIndex, stepId: $stepId, parentModel: 'test/model'), static fn () => $service->resume($parent, self::getContainer()->get(SerializerInterface::class)->denormalize($secondCall->args, AgentResumeArgumentsDTO::class)));
+            $replay = null;
+        } catch (\Throwable $error) {
+            $replay = $error;
+        }
+        $this->assertInstanceOf(ToolCallException::class, $replay);
+        $this->assertStringContainsString('Duplicate agent_resume', $replay->getMessage());
+        $this->assertSame(2, $followUps);
+
+        // A later tool batch may resume the same child again.
+        $later = $this->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'later batch'), agentRunner: $runner, toolCallId: 'resume-later');
+        $this->assertSame(3, $followUps);
+        $this->assertSame($later->deferredId, self::getContainer()->get(DeferredSubagentChildRepository::class)->findByChildRunId($child)?->batchLifecycleId);
+    }
+
+    public function testQueuedFollowUpDoesNotAdmitSameBatchDuplicate(): void
+    {
+        $parent = $this->parentSession('queued-dup');
+        $artifact = 'agent_queued_dup';
+        $child = 'child-queued-dup';
+        $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
+        $commandBus = new TestMessageBus();
+        $agentRunner = new AgentRunner($commandBus, self::getContainer()->get(SerializerInterface::class));
+        $stepId = 'queued-dup-step';
+        $store = self::getContainer()->get(ToolBatchStoreInterface::class);
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector($store),
+            $store,
+            $parent,
+            1,
+            $stepId,
+            [
+                new ExecuteToolCall($parent, 1, $stepId, 1, hash('sha256', 'q1'), 'resume-q1', 'agent_resume', [
+                    'artifact_id' => $artifact,
+                    'task' => 'continue',
+                ], 0, parentModel: 'test/model'),
+                new ExecuteToolCall($parent, 1, $stepId, 1, hash('sha256', 'q2'), 'resume-q2', 'agent_resume', [
+                    'artifact_id' => $artifact,
+                    'task' => 'duplicate',
+                ], 1, parentModel: 'test/model'),
+            ],
+        );
+
+        $context = new StackToolExecutionContextAccessor();
+        $service = $this->service($agentRunner, $parent, $context);
+        $winnerCall = new ExecuteToolCall($parent, 1, $stepId, 1, hash('sha256', 'q1'), 'resume-q1', 'agent_resume', [
+            'artifact_id' => $artifact,
+            'task' => 'continue',
+        ], 0, parentModel: 'test/model');
+        $winner = $context->with(
+            new ToolContext($parent, 1, 'resume-q1', 'agent_resume', new NullCancellationToken(), 30, 0, stepId: $stepId, parentModel: 'test/model'),
+            static fn () => $service->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')),
+        );
+        $this->assertCount(1, $commandBus->messages);
+        $command = $commandBus->messages[0];
+        $this->assertInstanceOf(ApplyCommand::class, $command);
+        $state = new RunState(runId: $child, status: RunStatus::Completed, messages: [
+            new AgentMessage('assistant', [['type' => 'text', 'text' => 'prior handoff']]),
+        ]);
+        $queued = self::getContainer()->get(ApplyCommandHandler::class)->handle($command, $state);
+        $this->assertNotNull($queued->nextState);
+        // Hold AdvanceRun/observation: only enqueue the follow_up command.
+        $enqueues = array_values(array_filter($queued->postCommitActions, static fn (object $action): bool => $action instanceof EnqueueCommandDTO));
+        $this->assertCount(1, $enqueues);
+        self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class)->enqueue($enqueues[0]->command);
+
+        $duplicateCall = new ExecuteToolCall($parent, 1, $stepId, 1, hash('sha256', 'q2'), 'resume-q2', 'agent_resume', [
+            'artifact_id' => $artifact,
+            'task' => 'duplicate',
+        ], 1, parentModel: 'test/model');
+        try {
+            $context->with(new ToolContext($parent, 1, $duplicateCall->toolCallId, 'agent_resume', new NullCancellationToken(), 30, $duplicateCall->orderIndex, stepId: $stepId, parentModel: 'test/model'), static fn () => $service->resume($parent, self::getContainer()->get(SerializerInterface::class)->denormalize($duplicateCall->args, AgentResumeArgumentsDTO::class)));
+            $duplicate = null;
+        } catch (\Throwable $error) {
+            $duplicate = $error;
+        }
+        $this->assertInstanceOf(ToolCallException::class, $duplicate);
+        $this->assertStringContainsString('Duplicate agent_resume', $duplicate->getMessage());
+        $this->assertSame($winner->deferredId, self::getContainer()->get(DeferredSubagentChildRepository::class)->findByChildRunId($child)?->batchLifecycleId);
+        $this->assertNull(self::getContainer()->get(DeferredSubagentBatchRepository::class)->findByParentRunAndToolCall($parent, 'resume-q2'));
+        $this->assertCount(1, $commandBus->messages);
+    }
+
+    public function testSameResumeIntentRedispatchesOneStableFollowUpCommand(): void
+    {
+        $parent = $this->parentSession('stable-resume');
+        $artifact = 'agent_stable_resume';
+        $child = 'child-stable-resume';
+        $this->seedTerminalChild($parent, $artifact, $child, latestInputTokens: 10, contextWindow: 200_000);
+        $context = new StackToolExecutionContextAccessor();
+        $commands = new TestMessageBus();
+        $batches = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $canonical = [];
+        $events = $this->createConfiguredStub(EventStoreInterface::class, ['latestSequenceFor' => 1]);
+        $events->method('reverseFor')->willReturnCallback(static function () use (&$canonical): iterable { return array_reverse($canonical); });
+        $status = RunStatus::Completed;
+        $statuses = $this->createStub(RunOperationalStatusReaderInterface::class);
+        $statuses->method('findOperationalStatus')->willReturnCallback(static function () use (&$status): RunOperationalStatusDTO { return new RunOperationalStatusDTO($status, 1); });
+        $service = new AgentResumeExecutionService(
+            artifactRegistry: $this->registry(),
+            batchRepository: $batches,
+            childRepository: self::getContainer()->get(DeferredSubagentChildRepository::class),
+            identityFactory: new DeferredSubagentBatchIdentityFactory(),
+            commandBus: $commands,
+            operationalStatusReader: $statuses,
+            eventStore: $events,
+            runLockManager: self::getContainer()->get(RunLockManager::class),
+            relationshipReader: StubRunRelationshipReader::topLevel($parent),
+            depthGuard: new AgentDepthGuard(),
+            contextAccessor: $context,
+            agentsConfig: new AgentsConfig(),
+            logger: new NullLogger(),
+            toolBatches: self::getContainer()->get(ToolBatchStoreInterface::class),
+            normalizer: self::getContainer()->get(SerializerInterface::class),
+            denormalizer: self::getContainer()->get(SerializerInterface::class),
+            validator: self::getContainer()->get(ValidatorInterface::class),
+            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($events),
+        );
+        $step = 'stable-resume-step';
+        $call = new ExecuteToolCall($parent, 1, $step, 1, hash('sha256', 'stable'), 'resume-stable', 'agent_resume', ['artifact_id' => $artifact, 'task' => 'continue'], 0, parentModel: 'test/model');
+        TestToolBatchRegistration::register(new ToolBatchCollector(self::getContainer()->get(ToolBatchStoreInterface::class)), self::getContainer()->get(ToolBatchStoreInterface::class), $parent, 1, $step, [$call]);
+        $invoke = static fn () => $context->with(new ToolContext($parent, 1, 'resume-stable', 'agent_resume', new NullCancellationToken(), 30, 0, stepId: $step, parentModel: 'test/model'), static fn () => $service->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue')));
+        $first = $invoke();
+        // Simulate process loss after dispatch, before local launch-success persistence.
+        self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getConnection()->executeStatement("UPDATE deferred_subagent_batch SET launch_status = 'reserved' WHERE lifecycle_id = ?", [$first->deferredId]);
+        $second = $invoke();
+        $this->assertSame($first->deferredId, $second->deferredId);
+        $this->assertCount(2, $commands->messages);
+        [$original, $replayed] = $commands->messages;
+        $this->assertInstanceOf(ApplyCommand::class, $original);
+        $this->assertEquals($original, $replayed);
+        $this->assertSame('follow_up', $original->kind);
+        $state = new RunState($child, RunStatus::Completed);
+        $handler = self::getContainer()->get(ApplyCommandHandler::class);
+        $store = self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class);
+        foreach ([$original, $replayed] as $command) {
+            $transition = $handler->handle($command, $state);
+            foreach ($transition->postCommitActions as $action) {
+                if ($action instanceof EnqueueCommandDTO) {
+                    $store->enqueue($action->command);
+                }
+            }
+        }
+        $continued = self::getContainer()->get(CommandMailboxPolicy::class)->applyPendingTurnStartCommands($state);
+        $this->assertCount(1, $continued->state->messages);
+        $this->assertSame('continue', $continued->state->messages[0]->content[0]['text']);
+
+        // The mailbox has consumed the command, but its exact canonical identity
+        // still proves that this resume started even if the local write was lost.
+        $canonical = (new EventFactory())->eventsFromSpecs($child, 2, 2, $continued->eventSpecs);
+        $status = RunStatus::Running;
+        $connection = self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getConnection();
+        $connection->executeStatement("UPDATE deferred_subagent_batch SET launch_status = 'reserved' WHERE lifecycle_id = ?", [$first->deferredId]);
+        $this->assertSame($first->deferredId, $invoke()->deferredId);
+        $this->assertCount(2, $commands->messages);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batches->findByLifecycleId($first->deferredId)->launchStatus);
+
+        // Finishing the associated execution does not authorize another follow_up.
+        $canonical[] = new RunEvent($child, 3, 2, 'agent_end', ['status' => 'completed']);
+        $status = RunStatus::Completed;
+        $connection->executeStatement("UPDATE deferred_subagent_batch SET launch_status = 'reserved' WHERE lifecycle_id = ?", [$first->deferredId]);
+        $this->assertSame($first->deferredId, $invoke()->deferredId);
+        $this->assertCount(2, $commands->messages);
+
+        $this->registry()->update($parent, $artifact, AgentArtifactStatusEnum::Completed);
+        $later = new ExecuteToolCall($parent, 1, 'later-resume-step', 1, 'later-key', 'resume-later', 'agent_resume', ['artifact_id' => $artifact, 'task' => 'continue later'], 0, parentModel: 'test/model');
+        TestToolBatchRegistration::register(new ToolBatchCollector(self::getContainer()->get(ToolBatchStoreInterface::class)), self::getContainer()->get(ToolBatchStoreInterface::class), $parent, 1, 'later-resume-step', [$later]);
+        $laterOutcome = $context->with(new ToolContext($parent, 1, 'resume-later', 'agent_resume', new NullCancellationToken(), 30, 0, stepId: 'later-resume-step', parentModel: 'test/model'), static fn () => $service->resume($parent, new AgentResumeArgumentsDTO(artifact_id: $artifact, task: 'continue later')));
+        $this->assertNotSame($first->deferredId, $laterOutcome->deferredId);
+        $this->assertCount(3, $commands->messages);
+        $this->assertNotSame($original->idempotencyKey(), $commands->messages[2]->idempotencyKey());
+    }
+
+    private function resumeCommandBus(AgentRunnerInterface $runner): \Symfony\Component\Messenger\MessageBusInterface
+    {
+        $serializer = self::getContainer()->get(SerializerInterface::class);
+
+        return new \Symfony\Component\Messenger\MessageBus([
+            new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware(new \Symfony\Component\Messenger\Handler\HandlersLocator([
+                ApplyCommand::class => [static function (ApplyCommand $command) use ($runner, $serializer): void {
+                    $runner->followUp($command->runId(), $serializer->denormalize($command->payload['message'], AgentMessage::class));
+                }],
+            ])),
+        ]);
+    }
+
+    private function parentSession(string $label): string
+    {
+        return self::getContainer()->get(HatfieldSessionStore::class)->createSession('agent-resume '.$label);
+    }
+
+    private function service(
+        AgentRunnerInterface $agentRunner,
+        string $parentRunId,
+        ?StackToolExecutionContextAccessor $contextAccessor = null,
+    ): AgentResumeExecutionService {
+        $eventStore = $this->createConfiguredStub(EventStoreInterface::class, ['latestSequenceFor' => 1]);
+
+        return new AgentResumeExecutionService(
+            artifactRegistry: $this->registry(),
+            batchRepository: self::getContainer()->get(DeferredSubagentBatchRepository::class),
+            childRepository: self::getContainer()->get(DeferredSubagentChildRepository::class),
+            identityFactory: new DeferredSubagentBatchIdentityFactory(),
+            commandBus: $this->resumeCommandBus($agentRunner),
+            normalizer: self::getContainer()->get(SerializerInterface::class),
+            operationalStatusReader: $this->createConfiguredStub(RunOperationalStatusReaderInterface::class, [
+                'findOperationalStatus' => new RunOperationalStatusDTO(RunStatus::Completed, 1),
+            ]),
+            eventStore: $eventStore,
+            runLockManager: self::getContainer()->get(RunLockManager::class),
+            relationshipReader: StubRunRelationshipReader::topLevel($parentRunId),
+            depthGuard: new AgentDepthGuard(),
+            contextAccessor: $contextAccessor ?? new StackToolExecutionContextAccessor(),
+            agentsConfig: new AgentsConfig(),
+            logger: new NullLogger(),
+            toolBatches: self::getContainer()->get(ToolBatchStoreInterface::class),
+            denormalizer: self::getContainer()->get(SerializerInterface::class),
+            validator: self::getContainer()->get(ValidatorInterface::class),
+            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($eventStore),
+        );
     }
 
     private function resume(
@@ -693,7 +993,8 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             batchRepository: self::getContainer()->get(DeferredSubagentBatchRepository::class),
             childRepository: self::getContainer()->get(DeferredSubagentChildRepository::class),
             identityFactory: new DeferredSubagentBatchIdentityFactory(),
-            agentRunner: $agentRunner ?? $this->createStub(AgentRunnerInterface::class),
+            commandBus: $this->resumeCommandBus($agentRunner ?? $this->createStub(AgentRunnerInterface::class)),
+            normalizer: self::getContainer()->get(SerializerInterface::class),
             operationalStatusReader: $operationalStatusReader,
             eventStore: $eventStore,
             runLockManager: self::getContainer()->get(RunLockManager::class),
@@ -702,6 +1003,37 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             contextAccessor: $contextAccessor,
             agentsConfig: new AgentsConfig(),
             logger: $logger ?? new NullLogger(),
+            toolBatches: self::getContainer()->get(ToolBatchStoreInterface::class),
+            denormalizer: self::getContainer()->get(SerializerInterface::class),
+            validator: self::getContainer()->get(ValidatorInterface::class),
+            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($eventStore),
+        );
+
+        $stepId = 'resume-step-'.$toolCallId;
+        $call = new ExecuteToolCall(
+            runId: $parentRunId,
+            turnNo: 1,
+            stepId: $stepId,
+            attempt: 1,
+            idempotencyKey: hash('sha256', $parentRunId.'|'.$stepId.'|'.$toolCallId),
+            toolCallId: $toolCallId,
+            toolName: 'agent_resume',
+            args: array_filter([
+                'task' => $task->task,
+                'artifact_id' => $task->artifact_id,
+                'agent_run_id' => $task->agent_run_id,
+                'backgrounded' => $task->backgrounded,
+            ], static fn (mixed $value): bool => null !== $value),
+            orderIndex: 0,
+            parentModel: 'test/model',
+        );
+        TestToolBatchRegistration::register(
+            new ToolBatchCollector(self::getContainer()->get(ToolBatchStoreInterface::class)),
+            self::getContainer()->get(ToolBatchStoreInterface::class),
+            $parentRunId,
+            1,
+            $stepId,
+            [$call],
         );
 
         return $contextAccessor->with(
@@ -713,6 +1045,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
                 cancellationToken: new NullCancellationToken(),
                 timeoutSeconds: 30,
                 orderIndex: 0,
+                stepId: $stepId,
                 parentModel: 'test/model',
             ),
             static function () use ($service, $parentRunId, $task): \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome {

@@ -14,9 +14,8 @@ use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 
 /**
  * Routes built-in {@see ExecuteToolCall} for tool names "subagent" and "agent_resume"
- * to the dedicated
- * agent transport so foreground subagent orchestration does not occupy generic
- * tool workers (which child agents need for read/write/shell/etc.).
+ * to the agent transport. One shared Fiber consumer reads both tool and agent
+ * queues, so retained agent messages still execute after controller restart.
  *
  * Runs on agent.execution.bus before send_message. Skips envelopes that already
  * carry ReceivedStamp or an explicit TransportNamesStamp (e.g. MCP middleware).

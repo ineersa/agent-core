@@ -4,16 +4,17 @@ The default interactive path crosses process boundaries. Commands go in, workers
 execute effects, and runtime events return to the terminal. The response does not
 return through one synchronous call stack.
 
-These repository-only diagrams describe the source at `9f744008c`, with documentation
-corrections on this task branch. View them in a Markdown renderer with Mermaid support.
-Later audits, including the ORM freshness map, state their own source revision.
+View these repository-only diagrams in a Markdown renderer with Mermaid support.
+This overview and [processes and queues](processes-and-queues.md) describe the
+shared Fiber workers. Older lifecycle diagrams describe logical roles, not one
+process per queue; historical audits state their own source revision.
 
 ## Diagram map
 
 | Question | Diagrams |
 |---|---|
 | How does a prompt become an answer? | [Request lifecycle](request-lifecycle.md): end-to-end sequence, input routing, tool loop, live projection |
-| What starts and stops each process? | [Processes and queues](processes-and-queues.md): startup, ownership, routing, scheduler, shutdown |
+| How do processes and Fibers share work? | [Processes and queues](processes-and-queues.md): topology, admission, state isolation, metadata ownership, shutdown |
 | Who owns state and how does recovery work? | [State and recovery](state-and-recovery.md): commit order, storage, replay, repair, compaction, cancellation |
 | Which database queries need refresh? | [Database query decisions](orm-freshness-map.md): methods, reads/writes, refresh decisions, and reasons |
 | How do tool calls, approvals, and MCP work? | [Tools and MCP](tools-and-mcp.md): registration, execution, human continuations, connection lifecycle |
@@ -33,27 +34,53 @@ implemented direct `code_mode` tool is documented in
 
 This map keeps only process boundaries. The linked sequences expand handlers and
 messages within each boundary. Parent and child runs have separate identities but
-share the controller's consumer pools.
+share the controller's workers. LLM calls overlap in one PHP process; generic
+tools and child launch/resume calls overlap in another. Each uses cooperative
+Fibers, not one PHP process per invocation.
 
 ```mermaid
 flowchart TB
     User([User]) --> TUI["TUI process<br/>editor, transcript, runtime client"]
     TUI -->|JSONL commands| Controller["Controller process<br/>owner lock and consumer supervision"]
     Controller -->|ACK and runtime events| TUI
-    Controller -->|Command bus| RC["run_control consumer<br/>state transitions and commits"]
-    RC -->|Execution bus| Work["LLM and tool consumers<br/>llm, tool, agent, mcp"]
-    Work -->|Result messages| RC
+    Controller -->|Command bus| Broker["Session sqlite-queue broker<br/>durable queues and lifecycle replies"]
+    Broker -->|Commands and results| RC["run_control process<br/>serialized transitions and lifecycle writes"]
+    RC -->|Execution effects and replies| Broker
+    Broker -->|llm queue| LLM["One LLM process<br/>up to 10 concurrent handlers by default"]
+    Broker -->|tool and agent queues| Tool["One tool process<br/>no worker admission cap"]
+    Broker -->|mcp queue| MCP["One MCP process<br/>serialized connection ownership"]
+    LLM -->|Results| Broker
+    Tool -->|Results and lifecycle commands| Broker
+    MCP -->|Results| Broker
     RC -->|Canonical append| Events[(events.jsonl)]
-    RC -->|Operational projection| State[(state.sqlite)]
+    RC -->|Operational and lifecycle state| State[(state.sqlite)]
     RC -->|Mapped committed events| Controller
-    Work -->|Transient deltas| Controller
-    Work <-->|External I/O| External["Model providers and MCP servers"]
+    LLM -->|Transient deltas| Controller
+    LLM <-->|HTTP| Providers[Model providers]
+    Tool --> Children["Bash and code-mode subprocesses"]
+    MCP <--> Servers[MCP servers]
 ```
 
 The queue arrows summarize delivery. They are not direct calls between worker
-processes. [Processes and queues](processes-and-queues.md) shows both buses and the
-complete YAML route inventory, including scheduler and extension-agent consumers.
-Extension jobs have their own dispatch path.
+processes. The broker and its SQLite helper remain separate from execution workers.
+The `agent` queue still exists, but has no separate consumer process. Scheduler and
+optional extension-agent workers are detailed in [processes and queues](processes-and-queues.md).
+
+`runtime.llm_concurrency` bounds active LLM handlers, not process counts.
+The shared tool consumer has no worker-level admission cap. A waiting
+handler yields so another Fiber can run; synchronous CPU or blocking I/O still
+blocks its process. `tools.execution.max_parallelism` separately limits admission
+within a tool batch.
+
+Run control sends an immutable tool intent and receives its result. The tool
+handler owns execution and same-intent idempotency. Bash persists native launch
+and background acceptance locally and returns an ordinary result. Agent and
+communication handlers prepare their execution locally; workers register deferred
+correlation from returned outcomes without a registration reply RPC.
+Tool context, log/trace scopes and run-lock reentrancy are isolated by
+Fiber. See the
+[persistence ownership flow](processes-and-queues.md#lifecycle-persistence-ownership)
+for the current boundary.
 
 ## Code boundaries
 
@@ -79,7 +106,7 @@ reference CodingAgent or TUI. ExtensionApi does not reference host internals.
 | Canonical `RunEvent` | Positive | `events.jsonl` | History, replay, committed lifecycle |
 | Mapped runtime event | Preserves canonical identity where applicable | Delivery of committed data | TUI projection |
 | Streaming delta | `0` | No | Live text, reasoning, tool arguments |
-| Messenger envelope | Not an event sequence | Doctrine transports in controller mode | Commands, execution, results, delayed work |
+| Messenger envelope | Not an event sequence | Session sqlite-queue broker in controller mode | Commands, execution, results, delayed work |
 
 Sources: [Messenger configuration](../config/packages/messenger.yaml),
 [HeadlessController](../src/CodingAgent/Runtime/Controller/HeadlessController.php),

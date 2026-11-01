@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
 use Ineersa\CodingAgent\Tool\DTO\BashBackgroundRequestDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
@@ -23,6 +24,14 @@ final readonly class BashBackgroundRequestService
     /** @param array<string, mixed> $payload */
     public function request(string $runId, array $payload): bool
     {
+        $request = $this->prepare($runId, $payload);
+
+        return null !== $request && $this->manager->requestBackground($request->runId, $request->recordId, $request->toolCallId);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function prepare(string $runId, array $payload): ?RequestBashBackgroundDTO
+    {
         try {
             $request = $this->serializer->denormalize($payload, BashBackgroundRequestDTO::class);
         } catch (ExceptionInterface $exception) {
@@ -34,13 +43,13 @@ final readonly class BashBackgroundRequestService
                 'exception_class' => $exception::class,
             ]);
 
-            return false;
+            return null;
         }
 
-        if (0 !== \count($this->validator->validate($request))) {
-            return false;
+        if ('' === trim($runId) || 0 !== \count($this->validator->validate($request))) {
+            return null;
         }
 
-        return $this->manager->requestBackground($runId, $request->recordId, $request->toolCallId);
+        return new RequestBashBackgroundDTO($runId, $request->recordId, $request->toolCallId);
     }
 }

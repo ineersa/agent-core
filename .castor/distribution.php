@@ -663,6 +663,8 @@ function distribution_resolve_canonical_phar_for_static(
  *
  * No extension-agent handlers are registered here, so HeadlessController omits
  * extension_agent. Registered-handler worker execution is covered separately.
+ * The tool Fiber consumer also receives agent work; no standalone agent
+ * consumer is launched.
  *
  * runtime.ready is emitted AFTER consumers are launched (HeadlessController::run),
  * so topology verification must wait until these transports appear.
@@ -675,7 +677,6 @@ function distribution_expected_messenger_transports(): array
         'run_control',
         'llm',
         'tool',
-        'agent',
         'scheduler_default',
         'mcp',
     ];

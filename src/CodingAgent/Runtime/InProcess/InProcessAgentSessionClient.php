@@ -117,8 +117,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function stopBackgroundProcess(string $runId, int $recordId): bool
     {
-        $process = $this->backgroundProcesses->findByRecordId($recordId, $runId);
-        if (null === $process || null === $process->backgroundedAt) {
+        if (!$this->backgroundProcesses->isAcceptedRecord($recordId, $runId)) {
             throw new BackgroundProcessUnavailableException('Background process is no longer available in this session.');
         }
 

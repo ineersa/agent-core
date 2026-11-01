@@ -56,12 +56,6 @@ final readonly class ExecuteToolCallWorker
 
         try {
             $execute = function () use ($message): ?ToolCallResult {
-                $existing = $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId);
-                if (null !== $existing) {
-                    $this->execute($message);
-
-                    return null;
-                }
                 $outcome = $this->execute($message);
                 if (null === $outcome) {
                     if ('completed' === $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId)) {
@@ -113,16 +107,13 @@ final readonly class ExecuteToolCallWorker
 
     private function execute(ExecuteToolCall $message): ?ToolCallResult
     {
-        $status = $this->deferredToolCompletionRepository->statusForRunAndToolCall($message->runId(), $message->toolCallId);
-        if (null !== $status) {
-            if ('pending' === $status) {
-                $existing = $this->deferredToolCompletionRepository->findByRunAndToolCall($message->runId(), $message->toolCallId);
-                if (null !== $existing) {
-                    $this->dispatchDeferredRegistered($existing);
-                }
+        $metadata = $this->deferredToolCompletionRepository->findMetadataByRunAndToolCall($message->runId(), $message->toolCallId);
+        if (null !== $metadata) {
+            // Prepared-but-not-ready rows still need first execution.
+            // Completed or ready pending rows are already deferred and must not rerun.
+            if ('completed' === $metadata->status || null !== $metadata->readyAt) {
+                return null;
             }
-
-            return null;
         }
 
         RunLogContext::enter(['event_type' => 'tool.execute.started']);
@@ -181,7 +172,11 @@ final readonly class ExecuteToolCallWorker
                 ], $executeTool, level: LogLevel::INFO);
 
             if ($this->isDeferredOutcome($toolResult)) {
-                $this->registerDeferredExecution($message, $toolResult);
+                $raw = $toolResult->details['raw_result'] ?? null;
+                if (!$raw instanceof DeferredToolCompletionOutcome) {
+                    throw new \RuntimeException('Deferred tool outcome missing typed raw_result marker.');
+                }
+                $this->registerDeferredExecution($message, $raw);
                 $this->resultStore->releaseCompleted(
                     $message->runId(),
                     $message->toolCallId,
@@ -210,33 +205,11 @@ final readonly class ExecuteToolCallWorker
         return ($details['raw_result'] ?? null) instanceof DeferredToolCompletionOutcome;
     }
 
-    private function registerDeferredExecution(ExecuteToolCall $message, ToolResult $toolResult): DeferredToolCompletionCorrelation
+    private function registerDeferredExecution(ExecuteToolCall $message, DeferredToolCompletionOutcome $raw): DeferredToolCompletionCorrelation
     {
-        $raw = $toolResult->details['raw_result'] ?? null;
-        if (!$raw instanceof DeferredToolCompletionOutcome) {
-            throw new \RuntimeException('Deferred tool outcome missing typed raw_result marker.');
-        }
-
-        $correlation = new DeferredToolCompletionCorrelation(
-            deferredId: $raw->deferredId,
-            runId: $message->runId(),
-            turnNo: $message->turnNo(),
-            stepId: $message->stepId(),
-            attempt: $message->attempt(),
-            idempotencyKey: $message->idempotencyKey(),
-            toolCallId: $message->toolCallId,
-            toolName: $message->toolName,
-            arguments: $message->args,
-            orderIndex: $message->orderIndex,
-            toolIdempotencyKey: $message->toolIdempotencyKey,
-            mode: $message->mode,
-            timeoutSeconds: $message->timeoutSeconds,
-            maxParallelism: $message->maxParallelism,
-            argSchema: $message->argSchema,
-            toolsRef: $message->toolsRef,
+        return $this->deferredToolCompletionRepository->registerPending(
+            ToolCallResultFactory::correlationFromExecuteToolCall($message, $raw->deferredId),
         );
-
-        return $this->deferredToolCompletionRepository->registerPending($correlation);
     }
 
     private function dispatchDeferredRegistered(DeferredToolCompletionCorrelation $correlation): void

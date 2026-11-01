@@ -22,12 +22,12 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
         }
     }
 
-    // Only real broker consumers can prove occupancy and queued dispatch. FIFO
+    // Only real broker consumers can prove retained hosts do not block dispatch. FIFO
     // release is the rendezvous; bounded waits are failure caps, not scheduling.
     #[TestWith([false], 'natural return')]
     #[TestWith([true], 'targeted stop')]
     #[TestWith([false, true], 'model launch')]
-    public function testTwoRetainedHostsSaturateTheExistingPoolUntilOneReturns(bool $stop, bool $modelLaunch = false): void
+    public function testTwoRetainedHostsAllowOrdinaryWorkBeforeEitherReturns(bool $stop, bool $modelLaunch = false): void
     {
         $releases = [];
         try {
@@ -69,11 +69,16 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
             foreach (['pid', 'socket', 'workspace'] as $field) {
                 $this->assertNotSame($identities['one'][$field], $identities['two'][$field]);
             }
-            $this->collectEventsUntil(null, 5, static fn (array $e): bool => 'tool_execution.started' === ($e['type'] ?? '') && 'free' === ($e['payload']['tool_call_id'] ?? ''));
+            $progress = $this->collectEventsUntil(null, 5, static fn (array $e): bool => 'tool_execution.completed' === ($e['type'] ?? '') && 'free' === ($e['payload']['tool_call_id'] ?? ''));
+            $this->assertCount(1, $this->indexByType($progress)['tool_execution.completed']);
+            $this->collectEventsUntil('run.completed', 5);
             $snapshot = json_decode(trim($this->query($this->runId)->getOutput()), true, 32, \JSON_THROW_ON_ERROR);
             $this->assertCount(2, $snapshot['work']);
-            $this->assertContains('["free"]', $snapshot['inFlight'], 'Ordinary work has been dispatched while both real consumers are occupied.');
-            $this->assertCount(3, file($this->tempDir.'/requests.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES), 'The dispatched read has not returned to the model.');
+            foreach (['one', 'two'] as $id) {
+                $this->assertFileExists($identities[$id]['socket'], 'Both hosts remain retained while ordinary work completes.');
+                $this->assertFileDoesNotExist($this->tempDir.'/'.$id.'.after');
+            }
+            $this->assertCount(4, file($this->tempDir.'/requests.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES), 'Ordinary work reaches the model before either host returns.');
             if ($stop) {
                 $this->writeCommand(['v' => 1, 'id' => 'stop', 'type' => 'stop_code_mode', 'runId' => $this->runId,
                     'payload' => ['deferred_id' => $invocations['one'], 'tool_call_id' => 'one']]);
@@ -81,15 +86,12 @@ final class ControllerReplayBackgroundCodeModeTest extends ControllerReplayE2eTe
                 fwrite($releases['one'], "finish\n");
                 fflush($releases['one']);
             }
-            $progress = $this->collectEventsUntil(null, 5, static fn (array $e): bool => 'tool_execution.completed' === ($e['type'] ?? '') && 'free' === ($e['payload']['tool_call_id'] ?? ''));
-            $this->assertCount(1, $this->indexByType($progress)['tool_execution.completed']);
             $this->assertFileExists($identities['two']['socket'], 'The other host is still retained when ordinary work progresses.');
             $this->assertFileDoesNotExist($this->tempDir.'/two.after');
             if (!$stop) {
-                $first = $this->indexByType($progress)['model.notification'][0] ?? $this->waitForEvent('model.notification', 5);
+                $first = $this->waitForEvent('model.notification', 5);
                 $this->assertSame($invocations['one'], $first['payload']['metadata']['background_completion']['invocation_id']);
             } else {
-                $this->collectEventsUntil('run.completed', 5);
                 $this->assertCount(4, file($this->tempDir.'/requests.jsonl', \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES), 'Only the completed read, not the stopped host, advances the model.');
                 $this->assertFileDoesNotExist($this->tempDir.'/one.after');
             }

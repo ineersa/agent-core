@@ -18,6 +18,12 @@ interface DeferredToolCompletionRepositoryInterface
      */
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation;
 
+    /**
+     * Owner preparation inserts a pending record without readiness.
+     * Existing rows keep their current readiness; late registerPending stamps readiness.
+     */
+    public function preparePending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation;
+
     /** Resolve pending data only. Completed markers never require a retained body. */
     public function findByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation;
 
@@ -29,12 +35,20 @@ interface DeferredToolCompletionRepositoryInterface
     /** Read and validate stored correlation identity without opening its body. */
     public function findMetadataByDeferredId(string $deferredId): ?DeferredToolCompletionMetadataDTO;
 
+    public function findMetadataByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionMetadataDTO;
+
     /**
      * @return 'completed'|'pending'|null
      */
     public function status(string $deferredId): ?string;
 
     public function markCompleted(string $deferredId): void;
+
+    /** Owner readiness stamp after launch success, host ready, or communication acceptance. */
+    public function markReady(string $deferredId): void;
+
+    /** Owner acceptance stamp after a deferred Bash/code-mode background handoff. */
+    public function markBackgrounded(string $deferredId, \DateTimeImmutable $acceptedAt): void;
 
     /** Old successor tokens require an explicit owner continuation after loss. */
     public function runRequiresContinuation(string $runId): bool;

@@ -44,6 +44,19 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->store = $store;
     }
 
+    public function testCatalogAndExistenceReadsDoNotPopulateTheIdentityMap(): void
+    {
+        $id = $this->store->createSession('Snapshot catalog');
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $entityManager->clear();
+        for ($round = 0; $round < 128; ++$round) {
+            $sessions = $this->store->listSessions();
+            $this->assertContains($id, array_column($sessions, 'sessionId'));
+            $this->assertTrue($this->store->exists($id));
+            $this->assertSame([], $entityManager->getUnitOfWork()->getIdentityMap());
+        }
+    }
+
     public function testCreateSessionCreatesDirectoryAndMetadata(): void
     {
         $sessionId = $this->store->createSession('Hello');
@@ -81,6 +94,28 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertFileExists($sessionPath.'/events.jsonl');
         $this->assertFileDoesNotExist($sessionPath.'/transcript.jsonl');
         $this->assertFileDoesNotExist($sessionPath.'/idempotency.jsonl');
+    }
+
+    public function testModelMetadataSnapshotsStayFreshWithoutManagedAliases(): void
+    {
+        $id = $this->store->createSession('Model metadata snapshot');
+        $this->store->updateMetadata($id, ['model' => 'test/model', 'reasoning' => 'medium']);
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $entityManager->clear();
+        for ($round = 0; $round < 300; ++$round) {
+            $metadata = $this->store->findModelMetadata($id);
+            $this->assertNotNull($metadata);
+            $this->assertSame('test/model', $metadata->model);
+            $this->assertSame('medium', $metadata->reasoning);
+            $this->assertNotEmpty($metadata->providerCacheKey);
+            $this->assertSame([], $entityManager->getUnitOfWork()->getIdentityMap());
+        }
+        $alias = $this->store->findSession($id);
+        $entityManager->getConnection()->executeStatement('UPDATE hatfield_session SET reasoning = ? WHERE id = ?', ['high', (int) $id]);
+        $this->assertSame('high', $this->store->findModelMetadata($id)?->reasoning);
+        $this->assertSame('medium', $alias?->reasoning);
+        $this->assertNull($this->store->findModelMetadata('child-run'));
+        $this->assertNull($this->store->findModelMetadata('2147483647'));
     }
 
     public function testExistsReturnsFalseForMissingSession(): void

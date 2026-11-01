@@ -103,7 +103,7 @@ echo "READY\n"; fflush(STDOUT); fgets(STDIN);
 PHP);
         $input = new InputStream();
         $producer->setInput($input);
-        $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger());
+        $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger(), new LockFactory(new FlockStore()));
         $consumerPid = 0;
         try {
             $producer->start();

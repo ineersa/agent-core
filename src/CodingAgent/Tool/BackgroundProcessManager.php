@@ -4,9 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\BashProcessSnapshotDTO;
+use Ineersa\CodingAgent\Application\BackgroundProcess\DTO\RequestBashBackgroundDTO;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
-use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\ForegroundBashProcessDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\NativeBashLaunchDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\NativeBashObservationDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -14,38 +21,41 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
+use Symfony\Component\Finder\Finder;
+
+use function Amp\delay;
 
 /**
- * Durable, ORM-backed manager for background processes.
+ * Native process supervision with tool-local durable metadata.
  *
  * This is a facade that delegates database operations to ProcessStore
  * and OS/filesystem operations to ProcessLifecycle.
  *
  * Process lifecycle:
- *  1. start() persists a BackgroundProcess entity and launches the
- *     command in a new session/process group via setsid. A shell
+ *  1. start() launches the command in a new session/process group via setsid.
+ *     Bash persists actual launch facts after native startup. A shell
  *     wrapper backgrounds the command as a distinct child process,
  *     redirects stdout/stderr to a log file, and records exit status
  *     to a status file on completion. The wrapper traps SIGTERM and
  *     forwards it to the child so TERM reaches the actual workload.
  *  2. The process runs independently — the PHP tool worker exits while
  *     the child continues in its own session.
- *  3. On subsequent accepted-background list() calls, resolveEntityStatus() checks
+ *  3. Subsequent accepted-background reads ask the metadata owner to observe
  *     liveness via /proc/<pid> on Linux or the status file.
  *  4. stop() sends SIGTERM to the process group (negative PGID), polls
  *     until exit or the configured grace deadline, then SIGKILL if still alive.
  *
  * Session ownership: user-facing list(), readLogTail(), and
  * stop() operations require an owning session and expose only rows explicitly
- * accepted as background work. Instance shutdown resolves owned record IDs
- * directly and stops them through stopProcessEntity().
+ * accepted as background work. Instance shutdown stops only native launches
+ * still held by that instance; accepted launches have transferred out.
  *
  * Shutdown handling:
  * Call registerShutdownHandler() from production wiring (services.yaml)
  * to register a PHP shutdown function that calls shutdownCleanup() with
- * no session argument. That path reaps only background-process records this
- * PHP instance started (owned record IDs), not every unfinished row in the
- * shared database. This covers graceful exit (Ctrl+C, quit command,
+ * no session argument. That path reaps only unaccepted local native launches,
+ * not accepted jobs or every unfinished row in the shared database.
+ * This covers graceful exit (Ctrl+C, quit command,
  * normal script end) and fatal errors.
  *
  * In test environment (config/services_test.yaml), the shutdown handler
@@ -69,16 +79,8 @@ final class BackgroundProcessManager
 {
     private bool $shutdownRegistered = false;
 
-    /**
-     * Immutable record IDs launched via start() by THIS instance.
-     *
-     * Shutdown cleanup must address the exact rows this PHP process created.
-     * Tracking OS PIDs alone is unsafe: rows can be deleted while ownership
-     * remains, and PID reuse can make fetchLatestByPid() resolve a foreign row.
-     *
-     * @var array<int, true>
-     */
-    private array $ownedRecordIds = [];
+    /** @var array<string, NativeBashLaunchDTO> statusPath => native launch */
+    private array $nativeLaunches = [];
 
     /** @var array<int, int> Immutable record ID to monotonic TERM grace deadline. */
     private array $timeoutGraceDeadlines = [];
@@ -109,11 +111,8 @@ final class BackgroundProcessManager
      *
      * Safe to call multiple times — idempotent.
      *
-     * This does NOT conflict with Symfony Messenger workers:
-     * BackgroundProcessManager is only constructed in the
-     * controller/in-process agent paths, never inside
-     * messenger:consume worker processes. Each agent process
-     * registers exactly one shutdown function.
+     * Tool workers also construct this manager. Accepted jobs release their
+     * local handle and belong to the session, not the retiring worker.
      */
     public function registerShutdownHandler(): void
     {
@@ -131,7 +130,7 @@ final class BackgroundProcessManager
     // ─── Public lifecycle API ─────────────────────────────────────────
 
     /**
-     * Start a background process and register it in the durable store.
+     * Launch and supervise a native process locally.
      *
      * The command is launched in a new session/process group via setsid
      * and wrapped in a shell harness that:
@@ -147,7 +146,7 @@ final class BackgroundProcessManager
      * signal with default disposition, while the wrapper survives long
      * enough to write the status sidecar.  When stop() sends SIGKILL
      * (after grace expires) the wrapper dies immediately and the status
-     * file is not written; resolveEntityStatus() marks that scenario as
+     * file is not written; the owner observation marks that scenario as
      * "finished (unclean)".
      *
      * setsid is required.  If setsid is not available or fails, this
@@ -169,307 +168,223 @@ final class BackgroundProcessManager
      *
      * @throws \RuntimeException on storage/launch failure
      */
-    public function start(string $command, ?string $sessionId = null, ?string $toolCallId = null, ?int $deadlineNanoseconds = null, bool $backgroundRequested = false): StartResult
-    {
-        // Ensure storage directory exists
-        $bgDir = $this->lifecycle->ensureStorageDir();
+    public function start(
+        string $command,
+        ?string $sessionId = null,
+        ?string $toolCallId = null,
+        ?int $deadlineNanoseconds = null,
+        bool $backgroundRequested = false,
+        ?string $invocationKey = null,
+    ): StartResult {
+        $runId = $sessionId ?? '';
+        $scoped = '' !== $runId && null !== $toolCallId && '' !== $toolCallId;
+        $suffix = $scoped ? hash('sha256', $invocationKey ?? $toolCallId) : bin2hex(random_bytes(32));
+        $prefix = '' !== $runId ? hash('sha256', $runId).'-'.$suffix : $suffix;
+        $directory = $this->lifecycle->ensureStorageDir();
+        $pidFile = $directory.'/'.$prefix.'.pid';
+        $statusFile = $directory.'/'.$prefix.'.status';
+        $logFile = $directory.'/'.$prefix.'.log';
 
-        // Generate unique file prefix and file paths
-        $filePrefix = bin2hex(random_bytes(8));
-        $pidFile = $bgDir.'/'.$filePrefix.'.pid';
-        $statusFile = $bgDir.'/'.$filePrefix.'.status';
-        $logFile = $bgDir.'/'.$filePrefix.'.log';
-
-        $now = Clock::get()->now();
-
-        // Launch process in new session group
-        $launchResult = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
-        $pid = $launchResult['pid'];
-        $pgid = $launchResult['pgid'];
-
-        // Persist launch intent with the initial row; acknowledgement still belongs to the supervisor.
+        $ownsInvocation = false;
         try {
-            $dbId = $this->store->insertRecord([
-                'pid' => $pid,
-                'pgid' => $pgid,
-                'session_id' => $sessionId ?? '',
-                'command' => $command,
-                'tool_call_id' => $toolCallId,
-                'deadline_nanoseconds' => $deadlineNanoseconds,
-                'background_requested' => $backgroundRequested,
-                'log_path' => $logFile,
-                'status_path' => $statusFile,
-                'started_at' => $now,
-            ]);
-        } catch (\Throwable $exception) {
-            // No durable row exists. Abort the captured launch without depending on a working database.
-            $this->lifecycle->sendKill($pid, $pgid);
-            throw $exception;
+            return $this->lifecycle->withSidecarLock($statusFile, function () use ($command, $runId, $toolCallId, $deadlineNanoseconds, $backgroundRequested, $scoped, $pidFile, $statusFile, $logFile, &$ownsInvocation): StartResult {
+                if (!$this->lifecycle->ownsSidecarPaths($logFile, $statusFile)) {
+                    throw new \RuntimeException('Bash native paths are not owned sidecars.');
+                }
+                $id = $scoped ? $this->store->recordIdForStatusPath($statusFile, $runId) : null;
+                $record = null === $id ? null : $this->store->snapshot($id);
+                if (null !== $record && ($record->command !== $command || $record->toolCallId !== $toolCallId || $record->logPath !== $logFile)) {
+                    throw new \RuntimeException('Bash intent conflicts with its existing native execution.');
+                }
+                $evidence = null !== $record || file_exists($pidFile) || file_exists($statusFile) || file_exists($logFile);
+                $startedAt = $record?->startedAt;
+                if ($evidence) {
+                    $pid = $this->lifecycle->readPidFile($statusFile);
+                    if (null === $pid || (null !== $record?->pid && $record->pid !== $pid)) {
+                        throw new \RuntimeException('Bash execution has incomplete native identity; workload outcome is unknown.');
+                    }
+                    $pgid = $record?->pgid;
+                    if (null === $this->lifecycle->readStatusFile($statusFile) && $this->lifecycle->isAlive($pid)) {
+                        $pgid = $this->lifecycle->ownedPgid($pid, $statusFile);
+                        if (null === $pgid || (null !== $record?->pgid && $record->pgid !== $pgid)) {
+                            throw new \RuntimeException('Bash execution has no recoverable owned process group; workload outcome is unknown.');
+                        }
+                    }
+                } else {
+                    $launched = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
+                    $pid = $launched['pid'];
+                    $pgid = $launched['pgid'];
+                }
+                $accepted = null !== $record?->backgroundedAt;
+                if (!$accepted) {
+                    // Own the native launch before timestamp lookup or persistence can
+                    // fail. Cleanup runs outside this lock and preserves replay evidence.
+                    $this->nativeLaunches[$statusFile] = new NativeBashLaunchDTO(
+                        pid: $pid, pgid: $pgid, sessionId: $runId, command: $command, toolCallId: $toolCallId,
+                        deadlineNanoseconds: $record->deadlineNanoseconds ?? $deadlineNanoseconds,
+                        backgroundRequested: $record->backgroundRequested ?? $backgroundRequested,
+                        logPath: $logFile, statusPath: $statusFile,
+                    );
+                    $ownsInvocation = true;
+                }
+                if (null === $startedAt) {
+                    clearstatcache(true, $pidFile);
+                    $timestamp = filemtime($pidFile);
+                    if (false === $timestamp) {
+                        throw new \RuntimeException('Bash execution has no recoverable native start time.');
+                    }
+                    $startedAt = new \DateTimeImmutable('@'.$timestamp);
+                }
+                $deadline = null !== $record ? $record->deadlineNanoseconds : $deadlineNanoseconds;
+                if ($evidence && null === $record && null !== $deadlineNanoseconds) {
+                    // Preserve the caller's budget when recovering a launch whose
+                    // post-launch SQL insert was interrupted. The PID file dates
+                    // the original launch; do not restart its timeout on replay.
+                    $elapsed = max(0.0, (float) Clock::get()->now()->format('U.u') - (float) $startedAt->format('U.u'));
+                    $deadline = $deadlineNanoseconds - (int) ($elapsed * 1_000_000_000);
+                }
+                if ($scoped && null === $id) {
+                    $id = $this->store->insertRecord([
+                        'session_id' => $runId, 'tool_call_id' => $toolCallId, 'command' => $command,
+                        'pid' => $pid, 'pgid' => $pgid, 'log_path' => $logFile, 'status_path' => $statusFile,
+                        'started_at' => $startedAt, 'deadline_nanoseconds' => $deadline,
+                        'background_requested' => $backgroundRequested,
+                    ]);
+                }
+                $native = new NativeBashLaunchDTO(
+                    pid: $pid, pgid: $pgid, sessionId: $runId, command: $command, toolCallId: $toolCallId,
+                    deadlineNanoseconds: $deadline,
+                    backgroundRequested: $record->backgroundRequested ?? $backgroundRequested,
+                    logPath: $logFile, statusPath: $statusFile,
+                );
+                if (!$accepted) {
+                    $this->nativeLaunches[$statusFile] = $native;
+                    $this->observeNative($native);
+                }
+
+                return new StartResult($pid, $logFile, $statusFile, $native->deadlineNanoseconds, $accepted);
+            });
+        } catch (\Throwable $error) {
+            if ($ownsInvocation) {
+                $this->releaseNativeInvocation($statusFile);
+            }
+
+            throw $error;
         }
-
-        // Track for instance-scoped shutdown only after the durable row exists.
-        // Ownership is the immutable record ID, never the reusable OS PID.
-        $this->ownedRecordIds[$dbId] = true;
-
-        $resolvedSessionId = $sessionId ?? '';
-
-        $this->logger->info('background_process.started', [
-            'component' => 'tool.background_process',
-            'event_type' => 'background_process.started',
-            'process_pid' => $pid,
-            'process_pgid' => $pgid,
-            'has_group_termination' => true,
-            'log_path' => $logFile,
-            'process_session_id' => $resolvedSessionId,
-        ]);
-
-        return new StartResult(
-            id: $dbId,
-            pid: $pid,
-            logPath: $logFile,
-        );
     }
 
     /**
-     * List processes explicitly accepted as background work for one run.
-     * Private foreground-supervision records (backgroundedAt === null) are
-     * deliberately excluded from the user-facing bg_status surface.
-     *
-     * Resolves status from filesystem state (/proc/<pid> or status file)
-     * and persists any changes before returning.
-     *
-     * @return list<BackgroundProcess>
+     * @return list<BashProcessRecordDTO>
      */
     public function list(string $sessionId): array
     {
-        $entities = $this->store->fetchBackgrounded($sessionId);
-
-        foreach ($entities as $entity) {
-            $this->resolveEntityStatus($entity);
+        $records = [];
+        foreach ($this->store->backgroundSnapshots($sessionId) as $candidate) {
+            $record = $this->findByRecordId($candidate->id, $sessionId);
+            if (null !== $record) {
+                $records[] = $record;
+            }
         }
 
-        $this->store->flush();
-
-        return $entities;
+        return $records;
     }
 
     /**
-     * Check whether a row exists for the given PID.
-     *
-     * Uses an ORM COUNT query that always hits the database, bypassing
-     * the identity map. This allows callers to distinguish "row does not
-     * exist" from "row exists but ORM/identity map did not return it."
+     * Public PID lookup selects the newest retained row before filtering
+     * ownership. Null covers both absence and a different session. Immutable record
+     * IDs, not reusable PIDs, address foreground supervision.
      */
-    public function existsByPid(int $pid): bool
+    public function find(int $pid, ?string $sessionId = null): ?BashProcessRecordDTO
     {
-        return $this->store->existsByPid($pid);
+        $record = $this->store->latestSnapshot($pid);
+
+        return null === $record ? null : $this->findByRecordId($record->id, $sessionId);
     }
 
-    /**
-     * Check whether a row exists for the given record ID.
-     *
-     * Uses an ORM COUNT query that always hits the database, bypassing
-     * the identity map.
-     */
-    public function existsByRecordId(int $id): bool
+    public function findByRecordId(int $id, ?string $sessionId = null): ?BashProcessRecordDTO
     {
-        return $this->store->existsByRecordId($id);
+        $record = $this->store->snapshot($id);
+        if (null === $record || (null !== $sessionId && $record->sessionId !== $sessionId)) {
+            return null;
+        }
+        if (null === $record->finishedAt) {
+            $this->observeNativeAndPublish($record);
+            $record = $this->store->snapshot($id) ?? $record;
+        }
+
+        return $record;
     }
 
-    /**
-     * Find a single background process by PID, with refreshed status.
-     *
-     * Resolves status from filesystem state and flushes before returning.
-     * This is O(1) per call (single entity fetch), unlike list() which
-     * refreshes all entities. Preferred for polling loops that only care
-     * about one known PID.
-     *
-     * Returns null for two distinct cases:
-     *   1. The row does not exist (genuinely absent / cleaned up).
-     *   2. The row exists but belongs to a different session (session
-     *      mismatch — the entity is silently filtered out).
-     *
-     * Callers that need to distinguish these cases should use the DB
-     * record id via findByRecordId() or call existsByPid() after a null
-     * result from this method.
-     *
-     * @param int         $pid       Process PID to find (must be > 0)
-     * @param string|null $sessionId optional session filter.
-     *                               When provided, only a matching session
-     *                               process is returned.
-     *
-     * @return BackgroundProcess|null the entity with refreshed status, or
-     *                                null if not found or session mismatch
-     *
-     * PID resolution uses the newest retained row (ORDER BY id DESC) for public
-     * bg_status semantics; session ownership is enforced after lookup
-     */
-    public function find(int $pid, ?string $sessionId = null): ?BackgroundProcess
+    public function findByStatusPath(string $statusPath, ?string $sessionId = null): ?BashProcessRecordDTO
     {
-        $entity = $this->store->fetchLatestByPid($pid);
-
-        if (null === $entity) {
-            $this->logger->notice('background_process.find_by_pid_null', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.find_by_pid_null',
-                'process_pid' => $pid,
-                'session_id' => $sessionId ?? '',
-                'reason' => 'fetch_by_pid_returned_null',
-            ]);
-
+        // Durable lookup only. Local supervisors use observeNativeByStatusPath().
+        $resolvedSession = $sessionId ?? ($this->nativeLaunches[$statusPath]->sessionId ?? null);
+        if (null === $resolvedSession) {
+            return null;
+        }
+        $id = $this->store->recordIdForStatusPath($statusPath, $resolvedSession);
+        if (null === $id) {
             return null;
         }
 
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
-            $this->logger->notice('background_process.find_by_pid_session_mismatch', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.find_by_pid_session_mismatch',
-                'process_pid' => $pid,
-                'session_id' => $sessionId,
-                'entity_session_id' => $entity->sessionId,
-                'reason' => 'find_by_pid_session_mismatch',
-            ]);
-
-            return null;
-        }
-
-        // Only flush when the entity transitioned from running to a
-        // terminal state. If finishedAt was already set before the
-        // resolve call, no mutation occurred; if it remains null, the
-        // process is still running and no persisted column changed.
-        // This avoids unnecessary DB writes during polling loops that
-        // call find() every ~100 ms.
-        $wasFinished = null !== $entity->finishedAt;
-        $this->resolveEntityStatus($entity);
-
-        if (!$wasFinished && null !== $entity->finishedAt) {
-            $this->store->flush();
-        }
-
-        return $entity;
+        return $this->findByRecordId($id, $resolvedSession);
     }
 
     /**
-     * Find a single background process by its auto-increment record ID,
-     * with refreshed status.
+     * Observe the exact native launch identified by statusPath.
      *
-     * Unlike find() which queries by OS PID (which can be reused after
-     * the process exits), this queries by the immutable auto-increment
-     * primary key. Prefer this when the DB id is available (e.g. from
-     * StartResult::$id returned by start()).
-     *
-     * Session scoping is preserved: if $sessionId is provided and the
-     * entity belongs to a different session, null is returned.
-     *
-     * @param int         $id        Auto-increment record ID (> 0)
-     * @param string|null $sessionId optional session filter.
-     *                               When provided, only a matching session
-     *                               process is returned.
-     *
-     * @return BackgroundProcess|null The entity with refreshed status, or
-     *                                null if not found or session mismatch
+     * Returns local supervision facts only. Never fabricates a durable row id.
      */
-    public function findByRecordId(int $id, ?string $sessionId = null): ?BackgroundProcess
+    public function observeNativeByStatusPath(string $statusPath, ?string $sessionId = null): ?NativeBashObservationDTO
     {
-        $entity = $this->store->fetchByRecordId($id);
-
-        if (null === $entity) {
-            $this->logger->notice('background_process.find_by_record_id_null', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.find_by_record_id_null',
-                'record_id' => $id,
-                'session_id' => $sessionId ?? '',
-                'reason' => 'fetch_by_record_id_returned_null',
-            ]);
-
+        $native = $this->nativeLaunches[$statusPath] ?? null;
+        if (null === $native && null !== $sessionId) {
+            $record = $this->findByStatusPath($statusPath, $sessionId);
+            if (null !== $record?->pid && null !== $record->startedAt) {
+                $native = new NativeBashLaunchDTO($record->pid, $record->pgid, $record->sessionId, $record->command, $record->toolCallId, $record->deadlineNanoseconds, $record->backgroundRequested, $record->logPath, $record->statusPath);
+            }
+        }
+        if (null === $native) {
+            return null;
+        }
+        if (null !== $sessionId && $native->sessionId !== $sessionId) {
             return null;
         }
 
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
-            $this->logger->notice('background_process.find_by_record_id_session_mismatch', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.find_by_record_id_session_mismatch',
-                'record_id' => $id,
-                'session_id' => $sessionId,
-                'entity_session_id' => $entity->sessionId,
-                'reason' => 'find_by_record_id_session_mismatch',
-            ]);
-
-            return null;
-        }
-
-        $wasFinished = null !== $entity->finishedAt;
-        $this->resolveEntityStatus($entity);
-
-        if (!$wasFinished && null !== $entity->finishedAt) {
-            $this->store->flush();
-        }
-
-        return $entity;
+        return $this->observeNative($native);
     }
 
-    /**
-     * Return a user-accepted background process log within its owning run.
-     * The repository applies run, PID, and backgroundedAt predicates together,
-     * so foreground and cross-run records are indistinguishable from absent.
-     *
-     * @throws \RuntimeException when no accepted process matches
-     */
     public function readLogTail(string $sessionId, int $pid, ?int $maxChars = null): LogTailResult
     {
-        $maxChars ??= $this->config->logTailChars;
-        $entity = $this->store->fetchBackgroundedByPid($sessionId, $pid);
-
-        if (null === $entity) {
+        $id = $this->store->acceptedRecordId($sessionId, $pid);
+        if (null === $id) {
             throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
-        $wasFinished = null !== $entity->finishedAt;
-        $this->resolveEntityStatus($entity);
-        if (!$wasFinished && null !== $entity->finishedAt) {
-            $this->store->flush();
-        }
-
-        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, null !== $entity->finishedAt);
+        return $this->readLogTailForRecord($id, $maxChars, $sessionId);
     }
 
-    /**
-     * Return the tail of a background process log by immutable record ID.
-     */
     public function readLogTailForRecord(int $recordId, ?int $maxChars = null, ?string $sessionId = null): LogTailResult
     {
-        $maxChars ??= $this->config->logTailChars;
-
-        $entity = $this->store->fetchByRecordId($recordId);
-
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('No background process found with record ID %d.', $recordId));
-        }
-
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+        $record = $this->findByRecordId($recordId, $sessionId);
+        if (null === $record) {
             throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
         }
 
-        $wasFinished = null !== $entity->finishedAt;
-        $this->resolveEntityStatus($entity);
-        if (!$wasFinished && null !== $entity->finishedAt) {
-            $this->store->flush();
-        }
+        return $this->lifecycle->readLogTail($record->logPath, $maxChars ?? $this->config->logTailChars, null !== $record->finishedAt);
+    }
 
-        return $this->lifecycle->readLogTail($entity->logPath, $maxChars, null !== $entity->finishedAt);
+    public function isAcceptedRecord(int $recordId, string $runId): bool
+    {
+        return $this->store->isAcceptedRecord($recordId, $runId);
     }
 
     /**
      * Stop a background process: TERM → grace → KILL.
      *
      * Targets the entire process group via negative PGID
-     * (kill -TERM -<PGID>) when a PGID is available.  Falls back
-     * to single-PID signalling only when the PGID could not be
-     * determined — a rare race window immediately after process launch.
-     *
-     * @param int    $pid       Process PID to stop. Must be > 0.
-     * @param string $sessionId owning run. Only an accepted background process
-     *                          in that run can be stopped.
+     * (kill -TERM -<PGID>) only after validating the live wrapper and owned group.
+     * Unverifiable native ownership refuses signalling; there is no PID fallback.
      *
      * @throws \RuntimeException when process not found or PID is invalid
      */
@@ -481,13 +396,13 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('Invalid PID %d for stop.', $pid));
         }
 
-        $entity = $this->store->fetchBackgroundedByPid($sessionId, $pid);
+        $recordId = $this->store->acceptedRecordId($sessionId, $pid);
 
-        if (null === $entity) {
+        if (null === $recordId) {
             throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
-        return $this->stopProcessEntity($entity);
+        return $this->stopProcessRecord($recordId, $sessionId);
     }
 
     /**
@@ -504,22 +419,16 @@ final class BackgroundProcessManager
             return false;
         }
 
-        $entity = $this->findByRecordId($recordId, $runId);
-        if (null === $entity || $entity->toolCallId !== $toolCallId || null !== $entity->finishedAt || null !== $entity->backgroundedAt) {
-            return false;
-        }
+        $request = new RequestBashBackgroundDTO($runId, $recordId, $toolCallId);
 
-        $entity->backgroundRequested = true;
-        $this->store->flush();
-
-        return true;
+        return $this->store->requestBackground($request, $this->lifecycle);
     }
 
     /**
      * Read-only selection snapshot. Native supervision and deadline enforcement
      * remain with the execution owner/poller, not TUI candidate discovery.
      *
-     * @return list<BackgroundProcess>
+     * @return list<ForegroundBashProcessDTO>
      */
     public function foregroundTools(string $runId): array
     {
@@ -527,329 +436,598 @@ final class BackgroundProcessManager
             return [];
         }
 
-        return $this->store->fetchForegroundTools($runId);
+        $candidates = [];
+        foreach ($this->store->fetchForegroundTools($runId) as $process) {
+            // Candidate discovery reads actual launch metadata without enforcing deadlines.
+            $pid = $process->pid ?? $this->lifecycle->readPidFile($this->store->snapshot($process->id)?->statusPath);
+            if (null !== $pid) {
+                $candidates[] = new ForegroundBashProcessDTO($process->id, $pid, $process->toolCallId);
+            }
+        }
+
+        return $candidates;
     }
 
     /**
-     * Mark the exact background-process record as user-backgrounded.
+     * Resolve a still-running background acceptance candidate.
      *
-     * Used by BashTool when its worker accepts the background request for the
-     * current invocation (immutable record ID from start()).
+     * Callers must perform the freshest cancellation check after this returns
+     * and before {@see acceptResolvedBackground()}, with no yield between them.
      *
-     * @throws \RuntimeException when record not found or session mismatches
+     * @return array{kind: 'native', statusPath: string, pid: int, sessionId: string}|array{kind: 'record', statusPath: string, recordId: int, pid: ?int, sessionId: string}|null
      */
-    public function markBackgroundedForRecord(int $recordId, ?string $sessionId = null): void
+    public function resolveBackgroundAcceptance(string $statusPath, ?string $sessionId = null): ?array
     {
-        $entity = $this->store->fetchByRecordId($recordId);
+        $native = $this->nativeLaunches[$statusPath] ?? null;
+        if (null !== $native) {
+            $observed = $this->observeNative($native);
+            if (null !== $sessionId && $observed->sessionId !== $sessionId) {
+                throw new \RuntimeException('Bash background acceptance record/session mismatch.');
+            }
+            if (null !== $observed->finishedAt) {
+                return null;
+            }
 
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('Background process record with ID %d not found.', $recordId));
+            return [
+                'kind' => 'native',
+                'statusPath' => $statusPath,
+                'pid' => $observed->pid,
+                'sessionId' => $sessionId ?? $observed->sessionId,
+            ];
         }
 
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
-            throw new \RuntimeException(\sprintf('No background process with record ID %d for this session.', $recordId));
+        $record = $this->findByStatusPath($statusPath, $sessionId);
+        if (null === $record || (null !== $sessionId && $record->sessionId !== $sessionId)) {
+            throw new \RuntimeException('Bash background acceptance record/session mismatch.');
+        }
+        if (null !== $record->finishedAt) {
+            return null;
         }
 
-        $entity->markBackgrounded(Clock::get()->now());
-        $this->store->flush();
-
-        $this->logger->info('background_process.marked_backgrounded', [
-            'component' => 'tool.background_process',
-            'event_type' => 'background_process.marked_backgrounded',
-            'process_pid' => $entity->pid,
-            'record_id' => $recordId,
-            'process_session_id' => $sessionId ?? '',
-        ]);
+        return [
+            'kind' => 'record',
+            'statusPath' => $statusPath,
+            'recordId' => $record->id,
+            'pid' => $record->pid,
+            'sessionId' => $sessionId ?? $record->sessionId,
+        ];
     }
 
     /**
-     * Stop a background process by immutable record ID.
+     * Commit local acceptance for a candidate resolved by {@see resolveBackgroundAcceptance()}.
      *
-     * Same TERM → grace → KILL lifecycle as stop(), but targets the exact
-     * row tracked by a foreground BashTool invocation.
-     * Nonblocking callers leave grace and escalation to the owning controller.
+     * @param array{kind: 'native', statusPath: string, pid: int, sessionId: string}|array{kind: 'record', statusPath: string, recordId: int, pid: ?int, sessionId: string} $candidate
+     */
+    public function acceptResolvedBackground(array $candidate, ?CancellationTokenInterface $cancellationToken = null): bool
+    {
+        $statusPath = $candidate['statusPath'];
+
+        return $this->lifecycle->withSidecarLock($statusPath, function () use ($candidate, $statusPath, $cancellationToken): bool {
+            $id = $this->store->recordIdForStatusPath($statusPath, $candidate['sessionId']);
+            $record = null === $id ? null : $this->store->snapshot($id);
+            if (null !== $record?->backgroundedAt) {
+                $this->releaseNativeLaunch($statusPath);
+
+                return true;
+            }
+            // Lock acquisition can yield. Recheck cancellation after acquiring
+            // it; an acceptance already committed by another delivery still wins.
+            if ($cancellationToken?->isCancellationRequested()) {
+                return false;
+            }
+            if (null !== $record?->finishedAt || null !== $this->lifecycle->readStatusFile($statusPath)
+                || null === $record?->pid || !$this->lifecycle->isAlive($record->pid)) {
+                return false;
+            }
+            if ('native' === $candidate['kind']) {
+                $native = $this->nativeLaunches[$statusPath] ?? null;
+                if (null === $native || $native->pid !== $candidate['pid'] || $native->sessionId !== $candidate['sessionId']) {
+                    throw new \RuntimeException('Bash background acceptance native/session mismatch.');
+                }
+                $id = $this->store->recordIdForStatusPath($statusPath, $candidate['sessionId']);
+                if (null === $id || !$this->store->acceptLocal($id, $candidate['sessionId'])) {
+                    throw new \RuntimeException('Background acceptance requires the launched process record.');
+                }
+                $this->releaseNativeLaunch($statusPath);
+                $this->logger->info('background_process.marked_backgrounded', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.marked_backgrounded',
+                    'process_pid' => $candidate['pid'],
+                    'status_path' => $statusPath,
+                    'process_session_id' => $candidate['sessionId'],
+                    'run_id' => $candidate['sessionId'],
+                    'session_id' => $candidate['sessionId'],
+                ]);
+
+                return true;
+            }
+
+            if ($candidate['recordId'] > 0) {
+                if (!$this->store->acceptLocal($candidate['recordId'], $candidate['sessionId'])) {
+                    throw new \RuntimeException('Bash background acceptance record/session mismatch.');
+                }
+            }
+            $this->releaseNativeLaunch($statusPath);
+            $this->logger->info('background_process.marked_backgrounded', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.marked_backgrounded',
+                'process_pid' => $candidate['pid'],
+                'status_path' => $statusPath,
+                'record_id' => $candidate['recordId'],
+                'process_session_id' => $candidate['sessionId'],
+                'run_id' => $candidate['sessionId'],
+                'session_id' => $candidate['sessionId'],
+            ]);
+
+            return true;
+        });
+    }
+
+    /**
+     * Stop foreground work unless durable background acceptance already won.
+     *
+     * @return bool true when stopped; false when accepted ownership is preserved
      *
      * @throws \RuntimeException when record not found, session mismatch, or invalid state
      */
+    public function stopForegroundByStatusPath(string $statusPath, ?string $sessionId = null): bool
+    {
+        return $this->lifecycle->withSidecarLock($statusPath, function () use ($statusPath, $sessionId): bool {
+            $native = $this->nativeLaunches[$statusPath] ?? null;
+            $record = null === $sessionId ? null : $this->findByStatusPath($statusPath, $sessionId);
+            if (null !== $record?->backgroundedAt) {
+                $this->releaseNativeLaunch($statusPath);
+
+                return false;
+            }
+            if (null === $native || (null !== $sessionId && $native->sessionId !== $sessionId)) {
+                throw new \RuntimeException('No locally owned foreground Bash invocation for this session.');
+            }
+            // Acceptance uses this same lock. Keep it through native ownership
+            // lookup and signalling, including cooperative ps waits.
+            $this->lifecycle->stopProcess($native->pid, $native->pgid, $statusPath);
+            $this->observeNative($native);
+
+            return true;
+        });
+    }
+
+    /**
+     * Read a log by the exact native paths retained from start().
+     *
+     * Used after local supervision releases the in-memory launch map.
+     */
+    public function readLogTailForNativePaths(string $logPath, string $statusPath, ?int $maxChars = null): LogTailResult
+    {
+        $finished = null !== $this->lifecycle->readStatusFile($statusPath);
+
+        return $this->lifecycle->readLogTail($logPath, $maxChars ?? $this->config->logTailChars, $finished);
+    }
+
+    /**
+     * Release the local native launch after the caller finished consuming output.
+     *
+     * Unaccepted launches delete their exact .pid/.status/.log set.
+     * Accepted detached launches already released via {@see acceptResolvedBackground()}.
+     */
+    public function releaseNativeInvocation(string $statusPath): void
+    {
+        $native = $this->nativeLaunches[$statusPath] ?? null;
+        if (null === $native) {
+            return;
+        }
+
+        // Exceptional paths may still own a running unaccepted launch. Stop it
+        // with existing native supervision before dropping the handle. Accepted
+        // detach in another delivery is rechecked under the signalling lock.
+        $exitCode = $this->lifecycle->readStatusFile($statusPath);
+        if (null === $exitCode && $this->lifecycle->isAlive($native->pid)) {
+            $this->stopForegroundByStatusPath($statusPath, '' !== $native->sessionId ? $native->sessionId : null);
+            $native = $this->nativeLaunches[$statusPath] ?? null;
+            if (null === $native) {
+                return;
+            }
+        }
+
+        $logPath = $native->logPath;
+        $sessionId = $native->sessionId;
+        $pid = $native->pid;
+        $this->releaseNativeLaunch($statusPath);
+        if ('' !== $sessionId && null !== $native->toolCallId) {
+            return;
+        }
+        $deleted = $this->lifecycle->withSidecarLock($statusPath, function () use ($logPath, $statusPath): bool {
+            return $this->lifecycle->deleteLockedRecordSidecars($logPath, $statusPath);
+        });
+        if (!$deleted) {
+            $this->logger->error('background_process.native_sidecar_cleanup_failed', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.native_sidecar_cleanup_failed',
+                'status_path' => $statusPath,
+                'log_path' => $logPath,
+                'process_pid' => $pid,
+                'process_session_id' => $sessionId,
+                'run_id' => $sessionId,
+                'session_id' => $sessionId,
+            ]);
+        }
+    }
+
     public function stopByRecordId(int $recordId, ?string $sessionId = null, bool $waitForExit = true): StopResult
     {
         if ($recordId <= 0) {
             throw new \RuntimeException(\sprintf('Invalid record ID %d for stop.', $recordId));
         }
 
-        $entity = $this->store->fetchByRecordId($recordId);
-
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('No background process found with record ID %d.', $recordId));
-        }
-
-        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+        $runId = $this->store->sessionForRecord($recordId);
+        if (null === $runId || (null !== $sessionId && $runId !== $sessionId)) {
             throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
         }
 
-        return $this->stopProcessEntity($entity, $waitForExit);
+        return $this->stopProcessRecord($recordId, $runId, $waitForExit);
     }
 
     /**
      * Terminate background processes started by this manager instance.
      *
-     * This PHP-shutdown fallback queries only this instance's immutable record
-     * IDs. The controller lifecycle listener owns session-wide cleanup.
+     * This PHP-shutdown fallback stops only unaccepted local foreground
+     * launches still tracked in nativeLaunches. Accepted background jobs belong
+     * to the session owner; the controller lifecycle listener owns session-wide
+     * cleanup.
      *
      * @return int Number of processes terminated
      */
     public function shutdownCleanup(): int
     {
-        return $this->reapOwnedProcesses();
+        return $this->reapUnacceptedNativeLaunches();
+    }
+
+    /** Stop unreported wrappers after launchers stop; only deletion erases replay evidence. */
+    public function cleanupSessionSidecars(string $runId, bool $permanentDeletion = false): void
+    {
+        $directory = $this->lifecycle->ensureStorageDir();
+        $prefix = hash('sha256', $runId).'-';
+        foreach ((new Finder())->files()->in($directory)->depth('== 0')->name('/^'.preg_quote($prefix, '/').'[a-f0-9]{64}\.pid$/') as $file) {
+            $statusPath = substr($file->getPathname(), 0, -4).'.status';
+            $logPath = substr($file->getPathname(), 0, -4).'.log';
+            $this->lifecycle->withSidecarLock($statusPath, function () use ($runId, $statusPath, $logPath, $permanentDeletion): void {
+                if (null !== $this->store->recordIdForStatusPath($statusPath, $runId)) {
+                    return; // A failed row cleanup must retain its native evidence.
+                }
+                if (!$this->lifecycle->ownsSidecarPaths($logPath, $statusPath)) {
+                    throw new \RuntimeException('Session native cleanup encountered unsafe sidecars.');
+                }
+                $pid = $this->lifecycle->readPidFile($statusPath);
+                if (null === $pid) {
+                    throw new \RuntimeException('Session native cleanup cannot establish wrapper ownership.');
+                }
+                $this->lifecycle->stopProcess($pid, $this->lifecycle->ownedPgid($pid, $statusPath), $statusPath);
+                if ($permanentDeletion && !$this->lifecycle->deleteLockedRecordSidecars($logPath, $statusPath)) {
+                    throw new \RuntimeException('Session native sidecar cleanup failed.');
+                }
+            });
+        }
     }
 
     /**
-     * Refresh unfinished entities for controller-owned runs in one batch.
-     * Populate finished_at even when no list() call observes completion.
-     *
-     * Passive maintenance only: never signal a process. The owning controller
-     * enforces accepted-job deadlines through refreshEntities(); maintenance
-     * cannot share that owner's in-memory termination grace deadlines.
-     *
-     * Safe to call repeatedly — only queries unfinished entities, checks
-     * status files and /proc/<pid>, and flushes any newly-resolved
-     * entities. Already-finished entities are skipped.
-     *
-     * @param list<string> $sessionIds Controller-owned runs
+     * Permanent deletion removes finished metadata and its exact native sidecars
+     * under the same lock used for launch, attachment and acceptance.
      */
-    public function refreshAllUnfinished(array $sessionIds): void
+    public function cleanupFinishedRecord(int $recordId, string $runId): bool
     {
-        $entities = $this->store->fetchAllUnfinished($sessionIds);
-        foreach ($entities as $entity) {
-            $this->resolveEntityStatus($entity);
+        $record = $this->store->snapshot($recordId);
+        if (null === $record || $record->sessionId !== $runId) {
+            return false;
         }
-        if ([] !== $entities) {
-            $this->store->flush();
-        }
+
+        return $this->lifecycle->withSidecarLock($record->statusPath, function () use ($recordId, $runId): bool {
+            $record = $this->store->snapshot($recordId);
+            if (null === $record || $record->sessionId !== $runId || null === $record->finishedAt) {
+                return false;
+            }
+            if (!$this->lifecycle->deleteLockedRecordSidecars($record->logPath, $record->statusPath)) {
+                return false;
+            }
+
+            return null !== $this->processDecision($recordId, $runId, BashProcessActionEnum::DeleteFinished);
+        });
     }
 
     /**
-     * Resolve prefetched records, then persist the refresh phase once.
-     * Newly requested timeout stops are durable before any TERM is sent.
+     * Native controller supervision uses scalar snapshots. ProcessLifecycle
+     * validates current native evidence again before each signal.
      *
-     * A caller may isolate individual resolution failures with onError. Flush
-     * failures still propagate, so no completion is delivered before persistence.
-     * Callers without onError retain fail-fast resolution.
+     * @param list<BashProcessRecordDTO>                            $records
+     * @param \Closure(BashProcessRecordDTO, \Throwable): void|null $onError
      *
-     * @param list<BackgroundProcess>                            $entities
-     * @param \Closure(BackgroundProcess, \Throwable): void|null $onError
-     *
-     * @return list<BackgroundProcess> Successfully refreshed records in input order
+     * @return list<BashProcessRecordDTO>
      */
-    public function refreshEntities(array $entities, ?\Closure $onError = null): array
+    public function refreshRecords(array $records, ?\Closure $onError = null): array
     {
-        // Acknowledging an explicit stop never releases controller supervision.
-        // Its caller may die during grace or only request a nonblocking stop.
         foreach (array_keys($this->timeoutGraceDeadlines) as $id) {
-            $record = $this->store->fetchByRecordId($id);
+            $record = $this->store->snapshot($id);
             if (null === $record || null !== $record->finishedAt) {
                 unset($this->timeoutGraceDeadlines[$id]);
             }
         }
-
         $refreshed = [];
-        $toTerminate = [];
-        foreach ($entities as $entity) {
+        foreach ($records as $record) {
             try {
-                $this->resolveEntityStatus($entity);
-                $deadlineExpired = null !== $entity->deadlineNanoseconds && hrtime(true) >= $entity->deadlineNanoseconds;
-                if (null !== $entity->finishedAt) {
-                    unset($this->timeoutGraceDeadlines[$entity->id]);
-                } elseif (null !== $entity->backgroundedAt && ($entity->stoppedByUser || $deadlineExpired)) {
-                    // The batch flush records the stop cause before TERM can
-                    // make cleanup exit. finishedAt still gates completion.
-                    if (!isset($this->timeoutGraceDeadlines[$entity->id])) {
-                        $entity->status = BackgroundProcessStatusEnum::Stopped;
-                        if ($entity->stoppedByUser) {
-                            // TERM was requested already. Adopt bounded grace
-                            // without signaling cleanup subprocesses a second time.
-                            $this->timeoutGraceDeadlines[$entity->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
-                        } else {
-                            $toTerminate[] = $entity;
+                $current = $this->processDecision($record->id, $record->sessionId, BashProcessActionEnum::Observe);
+                if (null === $current || $current->finished) {
+                    unset($this->timeoutGraceDeadlines[$record->id]);
+                } else {
+                    $snapshot = $this->store->snapshot($record->id);
+                    if (null !== $snapshot && null !== $snapshot->backgroundedAt) {
+                        if ($snapshot->stoppedByUser && !isset($this->timeoutGraceDeadlines[$record->id])) {
+                            $this->stopProcessRecord($record->id, $record->sessionId, waitForExit: false);
+                        } elseif (null !== $snapshot->deadlineNanoseconds && hrtime(true) >= $snapshot->deadlineNanoseconds) {
+                            $this->superviseTimeout($snapshot);
+                        }
+                        if (isset($this->timeoutGraceDeadlines[$record->id]) && hrtime(true) >= $this->timeoutGraceDeadlines[$record->id]) {
+                            $this->settleExpiredGrace($snapshot);
                         }
                     }
-                    if (isset($this->timeoutGraceDeadlines[$entity->id]) && hrtime(true) >= $this->timeoutGraceDeadlines[$entity->id]) {
-                        $this->lifecycle->sendKill($entity->pid, $entity->pgid);
-                        $entity->finish(null, Clock::get()->now());
-                        $this->lifecycle->writeStopMarker($entity->statusPath);
-                        unset($this->timeoutGraceDeadlines[$entity->id]);
-                    }
                 }
-                $refreshed[] = $entity;
-            } catch (\Throwable $e) {
+                $snapshot = $this->store->snapshot($record->id);
+                if (null !== $snapshot) {
+                    $refreshed[] = $snapshot;
+                }
+            } catch (\Throwable $error) {
                 if (null === $onError) {
-                    throw $e;
+                    throw $error;
                 }
-                $onError($entity, $e);
+                $onError($record, $error);
             }
-        }
-        if ([] !== $refreshed) {
-            $this->store->flush();
-        }
-        // Never wait for grace: all due processes receive TERM after the same
-        // refresh flush, and later passes observe exit or escalate to KILL.
-        $stoppedAfterTerm = false;
-        foreach ($toTerminate as $entity) {
-            try {
-                // A separate caller may have requested an explicit stop since
-                // the candidate snapshot. Refresh its intent before signaling.
-                $current = $this->store->fetchByRecordId($entity->id);
-                if (null === $current || null !== $current->finishedAt || $current->stoppedByUser) {
-                    continue;
-                }
-                $this->lifecycle->sendTerm($entity->pid, $entity->pgid);
-                $this->timeoutGraceDeadlines[$entity->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
-                if (0 === $this->config->stopGraceSeconds) {
-                    $this->lifecycle->sendKill($entity->pid, $entity->pgid);
-                    $entity->markStopped(Clock::get()->now());
-                    $entity->stoppedByUser = false;
-                    $this->lifecycle->writeStopMarker($entity->statusPath);
-                    unset($this->timeoutGraceDeadlines[$entity->id]);
-                    $stoppedAfterTerm = true;
-                }
-                $this->logger->info('background_process.timed_out', [
-                    'component' => 'tool.background_process',
-                    'event_type' => 'background_process.timed_out',
-                    'run_id' => $entity->sessionId,
-                    'session_id' => $entity->sessionId,
-                    'record_id' => $entity->id,
-                ]);
-            } catch (\Throwable $e) {
-                if (null === $onError) {
-                    throw $e;
-                }
-                $onError($entity, $e);
-            }
-        }
-        // Zero-grace stops end after the cause was flushed but before delivery.
-        if ($stoppedAfterTerm) {
-            $this->store->flush();
         }
 
         return $refreshed;
     }
 
-    /**
-     * Shared stop lifecycle for a resolved background-process entity.
-     */
-    private function stopProcessEntity(BackgroundProcess $entity, bool $waitForExit = true): StopResult
+    private function superviseTimeout(BashProcessRecordDTO $record): void
     {
-        unset($this->timeoutGraceDeadlines[$entity->id]);
-        $pid = $entity->pid;
-
-        // Refresh status before acting — the process may have finished
-        // since the last list() call (status file written, /proc gone).
-        $this->resolveEntityStatus($entity);
-        $this->store->flush();
-
-        if (null !== $entity->finishedAt) {
-            return new StopResult(
-                pgid: $entity->pgid,
-                alreadyFinished: true,
-                signalSent: 'none',
-            );
+        if (isset($this->timeoutGraceDeadlines[$record->id])) {
+            return;
         }
-
-        $pgid = $entity->pgid;
-        $graceSeconds = $this->config->stopGraceSeconds;
-
-        // Persist explicit stop intent before TERM: an independent completion
-        // poller can observe native exit while this caller is still in grace.
-        $entity->status = BackgroundProcessStatusEnum::Stopped;
-        $entity->stoppedByUser = true;
-        $entity->markCompletionNotified(Clock::get()->now());
-        $this->store->flush();
-
-        // TERM signal — target process group (negative PGID)
-        $signalSent = 'term';
-        $this->lifecycle->sendTerm($pid, $pgid);
-        if (!$waitForExit) {
-            return new StopResult(pgid: $pgid, alreadyFinished: false, signalSent: $signalSent);
-        }
-
-        // Poll until cooperative exit or grace deadline, then KILL if still alive.
-        // Wrapper trap writes .status before /proc fully disappears; treat that as done.
-        // ponytail: 50ms poll loop (matches ProcessLifecycle::resolvePgid); waitpid/eventfd if stop latency becomes a hot path
-        $statusPath = $entity->statusPath;
-        if ($graceSeconds > 0) {
-            $deadlineNs = hrtime(true) + ($graceSeconds * 1_000_000_000);
-            while (hrtime(true) < $deadlineNs) {
-                if (null !== $this->lifecycle->readStatusFile($statusPath)) {
-                    break;
-                }
-                if (!$this->lifecycle->isAlive($pid)) {
-                    break;
-                }
-                usleep(50_000);
+        $this->lifecycle->withSidecarLock($record->statusPath, function () use ($record): void {
+            $decision = $this->processDecision($record->id, $record->sessionId, BashProcessActionEnum::Timeout);
+            if (null === $decision || $decision->finished || !$decision->signalRequired) {
+                return;
             }
-        }
+            if (null === $decision->pid) {
+                return;
+            }
+            $this->lifecycle->sendTerm($decision->pid, $decision->pgid, $decision->statusPath);
+            $this->timeoutGraceDeadlines[$record->id] = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+            $this->logger->info('background_process.timed_out', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.timed_out',
+                'run_id' => $record->sessionId,
+                'session_id' => $record->sessionId,
+                'record_id' => $record->id,
+            ]);
+        });
+    }
 
-        // Prefer status-file proof of cooperative exit over /proc residual.
-        $cooperativelyExited = null !== $this->lifecycle->readStatusFile($statusPath);
-        if (!$cooperativelyExited && $this->lifecycle->isAlive($pid)) {
-            $signalSent = 'term+kill';
-            $this->lifecycle->sendKill($pid, $pgid);
-        }
-
-        $this->logger->info('background_process.stopped', [
-            'component' => 'tool.background_process',
-            'event_type' => 'background_process.stopped',
-            'process_pid' => $pid,
-            'process_pgid' => $pgid,
-            'signal_sent' => $signalSent,
-            'grace_seconds' => $graceSeconds,
-        ]);
-
-        $now = Clock::get()->now();
-        $entity->markStopped($now);
-
-        // Write -1 to the status file only when the wrapper did not
-        // already write a real exit code (KILL path). When TERM succeeds
-        // the wrapper's trap handler writes the child's real exit code
-        // before exiting; overwriting would corrupt forensic evidence.
-        if ('' !== $statusPath) {
-            $this->lifecycle->writeStopMarker($statusPath);
-        }
-
-        $this->store->flush();
-
-        return new StopResult(
-            pgid: $pgid,
-            alreadyFinished: false,
-            signalSent: $signalSent,
-        );
+    private function settleExpiredGrace(BashProcessRecordDTO $record): void
+    {
+        $this->lifecycle->withSidecarLock($record->statusPath, function () use ($record): void {
+            $decision = $this->processDecision($record->id, $record->sessionId, BashProcessActionEnum::Observe);
+            if (null !== $decision && !$decision->finished && null !== $decision->pid) {
+                $this->lifecycle->sendKill($decision->pid, $decision->pgid, $decision->statusPath);
+                $this->lifecycle->writeStopMarker($decision->statusPath);
+                $this->processDecision($record->id, $record->sessionId, BashProcessActionEnum::SettleTimeout);
+            }
+            unset($this->timeoutGraceDeadlines[$record->id]);
+        });
     }
 
     /**
-     * Reap only records started via start() on this manager instance.
-     *
-     * Used when shutdownCleanup() is called with no session id (PHP shutdown
-     * handler path). Never reads unfinished rows from the shared database.
+     * Native stop supervision retains only immutable snapshots across yields.
      */
-    private function reapOwnedProcesses(): int
+    private function stopProcessRecord(int $recordId, string $runId, bool $waitForExit = true): StopResult
+    {
+        $identity = $this->processDecision($recordId, $runId, BashProcessActionEnum::Observe);
+        if (null === $identity) {
+            throw new \RuntimeException('Background process is no longer available.');
+        }
+
+        // Maintenance must not delete completion evidence between the owner
+        // decision and native signalling. Owner decisions do not take this lock.
+        return $this->lifecycle->withSidecarLock($identity->statusPath, function () use ($recordId, $runId, $waitForExit): StopResult {
+            $process = $this->processDecision($recordId, $runId, BashProcessActionEnum::Stop);
+            if (null === $process) {
+                throw new \RuntimeException('Background process is no longer available.');
+            }
+            if ($process->finished || !$process->signalRequired) {
+                unset($this->timeoutGraceDeadlines[$recordId]);
+
+                return new StopResult(pgid: $process->pgid, alreadyFinished: $process->finished, signalSent: 'none');
+            }
+            $pid = $process->pid;
+            $pgid = $process->pgid;
+            $statusPath = $process->statusPath;
+            $graceSeconds = $this->config->stopGraceSeconds;
+            $signalSent = 'none';
+            if (null === $pid) {
+                unset($this->timeoutGraceDeadlines[$recordId]);
+
+                return new StopResult(pgid: $pgid, alreadyFinished: false, signalSent: 'none');
+            }
+            if (!isset($this->timeoutGraceDeadlines[$recordId])) {
+                $this->lifecycle->sendTerm($pid, $pgid, $statusPath);
+                $signalSent = 'term';
+                $this->timeoutGraceDeadlines[$recordId] = hrtime(true) + $graceSeconds * 1_000_000_000;
+            }
+            if (!$waitForExit) {
+                return new StopResult(pgid: $pgid, alreadyFinished: false, signalSent: $signalSent);
+            }
+            if ($graceSeconds > 0) {
+                $deadlineNs = $this->timeoutGraceDeadlines[$recordId];
+                while (hrtime(true) < $deadlineNs) {
+                    if (null !== $this->lifecycle->readStatusFile($statusPath) || !$this->lifecycle->isAlive($pid)) {
+                        break;
+                    }
+                    delay(0.05);
+                }
+            }
+            if (null === $this->lifecycle->readStatusFile($statusPath) && $this->lifecycle->isAlive($pid)) {
+                $signalSent = 'term+kill';
+                $this->lifecycle->sendKill($pid, $pgid, $statusPath);
+            }
+            $this->logger->info('background_process.stopped', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.stopped',
+                'run_id' => $runId,
+                'record_id' => $recordId,
+                'process_pid' => $pid,
+                'process_pgid' => $pgid,
+                'signal_sent' => $signalSent,
+                'grace_seconds' => $graceSeconds,
+            ]);
+            // Preserve the wrapper's real exit code; only an absent marker gets -1.
+            if ('' !== $statusPath) {
+                $this->lifecycle->writeStopMarker($statusPath);
+            }
+            $this->processDecision($recordId, $runId, BashProcessActionEnum::SettleStop);
+            unset($this->timeoutGraceDeadlines[$recordId]);
+
+            return new StopResult(pgid: $pgid, alreadyFinished: false, signalSent: $signalSent);
+        });
+    }
+
+    private function observeNative(NativeBashLaunchDTO $native): NativeBashObservationDTO
+    {
+        $exitCode = $this->lifecycle->readStatusFile($native->statusPath);
+        $finished = null !== $exitCode || !$this->lifecycle->isAlive($native->pid);
+        $stoppedByUser = false;
+        $status = BackgroundProcessStatusEnum::Running;
+        $finishedAt = null;
+        $id = '' === $native->sessionId ? null : $this->store->recordIdForStatusPath($native->statusPath, $native->sessionId);
+        $record = null === $id ? null : $this->store->snapshot($id);
+        $backgroundRequested = $native->backgroundRequested || ($record->backgroundRequested ?? false);
+        $accepted = null !== $record?->backgroundedAt;
+        if ($accepted) {
+            $this->releaseNativeLaunch($native->statusPath);
+        }
+        if ($finished) {
+            if (-1 === $exitCode) {
+                $status = BackgroundProcessStatusEnum::Stopped;
+                $stoppedByUser = true;
+            } elseif (null !== $exitCode) {
+                $status = BackgroundProcessStatusEnum::Finished;
+            } else {
+                $status = BackgroundProcessStatusEnum::FinishedUnclean;
+            }
+            $finishedAt = $record->finishedAt ?? Clock::get()->now();
+            $this->publishFinished($native, $exitCode, $status, $stoppedByUser, $finishedAt);
+        }
+
+        return new NativeBashObservationDTO(
+            pid: $native->pid,
+            sessionId: $native->sessionId,
+            command: $native->command,
+            logPath: $native->logPath,
+            statusPath: $native->statusPath,
+            finishedAt: $finishedAt,
+            exitCode: $exitCode,
+            stoppedByUser: $stoppedByUser,
+            toolCallId: $native->toolCallId,
+            backgroundRequested: $backgroundRequested,
+            status: $status,
+            accepted: $accepted,
+        );
+    }
+
+    private function observeNativeAndPublish(BashProcessRecordDTO $record): void
+    {
+        if (isset($this->nativeLaunches[$record->statusPath])) {
+            $this->observeNative($this->nativeLaunches[$record->statusPath]);
+
+            return;
+        }
+        $exitCode = $this->lifecycle->readStatusFile($record->statusPath);
+        if (null === $record->pid || null === $record->startedAt) {
+            return;
+        }
+        $finished = null !== $exitCode || !$this->lifecycle->isAlive($record->pid);
+        if (!$finished) {
+            return;
+        }
+        $status = -1 === $exitCode
+            ? BackgroundProcessStatusEnum::Stopped
+            : (null !== $exitCode ? BackgroundProcessStatusEnum::Finished : BackgroundProcessStatusEnum::FinishedUnclean);
+        // Timeout/stop intents mark Stopped before native exit evidence arrives.
+        // Preserve that classification when the sidecar later reports completion,
+        // matching ProcessStore::decide()'s settle path.
+        if (BackgroundProcessStatusEnum::Stopped === $record->status) {
+            $status = BackgroundProcessStatusEnum::Stopped;
+        }
+        $this->publishFinished(
+            new NativeBashLaunchDTO(
+                pid: $record->pid,
+                pgid: $record->pgid,
+                sessionId: $record->sessionId,
+                command: $record->command,
+                toolCallId: $record->toolCallId,
+                deadlineNanoseconds: $record->deadlineNanoseconds,
+                backgroundRequested: $record->backgroundRequested,
+                logPath: $record->logPath,
+                statusPath: $record->statusPath,
+            ),
+            $exitCode,
+            $status,
+            $record->stoppedByUser || -1 === $exitCode,
+            Clock::get()->now(),
+        );
+    }
+
+    private function publishFinished(
+        NativeBashLaunchDTO $native,
+        ?int $exitCode,
+        BackgroundProcessStatusEnum $status,
+        bool $stoppedByUser,
+        \DateTimeImmutable $finishedAt,
+    ): void {
+        $id = '' === $native->sessionId ? null : $this->store->recordIdForStatusPath($native->statusPath, $native->sessionId);
+        if (null === $id || '' === $native->sessionId) {
+            return;
+        }
+        $this->store->applyFinishedByRecord($id, $native->sessionId, $exitCode, $status, $stoppedByUser, $finishedAt);
+    }
+
+    private function releaseNativeLaunch(string $statusPath): void
+    {
+        unset($this->nativeLaunches[$statusPath]);
+    }
+
+    private function processDecision(int $recordId, string $runId, BashProcessActionEnum $action): ?BashProcessSnapshotDTO
+    {
+        return $this->store->decide($recordId, $runId, $action, $this->lifecycle);
+    }
+
+    /** Worker exit kills only unaccepted foreground launches it still owns. */
+    private function reapUnacceptedNativeLaunches(): int
     {
         $count = 0;
-        foreach (array_keys($this->ownedRecordIds) as $recordId) {
+        foreach ($this->nativeLaunches as $statusPath => $launch) {
             try {
-                $entity = $this->store->fetchByRecordId($recordId);
-                if (null !== $entity) {
-                    $this->stopProcessEntity($entity);
+                if (null !== $this->lifecycle->readStatusFile($launch->statusPath) || !$this->lifecycle->isAlive($launch->pid)) {
+                    $this->releaseNativeLaunch($statusPath);
+                    continue;
+                }
+                if ($this->stopForegroundByStatusPath($statusPath, '' !== $launch->sessionId ? $launch->sessionId : null)) {
                     ++$count;
                 }
-                // Missing rows were already removed by session/provisional cleanup.
-                // Keep ownership on failure so a later cleanup can retry.
-                unset($this->ownedRecordIds[$recordId]);
-            } catch (\RuntimeException $e) {
-                $this->logger->warning('background_process.shutdown_cleanup_error', [
+                $this->releaseNativeLaunch($statusPath);
+            } catch (\Throwable $error) {
+                $this->logger->error('background_process.native_reap_failed', [
                     'component' => 'tool.background_process',
-                    'event_type' => 'background_process.shutdown_cleanup_error',
-                    'record_id' => $recordId,
-                    'error' => $e->getMessage(),
+                    'event_type' => 'background_process.native_reap_failed',
+                    'session_id' => $launch->sessionId,
+                    'run_id' => $launch->sessionId,
+                    'status_path' => $statusPath,
+                    'exception' => $error,
                 ]);
             }
         }
@@ -858,54 +1036,4 @@ final class BackgroundProcessManager
     }
 
     // ─── Private helpers ─────────────────────────────────────────────
-
-    /**
-     * Resolve the runtime status of a background process entity.
-     *
-     * Check order:
-     *  1. DB finished_at — already resolved, trust the persisted status.
-     *  2. Status file   — process finished normally, wrapper wrote exit code.
-     *  3. /proc/<pid>   — still alive, mark as Running.
-     *  4. None of above — process is gone without a status file
-     *     (crash / SIGKILL / unclean exit). Mark as FinishedUnclean.
-     *
-     * Mutates the entity in place; caller is responsible for flush.
-     */
-    private function resolveEntityStatus(BackgroundProcess $entity): void
-    {
-        // Already resolved in DB
-        if (null !== $entity->finishedAt) {
-            return;
-        }
-
-        $pid = $entity->pid;
-
-        // Check status file first (process may have finished normally)
-        $exitCode = $this->lifecycle->readStatusFile($entity->statusPath);
-        if (null !== $exitCode) {
-            $now = Clock::get()->now();
-            $entity->finish($exitCode, $now);
-
-            return;
-        }
-
-        // Check /proc/<pid> for liveness
-        if ($this->lifecycle->isAlive($pid)) {
-            if (BackgroundProcessStatusEnum::Stopped !== $entity->status) {
-                $entity->status = BackgroundProcessStatusEnum::Running;
-            }
-
-            return;
-        }
-
-        // Process is gone but no status file written (crash / SIGKILL / unclean exit)
-        $now = Clock::get()->now();
-        $entity->markFinishedUnclean($now);
-
-        $this->logger->info('background_process.finished_unclean', [
-            'component' => 'tool.background_process',
-            'event_type' => 'background_process.finished_unclean',
-            'process_pid' => $pid,
-        ]);
-    }
 }

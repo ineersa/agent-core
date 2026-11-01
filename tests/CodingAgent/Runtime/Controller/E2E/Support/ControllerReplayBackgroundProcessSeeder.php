@@ -7,9 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Support;
 use DAMA\DoctrineTestBundle\Doctrine\DBAL\StaticDriver;
 use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
-use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
 
@@ -58,16 +58,16 @@ final class ControllerReplayBackgroundProcessSeeder
                 'status_path' => $statusPath,
                 'started_at' => new \DateTimeImmutable(),
             ]);
-            $entity = $store->fetchByRecordId($id);
+            $entity = BackgroundProcessFixture::record($container, $id);
             if (null === $entity) {
                 throw new \RuntimeException(\sprintf('Seeded background process %d missing after insert.', $id));
             }
-            $entity->finish(0, new \DateTimeImmutable());
-            $store->flush();
-
-            /** @var BackgroundProcessManager $manager */
-            $manager = $container->get(BackgroundProcessManager::class);
-            $manager->markBackgroundedForRecord($id, $sessionId);
+            // Acceptance must precede finish: workers no longer accept finished rows.
+            if (!$store->acceptLocal($id, $sessionId)) {
+                throw new \RuntimeException(\sprintf('Unable to accept seeded background process %d.', $id));
+            }
+            BackgroundProcessFixture::finish($entity, 0, new \DateTimeImmutable());
+            $container->get(\Doctrine\ORM\EntityManagerInterface::class)->flush();
 
             return [
                 'id' => $id,
@@ -91,7 +91,7 @@ final class ControllerReplayBackgroundProcessSeeder
             /** @var ProcessStore $store */
             $store = $container->get(ProcessStore::class);
 
-            return $store->existsByRecordId($id);
+            return null !== $store->snapshot($id);
         });
     }
 

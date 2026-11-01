@@ -66,6 +66,17 @@ final class AgentSteerToolTest extends IsolatedKernelTestCase
         $context->with($native, static fn () => $context->with($native, static fn () => $toolbox->execute(new ToolCall('steer', 'agent_steer', ['text' => 'x', 'artifact_id' => $f->artifact]))));
     }
 
+    public function testMalformedCommunicationReturnsOrdinaryErrorWithoutDeferredPreparation(): void
+    {
+        $c = self::getContainer();
+        $f = new SubmissionFixture($c);
+        $request = new ExecuteToolCall($f->parent, 1, 'step', 1, 'malformed-steer', 'steer', 'agent_steer', ['text' => ['not a string'], 'artifact_id' => $f->artifact], 0, toolsRef: 'current');
+        $result = ($c->get(ExecuteToolCallWorker::class))($request);
+        Assert::assertNotNull($result);
+        Assert::assertTrue($result->isError);
+        Assert::assertNull($c->get(DeferredToolCompletionRepositoryInterface::class)->statusForRunAndToolCall($f->parent, 'steer'));
+    }
+
     public function testParentAllowlistCannotBeOverriddenByCommunication(): void
     {
         $c = self::getContainer();

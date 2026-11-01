@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolLaunchContextDTO;
@@ -82,6 +83,21 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             parentState: $parentState,
             childEventStore: $childEventStore,
             childRunner: $childRunner,
+            prepare: new ExecuteToolCall(
+                $parentRunId,
+                1,
+                'gf05-tool-step',
+                1,
+                hash('sha256', 'gf05-tool-call'),
+                'gf05-tool-call',
+                'subagent',
+                [
+                    'agent' => 'gf05-scout',
+                    'task' => 'Verify inherited AGENTS context',
+                ],
+                0,
+                parentModel: 'test-model',
+            ),
         );
 
         $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
@@ -102,6 +118,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             toolName: 'subagent',
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
+            orderIndex: 0,
             parentModel: 'test-model',
             launchContext: new ToolLaunchContextDTO(
                 kind: ToolLaunchContextDTO::KIND_SUBAGENT,
@@ -143,6 +160,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
         RunState $parentState,
         EventStoreInterface $childEventStore,
         PipelineCapturingAgentRunner $childRunner,
+        ?ExecuteToolCall $prepare = null,
     ): SubagentExecutionService {
         $registry = self::getContainer()->get(ToolRegistryInterface::class);
         $policy = new AgentToolPolicyResolver($registry, $this->emptyMcpToolsResolver(), new AgentsConfig());
@@ -178,7 +196,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             'forkToolPolicyResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver::class),
             'childExtensionSelection' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\ChildExtensionSelectionService::class),
             'toolRegistry' => self::getContainer()->get(ToolRegistryInterface::class),
-        ]);
+        ], $prepare);
     }
 
     private function parentState(string $runId, array $messages): RunState

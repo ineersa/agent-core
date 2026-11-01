@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
+use Ineersa\CodingAgent\Session\DTO\SessionModelMetadataDTO;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Filesystem\Filesystem;
@@ -150,6 +151,17 @@ final class HatfieldSessionStore
         return $this->fetchEntityOrNull($sessionId);
     }
 
+    public function findModelMetadata(string $sessionId): ?SessionModelMetadataDTO
+    {
+        $id = $this->parsePositiveSessionId($sessionId);
+        if (null === $id) {
+            return null;
+        }
+        $row = $this->entityManager->getConnection()->fetchAssociative('SELECT model, reasoning, provider_cache_key FROM hatfield_session WHERE id = ?', [$id]);
+
+        return false === $row ? null : new SessionModelMetadataDTO($row['model'], $row['reasoning'], $row['provider_cache_key']);
+    }
+
     /**
      * Update session metadata fields on the database row.
      *
@@ -279,28 +291,28 @@ final class HatfieldSessionStore
      */
     public function listSessions(): array
     {
-        $entities = $this->getRepository()->findForCatalog();
+        $sessions = $this->getRepository()->findForCatalog();
         $result = [];
 
-        foreach ($entities as $entity) {
-            $id = (string) $entity->id;
-            $name = $entity->name;
-            $promptPreview = $this->resolvePromptPreview($entity->prompt);
+        foreach ($sessions as $session) {
+            $id = (string) $session['id'];
+            $name = $session['name'];
+            $promptPreview = $this->resolvePromptPreview($session['prompt']);
             $displayTitle = $this->resolveDisplayTitle($id, $name, $promptPreview);
 
             $result[] = [
                 'sessionId' => $id,
                 'name' => $name,
                 'displayTitle' => $displayTitle,
-                'cwd' => $entity->cwd,
-                'prompt' => $entity->prompt,
+                'cwd' => $session['cwd'],
+                'prompt' => $session['prompt'],
                 'promptPreview' => $promptPreview,
-                'model' => $entity->model,
-                'model_provider' => $entity->modelProvider,
-                'model_name' => $entity->modelName,
-                'reasoning' => $entity->reasoning,
-                'created_at' => $entity->createdAt->format(\DateTimeInterface::ATOM),
-                'updated_at' => $entity->updatedAt->format(\DateTimeInterface::ATOM),
+                'model' => $session['model'],
+                'model_provider' => $session['model_provider'],
+                'model_name' => $session['model_name'],
+                'reasoning' => $session['reasoning'],
+                'created_at' => (new \DateTimeImmutable($session['created_at']))->format(\DateTimeInterface::ATOM),
+                'updated_at' => (new \DateTimeImmutable($session['updated_at']))->format(\DateTimeInterface::ATOM),
             ];
         }
 

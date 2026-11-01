@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Repository;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -17,6 +18,24 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
  */
 final class RunRelationshipReaderTest extends IsolatedKernelTestCase
 {
+    public function testRelationshipSnapshotsRemainFreshWithoutManagingTheGraph(): void
+    {
+        $projection = self::getContainer()->get(RunOperationalProjectionRepository::class);
+        $projection->replace(new RunState('relationship-parent', RunStatus::Running));
+        $projection->replace(new RunState('relationship-child', RunStatus::Running, parentRunId: 'relationship-parent'));
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $entityManager->clear();
+        $reader = new RunRelationshipReader($projection);
+        for ($round = 0; $round < 128; ++$round) {
+            $this->assertTrue($reader->isAgentChild('relationship-child'));
+            $this->assertSame('relationship-parent', $reader->readParentRunId('relationship-child'));
+            $reader->requireKnownTopLevel('relationship-parent');
+            $this->assertSame([], $entityManager->getUnitOfWork()->getIdentityMap());
+        }
+        $entityManager->getConnection()->executeStatement('UPDATE run_operational_state SET parent_run_id = NULL WHERE run_id = ?', ['relationship-child']);
+        $this->assertFalse($reader->isAgentChild('relationship-child'));
+    }
+
     public function testHotClassificationUsesProjectionOnlyAndNeverTouchesEventStore(): void
     {
         $container = self::getContainer();

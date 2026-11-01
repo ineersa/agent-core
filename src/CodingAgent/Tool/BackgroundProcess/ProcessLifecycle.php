@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 
+use Amp\Process\Process;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Process\ExecutableFinder;
+
+use function Amp\ByteStream\buffer;
+use function Amp\delay;
 
 /**
  * OS and filesystem operations for background process lifecycle.
@@ -22,6 +28,7 @@ final class ProcessLifecycle
     public function __construct(
         private readonly BackgroundProcessConfig $config,
         private readonly LoggerInterface $logger,
+        private readonly LockFactory $lockFactory,
     ) {
     }
 
@@ -47,13 +54,13 @@ final class ProcessLifecycle
     public function launchProcess(string $command, string $pidFile, string $logFile, string $statusFile): array
     {
         // Preflight: verify setsid is available before attempting launch.
-        exec('command -v setsid', $_, $rc);
-        if (0 !== $rc) {
+        $setsid = (new ExecutableFinder())->find('setsid');
+        if (null === $setsid) {
             throw new \RuntimeException('setsid is required but not found on this platform.');
         }
 
         // Build a shell wrapper that:
-        //  1. Records wrapper PID to pidFile
+        //  1. Exclusively claims pidFile before running the command
         //  2. Redirects stdout/stderr to logFile
         //  3. Backgrounds the user command as a child process (&) so
         //     the child inherits default SIGTERM (not ignored)
@@ -62,7 +69,7 @@ final class ProcessLifecycle
         //  5. Waits for the child on the normal path, stores child RC
         //     in a variable before echo so exit reflects child outcome
         $shellCode = \sprintf(
-            'echo $$ > %s || exit 1; echo $$; exec >> %s 2>&1; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > $STATUS_FILE; exit $RC',
+            'set -o noclobber; { echo $$ > %s; } 2>/dev/null || exit 73; set +o noclobber; echo $$ || exit 74; exec >> %s 2>&1; bash -c %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > "$STATUS_FILE"; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > "$STATUS_FILE"; exit $RC',
             escapeshellarg($pidFile),
             escapeshellarg($logFile),
             escapeshellarg($command),
@@ -77,12 +84,24 @@ final class ProcessLifecycle
         // stdout to the log: EOF acknowledges readiness without polling a file.
         // Keep the command in its own bash -c so heredocs/exit cannot consume
         // or bypass the supervisor's wait/status-writing code.
-        $launcher = 'setsid -f bash -c '.escapeshellarg($shellCode);
+        $launcher = Process::start([$setsid, '-f', 'bash', '-c', $shellCode]);
+        // Reading launch-pipe EOF cooperatively preserves the wrapper readiness
+        // boundary without blocking every other invocation in this process.
+        $output = preg_split('/\R/', trim(buffer($launcher->getStdout())));
+        $exitCode = $launcher->join();
 
-        $output = [];
-        $exitCode = -1;
-        exec($launcher, $output, $exitCode);
+        if (73 === $exitCode) {
+            $pid = $this->readPidFile($statusFile);
+            if (null === $pid) {
+                throw new \RuntimeException('Bash wrapper claim exists without a valid PID; workload outcome is unknown.');
+            }
+            $pgid = $this->ownedPgid($pid, $statusFile);
+            if (null === $this->readStatusFile($statusFile) && $this->isAlive($pid) && null === $pgid) {
+                throw new \RuntimeException('Bash wrapper claim cannot be validated; workload outcome is unknown.');
+            }
 
+            return ['pid' => $pid, 'pgid' => $pgid];
+        }
         if (0 !== $exitCode || [] === $output) {
             throw new \RuntimeException('Failed to launch background process: setsid returned exit code '.$exitCode.'. (pid file: '.$pidFile.')');
         }
@@ -102,27 +121,85 @@ final class ProcessLifecycle
     /**
      * Send SIGTERM to a process (or its process group).
      */
-    public function sendTerm(int $pid, ?int $pgid): void
+    public function sendTerm(int $pid, ?int $pgid, string $statusPath): void
     {
-        if (null !== $pgid && $pgid > 0) {
-            @exec(\sprintf('kill -TERM -%d 2>/dev/null', $pgid));
-        } else {
-            @exec(\sprintf('kill -TERM %d 2>/dev/null', $pid));
+        $ownedGroup = $this->ownedPgid($pid, $statusPath);
+        if (null === $ownedGroup || (null !== $pgid && $ownedGroup !== $pgid)) {
+            if (null !== $this->readStatusFile($statusPath) || !$this->isAlive($pid)) {
+                return;
+            }
+            throw new \RuntimeException('Refusing to signal a process without its owned native group.');
         }
+        @exec(\sprintf('kill -TERM -%d 2>/dev/null', $ownedGroup));
     }
 
-    /**
-     * Send SIGKILL to a process (or its process group).
-     */
-    public function sendKill(int $pid, ?int $pgid): void
+    /** Caller holds the exact sidecar lock through native validation and signal. */
+    public function sendKill(int $pid, ?int $pgid, string $statusPath): void
     {
-        if (null !== $pgid && $pgid > 0) {
-            @exec(\sprintf('kill -KILL -%d 2>/dev/null', $pgid));
-        } else {
-            @exec(\sprintf('kill -KILL %d 2>/dev/null', $pid));
+        $ownedGroup = $this->ownedPgid($pid, $statusPath);
+        if (null === $ownedGroup || (null !== $pgid && $ownedGroup !== $pgid)) {
+            if (null !== $this->readStatusFile($statusPath) || !$this->isAlive($pid)) {
+                return;
+            }
+            throw new \RuntimeException('Refusing to signal a process without its owned native group.');
         }
+        @exec(\sprintf('kill -KILL -%d 2>/dev/null', $ownedGroup));
     }
 
+    /** Validate the live setsid wrapper, not merely a reusable PID or SQL row. */
+    public function ownedPgid(int $pid, string $statusPath): ?int
+    {
+        if (!$this->ownsSidecarPaths(substr($statusPath, 0, -7).'.log', $statusPath)
+            || null !== $this->readStatusFile($statusPath) || $this->readPidFile($statusPath) !== $pid || !$this->isAlive($pid)) {
+            return null;
+        }
+        try {
+            $process = Process::start(['ps', '-ww', '-p', (string) $pid, '-o', 'command=']);
+            $command = buffer($process->getStdout());
+            $exitCode = $process->join();
+        } catch (\Throwable $error) {
+            $this->logger->warning('background_process.ownership_lookup_failed', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.ownership_lookup_failed',
+                'process_pid' => $pid,
+                'run_id' => null,
+                'session_id' => null,
+                'exception' => $error,
+            ]);
+
+            return null;
+        }
+        if (0 !== $exitCode || !str_contains($command, 'STATUS_FILE='.escapeshellarg($statusPath))) {
+            return null;
+        }
+        $pgid = $this->resolvePgid($pid);
+
+        return $pgid === $pid ? $pgid : null;
+    }
+
+    /** Caller holds the sidecar lock; every escalation revalidates native ownership. */
+    public function stopProcess(int $pid, ?int $pgid, string $statusPath, bool $waitForExit = true): StopResult
+    {
+        if (null !== $this->readStatusFile($statusPath) || !$this->isAlive($pid)) {
+            return new StopResult($pgid, true, 'none');
+        }
+        $this->sendTerm($pid, $pgid, $statusPath);
+        if (!$waitForExit) {
+            return new StopResult($pgid, false, 'TERM');
+        }
+        $deadline = hrtime(true) + $this->config->stopGraceSeconds * 1_000_000_000;
+        while (null === $this->readStatusFile($statusPath) && $this->isAlive($pid) && hrtime(true) < $deadline) {
+            delay(0.05);
+        }
+        $signal = 'TERM';
+        if (null === $this->readStatusFile($statusPath) && $this->isAlive($pid)) {
+            $this->sendKill($pid, $pgid, $statusPath);
+            $signal = 'KILL';
+        }
+        $this->writeStopMarker($statusPath);
+
+        return new StopResult($pgid, false, $signal);
+    }
     // ─── Liveness / status ───────────────────────────────────────────
 
     /**
@@ -208,6 +285,50 @@ final class ProcessLifecycle
     }
 
     /**
+     * Read the wrapper PID from the exact .pid sibling of a status path.
+     *
+     * Recovery reads the wrapper's exclusive claim before attaching to native
+     * execution. Missing/invalid evidence means
+     * not-yet-known, never a fabricated identity.
+     */
+    public function readPidFile(?string $statusPath): ?int
+    {
+        if (!\is_string($statusPath) || '' === $statusPath || !str_ends_with($statusPath, '.status')) {
+            return null;
+        }
+
+        $pidPath = substr($statusPath, 0, -7).'.pid';
+        if (!is_file($pidPath)) {
+            return null;
+        }
+
+        clearstatcache(true, $pidPath);
+        $raw = @file_get_contents($pidPath);
+        if (false === $raw) {
+            $error = error_get_last();
+            if (null !== $error) {
+                $this->logger->debug('background_process.pid_file_unreadable', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.pid_file_unreadable',
+                    'path' => $pidPath,
+                    'error' => $error['message'],
+                ]);
+            }
+
+            return null;
+        }
+
+        $trimmed = trim($raw);
+        if ('' === $trimmed || !ctype_digit($trimmed)) {
+            return null;
+        }
+
+        $pid = (int) $trimmed;
+
+        return $pid > 0 ? $pid : null;
+    }
+
+    /**
      * Write a user-stop marker to the status file.
      *
      * Only writes when the status file doesn't already exist (meaning
@@ -235,15 +356,17 @@ final class ProcessLifecycle
     public function resolvePgid(int $pid): ?int
     {
         for ($attempt = 0; $attempt < 5; ++$attempt) {
-            $pgidStr = @shell_exec(\sprintf('ps -o pgid= -p %d 2>/dev/null', $pid));
-            if (\is_string($pgidStr) && '' !== trim($pgidStr)) {
+            $process = Process::start(['ps', '-o', 'pgid=', '-p', (string) $pid]);
+            $pgidStr = buffer($process->getStdout());
+            $process->join();
+            if ('' !== trim($pgidStr)) {
                 $pgid = (int) trim($pgidStr);
                 if ($pgid > 0) {
                     return $pgid;
                 }
             }
             if ($attempt < 4) {
-                usleep(50_000);
+                delay(0.05);
             }
         }
 
@@ -353,15 +476,52 @@ final class ProcessLifecycle
     // ─── Cleanup ─────────────────────────────────────────────────────
 
     /**
-     * Delete only the three exact sidecars belonging to one record. This
-     * intentionally does not scan the background directory: a row may clean up
-     * only its own .log/.status/.pid siblings after their paths are verified as
-     * direct children of it.
+     * Keep completion evidence stable from the owner decision through signalling.
+     * Maintenance must not erase that evidence while a remote reply is in flight.
      *
-     * @return bool false when paths are not the expected exact sibling set or
-     *              an existing sidecar cannot be removed
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
      */
-    public function deleteExactRecordSidecars(string $logPath, string $statusPath): bool
+    public function withSidecarLock(string $statusPath, callable $operation): mixed
+    {
+        $lock = $this->lockFactory->createLock('bash.sidecars.'.hash('sha256', $statusPath), autoRelease: false);
+        while (!$lock->acquire()) {
+            delay(0.02);
+        }
+        try {
+            return $operation();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Delete only this record's exact .log/.status/.pid sibling set, after
+     * verifying it belongs directly to the configured storage directory.
+     * Caller must retain withSidecarLock() through metadata retirement.
+     *
+     * @return bool false for invalid paths or a sidecar removal failure
+     */
+    public function deleteLockedRecordSidecars(string $logPath, string $statusPath): bool
+    {
+        if (!$this->ownsSidecarPaths($logPath, $statusPath)) {
+            return false;
+        }
+        $pidPath = substr($statusPath, 0, -7).'.pid';
+        foreach ([$logPath, $statusPath, $pidPath] as $path) {
+            if ((is_file($path) || is_link($path)) && !@unlink($path)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** Validate the exact native sidecar set without deleting or signaling it. */
+    public function ownsSidecarPaths(string $logPath, string $statusPath): bool
     {
         if (!str_ends_with($logPath, '.log')) {
             return false;
@@ -395,7 +555,7 @@ final class ProcessLifecycle
         }
 
         foreach ([$logPath, $statusPath, $expectedPidPath] as $path) {
-            if ((is_file($path) || is_link($path)) && !@unlink($path)) {
+            if (is_link($path)) {
                 return false;
             }
         }

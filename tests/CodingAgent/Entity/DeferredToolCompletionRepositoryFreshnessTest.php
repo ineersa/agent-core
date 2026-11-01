@@ -17,8 +17,8 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Mutable deferred-tool status reads must observe DBAL writes from another
- * connection without refreshing immutable registration fields.
+ * Deferred-tool snapshots must observe DBAL writes without refreshing
+ * managed registration aliases held by other callers.
  */
 #[Group('db')]
 final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernelTestCase
@@ -86,7 +86,7 @@ final class DeferredToolCompletionRepositoryFreshnessTest extends IsolatedKernel
         $this->assertSame('completed', $metadata->status);
         $this->assertSame($runId, $metadata->reference->runId);
         $this->assertSame('call-fresh', $metadata->reference->toolCallId);
-        $this->assertSame('completed', $managed->status);
+        $this->assertSame('pending', $managed->status);
         $this->assertTrue($this->entityManager->contains($managed));
     }
 

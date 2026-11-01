@@ -240,6 +240,6 @@ final class SessionToolPayloadStoreTest extends IsolatedKernelTestCase
 
     private function parentCounts(TestLogger $sql): int
     {
-        return \count(array_filter($sql->records, static fn (array $record): bool => str_contains(strtolower($record['context']['sql'] ?? ''), 'hatfield_session') && str_contains(strtolower($record['context']['sql'] ?? ''), 'count')));
+        return \count(array_filter($sql->records, static fn (array $record): bool => str_contains(strtolower($record['context']['sql'] ?? ''), 'from hatfield_session')));
     }
 }

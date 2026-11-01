@@ -110,13 +110,14 @@ final class SubagentExecutionServiceFactory
 
         $identityFactory = new DeferredSubagentBatchIdentityFactory();
         $runtimeStart = new DeferredSubagentBatchRuntimeStartService(
+            $args['operationalStatusReader'] ?? new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             $args['agentRunner'],
-            $artifactLifecycle,
             $batchLaunchService,
             $lifecyclePolicy,
             $args['logger'],
         );
         $batchPreparation = new DeferredSubagentBatchPreparationService(
+            $args['operationalStatusReader'] ?? new \Ineersa\AgentCore\Tests\Support\NullRunOperationalStatusReader(),
             $launchPreparation,
             $identityFactory,
             $artifactLifecycle,

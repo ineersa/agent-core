@@ -24,7 +24,7 @@ Immutable bus payloads and owner-local processor messages under `Ineersa\AgentCo
 - `ExecuteLlmStep`, `ExecuteCompactionStep` → `llm`
 - `ExecuteToolCall`, `ExecuteShellToolCall` → `tool`
 
-`ExecuteToolCall`, `ExecuteShellToolCall`, `ToolCallResult` and `CompleteDeferredToolCall` are local typed processing values. `ToolPayloadMiddleware` seals their data before sending and transports only `ToolPayloadMessage`, a bounded identity and file reference. It resolves execution data after admission and result data after owner initialization under the run lock. Subagent and MCP routing run before sealing. LLM and compaction message formats are unchanged. Critical tools own their external idempotency contracts; canonical events do not prove whether an external action occurred.
+`ExecuteToolCall`, `ExecuteShellToolCall`, `ToolCallResult` and `CompleteDeferredToolCall` are local typed processing values. `ToolPayloadMiddleware` seals their data before sending and transports only `ToolPayloadMessage`, a bounded identity and file reference. It resolves execution data after admission and result data after owner initialization under the run lock. Subagent and MCP routing run before sealing. Obsolete deferred completions may carry the original correlation reference plus deferred ID without reading its body. All deferred envelopes route to run_control regardless of prior execution stamps. The owner settles obsolete identity before hydration; an active correlation-only receipt is rejected rather than treated as a result. LLM and compaction message formats are unchanged. Critical tools own their external idempotency contracts; canonical events do not prove whether an external action occurred.
 
 Producers/consumers and App-layer workers: `../../Application/AGENTS.md`.
 

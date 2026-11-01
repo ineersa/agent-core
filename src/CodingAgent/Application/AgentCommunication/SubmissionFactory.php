@@ -41,8 +41,6 @@ final readonly class SubmissionFactory
     {
         $receipt = $this->prepare($context->runId(), $context->turnNo(), $context->stepId() ?? '', $context->toolCallId(), $context->toolName(), $arguments);
 
-        // The id freezes the exact edge at execution. Owner acceptance recomputes
-        // it, so queued work cannot silently address a newer resume generation.
         return new DeferredToolCompletionOutcome($receipt->identity);
     }
 

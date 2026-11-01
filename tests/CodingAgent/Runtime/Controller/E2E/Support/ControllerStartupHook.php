@@ -101,7 +101,7 @@ $container->get('event_dispatcher')->addListener(ControllerSessionStartingEvent:
         }
         $result += ['tree' => $tree, 'lifecycle' => $lifecycle,
             'signal_observed' => $signalObserved, 'terminal_written' => str_contains($wire, 'fixture broker failure'),
-            'background_removed' => !ControllerReplayBackgroundProcessSeeder::recordExists(getcwd(), getenv('HATFIELD_TEST_DATABASE_PATH'), $seed['id']) && !file_exists($seed['log']) && !file_exists($seed['status']) && !file_exists($seed['pid'])];
+            'background_retained' => ControllerReplayBackgroundProcessSeeder::recordExists(getcwd(), getenv('HATFIELD_TEST_DATABASE_PATH'), $seed['id']) && file_exists($seed['log']) && file_exists($seed['status']) && file_exists($seed['pid'])];
         file_put_contents($proof, json_encode($result, \JSON_THROW_ON_ERROR));
         fclose($writer);
         EventLoop::getDriver()->stop();

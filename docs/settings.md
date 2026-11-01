@@ -122,7 +122,25 @@ Parent reminders are off by default. Fork and subagent reminders remain on by de
 |---|---|---|
 | `runtime.llm_concurrency` | Same-process Fiber admission limit for the single llm consumer | `10` |
 
-Distinct from `tools.execution.max_parallelism` and from the Amp HTTP host connection pool.
+The LLM limit must be a positive integer. `tools.execution.max_parallelism` remains the
+per-batch admission limit (default `4`), not a worker count. The Amp HTTP host
+connection pool is independent of the LLM admission limit.
+
+The shared tool consumer reads both `tool` and `agent` queues, including retained
+agent messages after a controller restart. It has no worker-level concurrency cap.
+Child launch returns once deferred completion is registered rather than waiting
+for the child's lifetime. Synchronous filesystem, database and CPU work can
+still block sibling Fibers; concurrency does not make every tool non-blocking.
+
+The shared tool process sends Bash, code-mode and child lifecycle metadata writes
+to `run_control` and reads scalar snapshots. It does not retain managed entities
+across tool waits or recycle after a fixed number of messages. Services are not
+reset beneath active Fibers. The normal worker memory limit remains in effect.
+Metadata redelivery does not repeat an external launch or resume action; it does
+not guarantee exactly-once external tool effects.
+The code-mode handler registers deferred correlation when execution begins and
+marks readiness locally after accepting the script socket. Permission refusals
+do not allocate execution metadata.
 
 ### Tool execution
 

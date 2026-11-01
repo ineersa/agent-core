@@ -10,10 +10,12 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\Arguments\BgStatusArgumentsDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -71,7 +73,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         // ProcessStore comes from the container (real Doctrine schema, no manual ORM).
         $store = static::getContainer()->get(ProcessStore::class);
-        $lifecycle = new ProcessLifecycle($this->config, new NullLogger());
+        $lifecycle = new ProcessLifecycle($this->config, new NullLogger(), new LockFactory(new FlockStore()));
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->config, new NullLogger());
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->tool = new BgStatusTool(
@@ -83,21 +85,13 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     protected function tearDown(): void
     {
-        // Direct SIGKILL via .pid files to avoid 1s grace sleep in shutdownCleanup
-        if (isset($this->manager)) {
-            $bgDir = $this->config->storageDir;
-            if (is_dir($bgDir)) {
-                foreach (new \FilesystemIterator($bgDir, \FilesystemIterator::SKIP_DOTS) as $file) {
-                    if ('pid' === $file->getExtension()) {
-                        $pid = (int) file_get_contents((string) $file);
-                        if ($pid > 0 && is_dir('/proc/'.$pid)) {
-                            @exec('kill -KILL -'.$pid.' 2>/dev/null');
-                            @exec('kill -KILL '.$pid.' 2>/dev/null');
-                        }
-                    }
-                }
+        foreach ([self::TEST_SESSION, 'session-A', 'session-B'] as $runId) {
+            foreach (self::getContainer()->get(ProcessStore::class)->sessionSnapshots($runId) as $record) {
+                $this->manager->stopByRecordId($record->id, $runId);
+                $this->manager->cleanupFinishedRecord($record->id, $runId);
             }
         }
+        $this->manager->shutdownCleanup();
 
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
 
@@ -109,8 +103,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testListReturnsProcesses(): void
     {
         $this->withContext(self::TEST_SESSION, function (): void {
-            $started = $this->manager->start('echo "bg process"', self::TEST_SESSION);
-            $this->manager->markBackgroundedForRecord($started->id, self::TEST_SESSION);
+            $this->startAcceptedProcess('echo "bg process"');
         });
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
@@ -128,8 +121,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testListExcludesPrivateForegroundSupervision(): void
     {
         $private = $this->manager->start('echo "private"', self::TEST_SESSION);
-        $accepted = $this->manager->start('echo "accepted"', self::TEST_SESSION);
-        $this->manager->markBackgroundedForRecord($accepted->id, self::TEST_SESSION);
+        $accepted = $this->startAcceptedProcess('echo "accepted"', toolCallId: 'accepted-call');
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
         $data = Toon::decode($result);
@@ -157,13 +149,12 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $release = fopen($fifo, 'r+b');
         $this->assertIsResource($release);
         try {
-            $process = $this->manager->start('IFS= read -r release < '.escapeshellarg($fifo), self::TEST_SESSION);
-            $this->manager->markBackgroundedForRecord($process->id, self::TEST_SESSION);
+            $process = $this->startAcceptedProcess('IFS= read -r release < '.escapeshellarg($fifo), toolCallId: 'fifo-call');
             $store = self::getContainer()->get(ProcessStore::class);
-            $entity = $store->fetchByRecordId($process->id);
+            $entity = BackgroundProcessFixture::record(self::getContainer(), $process->id);
             $this->assertNotNull($entity);
             $entity->status = BackgroundProcessStatusEnum::Stopped;
-            $store->flush();
+            self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->flush();
 
             $data = Toon::decode($this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list'))));
             $this->assertSame('stopping', $data['processes'][0]['status']);
@@ -174,7 +165,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
             $data = Toon::decode($this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list'))));
             $this->assertSame('stopped', $data['processes'][0]['status']);
             $this->assertSame(0, $data['processes'][0]['exit_code']);
-            $this->assertNotNull($entity->finishedAt);
+            $this->assertNotNull($store->snapshot($process->id)?->finishedAt);
         } finally {
             fclose($release);
         }
@@ -184,8 +175,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testLogReturnsContent(): void
     {
-        $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "hello from bg"', self::TEST_SESSION));
-        $this->manager->markBackgroundedForRecord($started->id, self::TEST_SESSION);
+        $started = $this->withContext(self::TEST_SESSION, fn () => $this->startAcceptedProcess('echo "hello from bg"', toolCallId: 'log-call'));
 
         $this->waitUntilLogContains($started->logPath, 'hello from bg');
 
@@ -219,8 +209,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testStopAction(): void
     {
-        $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('sleep 30', self::TEST_SESSION));
-        $this->manager->markBackgroundedForRecord($started->id, self::TEST_SESSION);
+        $started = $this->withContext(self::TEST_SESSION, fn () => $this->startAcceptedProcess('sleep 30', toolCallId: 'stop-call'));
         // start() persists the row and returns a live PID; stop needs no fixed delay.
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'stop', pid: $started->pid)));
@@ -231,8 +220,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testStopAlreadyFinished(): void
     {
-        $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "quick"', self::TEST_SESSION));
-        $this->manager->markBackgroundedForRecord($started->id, self::TEST_SESSION);
+        $started = $this->withContext(self::TEST_SESSION, fn () => $this->startAcceptedProcess('echo "quick"', toolCallId: 'finished-call'));
         $this->waitUntilFinished($started->pid);
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'stop', pid: $started->pid)));
@@ -279,10 +267,8 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     public function testListScopedBySession(): void
     {
-        $a = $this->withContext('session-A', fn () => $this->manager->start('echo "A-for-test-B"', 'session-A'));
-        $b = $this->withContext('session-B', fn () => $this->manager->start('echo "B-for-test-A"', 'session-B'));
-        $this->manager->markBackgroundedForRecord($a->id, 'session-A');
-        $this->manager->markBackgroundedForRecord($b->id, 'session-B');
+        $a = $this->withContext('session-A', fn () => $this->startAcceptedProcess('echo "A-for-test-B"', 'session-A', 'a-call'));
+        $b = $this->withContext('session-B', fn () => $this->startAcceptedProcess('echo "B-for-test-A"', 'session-B', 'b-call'));
 
         $resultA = $this->withContext('session-A', fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
         $resultB = $this->withContext('session-B', fn (): string => ($this->tool)(new BgStatusArgumentsDTO(action: 'list')));
@@ -325,8 +311,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $padding = str_repeat('x', 170);
         $command = 'printf \''.$padding.'\n'.$sentinel.'\n\'';
 
-        $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start($command, self::TEST_SESSION));
-        $this->manager->markBackgroundedForRecord($started->id, self::TEST_SESSION);
+        $started = $this->withContext(self::TEST_SESSION, fn () => $this->startAcceptedProcess($command, toolCallId: 'cap-call'));
         $this->waitUntilLogContains($started->logPath, $sentinel);
 
         $result = $this->withContext(self::TEST_SESSION, static fn (): string => $lowCapTool(new BgStatusArgumentsDTO(action: 'log', pid: $started->pid)));
@@ -404,15 +389,29 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $this->fail(\sprintf('Timed out waiting for pid %d to finish', $pid));
     }
 
-    /**
-     * Execute a callback with a specific session context pushed onto the context stack.
-     *
-     * @template T
-     *
-     * @param callable(): T $callback
-     *
-     * @return T
-     */
+    private function startAcceptedProcess(string $command, string $sessionId = self::TEST_SESSION, ?string $toolCallId = null): BashProcessRecordDTO
+    {
+        $toolCallId ??= 'call-'.bin2hex(random_bytes(4));
+
+        $started = $this->manager->start(
+            $command,
+            $sessionId,
+            $toolCallId,
+        );
+
+        $started = $this->manager->findByStatusPath($started->statusPath, $sessionId);
+        $this->assertNotNull($started);
+        $candidate = $this->manager->resolveBackgroundAcceptance($started->statusPath, $sessionId);
+        if (null === $candidate) {
+            // Short commands can finish before acceptance; durable acceptance still applies.
+            $this->assertTrue(self::getContainer()->get(ProcessStore::class)->acceptLocal($started->id, $sessionId));
+        } else {
+            $this->manager->acceptResolvedBackground($candidate);
+        }
+
+        return $started;
+    }
+
     private function withContext(string $sessionId, callable $callback): mixed
     {
         $cancellationToken = new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken();

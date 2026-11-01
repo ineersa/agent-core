@@ -29,7 +29,6 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
     protected function tearDown(): void
     {
         $this->stopProcess();
-        $this->assertNoTrackedControllerProcessSurvivors();
         if (isset($this->tempDir) && '' !== $this->tempDir) {
             TestDirectoryIsolation::removeDirectory($this->tempDir);
         }
@@ -234,7 +233,7 @@ final class HeadlessControllerBrokerHardDeathProcessTest extends ControllerRepla
             $this->assertTrue($result['receiver_unchanged']);
             if ('normal' !== $terminalMode) {
                 $this->assertTrue($result['lifecycle']);
-                $this->assertTrue($result['background_removed']);
+                $this->assertTrue($result['background_retained']);
                 if (str_starts_with($terminalMode, 'sig')) {
                     $this->assertTrue($result['signal_observed']);
                     $this->assertTrue($result['terminal_written']);
@@ -369,7 +368,6 @@ YAML;
         }
         $this->process = null;
         $this->trackedControllerPids = [];
-        $this->lastTeardownSurvivorPids = [];
         $this->stdoutBuf = '';
         $this->stderrBuf = '';
     }

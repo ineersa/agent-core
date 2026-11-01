@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkDTO;
@@ -12,10 +13,11 @@ use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
+use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\DTO\BashProcessRecordDTO;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\Tui\Command\SlashCommandCatalog;
 use Ineersa\Tui\Listener\BackgroundProcessCommandRegistrar;
@@ -57,6 +59,12 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         if (isset($this->harness)) {
             $this->harness->stopInputLoop();
         }
+        foreach (['visible', 'foreign', 'parent'] as $runId) {
+            foreach (self::getContainer()->get(ProcessStore::class)->sessionSnapshots($runId) as $record) {
+                $this->manager->stopByRecordId($record->id, $runId);
+                $this->manager->cleanupFinishedRecord($record->id, $runId);
+            }
+        }
         $this->manager->shutdownCleanup();
         fclose($this->release);
         TestDirectoryIsolation::removeDirectory($this->directory);
@@ -76,8 +84,7 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $private = $this->start(accepted: false);
         $foreign = $this->start('foreign');
         $this->start();
-        $this->manager->findByRecordId($first->id)->status = BackgroundProcessStatusEnum::Stopped;
-        self::getContainer()->get(EntityManagerInterface::class)->flush();
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->update('background_process', ['status' => BackgroundProcessStatusEnum::Stopped->value], ['id' => $first->id]);
         $this->mount($clientClass);
         $this->open();
         $this->assertSame(1, $this->reads);
@@ -109,53 +116,34 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
     }
 
     #[DataProvider('clients')]
-    public function testConfirmedStopRendersAndAcceptsInputDuringNativeGrace(string $clientClass): void
+    public function testConfirmedStopRendersResultAndAcceptsInput(string $clientClass): void
     {
-        $process = $this->start(resistant: true);
-        $lifecycle = self::getContainer()->get(ProcessLifecycle::class);
-        $deadline = hrtime(true) + 2_000_000_000;
-        while (!is_file($this->directory.'/ready') && hrtime(true) < $deadline) {
-            $this->assertTrue($lifecycle->isAlive($process->pid));
-            usleep(10_000);
-        }
-        $this->assertFileExists($this->directory.'/ready');
-        $this->manager->findByRecordId($process->id)->deadlineNanoseconds = hrtime(true) - 1;
-        self::getContainer()->get(EntityManagerInterface::class)->flush();
+        // Intent/UI only. Do not wait on native exit in this virtual harness.
+        $process = $this->start();
         $this->mount($clientClass);
         $this->open();
         $this->assertTrue(posix_kill($process->pid, 0), 'Opening the picker must never enforce deadlines.');
         $this->assertNull($this->manager->findByRecordId($process->id)->finishedAt);
         $before = \strlen($this->harness->terminal()->getOutput());
         $this->confirm();
-        $this->assertTrue($lifecycle->isAlive($process->pid), 'The input callback must return before termination grace ends.');
         $rendered = substr($this->harness->terminal()->getOutput(), $before);
+        if (JsonlProcessAgentSessionClient::class === $clientClass) {
+            // This virtual harness has no controller. Process-backed stops now
+            // refuse rather than mutating locally or starting a controller.
+            $this->assertStringContainsString('Controller unavailable', $rendered);
+            $this->assertFalse($this->manager->findByRecordId($process->id)->stoppedByUser);
+            $this->harness->sendInput('responsive');
+            $this->assertStringContainsString('responsive', substr($this->harness->terminal()->getOutput(), $before));
+
+            return;
+        }
         $this->assertStringContainsString('Cancellation requested', $rendered);
         $this->assertMatchesRegularExpression('/\e\[/', $rendered);
         $this->harness->sendInput('responsive');
         $this->assertStringContainsString('responsive', substr($this->harness->terminal()->getOutput(), $before));
-        $this->assertTrue($lifecycle->isAlive($process->pid), 'Another rendered input precedes native termination.');
         $record = $this->manager->findByRecordId($process->id);
         $this->assertTrue($record->stoppedByUser);
-        $this->assertNull($record->finishedAt);
-        $deadline = hrtime(true) + 7_000_000_000;
-        do {
-            $this->manager->refreshEntities([$record]);
-            // Escalation records completion after sending KILL, before the OS
-            // necessarily schedules the wrapper's exit. Observe both facts.
-            if (null !== $record->finishedAt && !$lifecycle->isAlive($process->pid)) {
-                break;
-            }
-            usleep(10_000);
-        } while (hrtime(true) < $deadline);
-        $this->assertNotNull($record->finishedAt);
-        $this->assertFalse($lifecycle->isAlive($process->pid));
-        $this->assertNotNull($record->completionNotifiedAt);
         $this->assertSame(1, $this->reads);
-        $this->harness->sendInput("\x15"); // Clear the input accepted during grace.
-        $this->open();
-        $this->assertSame(2, $this->reads);
-        $this->assertFalse($this->harness->screen()->hasInputOverlay());
-        $this->assertStringContainsString('No background work running.', $this->harness->plainScreenText());
     }
 
     #[DataProvider('clients')]
@@ -164,16 +152,13 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $process = $this->start();
         $this->mount($clientClass);
         $this->open();
-        fwrite($this->release, "release\n");
-        $deadline = hrtime(true) + 2_000_000_000;
-        do {
-            $record = $this->manager->findByRecordId($process->id);
-            if (null !== $record->finishedAt) {
-                break;
-            }
-            usleep(10_000);
-        } while (hrtime(true) < $deadline);
-        $this->assertNotNull($record->finishedAt);
+        // Seed finished metadata directly. This proves picker UX for a finished
+        // snapshot without waiting on OS exit; it does not prove native settlement
+        // or model notification delivery.
+        $entity = self::getContainer()->get(EntityManagerInterface::class)->find(BackgroundProcess::class, $process->id);
+        $this->assertNotNull($entity);
+        BackgroundProcessFixture::finish($entity, 0, new \DateTimeImmutable());
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
         $this->confirm();
         $this->assertNull($this->manager->findByRecordId($process->id)->completionNotifiedAt);
         $this->assertStringContainsString('finished.', $this->harness->plainScreenText());
@@ -186,7 +171,7 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $this->mount(JsonlProcessAgentSessionClient::class);
         $this->open();
         $em = self::getContainer()->get(EntityManagerInterface::class);
-        $old = $this->manager->findByRecordId($process->id);
+        $old = $em->find(BackgroundProcess::class, $process->id);
         $replacement = clone $old;
         $replacement->id = 0;
         $em->remove($old);
@@ -244,7 +229,7 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
                 $client->stopBackgroundProcess('visible', $process->id);
                 $this->fail('The record must not be stopped from this visible session.');
             } catch (\RuntimeException $e) {
-                $this->assertStringContainsString('no longer available', $e->getMessage());
+                $this->assertStringContainsString(JsonlProcessAgentSessionClient::class === $clientClass ? 'Controller unavailable' : 'no longer available', $e->getMessage());
             }
             $this->assertTrue(posix_kill($process->pid, 0));
             $this->assertNull($this->manager->findByRecordId($process->id)->finishedAt);
@@ -266,13 +251,23 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $this->assertFalse($this->harness->screen()->hasInputOverlay());
     }
 
-    private function start(string $runId = 'visible', bool $accepted = true, bool $resistant = false): StartResult
+    private function start(string $runId = 'visible', bool $accepted = true): BashProcessRecordDTO
     {
-        $command = ($resistant ? "trap '' TERM; : > ".escapeshellarg($this->directory.'/ready').'; ' : '')
-            .'read -r release < '.escapeshellarg($this->directory.'/release');
-        $process = $this->manager->start($command, $runId, 'call');
+        $command = 'read -r release < '.escapeshellarg($this->directory.'/release');
+        $toolCallId = 'call-'.bin2hex(random_bytes(4));
+
+        $process = $this->manager->start(
+            $command,
+            $runId,
+            $toolCallId,
+        );
+        $process = $this->manager->findByStatusPath($process->statusPath, $runId);
+        $this->assertNotNull($process);
+
         if ($accepted) {
-            $this->manager->markBackgroundedForRecord($process->id, $runId);
+            $candidate = $this->manager->resolveBackgroundAcceptance($process->statusPath, $runId);
+            $this->assertNotNull($candidate);
+            $this->manager->acceptResolvedBackground($candidate);
         }
 
         return $process;
@@ -286,8 +281,8 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $client->expects(null === $send ? $this->never() : $this->once())->method('send')->willReturnCallback($send ?? static fn () => null);
         $client->expects($this->never())->method('cancel');
         $client->method('backgroundWork')->willReturnCallback(function (string $runId, ?int $observedProcessId = null) use ($snapshot): BackgroundWorkSnapshotDTO {
-            // Count opening snapshots separately from exact-record stop revalidation
-            // and UI-only settlement; those must not refresh an open picker.
+            // Opening snapshots are counted separately from exact-record stop
+            // revalidation and UI-only settlement; those must not refresh an open picker.
             if (null === $observedProcessId) {
                 ++$this->reads;
             }

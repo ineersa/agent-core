@@ -50,6 +50,8 @@ final class ConsumerSupervisorTest extends TestCase
             'running:hang',
             'stop:hang:0',
             'running:exit',
+            'running:hang',
+            'running:exit',
         ], $calls->entries);
         $this->assertFalse($hang->isMarkedRunning());
         $this->assertFalse($exit->isMarkedRunning());
@@ -80,6 +82,7 @@ final class ConsumerSupervisorTest extends TestCase
             'signal:hang:'.\SIGTERM,
             'running:hang',
             'stop:hang:0',
+            'running:hang',
         ], $calls->entries);
         $this->assertFalse($hang->isMarkedRunning());
         $this->assertLessThan(1.0, $elapsed, 'expired shared deadline must escalate without waiting configured grace');

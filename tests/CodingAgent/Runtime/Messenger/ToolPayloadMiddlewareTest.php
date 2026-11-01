@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
@@ -23,14 +24,18 @@ use Ineersa\AgentCore\Domain\Tool\DTO\ToolBatchScheduleDTO;
 use Ineersa\AgentCore\Domain\Tool\DTO\ToolPayloadReferenceDTO;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\AgentCore\Tests\Support\TestToolBatchRegistration;
+use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
 use Ineersa\CodingAgent\Runtime\Messenger\ToolPayloadMiddleware;
 use Ineersa\CodingAgent\Session\CanonicalToolInvocationReader;
 use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use Ineersa\CodingAgent\Tests\Runtime\Messenger\Support\ToolPayloadWorkerTransport;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
@@ -55,12 +60,13 @@ use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
+use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 use Symfony\Component\Messenger\Worker;
 use Symfony\Component\Validator\ConstraintViolationList;
 use Symfony\Component\Validator\Validation;
 
-final class ToolPayloadMiddlewareTest extends TestCase
+final class ToolPayloadMiddlewareTest extends IsolatedKernelTestCase
 {
     #[DataProvider('ackModes')]
     public function testNativeWorkerReleasesExactReferenceIdentityAndPreservesHandlerOutcome(bool $explicitAck): void
@@ -240,23 +246,95 @@ final class ToolPayloadMiddlewareTest extends TestCase
         }
     }
 
-    public function testObsoleteDeferredProducerSettlesBeforeCorrelationOrResultPublication(): void
+    public function testObsoletePendingCompletionReachesOwnerAndCompletedReplayNeedsNoBodies(): void
     {
         $payloads = $this->createMock(ToolPayloadStoreInterface::class);
         $payloads->expects($this->never())->method('read');
         $payloads->expects($this->never())->method('publish');
+        $completed = false;
         $deferred = $this->createMock(DeferredToolCompletionRepositoryInterface::class);
-        $deferred->method('findMetadataByDeferredId')->willReturn(new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), 'pending'));
+        $deferred->method('findMetadataByDeferredId')->willReturnCallback(function () use (&$completed): DeferredToolCompletionMetadataDTO {
+            return new DeferredToolCompletionMetadataDTO('deferred', $this->reference('correlation'), $completed ? 'completed' : 'pending');
+        });
         $deferred->expects($this->never())->method('findByDeferredId');
-        $deferred->expects($this->once())->method('markCompleted')->with('deferred');
+        $deferred->expects($this->exactly(2))->method('markCompleted')->willReturnCallback(static function () use (&$completed): void {
+            $completed = true;
+        });
         $batches = $this->createMock(ToolBatchStoreInterface::class);
-        $batches->expects($this->once())->method('delete')->with('run', 1, 'step');
-        $replay = $this->createMock(RunStateRebuilderInterface::class);
-        $replay->expects($this->never())->method('rebuildIfStale');
-        $registry = new \Ineersa\AgentCore\Tests\Support\TestActiveRunContext();
-        $registry->loadRecovered(new RunState('run', RunStatus::Cancelled, turnNo: 1, lastSeq: 7));
-        $result = new MessageBus([$this->middleware($payloads, $deferred, $batches, registry: $registry, replay: $replay)])->dispatch(new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'discard']]));
-        $this->assertNotNull($result->last(HandledStamp::class));
+        $batches->expects($this->exactly(2))->method('delete')->with('run', 1, 'step');
+        $registry = $this->createStub(ActiveRunContextInterface::class);
+        $registry->method('requireLoaded')->willReturn(new RunState('run', RunStatus::Cancelled, turnNo: 1, lastSeq: 7));
+        $middleware = $this->middleware($payloads, $deferred, $batches, $registry);
+        $producer = new MessageBus([$middleware]);
+        $completion = new CompleteDeferredToolCall('deferred', [['type' => 'text', 'text' => 'obsolete']]);
+        $sealed = $producer->dispatch(new Envelope($completion, [new TransportNamesStamp(['agent'])]));
+        $this->assertInstanceOf(ToolPayloadMessage::class, $sealed->getMessage());
+        $this->assertEquals($this->reference('correlation'), $sealed->getMessage()->reference);
+        $this->assertSame(['run_control'], $sealed->last(TransportNamesStamp::class)?->getTransportNames());
+        $this->assertFalse($completed, 'The producer must not settle owner state.');
+        $owner = new MessageBus([$middleware, new HandleMessageMiddleware(new HandlersLocator([]), false)]);
+        $received = $sealed->with(new ReceivedStamp('run_control'));
+        $this->assertNotNull($owner->dispatch($received)->last(HandledStamp::class));
+        $this->assertTrue($completed);
+        // Payload mocks reject all reads. Redelivery after cleanup still settles
+        // without hydrating a body or forwarding a stale conversational result.
+        $owner->dispatch($received);
+        $this->assertSame($completion, $producer->dispatch($completion)->getMessage());
+    }
+
+    public function testProducerSealsCodeModeWithoutPreparingExecutionAndReusesIdentity(): void
+    {
+        $container = self::getContainer();
+        $run = $container->get(HatfieldSessionStore::class)->createSession('owner prepared code_mode');
+        $code = new ExecuteToolCall($run, 1, 'step', 1, 'key', 'code-call', 'code_mode', ['script' => 'return 1;'], 0, mode: 'parallel', maxParallelism: 2);
+        $other = new ExecuteToolCall($run, 1, 'step', 1, 'other-key', 'echo-call', 'echo', ['text' => 'hi'], 1, mode: 'parallel', maxParallelism: 2);
+        $batches = $container->get(ToolBatchStoreInterface::class);
+        $admitted = TestToolBatchRegistration::register(
+            new ToolBatchCollector($batches),
+            $batches,
+            $run,
+            1,
+            'step',
+            [$code, $other],
+        );
+        $this->assertCount(2, $admitted);
+
+        $deferred = $container->get(DeferredToolCompletionRepository::class);
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'code-call'));
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'echo-call'));
+
+        $published = [];
+        $bus = new MessageBus([
+            $container->get(ToolPayloadMiddleware::class),
+            new HandleMessageMiddleware(new HandlersLocator([
+                ToolPayloadMessage::class => [function (ToolPayloadMessage $message) use (&$published, $deferred, $run): ToolPayloadMessage {
+                    $published[] = $message;
+                    if ('code-call' === $message->reference->toolCallId) {
+                        $metadata = $deferred->findMetadataByRunAndToolCall($run, 'code-call');
+                        $this->assertNull($metadata, 'Publishing intent must not allocate deferred execution.');
+                    }
+
+                    return $message;
+                }],
+            ])),
+        ]);
+
+        $sealed = $bus->dispatch($code);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $sealed->getMessage());
+        $metadata = $deferred->findMetadataByRunAndToolCall($run, 'code-call');
+        $this->assertNull($metadata);
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'echo-call'));
+
+        $repeat = $bus->dispatch($code);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $repeat->getMessage());
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'code-call'));
+
+        $otherSealed = $bus->dispatch($other);
+        $this->assertInstanceOf(ToolPayloadMessage::class, $otherSealed->getMessage());
+        $this->assertNull($deferred->findMetadataByRunAndToolCall($run, 'echo-call'));
+
+        $this->assertGreaterThanOrEqual(2, \count($published));
+        $this->assertNull($published[0]->deferredId);
     }
 
     #[DataProvider('mismatchedIdentities')]
@@ -280,6 +358,21 @@ final class ToolPayloadMiddlewareTest extends TestCase
     {
         foreach (['runId', 'turnNo', 'stepId', 'attempt', 'idempotencyKey', 'toolCallId', 'orderIndex', 'toolName'] as $field) {
             yield $field => [$field];
+        }
+    }
+
+    protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
+    {
+        // Isolated CWD starts without installed agents; seed the bundled scout
+        // definition so owner-prepared subagent preparation can reserve metadata.
+        $agentsDir = $classCwd.'/.hatfield/agents';
+        TestDirectoryIsolation::ensureDirectory($agentsDir);
+        $source = \dirname(__DIR__, 4).'/src/CodingAgent/Resources/agents/scout.md';
+        if (!is_file($source)) {
+            throw new \RuntimeException('Bundled scout agent definition is missing: '.$source);
+        }
+        if (!copy($source, $agentsDir.'/scout.md')) {
+            throw new \RuntimeException('Failed to install scout agent fixture into '.$agentsDir);
         }
     }
 
@@ -320,6 +413,7 @@ final class ToolPayloadMiddlewareTest extends TestCase
         return new ToolPayloadMiddleware(
             $payloads, new ToolPayloadAdmission($batches, $registry, $replay, $events, $logger, new CanonicalToolInvocationReader($this->createStub(RunHistorySourceProviderInterface::class))), $deferred, $locks,
             Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator(), $commands, $logger,
-            new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+            new CompleteDeferredToolCallHandler($deferred, $commands, $locks, $batches, $logger), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(),
+        );
     }
 }

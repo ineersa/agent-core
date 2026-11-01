@@ -95,6 +95,9 @@ enum RuntimeEventTypeEnum: string
 
     case BackgroundProcessCompleted = 'bg_process.completed';
 
+    /** Correlated result for the process client's synchronous stop request. */
+    case BackgroundProcessStopCompleted = 'bg_process.stop.completed';
+
     // ── Extension agent jobs ────────────────────────────────────────────────────────────
     // Emitted by Extension\Agent\ExtensionAgentJobFailedEventSubscriber after the extension_agent
     // transport exhausts retries (max_retries: 1). Transient JSONL/TUI only;

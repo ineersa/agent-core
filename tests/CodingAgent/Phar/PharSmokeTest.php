@@ -105,7 +105,6 @@ final class PharSmokeTest extends TestCase
             'run_control',
             'llm',
             'tool',
-            'agent',
             'scheduler_default',
             'mcp',
         ], distribution_expected_messenger_transports());

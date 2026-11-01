@@ -38,6 +38,9 @@
 
 - Run all QA, tests, lint, analysis, formatting, and docs validation through Castor in the exact checkout.
 - Use raw `vendor/bin/*` only to isolate a Castor failure.
+- **Never overwrite, truncate, delete, or replace real user or project settings for tests, diagnostics, or fixture setup.** This applies to main, forks, subagents, and their subprocesses. In particular, never write test defaults to the user's `~/.hatfield/settings.yaml`.
+- Use the existing Castor/test-harness HOME and directory isolation helpers. Do not recreate their setup with ad hoc shell commands or redirect fixtures through inherited `$HOME`. Before writing a fixture, verify that its resolved destination is inside the disposable test directory and cannot resolve through a symlink to real configuration.
+- A shell prefix such as `HOME=<temporary-directory> command` affects only that command; it does not change `$HOME` for subsequent commands after `&&` or `;`. Never rely on it to isolate later file writes. Main must enforce these settings-safety rules in delegated test work.
 - Rewrite timing-dependent or flaky tests to use deterministic synchronization, or delete them. Never repair them with sleeps, timing-based polling, retries, or increased timeouts. Missing coverage is preferable to flaky coverage; record the coverage lost when deleting a test.
 - Before test work or runtime, TUI, Messenger, or database validation, load `.agents/skills/testing/SKILL.md` and read `tests/AGENTS.md`.
 - Apply that prerequisite to every agent and fork. Test-related fork handoffs must confirm both reads.

@@ -38,9 +38,11 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
 
     public function findByChildRunId(string $childRunId): ?DeferredSubagentChildProjectionDTO
     {
-        $row = $this->findFreshOneBy(['childRunId' => $childRunId]);
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
+            'SELECT * FROM deferred_subagent_child WHERE child_run_id = ?', [$childRunId],
+        );
 
-        return $row instanceof DeferredSubagentChild ? $this->toDto($row) : null;
+        return false === $row ? null : $this->snapshot($row);
     }
 
     public function findProviderCacheKey(string $childRunId): ?string
@@ -65,22 +67,9 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
      */
     public function findOrderedByBatchLifecycleId(string $batchLifecycleId): array
     {
-        $rows = $this->createQueryBuilder('c')
-            ->andWhere('c.batchLifecycleId = :batchLifecycleId')
-            ->setParameter('batchLifecycleId', $batchLifecycleId)
-            ->orderBy('c.batchIndex', 'ASC')
-            ->getQuery()
-            ->setHint(Query::HINT_REFRESH, true)
-            ->getResult();
-
-        $out = [];
-        foreach ($rows as $row) {
-            if ($row instanceof DeferredSubagentChild) {
-                $out[] = $this->toDto($row);
-            }
-        }
-
-        return $out;
+        return array_map($this->snapshot(...), $this->getEntityManager()->getConnection()->fetchAllAssociative(
+            'SELECT * FROM deferred_subagent_child WHERE batch_lifecycle_id = ? ORDER BY batch_index', [$batchLifecycleId],
+        ));
     }
 
     public function insertReservedChild(string $batchLifecycleId, DeferredSubagentBatchChildIntentDTO $childIntent, ?Connection $conn = null): void
@@ -316,24 +305,25 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         return $row instanceof DeferredSubagentChild ? $row : null;
     }
 
-    private function toDto(DeferredSubagentChild $row): DeferredSubagentChildProjectionDTO
+    /** @param array<string, mixed> $row */
+    private function snapshot(array $row): DeferredSubagentChildProjectionDTO
     {
         return new DeferredSubagentChildProjectionDTO(
-            batchLifecycleId: $row->batchLifecycleId,
-            batchIndex: $row->batchIndex,
-            childRunId: $row->childRunId,
-            artifactId: $row->artifactId,
-            agentName: $row->agentName,
-            task: $row->task,
-            launchModel: $row->launchModel,
-            launchReasoning: $row->launchReasoning,
-            launchStatus: $row->launchStatus,
-            childEventCursor: $row->childEventCursor,
-            childLifecycleProjection: $this->decodeChildLifecycleProjection($row->childLifecycleProjection),
-            startedAt: $row->startedAt,
-            terminalCompletedAt: $row->terminalCompletedAt,
-            terminalStatus: $row->terminalStatus,
-            projectionVersion: $row->projectionVersion,
+            batchLifecycleId: $row['batch_lifecycle_id'],
+            batchIndex: (int) $row['batch_index'],
+            childRunId: $row['child_run_id'],
+            artifactId: $row['artifact_id'],
+            agentName: $row['agent_name'],
+            task: $row['task'],
+            launchModel: $row['launch_model'],
+            launchReasoning: $row['launch_reasoning'],
+            launchStatus: DeferredSubagentChildLaunchStatusEnum::from($row['launch_status']),
+            childEventCursor: (int) $row['child_event_cursor'],
+            childLifecycleProjection: $this->decodeChildLifecycleProjection(null === $row['child_lifecycle_projection'] ? null : json_decode($row['child_lifecycle_projection'], true, flags: \JSON_THROW_ON_ERROR)),
+            startedAt: null === $row['started_at'] ? null : new \DateTimeImmutable($row['started_at']),
+            terminalCompletedAt: null === $row['terminal_completed_at'] ? null : new \DateTimeImmutable($row['terminal_completed_at']),
+            terminalStatus: $row['terminal_status'],
+            projectionVersion: (int) $row['projection_version'],
         );
     }
 }

@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Psr\Log\LoggerInterface;
@@ -18,6 +19,9 @@ use Symfony\Component\Clock\Clock;
 
 /**
  * Durable idempotent one-child launch using deferred batch supervision.
+ *
+ * The tool reserves its deterministic child identity after argument validation.
+ * Replayed intents reuse the same batch and native child run.
  */
 final class DeferredSubagentBatchLaunchService
 {
@@ -45,19 +49,22 @@ final class DeferredSubagentBatchLaunchService
         $plan = $this->batchPreparation->buildLaunchPlan(
             $parentRunId,
             $toolCallId,
-            $agentName,
-            $task,
+            trim($agentName),
+            trim($task),
             parentModel: $toolContext->parentModel(),
             launchContext: $toolContext->launchContext(),
         );
+        $projection = $this->reserveInvocation($parentRunId, $toolCallId, $plan);
+        $this->assertPlanMatchesPreparedChild($plan, $this->requirePreparedChild($projection));
 
         return $this->launchWithPlan(
             parentRunId: $parentRunId,
             toolCallId: $toolCallId,
             plan: $plan,
-            prepare: fn (DeferredSubagentBatchProjectionDTO $projection): ?PreparedAgentChildRunDTO => $this->batchPreparation->preparePendingChild(
+            projection: $projection,
+            prepare: fn (DeferredSubagentBatchProjectionDTO $reserved): ?PreparedAgentChildRunDTO => $this->batchPreparation->preparePendingChild(
                 $parentRunId,
-                $projection,
+                $reserved,
                 $plan,
             ),
         );
@@ -93,18 +100,46 @@ final class DeferredSubagentBatchLaunchService
             parentModel: $toolContext->parentModel(),
             launchContext: $toolContext->launchContext(),
         );
+        $projection = $this->reserveInvocation($parentRunId, $toolCallId, $plan);
+        $this->assertPlanMatchesPreparedChild($plan, $this->requirePreparedChild($projection));
 
         return $this->launchWithPlan(
             parentRunId: $parentRunId,
             toolCallId: $toolCallId,
             plan: $plan,
-            prepare: fn (DeferredSubagentBatchProjectionDTO $projection): ?PreparedAgentChildRunDTO => $this->batchPreparation->preparePendingProfiledChild(
+            projection: $projection,
+            prepare: fn (DeferredSubagentBatchProjectionDTO $reserved): ?PreparedAgentChildRunDTO => $this->batchPreparation->preparePendingProfiledChild(
                 $parentRunId,
-                $projection,
+                $reserved,
                 $plan,
                 $profile,
             ),
         );
+    }
+
+    public function findInvocation(string $parentRunId, string $toolCallId): ?DeferredSubagentBatchProjectionDTO
+    {
+        return $this->batchRepository->findByParentRunAndToolCall($parentRunId, $toolCallId);
+    }
+
+    private function reserveInvocation(string $parentRunId, string $toolCallId, DeferredSubagentBatchLaunchPlanDTO $plan): DeferredSubagentBatchProjectionDTO
+    {
+        $context = $this->contextAccessor->requireCurrent();
+        $projection = $this->batchRepository->reserveBatch(
+            $plan->lifecycleId,
+            $parentRunId,
+            $context->turnNo(),
+            $toolCallId,
+            $context->orderIndex(),
+            Clock::get()->now()->modify(\sprintf('+%d seconds', $this->agentsConfig->subagentToolTimeoutSeconds)),
+            $plan->childIntent,
+            $context->parentModel(),
+        );
+        if ($projection->parentTurnNo !== $context->turnNo() || $projection->parentOrderIndex !== $context->orderIndex()) {
+            throw new ToolCallException('Child invocation does not match its tool context.', retryable: false);
+        }
+
+        return $projection;
     }
 
     /**
@@ -114,42 +149,17 @@ final class DeferredSubagentBatchLaunchService
         string $parentRunId,
         string $toolCallId,
         DeferredSubagentBatchLaunchPlanDTO $plan,
+        DeferredSubagentBatchProjectionDTO $projection,
         callable $prepare,
     ): DeferredToolCompletionOutcome {
         $lifecycleId = $plan->lifecycleId;
-        $deadlineAt = Clock::get()->now()->modify(\sprintf('+%d seconds', $this->agentsConfig->subagentToolTimeoutSeconds));
-        $toolContext = $this->contextAccessor->requireCurrent();
-
-        $existing = $this->batchRepository->findByParentRunAndToolCall($parentRunId, $toolCallId);
-        if (null !== $existing && DeferredSubagentBatchLaunchStatusEnum::Failed === $existing->launchStatus) {
+        if (DeferredSubagentBatchLaunchStatusEnum::Failed === $projection->launchStatus) {
             throw new ToolCallException('Subagent batch launch previously failed for this tool call.', retryable: false);
         }
-
-        if (null !== $existing && DeferredSubagentBatchLaunchStatusEnum::Launched === $existing->launchStatus) {
-            $this->batchRepository->reserveBatch(
-                lifecycleId: $lifecycleId,
-                parentRunId: $parentRunId,
-                parentTurnNo: $toolContext->turnNo(),
-                parentToolCallId: $toolCallId,
-                parentOrderIndex: $toolContext->orderIndex(),
-                deadlineAt: $deadlineAt,
-                childIntent: $plan->childIntent,
-                parentModel: $plan->parentModel,
-            );
-
+        if (DeferredSubagentBatchLaunchStatusEnum::Launched === $projection->launchStatus) {
+            // Already launched for this invocation: never prepare/start again.
             return new DeferredToolCompletionOutcome($lifecycleId);
         }
-
-        $projection = $this->batchRepository->reserveBatch(
-            lifecycleId: $lifecycleId,
-            parentRunId: $parentRunId,
-            parentTurnNo: $toolContext->turnNo(),
-            parentToolCallId: $toolCallId,
-            parentOrderIndex: $toolContext->orderIndex(),
-            deadlineAt: $deadlineAt,
-            childIntent: $plan->childIntent,
-            parentModel: $plan->parentModel,
-        );
 
         // Parent cancel/timeout can land while children are still Reserved.
         // Do not prepare/start after interruption intent is durable; return the
@@ -168,19 +178,7 @@ final class DeferredSubagentBatchLaunchService
                 $e->getPrevious() ?? $e,
                 $e->failureBatchIndex,
             );
-            try {
-                $this->batchRepository->applyLaunchFailurePreparation($parentRunId, $toolCallId, $lifecycleId);
-            } catch (\Throwable $persistFailure) {
-                $this->logger->warning('deferred_subagent_batch.launch_failure_persist_failed', [
-                    'run_id' => $parentRunId,
-                    'tool_call_id' => $toolCallId,
-                    'component' => 'agent.execution',
-                    'event_type' => 'deferred_subagent_batch.launch_failure_persist_failed',
-                    'failure_phase' => 'preparation',
-                    'failure_batch_index' => $e->failureBatchIndex,
-                    'exception_class' => $persistFailure::class,
-                ]);
-            }
+            $this->batchRepository->applyLaunchFailurePreparation($parentRunId, $toolCallId, $lifecycleId);
 
             throw $this->launchFailedException($e->getPrevious() ?? $e);
         }
@@ -200,25 +198,7 @@ final class DeferredSubagentBatchLaunchService
                 $prepared,
             );
         } catch (DeferredSubagentBatchRuntimeStartFailure $e) {
-            $failureIndex = $e->failureBatchIndex;
-            try {
-                $this->batchRepository->applyLaunchFailurePreparation(
-                    $parentRunId,
-                    $toolCallId,
-                    $lifecycleId,
-                );
-            } catch (\Throwable $persistFailure) {
-                $this->logger->warning('deferred_subagent_batch.launch_failure_persist_failed', [
-                    'run_id' => $parentRunId,
-                    'tool_call_id' => $toolCallId,
-                    'component' => 'agent.execution',
-                    'event_type' => 'deferred_subagent_batch.launch_failure_persist_failed',
-                    'failure_phase' => 'runtime_start',
-                    'failure_batch_index' => $failureIndex,
-                    'exception_class' => $persistFailure::class,
-                ]);
-            }
-
+            $this->batchRepository->applyLaunchFailurePreparation($parentRunId, $toolCallId, $lifecycleId);
             throw $this->launchFailedException($e->getPrevious() ?? $e);
         }
 
@@ -235,6 +215,34 @@ final class DeferredSubagentBatchLaunchService
         }
 
         return new DeferredToolCompletionOutcome($lifecycleId);
+    }
+
+    private function requirePreparedChild(DeferredSubagentBatchProjectionDTO $projection): DeferredSubagentChildProjectionDTO
+    {
+        if (1 !== \count($projection->children)) {
+            throw new ToolCallException('Prepared child reservation must contain exactly one child.', retryable: false);
+        }
+
+        return $projection->children[0];
+    }
+
+    private function assertPlanMatchesPreparedChild(
+        DeferredSubagentBatchLaunchPlanDTO $plan,
+        DeferredSubagentChildProjectionDTO $child,
+    ): void {
+        $intent = $plan->childIntent;
+        if (1 !== $intent->batchIndex
+            || $intent->childRunId !== $child->childRunId
+            || $intent->artifactId !== $child->artifactId
+            || $intent->agentName !== $child->agentName
+            || $intent->task !== $child->task
+            || $intent->launchModel !== $child->launchModel
+            || $intent->launchReasoning !== $child->launchReasoning) {
+            throw new ToolCallException('Deferred invocation reservation does not match its launch intent.', retryable: false);
+        }
+        if ($plan->identity->childRunId !== $child->childRunId || $plan->identity->artifactId !== $child->artifactId) {
+            throw new ToolCallException('Deferred invocation reservation does not match its launch intent.', retryable: false);
+        }
     }
 
     /**

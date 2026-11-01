@@ -42,7 +42,7 @@ final class SessionPromptCacheInspectionService
     public function inspect(string $sessionId): array
     {
         $sessionId = trim($sessionId);
-        if ('' === $sessionId || null === $this->hatfieldSessionStore->findSession($sessionId)) {
+        if ('' === $sessionId || !$this->hatfieldSessionStore->exists($sessionId)) {
             return ['found' => false, 'notice' => \sprintf('Session "%s" not found.', $sessionId)];
         }
 
