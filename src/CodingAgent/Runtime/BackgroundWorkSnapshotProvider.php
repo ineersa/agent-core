@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime;
 
 use DateTimeImmutable as ImmutableDateTime;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
@@ -24,7 +23,6 @@ final readonly class BackgroundWorkSnapshotProvider
     public function snapshot(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
     {
         $children = [];
-        $invocations = [];
         // Terminal child statuses reconcile the picker catalog as well as the
         // active rows. Keep this single projection read; work ownership below
         // is selected directly in SQL without traversing historical children.
@@ -37,20 +35,8 @@ final readonly class BackgroundWorkSnapshotProvider
                 (int) $row['latest_input_tokens'], (int) $row['context_window'],
             );
             $children[] = $child;
-            if ($child->backgrounded) {
-                $invocations[$child->lifecycleId][] = $child;
-            }
         }
         $work = [];
-        foreach ($invocations as $id => $members) {
-            $active = array_values(array_filter($members, static fn (BackgroundChildStatusDTO $child): bool => !RunStatus::from($child->status)->isTerminal()));
-            $statuses = array_unique(array_map(static fn (BackgroundChildStatusDTO $child): string => $child->status, [] !== $active ? $active : $members));
-            $status = implode('/', $statuses);
-            $work[] = new BackgroundWorkDTO(
-                $id, 'agent', implode('; ', array_map($this->ownerLabel(...), $members)), $status,
-                [] === $active, array_map(static fn (BackgroundChildStatusDTO $child): string => $child->runId, $active),
-            );
-        }
         foreach ($this->processes->findOwnedBackgroundWork($rootRunId, $observedProcessId) as $row) {
             $runId = (string) $row['session_id'];
             $terminal = null !== $row['finished_at'];
@@ -76,10 +62,5 @@ final readonly class BackgroundWorkSnapshotProvider
         }
 
         return new BackgroundWorkSnapshotDTO($children, $work, $candidates);
-    }
-
-    private function ownerLabel(BackgroundChildStatusDTO $child): string
-    {
-        return \sprintf('%s agent_id:%s run:%s', $child->name, $child->artifactId, $child->runId);
     }
 }

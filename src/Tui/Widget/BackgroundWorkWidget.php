@@ -91,7 +91,7 @@ final class BackgroundWorkWidget extends AbstractWidget
         foreach ($shown as $row) {
             $color = match ($row['kind']) {
                 'fork' => ThemeColorEnum::Warning,
-                'agent', 'subagent' => ThemeColorEnum::Accent,
+                'agent' => ThemeColorEnum::Accent,
                 'code_mode' => ThemeColorEnum::Success,
                 default => ThemeColorEnum::ThinkingLow,
             };

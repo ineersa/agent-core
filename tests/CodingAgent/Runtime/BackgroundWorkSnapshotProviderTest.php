@@ -69,6 +69,7 @@ final class BackgroundWorkSnapshotProviderTest extends IsolatedKernelTestCase
         $container = self::getContainer();
         $root = $container->get(HatfieldSessionStore::class)->createSession('reservation');
         $child = $this->reserveChild($root, 'tool');
+        $container->get(DeferredSubagentBatchRepository::class)->markBackgrounded((new DeferredSubagentBatchIdentityFactory())->batchLifecycleId($root, 'tool'), new \DateTimeImmutable());
         $identity = (new DeferredSubagentBatchIdentityFactory())->childIdentity($root, 'tool', 1);
         $container->get(AgentArtifactRegistry::class)->create($root, $identity['artifactId'], $child, 'scout', AgentArtifactKindEnum::Subagent);
         $correlation = new DeferredToolCompletionCorrelation(Uuid::v7()->toRfc4122(), $child, 1, 'step', 1, 'key', 'host', 'code_mode', [], 0);
@@ -82,7 +83,11 @@ final class BackgroundWorkSnapshotProviderTest extends IsolatedKernelTestCase
         $this->assertSame([$correlation->deferredId], array_column($provider->snapshot($root)->work, 'id'), 'Matching both relations must not duplicate an invocation.');
         $this->assertSame([], $provider->snapshot('foreign')->work);
         $repository->markCompleted($correlation->deferredId);
-        $this->assertSame([], $provider->snapshot($root)->work);
+        $snapshot = $provider->snapshot($root);
+        $this->assertSame([], $snapshot->work, 'Agent work is represented only by the children collection.');
+        $this->assertSame([$child], array_column($snapshot->children, 'runId'));
+        $this->assertTrue($snapshot->children[0]->backgrounded);
+        $this->assertSame('running', $snapshot->children[0]->status);
     }
 
     public function testSnapshotQueriesAreBoundedAndNeverReadHistoricalRegistries(): void
