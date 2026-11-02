@@ -10,6 +10,8 @@ use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\WriteFileArgumentsDTO;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
 
+use function Amp\delay;
+
 /**
  * Write (create or replace) a file at the specified path.
  *
@@ -19,8 +21,8 @@ use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
  * Features:
  * - Creates parent directories when they do not exist.
  * - Overwrites existing files.
- * - Checks cancellation before writing and before returning.
- * - Uses LOCK_EX for safe concurrent writes.
+ * - Checks cancellation before writing and during lock waits.
+ * - Uses cooperative LOCK_EX acquisition for concurrent writes.
  */
 final class WriteFileTool implements HatfieldToolProviderInterface
 {
@@ -44,7 +46,7 @@ final class WriteFileTool implements HatfieldToolProviderInterface
         #[MapToolArguments]
         WriteFileArgumentsDTO $arguments,
     ): string {
-        return $this->toolRuntime->run(static function () use ($arguments): string {
+        return $this->toolRuntime->run(function () use ($arguments): string {
             $path = $arguments->path;
             $content = $arguments->content;
 
@@ -60,17 +62,42 @@ final class WriteFileTool implements HatfieldToolProviderInterface
 
             // Create parent directories if they do not exist.
             // If the parent path is an existing file, mkdir will fail silently
-            // and file_put_contents below will produce the error.
+            // and opening the target below will produce the error.
             @mkdir(\dirname($resolvedPath), recursive: true);
 
-            // Write content with exclusive lock
-            $bytesWritten = @file_put_contents($resolvedPath, $content, \LOCK_EX);
-
-            if (false === $bytesWritten) {
+            // Nontruncating open preserves the inode and existing bytes while
+            // another Fiber or process owns the target-file lock.
+            $stream = @fopen($resolvedPath, 'c+b');
+            if (false === $stream) {
                 throw new ToolCallException(\sprintf('Failed to write file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and available disk space.');
             }
+            $acquired = false;
+            try {
+                do {
+                    $this->toolRuntime->checkpoint();
+                    $acquired = flock($stream, \LOCK_EX | \LOCK_NB, $wouldBlock);
+                    if (!$acquired) {
+                        if (0 === $wouldBlock) {
+                            throw new ToolCallException(\sprintf('Failed to lock file "%s".', $resolvedPath), retryable: true);
+                        }
+                        delay(0.02);
+                    }
+                } while (!$acquired);
+                $this->toolRuntime->checkpoint();
 
-            return \sprintf('Successfully wrote %d bytes to %s', $bytesWritten, $resolvedPath);
+                // Do not yield or check cancellation during mutation.
+                $bytesWritten = '' === $content ? 0 : @fwrite($stream, $content);
+                if (false === $bytesWritten || $bytesWritten !== \strlen($content) || !@ftruncate($stream, $bytesWritten) || !fflush($stream)) {
+                    throw new ToolCallException(\sprintf('Failed to write file "%s" (%d of %d bytes).', $resolvedPath, false === $bytesWritten ? 0 : $bytesWritten, \strlen($content)), retryable: true, hint: 'Check file permissions and available disk space.');
+                }
+
+                return \sprintf('Successfully wrote %d bytes to %s', $bytesWritten, $resolvedPath);
+            } finally {
+                if ($acquired) {
+                    flock($stream, \LOCK_UN);
+                }
+                fclose($stream);
+            }
         });
     }
 

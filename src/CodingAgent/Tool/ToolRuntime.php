@@ -7,11 +7,12 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 
 /**
- * Shared runtime helper for tool authors providing a pre-start cancellation checkpoint.
+ * Shared runtime helper for tool authors providing cancellation checkpoints.
  *
  * {@see run()} checks cancellation before the callback and throws a clear
  * RuntimeException if cancelled so ToolExecutor converts it to a structured error.
- * Completed results are not rewritten here after the callback returns.
+ * Completed results are not rewritten here after the callback returns. Handlers
+ * can call checkpoint() while waiting, but must not interrupt a file mutation.
  *
  * Designed for use inside invokable tool handler implementations.
  * The ambient ToolContext (populated by ToolExecutor) provides the cancellation token.
@@ -42,12 +43,23 @@ final readonly class ToolRuntime
      */
     public function run(callable $callback): mixed
     {
+        $this->checkCancellation(' before start');
+
+        return $callback();
+    }
+
+    /** Observe the current Fiber's tool cancellation while waiting for resources. */
+    public function checkpoint(): void
+    {
+        $this->checkCancellation('');
+    }
+
+    private function checkCancellation(string $phase): void
+    {
         $context = $this->contextAccessor->current();
 
         if (null !== $context && $context->cancellationToken()->isCancellationRequested()) {
-            throw new \RuntimeException(\sprintf('Tool execution "%s" cancelled before start.', $context->toolName()));
+            throw new \RuntimeException(\sprintf('Tool execution "%s" cancelled%s.', $context->toolName(), $phase));
         }
-
-        return $callback();
     }
 }

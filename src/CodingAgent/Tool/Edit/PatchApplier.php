@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Tool\Edit;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Symfony\Component\Lock\LockFactory;
 
+use function Amp\delay;
+
 /**
  * Applies Codex-style single-file hunks under a Symfony Lock critical section.
  */
@@ -32,16 +34,44 @@ final class PatchApplier
      *     changedLineNumbers: list<int>
      * }
      */
-    public function apply(string $targetPath, string $rawPatch): array
+    public function apply(string $targetPath, string $rawPatch, \Closure $checkpoint): array
     {
         $realPath = false !== ($r = realpath($targetPath)) ? $r : $targetPath;
         $lockKey = 'edit-file-'.hash('sha256', $realPath);
         $lock = $this->lockFactory->createLock($lockKey);
+        $acquired = false;
+        $stream = false;
+        $fileLocked = false;
 
         try {
-            $lock->acquire(true);
+            do {
+                $checkpoint();
+                $acquired = $lock->acquire(false);
+                if (!$acquired) {
+                    delay(0.02);
+                }
+            } while (!$acquired);
+            $checkpoint();
 
-            $originalContent = @file_get_contents($targetPath);
+            // Keep the inode (including hardlinks/symlinks) and do not truncate
+            // before both locks and the final cancellation checkpoint succeed.
+            $stream = @fopen($targetPath, 'r+b');
+            if (false === $stream) {
+                throw new ToolCallException(\sprintf('[E_PATCH_WRITE] Failed to open "%s" for writing.', $targetPath), retryable: true);
+            }
+            do {
+                $checkpoint();
+                $fileLocked = flock($stream, \LOCK_EX | \LOCK_NB, $wouldBlock);
+                if (!$fileLocked) {
+                    if (0 === $wouldBlock) {
+                        throw $this->infraError('Failed to lock target file.', $targetPath);
+                    }
+                    delay(0.02);
+                }
+            } while (!$fileLocked);
+            $checkpoint();
+
+            $originalContent = stream_get_contents($stream);
             if (false === $originalContent) {
                 throw $this->infraError('Failed to read target file under lock.', $targetPath);
             }
@@ -70,7 +100,7 @@ final class PatchApplier
                 ];
             }
 
-            $this->writeBytesInPlace($targetPath, $patchedContent, $originalContent);
+            $this->writeBytesInPlace($stream, $targetPath, $patchedContent, $originalContent);
 
             return [
                 'patchedContent' => $patchedContent,
@@ -82,8 +112,16 @@ final class PatchApplier
                 'changedLineNumbers' => $changedLineNumbers,
             ];
         } finally {
+            if (false !== $stream) {
+                if ($fileLocked) {
+                    flock($stream, \LOCK_UN);
+                }
+                fclose($stream);
+            }
             try {
-                $lock->release();
+                if ($acquired) {
+                    $lock->release();
+                }
             } catch (\Throwable $e) {
                 $this->logger->warning('Lock release failed during edit tool cleanup', [
                     'component' => 'edit_tool',
@@ -185,25 +223,40 @@ final class PatchApplier
         return null;
     }
 
-    private function writeBytesInPlace(string $targetPath, string $patchedContent, string $originalContent): void
+    /** @param resource $stream */
+    private function writeBytesInPlace($stream, string $targetPath, string $patchedContent, string $originalContent): void
     {
-        $written = @file_put_contents($targetPath, $patchedContent, \LOCK_EX);
+        $written = $this->replaceStreamContents($stream, $patchedContent);
 
         if (false !== $written && $written === \strlen($patchedContent)) {
             return;
         }
 
-        if (false === $written) {
-            throw new ToolCallException(\sprintf('[E_PATCH_WRITE] Failed to write patched content to "%s": write returned false (permission/disk error).', $targetPath), retryable: true, hint: 'Check file permissions and disk space, then retry.');
-        }
-
-        $restored = @file_put_contents($targetPath, $originalContent, \LOCK_EX);
+        $restored = $this->replaceStreamContents($stream, $originalContent);
         $rollbackOk = false !== $restored && $restored === \strlen($originalContent);
         $rollbackStatus = $rollbackOk
             ? 'Original content restored.'
             : 'Rollback may be incomplete (write failure or short write) — verify file integrity with read or git diff.';
 
+        if (false === $written) {
+            throw new ToolCallException(\sprintf('[E_PATCH_WRITE] Failed to write patched content to "%s": write returned false (permission/disk error). %s', $targetPath, $rollbackStatus), retryable: true, hint: 'Check file permissions and disk space, then retry.');
+        }
+
         throw new ToolCallException(\sprintf('[E_PATCH_WRITE] Failed to write patched content to "%s": short write (%d of %d bytes). %s', $targetPath, $written, \strlen($patchedContent), $rollbackStatus), retryable: true, hint: 'Check file permissions and disk space, then retry.');
+    }
+
+    /** @param resource $stream */
+    private function replaceStreamContents($stream, string $content): int|false
+    {
+        if (!rewind($stream)) {
+            return false;
+        }
+        $written = '' === $content ? 0 : @fwrite($stream, $content);
+        if (false === $written || $written !== \strlen($content)) {
+            return $written;
+        }
+
+        return @ftruncate($stream, $written) && fflush($stream) ? $written : false;
     }
 
     private function infraError(string $context, string $targetPath): ToolCallException
