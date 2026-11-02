@@ -10,7 +10,7 @@ Topology map for AgentCore application handlers. Authoritative routing: `config/
 |---|---|---|
 | `StartRun` | `agent.command.bus` | `StartRunHandler` |
 | `ApplyCommand` | `agent.command.bus` | `ApplyCommandHandler` |
-| `ApplyShellCommand` | `agent.command.bus` | `ApplyShellCommandHandler` → effect `ExecuteShellToolCall` |
+| `ApplyShellCommand` | `agent.command.bus` | `Ineersa\CodingAgent\Application\Pipeline\ApplyShellCommandHandler` → effect `ExecuteShellToolCall` |
 | `AdvanceRun` | `agent.command.bus` (transport `run_control`) | `AdvanceRunHandler` |
 | `LlmStepResult` | `agent.command.bus` (transport `run_control`) | `LlmStepResultHandler` |
 | `ToolCallResult` | `agent.command.bus` (transport `run_control`) | `ToolCallResultHandler` |
@@ -73,10 +73,12 @@ There is **no** `CollectToolBatch` message type in `src/` (stale historical name
 
 ## Direct shell lifecycle ownership
 
-`ApplyShellCommandHandler` commits `agent_command_applied` plus canonical
+CodingAgent's `ApplyShellCommandHandler` owns Hatfield's bang-shell policy and
+commits `agent_command_applied` plus canonical
 `tool_execution_start` (with flat bash `arguments.command`) under the owner lock,
 then returns the `ExecuteShellToolCall` effect. Direct-shell redelivery checks
-canonical `agent_command_applied` identities even after execution ends. This is
+indexed identities validated against canonical `agent_command_applied` events
+even after execution ends. This is
 separate from the pending-only `ApplyCommand` mailbox. The shell worker has no
 EventStore dependency: it only executes bash and posts `ToolCallResult`.
 `tool_execution_start` is lifecycle acceptance before external work, not measured

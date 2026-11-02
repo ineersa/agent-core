@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Application\Pipeline;
+namespace Ineersa\CodingAgent\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageHandler;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
@@ -15,6 +18,7 @@ use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 /**
@@ -32,6 +36,7 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
         private EventFactory $eventFactory,
         private EventStoreInterface $eventStore,
         private NormalizerInterface $normalizer,
+        private RunHistorySourceProviderInterface $sources,
     ) {
     }
 
@@ -46,16 +51,10 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             throw new \InvalidArgumentException('ApplyShellCommandHandler can only handle ApplyShellCommand messages.');
         }
 
-        // A committed shell command is a completed command transition even
-        // after its tool lifecycle has ended. Stream newest-first so this
-        // stays bounded in the storage implementations and does not turn
-        // RunState into shell-command history.
-        foreach ($this->eventStore->reverseFor($state->runId) as $event) {
-            if (RunEventTypeEnum::AgentCommandApplied->value === $event->type
-                && 'shell_command' === ($event->payload['kind'] ?? null)
-                && $message->idempotencyKey() === ($event->payload['idempotency_key'] ?? null)) {
-                return new HandlerResult();
-            }
+        // The disposable index rules out fresh identities without scanning the
+        // archive. Canonical evidence still authorizes duplicate suppression.
+        if ($this->wasApplied($state->runId, $message->idempotencyKey())) {
+            return new HandlerResult();
         }
 
         // Direct shells can attach to an active LLM, so currentOperation cannot
@@ -216,5 +215,49 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
             events: $events,
             effects: [$effect],
         );
+    }
+
+    private function wasApplied(string $runId, string $key): bool
+    {
+        $source = $this->sources->historySource($runId);
+        if (!is_file($source->path)) {
+            return false;
+        }
+        $cut = $source->log->historyCut($source->path, $runId);
+        $sequence = $source->log->latestCommandSequences($source->path, $runId, [$key], $cut['sequence'] ?? 0)[$key] ?? null;
+        if (null === $sequence) {
+            return false;
+        }
+        $indexed = null;
+        foreach ($this->eventStore->rangeFor($runId, $sequence, $sequence) as $event) {
+            if (null !== $indexed || $event->seq !== $sequence || $event->runId !== $runId
+                || ($event->payload['idempotency_key'] ?? null) !== $key) {
+                throw new \RuntimeException('Indexed shell command evidence does not match canonical history.');
+            }
+            $indexed = $event;
+        }
+        unset($event);
+        if (null === $indexed) {
+            throw new \RuntimeException('Indexed shell command evidence is missing from canonical history.');
+        }
+        if ($this->matches($indexed, $key)) {
+            return true;
+        }
+        // Identity-only indexing must not hide an older applied shell behind
+        // a later command of another kind/status using the same key.
+        foreach ($this->eventStore->reverseFor($runId) as $event) {
+            if ($event->seq < $sequence && $this->matches($event, $key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function matches(RunEvent $event, string $key): bool
+    {
+        return RunEventTypeEnum::AgentCommandApplied->value === $event->type
+            && 'shell_command' === ($event->payload['kind'] ?? null)
+            && $key === ($event->payload['idempotency_key'] ?? null);
     }
 }
