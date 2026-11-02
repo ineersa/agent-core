@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
@@ -12,6 +13,7 @@ use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
+use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -404,6 +406,6 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
 
     private function outputCap(OutputCapConfig $config): OutputCap
     {
-        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
+        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor()));
     }
 }

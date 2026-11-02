@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticCapture;
 use Ineersa\CodingAgent\Tool\OutputCap;
+use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -23,7 +25,7 @@ final class CodeModeDiagnosticCaptureTest extends TestCase
     protected function setUp(): void
     {
         $this->directory = TestDirectoryIsolation::createOsTempDir('code-mode-capture');
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->directory.'/artifacts'), new LockFactory(new FlockStore($this->directory)), new NullLogger());
+        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->directory.'/artifacts'), new LockFactory(new FlockStore($this->directory)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor()));
         $this->capture = new CodeModeDiagnosticCapture($cap, 'capture-test', $this->directory);
         file_put_contents($this->capture->stdoutPath, '');
         file_put_contents($this->capture->stderrPath, '');

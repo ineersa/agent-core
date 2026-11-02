@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -12,6 +13,7 @@ use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook;
+use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Message\ToolCallMessage;
@@ -506,6 +508,6 @@ final class OutputCapLlmTransformHookTest extends TestCase
     /* ── Helpers ── */
     private function outputCap(OutputCapConfig $config): OutputCap
     {
-        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
+        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor()));
     }
 }

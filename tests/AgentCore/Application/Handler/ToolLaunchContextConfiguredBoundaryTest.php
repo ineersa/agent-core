@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
@@ -184,12 +185,15 @@ final class ToolLaunchContextConfiguredBoundaryTest extends IsolatedKernelTestCa
                 return new SymfonyToolResult($toolCall, 'should-not-run', new SourceCollection());
             }
         };
+        $processor = $this->createMock(ToolResultProcessorInterface::class);
+        $processor->expects($this->never())->method('process');
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
             maxParallelism: 4,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
             contextAccessor: $accessor,
+            toolResultProcessors: [$processor],
         );
 
         $result = $executor->execute(ToolCallBuilder::create('fork-mismatch')

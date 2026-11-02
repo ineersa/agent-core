@@ -710,7 +710,7 @@ PHP);
             $container->get(TransitionFinalizer::class),
             new HookDispatcher([$container->get(ToolBatchSnapshotCleanupHookSubscriber::class)]));
         $state = $commit->commit($state, $reducer->replay($state, $events), $events);
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/artifacts'), new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
+        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/artifacts'), new LockFactory(new FlockStore($this->tmpDir)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor()));
         $result = $this->runScript($this->bridgeWithToolbox(static fn () => null, $cap), $script, runId: $run);
         $call = new DomainToolCall('code-mode-bridge-test-1', 'code_mode', [], 0, $run);
         $raw = ['code_mode_value' => $result instanceof CodeModeExecutionResult ? $result->result : $result, 'code_mode_diagnostics' => $result instanceof CodeModeExecutionResult ? $result->diagnostics : []];
@@ -783,7 +783,7 @@ PHP);
     public function testLargeFailureDiagnosticsKeepAnExactArtifact(string $mode, string $message): void
     {
         $run = $this->retainedRun();
-        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/artifacts'), new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
+        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/artifacts'), new LockFactory(new FlockStore($this->tmpDir)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor()));
         $bridge = $this->bridgeWithToolbox(static fn () => null, $cap);
         $marker = $this->tmpDir.'/ready-to-cancel';
         $token = new class($marker) implements CancellationTokenInterface {

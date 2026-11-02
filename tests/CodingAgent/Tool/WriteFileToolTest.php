@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Amp\DeferredFuture;
+use Amp\TimeoutCancellation;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
@@ -71,6 +73,25 @@ final class WriteFileToolTest extends TestCase
 
     /* ── __invoke() success tests ── */
 
+    public function testWriteOverwritesWriteOnlyFile(): void
+    {
+        $path = $this->tmpDir.'/write-only.txt';
+        file_put_contents($path, 'old bytes');
+        chmod($path, 0200);
+        try {
+            if (is_readable($path) || !is_writable($path)) {
+                $this->markTestSkipped('Runtime does not enforce write-only file permissions.');
+            }
+            $inode = fileinode($path);
+            ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $path, content: 'new'));
+            $this->assertSame($inode, fileinode($path));
+            chmod($path, 0600);
+            $this->assertSame("new\n", file_get_contents($path));
+        } finally {
+            chmod($path, 0600);
+        }
+    }
+
     public function testWriteCreatesNewFile(): void
     {
         $targetPath = $this->tmpDir.'/new_file.txt';
@@ -109,6 +130,91 @@ final class WriteFileToolTest extends TestCase
         $this->assertStringContainsString('Successfully', $result);
         // Non-empty content without trailing newline is normalized
         $this->assertSame("New content replacing the old one.\n", file_get_contents($targetPath));
+    }
+
+    public function testTargetLockWaitYieldsAndCancellationDoesNotTruncate(): void
+    {
+        foreach ([false, true] as $cancel) {
+            $path = $this->tmpDir.'/contended-'.(int) $cancel.'.txt';
+            file_put_contents($path, "original longer content\n");
+            $owner = fopen($path, 'r+b');
+            $this->assertTrue(flock($owner, \LOCK_EX | \LOCK_NB));
+            $cancelled = false;
+            $token = $this->createStub(CancellationTokenInterface::class);
+            $token->method('isCancellationRequested')->willReturnCallback(static function () use (&$cancelled): bool { return $cancelled; });
+            $entered = new DeferredFuture();
+            $waiting = \Amp\async(fn () => $this->contextAccessor->with(
+                $this->contextWithToken($token),
+                function () use ($path, $entered): string {
+                    $entered->complete();
+
+                    return ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $path, content: 'new'));
+                },
+            ));
+            try {
+                $entered->getFuture()->await(new TimeoutCancellation(2));
+                \Amp\async(static function () use ($waiting, $path): void {
+                    self::assertFalse($waiting->isComplete());
+                    self::assertSame("original longer content\n", file_get_contents($path));
+                })->await(new TimeoutCancellation(2));
+                if ($cancel) {
+                    $cancelled = true;
+                    try {
+                        $waiting->await(new TimeoutCancellation(2));
+                        $this->fail('Expected cancellation while the target lock is held.');
+                    } catch (\RuntimeException $e) {
+                        $this->assertStringContainsString('cancelled', $e->getMessage());
+                    }
+                    $this->assertSame("original longer content\n", file_get_contents($path));
+                }
+                flock($owner, \LOCK_UN);
+                if (!$cancel) {
+                    $this->assertStringContainsString('Successfully wrote 4 bytes', $waiting->await(new TimeoutCancellation(2)));
+                }
+                ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $path, content: 'final'));
+                $this->assertSame("final\n", file_get_contents($path));
+            } finally {
+                $cancelled = true;
+                flock($owner, \LOCK_UN);
+                fclose($owner);
+            }
+        }
+    }
+
+    public function testWritePreservesSymlinkAndHardlink(): void
+    {
+        $path = $this->tmpDir.'/target.txt';
+        $symlink = $this->tmpDir.'/symbolic.txt';
+        $hardlink = $this->tmpDir.'/hard.txt';
+        file_put_contents($path, "old longer content\n");
+        symlink($path, $symlink);
+        link($path, $hardlink);
+        ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $symlink, content: 'new'));
+        $this->assertTrue(is_link($symlink));
+        $this->assertSame("new\n", file_get_contents($hardlink));
+        ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $hardlink, content: ''));
+        $this->assertSame('', file_get_contents($path));
+    }
+
+    public function testCancellationAfterTargetAcquisitionDoesNotMutate(): void
+    {
+        $path = $this->tmpDir.'/post-acquire.txt';
+        file_put_contents($path, "original\n");
+        $checks = 0;
+        $token = $this->createStub(CancellationTokenInterface::class);
+        // Pre-start, pre-acquire, then the checkpoint with the target locked.
+        $token->method('isCancellationRequested')->willReturnCallback(static function () use (&$checks): bool { return ++$checks >= 3; });
+        try {
+            $this->contextAccessor->with($this->contextWithToken($token), fn () => ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $path, content: 'new')));
+            $this->fail('Expected cancellation before mutation.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('cancelled', $e->getMessage());
+        }
+        $this->assertSame("original\n", file_get_contents($path));
+        $stream = fopen($path, 'r+b');
+        $this->assertTrue(flock($stream, \LOCK_EX | \LOCK_NB));
+        flock($stream, \LOCK_UN);
+        fclose($stream);
     }
 
     public function testWriteReturnsByteCount(): void

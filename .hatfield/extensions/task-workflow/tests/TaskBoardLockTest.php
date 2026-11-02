@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\TaskWorkflow\Tests;
 
+use Amp\DeferredFuture;
+use Amp\TimeoutCancellation;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardLock;
@@ -12,6 +14,58 @@ use PHPUnit\Framework\TestCase;
 
 final class TaskBoardLockTest extends TestCase
 {
+    public function testContendedBoardWaitYieldsForReleaseAndCancellation(): void
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('tw-lock-fiber');
+        try {
+            foreach ([false, true] as $cancel) {
+                $path = TaskBoardLock::lockPathForRoot($dir);
+                $owner = fopen($path, 'c+b');
+                $this->assertTrue(flock($owner, \LOCK_EX | \LOCK_NB));
+                $cancelled = false;
+                $token = $this->createStub(ToolCancellationTokenInterface::class);
+                $token->method('isCancellationRequested')->willReturnCallback(static function () use (&$cancelled): bool { return $cancelled; });
+                $entered = new DeferredFuture();
+                $mutated = false;
+                $lock = new TaskBoardLock($path);
+                $waiting = \Amp\async(static function () use ($lock, $token, $entered, &$mutated): mixed {
+                    $entered->complete();
+
+                    return $lock->withLock(static function () use (&$mutated): string {
+                        $mutated = true;
+
+                        return 'done';
+                    }, $token);
+                });
+                try {
+                    $entered->getFuture()->await(new TimeoutCancellation(2));
+                    \Amp\async(static function () use ($waiting, &$mutated): void {
+                        self::assertFalse($waiting->isComplete());
+                        self::assertFalse($mutated);
+                    })->await(new TimeoutCancellation(2));
+                    if ($cancel) {
+                        $cancelled = true;
+                        $result = $waiting->await(new TimeoutCancellation(2));
+                        $this->assertTrue($result['cancelled']);
+                        $this->assertFalse($mutated);
+                    }
+                    flock($owner, \LOCK_UN);
+                    if (!$cancel) {
+                        $this->assertSame('done', $waiting->await(new TimeoutCancellation(2)));
+                        $this->assertTrue($mutated);
+                    }
+                    $this->assertSame('reused', $lock->withLock(static fn (): string => 'reused'));
+                } finally {
+                    $cancelled = true;
+                    flock($owner, \LOCK_UN);
+                    fclose($owner);
+                }
+            }
+        } finally {
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+    }
+
     #[Test]
     public function withLockReleasesOnException(): void
     {
