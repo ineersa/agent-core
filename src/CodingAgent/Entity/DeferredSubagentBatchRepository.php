@@ -88,7 +88,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         // Failed preparation may leave no runtime or only a previous attempt's
         // projection. A successful launch retains its actual lifecycle status.
         return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<'SQL'
-            SELECT batch.lifecycle_id, batch.backgrounded_at,
+            SELECT batch.backgrounded_at,
                 child.child_run_id, child.artifact_id, child.agent_name, child.task,
                 COALESCE(json_extract(child.child_lifecycle_projection, '$.model'), child.launch_model) AS model,
                 COALESCE(json_extract(child.child_lifecycle_projection, '$.reasoning'), child.launch_reasoning) AS reasoning,

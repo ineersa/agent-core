@@ -18,23 +18,23 @@ final class SubagentLiveCatalogTest extends TestCase
     public function testOperationalRefreshUpdatesMetadataWithoutParentProgressAndIdenticalSnapshotsAreNoOps(): void
     {
         $catalog = new SubagentLiveCatalog();
-        $child = new BackgroundChildStatusDTO('batch', 'run', 'artifact', 'fork', 'task', 'provider/model', 'low', 'running', true);
+        $child = new BackgroundChildStatusDTO('run', 'artifact', 'fork', 'task', 'provider/model', 'low', 'running', true);
         $catalog->synchronizeOperationalStatus([$child]);
         $first = $catalog->findByArtifactId('artifact');
         $this->assertNotNull($first);
         $this->assertSame('provider/model', $first->model);
         $catalog->synchronizeOperationalStatus([$child]);
         $this->assertSame($first, $catalog->findByArtifactId('artifact'));
-        $catalog->synchronizeOperationalStatus([new BackgroundChildStatusDTO('batch', 'run', 'artifact', 'fork', 'task', 'provider/new-model', 'high', 'running', true, 23000, 272000)]);
+        $catalog->synchronizeOperationalStatus([new BackgroundChildStatusDTO('run', 'artifact', 'fork', 'task', 'provider/new-model', 'high', 'running', true, 23000, 272000)]);
         $current = $catalog->findByArtifactId('artifact');
         $this->assertNotNull($current);
         $this->assertSame('provider/new-model', $current->model);
         $this->assertSame('high', $current->reasoning);
         $this->assertSame(23000, $current->latestInputTokens);
         $this->assertSame(272000, $current->contextWindow);
-        $catalog->synchronizeOperationalStatus([new BackgroundChildStatusDTO('batch', 'run', 'artifact', 'fork', 'task', 'provider/new-model', 'high', 'waiting_human', true, 23000, 272000)]);
+        $catalog->synchronizeOperationalStatus([new BackgroundChildStatusDTO('run', 'artifact', 'fork', 'task', 'provider/new-model', 'high', 'waiting_human', true, 23000, 272000)]);
         $this->assertTrue($catalog->findByArtifactId('artifact')->needsAttention());
-        $catalog->synchronizeOperationalStatus([new BackgroundChildStatusDTO('batch', 'run', 'artifact', 'fork', 'task', 'provider/new-model', 'high', 'completed', true, 23000, 272000)]);
+        $catalog->synchronizeOperationalStatus([new BackgroundChildStatusDTO('run', 'artifact', 'fork', 'task', 'provider/new-model', 'high', 'completed', true, 23000, 272000)]);
         $this->assertFalse($catalog->findByArtifactId('artifact')->needsAttention());
         $this->assertTrue($catalog->findByArtifactId('artifact')->isTerminal());
     }

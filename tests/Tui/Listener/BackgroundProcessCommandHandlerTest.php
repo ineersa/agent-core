@@ -262,9 +262,9 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
             new BackgroundWorkDTO('code', 'code_mode', 'LIVE_CODE', 'running', false, ['visible']),
             new BackgroundWorkDTO('failed-code', 'code_mode', 'FAILED_CODE', 'failed', true, ['visible']),
         ], children: [
-            new BackgroundChildStatusDTO('first', '12345678-1234-5678-9012-123456789012', 'agent_1234567890abcdef', 'scout', 'SCOUT_TASK '.str_repeat('task ', 10), 'provider/gpt-6.1-sol', 'low', 'running', true, 10000, 272000),
-            new BackgroundChildStatusDTO('second', '87654321-1234-5678-9012-123456789012', 'agent_fedcba0987654321', 'fork', 'FORK_TASK '.str_repeat('task ', 10), 'provider/gpt-6.1-sol', 'low', 'waiting_human', true, 23000, 272000),
-            new BackgroundChildStatusDTO('third', 'cancelled-run', 'cancelled-artifact', 'fork', 'CANCELLED_TASK', 'provider/model', 'low', 'cancelled', true),
+            new BackgroundChildStatusDTO('12345678-1234-5678-9012-123456789012', 'agent_1234567890abcdef', 'scout', 'SCOUT_TASK '.str_repeat('task ', 10), 'provider/gpt-6.1-sol', 'low', 'running', true, 10000, 272000),
+            new BackgroundChildStatusDTO('87654321-1234-5678-9012-123456789012', 'agent_fedcba0987654321', 'fork', 'FORK_TASK '.str_repeat('task ', 10), 'provider/gpt-6.1-sol', 'low', 'waiting_human', true, 23000, 272000),
+            new BackgroundChildStatusDTO('cancelled-run', 'cancelled-artifact', 'fork', 'CANCELLED_TASK', 'provider/model', 'low', 'cancelled', true),
         ]);
         $this->mount(JsonlProcessAgentSessionClient::class, $snapshot);
         $this->context->state->sessionReady = true;
