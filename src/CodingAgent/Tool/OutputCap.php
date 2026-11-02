@@ -310,14 +310,18 @@ STRING;
         $lock = $this->scopeLock($canonicalRoot, $scopeName);
 
         try {
-            do {
+            // Completed handler results survive late cancellation when persistence
+            // is immediately available. Only a contended wait is cancellable.
+            $waited = false;
+            while (!$lock->acquire(false)) {
+                $waited = true;
                 $this->toolRuntime->checkpoint();
-                $acquired = $lock->acquire(false);
-                if (!$acquired) {
-                    delay(0.02);
-                }
-            } while (!$acquired);
-            $this->toolRuntime->checkpoint();
+                delay(0.02);
+                $this->toolRuntime->checkpoint();
+            }
+            if ($waited) {
+                $this->toolRuntime->checkpoint();
+            }
             $canonicalScope = $this->ensureScopeDirectory($canonicalRoot, $scopeName);
             $filePath = $canonicalScope.'/'.bin2hex(random_bytes(16)).'.txt';
             $handle = @fopen($filePath, 'xb');

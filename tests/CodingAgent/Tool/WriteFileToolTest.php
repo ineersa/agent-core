@@ -73,6 +73,25 @@ final class WriteFileToolTest extends TestCase
 
     /* ── __invoke() success tests ── */
 
+    public function testWriteOverwritesWriteOnlyFile(): void
+    {
+        $path = $this->tmpDir.'/write-only.txt';
+        file_put_contents($path, 'old bytes');
+        chmod($path, 0200);
+        try {
+            if (is_readable($path) || !is_writable($path)) {
+                $this->markTestSkipped('Runtime does not enforce write-only file permissions.');
+            }
+            $inode = fileinode($path);
+            ($this->writeFileTool)(new WriteFileArgumentsDTO(path: $path, content: 'new'));
+            $this->assertSame($inode, fileinode($path));
+            chmod($path, 0600);
+            $this->assertSame("new\n", file_get_contents($path));
+        } finally {
+            chmod($path, 0600);
+        }
+    }
+
     public function testWriteCreatesNewFile(): void
     {
         $targetPath = $this->tmpDir.'/new_file.txt';

@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Amp\DeferredFuture;
 use Amp\TimeoutCancellation;
+use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
+use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
@@ -14,6 +16,8 @@ use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -24,6 +28,9 @@ use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
+use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\String\Exception\InvalidArgumentException;
@@ -50,6 +57,92 @@ final class OutputCapTest extends TestCase
     {
         if (is_dir($this->tmpDir)) {
             TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        }
+    }
+
+    public static function executorPersistenceCases(): iterable
+    {
+        yield 'contended cancellation' => [true];
+        yield 'completed oversized success survives late cancellation' => [false];
+    }
+
+    #[DataProvider('executorPersistenceCases')]
+    public function testExecutorPersistenceCancellationRespectsCompletedResults(bool $contended): void
+    {
+        $accessor = new StackToolExecutionContextAccessor();
+        $factory = new LockFactory(new FlockStore($this->tmpDir));
+        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir), $factory, new NullLogger(), new ToolRuntime($accessor));
+        $scope = $this->tmpDir.'/run-'.hash('sha256', 'executor-run');
+        $owner = $factory->createLock('output-cap:'.hash('sha256', $scope));
+        if ($contended) {
+            $this->assertTrue($owner->acquire(false));
+        }
+        $token = new class implements CancellationTokenInterface {
+            public bool $cancelled = false;
+
+            public function isCancellationRequested(): bool
+            {
+                return $this->cancelled;
+            }
+        };
+        $entered = new DeferredFuture();
+        $toolbox = new class($token, $entered, $contended) implements ToolboxInterface {
+            public int $calls = 0;
+
+            public function __construct(private CancellationTokenInterface $token, private DeferredFuture $entered, private bool $contended)
+            {
+            }
+
+            public function getTools(): array
+            {
+                return [];
+            }
+
+            public function execute(SymfonyToolCall $call): SymfonyToolResult
+            {
+                ++$this->calls;
+                $this->entered->complete();
+                if (!$this->contended) {
+                    $this->token->cancelled = true;
+                }
+
+                return new SymfonyToolResult($call, str_repeat('x', 30000));
+            }
+        };
+        $processor = new OutputCapToolResultProcessor($cap, AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel', maxParallelism: 4,
+            resultStore: new ToolExecutionResultStore(),
+            toolbox: $toolbox, contextAccessor: $accessor, toolResultProcessors: [$processor],
+        );
+        $call = ToolCallBuilder::create('executor-call')
+            ->withToolName('read')->withArguments([])->withRunId('executor-run')
+            ->withContext(['cancel_token' => $token])->build();
+        $future = \Amp\async(static function () use ($executor, $call, $accessor): array {
+            $result = $executor->execute($call);
+
+            return [$result, $accessor->current()];
+        });
+        try {
+            $entered->getFuture()->await(new TimeoutCancellation(2));
+            if ($contended) {
+                $this->assertFalse($future->isComplete());
+                $token->cancelled = true;
+            }
+            [$result, $context] = $future->await(new TimeoutCancellation(2));
+            $this->assertNull($context);
+            $this->assertSame(1, $toolbox->calls);
+            $this->assertSame($contended, $result->isError);
+            $artifacts = glob($scope.'/*.txt') ?: [];
+            $this->assertCount($contended ? 0 : 1, $artifacts);
+            if ($contended) {
+                $this->assertTrue($owner->isAcquired(), 'Cancellation must finish before the holder releases.');
+                $this->assertFalse($result->details['retryable']);
+            }
+        } finally {
+            $token->cancelled = true;
+            $owner->release();
+            $future->await(new TimeoutCancellation(2));
         }
     }
 
@@ -447,8 +540,8 @@ final class OutputCapTest extends TestCase
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
         $outputCap = $this->outputCap($cfg);
-        $processor = new OutputCapToolResultProcessor($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
-        $hook = new OutputCapLlmTransformHook($outputCap, \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer());
+        $processor = new OutputCapToolResultProcessor($outputCap, AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
+        $hook = new OutputCapLlmTransformHook($outputCap, AttributeSerializerValidatorTestFactory::denormalizer());
 
         $body = str_repeat('D', 25000);
         $this->assertGreaterThan(20000, u($body)->length());
@@ -510,7 +603,7 @@ final class OutputCapTest extends TestCase
     public function testHatfieldDocsReadOverDocCapIsCappedAtFiftyK(): void
     {
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
-        $processor = new OutputCapToolResultProcessor($this->outputCap($cfg), \Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
+        $processor = new OutputCapToolResultProcessor($this->outputCap($cfg), AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
         $body = str_repeat('Z', 50001);
         $toolCall = new ToolCall(
             toolCallId: 'call-docs-over',

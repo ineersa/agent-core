@@ -234,8 +234,10 @@ final class ToolExecutor implements ToolExecutorInterface
         // coordination markers and pre-start cancellation do not enter it.
         $processingFailed = false;
         if (!$this->isDeferredOutcomeResult($result)) {
-            $result = $this->probe('result_processors', $toolCall, function () use ($result, $toolCall, &$processingFailed): ToolResult {
-                return $this->processTerminalResult($result, $toolCall, $processingFailed);
+            $result = $this->probe('result_processors', $toolCall, function () use ($result, $toolCall, $policy, &$processingFailed): ToolResult {
+                return $this->executeWithContext($toolCall, $policy, function () use ($result, $toolCall, &$processingFailed): ToolResult {
+                    return $this->processTerminalResult($result, $toolCall, $processingFailed);
+                });
             });
         }
 
@@ -348,10 +350,16 @@ final class ToolExecutor implements ToolExecutorInterface
         ], $operation);
     }
 
-    private function executeWithContext(ToolCall $toolCall, ToolExecutionPolicy $policy, callable $callback): SymfonyToolResult
+    /**
+     * @template T
+     *
+     * @param callable(): T $callback
+     *
+     * @return T
+     */
+    private function executeWithContext(ToolCall $toolCall, ToolExecutionPolicy $policy, callable $callback): mixed
     {
         if (null === $this->contextAccessor) {
-            /** @var SymfonyToolResult $result */
             $result = $callback();
 
             return $result;
@@ -391,7 +399,6 @@ final class ToolExecutor implements ToolExecutorInterface
             retainOutput: true === ($toolCall->context['retain_output'] ?? false),
         );
 
-        /** @var SymfonyToolResult $result */
         $result = $this->contextAccessor->with($context, $callback);
 
         return $result;

@@ -67,7 +67,7 @@ final class WriteFileTool implements HatfieldToolProviderInterface
 
             // Nontruncating open preserves the inode and existing bytes while
             // another Fiber or process owns the target-file lock.
-            $stream = @fopen($resolvedPath, 'c+b');
+            $stream = @fopen($resolvedPath, 'cb');
             if (false === $stream) {
                 throw new ToolCallException(\sprintf('Failed to write file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and available disk space.');
             }
