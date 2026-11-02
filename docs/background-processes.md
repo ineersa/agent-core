@@ -34,8 +34,8 @@ The same child continues under its original deadline and cancellation supervisio
 Its handoff arrives as a follow-up when it settles, not as a second result for the
 original tool call. Independent child calls can run concurrently.
 Use `agent_retrieve` for existing artifact details and handoff history.
-The transcript card is marked backgrounded once,
-then remains frozen. Open `/agents-live` for current child status, inspection or steering.
+The transcript acknowledgment stays compact and frozen; Ctrl+O opens its details.
+Use Ctrl+\ or `/agents-live` for current child status, inspection or steering.
 
 A child can also background its own Bash tool. If a completion reaches an active owner,
 it uses that owner's existing follow-up mailbox. If the owner has finished or is cancelling,
@@ -43,15 +43,34 @@ the completion goes to the root parent instead. The forwarded note identifies th
 child's name, agent/artifact ID and run ID. It never resumes the child or rewrites a completed
 handoff. The parent can explicitly use `agent_resume` if more child work is needed.
 
+## Persistent background rows
+
+Active background work appears below the editor, above the footer. Bash, code mode,
+agents and forks have distinct type colors. Child rows show the same status, task,
+model and available context usage as the Ctrl+\ picker. A child waiting for an answer
+shows **[⚠ needs input]** without taking focus from the parent editor.
+
+Child rows stay in launch order while their context and status update, including
+when the parent is idle. Unchanged rows do not repaint; metadata updates repaint
+only changed rows. Completed, failed and cancelled work disappears immediately.
+The area uses at most five physical rows, including a `+N more` summary linking to
+`/bg` and Ctrl+\. On short terminals it shrinks further to leave room for the editor
+and footer. Under overflow, children needing input appear first; launch order stays
+stable within attention and ordinary groups. Without overflow, launch order is unchanged.
+Adding or removing rows can change the layout height. Long labels truncate to the
+terminal width. At heights too small for the editor and footer themselves, background
+rows are hidden.
+
 ## Background work picker: `/bg`
 
-Run `/bg` from the main view. It lists detached child invocations, code-mode scripts and
-accepted unfinished Bash jobs owned by the root session, including its children. Entries identify the owning
+Run `/bg` from the main view. It lists background code-mode scripts and
+accepted unfinished Bash jobs owned by the root session, including its children.
+Agents and forks remain in Ctrl+\ or `/agents-live`. Entries identify the owning
 agent and run. Bash entries also show command, PID and elapsed seconds; jobs in termination
 grace appear as `stopping`. `bg_status` remains a Bash-only tool scoped to its current run.
 Select work and press Enter to open a Yes/No cancellation confirmation, defaulting to No.
 Escape returns to the original list; Escape again closes it. Confirming Yes closes
-the picker and requests a native stop or child run cancellation without waiting for exit.
+the picker and requests a native stop or code-mode cancellation without waiting for exit.
 The terminal remains responsive during grace. The controller observes exit or escalates
 to KILL, even if the caller dies. Reopen `/bg` to inspect the current status.
 Opening the picker does not call the model.

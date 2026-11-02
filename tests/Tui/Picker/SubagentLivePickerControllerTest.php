@@ -64,6 +64,19 @@ final class SubagentLivePickerControllerTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
+    public function testRowShowsModelBeforeFirstUsageAndAttentionAlongsideRealContext(): void
+    {
+        $child = new SubagentLiveChildDTO('run', 'artifact', 'fork', SubagentLiveStatusEnum::Running, 'task', 0, 'provider/model', 'low', backgrounded: true);
+        $label = SubagentLivePickerController::buildItems([$child])[0]['label'];
+        $this->assertStringContainsString('model', $label);
+        $this->assertStringNotContainsString('%', $label);
+        $waiting = new SubagentLiveChildDTO('run', 'artifact', 'fork', SubagentLiveStatusEnum::WaitingHuman, 'task', 1, 'provider/model', 'low', 23000, 272000, backgrounded: true);
+        $label = SubagentLivePickerController::buildItems([$waiting])[0]['label'];
+        $this->assertStringContainsString('needs input', $label);
+        $this->assertStringContainsString('23.0k/272.0k', $label);
+        $this->assertStringContainsString('model', $label);
+    }
+
     #[Test]
     public function testOpenTwiceDoesNotStackOverlay(): void
     {

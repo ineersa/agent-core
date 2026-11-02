@@ -73,7 +73,10 @@ final class SubagentLiveCatalog
             }
             $existing = $this->byArtifactId[$child->artifactId] ?? null;
             $status = SubagentLiveStatusEnum::fromProgressString($child->status);
-            if (null !== $existing && $existing->status === $status && $existing->backgrounded === $child->backgrounded && $existing->taskSummary === $child->task) {
+            if (null !== $existing && $existing->status === $status && $existing->backgrounded === $child->backgrounded
+                && $existing->taskSummary === $child->task && $existing->model === $child->model
+                && $existing->reasoning === $child->reasoning && $existing->latestInputTokens === $child->latestInputTokens
+                && $existing->contextWindow === $child->contextWindow) {
                 continue;
             }
             // This refreshes only the catalog. The acknowledged transcript card
@@ -81,7 +84,7 @@ final class SubagentLiveCatalog
             $this->byArtifactId[$child->artifactId] = new SubagentLiveChildDTO(
                 $child->runId, $child->artifactId, $child->name, $status, $child->task,
                 (int) (microtime(true) * 1000), $child->model, $child->reasoning,
-                $existing->latestInputTokens ?? 0, $existing->contextWindow ?? 0,
+                $child->latestInputTokens, $child->contextWindow,
                 $existing?->cacheReadHitPercentage, $child->backgrounded,
             );
         }

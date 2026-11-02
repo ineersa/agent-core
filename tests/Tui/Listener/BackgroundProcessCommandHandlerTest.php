@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundChildStatusDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -30,6 +31,7 @@ use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Tui\Event\TickEvent;
+use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 
 final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
@@ -101,17 +103,18 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $this->assertSame('no', $this->list()->getSelectedItem()['value']);
         $this->assertStringContainsString('Cancel this background work?', $this->harness->plainScreenText());
         $this->context->ticks->dispatch(new TickEvent());
+        $readsAfterStatusPoll = $this->reads;
         $this->harness->sendInput("\r"); // Default No restores the opening snapshot.
-        $this->assertStringNotContainsString('PID '.$later->pid.' |', $this->harness->plainScreenText());
+        $this->assertStringNotContainsString('PID '.$later->pid.' |', implode("\n", $this->list()->render(new RenderContext(120, 80))));
         $this->harness->sendInput("\r");
         $this->harness->sendInput("\x1b"); // Confirmation Escape also restores it.
         $this->assertSame('1', $this->list()->getSelectedItem()['value']);
-        $this->assertSame(1, $this->reads);
+        $this->assertSame($readsAfterStatusPoll, $this->reads);
         $this->harness->sendInput("\x1b");
         $this->assertFalse($this->harness->screen()->hasInputOverlay());
         $this->assertSame($this->harness->screen()->editorWidget(), $this->harness->tui()->getFocus());
         $this->open();
-        $this->assertSame(2, $this->reads);
+        $this->assertSame($readsAfterStatusPoll + 1, $this->reads);
         $this->assertStringContainsString('PID '.$later->pid.' |', $this->harness->plainScreenText());
     }
 
@@ -249,6 +252,37 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $this->assertSame('stop_code_mode', $sent[0][1]->type);
         $this->assertSame(['deferred_id' => 'invocation', 'tool_call_id' => 'host'], $sent[0][1]->payload);
         $this->assertFalse($this->harness->screen()->hasInputOverlay());
+    }
+
+    public function testPickerExcludesChildrenButPersistentRowsKeepCanonicalOrderAndHideTerminalWork(): void
+    {
+        $snapshot = new BackgroundWorkSnapshotDTO(work: [
+            new BackgroundWorkDTO('child-batch', 'agent', 'CHILD_INVOCATION', 'running', false, ['child']),
+            new BackgroundWorkDTO('bash', 'bash', 'CHILD_OWNED_BASH', 'running', false, ['child']),
+            new BackgroundWorkDTO('code', 'code_mode', 'LIVE_CODE', 'running', false, ['visible']),
+            new BackgroundWorkDTO('failed-code', 'code_mode', 'FAILED_CODE', 'failed', true, ['visible']),
+        ], children: [
+            new BackgroundChildStatusDTO('first', 'scout-run', 'scout-artifact', 'scout', 'SCOUT_TASK', 'provider/model', 'low', 'running', true, 10000, 272000),
+            new BackgroundChildStatusDTO('second', 'fork-run', 'fork-artifact', 'fork', 'FORK_TASK', 'provider/model', 'low', 'waiting_human', true, 23000, 272000),
+            new BackgroundChildStatusDTO('third', 'cancelled-run', 'cancelled-artifact', 'fork', 'CANCELLED_TASK', 'provider/model', 'low', 'cancelled', true),
+        ]);
+        $this->mount(JsonlProcessAgentSessionClient::class, $snapshot);
+        $this->context->state->sessionReady = true;
+        $this->context->ticks->dispatch(new TickEvent());
+        $text = $this->harness->plainScreenText();
+        $this->assertLessThan(strpos($text, 'FORK_TASK'), strpos($text, 'SCOUT_TASK'));
+        $this->assertStringContainsString('needs input', $text);
+        $this->assertStringContainsString('23.0k/272.0k', $text);
+        $this->assertStringNotContainsString('CANCELLED_TASK', $text);
+        $this->assertStringNotContainsString('FAILED_CODE', $text);
+        $this->open();
+        $picker = implode("\n", $this->list()->render(new RenderContext(120, 80)));
+        $this->assertStringContainsString('CHILD_OWNED_BASH', $picker);
+        $this->assertStringContainsString('LIVE_CODE', $picker);
+        $this->assertStringNotContainsString('CHILD_INVOCATION', $picker);
+        $this->assertStringNotContainsString('SCOUT_TASK', $picker);
+        $this->assertStringNotContainsString('FORK_TASK', $picker);
+        $this->assertStringNotContainsString('FAILED_CODE', $picker);
     }
 
     private function start(string $runId = 'visible', bool $accepted = true): BashProcessRecordDTO

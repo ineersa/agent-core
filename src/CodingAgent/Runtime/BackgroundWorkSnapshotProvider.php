@@ -30,8 +30,9 @@ final readonly class BackgroundWorkSnapshotProvider
             $child = new BackgroundChildStatusDTO(
                 (string) $row['lifecycle_id'],
                 (string) $row['child_run_id'], (string) $row['artifact_id'], (string) $row['agent_name'],
-                (string) $row['task'], (string) $row['launch_model'], (string) $row['launch_reasoning'],
+                (string) $row['task'], (string) $row['model'], (string) $row['reasoning'],
                 (string) $row['status'], null !== $row['backgrounded_at'],
+                (int) $row['latest_input_tokens'], (int) $row['context_window'],
             );
             $children[] = $child;
             if ($child->backgrounded) {

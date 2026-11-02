@@ -90,7 +90,10 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<'SQL'
             SELECT batch.lifecycle_id, batch.backgrounded_at,
                 child.child_run_id, child.artifact_id, child.agent_name, child.task,
-                child.launch_model, child.launch_reasoning,
+                COALESCE(json_extract(child.child_lifecycle_projection, '$.model'), child.launch_model) AS model,
+                COALESCE(json_extract(child.child_lifecycle_projection, '$.reasoning'), child.launch_reasoning) AS reasoning,
+                COALESCE(json_extract(child.child_lifecycle_projection, '$.latest_input_tokens'), 0) AS latest_input_tokens,
+                COALESCE(json_extract(child.child_lifecycle_projection, '$.context_window'), 0) AS context_window,
                 CASE WHEN child.launch_status = :failed_child_launch
                     OR (batch.launch_status = :failed_batch_launch AND child.launch_status = :reserved_child_launch)
                     THEN :failed_status

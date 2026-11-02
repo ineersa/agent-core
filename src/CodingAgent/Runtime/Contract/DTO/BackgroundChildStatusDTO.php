@@ -16,6 +16,8 @@ final readonly class BackgroundChildStatusDTO
         public string $reasoning,
         public string $status,
         public bool $backgrounded,
+        public int $latestInputTokens = 0,
+        public int $contextWindow = 0,
     ) {
     }
 }

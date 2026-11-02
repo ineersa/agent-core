@@ -81,6 +81,28 @@ final class DeferredSubagentBatchRepositoryFreshnessTest extends IsolatedKernelT
     }
 
     #[Test]
+    public function operationalInventoryReadsCurrentContextAndKeepsBatchLaunchOrder(): void
+    {
+        $first = $this->reserveOneChild('parent-inventory', 'first-tool');
+        $second = $this->reserveOneChild('parent-inventory', 'second-tool');
+        $rows = $this->repository->findOwnedChildStatuses('parent-inventory');
+        $this->assertSame([$first, $second], array_column($rows, 'lifecycle_id'));
+        $this->assertSame('deepseek/deepseek-v4-flash', $rows[0]['model']);
+        $this->assertSame(0, $rows[0]['latest_input_tokens']);
+        $this->connection->update('deferred_subagent_child', ['child_lifecycle_projection' => json_encode([
+            'model' => 'provider/current-model', 'reasoning' => 'high',
+            'latest_input_tokens' => 23400, 'context_window' => 272000, 'child_status' => 'running',
+        ], \JSON_THROW_ON_ERROR)], ['batch_lifecycle_id' => $first]);
+        $rows = $this->repository->findOwnedChildStatuses('parent-inventory');
+        $this->assertSame([$first, $second], array_column($rows, 'lifecycle_id'));
+        $this->assertSame('provider/current-model', $rows[0]['model']);
+        $this->assertSame('high', $rows[0]['reasoning']);
+        $this->assertSame(23400, $rows[0]['latest_input_tokens']);
+        $this->assertSame(272000, $rows[0]['context_window']);
+        $this->assertSame('running', $rows[0]['status']);
+    }
+
+    #[Test]
     public function projectionReadsDoNotPopulateTheIdentityMap(): void
     {
         $parent = 'parent-batch-snapshot-retention';

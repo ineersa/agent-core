@@ -19,7 +19,7 @@ final readonly class BackgroundProcessCommandRegistrar implements TuiListenerReg
     {
         $catalog->registerMetadata(new CommandMetadata(
             name: 'bg',
-            description: 'Manage root-session background Bash and child invocations',
+            description: 'Manage background Bash and code-mode work; Ctrl+\\ for agents and forks',
             usage: '/bg',
             acceptsArguments: false,
         ));

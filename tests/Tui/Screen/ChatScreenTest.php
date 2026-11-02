@@ -86,6 +86,73 @@ class ChatScreenTest extends TestCase
             promptEditor: new PromptEditor());
     }
 
+    public function testBackgroundRowsStayBelowEditorAcrossOverlayAndAttentionRemoval(): void
+    {
+        $harness = new VirtualTuiHarness(columns: 90, rows: 30);
+        $screen = $harness->screen();
+        $screen->promptEditor()->setText('EDITOR_ANCHOR');
+        $rows = [
+            ['kind' => 'agent', 'label' => 'scout [⚠ needs input, backgrounded] 2% 4.5k/272k model', 'status' => ''],
+            ['kind' => 'fork', 'label' => 'fork [⚠ needs input, backgrounded]', 'status' => ''],
+        ];
+        $screen->setBackgroundRows($rows);
+        $overlay = new TextWidget(text: 'QUESTION_ANCHOR');
+        $screen->insertOverlayBeforeEditor($overlay);
+        $text = $harness->plainScreenText();
+        $this->assertLessThan(strpos($text, 'EDITOR_ANCHOR'), strpos($text, 'QUESTION_ANCHOR'));
+        $this->assertLessThan(strpos($text, 'scout ['), strpos($text, 'EDITOR_ANCHOR'));
+        $screen->removeOverlay($overlay);
+        $screen->setBackgroundRows([$rows[0]]);
+        $text = $harness->plainScreenText();
+        $this->assertLessThan(strpos($text, 'scout ['), strpos($text, 'EDITOR_ANCHOR'));
+        $this->assertStringNotContainsString('fork [', $text);
+        $screen->setBackgroundRows([]);
+        $this->assertStringNotContainsString('needs input', $harness->plainScreenText());
+    }
+
+    public function testBackgroundMetadataInvalidatesOnlyChangedRowsAndIdenticalTextIsNoOp(): void
+    {
+        $harness = new VirtualTuiHarness();
+        $screen = $harness->screen();
+        $screen->promptEditor()->setText('UNCHANGED_EDITOR');
+        $rows = [['kind' => 'fork', 'label' => 'fork 7% 19.3k/272k model', 'status' => '']];
+        $screen->setBackgroundRows($rows);
+        $harness->render();
+        $harness->terminal()->clearOutput();
+        $rows[0]['label'] = 'fork 9% 23.4k/272k model';
+        $harness->tui()->onTick(static fn () => $screen->setBackgroundRows($rows));
+        $harness->tui()->tick();
+        $harness->tui()->processRender();
+        $output = $harness->terminal()->consumeOutput();
+        $this->assertStringContainsString('23.4k', $output);
+        $this->assertStringNotContainsString('UNCHANGED_EDITOR', $output);
+        $this->assertStringNotContainsString("\033[2J", $output);
+        $this->assertStringNotContainsString("\033[H", $output);
+        $screen->setBackgroundRows($rows);
+        $harness->tui()->tick();
+        $this->assertSame('', $harness->terminal()->consumeOutput());
+    }
+
+    public function testMixedBackgroundRowsAtNarrowTerminalKeepEditorUsable(): void
+    {
+        $harness = new VirtualTuiHarness(columns: 48, rows: 20);
+        $screen = $harness->screen();
+        $screen->promptEditor()->setText('EDITOR_ANCHOR');
+        $rows = [];
+        foreach (['agent', 'fork', 'bash', 'code_mode'] as $kind) {
+            $rows[] = ['kind' => $kind, 'label' => $kind.' '.str_repeat('long label ', 20), 'status' => 'running'];
+        }
+        $screen->setBackgroundRows($rows);
+        $text = $harness->plainScreenText();
+        $this->assertStringContainsString('EDITOR_ANCHOR', $text, $text);
+        foreach (['agent', 'fork', 'bash', 'code_mode'] as $kind) {
+            $this->assertStringContainsString($kind.' [running]', $text, $text);
+        }
+        $harness->terminal()->simulateResize(48, 12);
+        $text = $harness->plainScreenText();
+        $this->assertStringContainsString('EDITOR_ANCHOR', $text, $text);
+    }
+
     // ── Pre-mount safety ──
 
     #[Test]
