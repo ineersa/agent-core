@@ -9,6 +9,7 @@ logging:
     level: info
     max_files: 2
 extensions:
+    # Scheduling is opt-in: add Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension to enabled.
     enabled:
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
         - Ineersa\HatfieldExt\FileRewind\FileRewindExtension

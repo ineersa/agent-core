@@ -51,7 +51,7 @@ final class ReadFileToolTest extends TestCase
         $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_read_test');
 
         // Output capping is handled centrally by tool-result processors.
-        $this->readFileTool = new ReadFileTool($this->toolRuntime, $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/output-cap')), $this->contextAccessor);
+        $this->readFileTool = new ReadFileTool($this->toolRuntime, $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/output-cap')), $this->contextAccessor, static fn () => throw new \LogicException('Unused retention capability.'));
     }
 
     protected function tearDown(): void
@@ -642,7 +642,7 @@ final class ReadFileToolTest extends TestCase
             docCap: 10,
         );
         $cap = $this->outputCap($capConfig);
-        $readTool = new ReadFileTool($this->toolRuntime, $cap, $this->contextAccessor);
+        $readTool = new ReadFileTool($this->toolRuntime, $cap, $this->contextAccessor, static fn () => throw new \LogicException('Unused retention capability.'));
 
         $targetPath = $this->tmpDir.'/cap_me.txt';
         file_put_contents($targetPath, "hello world this is a longer line that should exceed the cap\n");
@@ -678,7 +678,7 @@ final class ReadFileToolTest extends TestCase
         $limit = 'lines' === $kind ? 1000 : 1;
         file_put_contents($path, $content."not selected\n");
         $cap = $this->outputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/output-cap'));
-        $tool = new ReadFileTool($this->toolRuntime, $cap, $this->contextAccessor);
+        $tool = new ReadFileTool($this->toolRuntime, $cap, $this->contextAccessor, static fn () => throw new \LogicException('Unused retention capability.'));
         $toolbox = ToolValidationHarness::toolbox($tool);
         $raw = $this->contextAccessor->with($this->contextWithToken($this->createToken(false)), static fn () => $toolbox->execute(new ToolCall('read_call_1', 'read', ['path' => $path, 'offset' => 1, 'limit' => $limit]))->getResult());
         $this->assertIsArray($raw);

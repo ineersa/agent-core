@@ -72,6 +72,21 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
         $this->cwd = $cwd ?? '';
     }
 
+    public function tools(): \Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface
+    {
+        throw new \LogicException('Unused fixture capability.');
+    }
+
+    public function notifyOwner(\Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO $notification): void
+    {
+        throw new \LogicException('Unused fixture capability.');
+    }
+
+    public function registerRecurringJobSource(string $sourceId, \Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface $source): void
+    {
+        throw new \LogicException('Unused fixture capability.');
+    }
+
     public function registerTool(ToolRegistrationDTO $tool): void
     {
         $this->registeredTools[] = $tool;

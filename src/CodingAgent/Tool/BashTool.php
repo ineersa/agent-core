@@ -286,7 +286,7 @@ final class BashTool implements HatfieldToolProviderInterface
             throw new ToolCallException('Bash output retention requires a readable command log.', retryable: false);
         }
 
-        $retainedOutputPath = $this->payloads->saveAttachment($runId, $toolCallId, static function ($handle) use ($logPath): void {
+        $retainedOutputPath = $this->payloads->saveAttachment($runId, $this->contextAccessor->current()?->attachmentOwnerToolCallId() ?? $toolCallId, static function ($handle) use ($logPath): void {
             $source = fopen($logPath, 'rb');
             if (false === $source) {
                 throw new \RuntimeException('Failed to open Bash log for retention.');

@@ -19,6 +19,7 @@ servers. Tool availability does not bypass approval policy.
 | `view_image` | Attach an image for model inspection | JPEG, PNG, GIF, and WebP. Size and dimension limits apply. |
 | `bash` | Run a shell command in the workspace | Local permissions apply. Timeout and cancellation do not undo completed effects. |
 | `bg_status` | List, inspect logs, or stop accepted background processes | Session-scoped. Does not expose private foreground supervision. |
+| `schedule` | Schedule recurring Bash commands or code-mode scripts, or list and cancel schedules | Optional Scheduling extension, disabled by default. Enable through `hatfield extensions:setup`, select **Scheduling (built in)**, enable for the parent, save, and start a new session. While disabled, neither `schedule` nor `/schedule` is available. Results arrive automatically; schedules end when Hatfield closes. Live controller only; noninteractive. See [recurring work](background-processes.md#recurring-work-schedule) for execution and cancellation limits. |
 | `ask_human` | Ask for text, confirmation, or a choice | Waits for a human response. Cancellation is not approval. |
 | `code_mode` | Run a PHP script that calls other tools through `tool(name, arguments)` | Disabled by default (`tools.code_mode.enabled`). Raw PHP bypasses toolbox hooks. Checkout/PHAR reuse the launching PHP CLI; fused native builds need `php` on PATH. |
 | `hatfield_docs` | List and read packaged Hatfield documentation | Does not automatically discover extension-package READMEs. |
@@ -31,6 +32,9 @@ servers. Tool availability does not bypass approval policy.
 
 Tool argument schemas supplied to the model are the authoritative call format.
 The catalog above explains purpose rather than duplicating every argument.
+For agents, the current tool catalog is authoritative for availability. Use
+`schedule` only when listed. If absent, explain its enablement prerequisite;
+do not assume it is available or change settings without user approval.
 
 ## File changes and commands
 

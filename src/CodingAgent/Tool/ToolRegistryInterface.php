@@ -66,6 +66,7 @@ interface ToolRegistryInterface
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
         ?int $timeoutSeconds = null,
         ?string $extensionOwnerClass = null,
+        bool $mainOnly = false,
     ): void;
 
     /**

@@ -7,10 +7,12 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\MalformedToolResultException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
+use Symfony\Component\DependencyInjection\Attribute\AutowireServiceClosure;
 
 /**
  * Read a text file as plain UTF-8 content.
@@ -53,6 +55,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface
         private readonly ToolRuntime $toolRuntime,
         private readonly OutputCap $outputCap,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
+        #[AutowireServiceClosure(ToolPayloadStoreInterface::class)] private readonly \Closure $payloads,
     ) {
     }
 
@@ -83,9 +86,12 @@ final class ReadFileTool implements HatfieldToolProviderInterface
 
             // Pre-execution target validation moved to the ReadFileTarget
             // DTO constraint (ValidateToolCallArgumentsListener).
+            $context = $this->contextAccessor->current();
+
             return $this->outputCap->capture(
                 $this->validatedChunks($this->readSelectedContent($resolvedPath, $offset, $limit)),
-                $this->contextAccessor->current()?->runId(),
+                $context?->runId(),
+                $context?->retainOutput() ? fn (callable $write): string => ($this->payloads)()->saveAttachment($context->runId(), $context->attachmentOwnerToolCallId(), $write) : null,
             );
         });
     }

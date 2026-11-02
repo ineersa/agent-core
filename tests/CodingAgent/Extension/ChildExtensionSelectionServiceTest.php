@@ -138,6 +138,21 @@ final class ChildExtensionSelectionServiceTest extends TestCase
         $manager = new ExtensionManager(
             $appConfig,
             new class implements ExtensionApiInterface {
+                public function tools(): \Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface
+                {
+                    throw new \LogicException('Unused fixture capability.');
+                }
+
+                public function notifyOwner(\Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO $notification): void
+                {
+                    throw new \LogicException('Unused fixture capability.');
+                }
+
+                public function registerRecurringJobSource(string $sourceId, \Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface $source): void
+                {
+                    throw new \LogicException('Unused fixture capability.');
+                }
+
                 public function registerTool(\Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO $tool): void
                 {
                 }

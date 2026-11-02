@@ -47,11 +47,11 @@ final readonly class AgentToolPolicyResolver
             }
         }
 
-        // Children cannot launch descendants, so they also have no direct child
-        // to steer. Neither inherit-all nor explicit lists can reintroduce these tools.
+        // Children cannot launch descendants, steer children, or own schedules.
+        // Neither inherit-all nor explicit lists can reintroduce these tools.
         $tools = array_values(array_filter(
             $tools,
-            static fn (string $name): bool => !\in_array($name, ['subagent', 'fork', 'agent_resume', 'agent_steer'], true),
+            fn (string $name): bool => !\in_array($name, ['subagent', 'fork', 'agent_resume', 'agent_steer'], true) && !($this->toolRegistry->toolDefinition($name)->mainOnly ?? false),
         ));
 
         // Parent-only tools (hatfield_docs, …) are stripped for every child,

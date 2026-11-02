@@ -861,8 +861,12 @@ parameters:
       - SymfonyLock
     AppExtensionBuiltin:
       - AppExtensionApi
+      - SymfonyValidator
       - AppRuntimeContract
       - SymfonyYaml
+      - SymfonyScheduler
+      - SymfonyLock
+      - SymfonyTui
 
     AgentCore:
       - SymfonyLock

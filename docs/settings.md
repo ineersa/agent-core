@@ -231,3 +231,9 @@ After editing docs or packaging selection:
 ```bash
 castor docs:validate
 ```
+
+### Optional scheduling extension
+
+The optional Scheduling extension is disabled by default. Run `hatfield extensions:setup`, select **Scheduling (built in)**, enable it for the parent, save, and start a new session. No Composer installation or scheduling settings are required. Disable it through the same form. Alternatively, add `Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension` to `extensions.enabled` before starting a new session.
+
+While disabled, neither the main-only `schedule` tool nor the `/schedule` command is available; no scheduling sources or dispatch callbacks are registered. Agents must use the current tool catalog to check availability. If `schedule` is absent, explain this prerequisite rather than assuming availability or changing settings without user approval. See [recurring work](background-processes.md#recurring-work-schedule) for usage. Definitions belong to the current live controller and are not restored when Hatfield reopens.

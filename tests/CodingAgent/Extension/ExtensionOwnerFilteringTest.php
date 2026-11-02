@@ -50,6 +50,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
  */
 final class ExtensionOwnerFilteringTest extends TestCase
 {
+    use ExtensionHostCapabilitiesFixtureTrait;
+
     private const OWNER_A = 'Ext\\OwnerA';
     private const OWNER_B = 'Ext\\OwnerB';
 
@@ -186,6 +188,10 @@ final class ExtensionOwnerFilteringTest extends TestCase
                 resources: new AppResourceLocator('' !== $appConfig->cwd ? $appConfig->cwd : '/tmp'),
                 filesystem: new Filesystem(),
             ),
+            toolInvoker: $this->unusedToolInvoker(),
+            children: $this->createStub(\Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface::class),
+            recurringJobs: new \Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), ''),
+            commandBus: $this->createStub(MessageBusInterface::class),
         );
     }
 

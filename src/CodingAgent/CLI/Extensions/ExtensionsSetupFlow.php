@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
+use Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
 use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
@@ -54,7 +55,10 @@ final class ExtensionsSetupFlow
     {
         $manifest = json_decode(file_get_contents($this->resources->getAppRoot().'/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
         $installed = $this->installer->packages($this->layer, $this->app->cwd);
-        $rows = ['safe_guard' => ['label' => 'SafeGuard (built in)', 'installed' => true, 'class' => SafeGuardExtension::class]];
+        $rows = [
+            'safe_guard' => ['label' => 'SafeGuard (built in)', 'installed' => true, 'class' => SafeGuardExtension::class],
+            'scheduling' => ['label' => 'Scheduling (built in)', 'installed' => true, 'class' => SchedulingExtension::class],
+        ];
         foreach ($manifest['suggest'] ?? [] as $name => $description) {
             if (!str_starts_with($name, 'ineersa/hatfield-ext-')) {
                 continue;
@@ -74,7 +78,7 @@ final class ExtensionsSetupFlow
     public function select(string $package): void
     {
         $row = $this->packages()[$package];
-        if ('safe_guard' !== $package) {
+        if (!\in_array($package, ['safe_guard', 'scheduling'], true)) {
             // Regenerate existing loaders before dual-root loading; never update installed packages.
             $this->installer->install($this->layer, $this->app->cwd, $package);
             $this->manager->loadAutoloaders();
