@@ -16,13 +16,53 @@ use PHPUnit\Framework\TestCase;
  * Direct production-contract proof for {@see TranscriptVisualProjector} patches.
  *
  * Test thesis: ordinary pure tail stream must emit a content-only visual patch
- * (no order payload, only the streaming key touched). Structural full-history
- * reproject remains allowed for pairing/question/user changes. Existing tool
- * exchanges must stay dependency-bounded even with distant call/result sources.
+ * (no order payload, only the streaming key touched). Ordinary structural tails
+ * retain historical nodes; ambiguous pairing and replacements keep full policy.
+ * Existing exchanges stay bounded even with distant call/result sources.
  */
 final class TranscriptVisualProjectorTest extends TestCase
 {
     private const string SESSION_ID = 'visual-projector-contract';
+
+    public function testStructuralTailsRetainHistoricalNodesAndMatchFullProjection(): void
+    {
+        foreach ([10, 1000] as $size) {
+            $projector = new TranscriptVisualProjector();
+            $history = [];
+            for ($i = 0; $i < $size; ++$i) {
+                $history[] = new TranscriptBlock('history-'.$i, TranscriptBlockKindEnum::AssistantMessage, self::SESSION_ID, $i + 1, 'history');
+            }
+            $projector->replaceAll($history);
+            $nodes = new \ReflectionProperty(TranscriptVisualProjector::class, 'nodesByKey');
+            $original = $nodes->getValue($projector);
+            $meta = ['tool_call_id' => 'tail', 'tool_name' => 'read'];
+            $batchMeta = ['tool_call_id' => 'batch', 'tool_name' => 'bash'];
+            $deltas = [
+                [new TranscriptBlock('user', TranscriptBlockKindEnum::UserMessage, self::SESSION_ID, 2001, 'next turn')],
+                [new TranscriptBlock('call', TranscriptBlockKindEnum::ToolCall, self::SESSION_ID, 2002, 'read', $meta)],
+                [new TranscriptBlock('between', TranscriptBlockKindEnum::AssistantMessage, self::SESSION_ID, 2003, 'between')],
+                [new TranscriptBlock('result', TranscriptBlockKindEnum::ToolResult, self::SESSION_ID, 2004, 'done', $meta)],
+                [new TranscriptBlock('batch-call', TranscriptBlockKindEnum::ToolCall, self::SESSION_ID, 2005, 'bash', $batchMeta),
+                    new TranscriptBlock('batch-result', TranscriptBlockKindEnum::ToolResult, self::SESSION_ID, 2006, 'done', $batchMeta)],
+                [new TranscriptBlock('placeholder', TranscriptBlockKindEnum::AssistantMessage, self::SESSION_ID, 2007, '')],
+                [new TranscriptBlock('question', TranscriptBlockKindEnum::Question, self::SESSION_ID, 2008, 'Choose')],
+            ];
+            foreach ($deltas as $delta) {
+                $patch = $projector->applyChangeSet(TranscriptChangeSet::incremental($delta));
+                $this->assertFalse($patch->isFull());
+                $this->assertLessThanOrEqual(2, \count($patch->upserts));
+                $current = $nodes->getValue($projector);
+                foreach ($original as $key => $node) {
+                    $this->assertSame($node, $current[$key], 'Retained visual nodes must not be reconstructed as history grows.');
+                }
+                array_push($history, ...$delta);
+                $reference = new TranscriptVisualProjector();
+                $full = $reference->replaceAll($history);
+                $this->assertSame($full->order, $patch->order);
+                $this->assertEquals($nodes->getValue($reference), $nodes->getValue($projector));
+            }
+        }
+    }
 
     #[Test]
     public function testPureTailStreamEmitsContentOnlyPatchWithoutOrderSnapshot(): void
@@ -125,6 +165,24 @@ final class TranscriptVisualProjectorTest extends TestCase
         $second = new TranscriptBlock('second', TranscriptBlockKindEnum::ToolResult, self::SESSION_ID, 3, 'longer second result', [
             'tool_name' => 'read', 'tool_call_id' => 'competing',
         ]);
+        $duplicate = new TranscriptBlock('duplicate-call', TranscriptBlockKindEnum::ToolCall, self::SESSION_ID, 4, 'read', $call->meta);
+        $user = new TranscriptBlock('new-user', TranscriptBlockKindEnum::UserMessage, self::SESSION_ID, 5, 'next');
+        foreach ([
+            [[$call, $first], [$user, $second]],
+            [[$first], [$user, $call]],
+            [[$call], [$user, $duplicate]],
+            [[$call, $duplicate], [$user, $first]],
+        ] as [$before, $arrival]) {
+            $candidate = new TranscriptVisualProjector();
+            $candidate->replaceAll($before);
+            $candidate->applyChangeSet(TranscriptChangeSet::incremental($arrival));
+            $reference = new TranscriptVisualProjector();
+            $reference->replaceAll([...$before, ...$arrival]);
+            $nodes = new \ReflectionProperty(TranscriptVisualProjector::class, 'nodesByKey');
+            $this->assertEquals($nodes->getValue($reference), $nodes->getValue($candidate), 'Fallback must not retain partially planned nodes.');
+            $order = new \ReflectionProperty(TranscriptVisualProjector::class, 'nodeOrder');
+            $this->assertSame($order->getValue($reference), $order->getValue($candidate));
+        }
         $projector->replaceAll([$call, $first, $second]);
         $first = $first->with(meta: [...$first->meta, 'is_error' => true]);
         $patch = $projector->applyChangeSet(TranscriptChangeSet::incremental([$first]));
@@ -138,8 +196,8 @@ final class TranscriptVisualProjectorTest extends TestCase
         $snapshot = new \ReflectionProperty($projector, 'nodesByKey')->getValue($projector);
         $this->assertEquals($fresh->nodes, array_values($snapshot));
 
-        // Full replacement remains the explicit history/reorder path, and a result
-        // arriving later is paired by the structural policy rather than this fast path.
+        // Full replacement remains the explicit history/reorder path; an ordinary
+        // later result uses the bounded structural tail path.
         $reordered = $projector->replaceAll([$second, $call, $first]);
         $this->assertTrue($reordered->isFull());
         $projector->replaceAll([$call]);

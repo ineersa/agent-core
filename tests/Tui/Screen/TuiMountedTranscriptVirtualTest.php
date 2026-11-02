@@ -51,6 +51,34 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
 {
     private const string SESSION_ID = 'virtual-mounted-transcript';
 
+    public function testOrdinaryTailExchangesRenderLikeFreshMountedHistory(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID, columns: 120, rows: 60);
+        $harness->screen()->setWorkingVisible(false);
+        $history = [new TranscriptBlock('initial', TranscriptBlockKindEnum::AssistantMessage, self::SESSION_ID, 1, 'Retained history')];
+        $harness->screen()->setTranscriptBlocks($history);
+        $meta = ['tool_call_id' => 'mounted-tail', 'tool_name' => 'bash', 'arguments' => ['command' => 'printf hello']];
+        $batch = [...$meta, 'tool_call_id' => 'mounted-batch'];
+        $deltas = [
+            [new TranscriptBlock('next-user', TranscriptBlockKindEnum::UserMessage, self::SESSION_ID, 2, 'Next turn')],
+            [new TranscriptBlock('tail-call', TranscriptBlockKindEnum::ToolCall, self::SESSION_ID, 3, 'bash', $meta)],
+            [new TranscriptBlock('intervening', TranscriptBlockKindEnum::AssistantMessage, self::SESSION_ID, 4, 'While waiting')],
+            [new TranscriptBlock('tail-result', TranscriptBlockKindEnum::ToolResult, self::SESSION_ID, 5, 'unique-tail-output', [...$meta, 'result' => 'unique-tail-output'])],
+            [new TranscriptBlock('batch-call', TranscriptBlockKindEnum::ToolCall, self::SESSION_ID, 6, 'bash', $batch),
+                new TranscriptBlock('batch-result', TranscriptBlockKindEnum::ToolResult, self::SESSION_ID, 7, 'unique-batch-output', [...$batch, 'result' => 'unique-batch-output'])],
+        ];
+        foreach ($deltas as $delta) {
+            $harness->screen()->applyTranscriptChangeSet(TranscriptChangeSet::incremental($delta));
+            array_push($history, ...$delta);
+            $reference = new VirtualTuiHarness(sessionId: self::SESSION_ID, columns: 120, rows: 60);
+            $reference->screen()->setWorkingVisible(false);
+            $reference->screen()->setTranscriptBlocks($history);
+            $this->assertSame($reference->plainScreenText(), $harness->plainScreenText());
+        }
+        $this->assertSame(1, substr_count($harness->plainScreenText(), 'unique-tail-output'));
+        $this->assertSame(1, substr_count($harness->plainScreenText(), 'unique-batch-output'));
+    }
+
     public function testCompletedSubagentCardAndHandoffRenderInMountedTranscript(): void
     {
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID, columns: 120, rows: 60);

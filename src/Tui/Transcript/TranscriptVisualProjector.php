@@ -127,8 +127,18 @@ final class TranscriptVisualProjector
         // exchanges with unchanged identity can update without rescanning history.
         $inPlaceToolIds = $this->findInPlaceToolUpdates($changes);
 
+        $tailOnly = [] === $changes->removals;
+        foreach ($changes->upserts as $block) {
+            $tailOnly = $tailOnly && !isset($this->blocksById[$block->id]);
+        }
+        $previousTail = [] === $this->blockOrder ? null : $this->blocksById[$this->blockOrder[array_key_last($this->blockOrder)]];
+
         // Mutate canonical state first; dependency expansion uses post-mutation indexes.
         $this->applyRemovalsAndUpsertsToCanonical($changes);
+
+        if ($tailOnly && null !== ($patch = $this->projectTail($changes->upserts, $previousTail))) {
+            return $patch;
+        }
 
         // Neighbors cover separators/placeholders; exchange sources are resolved by
         // their existing visual dependency mapping, even when separated in history.
@@ -369,6 +379,107 @@ final class TranscriptVisualProjector
         return $expanded;
     }
 
+    /**
+     * Plan ordinary appended rows and distant result pairing without rebuilding
+     * retained nodes. All eligibility checks precede visual-state mutation.
+     * Structural patches still carry the complete O(order) key list.
+     *
+     * @param list<TranscriptBlock> $blocks
+     */
+    private function projectTail(array $blocks, ?TranscriptBlock $previousTail): ?TranscriptVisualPatch
+    {
+        if (\count($this->nodeOrder) !== \count($this->nodesByKey)) {
+            return null; // Duplicate visual identities require full pairing policy.
+        }
+        $revision = $this->presentationRevision();
+        $planned = [];
+        $mapping = [];
+        $consumedResults = [];
+        $consumedCalls = [];
+        $removals = [];
+        if (null !== $previousTail && isset($this->nodesByKey[$previousTail->id]) && $this->factory->shouldSuppressEmptyAssistantPlaceholder($previousTail, $blocks[0] ?? null)) {
+            $removals[] = $previousTail->id;
+        }
+        $visible = \count($this->nodesByKey) - (int) isset($this->nodesByKey[self::WELCOME_KEY]) - \count($removals) > 0;
+        foreach ($blocks as $index => $block) {
+            $callId = $this->toolCallIdMeta($block);
+            $key = TranscriptBlockKindEnum::ToolCall === $block->kind ? $this->stableToolVisualKey($block) : $block->id;
+            if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
+                if (isset($this->nodesByKey[$key]) || isset($planned[$key])) {
+                    return null;
+                }
+                foreach ($this->toolResultIdsByCallId[$callId ?? ''] ?? [] as $resultId) {
+                    if ($this->blockIndex[$resultId] < $this->blockIndex[$block->id]) {
+                        return null; // Result-before-call and duplicate histories keep full policy.
+                    }
+                }
+            }
+            if (null !== $callId && \count($this->toolResultIdsByCallId[$callId] ?? []) > 1) {
+                return null;
+            }
+            if ($this->factory->isTranscriptWidgetSuppressed($block)
+                || $this->factory->shouldSuppressEmptyAssistantPlaceholder($block, $blocks[$index + 1] ?? null)) {
+                continue;
+            }
+            if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
+                $callKey = 'exchange:'.$callId;
+                $callNode = $planned[$callKey] ?? $this->nodesByKey[$callKey] ?? null;
+                if (null !== $callNode && TranscriptBlockKindEnum::ToolCall === $callNode->primary?->kind) {
+                    $call = $callNode->primary;
+                    $match = $this->factory->findCombinableToolResultForCall($call, [$callId => [$block]], [], []);
+                    if (null !== $match) {
+                        $planned[$callKey] = new TranscriptVisualNode($callKey, TranscriptVisualNode::KIND_TOOL_EXCHANGE, $call, $match, $revision);
+                        $mapping[$block->id] = $callKey;
+                        $this->factory->markToolResultConsumedForExchange($match, $consumedResults, $consumedCalls);
+                    }
+                }
+                if ($this->factory->shouldSkipStandaloneToolResultInList($block, $consumedCalls)) {
+                    continue;
+                }
+            }
+            if ($visible && TranscriptBlockKindEnum::UserMessage === $block->kind) {
+                $separator = 'sep-before:'.$block->id;
+                $planned[$separator] = new TranscriptVisualNode($separator, TranscriptVisualNode::KIND_SEPARATOR, null, null, $revision);
+            }
+            $match = null;
+            if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
+                $results = array_map(fn (string $id): TranscriptBlock => $this->blocksById[$id], $this->toolResultIdsByCallId[$callId ?? ''] ?? []);
+                $match = $this->factory->findCombinableToolResultForCall($block, [$callId ?? '' => $results], $consumedResults, $consumedCalls);
+            }
+            $planned[$key] = new TranscriptVisualNode($key, null !== $match ? TranscriptVisualNode::KIND_TOOL_EXCHANGE : $this->classifyStandalone($block), $block, $match, $revision);
+            $mapping[$block->id] = $key;
+            if (null !== $match) {
+                $mapping[$match->id] = $key;
+                $this->factory->markToolResultConsumedForExchange($match, $consumedResults, $consumedCalls);
+            }
+            $visible = true;
+        }
+        if ([] === $planned && [] === $this->nodesByKey) {
+            return null;
+        }
+        if ([] !== $planned && isset($this->nodesByKey[self::WELCOME_KEY])) {
+            $removals[] = self::WELCOME_KEY;
+        }
+        foreach ($removals as $key) {
+            unset($this->nodesByKey[$key], $this->visualKeyByPrimaryId[$key]);
+        }
+        if ([] !== $removals) {
+            $removed = array_fill_keys($removals, true);
+            $this->nodeOrder = array_values(array_filter($this->nodeOrder, static fn (string $key): bool => !isset($removed[$key])));
+        }
+        foreach ($planned as $key => $node) {
+            if (!isset($this->nodesByKey[$key])) {
+                $this->nodeOrder[] = $key;
+            }
+            $this->nodesByKey[$key] = $node;
+        }
+        foreach ($mapping as $id => $key) {
+            $this->visualKeyByPrimaryId[$id] = $key;
+        }
+
+        return TranscriptVisualPatch::structural(array_values($planned), $removals, $this->nodeOrder);
+    }
+
     private function fullReproject(): TranscriptVisualPatch
     {
         $revision = $this->presentationRevision();
@@ -522,8 +633,8 @@ final class TranscriptVisualProjector
         }
 
         if ($needsStructuralScan) {
-            // Pairing/suppression changes and tool arrival still require structural
-            // policy. Stable existing exchanges and ordinary streams bypass this scan.
+            // Replacements and ambiguous arrivals retain full structural policy.
+            // Ordinary tails, stable exchanges and streams bypass this scan.
             $beforeKeys = $this->nodeOrder;
             $beforeNodes = $this->nodesByKey;
             $full = $this->fullReproject();
