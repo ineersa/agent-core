@@ -32,8 +32,8 @@ the model. Cancellation and expiry do not stop work that has already started.
 
 Schedules require the process-backed controller. Definitions are not restored on
 reopening Hatfield, and no work runs while it is closed. Changes reach Symfony's
-schedule through a one-second refresh. Waiting schedules do not occupy tool workers;
-running invocations use the ordinary tool pool and can overlap.
+schedule through a one-second refresh. Waiting schedules do not occupy execution
+Fibers; running invocations share the cooperative tool/agent worker and can overlap.
 
 Results arrive through automatic notifications after normal output processing.
 Scheduled execution is noninteractive: operations requiring approval or human input
@@ -48,7 +48,10 @@ as stoppable work in `/bg`; use execution timeouts or cancel the owning run.
 The card freezes at acknowledgment; results and saved diagnostics arrive as agent notifications, not human input or another call result.
 
 Detachment preserves the 1,800-second default deadline and 3,600-second maximum.
-Hosts occupy tool consumers; saturation queues all tools, including inspection. No control worker is reserved.
+Suspended hosts retain a Fiber and subprocess resources, not an exclusive consumer slot.
+The shared worker has no handler-admission concurrency cap. Cooperative waits let
+sibling tools progress, but synchronous filesystem or CPU work can still block the
+shared thread. Memory-limit recycling remains enabled.
 
 Cooperative stop targets one invocation, not its parent or siblings; `stopping` lasts until terminal evidence arrives.
 Controller restart or shutdown fences old hosts and parks unresolved delivery.
