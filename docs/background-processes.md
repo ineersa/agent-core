@@ -17,6 +17,15 @@ Models can set `backgrounded: true` on these five tools to request background la
 
 ## Recurring work: `schedule`
 
+The optional Scheduling extension is disabled by default. Run
+`hatfield extensions:setup`, select **Scheduling (built in)**, enable it for the
+parent, save, and start a new session. While disabled, neither the `schedule`
+tool nor the `/schedule` command is available.
+
+For agents, the current tool catalog determines availability. Call `schedule`
+only when it is listed. If it is absent, explain the enablement prerequisite;
+do not assume availability or change settings without user approval.
+
 Use `schedule` with `action: create`, `tool: bash` or `code_mode`, the target's
 existing `arguments`, and `every` to repeat work during this live session.
 Symfony accepts seconds as a string (`"60"`), ISO 8601 durations (`"PT5M"`), and
