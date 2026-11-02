@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
+use Amp\TimeoutCancellation;
 use Ineersa\CodingAgent\Extension\ExtensionExecBridge;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+
+use function Amp\async;
+use function Amp\Socket\listen;
 
 /**
  * Tests for ExtensionExecBridge — the Symfony Process-backed implementation
@@ -24,6 +29,76 @@ final class ExtensionExecBridgeTest extends TestCase
     protected function setUp(): void
     {
         $this->execBridge = new ExtensionExecBridge();
+    }
+
+    public static function cooperativeCases(): iterable
+    {
+        yield 'normal held command' => [false, false];
+        yield 'termination grace' => [true, false];
+        yield 'forced termination after grace' => [true, true];
+    }
+
+    #[DataProvider('cooperativeCases')]
+    public function testHeldCommandAndTerminationGraceYield(bool $cancel, bool $force): void
+    {
+        if (!\function_exists('pcntl_signal')) {
+            $this->markTestSkipped('Native TERM readiness requires pcntl.');
+        }
+        $server = listen('127.0.0.1:0');
+        $token = new class implements ToolCancellationTokenInterface {
+            public bool $cancelled = false;
+
+            public function isCancellationRequested(): bool
+            {
+                return $this->cancelled;
+            }
+        };
+        $code = <<<'PHP'
+$c = stream_socket_client($argv[1]);
+pcntl_sigprocmask(SIG_BLOCK, [SIGTERM]);
+fwrite($c, "READY\n");
+if ($argv[2] === 'cancel') {
+    pcntl_sigwaitinfo([SIGTERM]);
+    fwrite($c, "TERM\n");
+}
+fgets($c);
+echo "released";
+fwrite(STDERR, "captured-error");
+exit(23);
+PHP;
+        $future = async(fn () => $this->execBridge->exec(\PHP_BINARY, ['-r', $code, 'tcp://'.$server->getAddress()->toString(), $cancel ? 'cancel' : 'normal'], new ExecOptionsDTO(cancellationToken: $token, timeout: 8)));
+        $socket = null;
+        try {
+            $socket = $server->accept(new TimeoutCancellation(2));
+            $this->assertNotNull($socket);
+            $this->assertSame("READY\n", $socket->read(new TimeoutCancellation(2)));
+            $this->assertFalse($future->isComplete());
+            if ($cancel) {
+                $token->cancelled = true;
+                $this->assertSame("TERM\n", $socket->read(new TimeoutCancellation(2)));
+                // Child has received TERM but still waits for release: the
+                // sibling must run inside the bridge's termination grace.
+                $this->assertFalse(async(static fn () => $future->isComplete())->await(new TimeoutCancellation(2)));
+            }
+            if (!$force) {
+                $socket->write("release\n");
+            }
+            $result = $future->await(new TimeoutCancellation(7));
+            $this->assertSame($cancel, $result->cancelled);
+            $this->assertFalse($result->timedOut);
+            if (!$force) {
+                $this->assertSame('released', $result->stdout);
+                $this->assertSame('captured-error', $result->stderr);
+                $this->assertSame(23, $result->exitCode);
+            } else {
+                $this->assertNotSame(23, $result->exitCode);
+            }
+        } finally {
+            $socket?->close();
+            $server->close();
+            $token->cancelled = true;
+            $future->await(new TimeoutCancellation(7));
+        }
     }
 
     public function testExecCapturesStdout(): void

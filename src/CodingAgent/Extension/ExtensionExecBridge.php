@@ -7,8 +7,13 @@ namespace Ineersa\CodingAgent\Extension;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+use Symfony\Component\Process\Exception\LogicException as ProcessLogicException;
 use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeException;
 use Symfony\Component\Process\Process;
+
+use function Amp\delay;
 
 /**
  * App-internal bridge implementing ExecInterface via Symfony Process.
@@ -28,7 +33,11 @@ use Symfony\Component\Process\Process;
 final readonly class ExtensionExecBridge implements ExecInterface
 {
     private const int DEFAULT_GRACE_SECONDS = 5;
-    private const int POLL_INTERVAL_MICROS = 50_000;
+    private const float POLL_INTERVAL_SECONDS = 0.05;
+
+    public function __construct(private LoggerInterface $logger = new NullLogger())
+    {
+    }
 
     public function exec(string $command, array $args = [], ?ExecOptionsDTO $options = null): ExecResultDTO
     {
@@ -68,20 +77,20 @@ final readonly class ExtensionExecBridge implements ExecInterface
                 if (null !== $options->cancellationToken && $options->cancellationToken->isCancellationRequested()) {
                     // Record reason before stop(): signaling failures must not erase it.
                     $cancelled = true;
-                    $process->stop(self::DEFAULT_GRACE_SECONDS);
+                    $this->stopCooperatively($process);
                     break;
                 }
 
                 if (null !== $deadlineNs && hrtime(true) >= $deadlineNs) {
                     // Record reason before stop(): signaling failures must not erase it.
                     $timedOut = true;
-                    $process->stop(self::DEFAULT_GRACE_SECONDS);
+                    $this->stopCooperatively($process);
                     break;
                 }
 
-                usleep(self::POLL_INTERVAL_MICROS);
+                delay(self::POLL_INTERVAL_SECONDS);
             }
-        } catch (ProcessRuntimeException $e) {
+        } catch (ProcessRuntimeException|ProcessLogicException $e) {
             return new ExecResultDTO(
                 stdout: $this->safeOutput($process),
                 stderr: $this->safeErrorOutput($process).$e->getMessage(),
@@ -89,6 +98,11 @@ final readonly class ExtensionExecBridge implements ExecInterface
                 timedOut: $timedOut,
                 cancelled: $cancelled,
             );
+        } finally {
+            // Also reap owned work if supervision or signalling fails.
+            if ($process->isRunning()) {
+                $process->stop(0);
+            }
         }
 
         $exitCode = $process->getExitCode();
@@ -105,11 +119,48 @@ final readonly class ExtensionExecBridge implements ExecInterface
         );
     }
 
+    private function stopCooperatively(Process $process): void
+    {
+        // Keep Symfony's platform-specific signalling and final cleanup, but do
+        // not let its synchronous grace-period polling block sibling Fibers.
+        $this->signalOwnedProcess($process, 15);
+        $deadline = hrtime(true) + self::DEFAULT_GRACE_SECONDS * 1_000_000_000;
+        while ($process->isRunning() && hrtime(true) < $deadline) {
+            delay(self::POLL_INTERVAL_SECONDS);
+        }
+        if ($process->isRunning()) {
+            $this->signalOwnedProcess($process, 9);
+            while ($process->isRunning()) {
+                delay(self::POLL_INTERVAL_SECONDS);
+            }
+        }
+        $process->stop(0);
+    }
+
+    private function signalOwnedProcess(Process $process, int $signal): void
+    {
+        try {
+            $process->signal($signal);
+        } catch (ProcessRuntimeException|ProcessLogicException $exception) {
+            if ($process->isRunning()) {
+                throw $exception;
+            }
+            // Symfony's public signal() throws when exit wins the race. Keep
+            // the observed completion rather than replacing it with an error.
+            $this->logger->debug('extension_exec.signal_after_exit', [
+                'component' => 'extension_exec',
+                'event_type' => 'extension_exec.signal_after_exit',
+                'signal' => $signal,
+                'exception' => $exception::class,
+            ]);
+        }
+    }
+
     private function safeOutput(Process $process): string
     {
         try {
             return $process->getOutput();
-        } catch (\Symfony\Component\Process\Exception\LogicException) {
+        } catch (ProcessLogicException) {
             return '';
         }
     }
@@ -118,7 +169,7 @@ final readonly class ExtensionExecBridge implements ExecInterface
     {
         try {
             return $process->getErrorOutput();
-        } catch (\Symfony\Component\Process\Exception\LogicException) {
+        } catch (ProcessLogicException) {
             return '';
         }
     }
