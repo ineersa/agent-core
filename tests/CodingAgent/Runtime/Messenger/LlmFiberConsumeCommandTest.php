@@ -52,6 +52,7 @@ use Symfony\Component\Messenger\Event\WorkerRunningEvent;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\RoutableMessageBus;
+use Symfony\Component\Messenger\Transport\Receiver\KeepaliveReceiverInterface;
 use Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 use Symfony\Contracts\Service\ServiceProviderInterface;
@@ -444,16 +445,19 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
                     --$this->active;
                 }
 
-                return $envelope;
+                // Payload middleware can restore a different message object.
+                // Settlement must use the delivery callback, not object lookup.
+                return new Envelope(clone $envelope->getMessage(), array_merge(...array_values($envelope->all())));
             }
         };
         $receivers = [];
         $factories = [];
         $names = 'tool' === $role ? ['tool', 'agent'] : ['llm'];
         foreach ($names as $name) {
-            $receiver = new class($name, intdiv($total, \count($names))) implements ReceiverInterface {
+            $receiver = new class($name, intdiv($total, \count($names))) implements KeepaliveReceiverInterface {
                 /** @var list<string> */
                 public array $acknowledged = [];
+                public int $keepalives = 0;
                 private int $next = 0;
 
                 public function __construct(private string $name, private int $total)
@@ -472,6 +476,11 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
                     $this->acknowledged[] = $envelope->getMessage()->id;
                 }
 
+                public function keepalive(Envelope $envelope, ?int $seconds = null): void
+                {
+                    ++$this->keepalives;
+                }
+
                 public function reject(Envelope $envelope): void
                 {
                     Assert::fail('Blocked handler was rejected: '.$envelope->getMessage()->id);
@@ -482,6 +491,10 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         }
         $dispatcher = new EventDispatcher();
         $handled = [];
+        $worker = null;
+        $dispatcher->addListener(WorkerStartedEvent::class, static function (WorkerStartedEvent $event) use (&$worker): void {
+            $worker = $event->getWorker();
+        });
         $dispatcher->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use (&$handled): void {
             $handled[] = $event->getEnvelope()->getMessage()->id;
         });
@@ -505,6 +518,11 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         $this->assertEqualsCanonicalizing($entered, $handled);
         $acknowledged = array_merge(...array_values(array_map(static fn ($receiver): array => $receiver->acknowledged, $receivers)));
         $this->assertEqualsCanonicalizing($entered, $acknowledged);
+        $this->assertNotNull($worker);
+        $worker->keepalive(1);
+        foreach ($receivers as $receiver) {
+            $this->assertSame(0, $receiver->keepalives, 'Settled deliveries must no longer receive keepalives.');
+        }
         $this->assertStringContainsString('Fiber concurrency '.('tool' === $role ? 'unlimited' : '6'), $output->fetch());
     }
 
