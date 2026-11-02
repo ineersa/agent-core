@@ -16,8 +16,10 @@ final class BackgroundWorkWidget extends AbstractWidget
 {
     /** @var list<array{kind: string, label: string, status: string, needs_input?: bool}> */
     private array $rows = [];
-    private int $editorRevision = -1;
-    private int $footerRevision = -1;
+    /** @var array<int, AbstractWidget> */
+    private array $overlays = [];
+    /** @var list<int> */
+    private array $reservedRevisions = [];
 
     public function __construct(private readonly TuiTheme $theme, private readonly AbstractWidget $editor, private readonly AbstractWidget $footer)
     {
@@ -35,12 +37,24 @@ final class BackgroundWorkWidget extends AbstractWidget
     public function beforeRender(): void
     {
         // Native cache keys include terminal dimensions, but not sibling revisions.
-        // Reconsider the budget when multiline editing or footer content changes.
-        $editor = $this->editor->getRenderRevision();
-        $footer = $this->footer->getRenderRevision();
-        if ($editor !== $this->editorRevision || $footer !== $this->footerRevision) {
-            $this->editorRevision = $editor;
-            $this->footerRevision = $footer;
+        // Reconsider the budget when editing, footer or overlay content changes.
+        $revisions = array_map(static fn (AbstractWidget $widget): int => $widget->getRenderRevision(), [$this->editor, $this->footer, ...array_values($this->overlays)]);
+        if ($revisions !== $this->reservedRevisions) {
+            $this->reservedRevisions = $revisions;
+            $this->invalidate();
+        }
+    }
+
+    public function reserveOverlay(AbstractWidget $widget): void
+    {
+        $this->overlays[spl_object_id($widget)] = $widget;
+        $this->invalidate();
+    }
+
+    public function releaseOverlay(AbstractWidget $widget): void
+    {
+        if (isset($this->overlays[spl_object_id($widget)])) {
+            unset($this->overlays[spl_object_id($widget)]);
             $this->invalidate();
         }
     }
@@ -48,7 +62,7 @@ final class BackgroundWorkWidget extends AbstractWidget
     public function render(RenderContext $context): array
     {
         $reserved = 2; // Editor and footer separators remain visible.
-        foreach ([$this->editor, $this->footer] as $widget) {
+        foreach ([$this->editor, $this->footer, ...array_values($this->overlays)] as $widget) {
             $reserved += \count($widget->getRenderCache($context->getColumns(), $context->getRows()) ?? $widget->render($context));
         }
         $limit = max(0, min(5, $context->getRows() - $reserved));

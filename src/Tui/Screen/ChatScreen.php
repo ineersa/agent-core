@@ -574,7 +574,7 @@ final class ChatScreen
      * restores everything in original order so the overlay renders
      * directly below the editor:
      *
-     *   … → editor → overlay → footerSep → footer
+     *   … → editor → overlay → backgroundRows → footerSep → footer
      *
      * Used by completion menus that should appear below the prompt
      * while the editor keeps focus (unlike question/picker overlays
@@ -591,12 +591,15 @@ final class ChatScreen
         // Remove everything below the editor (reverse mount order).
         $this->tui->remove($this->footerWidget);
         $this->tui->remove($this->footerSepWidget);
+        $this->tui->remove($this->backgroundRowsWidget);
 
         // Add the overlay (appended after the editor).
         $this->tui->add($widget);
         $this->inputOverlays[spl_object_id($widget)] = true;
 
-        // Restore footer widgets in original mount order.
+        // Reserve overlay height before restoring the below-editor tail.
+        $this->backgroundRowsWidget->reserveOverlay($widget);
+        $this->tui->add($this->backgroundRowsWidget);
         $this->tui->add($this->footerSepWidget);
         $this->tui->add($this->footerWidget);
     }
@@ -611,6 +614,7 @@ final class ChatScreen
     public function removeOverlay(AbstractWidget $widget): void
     {
         $this->tui?->remove($widget);
+        $this->backgroundRowsWidget->releaseOverlay($widget);
         unset($this->inputOverlays[spl_object_id($widget)]);
     }
 

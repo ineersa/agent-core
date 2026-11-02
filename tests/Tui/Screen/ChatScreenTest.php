@@ -133,6 +133,40 @@ class ChatScreenTest extends TestCase
         $this->assertSame('', $harness->terminal()->consumeOutput());
     }
 
+    public function testAfterEditorOverlayStaysBeforeBackgroundRowsAndReservesItsHeight(): void
+    {
+        $harness = new VirtualTuiHarness(columns: 48, rows: 30, sessionId: 'overlay');
+        $screen = $harness->screen();
+        $screen->promptEditor()->setText('EDITOR_ANCHOR');
+        $rows = [];
+        foreach (range(1, 4) as $index) {
+            $rows[] = ['kind' => 'agent', 'label' => 'ACTIVE_'.$index, 'status' => 'running'];
+        }
+        $screen->setBackgroundRows($rows);
+        $overlay = new TextWidget(text: "COMPLETION_ONE\nCOMPLETION_TWO");
+        $screen->insertOverlayAfterEditor($overlay);
+        foreach ([30, 10] as $height) {
+            $harness->terminal()->simulateResize(48, $height);
+            $text = $harness->plainScreenText();
+            foreach (['EDITOR_ANCHOR', 'COMPLETION_ONE', 'COMPLETION_TWO', 'ACTIVE_1', 'session overlay'] as $anchor) {
+                $this->assertStringContainsString($anchor, $text);
+            }
+            $this->assertLessThan(strpos($text, 'COMPLETION_ONE'), strpos($text, 'EDITOR_ANCHOR'));
+            $this->assertLessThan(strpos($text, 'ACTIVE_1'), strpos($text, 'COMPLETION_TWO'));
+            $this->assertLessThan(strpos($text, 'session overlay'), strpos($text, 'ACTIVE_1'));
+        }
+        $overlay->setText("COMPLETION_ONE\nCOMPLETION_TWO\nCOMPLETION_THREE");
+        $text = $harness->plainScreenText();
+        $this->assertStringContainsString('EDITOR_ANCHOR', $text);
+        $this->assertStringContainsString('COMPLETION_THREE', $text);
+        $this->assertStringContainsString('+4 more', $text);
+        $screen->removeOverlay($overlay);
+        $text = $harness->plainScreenText();
+        $this->assertStringNotContainsString('COMPLETION_', $text);
+        $this->assertStringContainsString('ACTIVE_4', $text);
+        $this->assertStringNotContainsString('more', $text);
+    }
+
     public function testMixedBackgroundRowsAtNarrowTerminalKeepEditorUsable(): void
     {
         $harness = new VirtualTuiHarness(columns: 48, rows: 20);

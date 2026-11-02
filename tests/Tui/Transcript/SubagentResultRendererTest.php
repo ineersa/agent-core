@@ -71,6 +71,7 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('╰─', $joined);
         $this->assertStringContainsString('scout', $joined);
         $this->assertStringContainsString('[running]', $joined);
+        $this->assertStringNotContainsString('backgrounded', $joined);
         $this->assertStringContainsString('Task inspect runtime events', $joined);
         $this->assertStringContainsString('agent_01HX', $joined);
         $this->assertStringContainsString('3 LLM steps', $joined);

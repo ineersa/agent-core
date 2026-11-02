@@ -27,7 +27,6 @@ final class SubagentProgressCardWidget extends AbstractWidget
         private readonly SubagentProgressSnapshotDTO $progress,
         private readonly bool $streaming = false,
         private readonly ?string $expandHandoffHint = null,
-        private readonly bool $backgrounded = false,
     ) {
     }
 
@@ -147,7 +146,7 @@ final class SubagentProgressCardWidget extends AbstractWidget
     ): string {
         $badge = $this->statusBadgeLabel($status);
         $glyph = $this->statusGlyph($status);
-        $parts = [\sprintf('%s %s [%s%s]', $glyph, $agentName, $badge, $this->backgrounded ? ', backgrounded' : '')];
+        $parts = [\sprintf('%s %s [%s]', $glyph, $agentName, $badge)];
 
         if (null !== $progress->cacheReadHitPercentage) {
             $parts[] = \sprintf('↻ %.0f%%', $progress->cacheReadHitPercentage);
