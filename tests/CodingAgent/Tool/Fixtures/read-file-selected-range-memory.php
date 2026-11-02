@@ -72,7 +72,7 @@ if (false === $archiveBytes) {
 $before = memory_get_usage(true);
 $accessor = new StackToolExecutionContextAccessor();
 $cap = new OutputCap(new OutputCapConfig(storageDir: $directory.'/output-cap'), new LockFactory(new FlockStore($directory)), new NullLogger());
-$tool = new ReadFileTool(new ToolRuntime($accessor), $cap, $accessor);
+$tool = new ReadFileTool(new ToolRuntime($accessor), $cap, $accessor, static fn () => throw new LogicException('Unused retention capability.'));
 $toolbox = ToolValidationHarness::toolbox($tool);
 $result = (string) $toolbox->execute(new ToolCall('read-memory', 'read', [
     'path' => $path,

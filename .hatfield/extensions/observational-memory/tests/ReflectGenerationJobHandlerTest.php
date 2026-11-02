@@ -565,6 +565,21 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
         $cwd = $this->projectDir;
 
         return new class($cwd, $settings, $onAgentRun) implements ExtensionApiInterface {
+            public function tools(): \Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function notifyOwner(\Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO $notification): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function registerRecurringJobSource(string $sourceId, \Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface $source): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
             public function __construct(
                 private readonly string $cwd,
                 private readonly OmSettings $settings,

@@ -136,6 +136,27 @@ final readonly class SessionToolPayloadStore implements ToolPayloadStoreInterfac
         });
     }
 
+    /** @return list<array{path: string, byte_count: int}> */
+    public function attachmentReferences(string $runId, string $toolCallId): array
+    {
+        return $this->withStorage($runId, function () use ($runId, $toolCallId): array {
+            $directory = \dirname($this->root($runId)).'/tool-attachments/'.hash('sha256', $toolCallId);
+            if (is_link($directory) || is_link(\dirname($directory))) {
+                throw new ToolPayloadException('Tool attachment directory cannot be a symbolic link.');
+            }
+            $references = [];
+            $paths = glob($directory.'/*.txt');
+            foreach (false === $paths ? [] : $paths as $path) {
+                if (is_link($path) || !is_file($path)) {
+                    throw new ToolPayloadException('Invalid retained tool attachment.');
+                }
+                $references[] = ['path' => $path, 'byte_count' => filesize($path)];
+            }
+
+            return $references;
+        });
+    }
+
     public function read(ToolPayloadReferenceDTO $reference): ExecuteToolCall|ExecuteShellToolCall|ToolCallResult|DeferredToolCompletionCorrelation
     {
         $this->validate($reference);

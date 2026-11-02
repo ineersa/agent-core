@@ -292,6 +292,21 @@ final class ObserveBoundaryThresholdDispatchTest extends IsolatedKernelTestCase
         $cwd = $this->projectDir;
 
         return new class($cwd, $events, $onAgentRun, $onDispatch, $reflectAfter) implements ExtensionApiInterface {
+            public function tools(): \Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function notifyOwner(\Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO $notification): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function registerRecurringJobSource(string $sourceId, \Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface $source): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
             public function __construct(
                 private readonly string $cwd,
                 private readonly array $events,

@@ -56,6 +56,7 @@ final readonly class ToolDefinitionDTO
         public readonly ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
         public readonly ?int $timeoutSeconds = null,
         public readonly ?string $extensionOwnerClass = null,
+        public readonly bool $mainOnly = false,
     ) {
     }
 }
