@@ -446,9 +446,9 @@ final class ToolExecutor implements ToolExecutorInterface
             // never invoke the failing processor again for the fallback result.
             $message = $exception instanceof \JsonException && \JSON_ERROR_UTF8 === $exception->getCode()
                 ? ToolResultText::FAILURE_MESSAGE
-                : ($exception instanceof ToolCallException
+                : (ToolResultText::failureMessage($exception->getMessage()) ?? ($exception instanceof ToolCallException
                     ? DiagnosticMessageSanitizer::sanitize($exception->getMessage())
-                    : (ToolResultText::failureMessage($exception->getMessage()) ?? 'Tool call failed: its result could not be processed.'));
+                    : 'Tool call failed: its result could not be processed.'));
             $failureDetails = [
                 'retryable' => false,
                 'error_type' => $exception::class,

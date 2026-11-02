@@ -10,8 +10,10 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Domain\Tool\ToolResultText;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
 use Ineersa\CodingAgent\Tool\Arguments\ReadFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
@@ -40,6 +42,45 @@ use Symfony\Component\Validator\ValidatorBuilder;
 
 final class ToolExecutorTest extends TestCase
 {
+    public function testMalformedProcessorExceptionIsRememberedWithoutRepeatingExecution(): void
+    {
+        $call = ToolCallBuilder::create('malformed-processor')
+            ->withToolName('read')
+            ->withRunId('processor-run')
+            ->build();
+        $toolbox = $this->createMock(ToolboxInterface::class);
+        $toolbox->expects($this->once())->method('execute')->willReturn(new SymfonyToolResult(
+            new SymfonyToolCall(id: 'malformed-processor', name: 'read', arguments: []),
+            'completed handler output',
+        ));
+        $processor = $this->createMock(ToolResultProcessorInterface::class);
+        $processor->expects($this->once())->method('process')->willThrowException(new ToolCallException("bad \xFF"));
+        $accessor = new StackToolExecutionContextAccessor();
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            maxParallelism: 4,
+            resultStore: new ToolExecutionResultStore(),
+            toolbox: $toolbox,
+            contextAccessor: $accessor,
+            toolResultProcessors: [$processor],
+        );
+
+        $result = $executor->execute($call);
+
+        $this->assertTrue($result->isError);
+        $this->assertFalse($result->details['retryable']);
+        $this->assertSame(ToolCallException::class, $result->details['error_type']);
+        $this->assertSame(ToolResultText::FAILURE_MESSAGE, $result->content[0]['text']);
+        $this->assertTrue(ToolResultText::isValid($result->content));
+        $this->assertTrue(ToolResultText::isValid($result->details));
+        $this->assertNull($accessor->current());
+        $reused = $executor->execute($call);
+        $this->assertTrue($reused->isError);
+        $this->assertSame($result->content, $reused->content);
+        $this->assertFalse($reused->details['retryable']);
+        $this->assertSame(ToolCallException::class, $reused->details['error_type']);
+    }
+
     public function testToolboxInterruptResultIsPreservedInDetails(): void
     {
         $toolbox = new Toolbox([new InterruptTool()]);
