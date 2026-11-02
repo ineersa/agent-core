@@ -304,6 +304,59 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
         ));
     }
 
+    public static function decisiveHistoryCases(): iterable
+    {
+        yield 'urgent queued blocks early' => [200000, ['noise', 'urgent-queued'], 2, false];
+        yield 'urgent applied blocks urgent' => [260000, ['noise', 'urgent-applied'], 2, false];
+        yield 'early applied decides early-only usage' => [200000, ['noise', 'early-applied'], 2, false];
+        yield 'early queued cannot hide older urgent' => [260000, ['early-queued', 'noise', 'urgent-applied'], 3, false];
+        yield 'early does not prevent urgent escalation' => [260000, ['early-applied', 'noise', 'compaction'], 3, true];
+        yield 'compaction hides older urgent' => [260000, ['compaction', 'urgent-queued'], 1, true];
+        yield 'near-match is not a reminder' => [260000, ['near-match', 'urgent-queued'], 2, false];
+    }
+
+    /** @param list<string> $kinds */
+    #[DataProvider('decisiveHistoryCases')]
+    public function testHistoryTraversalStopsAtDecisiveEvidence(int $inputTokens, array $kinds, int $expectedReads, bool $queuesUrgent): void
+    {
+        $early = ContextBudgetReminderHookSubscriber::wrapSystemReminder(ContextBudgetReminderHookSubscriber::EARLY_TEXT);
+        $urgent = ContextBudgetReminderHookSubscriber::wrapSystemReminder(ContextBudgetReminderHookSubscriber::URGENT_TEXT);
+        $events = [];
+        foreach ($kinds as $index => $kind) {
+            $seq = 2000 - $index;
+            $events[] = match ($kind) {
+                'early-queued' => $this->commandQueued($seq, $early),
+                'early-applied' => $this->commandApplied($seq, $early),
+                'urgent-queued' => $this->commandQueued($seq, $urgent),
+                'urgent-applied' => $this->commandApplied($seq, $urgent),
+                'near-match' => $this->commandQueued($seq, $urgent.' extra'),
+                'compaction' => $this->event($seq, RunEventTypeEnum::ContextCompacted->value, []),
+                default => $this->event($seq, RunEventTypeEnum::LlmStepCompleted->value, []),
+            };
+        }
+        $reads = 0;
+        $this->eventStore->method('firstFor')->willReturn($this->runStarted(1, 272000));
+        $this->eventStore->expects($this->once())->method('reverseFor')->willReturnCallback(function () use ($events, &$reads): iterable {
+            foreach ($events as $event) {
+                ++$reads;
+                yield $event;
+            }
+            // A large older prefix must remain unread after decisive evidence.
+            for ($seq = 1000; $seq > 0; --$seq) {
+                ++$reads;
+                yield $this->event($seq, RunEventTypeEnum::LlmStepCompleted->value, []);
+            }
+        });
+        $actions = $this->subscriber->prepareAfterTurnCommit($this->hookContext([
+            $this->summary(2001, RunEventTypeEnum::LlmStepCompleted->value, ['usage' => ['input_tokens' => $inputTokens]]),
+        ]), 2001);
+        $this->assertSame($expectedReads, $reads);
+        $this->assertCount($queuesUrgent ? 1 : 0, $actions);
+        if ($queuesUrgent) {
+            $this->assertSame($urgent, $actions[0]->message->payload['message']['content'][0]['text']);
+        }
+    }
+
     public function testUrgentAlreadyQueuedSuppressesLaterReminders(): void
     {
         $urgentWrapped = ContextBudgetReminderHookSubscriber::wrapSystemReminder(
