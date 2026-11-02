@@ -28,8 +28,8 @@ do not assume availability or change settings without user approval.
 
 Use `schedule` with `action: create`, `tool: bash` or `code_mode`, the target's
 existing `arguments`, and `every` to repeat work during this live session.
-Symfony accepts seconds as a string (`"60"`), ISO 8601 durations (`"PT5M"`), and
-relative intervals (`"5 minutes"`). Add `for_seconds` to limit the lifetime.
+Use intervals such as `"30 seconds"`, `"5 minutes"`, or `"PT1H"`. Arguments default
+to an empty object when omitted. Add `for_seconds` to limit the lifetime.
 Without a lifetime, the schedule lasts until cancelled or Hatfield closes.
 The first execution is immediately eligible. The `next` field denotes the next
 recurring occurrence, not a delay before initial execution.
@@ -47,7 +47,8 @@ Fibers; running invocations share the cooperative tool/agent worker and can over
 Results arrive through automatic notifications after normal output processing.
 Scheduled execution is noninteractive: operations requiring approval or human input
 are denied, even when the main conversation has an approval channel. Do not pass
-`backgrounded: true`; scheduled work is already asynchronous to the agent.
+`backgrounded: true`; scheduled work is already asynchronous to the agent. Do not
+sleep or poll to wait for results; notifications arrive automatically.
 There is no caller card to detach with Ctrl+B. Scheduled invocations are not listed
 as stoppable work in `/bg`; use execution timeouts or cancel the owning run.
 

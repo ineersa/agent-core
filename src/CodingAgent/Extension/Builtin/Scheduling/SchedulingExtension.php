@@ -113,21 +113,26 @@ final class SchedulingExtension implements ConfigurableExtensionInterface, TuiEx
         $this->schedules = new SessionScheduleRepository(new FilesystemAdapter('session-schedules', 0, $path), new LockFactory(new FlockStore()));
         $this->picker = new SchedulePicker($this->schedules);
         $api->registerTool(new ToolRegistrationDTO(
-            'schedule', 'Create, list, or cancel recurring Bash or code-mode work in this live main session. Nothing runs after Hatfield closes.',
-            ['type' => 'object', 'properties' => [
-                'action' => ['type' => 'string', 'enum' => ['create', 'list', 'cancel']],
-                'tool' => ['type' => 'string', 'enum' => ['bash', 'code_mode']],
-                'arguments' => ['type' => 'object', 'additionalProperties' => true],
-                'every' => ['type' => 'string', 'description' => 'Symfony interval, e.g. 5 minutes or PT1H.'],
-                'for_seconds' => ['type' => 'integer', 'minimum' => 1],
-                'id' => ['type' => 'string'],
-            ], 'required' => ['action'], 'additionalProperties' => false], $this,
+            name: 'schedule',
+            description: 'Schedule recurring Bash commands or code-mode scripts in the current session, or list and cancel schedules. Results arrive automatically. Schedules end when Hatfield closes.',
+            parametersJsonSchema: ['type' => 'object', 'properties' => [
+                'action' => ['type' => 'string', 'enum' => ['create', 'list', 'cancel'], 'description' => 'Create, list, or cancel schedules.'],
+                'tool' => ['type' => 'string', 'enum' => ['bash', 'code_mode'], 'description' => 'Tool to run for action=create.'],
+                'arguments' => ['type' => 'object', 'additionalProperties' => true, 'description' => 'Target tool arguments for action=create. Defaults to an empty object.'],
+                'every' => ['type' => 'string', 'description' => 'Repeat interval for action=create, e.g. 30 seconds, 5 minutes, or PT1H.'],
+                'for_seconds' => ['type' => 'integer', 'minimum' => 1, 'description' => 'Optional lifetime in seconds for action=create.'],
+                'id' => ['type' => 'string', 'description' => 'Schedule id returned by create or list, for action=cancel.'],
+            ], 'required' => ['action'], 'additionalProperties' => false],
+            handler: $this,
+            promptSummary: 'schedule action [tool] [arguments] [every] [for_seconds] [id] — create, list, or cancel recurring work',
             promptGuidelines: [
-                'Create with tool=bash or code_mode, arguments and every. Optional for_seconds limits its lifetime. Cancel with the returned id; /schedule lists and cancels future work.',
-                'The first execution is immediately eligible. The next field denotes the next recurring occurrence, not a delay before initial execution.',
-                'Scheduled work is already asynchronous. Do not pass backgrounded=true, sleep, or poll. Cancellation prevents future invocations, not work already running.',
-                'Scheduled work cannot ask for approval or human input. Approval-required actions are denied. Results arrive automatically; running code-mode invocations have no /bg control.',
-            ], mainOnly: true,
+                'Create with action=create, tool, arguments, and every. Use intervals such as 30 seconds, 5 minutes, or PT1H. Optional for_seconds limits the lifetime.',
+                'The first execution is immediately eligible; next reports the next recurring occurrence.',
+                'Use action=list to inspect schedules or action=cancel with the returned id. Cancellation prevents future executions, not work already running.',
+                'Scheduled work is already asynchronous. Do not pass backgrounded=true or sleep/poll to wait for results; notifications arrive automatically.',
+                'Approval-required actions and requests for human input are denied.',
+            ],
+            mainOnly: true,
         ));
         $api->registerCommand(new CommandDefinitionDTO('schedule', [], 'List and cancel recurring work', '/schedule', false), $this->picker);
         $api->registerSessionStartHook($this);
