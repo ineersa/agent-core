@@ -231,7 +231,7 @@ final class ProcessStore
         if ([] === $runIds) {
             return [];
         }
-        $rows = $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id IN (?) AND backgrounded_at IS NOT NULL AND completion_notified_at IS NULL ORDER BY id', [$runIds], [ArrayParameterType::STRING]);
+        $rows = $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM background_process WHERE session_id IN (?) AND backgrounded_at IS NOT NULL AND finished_at IS NOT NULL AND completion_notified_at IS NULL ORDER BY id', [$runIds], [ArrayParameterType::STRING]);
 
         return array_map($this->hydrateSnapshot(...), $rows);
     }
