@@ -57,9 +57,12 @@ The area uses at most five physical rows, including a `+N more` summary linking 
 `/bg` and Ctrl+\. On short terminals it shrinks further to leave room for the editor
 and footer. Under overflow, children needing input appear first; launch order stays
 stable within attention and ordinary groups. Without overflow, launch order is unchanged.
-Adding or removing rows can change the layout height. Long labels truncate to the
-terminal width. At heights too small for the editor and footer themselves, background
-rows are hidden.
+Adding or removing rows can change the layout height. Child rows reserve space for
+status, model and context usage before truncating task and identity details. The
+Ctrl+\ picker retains the full identity label. While a question or another
+above-editor input overlay is open, background rows are hidden so the focused
+question can use that space; they return when the overlay closes. At heights too
+small for the editor and footer themselves, background rows are hidden.
 
 ## Background work picker: `/bg`
 

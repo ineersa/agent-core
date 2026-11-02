@@ -184,7 +184,7 @@ final class ChatScreen
     }
 
     /* ────────── Mounting ────────── */
-    /** @param list<array{kind: string, label: string, status: string, needs_input?: bool}> $rows */
+    /** @param list<array{kind: string, label: string, status: string, needs_input?: bool, suffix?: string}> $rows */
     public function setBackgroundRows(array $rows): void
     {
         // Native tick revision tracking schedules only a diff frame.
@@ -557,6 +557,7 @@ final class ChatScreen
         // Add the overlay (appended after status / above the compact header).
         $this->tui->add($widget);
         $this->inputOverlays[spl_object_id($widget)] = true;
+        $this->backgroundRowsWidget->reserveModalOverlay($widget);
 
         // Restore compact header + editor area widgets in original mount order.
         $this->tui->add($this->compactHeaderWidget);

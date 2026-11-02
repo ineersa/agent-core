@@ -14,8 +14,10 @@ use Symfony\Component\Tui\Widget\Util\StringUtils;
 /** Bounded native text rows; editor/footer measurements reuse native render caches. */
 final class BackgroundWorkWidget extends AbstractWidget
 {
-    /** @var list<array{kind: string, label: string, status: string, needs_input?: bool}> */
+    /** @var list<array{kind: string, label: string, status: string, needs_input?: bool, suffix?: string}> */
     private array $rows = [];
+    /** @var array<int, true> */
+    private array $modalOverlays = [];
     /** @var array<int, AbstractWidget> */
     private array $overlays = [];
     /** @var list<int> */
@@ -25,7 +27,7 @@ final class BackgroundWorkWidget extends AbstractWidget
     {
     }
 
-    /** @param list<array{kind: string, label: string, status: string, needs_input?: bool}> $rows */
+    /** @param list<array{kind: string, label: string, status: string, needs_input?: bool, suffix?: string}> $rows */
     public function setRows(array $rows): void
     {
         if ($rows !== $this->rows) {
@@ -53,6 +55,10 @@ final class BackgroundWorkWidget extends AbstractWidget
 
     public function releaseOverlay(AbstractWidget $widget): void
     {
+        if (isset($this->modalOverlays[spl_object_id($widget)])) {
+            unset($this->modalOverlays[spl_object_id($widget)]);
+            $this->invalidate();
+        }
         if (isset($this->overlays[spl_object_id($widget)])) {
             unset($this->overlays[spl_object_id($widget)]);
             $this->invalidate();
@@ -61,6 +67,11 @@ final class BackgroundWorkWidget extends AbstractWidget
 
     public function render(RenderContext $context): array
     {
+        // Questions measure their lower siblings, including this widget. Give
+        // focused modals priority without recursively measuring them here.
+        if ([] !== $this->modalOverlays) {
+            return [];
+        }
         $reserved = 2; // Editor and footer separators remain visible.
         foreach ([$this->editor, $this->footer, ...array_values($this->overlays)] as $widget) {
             $reserved += \count($widget->getRenderCache($context->getColumns(), $context->getRows()) ?? $widget->render($context));
@@ -85,6 +96,17 @@ final class BackgroundWorkWidget extends AbstractWidget
                 default => ThemeColorEnum::ThinkingLow,
             };
             $plain = StringUtils::stripControlBytes(StringUtils::sanitizeUtf8(str_replace(["\r", "\n"], ' ', $row['label'])));
+            if (isset($row['suffix'])) {
+                // Keep operational metadata visible before spending remaining
+                // columns on task text and optional identity details.
+                $suffix = ' · '.StringUtils::stripControlBytes(StringUtils::sanitizeUtf8(str_replace(["\r", "\n"], ' ', $row['suffix'])));
+                $prefix = '  '.$row['kind'].' ['.$row['status'].'] ';
+                $budget = max(0, $context->getColumns() - mb_strwidth($prefix.$suffix));
+                $detail = mb_strimwidth($plain, 0, $budget, $budget >= 1 ? '…' : '');
+                $lines[] = $this->theme->color($color, $prefix).$detail.$suffix;
+
+                continue;
+            }
             $lines[] = '' === $row['status']
                 ? $this->theme->color($color, '  '.$plain)
                 : $this->theme->color($color, '  '.$row['kind']).' ['.$row['status'].'] '.$plain;
@@ -98,5 +120,11 @@ final class BackgroundWorkWidget extends AbstractWidget
 
         // TextWidget owns native ANSI-aware one-physical-line truncation.
         return (new TextWidget(implode("\n", $lines), truncate: true))->render($context);
+    }
+
+    public function reserveModalOverlay(AbstractWidget $widget): void
+    {
+        $this->modalOverlays[spl_object_id($widget)] = true;
+        $this->invalidate();
     }
 }

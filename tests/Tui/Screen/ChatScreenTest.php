@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\Tui\CompactHeader\CompactHeaderSnapshot;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Footer\FooterSegment;
+use Ineersa\Tui\Question\QuestionOverlayWidget;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -18,6 +20,8 @@ use Symfony\Component\Tui\Terminal\TerminalInterface;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
+use Symfony\Component\Tui\Widget\MarkdownWidget;
+use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
@@ -100,7 +104,7 @@ class ChatScreenTest extends TestCase
         $screen->insertOverlayBeforeEditor($overlay);
         $text = $harness->plainScreenText();
         $this->assertLessThan(strpos($text, 'EDITOR_ANCHOR'), strpos($text, 'QUESTION_ANCHOR'));
-        $this->assertLessThan(strpos($text, 'scout ['), strpos($text, 'EDITOR_ANCHOR'));
+        $this->assertStringNotContainsString('scout [', $text);
         $screen->removeOverlay($overlay);
         $screen->setBackgroundRows([$rows[0]]);
         $text = $harness->plainScreenText();
@@ -108,6 +112,29 @@ class ChatScreenTest extends TestCase
         $this->assertStringNotContainsString('fork [', $text);
         $screen->setBackgroundRows([]);
         $this->assertStringNotContainsString('needs input', $harness->plainScreenText());
+    }
+
+    public function testRealQuestionKeepsPriorityOverBackgroundRowsOnShortTerminal(): void
+    {
+        $harness = new VirtualTuiHarness(columns: 80, rows: 10);
+        $screen = $harness->screen();
+        $screen->setBackgroundRows(array_fill(0, 4, ['kind' => 'agent', 'label' => 'BACKGROUND_ANCHOR', 'status' => 'running']));
+        $question = new QuestionOverlayWidget();
+        $question->add(new TextWidget('Human input required'));
+        $question->add(new MarkdownWidget('QUESTION_ANCHOR'));
+        $question->add(new SelectListWidget(items: [['value' => 'yes', 'label' => 'ANSWER_ANCHOR']]));
+        $screen->insertOverlayBeforeEditor($question);
+        $screen->compactHeaderWidget()->setSnapshot(new CompactHeaderSnapshot(skills: ['testing']));
+        foreach (['EDITOR_ANCHOR', "EDITOR_ANCHOR\nsecond line"] as $draft) {
+            $screen->promptEditor()->setText($draft);
+            $text = $harness->plainScreenText();
+            $this->assertStringContainsString('QUESTION_ANCHOR', $text);
+            $this->assertStringContainsString('ANSWER_ANCHOR', $text);
+            $this->assertStringContainsString('EDITOR_ANCHOR', $text);
+            $this->assertStringNotContainsString('BACKGROUND_ANCHOR', $text);
+        }
+        $screen->removeOverlay($question);
+        $this->assertStringContainsString('BACKGROUND_ANCHOR', $harness->plainScreenText());
     }
 
     public function testBackgroundMetadataInvalidatesOnlyChangedRowsAndIdenticalTextIsNoOp(): void

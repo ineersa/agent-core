@@ -9,6 +9,26 @@ use PHPUnit\Framework\TestCase;
 
 final class BackgroundWorkWidgetTest extends TestCase
 {
+    public function testRealisticChildDetailsCannotDisplaceStatusModelOrContext(): void
+    {
+        foreach ([80, 120] as $width) {
+            $harness = new VirtualTuiHarness(columns: $width, rows: 20);
+            $harness->screen()->setBackgroundRows([[
+                'kind' => 'agent',
+                'label' => 'scout — '.str_repeat('long task ', 8).' · agent_1234567890abcdef run:12345678-1234',
+                'status' => '⚠ needs input',
+                'suffix' => '9% 23.4k/272.0k gpt-6.1-sol',
+                'needs_input' => true,
+            ]]);
+            $text = $harness->plainScreenText();
+            $this->assertStringContainsString('⚠ needs input', $text);
+            $this->assertStringContainsString('9% 23.4k/272.0k gpt-6.1-sol', $text);
+            $this->assertStringContainsString('scout', $text);
+            $this->assertStringContainsString('long task', $text);
+            $this->assertStringContainsString('…', $text);
+        }
+    }
+
     public function testOverflowIsFivePhysicalRowsWithStableAttentionPriorityAndResponsiveBudget(): void
     {
         $harness = new VirtualTuiHarness(columns: 48, rows: 12, sessionId: 'overflow');
@@ -54,13 +74,13 @@ final class BackgroundWorkWidgetTest extends TestCase
     public function testOverflowMetadataChangesUseNativeDiffAndIdenticalRowsProduceNoOutput(): void
     {
         $harness = new VirtualTuiHarness(columns: 48, rows: 12);
-        $rows = array_fill(0, 16, ['kind' => 'agent', 'label' => 'TASK 7% 19.3k', 'status' => 'running']);
+        $rows = array_fill(0, 16, ['kind' => 'agent', 'label' => 'TASK', 'status' => 'running', 'suffix' => '7% 19.3k']);
         $screen = $harness->screen();
         $screen->promptEditor()->setText('UNCHANGED_EDITOR');
         $screen->setBackgroundRows($rows);
         $harness->render();
         $harness->terminal()->clearOutput();
-        $rows[0]['label'] = 'TASK 9% 23.4k';
+        $rows[0]['suffix'] = '9% 23.4k';
         $harness->tui()->onTick(static fn () => $screen->setBackgroundRows($rows));
         $harness->tui()->tick();
         $harness->tui()->processRender();

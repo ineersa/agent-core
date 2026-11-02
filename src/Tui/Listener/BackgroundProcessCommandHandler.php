@@ -11,8 +11,8 @@ use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Picker\PickerOverlay;
-use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Utility\ThrowableMessage;
 use Ineersa\Tui\Widget\SelectListKeybindings;
@@ -207,8 +207,9 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
                 }
                 $rows[] = [
                     'kind' => 'fork' === $child->agentName ? 'fork' : 'agent',
-                    'label' => SubagentLivePickerController::buildItems([$child])[0]['label'],
-                    'status' => '',
+                    'label' => $child->agentName.' — '.$child->taskSummary.' · '.$child->artifactId.' run:'.substr($child->agentRunId, 0, 12),
+                    'status' => $child->needsAttention() ? '⚠ needs input' : $child->statusLabel(),
+                    'suffix' => trim((ContextUsageFormatter::format($child->model, $child->latestInputTokens, $child->contextWindow)->text ?? '').' '.FooterStateInitializer::shortModelName($child->model)),
                     'needs_input' => $child->needsAttention(),
                 ];
             }

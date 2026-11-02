@@ -262,13 +262,22 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
             new BackgroundWorkDTO('code', 'code_mode', 'LIVE_CODE', 'running', false, ['visible']),
             new BackgroundWorkDTO('failed-code', 'code_mode', 'FAILED_CODE', 'failed', true, ['visible']),
         ], children: [
-            new BackgroundChildStatusDTO('first', 'scout-run', 'scout-artifact', 'scout', 'SCOUT_TASK', 'provider/model', 'low', 'running', true, 10000, 272000),
-            new BackgroundChildStatusDTO('second', 'fork-run', 'fork-artifact', 'fork', 'FORK_TASK', 'provider/model', 'low', 'waiting_human', true, 23000, 272000),
+            new BackgroundChildStatusDTO('first', '12345678-1234-5678-9012-123456789012', 'agent_1234567890abcdef', 'scout', 'SCOUT_TASK '.str_repeat('task ', 10), 'provider/gpt-6.1-sol', 'low', 'running', true, 10000, 272000),
+            new BackgroundChildStatusDTO('second', '87654321-1234-5678-9012-123456789012', 'agent_fedcba0987654321', 'fork', 'FORK_TASK '.str_repeat('task ', 10), 'provider/gpt-6.1-sol', 'low', 'waiting_human', true, 23000, 272000),
             new BackgroundChildStatusDTO('third', 'cancelled-run', 'cancelled-artifact', 'fork', 'CANCELLED_TASK', 'provider/model', 'low', 'cancelled', true),
         ]);
         $this->mount(JsonlProcessAgentSessionClient::class, $snapshot);
         $this->context->state->sessionReady = true;
         $this->context->ticks->dispatch(new TickEvent());
+        foreach ([80, 120] as $width) {
+            $this->harness->terminal()->simulateResize($width, 30);
+            $rendered = $this->harness->plainScreenText();
+            $this->assertStringContainsString('⚠ needs input', $rendered);
+            $this->assertStringContainsString('8% 23.0k/272.0k gpt-6.1-sol', $rendered);
+            $this->assertStringContainsString('4% 10.0k/272.0k gpt-6.1-sol', $rendered);
+            $this->assertStringContainsString('SCOUT_TASK', $rendered);
+            $this->assertStringContainsString('FORK_TASK', $rendered);
+        }
         $text = $this->harness->plainScreenText();
         $this->assertLessThan(strpos($text, 'FORK_TASK'), strpos($text, 'SCOUT_TASK'));
         $this->assertStringContainsString('needs input', $text);
