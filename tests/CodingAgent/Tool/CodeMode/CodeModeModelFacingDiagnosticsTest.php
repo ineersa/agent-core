@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
@@ -20,6 +21,7 @@ use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
+use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
@@ -216,7 +218,7 @@ final class CodeModeModelFacingDiagnosticsTest extends TestCase
         $diagnostics = new CodeModeDiagnosticsToolResultProcessor();
         $capCfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: $defaultCap, docCap: $docCap ?? $defaultCap);
         $cap = new OutputCapToolResultProcessor(
-            new OutputCap($capCfg, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger()),
+            new OutputCap($capCfg, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor())),
             AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
 
         return new ToolExecutor(

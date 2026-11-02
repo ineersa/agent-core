@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
@@ -15,6 +16,7 @@ use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
+use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -170,7 +172,7 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
         $diagnostics = $this->processor();
         $capCfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 50);
         $capProcessor = new OutputCapToolResultProcessor(
-            new OutputCap($capCfg, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger()),
+            new OutputCap($capCfg, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor())),
             AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
         $toolCall = $this->toolCall('call-cap', ['script' => 'echo "diag"; return "'.str_repeat('A', 300).'";']);
         $result = new ToolResult(
@@ -205,7 +207,7 @@ final class CodeModeDiagnosticsToolResultProcessorTest extends TestCase
         // The diagnostics processor leaves isError results alone; OutputCap owns size.
         $capCfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
         $capProcessor = new OutputCapToolResultProcessor(
-            new OutputCap($capCfg, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger()),
+            new OutputCap($capCfg, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor())),
             AttributeSerializerValidatorTestFactory::denormalizer(), $this->createStub(ToolPayloadStoreInterface::class), $this->createStub(DeferredToolCompletionRepositoryInterface::class));
         $message = "Code-mode PHP subprocess exited without returning a value (exit code 0).\nstdout:\n".str_repeat('E', 60_000);
         $toolCall = $this->toolCall('call-err-cap', ['script' => 'exit(0);']);

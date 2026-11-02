@@ -24,6 +24,7 @@ use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
+use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
@@ -429,6 +430,6 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
     private function outputCap(OutputCapConfig $config): OutputCap
     {
-        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
+        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor()));
     }
 }

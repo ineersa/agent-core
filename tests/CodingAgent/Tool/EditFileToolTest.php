@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Amp\DeferredFuture;
+use Amp\TimeoutCancellation;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
@@ -13,11 +15,16 @@ use Ineersa\CodingAgent\Tests\Tool\Support\ToolValidationHarness;
 use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\EditFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\Lock\Exception\LockAcquiringException;
+use Symfony\Component\Lock\Lock;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\SharedLockInterface;
 use Symfony\Component\Lock\Store\FlockStore;
 
 /**
@@ -326,6 +333,160 @@ PATCH;
         );
 
         $this->assertSame($original, file_get_contents($targetPath));
+    }
+
+    public function testEditUsesNonblockingSymfonyAcquisition(): void
+    {
+        $path = $this->tmpDir.'/nonblocking.txt';
+        file_put_contents($path, "old\n");
+        $lock = $this->createMock(SharedLockInterface::class);
+        $lock->expects($this->once())->method('acquire')->with(false)->willReturn(true);
+        $lock->expects($this->once())->method('release');
+        $factory = $this->createStub(LockFactory::class);
+        $factory->method('createLock')->willReturn($lock);
+        $tool = new EditFileTool($this->toolRuntime, $factory, new NullLogger());
+        $tool(new EditFileArgumentsDTO(path: $path, patch: "@@\n-old\n+new"));
+        $this->assertSame("new\n", file_get_contents($path));
+    }
+
+    public function testAcquisitionThrowAfterStoreGrantReleasesBeforeLockDestruction(): void
+    {
+        $path = $this->tmpDir.'/throwing-acquire.txt';
+        file_put_contents($path, "old\n");
+        $key = 'edit-file-'.hash('sha256', realpath($path));
+        $lock = $this->lockFactory->createLock($key);
+        $this->assertInstanceOf(Lock::class, $lock);
+        $failure = new \RuntimeException('acquire logging failed');
+        $logger = $this->createStub(LoggerInterface::class);
+        $logger->method('debug')->willReturnCallback(static function (string $message) use ($failure): void {
+            if (str_starts_with($message, 'Successfully acquired')) {
+                throw $failure;
+            }
+        });
+        $lock->setLogger($logger);
+        $factory = $this->createStub(LockFactory::class);
+        $factory->method('createLock')->willReturn($lock);
+        $tool = new EditFileTool($this->toolRuntime, $factory, new NullLogger());
+        try {
+            $tool(new EditFileArgumentsDTO(path: $path, patch: "@@\n-old\n+new"));
+            $this->fail('Expected acquisition failure after the real store grant.');
+        } catch (LockAcquiringException $e) {
+            $this->assertSame($failure, $e->getPrevious());
+        }
+        // Retain the throwing lock and exception: destruction cannot hide a leak.
+        $next = $this->lockFactory->createLock($key);
+        $this->assertTrue($next->acquire(false));
+        $next->release();
+        $this->assertSame("old\n", file_get_contents($path));
+    }
+
+    public static function lockContentionCases(): iterable
+    {
+        yield 'Symfony lock released' => [false, false];
+        yield 'Symfony waiter cancelled' => [false, true];
+        yield 'target lock released' => [true, false];
+        yield 'target waiter cancelled' => [true, true];
+    }
+
+    public function testCancellationImmediatelyAfterSymfonyAcquisitionReleasesWithoutMutation(): void
+    {
+        $path = $this->tmpDir.'/cancel-after-acquire.txt';
+        file_put_contents($path, "old\n");
+        $cancelled = false;
+        $lock = $this->createMock(SharedLockInterface::class);
+        $lock->expects($this->once())->method('acquire')->with(false)->willReturnCallback(static function () use (&$cancelled): bool {
+            $cancelled = true;
+
+            return true;
+        });
+        $lock->expects($this->once())->method('release');
+        $factory = $this->createStub(LockFactory::class);
+        $factory->method('createLock')->willReturn($lock);
+        $token = $this->createStub(CancellationTokenInterface::class);
+        $token->method('isCancellationRequested')->willReturnCallback(static function () use (&$cancelled): bool { return $cancelled; });
+        $tool = new EditFileTool($this->toolRuntime, $factory, new NullLogger());
+        try {
+            $this->contextAccessor->with(new ToolContext('run', 1, 'call', 'edit', $token, 30), static fn () => $tool(new EditFileArgumentsDTO(path: $path, patch: "@@\n-old\n+new")));
+            $this->fail('Expected post-acquisition cancellation.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('cancelled', $e->getMessage());
+        }
+        $this->assertSame("old\n", file_get_contents($path));
+    }
+
+    #[DataProvider('lockContentionCases')]
+    public function testEditLockContentionYieldsWithoutChangingFile(bool $targetLock, bool $cancel): void
+    {
+        $path = $this->tmpDir.'/contended.txt';
+        file_put_contents($path, "old\n");
+        $owner = $this->lockFactory->createLock('edit-file-'.hash('sha256', realpath($path)));
+        $stream = fopen($path, 'r+b');
+        $this->assertIsResource($stream);
+        $this->assertTrue($targetLock ? flock($stream, \LOCK_EX | \LOCK_NB) : $owner->acquire(false));
+        $cancelled = false;
+        $token = $this->createStub(CancellationTokenInterface::class);
+        $token->method('isCancellationRequested')->willReturnCallback(static function () use (&$cancelled): bool { return $cancelled; });
+        $entered = new DeferredFuture();
+        $waiting = \Amp\async(fn () => $this->contextAccessor->with(
+            new ToolContext('run', 1, 'call', 'edit', $token, 30),
+            function () use ($path, $entered): string {
+                $entered->complete();
+
+                return ($this->editFileTool)(new EditFileArgumentsDTO(path: $path, patch: "@@\n-old\n+new"));
+            },
+        ));
+        try {
+            $entered->getFuture()->await(new TimeoutCancellation(2));
+            \Amp\async(static function () use ($waiting, $path): void {
+                self::assertFalse($waiting->isComplete());
+                self::assertSame("old\n", file_get_contents($path));
+            })->await(new TimeoutCancellation(2));
+            if ($cancel) {
+                $cancelled = true;
+                try {
+                    $waiting->await(new TimeoutCancellation(2));
+                    $this->fail('Expected cancellation while the owner still holds its lock.');
+                } catch (\RuntimeException $e) {
+                    $this->assertStringContainsString('cancelled', $e->getMessage());
+                }
+                $this->assertSame("old\n", file_get_contents($path));
+            }
+            $owner->release();
+            flock($stream, \LOCK_UN);
+            if (!$cancel) {
+                $this->assertStringContainsString('Applied patch', $waiting->await(new TimeoutCancellation(2)));
+            }
+            // A cancelled waiter must not retain either lock or alter content.
+            ($this->editFileTool)(new EditFileArgumentsDTO(path: $path, patch: $cancel ? "@@\n-old\n+new" : "@@\n-new\n+new"));
+            $this->assertSame("new\n", file_get_contents($path));
+        } finally {
+            $cancelled = true;
+            $owner->release();
+            flock($stream, \LOCK_UN);
+            fclose($stream);
+        }
+    }
+
+    public function testPatchFailureReleasesBothLocks(): void
+    {
+        $path = $this->tmpDir.'/failed-patch.txt';
+        file_put_contents($path, "same\nsame\n");
+        foreach (['not a patch', "@@\n-same\n+new"] as $patch) {
+            try {
+                ($this->editFileTool)(new EditFileArgumentsDTO(path: $path, patch: $patch));
+                $this->fail('Expected malformed or ambiguous patch refusal.');
+            } catch (ToolCallException $e) {
+                $this->assertStringContainsString('target file is untouched', $e->getMessage());
+            }
+            $lock = $this->lockFactory->createLock('edit-file-'.hash('sha256', realpath($path)));
+            $this->assertTrue($lock->acquire(false));
+            $stream = fopen($path, 'r+b');
+            $this->assertTrue(flock($stream, \LOCK_EX | \LOCK_NB));
+            flock($stream, \LOCK_UN);
+            fclose($stream);
+            $lock->release();
+        }
+        $this->assertSame("same\nsame\n", file_get_contents($path));
     }
 
     public function testEditViaSymlinkPreservesSymlinkAndUpdatesTarget(): void
