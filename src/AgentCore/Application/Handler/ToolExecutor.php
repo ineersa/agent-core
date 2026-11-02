@@ -235,9 +235,7 @@ final class ToolExecutor implements ToolExecutorInterface
         $processingFailed = false;
         if (!$this->isDeferredOutcomeResult($result)) {
             $result = $this->probe('result_processors', $toolCall, function () use ($result, $toolCall, $policy, &$processingFailed): ToolResult {
-                return $this->executeWithContext($toolCall, $policy, function () use ($result, $toolCall, &$processingFailed): ToolResult {
-                    return $this->processTerminalResult($result, $toolCall, $processingFailed);
-                });
+                return $this->processTerminalResult($result, $toolCall, $policy, $processingFailed);
             });
         }
 
@@ -421,7 +419,7 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
-    private function processTerminalResult(ToolResult $result, ToolCall $toolCall, bool &$processingFailed): ToolResult
+    private function processTerminalResult(ToolResult $result, ToolCall $toolCall, ToolExecutionPolicy $policy, bool &$processingFailed): ToolResult
     {
         $validated = ToolResultText::finalize($result);
         $processingFailed = $validated !== $result;
@@ -430,21 +428,27 @@ final class ToolExecutor implements ToolExecutorInterface
             return $result;
         }
         try {
-            foreach ($this->toolResultProcessors as $processor) {
-                $processed = $processor->process($result, $toolCall);
-                $result = ToolResultText::finalize($processed);
-                $processingFailed = $result !== $processed;
-                if ($processingFailed) {
-                    return $result;
+            $result = $this->executeWithContext($toolCall, $policy, function () use (&$result, $toolCall, &$processingFailed): ToolResult {
+                foreach ($this->toolResultProcessors as $processor) {
+                    $processed = $processor->process($result, $toolCall);
+                    $result = ToolResultText::finalize($processed);
+                    $processingFailed = $result !== $processed;
+                    if ($processingFailed) {
+                        return $result;
+                    }
                 }
-            }
+
+                return $result;
+            });
         } catch (\Throwable $exception) {
             $processingFailed = true;
             // Execution already returned. Remember the processing failure and
             // never invoke the failing processor again for the fallback result.
             $message = $exception instanceof \JsonException && \JSON_ERROR_UTF8 === $exception->getCode()
                 ? ToolResultText::FAILURE_MESSAGE
-                : (ToolResultText::failureMessage($exception->getMessage()) ?? 'Tool call failed: its result could not be processed.');
+                : ($exception instanceof ToolCallException
+                    ? DiagnosticMessageSanitizer::sanitize($exception->getMessage())
+                    : (ToolResultText::failureMessage($exception->getMessage()) ?? 'Tool call failed: its result could not be processed.'));
             $failureDetails = [
                 'retryable' => false,
                 'error_type' => $exception::class,
