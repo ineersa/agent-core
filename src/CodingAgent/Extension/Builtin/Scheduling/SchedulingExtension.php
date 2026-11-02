@@ -7,8 +7,8 @@ namespace Ineersa\CodingAgent\Extension\Builtin\Scheduling;
 use Ineersa\CodingAgent\Extension\Builtin\Scheduling\DTO\SessionScheduleDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobDTO;
@@ -21,6 +21,7 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
+use Symfony\Component\Config\Definition\ConfigurationInterface;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -29,7 +30,7 @@ use Symfony\Component\Validator\Exception\ValidationFailedException;
 use Symfony\Component\Validator\Validation;
 
 /** Optional, live-controller recurring work using public host capabilities. */
-final class SchedulingExtension implements HatfieldExtensionInterface, TuiExtensionInterface, ContextualExtensionToolHandlerInterface, AfterSessionStartHookInterface, RecurringJobSourceInterface, ExtensionAgentJobHandlerInterface
+final class SchedulingExtension implements ConfigurableExtensionInterface, TuiExtensionInterface, ContextualExtensionToolHandlerInterface, AfterSessionStartHookInterface, RecurringJobSourceInterface, ExtensionAgentJobHandlerInterface
 {
     private const string HANDLER = 'scheduling.execute';
     private SessionScheduleRepository $schedules;
@@ -99,6 +100,11 @@ final class SchedulingExtension implements HatfieldExtensionInterface, TuiExtens
             'next' => $this->schedules->recurring($row)->getTrigger()->getNextRunDate(new \DateTimeImmutable())?->format(\DateTimeInterface::ATOM),
             'expires_at' => $row->expiresAt?->format(\DateTimeInterface::ATOM),
         ], $this->schedules->all($context->runId)))];
+    }
+
+    public function getConfiguration(): ConfigurationInterface
+    {
+        return new SchedulingConfiguration();
     }
 
     public function register(ExtensionApiInterface $api): void

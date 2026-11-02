@@ -234,4 +234,4 @@ castor docs:validate
 
 ### Optional scheduling extension
 
-Scheduling is disabled by default. Add `Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension` to `extensions.enabled` to expose the main-only `schedule` tool and `/schedule` picker. Disabled extensions register no scheduling tools, commands, recurring sources, or dispatch callbacks. Definitions belong to the current live controller and are not restored when Hatfield reopens.
+Scheduling is disabled by default. Run `hatfield extensions:setup`, select **Scheduling (built in)**, enable it for the parent, and save. No Composer installation or scheduling settings are required. Disable it through the same form. Alternatively, add `Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension` to `extensions.enabled` to expose the main-only `schedule` tool and `/schedule` picker. Disabled extensions register no scheduling tools, commands, recurring sources, or dispatch callbacks. Definitions belong to the current live controller and are not restored when Hatfield reopens.
