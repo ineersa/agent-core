@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Runtime;
 
 use DateTimeImmutable as ImmutableDateTime;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\CodingAgent\Agent\Artifact\OwnedRunIdsProvider;
 use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
@@ -18,7 +17,7 @@ use Ineersa\CodingAgent\Runtime\Contract\DTO\ChildBackgroundCandidateDTO;
 /** Read-only presentation over existing native ownership and operational rows. */
 final readonly class BackgroundWorkSnapshotProvider
 {
-    public function __construct(private DeferredSubagentBatchRepository $batches, private BackgroundProcessRepository $processes, private DeferredToolCompletionRepository $deferred, private OwnedRunIdsProvider $owners)
+    public function __construct(private DeferredSubagentBatchRepository $batches, private BackgroundProcessRepository $processes, private DeferredToolCompletionRepository $deferred)
     {
     }
 
@@ -26,6 +25,9 @@ final readonly class BackgroundWorkSnapshotProvider
     {
         $children = [];
         $invocations = [];
+        // Terminal child statuses reconcile the picker catalog as well as the
+        // active rows. Keep this single projection read; work ownership below
+        // is selected directly in SQL without traversing historical children.
         foreach ($this->batches->findOwnedChildStatuses($rootRunId) as $row) {
             $child = new BackgroundChildStatusDTO(
                 (string) $row['lifecycle_id'],
@@ -61,7 +63,7 @@ final readonly class BackgroundWorkSnapshotProvider
         }
 
         $candidates = [];
-        foreach ($this->deferred->pendingCodeMode($this->owners->forOwner($rootRunId)) as $row) {
+        foreach ($this->deferred->pendingOwnedCodeMode($rootRunId) as $row) {
             $id = (string) $row['deferred_id'];
             $runId = (string) $row['run_id'];
             $call = (string) $row['tool_call_id'];
