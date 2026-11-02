@@ -10,6 +10,7 @@
     },
     "require": {
         "php": ">=8.3",
+        "amphp/amp": "^3.1",
         "helgesverre/toon": "^3.1",
         "ineersa/hatfield-extension-api": "@dev",
         "psr/log": "^3.0",

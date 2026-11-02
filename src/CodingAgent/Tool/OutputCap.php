@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
+use function Amp\delay;
 use function Symfony\Component\String\u;
 
 /**
@@ -46,6 +47,7 @@ final class OutputCap
         private readonly OutputCapConfig $config,
         private readonly LockFactory $lockFactory,
         private readonly LoggerInterface $logger,
+        private readonly ToolRuntime $toolRuntime,
     ) {
     }
 
@@ -284,9 +286,12 @@ STRING;
 
         $scopeName = $this->scopeName($runId);
         $lock = $this->scopeLock($canonicalRoot, $scopeName);
-        $lock->acquire(true);
 
         try {
+            // Session cleanup must finish even if the ambient tool is cancelled.
+            while (!$lock->acquire(false)) {
+                delay(0.02);
+            }
             [$files, $bytes] = $this->removeOwnedScope($canonicalRoot.'/'.$scopeName);
             $this->logCleanupCompleted($phase, $files, $bytes);
         } catch (\Throwable $exception) {
@@ -303,9 +308,16 @@ STRING;
         $canonicalRoot = $this->ensureStorageDirectory();
         $scopeName = $this->scopeName($runId);
         $lock = $this->scopeLock($canonicalRoot, $scopeName);
-        $lock->acquire(true);
 
         try {
+            do {
+                $this->toolRuntime->checkpoint();
+                $acquired = $lock->acquire(false);
+                if (!$acquired) {
+                    delay(0.02);
+                }
+            } while (!$acquired);
+            $this->toolRuntime->checkpoint();
             $canonicalScope = $this->ensureScopeDirectory($canonicalRoot, $scopeName);
             $filePath = $canonicalScope.'/'.bin2hex(random_bytes(16)).'.txt';
             $handle = @fopen($filePath, 'xb');

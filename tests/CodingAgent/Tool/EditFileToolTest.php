@@ -17,9 +17,12 @@ use Ineersa\CodingAgent\Tool\EditFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\Lock\Exception\LockAcquiringException;
+use Symfony\Component\Lock\Lock;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\SharedLockInterface;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -344,6 +347,37 @@ PATCH;
         $tool = new EditFileTool($this->toolRuntime, $factory, new NullLogger());
         $tool(new EditFileArgumentsDTO(path: $path, patch: "@@\n-old\n+new"));
         $this->assertSame("new\n", file_get_contents($path));
+    }
+
+    public function testAcquisitionThrowAfterStoreGrantReleasesBeforeLockDestruction(): void
+    {
+        $path = $this->tmpDir.'/throwing-acquire.txt';
+        file_put_contents($path, "old\n");
+        $key = 'edit-file-'.hash('sha256', realpath($path));
+        $lock = $this->lockFactory->createLock($key);
+        $this->assertInstanceOf(Lock::class, $lock);
+        $failure = new \RuntimeException('acquire logging failed');
+        $logger = $this->createStub(LoggerInterface::class);
+        $logger->method('debug')->willReturnCallback(static function (string $message) use ($failure): void {
+            if (str_starts_with($message, 'Successfully acquired')) {
+                throw $failure;
+            }
+        });
+        $lock->setLogger($logger);
+        $factory = $this->createStub(LockFactory::class);
+        $factory->method('createLock')->willReturn($lock);
+        $tool = new EditFileTool($this->toolRuntime, $factory, new NullLogger());
+        try {
+            $tool(new EditFileArgumentsDTO(path: $path, patch: "@@\n-old\n+new"));
+            $this->fail('Expected acquisition failure after the real store grant.');
+        } catch (LockAcquiringException $e) {
+            $this->assertSame($failure, $e->getPrevious());
+        }
+        // Retain the throwing lock and exception: destruction cannot hide a leak.
+        $next = $this->lockFactory->createLock($key);
+        $this->assertTrue($next->acquire(false));
+        $next->release();
+        $this->assertSame("old\n", file_get_contents($path));
     }
 
     public static function lockContentionCases(): iterable

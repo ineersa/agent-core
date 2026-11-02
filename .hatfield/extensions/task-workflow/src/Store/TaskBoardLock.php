@@ -6,10 +6,10 @@ namespace Ineersa\HatfieldExt\TaskWorkflow\Store;
 
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
 
+use function Amp\delay;
+
 final class TaskBoardLock
 {
-    private const int POLL_INTERVAL_MICROS = 50_000;
-
     public function __construct(
         private readonly string $lockPath,
     ) {
@@ -64,7 +64,7 @@ final class TaskBoardLock
                     break;
                 }
 
-                usleep(self::POLL_INTERVAL_MICROS);
+                delay(0.05);
             }
 
             // Re-check after acquire so a cancel that arrives between wait and

@@ -844,6 +844,6 @@ final class ReadFileToolTest extends TestCase
 
     private function outputCap(OutputCapConfig $config): OutputCap
     {
-        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
+        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor()));
     }
 }

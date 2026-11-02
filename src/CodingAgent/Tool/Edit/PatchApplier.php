@@ -119,9 +119,9 @@ final class PatchApplier
                 fclose($stream);
             }
             try {
-                if ($acquired) {
-                    $lock->release();
-                }
+                // acquire() can throw after the store has granted ownership.
+                // Symfony release() also safely handles an unacquired key.
+                $lock->release();
             } catch (\Throwable $e) {
                 $this->logger->warning('Lock release failed during edit tool cleanup', [
                     'component' => 'edit_tool',

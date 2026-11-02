@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Amp\DeferredFuture;
+use Amp\TimeoutCancellation;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -15,6 +20,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapLlmTransformHook;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
+use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -44,6 +50,75 @@ final class OutputCapTest extends TestCase
     {
         if (is_dir($this->tmpDir)) {
             TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        }
+    }
+
+    public static function cooperativeScopeCases(): iterable
+    {
+        yield 'persist after release' => ['persist'];
+        yield 'cancel persistence' => ['cancel'];
+        yield 'mandatory cleanup ignores cancellation' => ['cleanup'];
+    }
+
+    #[DataProvider('cooperativeScopeCases')]
+    public function testScopeWaitYieldsBeforeArtifactMutation(string $operation): void
+    {
+        $accessor = new StackToolExecutionContextAccessor();
+        $factory = new LockFactory(new FlockStore($this->tmpDir));
+        $cap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir), $factory, new NullLogger(), new ToolRuntime($accessor));
+        $run = 'contended';
+        $scope = $this->tmpDir.'/run-'.hash('sha256', $run);
+        $existing = 'cleanup' === $operation ? $cap->persist('retained', $run) : null;
+        $owner = $factory->createLock('output-cap:'.hash('sha256', $scope));
+        $this->assertTrue($owner->acquire(false));
+        $cancelled = 'cleanup' === $operation;
+        $token = $this->createStub(CancellationTokenInterface::class);
+        $token->method('isCancellationRequested')->willReturnCallback(static function () use (&$cancelled): bool { return $cancelled; });
+        $entered = new DeferredFuture();
+        $waiting = \Amp\async(static fn () => $accessor->with(new ToolContext('run', 1, 'call', 'read', $token, 30), static function () use ($entered, $cap, $run, $operation): ?string {
+            $entered->complete();
+            if ('cleanup' === $operation) {
+                $cap->cleanupRun($run, 'shutdown');
+
+                return null;
+            }
+
+            return $cap->persist('payload', $run);
+        }));
+        try {
+            $entered->getFuture()->await(new TimeoutCancellation(2));
+            \Amp\async(static function () use ($waiting, $scope, $existing): void {
+                self::assertFalse($waiting->isComplete());
+                if (null === $existing) {
+                    self::assertDirectoryDoesNotExist($scope);
+                } else {
+                    self::assertSame('retained', file_get_contents($existing));
+                }
+            })->await(new TimeoutCancellation(2));
+            if ('cancel' === $operation) {
+                $cancelled = true;
+                try {
+                    $waiting->await(new TimeoutCancellation(2));
+                    $this->fail('Expected cancellation before artifact creation.');
+                } catch (\RuntimeException $e) {
+                    $this->assertStringContainsString('cancelled', $e->getMessage());
+                }
+                $this->assertDirectoryDoesNotExist($scope);
+            }
+            $owner->release();
+            if ('cancel' !== $operation) {
+                $path = $waiting->await(new TimeoutCancellation(2));
+                if ('cleanup' === $operation) {
+                    $this->assertNull($path);
+                    $this->assertDirectoryDoesNotExist($scope);
+                } else {
+                    $this->assertSame('payload', file_get_contents($path));
+                }
+            }
+            $this->assertSame('next', file_get_contents($cap->persist('next', $run)));
+        } finally {
+            $cancelled = true;
+            $owner->release();
         }
     }
 
@@ -162,8 +237,7 @@ final class OutputCapTest extends TestCase
             (new OutputCap(
                 new OutputCapConfig(storageDir: $linkedRoot, retentionSeconds: 1),
                 $lockFactory,
-                new NullLogger(),
-            ))->cleanup();
+                new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor())))->cleanup();
         } finally {
             $lock->release();
             unlink($linkedRoot); // TestDirectoryIsolation intentionally owns directories, not symlink roots.
@@ -466,8 +540,7 @@ final class OutputCapTest extends TestCase
         $cap = new OutputCap(
             new OutputCapConfig(storageDir: $this->tmpDir),
             new LockFactory(new FlockStore($this->tmpDir)),
-            $logger,
-        );
+            $logger, new ToolRuntime(new StackToolExecutionContextAccessor()));
         $runId = 'sensitive-run-id';
         file_put_contents($this->tmpDir.'/run-'.hash('sha256', $runId), 'not a directory');
 
@@ -508,6 +581,6 @@ final class OutputCapTest extends TestCase
 
     private function outputCap(OutputCapConfig $config): OutputCap
     {
-        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger());
+        return new OutputCap($config, new LockFactory(new FlockStore($this->tmpDir)), new NullLogger(), new ToolRuntime(new StackToolExecutionContextAccessor()));
     }
 }
