@@ -4,13 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
-use Amp\DeferredFuture;
-use Amp\TimeoutCancellation;
 use Ineersa\CodingAgent\Runtime\Controller\ControllerSessionOwnerLockStore;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
-use Revolt\EventLoop;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\Exception\LockAcquiringException;
 use Symfony\Component\Lock\LockFactory;
@@ -102,6 +99,15 @@ echo "READY\n"; fflush(STDOUT); fgets(STDIN);
 PHP);
         $input = new InputStream();
         $producer->setInput($input);
+        $probe = $this->child(<<<'PHP'
+$directory = $root.'/managed-'.hash('sha256', $resource);
+$lock = (new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore($directory)))->createLock($resource, ttl: null);
+// Block in the kernel on the existing inode, without managed reclamation.
+if (!$lock->acquire(true)) { throw new \RuntimeException('Inherited inode acquisition failed.'); }
+echo "ACQUIRED\n"; fflush(STDOUT);
+$lock->release();
+PHP);
+        $probe->setTimeout(3);
         try {
             $producer->start();
             $this->assertTrue($producer->waitUntil(static fn ($type, $output) => str_contains($output, 'READY')), $producer->getErrorOutput());
@@ -113,26 +119,17 @@ PHP);
             $this->assertDirectoryExists($this->directory('one'));
             $one = $factory->createLock($this->resource('one'), ttl: null);
             $this->assertFalse($one->acquire(false));
+            $inodes = glob($this->directory('one').'/sf.*.lock');
+            $this->assertCount(1, $inodes);
+            $inode = fileinode($inodes[0]);
+            $probe->start();
             fwrite($release, "\n");
-            // The contract is inherited inode ownership, not a second snapshot
-            // of process liveness. Probe the existing inode without reclaiming
-            // its directory; the next managed acquisition must perform recovery.
-            $probe = (new LockFactory(new FlockStore($this->directory('one'))))->createLock($this->resource('one'), ttl: null);
-            $released = new DeferredFuture();
-            $watcher = EventLoop::repeat(0.001, static function () use ($probe, $released): void {
-                if ($probe->acquire(false)) {
-                    $released->complete();
-                }
-            });
-            try {
-                // Safety cap only: the FIFO releases the consumer's inherited
-                // descriptor; acquiring that exact lock establishes readiness.
-                $released->getFuture()->await(new TimeoutCancellation(3));
-                $this->assertTrue($probe->isAcquired());
-            } finally {
-                EventLoop::cancel($watcher);
-                $probe->release();
-            }
+            // Pipe notification follows blocking acquisition, not an elapsed
+            // interval or process-liveness snapshot. Timeout is a safety cap.
+            $this->assertTrue($probe->waitUntil(static fn ($type, $output) => str_contains($output, 'ACQUIRED')), $probe->getErrorOutput());
+            $this->assertSame(0, $probe->wait());
+            clearstatcache(true, $inodes[0]);
+            $this->assertSame($inode, fileinode($inodes[0]), 'The probe must acquire the inherited inode, not create a replacement.');
             $three = $factory->createLock($this->resource('three'), ttl: null);
             $this->assertTrue($three->acquire(false));
             $this->assertDirectoryDoesNotExist($this->directory('one'));
@@ -143,6 +140,7 @@ PHP);
             fclose($release);
             $input->close();
             $producer->stop();
+            $probe->stop();
         }
     }
 
