@@ -68,7 +68,7 @@ final readonly class ContextBudgetReminderHookSubscriber implements EssentialAft
             return [];
         }
 
-        $issued = $this->issuedReminderKeysAfterLatestCompaction($context->runId);
+        $issued = $this->issuedReminderKeysAfterLatestCompaction($context->runId, $remaining < $this->config->urgentRemainingTokens);
 
         $earlyEligible = $inputTokens >= $this->config->earlyInputTokens
             && !\in_array('early', $issued, true)
@@ -137,7 +137,7 @@ final readonly class ContextBudgetReminderHookSubscriber implements EssentialAft
      *
      * @return list<string>
      */
-    private function issuedReminderKeysAfterLatestCompaction(string $runId): array
+    private function issuedReminderKeysAfterLatestCompaction(string $runId, bool $urgentEligible): array
     {
         $earlyWrapped = self::wrapSystemReminder(self::EARLY_TEXT);
         $urgentWrapped = self::wrapSystemReminder(self::URGENT_TEXT);
@@ -156,11 +156,17 @@ final readonly class ContextBudgetReminderHookSubscriber implements EssentialAft
             }
 
             $text = $this->commandEventMessageText($event->payload);
-            if ($text === $urgentWrapped && !\in_array('urgent', $keys, true)) {
+            if ($text === $urgentWrapped) {
                 $keys[] = 'urgent';
+                break;
             }
             if ($text === $earlyWrapped && !\in_array('early', $keys, true)) {
                 $keys[] = 'early';
+                // Early is decisive only when this completion cannot escalate.
+                // Otherwise an older urgent reminder may already suppress it.
+                if (!$urgentEligible) {
+                    break;
+                }
             }
         }
 

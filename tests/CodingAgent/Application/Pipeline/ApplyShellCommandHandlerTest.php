@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Tests\Application\Pipeline;
+namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Pipeline\ApplyShellCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -17,11 +17,22 @@ use Ineersa\AgentCore\Domain\Run\RunOperationalToolCallStatusEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\ToolBatchIdentity;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Application\Pipeline\ApplyShellCommandHandler;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
+use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
+use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
+use Ineersa\CodingAgent\Session\JsonlRunEventLog;
+use Ineersa\CodingAgent\Session\RunHistorySourceDTO;
+use Ineersa\CodingAgent\Tests\Support\HistoryEventStoreFactory;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Lock\LockFactory;
 
 /**
  * Thesis: direct bang shells become canonical turn-owned command+effect
@@ -30,7 +41,7 @@ use PHPUnit\Framework\TestCase;
  * shells seed a new turn so retained-history discard can abandon them.
  */
 #[CoversClass(ApplyShellCommandHandler::class)]
-final class ApplyShellCommandHandlerTest extends TestCase
+final class ApplyShellCommandHandlerTest extends IsolatedKernelTestCase
 {
     /**
      * @return iterable<string, array{
@@ -105,7 +116,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         array $expectedEventTypes,
         RunStatus $expectedStatus,
     ): void {
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0], $this->sources());
         $rawInput = '!printf BANG_OWNERSHIP';
         $message = new ApplyShellCommand(
             runId: 'run-shell-1',
@@ -232,7 +243,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
         $state = $reducer->replay(new RunState(runId: $runId, status: RunStatus::Queued, model: 'test-model'), $prefix);
         $this->assertSame($ordinaryPending, $state->pendingToolCalls);
         $ordinaryTools = $state->currentToolCalls;
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0], $this->sources());
         $start = $handler->handle(new ApplyShellCommand(
             runId: $runId, turnNo: $state->turnNo, stepId: 'shell-step', attempt: 1,
             idempotencyKey: 'shell-parity', rawInput: '!printf shell',
@@ -268,7 +279,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
     public function testCommittedStandaloneShellRedeliveryIsANoOp(): void
     {
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0], $this->sources());
         $message = new ApplyShellCommand(
             runId: 'run-shell-duplicate',
             turnNo: 0,
@@ -292,7 +303,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
     public function testCommittedAttachedShellRedeliveryIsANoOpWithoutReplacingActiveLlm(): void
     {
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0], $this->sources());
         $message = new ApplyShellCommand(
             runId: 'run-attached-shell-duplicate',
             turnNo: 4,
@@ -344,7 +355,8 @@ final class ApplyShellCommandHandlerTest extends TestCase
             type: RunEventTypeEnum::AgentCommandApplied->value,
             payload: ['kind' => 'shell_command', 'idempotency_key' => 'completed-shell-key', 'text' => '!printf once'],
         ));
-        $handler = new ApplyShellCommandHandler(new EventFactory(), $events, AttributeSerializerValidatorTestFactory::create()[0]);
+        $this->appendHistory(new RunEvent('run-completed-shell', 7, 4, RunEventTypeEnum::AgentCommandApplied->value, ['kind' => 'shell_command', 'idempotency_key' => 'completed-shell-key']));
+        $handler = new ApplyShellCommandHandler(new EventFactory(), $events, AttributeSerializerValidatorTestFactory::create()[0], $this->sources());
         $message = new ApplyShellCommand('run-completed-shell', 4, 'shell-step', 1, 'completed-shell-key', '!printf once');
         $state = new RunState(runId: 'run-completed-shell', status: RunStatus::Running, turnNo: 4, lastSeq: 9, activeStepId: 'llm-step');
 
@@ -376,7 +388,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
 
     public function testRejectsInvalidRawInput(): void
     {
-        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0]);
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0], $this->sources());
         $state = new RunState(runId: 'run-shell-2', status: RunStatus::Queued, turnNo: 0, lastSeq: 0, model: 'test-model');
 
         $this->expectException(\InvalidArgumentException::class);
@@ -388,5 +400,76 @@ final class ApplyShellCommandHandlerTest extends TestCase
             idempotencyKey: 'bad',
             rawInput: 'ls',
         ), $state);
+    }
+
+    public function testFreshKeyDoesNotReadCanonicalArchiveAndHandlerIsRegisteredOnce(): void
+    {
+        $events = $this->createMock(EventStoreInterface::class);
+        $events->expects($this->never())->method('rangeFor');
+        $events->expects($this->never())->method('reverseFor');
+        $logger = new TestLogger();
+        $handler = new ApplyShellCommandHandler(new EventFactory(), $events, AttributeSerializerValidatorTestFactory::create()[0], $this->sources($logger));
+        foreach ([10, 1000] as $size) {
+            for ($i = 1; $i <= $size; ++$i) {
+                $this->appendHistory(new RunEvent('fresh-shell-'.$size, $i, 1, RunEventTypeEnum::AgentCommandApplied->value, ['kind' => 'shell_command', 'idempotency_key' => 'old-'.$i]));
+            }
+            $state = new RunState(runId: 'fresh-shell-'.$size, status: RunStatus::Running, turnNo: 1, lastSeq: $size);
+            $call = new ApplyShellCommand($state->runId, 1, 'shell-step', 1, 'fresh', '!printf fresh');
+            $this->assertCount(1, $handler->handle($call, $state)->effects);
+            $logger->records = [];
+            $this->assertCount(1, $handler->handle($call, $state)->effects);
+            $counts = [];
+            foreach ($logger->records as $record) {
+                $reason = $record['context']['read_reason'] ?? null;
+                if (\is_string($reason)) {
+                    $counts[$reason] = ($counts[$reason] ?? 0) + ($record['context']['lines_yielded'] ?? 0);
+                }
+            }
+            $this->assertSame(1, $counts['index_boundary_validation'] ?? 0);
+            $this->assertSame(0, $counts['index_cold_rebuild'] ?? 0);
+            $this->assertSame(0, $counts['sequence_range'] ?? 0);
+        }
+        $this->assertInstanceOf(ApplyShellCommandHandler::class, self::getContainer()->get(ApplyShellCommandHandler::class));
+        $this->assertFalse(self::getContainer()->has('Ineersa\\AgentCore\\Application\\Pipeline\\ApplyShellCommandHandler'));
+    }
+
+    public function testLaterKindCollisionDoesNotHideAppliedShell(): void
+    {
+        $older = new RunEvent('collision-shell', 1, 1, RunEventTypeEnum::AgentCommandApplied->value, ['kind' => 'shell_command', 'idempotency_key' => 'key']);
+        $newer = new RunEvent('collision-shell', 2, 1, RunEventTypeEnum::AgentCommandRejected->value, ['kind' => 'follow_up', 'idempotency_key' => 'key']);
+        $events = new InMemoryEventStore();
+        foreach ([$older, $newer] as $event) {
+            $this->appendHistory($event);
+            $events->seed($event);
+        }
+        $handler = new ApplyShellCommandHandler(new EventFactory(), $events, AttributeSerializerValidatorTestFactory::create()[0], $this->sources());
+        $this->assertSame([], $handler->handle(new ApplyShellCommand('collision-shell', 1, 'step', 1, 'key', '!printf once'), new RunState(runId: 'collision-shell', status: RunStatus::Running, turnNo: 1, lastSeq: 2))->effects);
+    }
+
+    public function testMissingIndexedEvidenceFailsClosed(): void
+    {
+        $this->appendHistory(new RunEvent('missing-shell', 1, 1, RunEventTypeEnum::AgentCommandApplied->value, ['kind' => 'shell_command', 'idempotency_key' => 'key']));
+        $handler = new ApplyShellCommandHandler(new EventFactory(), new InMemoryEventStore(), AttributeSerializerValidatorTestFactory::create()[0], $this->sources());
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('missing from canonical history');
+        $handler->handle(new ApplyShellCommand('missing-shell', 1, 'step', 1, 'key', '!printf once'), new RunState(runId: 'missing-shell', status: RunStatus::Running, turnNo: 1, lastSeq: 1));
+    }
+
+    private function sources(?TestLogger $logger = null): RunHistorySourceProviderInterface
+    {
+        $sources = $this->createStub(RunHistorySourceProviderInterface::class);
+        $container = self::getContainer();
+        $log = new JsonlRunEventLog($container->get(EventPayloadNormalizer::class), $container->get(LockFactory::class), $container->get(RunSequenceAllocatorInterface::class), new EventLogMaxSeqBootstrapReader(), $logger ?? new TestLogger(), presentations: HistoryEventStoreFactory::presentationFactory());
+        $sources->method('historySource')->willReturnCallback(static fn (string $runId): RunHistorySourceDTO => new RunHistorySourceDTO($log, getcwd().'/.hatfield/sessions/'.$runId.'/events.jsonl'));
+
+        return $sources;
+    }
+
+    private function appendHistory(RunEvent $event): void
+    {
+        $path = $this->sources()->historySource($event->runId)->path;
+        self::getContainer()->get(Filesystem::class)->mkdir(\dirname($path));
+        $record = self::getContainer()->get(EventPayloadNormalizer::class)->normalize($event->runId, $event->seq, $event->turnNo, $event->type, $event->payload);
+        file_put_contents($path, json_encode($record, \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
     }
 }
