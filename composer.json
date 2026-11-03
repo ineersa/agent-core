@@ -92,7 +92,10 @@
             "type": "path",
             "url": ".hatfield/extensions/extension-api",
             "options": {
-                "symlink": true
+                "symlink": true,
+                "versions": {
+                    "ineersa/hatfield-extension-api": "dev-main"
+                }
             }
         }
     ],
