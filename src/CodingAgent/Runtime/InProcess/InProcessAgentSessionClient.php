@@ -102,9 +102,10 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         return $this->childBackground->candidates($runId);
     }
 
-    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
+    /** @param list<string> $observedChildRunIds */
+    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null, array $observedChildRunIds = [], bool $includeChildHistory = false): BackgroundWorkSnapshotDTO
     {
-        return $this->backgroundWork->snapshot($rootRunId, $observedProcessId);
+        return $this->backgroundWork->snapshot($rootRunId, $observedProcessId, $observedChildRunIds, $includeChildHistory);
     }
 
     public function foregroundBash(string $runId): array

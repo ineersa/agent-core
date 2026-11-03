@@ -20,13 +20,13 @@ final readonly class BackgroundWorkSnapshotProvider
     {
     }
 
-    public function snapshot(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
+    /** @param list<string> $observedChildRunIds */
+    public function snapshot(string $rootRunId, ?int $observedProcessId = null, array $observedChildRunIds = [], bool $includeChildHistory = false): BackgroundWorkSnapshotDTO
     {
         $children = [];
-        // Terminal child statuses reconcile the picker catalog as well as the
-        // active rows. Keep this single projection read; work ownership below
-        // is selected directly in SQL without traversing historical children.
-        foreach ($this->batches->findOwnedChildStatuses($rootRunId) as $row) {
+        // Active rows discover new/resumed work. Exact observed identities get
+        // their final terminal status; historical inventory is on demand only.
+        foreach ($this->batches->findOwnedChildStatuses($rootRunId, $observedChildRunIds, $includeChildHistory) as $row) {
             $child = new BackgroundChildStatusDTO(
                 (string) $row['child_run_id'], (string) $row['artifact_id'], (string) $row['agent_name'],
                 (string) $row['task'], (string) $row['model'], (string) $row['reasoning'],

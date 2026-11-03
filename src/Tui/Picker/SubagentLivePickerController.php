@@ -70,7 +70,7 @@ final class SubagentLivePickerController
         }
 
         $rootRunId = $this->state->handle->runId ?? $this->state->sessionId;
-        $snapshot = $this->client->backgroundWork($rootRunId);
+        $snapshot = $this->client->backgroundWork($rootRunId, includeChildHistory: true);
         $this->state->subagentLiveCatalog->synchronizeOperationalStatus($snapshot->children);
         $children = $this->state->subagentLiveCatalog->all();
         if ([] === $children) {

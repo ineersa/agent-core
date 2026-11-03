@@ -189,7 +189,8 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
         }
         $this->lastStatusPoll = microtime(true);
         try {
-            $snapshot = $context->client->backgroundWork($runId, $this->requested?->processId);
+            $observedChildren = $context->state->subagentLiveCatalog->activeRunIds();
+            $snapshot = $context->client->backgroundWork($runId, $this->requested?->processId, $observedChildren);
             $context->state->subagentLiveCatalog->synchronizeOperationalStatus($snapshot->children);
             $rows = [];
             foreach ($snapshot->work as $work) {

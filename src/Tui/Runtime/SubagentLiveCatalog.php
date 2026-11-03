@@ -19,6 +19,8 @@ final class SubagentLiveCatalog
 {
     /** @var array<string, SubagentLiveChildDTO> artifactId → child */
     private array $byArtifactId = [];
+    /** @var array<string, string> artifactId → nonterminal run identity */
+    private array $activeRunIds = [];
 
     /** @var array<string, true> */
     private array $dismissedArtifactIds = [];
@@ -32,7 +34,7 @@ final class SubagentLiveCatalog
 
         $existing = $this->byArtifactId[$artifactId] ?? null;
         $this->dismissedArtifactIds[$artifactId] = true;
-        unset($this->byArtifactId[$artifactId]);
+        unset($this->byArtifactId[$artifactId], $this->activeRunIds[$artifactId]);
 
         return $existing;
     }
@@ -64,6 +66,12 @@ final class SubagentLiveCatalog
         return $this->byArtifactId[$artifactId] ?? null;
     }
 
+    /** @return list<string> Existing display identities awaiting active/final refresh. */
+    public function activeRunIds(): array
+    {
+        return array_values($this->activeRunIds);
+    }
+
     /** @param list<BackgroundChildStatusDTO> $children */
     public function synchronizeOperationalStatus(array $children): void
     {
@@ -81,12 +89,12 @@ final class SubagentLiveCatalog
             }
             // This refreshes only the catalog. The acknowledged transcript card
             // is historical and is never projected from these operational rows.
-            $this->byArtifactId[$child->artifactId] = new SubagentLiveChildDTO(
+            $this->store(new SubagentLiveChildDTO(
                 $child->runId, $child->artifactId, $child->name, $status, $child->task,
                 (int) (microtime(true) * 1000), $child->model, $child->reasoning,
                 $child->latestInputTokens, $child->contextWindow,
                 $existing?->cacheReadHitPercentage, $child->backgrounded,
-            );
+            ));
         }
     }
 
@@ -106,7 +114,7 @@ final class SubagentLiveCatalog
             return;
         }
 
-        $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
+        $this->store(new SubagentLiveChildDTO(
             agentRunId: $existing->agentRunId,
             artifactId: $existing->artifactId,
             agentName: $existing->agentName,
@@ -119,12 +127,22 @@ final class SubagentLiveCatalog
             contextWindow: $existing->contextWindow,
             cacheReadHitPercentage: $existing->cacheReadHitPercentage,
             backgrounded: $existing->backgrounded,
-        );
+        ));
     }
 
     public function ingestSnapshot(SubagentProgressSnapshotDTO $snapshot): void
     {
         $this->upsertFromProgressRow($snapshot, (int) (microtime(true) * 1000));
+    }
+
+    private function store(SubagentLiveChildDTO $child): void
+    {
+        $this->byArtifactId[$child->artifactId] = $child;
+        if ($child->isTerminal()) {
+            unset($this->activeRunIds[$child->artifactId]);
+        } else {
+            $this->activeRunIds[$child->artifactId] = $child->agentRunId;
+        }
     }
 
     private function upsertFromProgressRow(SubagentProgressSnapshotDTO $row, int $now): void
@@ -153,7 +171,7 @@ final class SubagentLiveCatalog
             ? $row->contextWindow
             : (null !== $existing ? $existing->contextWindow : 0);
 
-        $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
+        $this->store(new SubagentLiveChildDTO(
             agentRunId: $row->agentRunId,
             artifactId: $artifactId,
             agentName: $row->agentName,
@@ -166,6 +184,6 @@ final class SubagentLiveCatalog
             contextWindow: $contextWindow,
             cacheReadHitPercentage: $row->cacheReadHitPercentage,
             backgrounded: $existing->backgrounded ?? false,
-        );
+        ));
     }
 }

@@ -64,6 +64,10 @@ above-editor input overlay is open, background rows are hidden so the focused
 question can use that space; they return when the overlay closes. At heights too
 small for the editor and footer themselves, background rows are hidden.
 
+Periodic refresh reads active work and the final status of children still shown as
+unfinished. It does not reload completed child history or artifact registries.
+Opening Ctrl+\ loads the complete child inventory, including completed children.
+
 ## Background work picker: `/bg`
 
 Run `/bg` from the main view. It lists background code-mode scripts and

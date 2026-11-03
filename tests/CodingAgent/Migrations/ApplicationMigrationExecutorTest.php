@@ -677,6 +677,9 @@ SQL);
 
         $this->recordAppliedMigrationsThrough($connection, 'Version20261022235428');
 
+        // This focused legacy-session fixture omits deferred-work tables;
+        // their index migration is covered against the full schema separately.
+        $connection->insert('doctrine_migration_versions', ['version' => 'Version20261102143815', 'executed_at' => $now, 'execution_time' => 0]);
         (new ApplicationMigrationExecutor($connection, new NullLogger()))();
 
         $columns = $connection->createSchemaManager()->listTableColumns('hatfield_session');

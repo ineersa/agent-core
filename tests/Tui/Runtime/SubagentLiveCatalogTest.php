@@ -15,6 +15,19 @@ use PHPUnit\Framework\TestCase;
 /** @covers \Ineersa\Tui\Runtime\SubagentLiveCatalog */
 final class SubagentLiveCatalogTest extends TestCase
 {
+    public function testActiveIdentityIndexSettlesReactivatesAndRemovesChildren(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        foreach (['running', 'waiting_human', 'completed', 'running', 'cancelled', 'failed'] as $status) {
+            $catalog->synchronizeOperationalStatus([new BackgroundChildStatusDTO('run', 'artifact', 'fork', 'task', 'provider/model', 'low', $status, true)]);
+            $terminal = \in_array($status, ['completed', 'cancelled', 'failed'], true);
+            $this->assertSame($terminal ? [] : ['run'], $catalog->activeRunIds());
+        }
+        $catalog->dismissArtifactId('artifact');
+        $this->assertSame([], $catalog->activeRunIds());
+        $this->assertSame([], (new SubagentLiveCatalog())->activeRunIds(), 'Session reset constructs a fresh catalog.');
+    }
+
     public function testOperationalRefreshUpdatesMetadataWithoutParentProgressAndIdenticalSnapshotsAreNoOps(): void
     {
         $catalog = new SubagentLiveCatalog();

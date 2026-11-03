@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\OptimisticLockException;
 use Doctrine\ORM\Query;
@@ -80,14 +81,45 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         );
     }
 
-    /** @return list<array<string, mixed>> */
-    public function findOwnedChildStatuses(string $rootRunId): array
+    /**
+     * @param list<string> $observedChildRunIds
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function findOwnedChildStatuses(string $rootRunId, array $observedChildRunIds = [], bool $includeHistory = false): array
     {
+        $selection = '';
+        $parameters = [];
+        $types = [];
+        $from = 'deferred_subagent_batch batch JOIN deferred_subagent_child child ON child.batch_lifecycle_id = batch.lifecycle_id';
+        if (!$includeHistory) {
+            // CROSS JOIN fixes the candidate-first loop order. Otherwise SQLite
+            // may walk every owner batch before applying the active identity set.
+            $from = 'deferred_subagent_child child CROSS JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id';
+            // Start from the indexed unfinished range, not historical owner batches.
+            // Questions and final terminal updates use exact observed identities.
+            $selection = <<<'SQL'
+                AND child.id IN (
+                    SELECT active.id FROM deferred_subagent_child active INDEXED BY idx_child_active
+                    CROSS JOIN deferred_subagent_batch owner ON owner.lifecycle_id = active.batch_lifecycle_id
+                    WHERE active.terminal_status IS NULL AND active.terminal_completed_at IS NULL
+                        AND active.launch_status IN ('reserved', 'launched')
+                        AND owner.parent_run_id = :root
+                        AND NOT (owner.launch_status = 'failed' AND active.launch_status = 'reserved')
+                SQL;
+            if ([] !== $observedChildRunIds) {
+                $selection .= ' UNION SELECT observed.id FROM deferred_subagent_child observed JOIN deferred_subagent_batch observed_owner ON observed_owner.lifecycle_id = observed.batch_lifecycle_id WHERE observed.child_run_id IN (:observed) AND observed_owner.parent_run_id = :root';
+                $parameters['observed'] = $observedChildRunIds;
+                $types['observed'] = ArrayParameterType::STRING;
+            }
+            $selection .= ')';
+        }
+
         // Child launches are top-level only. Read their operational status in
         // one query, independently of the already-settled parent tool call.
         // Failed preparation may leave no runtime or only a previous attempt's
         // projection. A successful launch retains its actual lifecycle status.
-        return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<'SQL'
+        return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<SQL
             SELECT batch.backgrounded_at,
                 child.child_run_id, child.artifact_id, child.agent_name, child.task,
                 COALESCE(json_extract(child.child_lifecycle_projection, '$.model'), child.launch_model) AS model,
@@ -99,10 +131,10 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                     THEN :failed_status
                     ELSE COALESCE(child.terminal_status, state.status,
                         json_extract(child.child_lifecycle_projection, '$.child_status'), 'queued') END AS status
-            FROM deferred_subagent_batch batch
-            JOIN deferred_subagent_child child ON child.batch_lifecycle_id = batch.lifecycle_id
+            FROM $from
             LEFT JOIN run_operational_state state ON state.run_id = child.child_run_id
             WHERE batch.parent_run_id = :root
+                $selection
             ORDER BY batch.id, child.batch_index
             SQL, [
             'root' => $rootRunId,
@@ -110,7 +142,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             'failed_batch_launch' => DeferredSubagentBatchLaunchStatusEnum::Failed->value,
             'reserved_child_launch' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
             'failed_status' => RunStatus::Failed->value,
-        ]);
+        ] + $parameters, $types);
     }
 
     public function hasLaunchedPendingParentToolCall(string $parentRunId, int $parentTurnNo, string $parentToolCallId): bool

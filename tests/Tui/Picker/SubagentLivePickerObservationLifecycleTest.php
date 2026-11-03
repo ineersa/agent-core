@@ -232,7 +232,7 @@ final class ObservingSpyClient implements AgentSessionClient
         return [];
     }
 
-    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO
+    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null, array $observedChildRunIds = [], bool $includeChildHistory = false): BackgroundWorkSnapshotDTO
     {
         return new BackgroundWorkSnapshotDTO([], []);
     }

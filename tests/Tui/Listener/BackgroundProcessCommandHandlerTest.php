@@ -323,14 +323,14 @@ final class BackgroundProcessCommandHandlerTest extends IsolatedKernelTestCase
         $client->expects($this->never())->method('start');
         $client->expects(null === $send ? $this->never() : $this->once())->method('send')->willReturnCallback($send ?? static fn () => null);
         $client->expects($this->never())->method('cancel');
-        $client->method('backgroundWork')->willReturnCallback(function (string $runId, ?int $observedProcessId = null) use ($snapshot): BackgroundWorkSnapshotDTO {
+        $client->method('backgroundWork')->willReturnCallback(function (string $runId, ?int $observedProcessId = null, array $observedChildRunIds = [], bool $includeChildHistory = false) use ($snapshot): BackgroundWorkSnapshotDTO {
             // Opening snapshots are counted separately from exact-record stop
             // revalidation and UI-only settlement; those must not refresh an open picker.
             if (null === $observedProcessId) {
                 ++$this->reads;
             }
 
-            return $snapshot ?? $this->native->backgroundWork($runId, $observedProcessId);
+            return $snapshot ?? $this->native->backgroundWork($runId, $observedProcessId, $observedChildRunIds, $includeChildHistory);
         });
         $client->method('stopBackgroundProcess')->willReturnCallback(function (string $runId, int $id): bool {
             $this->assertFalse($this->harness->screen()->hasInputOverlay(), 'Close before the native stop action.');

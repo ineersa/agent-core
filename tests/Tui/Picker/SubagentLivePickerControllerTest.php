@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundChildStatusDTO;
 use Ineersa\CodingAgent\Runtime\Contract\DTO\BackgroundWorkSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
@@ -75,6 +76,24 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->assertStringContainsString('needs input', $label);
         $this->assertStringContainsString('23.0k/272.0k', $label);
         $this->assertStringContainsString('model', $label);
+    }
+
+    public function testOpeningLoadsCompletedInventoryOnDemand(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-history');
+        $state = new TuiSessionState('picker-history');
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())->method('backgroundWork')
+            ->with('picker-history', null, [], true)
+            ->willReturn(new BackgroundWorkSnapshotDTO(children: [
+                new BackgroundChildStatusDTO('completed-run', 'completed-artifact', 'scout', 'Completed inventory task', 'provider/model', 'low', 'completed', true),
+            ], work: []));
+        $picker = $this->picker($harness, $state, $client);
+        $this->assertSame([], $state->subagentLiveCatalog->all());
+        $picker->open();
+        $this->assertTrue($picker->isOpen());
+        $this->assertStringContainsString('Completed inventory task', $harness->plainScreenText());
+        $this->assertSame([], $state->subagentLiveCatalog->activeRunIds());
     }
 
     #[Test]
@@ -766,10 +785,12 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->assertStringContainsString('Removed scout from /agents-live.', $this->pickerHeaderPlain($picker));
     }
 
-    private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
+    private function picker(VirtualTuiHarness $harness, TuiSessionState $state, ?AgentSessionClient $client = null): SubagentLivePickerController
     {
-        $client = $this->createStub(AgentSessionClient::class);
-        $client->method('backgroundWork')->willReturn(new BackgroundWorkSnapshotDTO([], []));
+        if (null === $client) {
+            $client = $this->createStub(AgentSessionClient::class);
+            $client->method('backgroundWork')->willReturn(new BackgroundWorkSnapshotDTO([], []));
+        }
 
         return new SubagentLivePickerController(
             $harness->tui(),

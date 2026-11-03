@@ -45,8 +45,13 @@ interface AgentSessionClient
     /** @return list<ChildBackgroundCandidateDTO> One candidate per registered fork/subagent invocation. */
     public function foregroundChildren(string $runId): array;
 
-    /** Read native root-owned state; optionally include one retained process's terminal outcome. */
-    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null): BackgroundWorkSnapshotDTO;
+    /**
+     * Read active root-owned work and final outcomes for observed identities.
+     * Complete child history is requested only when opening the live picker.
+     *
+     * @param list<string> $observedChildRunIds
+     */
+    public function backgroundWork(string $rootRunId, ?int $observedProcessId = null, array $observedChildRunIds = [], bool $includeChildHistory = false): BackgroundWorkSnapshotDTO;
 
     /** Request stop of the exact accepted record without waiting; false means it already finished. */
     public function stopBackgroundProcess(string $runId, int $recordId): bool;
