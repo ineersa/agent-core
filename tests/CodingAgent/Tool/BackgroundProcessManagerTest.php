@@ -13,12 +13,14 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
+use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessControllerSessionLifecycleListener;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\BackgroundProcessFixture;
+use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\Arguments\BashArgumentsDTO;
@@ -60,6 +62,48 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->manager->cleanupSessionSidecars($this->runId);
         TestDirectoryIsolation::removeDirectory($this->directory);
         parent::tearDown();
+    }
+
+    #[TestWith([true])]
+    #[TestWith([false])]
+    public function testNativePollingRetainsIdentityButRefreshesAcceptance(bool $persisted): void
+    {
+        [$server, $command] = $this->blockedCommand();
+        $peer = null;
+        $launch = null;
+        try {
+            $launch = $this->manager->start($command, $this->runId, $persisted ? 'poll' : null, invocationKey: $persisted ? 'poll' : null);
+            $peer = stream_socket_accept($server, 2);
+            $this->assertIsResource($peer);
+            $sql = self::getContainer()->get('test.sql_logger');
+            $sql->records = [];
+            for ($i = 0; $i < 8; ++$i) {
+                $this->assertFalse($this->manager->observeNativeByStatusPath($launch->statusPath, $this->runId)?->accepted);
+            }
+            $queries = array_column(array_column($sql->records, 'context'), 'sql');
+            $this->assertCount($persisted ? 8 : 0, $queries);
+            foreach ($queries as $query) {
+                $this->assertStringContainsString('WHERE id =', $query);
+                $this->assertStringNotContainsString('status_path =', $query);
+            }
+            if ($persisted) {
+                $record = $this->store->sessionSnapshots($this->runId)[0];
+                $sql->records = [];
+                $this->manager->refreshRecords([$record]);
+                $selects = array_filter($sql->records, static fn (array $entry): bool => str_starts_with($entry['context']['sql'] ?? '', 'SELECT'));
+                $this->assertCount(2, $selects, 'Observe and supervision read current state without a discarded final snapshot.');
+                $this->assertTrue($this->store->acceptLocal($record->id, $this->runId));
+                $this->assertTrue($this->manager->observeNativeByStatusPath($launch->statusPath, $this->runId)?->accepted);
+            }
+        } finally {
+            if (null !== $launch) {
+                $this->manager->releaseNativeInvocation($launch->statusPath);
+            }
+            if (\is_resource($peer)) {
+                fclose($peer);
+            }
+            fclose($server);
+        }
     }
 
     public function testOrdinaryOutputAndCompletedIntentReplay(): void
@@ -381,6 +425,11 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
             }
             fclose($server);
         }
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new SqlLoggingKernel('test', false);
     }
 
     private function sessionListener(): BackgroundProcessControllerSessionLifecycleListener

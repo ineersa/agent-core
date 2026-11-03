@@ -45,6 +45,14 @@ final class AgentArtifactRegistry
 {
     private const SCHEMA_VERSION = 1;
 
+    private ?string $childIdsParent = null;
+    /** @var resource|null */
+    private mixed $childIdsHandle = null;
+    /** @var list<int> */
+    private array $childIdsIdentity = [];
+    /** @var list<string> */
+    private array $childIds = [];
+
     public function __construct(
         private readonly SessionAgentArtifactPathResolver $pathResolver,
         private readonly NormalizerInterface&DenormalizerInterface $serializer,
@@ -417,6 +425,64 @@ final class AgentArtifactRegistry
         }
     }
 
+    /** @return list<string> */
+    public function childRunIds(string $parentRunId): array
+    {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        if ($this->childIdsParent !== $parentRunId) {
+            $this->clearChildIdsSnapshot();
+        }
+        $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
+        try {
+            while (!$lock->acquire(false)) {
+                delay(0.02);
+            }
+            $path = $this->pathResolver->registryPath($parentRunId);
+            clearstatcache(true, $path);
+            if (!is_file($path)) {
+                $this->clearChildIdsSnapshot();
+
+                return [];
+            }
+            $stat = @stat($path);
+            if (false === $stat || !is_readable($path)) {
+                $this->clearChildIdsSnapshot();
+                throw new \RuntimeException(\sprintf('Registry.json for parent run "%s" exists but is not readable.', $parentRunId));
+            }
+            if ($this->childIdsParent === $parentRunId && $this->childIdsIdentity === $this->fileIdentity($stat)) {
+                return $this->childIds;
+            }
+            $this->clearChildIdsSnapshot();
+            $handle = @fopen($path, 'rb');
+            if (false === $handle) {
+                throw new \RuntimeException(\sprintf('Registry.json for parent run "%s" exists but is not readable.', $parentRunId));
+            }
+            try {
+                // Read and stamp the same opened snapshot. Keeping it open pins
+                // its inode, so same-second atomic replacement cannot look equal
+                // through inode reuse. Only one parent's scalar IDs are retained.
+                $stat = fstat($handle);
+                $json = stream_get_contents($handle);
+                if (false === $stat || false === $json) {
+                    throw new \RuntimeException('Cannot read agent registry snapshot.');
+                }
+                $ids = array_map(static fn (AgentArtifactEntryDTO $entry): string => $entry->agentRunId, $this->decodeRegistry($json, $parentRunId));
+                $this->childIdsParent = $parentRunId;
+                $this->childIdsIdentity = $this->fileIdentity($stat);
+                $this->childIds = $ids;
+                $this->childIdsHandle = $handle;
+            } finally {
+                if ($this->childIdsHandle !== $handle) {
+                    fclose($handle);
+                }
+            }
+
+            return $this->childIds;
+        } finally {
+            $lock->release();
+        }
+    }
+
     // ── Public file writers ─────────────────────────────────────────────
 
     /**
@@ -521,6 +587,25 @@ final class AgentArtifactRegistry
         throw new \InvalidArgumentException(\sprintf('No handoff "%s" for artifact "%s".', $handoffId, $artifactId));
     }
 
+    private function clearChildIdsSnapshot(): void
+    {
+        if (\is_resource($this->childIdsHandle)) {
+            fclose($this->childIdsHandle);
+        }
+        $this->childIdsHandle = null;
+        $this->childIdsParent = null;
+        $this->childIdsIdentity = [];
+        $this->childIds = [];
+    }
+
+    /** @param array<int|string, int> $stat
+     * @return list<int>
+     */
+    private function fileIdentity(array $stat): array
+    {
+        return [$stat['dev'], $stat['ino'], $stat['size'], $stat['mtime'], $stat['ctime'], $stat['mode'], $stat['uid'], $stat['gid']];
+    }
+
     // ── Internal read/write methods ─────────────────────────────────────
 
     private function buildPendingEntry(
@@ -582,7 +667,14 @@ final class AgentArtifactRegistry
         }
 
         $json = file_get_contents($path);
-        if (false === $json || '' === trim($json)) {
+
+        return false === $json ? [] : $this->decodeRegistry($json, $parentRunId);
+    }
+
+    /** @return list<AgentArtifactEntryDTO> */
+    private function decodeRegistry(string $json, string $parentRunId): array
+    {
+        if ('' === trim($json)) {
             return [];
         }
 

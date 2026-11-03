@@ -99,11 +99,12 @@ final class BackgroundProcessCompletionPoller
     public function resolveOwnedSessionIds(string $parentSessionId): array
     {
         $ids = [$parentSessionId];
+        $seen = [$parentSessionId => true];
 
         try {
-            foreach ($this->artifactRegistry->list($parentSessionId) as $entry) {
-                $childRunId = $entry->agentRunId;
-                if ('' !== $childRunId && !\in_array($childRunId, $ids, true)) {
+            foreach ($this->artifactRegistry->childRunIds($parentSessionId) as $childRunId) {
+                if ('' !== $childRunId && !isset($seen[$childRunId])) {
+                    $seen[$childRunId] = true;
                     $ids[] = $childRunId;
                 }
             }
