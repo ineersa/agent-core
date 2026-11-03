@@ -64,6 +64,51 @@ final class TranscriptVisualProjectorTest extends TestCase
         }
     }
 
+    public function testMixedToolFinalizationAndResultArrivalRetainHistoricalNodes(): void
+    {
+        foreach ([10, 1000] as $size) {
+            foreach ([false, true] as $resultFirst) {
+                $projector = new TranscriptVisualProjector();
+                $history = [];
+                for ($i = 0; $i < $size; ++$i) {
+                    $history[] = new TranscriptBlock('history-'.$i, TranscriptBlockKindEnum::AssistantMessage, self::SESSION_ID, $i + 1, 'history');
+                }
+                $call = new TranscriptBlock('call', TranscriptBlockKindEnum::ToolCall, self::SESSION_ID, $size + 1, 'partial arguments', [
+                    'tool_call_id' => 'mixed', 'tool_name' => 'read',
+                ], true);
+                $projector->replaceAll([...$history, $call]);
+                $nodes = new \ReflectionProperty(TranscriptVisualProjector::class, 'nodesByKey');
+                $original = $nodes->getValue($projector);
+                unset($original['exchange:mixed']);
+                $call = $call->with(text: 'final arguments', streaming: false);
+                $result = new TranscriptBlock('result', TranscriptBlockKindEnum::ToolResult, self::SESSION_ID, $size + 2, 'running', $call->meta);
+
+                $patch = $projector->applyChangeSet(TranscriptChangeSet::incremental($resultFirst ? [$result, $call] : [$call, $result]));
+                $this->assertFalse($patch->isFull());
+                $this->assertCount(1, $patch->upserts);
+                $this->assertSame($call, $patch->upserts[0]->primary);
+                $this->assertSame($result, $patch->upserts[0]->secondary);
+                foreach ($original as $key => $node) {
+                    $this->assertSame($node, $nodes->getValue($projector)[$key], 'Mixed ordinary batches must retain historical nodes.');
+                }
+                $reference = new TranscriptVisualProjector();
+                $full = $reference->replaceAll([...$history, $call, $result]);
+                $this->assertSame($full->order, $patch->order);
+                $this->assertEquals($nodes->getValue($reference), $nodes->getValue($projector));
+
+                $result = $result->with(text: 'finished');
+                $next = new TranscriptBlock('next', TranscriptBlockKindEnum::AssistantMessage, self::SESSION_ID, $size + 3, 'next');
+                $patch = $projector->applyChangeSet(TranscriptChangeSet::incremental([$next, $result]));
+                foreach ($original as $key => $node) {
+                    $this->assertSame($node, $nodes->getValue($projector)[$key]);
+                }
+                $full = $reference->replaceAll([...$history, $call, $result, $next]);
+                $this->assertSame($full->order, $patch->order);
+                $this->assertEquals($nodes->getValue($reference), $nodes->getValue($projector));
+            }
+        }
+    }
+
     #[Test]
     public function testPureTailStreamEmitsContentOnlyPatchWithoutOrderSnapshot(): void
     {

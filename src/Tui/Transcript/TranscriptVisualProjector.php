@@ -127,17 +127,33 @@ final class TranscriptVisualProjector
         // exchanges with unchanged identity can update without rescanning history.
         $inPlaceToolIds = $this->findInPlaceToolUpdates($changes);
 
-        $tailOnly = [] === $changes->removals;
+        $tailEligible = [] === $changes->removals;
+        $firstNew = null;
+        $hasExistingUpdates = false;
         foreach ($changes->upserts as $block) {
-            $tailOnly = $tailOnly && !isset($this->blocksById[$block->id]);
+            if (isset($this->blocksById[$block->id])) {
+                $hasExistingUpdates = true;
+                $tailEligible = $tailEligible && ($inPlaceToolIds[$block->id] ?? false);
+            } else {
+                $firstNew ??= $block;
+            }
         }
         $previousTail = [] === $this->blockOrder ? null : $this->blocksById[$this->blockOrder[array_key_last($this->blockOrder)]];
 
         // Mutate canonical state first; dependency expansion uses post-mutation indexes.
         $this->applyRemovalsAndUpsertsToCanonical($changes);
 
-        if ($tailOnly && null !== ($patch = $this->projectTail($changes->upserts, $previousTail))) {
-            return $patch;
+        if ($tailEligible && null !== $firstNew) {
+            $blocks = $changes->upserts;
+            if ($hasExistingUpdates) {
+                // A poll can finalize an existing call and add its result together.
+                // Plan only the changed sources, in their canonical order, so the
+                // exchange uses the updated call even if its upsert arrived last.
+                usort($blocks, fn (TranscriptBlock $a, TranscriptBlock $b): int => $this->blockIndex[$a->id] <=> $this->blockIndex[$b->id]);
+            }
+            if (null !== ($patch = $this->projectTail($blocks, $previousTail, $firstNew, $inPlaceToolIds))) {
+                return $patch;
+            }
         }
 
         // Neighbors cover separators/placeholders; exchange sources are resolved by
@@ -380,13 +396,14 @@ final class TranscriptVisualProjector
     }
 
     /**
-     * Plan ordinary appended rows and distant result pairing without rebuilding
-     * retained nodes. All eligibility checks precede visual-state mutation.
+     * Plan ordinary appended rows, stable tool updates and distant result pairing
+     * without rebuilding retained nodes. Eligibility precedes visual mutation.
      * Structural patches still carry the complete O(order) key list.
      *
      * @param list<TranscriptBlock> $blocks
+     * @param array<string, bool>   $inPlaceToolIds
      */
-    private function projectTail(array $blocks, ?TranscriptBlock $previousTail): ?TranscriptVisualPatch
+    private function projectTail(array $blocks, ?TranscriptBlock $previousTail, TranscriptBlock $firstNew, array $inPlaceToolIds): ?TranscriptVisualPatch
     {
         if (\count($this->nodeOrder) !== \count($this->nodesByKey)) {
             return null; // Duplicate visual identities require full pairing policy.
@@ -397,7 +414,7 @@ final class TranscriptVisualProjector
         $consumedResults = [];
         $consumedCalls = [];
         $removals = [];
-        if (null !== $previousTail && isset($this->nodesByKey[$previousTail->id]) && $this->factory->shouldSuppressEmptyAssistantPlaceholder($previousTail, $blocks[0] ?? null)) {
+        if (null !== $previousTail && isset($this->nodesByKey[$previousTail->id]) && $this->factory->shouldSuppressEmptyAssistantPlaceholder($previousTail, $firstNew)) {
             $removals[] = $previousTail->id;
         }
         $visible = \count($this->nodesByKey) - (int) isset($this->nodesByKey[self::WELCOME_KEY]) - \count($removals) > 0;
@@ -405,7 +422,8 @@ final class TranscriptVisualProjector
             $callId = $this->toolCallIdMeta($block);
             $key = TranscriptBlockKindEnum::ToolCall === $block->kind ? $this->stableToolVisualKey($block) : $block->id;
             if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
-                if (isset($this->nodesByKey[$key]) || isset($planned[$key])) {
+                if (isset($planned[$key]) || (isset($this->nodesByKey[$key])
+                    && (!($inPlaceToolIds[$block->id] ?? false) || $this->nodesByKey[$key]->primary?->id !== $block->id))) {
                     return null;
                 }
                 foreach ($this->toolResultIdsByCallId[$callId ?? ''] ?? [] as $resultId) {
