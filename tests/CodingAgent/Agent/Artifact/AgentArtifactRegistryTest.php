@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
@@ -13,6 +14,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Utility\AtomicFileWriter;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -25,6 +27,8 @@ use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Validator\ConstraintViolationListInterface;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Validator\ValidatorBuilder;
 
 /**
@@ -43,6 +47,7 @@ final class AgentArtifactRegistryTest extends TestCase
     private string $projectDir;
     private SessionAgentArtifactPathResolver $pathResolver;
     private AgentArtifactRegistry $registry;
+    private int $entryValidations = 0;
 
     protected function setUp(): void
     {
@@ -68,7 +73,15 @@ final class AgentArtifactRegistryTest extends TestCase
             [new JsonEncoder()],
         );
 
-        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+        $realValidator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+        $validator = $this->createStub(ValidatorInterface::class);
+        $validator->method('validate')->willReturnCallback(function (mixed $value) use ($realValidator): ConstraintViolationListInterface {
+            if ($value instanceof AgentArtifactEntryDTO) {
+                ++$this->entryValidations;
+            }
+
+            return $realValidator->validate($value);
+        });
 
         $this->pathResolver = new SessionAgentArtifactPathResolver($hatfieldSessionStore);
 
@@ -85,6 +98,68 @@ final class AgentArtifactRegistryTest extends TestCase
         parent::tearDown();
 
         TestDirectoryIsolation::removeDirectory($this->projectDir);
+    }
+
+    public function testUnchangedChildIdentitySnapshotsAvoidHistoricalHydration(): void
+    {
+        foreach ([1, 32] as $size) {
+            for ($i = 1 === $size ? 0 : 1; $i < $size; ++$i) {
+                $this->registry->create('snapshot', 'agent_'.$i, 'child-'.$i, 'scout', AgentArtifactKindEnum::Subagent);
+            }
+            $this->entryValidations = 0;
+            $this->assertCount($size, $this->registry->childRunIds('snapshot'));
+            $this->assertSame($size, $this->entryValidations);
+            $this->entryValidations = 0;
+            for ($poll = 0; $poll < 3; ++$poll) {
+                $this->assertCount($size, $this->registry->childRunIds('snapshot'));
+            }
+            $this->assertSame(0, $this->entryValidations);
+            $this->assertCount($size, $this->registry->list('snapshot'));
+            $this->assertSame($size, $this->entryValidations, 'Normal list still validates each entry.');
+        }
+    }
+
+    public function testSnapshotInvalidatesOnSameTimestampAtomicReplacementAndParentChanges(): void
+    {
+        $this->registry->create('snapshot', 'agent_first', 'child-first', 'scout', AgentArtifactKindEnum::Subagent);
+        $this->assertSame(['child-first'], $this->registry->childRunIds('snapshot'));
+        $path = $this->pathResolver->registryPath('snapshot');
+        $timestamp = filemtime($path);
+        $inode = fileinode($path);
+        $json = file_get_contents($path);
+        $this->assertIsString($json);
+        AtomicFileWriter::write($path, str_replace('child-first', 'child-other', $json));
+        $this->assertTrue(touch($path, $timestamp));
+        clearstatcache(true, $path);
+        $this->assertSame($timestamp, filemtime($path));
+        $this->assertNotSame($inode, fileinode($path));
+        $this->entryValidations = 0;
+        $this->assertSame(['child-other'], $this->registry->childRunIds('snapshot'));
+        $this->assertSame(1, $this->entryValidations);
+        $this->registry->create('another', 'agent_second', 'second-child', 'scout', AgentArtifactKindEnum::Subagent);
+        $this->assertSame(['second-child'], $this->registry->childRunIds('another'));
+        $this->entryValidations = 0;
+        $this->assertSame(['child-other'], $this->registry->childRunIds('snapshot'));
+        $this->assertSame(1, $this->entryValidations, 'Only the last parent snapshot is retained.');
+        unlink($path);
+        $this->assertSame([], $this->registry->childRunIds('snapshot'));
+        AtomicFileWriter::write($path, $json);
+        $this->assertSame(['child-first'], $this->registry->childRunIds('snapshot'));
+    }
+
+    public function testCorruptReplacementDoesNotServeStaleChildIdentities(): void
+    {
+        $this->registry->create('snapshot', 'agent_first', 'child-first', 'scout', AgentArtifactKindEnum::Subagent);
+        $this->assertSame(['child-first'], $this->registry->childRunIds('snapshot'));
+        AtomicFileWriter::write($this->pathResolver->registryPath('snapshot'), '{broken');
+        for ($poll = 0; $poll < 2; ++$poll) {
+            try {
+                $this->registry->childRunIds('snapshot');
+                $this->fail('Corrupt replacement must not reuse the prior snapshot.');
+            } catch (\RuntimeException $exception) {
+                $this->assertStringContainsString('not parseable as JSON', $exception->getMessage());
+            }
+        }
     }
 
     // ── Create ────────────────────────────────────────────────────────────

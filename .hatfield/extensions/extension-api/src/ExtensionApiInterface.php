@@ -14,7 +14,10 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
+use Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
@@ -34,6 +37,14 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
  */
 interface ExtensionApiInterface
 {
+    /** Noninteractive standalone invocation through native tool policy and processors. */
+    public function tools(): RegisteredToolInvokerInterface;
+
+    /** Submit an attributed notification through the canonical owner mailbox. */
+    public function notifyOwner(OwnerNotificationDTO $notification): void;
+
+    public function registerRecurringJobSource(string $sourceId, RecurringJobSourceInterface $source): void;
+
     /**
      * Register a permanent tool with the Hatfield tool registry.
      *

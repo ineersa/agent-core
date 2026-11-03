@@ -35,6 +35,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
+use Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentResumeExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -50,6 +51,7 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Session\Contract\RunHistorySourceProviderInterface;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -831,9 +833,10 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $context = new StackToolExecutionContextAccessor();
         $commands = new TestMessageBus();
         $batches = self::getContainer()->get(DeferredSubagentBatchRepository::class);
-        $canonical = [];
+        $canonicalStore = self::getContainer()->get(ChildAwareEventStore::class);
         $events = $this->createConfiguredStub(EventStoreInterface::class, ['latestSequenceFor' => 1]);
-        $events->method('reverseFor')->willReturnCallback(static function () use (&$canonical): iterable { return array_reverse($canonical); });
+        $events->method('reverseFor')->willReturnCallback($canonicalStore->reverseFor(...));
+        $events->method('rangeFor')->willReturnCallback($canonicalStore->rangeFor(...));
         $status = RunStatus::Completed;
         $statuses = $this->createStub(RunOperationalStatusReaderInterface::class);
         $statuses->method('findOperationalStatus')->willReturnCallback(static function () use (&$status): RunOperationalStatusDTO { return new RunOperationalStatusDTO($status, 1); });
@@ -855,7 +858,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             normalizer: self::getContainer()->get(SerializerInterface::class),
             denormalizer: self::getContainer()->get(SerializerInterface::class),
             validator: self::getContainer()->get(ValidatorInterface::class),
-            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($events),
+            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($events, self::getContainer()->get(RunHistorySourceProviderInterface::class)),
         );
         $step = 'stable-resume-step';
         $call = new ExecuteToolCall($parent, 1, $step, 1, hash('sha256', 'stable'), 'resume-stable', 'agent_resume', ['artifact_id' => $artifact, 'task' => 'continue'], 0, parentModel: 'test/model');
@@ -888,7 +891,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
 
         // The mailbox has consumed the command, but its exact canonical identity
         // still proves that this resume started even if the local write was lost.
-        $canonical = (new EventFactory())->eventsFromSpecs($child, 2, 2, $continued->eventSpecs);
+        PreparedEventStoreSeeder::appendMany($canonicalStore, (new EventFactory())->eventsFromSpecs($child, 2, 2, $continued->eventSpecs));
         $status = RunStatus::Running;
         $connection = self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->getConnection();
         $connection->executeStatement("UPDATE deferred_subagent_batch SET launch_status = 'reserved' WHERE lifecycle_id = ?", [$first->deferredId]);
@@ -897,7 +900,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batches->findByLifecycleId($first->deferredId)->launchStatus);
 
         // Finishing the associated execution does not authorize another follow_up.
-        $canonical[] = new RunEvent($child, 3, 2, 'agent_end', ['status' => 'completed']);
+        PreparedEventStoreSeeder::append($canonicalStore, RunEvent::forAppend($child, 2, 'agent_end', ['status' => 'completed']));
         $status = RunStatus::Completed;
         $connection->executeStatement("UPDATE deferred_subagent_batch SET launch_status = 'reserved' WHERE lifecycle_id = ?", [$first->deferredId]);
         $this->assertSame($first->deferredId, $invoke()->deferredId);
@@ -957,7 +960,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             toolBatches: self::getContainer()->get(ToolBatchStoreInterface::class),
             denormalizer: self::getContainer()->get(SerializerInterface::class),
             validator: self::getContainer()->get(ValidatorInterface::class),
-            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($eventStore),
+            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($eventStore, self::getContainer()->get(RunHistorySourceProviderInterface::class)),
         );
     }
 
@@ -1006,7 +1009,7 @@ final class AgentResumeExecutionServiceTest extends IsolatedKernelTestCase
             toolBatches: self::getContainer()->get(ToolBatchStoreInterface::class),
             denormalizer: self::getContainer()->get(SerializerInterface::class),
             validator: self::getContainer()->get(ValidatorInterface::class),
-            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($eventStore),
+            resumeCommands: new \Ineersa\CodingAgent\Agent\Execution\AgentResumeCommandReader($eventStore, self::getContainer()->get(RunHistorySourceProviderInterface::class)),
         );
 
         $stepId = 'resume-step-'.$toolCallId;

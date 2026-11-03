@@ -113,6 +113,19 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         parent::tearDown();
     }
 
+    public function testOwnedIdsKeepParentFirstAndDeduplicateChildrenAcrossSnapshots(): void
+    {
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $registry->create('owned-parent', 'agent_parent_alias', 'owned-parent', 'scout', AgentArtifactKindEnum::Subagent);
+        $registry->create('owned-parent', 'agent_first', 'child', 'scout', AgentArtifactKindEnum::Subagent);
+        $registry->create('owned-parent', 'agent_duplicate', 'child', 'scout', AgentArtifactKindEnum::Subagent);
+        $poller = $this->createPoller(self::getContainer()->get(ProcessStore::class), self::getContainer()->get(BackgroundProcessManager::class), 'different-configured-parent');
+        $this->assertSame(['owned-parent', 'child'], $poller->resolveOwnedSessionIds('owned-parent'));
+        $this->assertSame(['owned-parent', 'child'], $poller->resolveOwnedSessionIds('owned-parent'));
+        $registry->create('owned-parent', 'agent_new', 'new-child', 'scout', AgentArtifactKindEnum::Subagent);
+        $this->assertSame(['owned-parent', 'child', 'new-child'], $poller->resolveOwnedSessionIds('owned-parent'));
+    }
+
     #[TestWith(['stop'])]
     #[TestWith(['natural'])]
     #[TestWith(['failure'])]

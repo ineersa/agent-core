@@ -51,7 +51,7 @@ final class EditFileTool implements HatfieldToolProviderInterface
             // execution-time, state-dependent results under the applier's
             // lock and stay in PatchApplier.
             $targetPath = PathResolver::resolve($path);
-            $result = $this->applier->apply($targetPath, $patch);
+            $result = $this->applier->apply($targetPath, $patch, $this->toolRuntime->checkpoint(...));
 
             if ($result['patchedContent'] === $result['originalContent']) {
                 return 'No changes (patch produced identical content)';

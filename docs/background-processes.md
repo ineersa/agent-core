@@ -15,13 +15,53 @@ Questions, modal dialogs and completion overlays retain their keyboard handling.
 Without an eligible invocation, Ctrl+B keeps its editor cursor-left behavior.
 Models can set `backgrounded: true` on these five tools to request background launch after startup. Omitted or false keeps foreground behavior. There is no `bg_start` tool.
 
+## Recurring work: `schedule`
+
+The optional Scheduling extension is disabled by default. Run
+`hatfield extensions:setup`, select **Scheduling (built in)**, enable it for the
+parent, save, and start a new session. While disabled, neither the `schedule`
+tool nor the `/schedule` command is available.
+
+For agents, the current tool catalog determines availability. Call `schedule`
+only when it is listed. If it is absent, explain the enablement prerequisite;
+do not assume availability or change settings without user approval.
+
+Use `schedule` with `action: create`, `tool: bash` or `code_mode`, the target's
+existing `arguments`, and `every` to repeat work during this live session.
+Use intervals such as `"30 seconds"`, `"5 minutes"`, or `"PT1H"`. Arguments default
+to an empty object when omitted. Add `for_seconds` to limit the lifetime.
+Without a lifetime, the schedule lasts until cancelled or Hatfield closes.
+The first execution is immediately eligible. The `next` field denotes the next
+recurring occurrence, not a delay before initial execution.
+
+Use `action: list` to inspect schedules and `action: cancel` with the returned `id`
+to prevent future invocations. `/schedule` lists the current session's targets,
+intervals, next occurrences and expiry, with a cancellation picker. It does not call
+the model. Cancellation and expiry do not stop work that has already started.
+
+Schedules require the process-backed controller. Definitions are not restored on
+reopening Hatfield, and no work runs while it is closed. Changes reach Symfony's
+schedule through a one-second refresh. Waiting schedules do not occupy execution
+Fibers; running invocations share the cooperative tool/agent worker and can overlap.
+
+Results arrive through automatic notifications after normal output processing.
+Scheduled execution is noninteractive: operations requiring approval or human input
+are denied, even when the main conversation has an approval channel. Do not pass
+`backgrounded: true`; scheduled work is already asynchronous to the agent. Do not
+sleep or poll to wait for results; notifications arrive automatically.
+There is no caller card to detach with Ctrl+B. Scheduled invocations are not listed
+as stoppable work in `/bg`; use execution timeouts or cancel the owning run.
+
 ## Code-mode scripts
 
 `backgrounded: true` or Ctrl+B detaches a ready top-level `code_mode` without replacing its PHP host, socket, workspace, stack or nested calls.
 The card freezes at acknowledgment; results and saved diagnostics arrive as agent notifications, not human input or another call result.
 
 Detachment preserves the 1,800-second default deadline and 3,600-second maximum.
-Hosts occupy tool consumers; saturation queues all tools, including inspection. No control worker is reserved.
+Suspended hosts retain a Fiber and subprocess resources, not an exclusive consumer slot.
+The shared worker has no handler-admission concurrency cap. Cooperative waits let
+sibling tools progress, but synchronous filesystem or CPU work can still block the
+shared thread. Memory-limit recycling remains enabled.
 
 Cooperative stop targets one invocation, not its parent or siblings; `stopping` lasts until terminal evidence arrives.
 Controller restart or shutdown fences old hosts and parks unresolved delivery.

@@ -223,7 +223,7 @@ final class BackgroundProcessManager
                         pid: $pid, pgid: $pgid, sessionId: $runId, command: $command, toolCallId: $toolCallId,
                         deadlineNanoseconds: $record->deadlineNanoseconds ?? $deadlineNanoseconds,
                         backgroundRequested: $record->backgroundRequested ?? $backgroundRequested,
-                        logPath: $logFile, statusPath: $statusFile,
+                        logPath: $logFile, statusPath: $statusFile, recordId: $id,
                     );
                     $ownsInvocation = true;
                 }
@@ -255,7 +255,7 @@ final class BackgroundProcessManager
                     pid: $pid, pgid: $pgid, sessionId: $runId, command: $command, toolCallId: $toolCallId,
                     deadlineNanoseconds: $deadline,
                     backgroundRequested: $record->backgroundRequested ?? $backgroundRequested,
-                    logPath: $logFile, statusPath: $statusFile,
+                    logPath: $logFile, statusPath: $statusFile, recordId: $id,
                 );
                 if (!$accepted) {
                     $this->nativeLaunches[$statusFile] = $native;
@@ -341,7 +341,7 @@ final class BackgroundProcessManager
         if (null === $native && null !== $sessionId) {
             $record = $this->findByStatusPath($statusPath, $sessionId);
             if (null !== $record?->pid && null !== $record->startedAt) {
-                $native = new NativeBashLaunchDTO($record->pid, $record->pgid, $record->sessionId, $record->command, $record->toolCallId, $record->deadlineNanoseconds, $record->backgroundRequested, $record->logPath, $record->statusPath);
+                $native = new NativeBashLaunchDTO($record->pid, $record->pgid, $record->sessionId, $record->command, $record->toolCallId, $record->deadlineNanoseconds, $record->backgroundRequested, $record->logPath, $record->statusPath, $record->id);
             }
         }
         if (null === $native) {
@@ -739,10 +739,8 @@ final class BackgroundProcessManager
      *
      * @param list<BashProcessRecordDTO>                            $records
      * @param \Closure(BashProcessRecordDTO, \Throwable): void|null $onError
-     *
-     * @return list<BashProcessRecordDTO>
      */
-    public function refreshRecords(array $records, ?\Closure $onError = null): array
+    public function refreshRecords(array $records, ?\Closure $onError = null): void
     {
         foreach (array_keys($this->timeoutGraceDeadlines) as $id) {
             $record = $this->store->snapshot($id);
@@ -750,7 +748,6 @@ final class BackgroundProcessManager
                 unset($this->timeoutGraceDeadlines[$id]);
             }
         }
-        $refreshed = [];
         foreach ($records as $record) {
             try {
                 $current = $this->processDecision($record->id, $record->sessionId, BashProcessActionEnum::Observe);
@@ -769,10 +766,6 @@ final class BackgroundProcessManager
                         }
                     }
                 }
-                $snapshot = $this->store->snapshot($record->id);
-                if (null !== $snapshot) {
-                    $refreshed[] = $snapshot;
-                }
             } catch (\Throwable $error) {
                 if (null === $onError) {
                     throw $error;
@@ -780,8 +773,6 @@ final class BackgroundProcessManager
                 $onError($record, $error);
             }
         }
-
-        return $refreshed;
     }
 
     private function superviseTimeout(BashProcessRecordDTO $record): void
@@ -903,8 +894,11 @@ final class BackgroundProcessManager
         $stoppedByUser = false;
         $status = BackgroundProcessStatusEnum::Running;
         $finishedAt = null;
-        $id = '' === $native->sessionId ? null : $this->store->recordIdForStatusPath($native->statusPath, $native->sessionId);
+        $id = $native->recordId;
         $record = null === $id ? null : $this->store->snapshot($id);
+        if (null !== $record && $record->sessionId !== $native->sessionId) {
+            throw new \RuntimeException('Bash native execution does not belong to its session.');
+        }
         $backgroundRequested = $native->backgroundRequested || ($record->backgroundRequested ?? false);
         $accepted = null !== $record?->backgroundedAt;
         if ($accepted) {
@@ -974,6 +968,7 @@ final class BackgroundProcessManager
                 backgroundRequested: $record->backgroundRequested,
                 logPath: $record->logPath,
                 statusPath: $record->statusPath,
+                recordId: $record->id,
             ),
             $exitCode,
             $status,
@@ -989,7 +984,7 @@ final class BackgroundProcessManager
         bool $stoppedByUser,
         \DateTimeImmutable $finishedAt,
     ): void {
-        $id = '' === $native->sessionId ? null : $this->store->recordIdForStatusPath($native->statusPath, $native->sessionId);
+        $id = $native->recordId;
         if (null === $id || '' === $native->sessionId) {
             return;
         }

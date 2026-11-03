@@ -234,8 +234,8 @@ final class ToolExecutor implements ToolExecutorInterface
         // coordination markers and pre-start cancellation do not enter it.
         $processingFailed = false;
         if (!$this->isDeferredOutcomeResult($result)) {
-            $result = $this->probe('result_processors', $toolCall, function () use ($result, $toolCall, &$processingFailed): ToolResult {
-                return $this->processTerminalResult($result, $toolCall, $processingFailed);
+            $result = $this->probe('result_processors', $toolCall, function () use ($result, $toolCall, $policy, &$processingFailed): ToolResult {
+                return $this->processTerminalResult($result, $toolCall, $policy, $processingFailed);
             });
         }
 
@@ -348,10 +348,16 @@ final class ToolExecutor implements ToolExecutorInterface
         ], $operation);
     }
 
-    private function executeWithContext(ToolCall $toolCall, ToolExecutionPolicy $policy, callable $callback): SymfonyToolResult
+    /**
+     * @template T
+     *
+     * @param callable(): T $callback
+     *
+     * @return T
+     */
+    private function executeWithContext(ToolCall $toolCall, ToolExecutionPolicy $policy, callable $callback): mixed
     {
         if (null === $this->contextAccessor) {
-            /** @var SymfonyToolResult $result */
             $result = $callback();
 
             return $result;
@@ -387,9 +393,10 @@ final class ToolExecutor implements ToolExecutorInterface
             stepId: \is_string($stepId) && '' !== $stepId ? $stepId : null,
             parentModel: $parentModel,
             launchContext: $launchContext,
+            allowsHumanInput: false !== ($toolCall->context['allows_human_input'] ?? true),
+            retainOutput: true === ($toolCall->context['retain_output'] ?? false),
         );
 
-        /** @var SymfonyToolResult $result */
         $result = $this->contextAccessor->with($context, $callback);
 
         return $result;
@@ -412,7 +419,7 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
-    private function processTerminalResult(ToolResult $result, ToolCall $toolCall, bool &$processingFailed): ToolResult
+    private function processTerminalResult(ToolResult $result, ToolCall $toolCall, ToolExecutionPolicy $policy, bool &$processingFailed): ToolResult
     {
         $validated = ToolResultText::finalize($result);
         $processingFailed = $validated !== $result;
@@ -421,21 +428,27 @@ final class ToolExecutor implements ToolExecutorInterface
             return $result;
         }
         try {
-            foreach ($this->toolResultProcessors as $processor) {
-                $processed = $processor->process($result, $toolCall);
-                $result = ToolResultText::finalize($processed);
-                $processingFailed = $result !== $processed;
-                if ($processingFailed) {
-                    return $result;
+            $result = $this->executeWithContext($toolCall, $policy, function () use (&$result, $toolCall, &$processingFailed): ToolResult {
+                foreach ($this->toolResultProcessors as $processor) {
+                    $processed = $processor->process($result, $toolCall);
+                    $result = ToolResultText::finalize($processed);
+                    $processingFailed = $result !== $processed;
+                    if ($processingFailed) {
+                        return $result;
+                    }
                 }
-            }
+
+                return $result;
+            });
         } catch (\Throwable $exception) {
             $processingFailed = true;
             // Execution already returned. Remember the processing failure and
             // never invoke the failing processor again for the fallback result.
             $message = $exception instanceof \JsonException && \JSON_ERROR_UTF8 === $exception->getCode()
                 ? ToolResultText::FAILURE_MESSAGE
-                : (ToolResultText::failureMessage($exception->getMessage()) ?? 'Tool call failed: its result could not be processed.');
+                : (ToolResultText::failureMessage($exception->getMessage()) ?? ($exception instanceof ToolCallException
+                    ? DiagnosticMessageSanitizer::sanitize($exception->getMessage())
+                    : 'Tool call failed: its result could not be processed.'));
             $failureDetails = [
                 'retryable' => false,
                 'error_type' => $exception::class,

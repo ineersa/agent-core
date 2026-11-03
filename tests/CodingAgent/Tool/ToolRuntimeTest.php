@@ -67,6 +67,22 @@ final class ToolRuntimeTest extends TestCase
         $this->assertSame('result', $result);
     }
 
+    public function testCheckpointObservesCancellationDuringCallback(): void
+    {
+        $cancelled = false;
+        $token = $this->createStub(CancellationTokenInterface::class);
+        $token->method('isCancellationRequested')->willReturnCallback(static function () use (&$cancelled): bool { return $cancelled; });
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('cancelled.');
+        $this->contextAccessor->with($this->contextWithToken($token), function () use (&$cancelled): void {
+            $this->toolRuntime->run(function () use (&$cancelled): void {
+                $this->toolRuntime->checkpoint();
+                $cancelled = true;
+                $this->toolRuntime->checkpoint();
+            });
+        });
+    }
+
     public function testRunKeepsTypedToolResultWhenCancelledAfter(): void
     {
         $token = $this->createMock(CancellationTokenInterface::class);

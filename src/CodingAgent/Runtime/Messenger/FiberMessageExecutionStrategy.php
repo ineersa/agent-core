@@ -28,7 +28,7 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
 {
     private int $nextId = 0;
 
-    /** @var array<int, Future<array{int, Envelope, string, bool, ?\Throwable}>> */
+    /** @var array<int, Future<array{int, Envelope, string, bool, ?\Throwable, callable}>> */
     private array $pending = [];
 
     /** @var array<int, DeferredCancellation> */
@@ -50,7 +50,9 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
         $this->cancellations[$id] = $cancellation;
         $bus = $this->bus;
 
-        $this->pending[$id] = async(static function () use ($bus, $envelope, $transportName, $id, $cancellation): array {
+        // Worker callbacks capture the receipt of this delivery. Completion in
+        // another execute(), wait() or flush() must retain that exact callback.
+        $this->pending[$id] = async(static function () use ($bus, $envelope, $transportName, $id, $cancellation, $onHandled): array {
             $acked = false;
             $error = null;
             $handledEnvelope = $envelope;
@@ -64,15 +66,15 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
             try {
                 $handledEnvelope = $bus->dispatch($envelope->with(new AckStamp($ack)));
             } catch (\Throwable $e) {
-                return [$id, $handledEnvelope, $transportName, $acked, $e];
+                return [$id, $handledEnvelope, $transportName, $acked, $e, $onHandled];
             }
 
             $cancellation->getCancellation()->throwIfRequested();
 
-            return [$id, $handledEnvelope, $transportName, $acked, $error];
+            return [$id, $handledEnvelope, $transportName, $acked, $error, $onHandled];
         });
 
-        $this->drainReady($onHandled);
+        $this->drainReady();
     }
 
     public function shouldPauseConsumption(): bool
@@ -98,15 +100,15 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
             }
 
             try {
-                /** @var array{int, Envelope, string, bool, ?\Throwable} $winner */
+                /** @var array{int, Envelope, string, bool, ?\Throwable, callable} $winner */
                 $winner = awaitFirst($this->pending, new TimeoutCancellation($heartbeat));
             } catch (CancelledException) {
                 continue;
             }
 
-            [$id, $envelope, $transportName, $acked, $error] = $winner;
+            [$id, $envelope, $transportName, $acked, $error, $completion] = $winner;
             unset($this->pending[$id], $this->cancellations[$id]);
-            $onHandled($envelope, $transportName, $acked, $error);
+            $completion($envelope, $transportName, $acked, $error);
 
             return true;
         }
@@ -116,7 +118,7 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
 
     public function flush(callable $onHandled, bool|float $force = false): bool
     {
-        $handled = $this->drainReady($onHandled);
+        $handled = $this->drainReady();
 
         if ([] === $this->pending) {
             return $handled;
@@ -152,7 +154,7 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
     /**
      * @phpstan-impure
      */
-    private function drainReady(callable $onHandled): bool
+    private function drainReady(): bool
     {
         $handled = false;
         foreach ($this->pending as $id => $future) {
@@ -160,9 +162,9 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
                 continue;
             }
             unset($this->pending[$id], $this->cancellations[$id]);
-            [$doneId, $envelope, $transportName, $acked, $error] = $future->await();
+            [$doneId, $envelope, $transportName, $acked, $error, $completion] = $future->await();
             unset($doneId);
-            $onHandled($envelope, $transportName, $acked, $error);
+            $completion($envelope, $transportName, $acked, $error);
             $handled = true;
         }
 

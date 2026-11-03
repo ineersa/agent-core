@@ -156,6 +156,13 @@ final class ProcessStoreTest extends IsolatedKernelTestCase
             $manager->persist($process);
             $manager->flush();
 
+            $running = new BackgroundProcess();
+            $running->sessionId = 'accept-owner';
+            $running->pid = getmypid();
+            $manager->persist($running);
+            $manager->flush();
+            $this->assertTrue($store->acceptLocal($running->id, 'accept-owner'));
+            $this->assertSame([], $store->completionSnapshots(['accept-owner']), 'Accepted running jobs are not completion candidates.');
             $finishedAt = new \DateTimeImmutable('2026-10-30 12:00:00');
             $store->applyFinishedByRecord($process->id, 'accept-owner', 0, BackgroundProcessStatusEnum::Finished, false, $finishedAt);
             $this->assertTrue($store->acceptLocal($process->id, 'accept-owner'));

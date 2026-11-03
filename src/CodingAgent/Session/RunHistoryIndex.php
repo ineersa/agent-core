@@ -18,6 +18,9 @@ use Ineersa\CodingAgent\Session\History\RunPresentationDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\LockInterface;
+
+use function Amp\delay;
 
 /** Disposable scalar locations. Canonical bodies and growing history mappings never live here in PHP. */
 final readonly class RunHistoryIndex
@@ -53,8 +56,7 @@ final readonly class RunHistoryIndex
         if (!is_file($path)) {
             return null;
         }
-        $lock = $this->locks->createLock('hatfield-run-'.$runId);
-        $lock->acquire(true);
+        $lock = $this->acquireRunLock($runId);
         try {
             $db = $this->synchronize($log, $path, $runId);
             $meta = $db->fetchAssociative('SELECT * FROM index_meta');
@@ -84,8 +86,7 @@ final readonly class RunHistoryIndex
         if (!is_file($path)) {
             throw new \RuntimeException('Cannot select history: no events found.');
         }
-        $lock = $this->locks->createLock('hatfield-run-'.$runId);
-        $lock->acquire(true);
+        $lock = $this->acquireRunLock($runId);
         $observation = new JsonlPhysicalReadObservation();
         try {
             $db = $this->synchronize($log, $path, $runId);
@@ -149,8 +150,7 @@ final readonly class RunHistoryIndex
         if (!is_file($path)) {
             return $empty;
         }
-        $lock = $this->locks->createLock('hatfield-run-'.$runId);
-        $lock->acquire(true);
+        $lock = $this->acquireRunLock($runId);
         try {
             $db = $this->synchronize($log, $path, $runId);
             $selected = (int) $db->fetchOne('SELECT selected_anchor FROM index_meta');
@@ -206,8 +206,7 @@ final readonly class RunHistoryIndex
         if ($positionTurnNo < 0 || !is_file($path)) {
             return false;
         }
-        $lock = $this->locks->createLock('hatfield-run-'.$runId);
-        $lock->acquire(true);
+        $lock = $this->acquireRunLock($runId);
         try {
             $db = $this->synchronize($log, $path, $runId);
             $anchor = $this->anchorForTurn($db, $positionTurnNo);
@@ -280,8 +279,7 @@ final readonly class RunHistoryIndex
         if (!is_file($path)) {
             return;
         }
-        $lock = $this->locks->createLock('hatfield-run-'.$runId);
-        $lock->acquire(true);
+        $lock = $this->acquireRunLock($runId);
         try {
             $db = $this->synchronize($log, $path, $runId, $retained ? null : $endSeq);
             $meta = $db->fetchAssociative('SELECT * FROM index_meta');
@@ -345,8 +343,7 @@ final readonly class RunHistoryIndex
         if (!is_file($path)) {
             throw new \RuntimeException('Invocation admission requires canonical history.');
         }
-        $lock = $this->locks->createLock('hatfield-run-'.$runId);
-        $lock->acquire(true);
+        $lock = $this->acquireRunLock($runId);
         try {
             $db = $this->synchronize($log, $path, $runId);
             if ((int) $db->fetchOne('SELECT last_seq FROM index_meta') < 1) {
@@ -380,8 +377,7 @@ final readonly class RunHistoryIndex
 
     public function submissionSequence(JsonlRunEventLog $log, string $path, string $runId, string $identity): ?int
     {
-        $lock = $this->locks->createLock('hatfield-run-'.$runId);
-        $lock->acquire(true);
+        $lock = $this->acquireRunLock($runId);
         try {
             $db = $this->synchronize($log, $path, $runId);
             $sequence = $db->fetchOne('SELECT seq FROM agent_submission_location WHERE identity_hash = ?', [hash('sha256', $identity)]);
@@ -397,8 +393,7 @@ final readonly class RunHistoryIndex
 
     public function presentationSummary(JsonlRunEventLog $log, string $path, string $runId, int $sequence): RunPresentationDTO
     {
-        $lock = $this->locks->createLock('hatfield-run-'.$runId);
-        $lock->acquire(true);
+        $lock = $this->acquireRunLock($runId);
         try {
             $db = $this->synchronize($log, $path, $runId);
             $watermark = (int) $db->fetchOne('SELECT last_seq FROM index_meta');
@@ -417,6 +412,22 @@ final readonly class RunHistoryIndex
                 $db->close();
             }
             $lock->release();
+        }
+    }
+
+    private function acquireRunLock(string $runId): LockInterface
+    {
+        $lock = $this->locks->createLock('hatfield-run-'.$runId);
+        try {
+            while (!$lock->acquire(false)) {
+                delay(0.02);
+            }
+
+            return $lock;
+        } catch (\Throwable $exception) {
+            // Acquisition can throw after the store has granted ownership.
+            $lock->release();
+            throw $exception;
         }
     }
 

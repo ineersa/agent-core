@@ -177,7 +177,7 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         ]);
         $handler = new RecallToolHandler(new OmQueryService($api, $settings));
         $accessor = new StackToolExecutionContextAccessor();
-        $adapter = new ExtensionToolHandlerAdapter($handler, $accessor);
+        $adapter = new ExtensionToolHandlerAdapter($handler, $accessor, $this->createStub(\Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface::class));
 
         $observationResult = $accessor->with(
             new ToolContext(
@@ -401,7 +401,7 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         ]);
         $handler = new RecallToolHandler(new OmQueryService($api, $settings));
         $accessor = new StackToolExecutionContextAccessor();
-        $adapter = new ExtensionToolHandlerAdapter($handler, $accessor);
+        $adapter = new ExtensionToolHandlerAdapter($handler, $accessor, $this->createStub(\Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface::class));
 
         $obsResult = $accessor->with(
             new ToolContext(
@@ -552,7 +552,7 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         ]);
         $handler = new RecallToolHandler(new OmQueryService($api, $settings));
         $accessor = new StackToolExecutionContextAccessor();
-        $adapter = new ExtensionToolHandlerAdapter($handler, $accessor);
+        $adapter = new ExtensionToolHandlerAdapter($handler, $accessor, $this->createStub(\Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface::class));
 
         $cancelToken = new class implements CancellationTokenInterface {
             public function isCancellationRequested(): bool
@@ -638,7 +638,7 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             ]),
         ));
         $accessor = new StackToolExecutionContextAccessor();
-        $adapter = new ExtensionToolHandlerAdapter($handler, $accessor);
+        $adapter = new ExtensionToolHandlerAdapter($handler, $accessor, $this->createStub(\Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface::class));
 
         $withoutSession = $accessor->with(
             new ToolContext(
@@ -683,6 +683,21 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
     private function api(string $cwd, SessionEventReaderInterface $reader): ExtensionApiInterface
     {
         return new class($cwd, $reader) implements ExtensionApiInterface {
+            public function tools(): \Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function notifyOwner(\Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO $notification): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function registerRecurringJobSource(string $sourceId, \Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface $source): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
             public function __construct(
                 private string $cwd,
                 private SessionEventReaderInterface $reader,

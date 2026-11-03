@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Amp\DeferredFuture;
+use Amp\TimeoutCancellation;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
@@ -43,6 +45,37 @@ final class RunHistoryIndexTest extends IsolatedKernelTestCase
         $this->log = new JsonlRunEventLog(static::getContainer()->get(EventPayloadNormalizer::class), static::getContainer()->get(LockFactory::class), static::getContainer()->get(RunSequenceAllocatorInterface::class), new EventLogMaxSeqBootstrapReader(), $this->logger, presentations: HistoryEventStoreFactory::presentationFactory());
         $this->path = getcwd().'/.hatfield/sessions/indexed/events.jsonl';
         (new Filesystem())->mkdir(\dirname($this->path));
+    }
+
+    public function testContendedHistoryReadYieldsAndPreservesItsSequenceCut(): void
+    {
+        $this->write(1, 1, 'turn_advanced', ['turn_no' => 1]);
+        $this->write(2, 1, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'first')]);
+        $factory = static::getContainer()->get(LockFactory::class);
+        $index = new RunHistoryIndex($factory, $this->logger);
+        $cut = $index->cut($this->log, $this->path, 'indexed');
+        $this->assertNotNull($cut);
+        $expected = iterator_to_array($index->records($this->log, $this->path, 'indexed', 1, $cut['sequence']));
+        $owner = $factory->createLock('hatfield-run-indexed');
+        $this->assertTrue($owner->acquire(false));
+        $entered = new DeferredFuture();
+        $waiting = \Amp\async(function () use ($entered, $index, $cut): array {
+            $entered->complete();
+
+            return iterator_to_array($index->records($this->log, $this->path, 'indexed', 1, $cut['sequence']));
+        });
+        try {
+            $entered->getFuture()->await(new TimeoutCancellation(2));
+            \Amp\async(static function () use ($waiting): void {
+                self::assertFalse($waiting->isComplete());
+            })->await(new TimeoutCancellation(2));
+            $owner->release();
+            $this->assertSame($expected, $waiting->await(new TimeoutCancellation(2)));
+            $this->write(3, 1, 'llm_step_completed', ['assistant_message' => $this->presentationMessage('assistant', 'later')]);
+            $this->assertSame($expected, iterator_to_array($index->records($this->log, $this->path, 'indexed', 1, $cut['sequence'])));
+        } finally {
+            $owner->release();
+        }
     }
 
     public function testSchemaBootstrapRollsBackAllNewObjectsOnDdlFailure(): void

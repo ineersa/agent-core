@@ -288,6 +288,21 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
     private function failOnDispatchModelOrEvents(string $cwd, OmSettings $settings): ExtensionApiInterface
     {
         return new class($cwd, $settings) implements ExtensionApiInterface {
+            public function tools(): \Ineersa\Hatfield\ExtensionApi\Tool\RegisteredToolInvokerInterface
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function notifyOwner(\Ineersa\Hatfield\ExtensionApi\Session\OwnerNotificationDTO $notification): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
+            public function registerRecurringJobSource(string $sourceId, \Ineersa\Hatfield\ExtensionApi\Scheduler\RecurringJobSourceInterface $source): void
+            {
+                throw new \LogicException('Unused fixture capability.');
+            }
+
             public function __construct(
                 private readonly string $cwd,
                 private readonly OmSettings $settings,

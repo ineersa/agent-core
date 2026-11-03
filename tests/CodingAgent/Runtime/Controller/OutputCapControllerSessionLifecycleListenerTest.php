@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
@@ -15,6 +16,7 @@ use Ineersa\CodingAgent\Session\Event\ControllerSessionStartingEvent;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\OutputCap;
+use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
@@ -39,8 +41,7 @@ final class OutputCapControllerSessionLifecycleListenerTest extends IsolatedKern
         $this->outputCap = new OutputCap(
             new OutputCapConfig(storageDir: $this->tmpDir),
             new LockFactory(new FlockStore($this->tmpDir)),
-            $this->logger,
-        );
+            $this->logger, new ToolRuntime(new StackToolExecutionContextAccessor()));
         $listener = new OutputCapControllerSessionLifecycleListener(
             static::getContainer()->get(BackgroundProcessCompletionPoller::class),
             $this->outputCap,
