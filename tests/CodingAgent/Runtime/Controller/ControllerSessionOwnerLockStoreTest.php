@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
-use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Amp\DeferredFuture;
+use Amp\TimeoutCancellation;
 use Ineersa\CodingAgent\Runtime\Controller\ControllerSessionOwnerLockStore;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
+use Revolt\EventLoop;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\Exception\LockAcquiringException;
 use Symfony\Component\Lock\LockFactory;
@@ -98,17 +98,13 @@ $script = '$pipe = fopen($argv[1], "r+"); $held = false; foreach (glob("/proc/se
 $consumer = new \Symfony\Component\Process\Process([PHP_BINARY, '-r', $script, $root.'/barrier'], env: ['HATFIELD_SESSION_ID' => false], timeout: 5);
 $consumer->start();
 if (!$consumer->waitUntil(static fn ($type, $output) => str_contains($output, 'CONSUMER_READY'))) { throw new \RuntimeException('Inherited consumer not ready.'); }
-file_put_contents($root.'/consumer-pid', (string) $consumer->getPid());
 echo "READY\n"; fflush(STDOUT); fgets(STDIN);
 PHP);
         $input = new InputStream();
         $producer->setInput($input);
-        $lifecycle = new ProcessLifecycle(new BackgroundProcessConfig(), new NullLogger(), new LockFactory(new FlockStore()));
-        $consumerPid = 0;
         try {
             $producer->start();
             $this->assertTrue($producer->waitUntil(static fn ($type, $output) => str_contains($output, 'READY')), $producer->getErrorOutput());
-            $consumerPid = (int) file_get_contents($this->root.'/consumer-pid');
             $producer->signal(\SIGKILL);
             $producer->wait();
             $factory = new LockFactory(new ControllerSessionOwnerLockStore($this->root));
@@ -118,11 +114,25 @@ PHP);
             $one = $factory->createLock($this->resource('one'), ttl: null);
             $this->assertFalse($one->acquire(false));
             fwrite($release, "\n");
-            $deadline = microtime(true) + 3;
-            while ($lifecycle->isAlive($consumerPid) && microtime(true) < $deadline) {
-                usleep(1000);
+            // The contract is inherited inode ownership, not a second snapshot
+            // of process liveness. Probe the existing inode without reclaiming
+            // its directory; the next managed acquisition must perform recovery.
+            $probe = (new LockFactory(new FlockStore($this->directory('one'))))->createLock($this->resource('one'), ttl: null);
+            $released = new DeferredFuture();
+            $watcher = EventLoop::repeat(0.001, static function () use ($probe, $released): void {
+                if ($probe->acquire(false)) {
+                    $released->complete();
+                }
+            });
+            try {
+                // Safety cap only: the FIFO releases the consumer's inherited
+                // descriptor; acquiring that exact lock establishes readiness.
+                $released->getFuture()->await(new TimeoutCancellation(3));
+                $this->assertTrue($probe->isAcquired());
+            } finally {
+                EventLoop::cancel($watcher);
+                $probe->release();
             }
-            $this->assertFalse($lifecycle->isAlive($consumerPid));
             $three = $factory->createLock($this->resource('three'), ttl: null);
             $this->assertTrue($three->acquire(false));
             $this->assertDirectoryDoesNotExist($this->directory('one'));
