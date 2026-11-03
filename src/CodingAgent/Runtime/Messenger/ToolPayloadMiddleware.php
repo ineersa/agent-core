@@ -23,10 +23,7 @@ use Ineersa\CodingAgent\Session\Exception\ToolPayloadException;
 use Ineersa\CodingAgent\Session\ToolPayloadAdmission;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\Exception\DelayedMessageHandlingException;
 use Symfony\Component\Messenger\Exception\EnvelopeAwareExceptionInterface;
-use Symfony\Component\Messenger\Exception\HandlerFailedException;
-use Symfony\Component\Messenger\Exception\ValidationFailedException as MessageValidationFailedException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
 use Symfony\Component\Messenger\Middleware\StackInterface;
@@ -53,6 +50,7 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
         private readonly LoggerInterface $logger,
         private readonly CompleteDeferredToolCallHandler $deferredHandler,
         private readonly DenormalizerInterface $serializer,
+        private readonly MessengerDeliveryEnvelopeRestorer $envelopes = new MessengerDeliveryEnvelopeRestorer(),
     ) {
     }
 
@@ -165,16 +163,16 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
                 // The worker always tracks the original reference object.
                 $hydrated = $hydrated->withoutAll(AckStamp::class)->with(new AckStamp(
                     fn (Envelope $handled, ?\Throwable $error = null) => $ack->ack(
-                        $this->restoreReference($handled, $envelope),
-                        null === $error ? null : $this->restoreException($error, $envelope),
+                        $this->envelopes->restoreReference($handled, $envelope),
+                        null === $error ? null : $this->envelopes->restoreException($error, $envelope),
                     ),
                 ));
             }
             try {
-                return $this->restoreReference($stack->next()->handle($hydrated, $stack), $envelope);
+                return $this->envelopes->restoreReference($stack->next()->handle($hydrated, $stack), $envelope);
             } catch (EnvelopeAwareExceptionInterface $exception) {
                 // Native retry listeners resend the exception's envelope directly.
-                throw $this->restoreException($exception, $envelope);
+                throw $this->envelopes->restoreException($exception, $envelope);
             }
         }
         if ($message instanceof ToolPayloadMessage) {
@@ -352,45 +350,6 @@ final class ToolPayloadMiddleware implements MiddlewareInterface
             !== [$reference->runId, $reference->turnNo, $reference->stepId, $reference->attempt, $reference->idempotencyKey, $reference->toolCallId, $reference->orderIndex, $reference->toolName]) {
             throw new ToolPayloadException('Deferred completion reference has a different correlation.');
         }
-    }
-
-    private function restoreReference(Envelope $handled, Envelope $original): Envelope
-    {
-        $restored = new Envelope($original->getMessage(), array_merge(...array_values($handled->all())));
-        if (null !== $ack = $original->last(AckStamp::class)) {
-            $restored = $restored->withoutAll(AckStamp::class)->with($ack);
-        }
-
-        return $restored;
-    }
-
-    private function restoreException(\Throwable $exception, Envelope $original): \Throwable
-    {
-        if ($exception instanceof HandlerFailedException) {
-            return new HandlerFailedException(
-                $this->restoreReference($exception->getEnvelope(), $original),
-                $exception->getWrappedExceptions(),
-            );
-        }
-        if ($exception instanceof DelayedMessageHandlingException && null !== $exception->getEnvelope()) {
-            return new DelayedMessageHandlingException(
-                $exception->getWrappedExceptions(),
-                $this->restoreReference($exception->getEnvelope(), $original),
-            );
-        }
-        if ($exception instanceof MessageValidationFailedException && null !== $exception->getEnvelope()) {
-            return new MessageValidationFailedException(
-                $exception->getViolatingMessage(), $exception->getViolations(),
-                $this->restoreReference($exception->getEnvelope(), $original),
-            );
-        }
-        if ($exception instanceof EnvelopeAwareExceptionInterface && null !== $exception->getEnvelope()) {
-            // Symfony inspects wrapped recoverable/unrecoverable causes and their
-            // retry delays. Keep an unknown implementation intact as that cause.
-            return new HandlerFailedException($this->restoreReference($exception->getEnvelope(), $original), [$exception]);
-        }
-
-        return $exception;
     }
 
     private function route(Envelope $envelope, ToolPayloadMessage $message): Envelope

@@ -47,9 +47,11 @@ use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
 use Symfony\Component\Messenger\Event\WorkerRunningEvent;
 use Symfony\Component\Messenger\Event\WorkerStartedEvent;
+use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\RoutableMessageBus;
 use Symfony\Component\Messenger\Transport\Receiver\KeepaliveReceiverInterface;
@@ -73,6 +75,16 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
     public function testLlmWorkerStillBoundsSimultaneouslyBlockedHandlers(): void
     {
         $this->assertWorkerAdmission('llm', 12, 6);
+    }
+
+    public function testWorkerReleasesDeliveryIdentityOnPlainFailure(): void
+    {
+        $this->assertWorkerAdmission('tool', 2, 2, 'plain');
+    }
+
+    public function testWorkerReleasesDeliveryIdentityOnEnvelopeAwareFailure(): void
+    {
+        $this->assertWorkerAdmission('tool', 2, 2, 'envelope');
     }
 
     public function testToolConsumerRetainsOnlySnapshotsBeyondFormerRecycleBoundary(): void
@@ -404,14 +416,14 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
         );
     }
 
-    private function assertWorkerAdmission(string $role, int $total, int $capacity): void
+    private function assertWorkerAdmission(string $role, int $total, int $capacity, ?string $failure = null): void
     {
         $release = new DeferredFuture();
         $entered = [];
         $completed = [];
         $active = 0;
         $peak = 0;
-        $bus = new class($release, $entered, $completed, $active, $peak, $capacity) implements MessageBusInterface {
+        $bus = new class($release, $entered, $completed, $active, $peak, $capacity, $failure) implements MessageBusInterface {
             /**
              * @param list<string> $entered
              * @param list<string> $completed
@@ -423,6 +435,7 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
                 private int &$active,
                 private int &$peak,
                 private int $capacity,
+                private ?string $failure,
             ) {
             }
 
@@ -447,20 +460,28 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
 
                 // Payload middleware can restore a different message object.
                 // Settlement must use the delivery callback, not object lookup.
-                return new Envelope(clone $envelope->getMessage(), array_merge(...array_values($envelope->all())));
+                $result = new Envelope(clone $envelope->getMessage(), array_merge(...array_values($envelope->all())));
+                if ('plain' === $this->failure) {
+                    throw new \RuntimeException('intentional handler failure');
+                }
+                if ('envelope' === $this->failure) {
+                    throw new HandlerFailedException($result, [new \RuntimeException('intentional handler failure')]);
+                }
+
+                return $result;
             }
         };
         $receivers = [];
         $factories = [];
         $names = 'tool' === $role ? ['tool', 'agent'] : ['llm'];
         foreach ($names as $name) {
-            $receiver = new class($name, intdiv($total, \count($names))) implements KeepaliveReceiverInterface {
+            $receiver = new class($name, intdiv($total, \count($names)), null !== $failure) implements KeepaliveReceiverInterface {
                 /** @var list<string> */
                 public array $acknowledged = [];
                 public int $keepalives = 0;
                 private int $next = 0;
 
-                public function __construct(private string $name, private int $total)
+                public function __construct(private string $name, private int $total, private bool $expectFailure)
                 {
                 }
 
@@ -483,7 +504,8 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
 
                 public function reject(Envelope $envelope): void
                 {
-                    Assert::fail('Blocked handler was rejected: '.$envelope->getMessage()->id);
+                    Assert::assertTrue($this->expectFailure, 'Unexpected handler rejection.');
+                    $this->acknowledged[] = $envelope->getMessage()->id;
                 }
             };
             $receivers[$name] = $receiver;
@@ -496,6 +518,11 @@ final class LlmFiberConsumeCommandTest extends IsolatedKernelTestCase
             $worker = $event->getWorker();
         });
         $dispatcher->addListener(WorkerMessageHandledEvent::class, static function (WorkerMessageHandledEvent $event) use (&$handled): void {
+            $handled[] = $event->getEnvelope()->getMessage()->id;
+        });
+        $dispatcher->addListener(WorkerMessageFailedEvent::class, static function (WorkerMessageFailedEvent $event) use (&$handled, $failure): void {
+            Assert::assertNotNull($failure);
+            Assert::assertSame('intentional handler failure', $event->getThrowable() instanceof HandlerFailedException ? $event->getThrowable()->getPrevious()->getMessage() : $event->getThrowable()->getMessage());
             $handled[] = $event->getEnvelope()->getMessage()->id;
         });
         $dispatcher->addListener(WorkerRunningEvent::class, static function (WorkerRunningEvent $event): void {
