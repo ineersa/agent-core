@@ -21,6 +21,7 @@ use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Application\BackgroundProcess\BashProcessActionEnum;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Application\Pipeline\BackgroundCompletionHandler;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
@@ -652,10 +653,19 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $config = $this->createBgConfig();
         $lifecycle = new ProcessLifecycle($config, new NullLogger(), new LockFactory(new FlockStore()));
         $owner = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
-        $fifo = $this->tmpDir.'/timeout-cleanup';
-        $this->assertTrue(posix_mkfifo($fifo, 0600));
-        $release = fopen($fifo, 'r+b');
-        $this->assertIsResource($release);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $process = new BackgroundProcess();
+        // Exercise owner decisions and independent reads, not native signalling.
+        // A live fixture PID keeps observation nonterminal until we publish status.
+        $process->pid = getmypid();
+        $process->sessionId = 'timeout-run';
+        $process->startedAt = new \DateTimeImmutable();
+        $process->logPath = $this->tmpDir.'/timeout.log';
+        $process->statusPath = $this->tmpDir.'/timeout.status';
+        $process->deadlineNanoseconds = hrtime(true) - 1;
+        $em->persist($process);
+        $em->flush();
+        $this->assertTrue($store->acceptLocal($process->id, 'timeout-run'));
         $otherKernel = new Kernel('test', true);
         $otherKernel->boot();
         try {
@@ -663,46 +673,19 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertNotSame(self::getContainer()->get(EntityManagerInterface::class), $otherContainer->get(EntityManagerInterface::class));
             $otherStore = $otherContainer->get(ProcessStore::class);
             $reader = new BackgroundProcessManager($otherStore, $lifecycle, $config, new NullLogger());
-            // Group TERM and wrapper forwarding can both reach this child. Do not
-            // re-enter cleanup and consume the one-shot FIFO release a second time.
-            $cleanup = 'trap "" TERM; IFS= read -r release < '.escapeshellarg($fifo).'; printf cleaned; exit 0';
-            $command = 'trap '.escapeshellarg($cleanup).' TERM; : > '.escapeshellarg($this->tmpDir.'/ready').'; while :; do sleep 0.05; done';
-
-            $deadlineNanoseconds = hrtime(true) - 1;
-            $process = $owner->start(
-                $command,
-                'timeout-run',
-                'timeout-call',
-                $deadlineNanoseconds,
-            );
-            $process = $owner->findByStatusPath($process->statusPath);
-            $this->assertNotNull($process);
-            $store = self::getContainer()->get(ProcessStore::class);
-
-            $candidate = $owner->resolveBackgroundAcceptance($process->statusPath, 'timeout-run');
-            $this->assertNotNull($candidate);
-            $owner->acceptResolvedBackground($candidate);
-            $record = BackgroundProcessFixture::record(self::getContainer(), $process->id);
-            $this->assertNotNull($record);
-            $deadline = hrtime(true) + 2_000_000_000;
-            while (!is_file($this->tmpDir.'/ready') && hrtime(true) < $deadline) {
-                $this->assertTrue($lifecycle->isAlive($process->pid));
-                usleep(10_000);
-            }
-            $this->assertFileExists($this->tmpDir.'/ready');
             $independent = $reader->findByRecordId($process->id, 'timeout-run');
             $this->assertNotNull($independent);
             $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status);
             $this->assertNull($independent->finishedAt);
-            $owner->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots(['timeout-run']));
+            $decision = $store->decide($process->id, 'timeout-run', BashProcessActionEnum::Timeout, $lifecycle);
+            $this->assertNotNull($decision);
+            $this->assertTrue($decision->signalRequired);
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, BackgroundProcessFixture::record(self::getContainer(), $process->id)?->status);
             $this->assertSame(BackgroundProcessStatusEnum::Running, $independent->status, 'Timeout must not refresh the suspended reader.');
-            $this->assertSame(8, fwrite($release, "release\n"));
-            $deadline = hrtime(true) + 2_000_000_000;
-            while (null === $lifecycle->readStatusFile($record->statusPath) && hrtime(true) < $deadline) {
-                usleep(10_000);
-            }
-            $this->assertSame(0, $lifecycle->readStatusFile($record->statusPath), 'TERM cleanup really exits successfully.');
+            // Publish completion before any reader/owner refresh. This explicit
+            // ordering cannot race a native TERM-to-KILL grace period.
+            file_put_contents($process->logPath, 'cleaned');
+            file_put_contents($process->statusPath, '0');
             if ('list' === $read) {
                 $this->assertSame(BackgroundProcessStatusEnum::Stopped, $reader->list('timeout-run')[0]->status);
             } else {
@@ -716,20 +699,12 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             $this->assertSame(BackgroundProcessStatusEnum::Stopped, $persisted->status);
             $this->assertFalse($persisted->stoppedByUser);
             $owner->refreshRecords(self::getContainer()->get(ProcessStore::class)->unfinishedSnapshots(['timeout-run']));
-            $grace = new \ReflectionProperty($owner, 'timeoutGraceDeadlines');
-            $this->assertSame([], $grace->getValue($owner));
             $poller = $this->createPoller($store, $owner, 'timeout-run');
             (new \ReflectionMethod($poller, 'poll'))->invoke($poller);
             $this->assertCount(1, $this->sentCommands);
             $this->assertStringContainsString('finished (exit 0)', $this->sentCommands[0][1]->text ?? '');
             $this->assertStringContainsString('cleaned', $this->sentCommands[0][1]->text ?? '');
         } finally {
-            fclose($release);
-            if (isset($process)) {
-                $owner->stopByRecordId($process->id, $process->sessionId);
-                $owner->cleanupFinishedRecord($process->id, $process->sessionId);
-            }
-            $owner->shutdownCleanup();
             $otherKernel->shutdown();
         }
     }

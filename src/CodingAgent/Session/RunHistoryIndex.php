@@ -703,10 +703,10 @@ final readonly class RunHistoryIndex
                     try {
                         $projector = $log->presentationProjector();
                         $plan = HistoryReplayPlan::build($this->presentationEvents($log, $path, $runId, $end));
-                        foreach ($this->presentationEvents($log, $path, $runId, $end) as $event) {
-                            $projector->observe($event, $plan->includes($event));
+                        foreach ($this->presentationEvents($log, $path, $runId, $end) as $presentationEvent) {
+                            $projector->observe($presentationEvent, $plan->includes($presentationEvent));
                         }
-                        unset($event);
+                        unset($presentationEvent);
                         $position = $plan->positionTurnNo;
                         $presentationFailed = false;
                     } catch (\Throwable $exception) {
