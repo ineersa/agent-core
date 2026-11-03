@@ -144,11 +144,15 @@ final class ExtensionManager
             // Composer's init class retains its loader, including negative lookups.
             // A fresh public ClassLoader clears misses that map setters cannot.
             $loader = new ClassLoader($vendor);
-            foreach (require $vendor.'/composer/autoload_psr4.php' as $prefix => $paths) {
-                $loader->setPsr4($prefix, $paths);
+            $psr4Map = require $vendor.'/composer/autoload_psr4.php';
+            unset($namespacePrefix, $namespacePaths);
+            foreach ($psr4Map as $namespacePrefix => $namespacePaths) {
+                $loader->setPsr4($namespacePrefix, $namespacePaths);
             }
-            foreach (require $vendor.'/composer/autoload_namespaces.php' as $prefix => $paths) {
-                $loader->add($prefix, $paths);
+            $namespaceMap = require $vendor.'/composer/autoload_namespaces.php';
+            unset($namespacePrefix, $namespacePaths);
+            foreach ($namespaceMap as $namespacePrefix => $namespacePaths) {
+                $loader->add($namespacePrefix, $namespacePaths);
             }
             $loader->addClassMap(require $vendor.'/composer/autoload_classmap.php');
             $loader->register(false);
