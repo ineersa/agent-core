@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Runtime\Contract\DTO;
 final readonly class BackgroundChildStatusDTO
 {
     public function __construct(
-        public string $lifecycleId,
         public string $runId,
         public string $artifactId,
         public string $name,
@@ -16,6 +15,8 @@ final readonly class BackgroundChildStatusDTO
         public string $reasoning,
         public string $status,
         public bool $backgrounded,
+        public int $latestInputTokens = 0,
+        public int $contextWindow = 0,
     ) {
     }
 }

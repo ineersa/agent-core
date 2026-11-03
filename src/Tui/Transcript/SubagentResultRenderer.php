@@ -39,6 +39,11 @@ final readonly class SubagentResultRenderer
         if (TranscriptBlockKindEnum::ToolResult !== $block->kind) {
             return false;
         }
+        // Detached invocations use the generic compact acknowledgement, including
+        // when a foreground progress snapshot arrived before detachment.
+        if (true === ($block->meta['backgrounded'] ?? false)) {
+            return false;
+        }
 
         $toolName = $block->meta['tool_name'] ?? null;
 
@@ -84,7 +89,6 @@ final readonly class SubagentResultRenderer
             progress: $progress,
             streaming: $block->streaming,
             expandHandoffHint: $expandHandoffHint,
-            backgrounded: true === ($block->meta['backgrounded'] ?? false),
         ));
 
         if ($isError && '' !== trim($resultText)) {

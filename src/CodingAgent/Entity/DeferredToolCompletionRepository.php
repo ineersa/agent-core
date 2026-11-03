@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
-use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
@@ -38,14 +37,24 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
         parent::__construct($registry, DeferredToolCompletion::class);
     }
 
-    /** @param list<string> $runIds
-     * @return list<array<string, mixed>> */
-    public function pendingCodeMode(array $runIds): array
+    /** @return list<array<string, mixed>> */
+    public function pendingOwnedCodeMode(string $rootRunId): array
     {
-        return $this->getEntityManager()->getConnection()->fetchAllAssociative(
-            "SELECT deferred_id, run_id, tool_call_id, ready_at, backgrounded_at, interruption_reason, created_at FROM tool_deferred_completion WHERE run_id IN (?) AND tool_name = 'code_mode' AND status = 'pending' AND (backgrounded_at IS NOT NULL OR accepted_result_reference_json IS NULL) ORDER BY created_at LIMIT 100",
-            [$runIds], [ArrayParameterType::STRING],
-        );
+        // Scope active invocations by their persisted run identity, not by
+        // traversing historical descendants or opening artifact registries.
+        // Reservations also cover children not yet operationally projected.
+        return $this->getEntityManager()->getConnection()->fetchAllAssociative(<<<'SQL'
+            SELECT invocation.deferred_id, invocation.run_id, invocation.tool_call_id,
+                invocation.ready_at, invocation.backgrounded_at, invocation.interruption_reason, invocation.created_at
+            FROM tool_deferred_completion invocation
+            LEFT JOIN run_operational_state state ON state.run_id = invocation.run_id
+            LEFT JOIN deferred_subagent_child child ON child.child_run_id = invocation.run_id
+            LEFT JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
+            WHERE invocation.tool_name = 'code_mode' AND invocation.status = 'pending'
+                AND (invocation.backgrounded_at IS NOT NULL OR invocation.accepted_result_reference_json IS NULL)
+                AND (invocation.run_id = :root OR state.owner_session_id = :root OR batch.parent_run_id = :root)
+            ORDER BY invocation.created_at LIMIT 100
+            SQL, ['root' => $rootRunId]);
     }
 
     public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation

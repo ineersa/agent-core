@@ -37,6 +37,7 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
     public function __construct(
         private readonly MessageBusInterface $bus,
         private readonly ?int $concurrencyLimit = 4,
+        private readonly MessengerDeliveryEnvelopeRestorer $envelopes = new MessengerDeliveryEnvelopeRestorer(),
     ) {
         if (null !== $this->concurrencyLimit && $this->concurrencyLimit < 1) {
             throw new \InvalidArgumentException('FiberMessageExecutionStrategy concurrency limit must be a positive integer.');
@@ -49,10 +50,11 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
         $cancellation = new DeferredCancellation();
         $this->cancellations[$id] = $cancellation;
         $bus = $this->bus;
+        $envelopes = $this->envelopes;
 
         // Worker callbacks capture the receipt of this delivery. Completion in
         // another execute(), wait() or flush() must retain that exact callback.
-        $this->pending[$id] = async(static function () use ($bus, $envelope, $transportName, $id, $cancellation, $onHandled): array {
+        $this->pending[$id] = async(static function () use ($bus, $envelope, $transportName, $id, $cancellation, $onHandled, $envelopes): array {
             $acked = false;
             $error = null;
             $handledEnvelope = $envelope;
@@ -66,12 +68,14 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
             try {
                 $handledEnvelope = $bus->dispatch($envelope->with(new AckStamp($ack)));
             } catch (\Throwable $e) {
-                return [$id, $handledEnvelope, $transportName, $acked, $e, $onHandled];
+                return [$id, $envelopes->restoreReference($handledEnvelope, $envelope), $transportName, $acked, $envelopes->restoreException($e, $envelope), $onHandled];
             }
 
             $cancellation->getCancellation()->throwIfRequested();
 
-            return [$id, $handledEnvelope, $transportName, $acked, $error, $onHandled];
+            // Worker keepalives are keyed by the received message object, not
+            // by the bus result or the delivery callback's identity.
+            return [$id, $envelopes->restoreReference($handledEnvelope, $envelope), $transportName, $acked, null === $error ? null : $envelopes->restoreException($error, $envelope), $onHandled];
         });
 
         $this->drainReady();

@@ -70,7 +70,7 @@ final class SubagentLivePickerController
         }
 
         $rootRunId = $this->state->handle->runId ?? $this->state->sessionId;
-        $snapshot = $this->client->backgroundWork($rootRunId);
+        $snapshot = $this->client->backgroundWork($rootRunId, includeChildHistory: true);
         $this->state->subagentLiveCatalog->synchronizeOperationalStatus($snapshot->children);
         $children = $this->state->subagentLiveCatalog->all();
         if ([] === $children) {
@@ -139,13 +139,11 @@ final class SubagentLivePickerController
             $runShort = \strlen($child->agentRunId) > 12 ? substr($child->agentRunId, 0, 12).'…' : $child->agentRunId;
             $label = \sprintf('%s [%s] %s run:%s — %s', $child->agentName, $statusLabel, $child->artifactId, $runShort, $task);
             $ctxFormatted = ContextUsageFormatter::format($child->model, $child->latestInputTokens, $child->contextWindow);
+            $suffix = FooterStateInitializer::shortModelName($child->model);
             if (null !== $ctxFormatted) {
-                $suffix = $ctxFormatted->text;
-                if (null !== $child->model && '' !== $child->model) {
-                    $suffix .= ' '.FooterStateInitializer::shortModelName($child->model);
-                }
-                $label .= ' · '.$suffix;
+                $suffix = $ctxFormatted->text.' '.$suffix;
             }
+            $label .= ' · '.$suffix;
             $items[] = [
                 'value' => $child->artifactId,
                 'label' => $label,

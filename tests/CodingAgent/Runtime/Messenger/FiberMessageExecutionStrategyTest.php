@@ -35,7 +35,7 @@ final class FiberMessageExecutionStrategyTest extends TestCase
                 $this->started[$id]->complete();
                 $this->release[$id]->getFuture()->await();
 
-                return $envelope->with(new HandledStamp($id, 'test'));
+                return new Envelope(clone $envelope->getMessage(), [new HandledStamp($id, 'test')]);
             }
         };
         $strategy = new FiberMessageExecutionStrategy($bus, null);
@@ -46,7 +46,10 @@ final class FiberMessageExecutionStrategyTest extends TestCase
         $execute = static function (string $id) use ($bus, $strategy, &$handled): void {
             $bus->started[$id] = new DeferredFuture();
             $bus->release[$id] = new DeferredFuture();
-            $strategy->execute(new Envelope((object) ['id' => $id]), 'tool', static function (Envelope $envelope, string $transport, bool $acked, ?\Throwable $error) use ($id, &$handled): void {
+            $message = (object) ['id' => $id];
+            $strategy->execute(new Envelope($message), 'tool', static function (Envelope $envelope, string $transport, bool $acked, ?\Throwable $error) use ($id, $message, &$handled): void {
+                self::assertSame($message, $envelope->getMessage());
+                self::assertSame($id, $envelope->last(HandledStamp::class)?->getResult());
                 self::assertSame($id, $envelope->getMessage()->id);
                 self::assertSame('tool', $transport);
                 self::assertFalse($acked);

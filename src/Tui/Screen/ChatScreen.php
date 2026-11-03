@@ -23,6 +23,7 @@ use Ineersa\Tui\Transcript\ThemeStyleSheetFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptMountedWidget;
+use Ineersa\Tui\Widget\BackgroundWorkWidget;
 use Ineersa\Tui\Widget\LiveTextWidget;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
@@ -82,6 +83,7 @@ final class ChatScreen
     private readonly FooterBarWidget $footerWidget;
     private readonly LiveTextWidget $footerSepWidget;
     private readonly FooterDataProvider $footerDataProvider;
+    private readonly BackgroundWorkWidget $backgroundRowsWidget;
 
     /* ── Status/working state (sole owner/writer; synced to native widgets) ── */
     /** @var array<string, string> */
@@ -121,6 +123,7 @@ final class ChatScreen
         $this->footerWidget = new FooterBarWidget($theme, $this->footerDataProvider);
         $this->loadedResourcesWidget = new LoadedResourcesWidget($theme);
         $this->compactHeaderWidget = new CompactHeaderWidget($theme);
+        $this->backgroundRowsWidget = new BackgroundWorkWidget($theme, $this->promptEditor->getWidget(), $this->footerWidget);
 
         // ── Top margin ──
         // Produces TOP_MARGIN_LINES blank lines.  Unlike TextWidget,
@@ -181,6 +184,12 @@ final class ChatScreen
     }
 
     /* ────────── Mounting ────────── */
+    /** @param list<array{kind: string, label: string, status: string, needs_input?: bool, suffix?: string}> $rows */
+    public function setBackgroundRows(array $rows): void
+    {
+        // Native tick revision tracking schedules only a diff frame.
+        $this->backgroundRowsWidget->setRows($rows);
+    }
 
     /**
      * Add all widgets to the Tui and perform initial render.
@@ -226,6 +235,7 @@ final class ChatScreen
         $tui->add($this->compactHeaderWidget);
         $tui->add($this->editorSepWidget);
         $tui->add($this->promptEditor->getWidget());
+        $tui->add($this->backgroundRowsWidget);
 
         // App shortcuts live on the mounted editor so InputEvent listeners
         // match through the context-shared KeyParser (legacy + Kitty).
@@ -525,7 +535,7 @@ final class ChatScreen
      * renders directly above the editor area:
      *
      *   … → status → overlay → compactHeader → editorSep → editor →
-     *   footerSep → footer
+     *   backgroundRows → footerSep → footer
      *
      * @throws \LogicException when the screen has not been mounted yet
      */
@@ -539,6 +549,7 @@ final class ChatScreen
         // so the question overlay sits above prompts/skills/agents/MCP.
         $this->tui->remove($this->footerWidget);
         $this->tui->remove($this->footerSepWidget);
+        $this->tui->remove($this->backgroundRowsWidget);
         $this->tui->remove($this->promptEditor->getWidget());
         $this->tui->remove($this->editorSepWidget);
         $this->tui->remove($this->compactHeaderWidget);
@@ -546,11 +557,13 @@ final class ChatScreen
         // Add the overlay (appended after status / above the compact header).
         $this->tui->add($widget);
         $this->inputOverlays[spl_object_id($widget)] = true;
+        $this->backgroundRowsWidget->reserveModalOverlay($widget);
 
         // Restore compact header + editor area widgets in original mount order.
         $this->tui->add($this->compactHeaderWidget);
         $this->tui->add($this->editorSepWidget);
         $this->tui->add($this->promptEditor->getWidget());
+        $this->tui->add($this->backgroundRowsWidget);
         $this->tui->add($this->footerSepWidget);
         $this->tui->add($this->footerWidget);
     }
@@ -562,7 +575,7 @@ final class ChatScreen
      * restores everything in original order so the overlay renders
      * directly below the editor:
      *
-     *   … → editor → overlay → footerSep → footer
+     *   … → editor → overlay → backgroundRows → footerSep → footer
      *
      * Used by completion menus that should appear below the prompt
      * while the editor keeps focus (unlike question/picker overlays
@@ -579,12 +592,15 @@ final class ChatScreen
         // Remove everything below the editor (reverse mount order).
         $this->tui->remove($this->footerWidget);
         $this->tui->remove($this->footerSepWidget);
+        $this->tui->remove($this->backgroundRowsWidget);
 
         // Add the overlay (appended after the editor).
         $this->tui->add($widget);
         $this->inputOverlays[spl_object_id($widget)] = true;
 
-        // Restore footer widgets in original mount order.
+        // Reserve overlay height before restoring the below-editor tail.
+        $this->backgroundRowsWidget->reserveOverlay($widget);
+        $this->tui->add($this->backgroundRowsWidget);
         $this->tui->add($this->footerSepWidget);
         $this->tui->add($this->footerWidget);
     }
@@ -599,6 +615,7 @@ final class ChatScreen
     public function removeOverlay(AbstractWidget $widget): void
     {
         $this->tui?->remove($widget);
+        $this->backgroundRowsWidget->releaseOverlay($widget);
         unset($this->inputOverlays[spl_object_id($widget)]);
     }
 

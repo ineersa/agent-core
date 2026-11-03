@@ -11,6 +11,7 @@ use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Picker\PickerOverlay;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Utility\ThrowableMessage;
@@ -59,14 +60,14 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
         try {
             $opening = $context->client->backgroundWork($runId);
             $context->state->subagentLiveCatalog->synchronizeOperationalStatus($opening->children);
-            $snapshot = array_values(array_filter($opening->work, static fn (BackgroundWorkDTO $work): bool => !$work->terminal));
+            $snapshot = array_values(array_filter($opening->work, static fn (BackgroundWorkDTO $work): bool => !$work->terminal && \in_array($work->kind, ['bash', 'code_mode'], true)));
         } catch (\Throwable $e) {
             $this->reportFailure($e, $runId);
 
             return new NoOp();
         }
         if ([] === $snapshot) {
-            return new TranscriptMessage('No background work running.', 'system');
+            return new TranscriptMessage('No background Bash or code-mode work running. Use Ctrl+\\ for agents and forks.', 'system');
         }
 
         $items = [];
@@ -78,7 +79,7 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
                 'label' => \sprintf('%s [%s]%s | %s', $process->kind, $process->status, $elapsed, $text),
             ];
         }
-        $title = 'Background work: Enter asks to cancel, Esc closes';
+        $title = 'Background Bash/code mode: Enter asks to cancel, Esc closes';
         $header = new TextWidget(text: $title);
         $list = new SelectListWidget(items: $items, maxVisible: SelectListKeybindings::MAX_VISIBLE);
         $this->pending = null;
@@ -148,10 +149,6 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
                         $context->client->send($target->runIds[0], new UserCommand('stop_code_mode', payload: ['deferred_id' => $target->id, 'tool_call_id' => $target->toolCallId]));
                     } elseif (null !== $target->processId) {
                         $context->client->stopBackgroundProcess($target->runIds[0], $target->processId);
-                    } else {
-                        foreach ($target->runIds as $childRunId) {
-                            $context->client->cancel($childRunId);
-                        }
                     }
                 }
                 $this->pendingNotice = 'Cancellation requested for '.$this->label($target);
@@ -177,6 +174,9 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
             return;
         }
         $runId = $context->state->handle->runId ?? $context->state->sessionId;
+        if ('' === $runId) {
+            return;
+        }
         if (null !== $this->requested && $context->screen->status('background') !== $this->pendingNotice) {
             // A newer UI notice owns this row; never replace it with an older result.
             $this->requested = null;
@@ -187,13 +187,34 @@ final class BackgroundProcessCommandHandler implements SlashCommandHandler
 
             return;
         }
-        if (null === $this->requested && !array_any($context->state->subagentLiveCatalog->all(), static fn ($child): bool => !$child->isTerminal())) {
-            return;
-        }
         $this->lastStatusPoll = microtime(true);
         try {
-            $snapshot = $context->client->backgroundWork($runId, $this->requested?->processId);
+            $observedChildren = $context->state->subagentLiveCatalog->activeRunIds();
+            $snapshot = $context->client->backgroundWork($runId, $this->requested?->processId, $observedChildren);
             $context->state->subagentLiveCatalog->synchronizeOperationalStatus($snapshot->children);
+            $rows = [];
+            foreach ($snapshot->work as $work) {
+                if ($work->terminal || !\in_array($work->kind, ['bash', 'code_mode'], true)) {
+                    continue;
+                }
+                $rows[] = ['kind' => $work->kind, 'label' => $this->label($work), 'status' => $work->status];
+            }
+            // Operational children retain canonical batch launch order. The
+            // picker catalog's attention/activity sort must not move these rows.
+            foreach ($snapshot->children as $operationalChild) {
+                $child = $context->state->subagentLiveCatalog->findByArtifactId($operationalChild->artifactId);
+                if (null === $child || $child->isTerminal() || (!$child->backgrounded && !$child->needsAttention())) {
+                    continue;
+                }
+                $rows[] = [
+                    'kind' => 'fork' === $child->agentName ? 'fork' : 'agent',
+                    'label' => $child->agentName.' — '.$child->taskSummary.' · '.$child->artifactId.' run:'.substr($child->agentRunId, 0, 12),
+                    'status' => $child->needsAttention() ? '⚠ needs input' : $child->statusLabel(),
+                    'suffix' => trim((ContextUsageFormatter::format($child->model, $child->latestInputTokens, $child->contextWindow)->text ?? '').' '.FooterStateInitializer::shortModelName($child->model)),
+                    'needs_input' => $child->needsAttention(),
+                ];
+            }
+            $context->screen->setBackgroundRows($rows);
             if (null === $this->requested) {
                 return;
             }

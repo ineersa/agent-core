@@ -11,6 +11,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\UniqueConstraint(name: 'uniq_tool_deferred_completion_deferred_id', columns: ['deferred_id'])]
 #[ORM\UniqueConstraint(name: 'uniq_tool_deferred_completion_run_tool_call', columns: ['run_id', 'tool_call_id'])]
 #[ORM\Index(name: 'idx_deferred_pending', columns: ['run_id', 'status', 'turn_no', 'step_id'])]
+#[ORM\Index(name: 'idx_deferred_active_tool', columns: ['tool_name', 'status', 'run_id'])]
 #[ORM\HasLifecycleCallbacks]
 class DeferredToolCompletion
 {

@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Tests\Support\SubagentProgressSerializerTestSupport;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\SubagentResultRenderer;
@@ -20,6 +21,34 @@ use Symfony\Component\Tui\Widget\ContainerWidget;
 
 final class SubagentResultRendererTest extends TestCase
 {
+    public function testBackgroundSubagentAndForkStayCompactWithStructuredProgressAndKeepDetails(): void
+    {
+        $blocks = [];
+        foreach (['subagent', 'fork'] as $index => $tool) {
+            $blocks[] = new TranscriptBlock(
+                id: 'background-'.$tool, kind: TranscriptBlockKindEnum::ToolResult, runId: 'parent', seq: $index + 1,
+                text: 'DETAILS_'.$tool,
+                meta: ['tool_name' => $tool, 'backgrounded' => true, 'subagent_progress' => $this->snapshot([
+                    'status' => 'running', 'agent_name' => $tool, 'artifact_id' => 'artifact-'.$tool,
+                    'agent_run_id' => 'child-'.$tool, 'task_summary' => 'task', 'model' => 'test/model', 'reasoning' => 'low',
+                ])],
+            );
+        }
+        $state = new TranscriptDisplayState();
+        $harness = new VirtualTuiHarness(displayState: $state);
+        $harness->screen()->setTranscriptBlocks($blocks);
+        $text = $harness->plainScreenText();
+        $this->assertStringContainsString('subagent · backgrounded', $text);
+        $this->assertStringContainsString('fork · backgrounded', $text);
+        $this->assertStringContainsString('Ctrl+O', $text);
+        $this->assertStringNotContainsString('╭─', $text);
+        $this->assertStringNotContainsString('DETAILS_', $text);
+        $expanded = new VirtualTuiHarness(displayState: new TranscriptDisplayState(previewableBlocksExpanded: true));
+        $expanded->screen()->setTranscriptBlocks($blocks);
+        $this->assertStringContainsString('DETAILS_subagent', $expanded->plainScreenText());
+        $this->assertStringContainsString('DETAILS_fork', $expanded->plainScreenText());
+    }
+
     public function testFactoryBuildsStructuredSubagentBlock(): void
     {
         $progress = [
@@ -42,6 +71,7 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('╰─', $joined);
         $this->assertStringContainsString('scout', $joined);
         $this->assertStringContainsString('[running]', $joined);
+        $this->assertStringNotContainsString('backgrounded', $joined);
         $this->assertStringContainsString('Task inspect runtime events', $joined);
         $this->assertStringContainsString('agent_01HX', $joined);
         $this->assertStringContainsString('3 LLM steps', $joined);
