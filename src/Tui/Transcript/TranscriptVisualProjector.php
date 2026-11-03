@@ -123,9 +123,9 @@ final class TranscriptVisualProjector
             $touchedPrimaryIds[$block->id] = true;
         }
 
-        // Pairing eligibility needs the old sources and candidate counts. Existing
-        // exchanges with unchanged identity can update without rescanning history.
-        $inPlaceToolIds = $this->findInPlaceToolUpdates($changes);
+        // Eligibility needs the old sources and candidate counts. Stable streams
+        // and exchanges can update without rescanning history.
+        $inPlaceIds = $this->findInPlaceUpdates($changes);
 
         $tailEligible = [] === $changes->removals;
         $firstNew = null;
@@ -133,7 +133,7 @@ final class TranscriptVisualProjector
         foreach ($changes->upserts as $block) {
             if (isset($this->blocksById[$block->id])) {
                 $hasExistingUpdates = true;
-                $tailEligible = $tailEligible && ($inPlaceToolIds[$block->id] ?? false);
+                $tailEligible = $tailEligible && ($inPlaceIds[$block->id] ?? false);
             } else {
                 $firstNew ??= $block;
             }
@@ -151,7 +151,7 @@ final class TranscriptVisualProjector
                 // exchange uses the updated call even if its upsert arrived last.
                 usort($blocks, fn (TranscriptBlock $a, TranscriptBlock $b): int => $this->blockIndex[$a->id] <=> $this->blockIndex[$b->id]);
             }
-            if (null !== ($patch = $this->projectTail($blocks, $previousTail, $firstNew, $inPlaceToolIds))) {
+            if (null !== ($patch = $this->projectTail($blocks, $previousTail, $firstNew, $inPlaceIds))) {
                 return $patch;
             }
         }
@@ -165,7 +165,7 @@ final class TranscriptVisualProjector
         return $this->reprojectAffected(
             array_keys($expanded),
             array_keys($touchedPrimaryIds),
-            $inPlaceToolIds,
+            $inPlaceIds,
         );
     }
 
@@ -185,13 +185,13 @@ final class TranscriptVisualProjector
     }
 
     /**
-     * Content changes cannot alter pairing when call identity/name stay fixed and
-     * a result has no competing candidate. Ambiguous results, suppression changes,
-     * new blocks and removals retain the full structural policy path.
+     * Stable stream identity and tool pairing permit content updates. The tail
+     * planner also checks assistant visibility against canonical neighbors after
+     * mutation; suppression changes that move an existing node retain full policy.
      *
      * @return array<string, bool>
      */
-    private function findInPlaceToolUpdates(TranscriptChangeSet $changes): array
+    private function findInPlaceUpdates(TranscriptChangeSet $changes): array
     {
         if ([] !== $changes->removals) {
             return [];
@@ -209,8 +209,8 @@ final class TranscriptVisualProjector
             }
 
             $previous = $this->blocksById[$block->id] ?? null;
-            $isTool = \in_array($block->kind, [TranscriptBlockKindEnum::ToolCall, TranscriptBlockKindEnum::ToolResult], true);
-            $eligible[$block->id] = $isTool
+            $isContentUpdate = \in_array($block->kind, [TranscriptBlockKindEnum::ToolCall, TranscriptBlockKindEnum::ToolResult, TranscriptBlockKindEnum::AssistantMessage, TranscriptBlockKindEnum::AssistantThinking], true);
+            $eligible[$block->id] = $isContentUpdate
                 && null !== $previous
                 && $previous->kind === $block->kind
                 && $previous->runId === $block->runId
@@ -219,7 +219,7 @@ final class TranscriptVisualProjector
                 && ($previous->meta['tool_name'] ?? null) === ($block->meta['tool_name'] ?? null)
                 && $this->factory->isTranscriptWidgetSuppressed($previous) === $this->factory->isTranscriptWidgetSuppressed($block)
                 && $this->factory->subagentRenderer()->supports($previous) === $this->factory->subagentRenderer()->supports($block)
-                && (TranscriptBlockKindEnum::ToolCall === $block->kind
+                && (TranscriptBlockKindEnum::ToolResult !== $block->kind
                     || \count($this->toolResultIdsByCallId[$this->toolCallIdMeta($block) ?? ''] ?? []) <= 1);
         }
 
@@ -396,14 +396,14 @@ final class TranscriptVisualProjector
     }
 
     /**
-     * Plan ordinary appended rows, stable tool updates and distant result pairing
+     * Plan ordinary appended rows, stable content updates and distant result pairing
      * without rebuilding retained nodes. Eligibility precedes visual mutation.
      * Structural patches still carry the complete O(order) key list.
      *
      * @param list<TranscriptBlock> $blocks
-     * @param array<string, bool>   $inPlaceToolIds
+     * @param array<string, bool>   $inPlaceIds
      */
-    private function projectTail(array $blocks, ?TranscriptBlock $previousTail, TranscriptBlock $firstNew, array $inPlaceToolIds): ?TranscriptVisualPatch
+    private function projectTail(array $blocks, ?TranscriptBlock $previousTail, TranscriptBlock $firstNew, array $inPlaceIds): ?TranscriptVisualPatch
     {
         if (\count($this->nodeOrder) !== \count($this->nodesByKey)) {
             return null; // Duplicate visual identities require full pairing policy.
@@ -414,16 +414,18 @@ final class TranscriptVisualProjector
         $consumedResults = [];
         $consumedCalls = [];
         $removals = [];
+        // An upsert may have filled the formerly empty tail placeholder.
+        $previousTail = null === $previousTail ? null : $this->blocksById[$previousTail->id];
         if (null !== $previousTail && isset($this->nodesByKey[$previousTail->id]) && $this->factory->shouldSuppressEmptyAssistantPlaceholder($previousTail, $firstNew)) {
             $removals[] = $previousTail->id;
         }
         $visible = \count($this->nodesByKey) - (int) isset($this->nodesByKey[self::WELCOME_KEY]) - \count($removals) > 0;
-        foreach ($blocks as $index => $block) {
+        foreach ($blocks as $block) {
             $callId = $this->toolCallIdMeta($block);
             $key = TranscriptBlockKindEnum::ToolCall === $block->kind ? $this->stableToolVisualKey($block) : $block->id;
             if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
                 if (isset($planned[$key]) || (isset($this->nodesByKey[$key])
-                    && (!($inPlaceToolIds[$block->id] ?? false) || $this->nodesByKey[$key]->primary?->id !== $block->id))) {
+                    && (!($inPlaceIds[$block->id] ?? false) || $this->nodesByKey[$key]->primary?->id !== $block->id))) {
                     return null;
                 }
                 foreach ($this->toolResultIdsByCallId[$callId ?? ''] ?? [] as $resultId) {
@@ -435,8 +437,16 @@ final class TranscriptVisualProjector
             if (null !== $callId && \count($this->toolResultIdsByCallId[$callId] ?? []) > 1) {
                 return null;
             }
-            if ($this->factory->isTranscriptWidgetSuppressed($block)
-                || $this->factory->shouldSuppressEmptyAssistantPlaceholder($block, $blocks[$index + 1] ?? null)) {
+            $nextId = $this->blockOrder[$this->blockIndex[$block->id] + 1] ?? null;
+            $suppressed = $this->factory->isTranscriptWidgetSuppressed($block)
+                || $this->factory->shouldSuppressEmptyAssistantPlaceholder($block, null === $nextId ? null : $this->blocksById[$nextId]);
+            if (TranscriptBlockKindEnum::AssistantMessage === $block->kind && ($inPlaceIds[$block->id] ?? false)) {
+                $visibleBefore = isset($this->nodesByKey[$key]) && !\in_array($key, $removals, true);
+                if ($visibleBefore === $suppressed) {
+                    return null; // Revealing/hiding an existing non-tail node can change order.
+                }
+            }
+            if ($suppressed) {
                 continue;
             }
             if (TranscriptBlockKindEnum::ToolResult === $block->kind) {

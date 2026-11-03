@@ -109,6 +109,62 @@ final class TranscriptVisualProjectorTest extends TestCase
         }
     }
 
+    public function testMixedAssistantThinkingAndToolUpdatesRetainHistoricalNodes(): void
+    {
+        foreach ([10, 1000] as $size) {
+            foreach ([false, true] as $existingCall) {
+                $history = [];
+                for ($i = 0; $i < $size; ++$i) {
+                    $history[] = new TranscriptBlock('history-'.$i, TranscriptBlockKindEnum::AssistantMessage, self::SESSION_ID, $i + 1, 'history');
+                }
+                $thinking = new TranscriptBlock('thinking', TranscriptBlockKindEnum::AssistantThinking, self::SESSION_ID, $size + 1, 'thinking', streaming: true);
+                $assistant = new TranscriptBlock('assistant', TranscriptBlockKindEnum::AssistantMessage, self::SESSION_ID, $size + 2, 'partial', streaming: true);
+                $call = new TranscriptBlock('call', TranscriptBlockKindEnum::ToolCall, self::SESSION_ID, $size + 3, 'arguments', ['tool_call_id' => 'mixed', 'tool_name' => 'read'], true);
+                $projector = new TranscriptVisualProjector();
+                $projector->replaceAll([...$history, $thinking, $assistant, ...($existingCall ? [$call] : [])]);
+                $nodes = new \ReflectionProperty(TranscriptVisualProjector::class, 'nodesByKey');
+                $original = $nodes->getValue($projector);
+                $thinking = $thinking->with(text: 'final thinking', streaming: false);
+                $assistant = $assistant->with(text: 'final text', streaming: false);
+                $call = $call->with(streaming: false);
+                $result = new TranscriptBlock('result', TranscriptBlockKindEnum::ToolResult, self::SESSION_ID, $size + 4, 'running', $call->meta);
+                $patch = $projector->applyChangeSet(TranscriptChangeSet::incremental([$call, $result, $assistant, $thinking]));
+                $this->assertFalse($patch->isFull());
+                $this->assertCount(3, $patch->upserts);
+                foreach ($history as $block) {
+                    $this->assertSame($original[$block->id], $nodes->getValue($projector)[$block->id]);
+                }
+                $reference = new TranscriptVisualProjector();
+                $full = $reference->replaceAll([...$history, $thinking, $assistant, $call, $result]);
+                $this->assertSame($full->order, $patch->order);
+                $this->assertEquals($nodes->getValue($reference), $nodes->getValue($projector));
+            }
+        }
+    }
+
+    public function testMixedAssistantUpdatesRespectCanonicalPlaceholderNeighbors(): void
+    {
+        foreach ([['', '', true], ['', 'revealed', true], ['visible', '', true], ['', 'visible', false], ['visible', '', false]] as [$before, $after, $existingQuestion]) {
+            $assistant = new TranscriptBlock('assistant', TranscriptBlockKindEnum::AssistantMessage, self::SESSION_ID, 1, $before, streaming: true);
+            $question = new TranscriptBlock('question', TranscriptBlockKindEnum::Question, self::SESSION_ID, 2, 'Choose');
+            $next = new TranscriptBlock('next', TranscriptBlockKindEnum::AssistantThinking, self::SESSION_ID, 3, 'thinking');
+            $projector = new TranscriptVisualProjector();
+            $projector->replaceAll([$assistant, ...($existingQuestion ? [$question] : [])]);
+            $nodes = new \ReflectionProperty(TranscriptVisualProjector::class, 'nodesByKey');
+            $original = $nodes->getValue($projector);
+            $assistant = $assistant->with(text: $after, streaming: false);
+            $projector->applyChangeSet(TranscriptChangeSet::incremental([$assistant, ...($existingQuestion ? [] : [$question]), $next]));
+            $reference = new TranscriptVisualProjector();
+            $reference->replaceAll([$assistant, $question, $next]);
+            $this->assertEquals($nodes->getValue($reference), $nodes->getValue($projector));
+            $order = new \ReflectionProperty(TranscriptVisualProjector::class, 'nodeOrder');
+            $this->assertSame($order->getValue($reference), $order->getValue($projector));
+            if ('' === $before && '' === $after) {
+                $this->assertSame($original['question'], $nodes->getValue($projector)['question']);
+            }
+        }
+    }
+
     #[Test]
     public function testPureTailStreamEmitsContentOnlyPatchWithoutOrderSnapshot(): void
     {
