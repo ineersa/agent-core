@@ -86,6 +86,7 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
         yield 'previous ownership guidance' => ["version: 1.1.5\n"];
         yield 'previous planning guidance' => ["version: 1.1.6\n"];
         yield 'previous multi-file skill' => ["version: 1.1.7\n"];
+        yield 'previous consolidated skill' => ["version: 1.1.8\n"];
         yield 'malformed' => ["version: [\n"];
     }
 

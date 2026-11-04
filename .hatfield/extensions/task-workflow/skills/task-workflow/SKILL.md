@@ -1,7 +1,7 @@
 ---
 name: task-workflow
 description: "Main-agent procedure for tracked work, review, and delivery."
-version: 1.1.8
+version: 1.1.9
 ---
 
 # Task workflow
@@ -16,7 +16,7 @@ For a planning-only request, present the plan, risks, open decisions, and valida
 
 ## Implement
 
-Move the task to IN-PROGRESS before changing code. Main keeps 1–2-file one-offs and delegates larger cohesive slices to implementation forks. Settle behavior and design first. Give each fork a precise, self-contained plan and exact task, including affected code, required behavior and invariants, and validation. Routine local inspection and implementation details remain the fork's judgment. Include necessary existing-draft facts, such as changes to preserve, but no orchestration chatter, prior-agent history, or rules already supplied by project instructions. Do not require headings. Apply this assignment rule to initial work, resumes, and replacements.
+Move the task to IN-PROGRESS before changing code. Main keeps 1–2-file one-offs and delegates larger cohesive slices to implementation forks. Settle behavior and design first, then follow the permanent fork assignment guidelines. Routine local inspection and implementation details remain the fork's judgment.
 
 Keep one writer per checkout. Main alone tracks child identity and progress in workflow metadata, without ownership handshakes or mandatory log formats. Before replacement, verify the previous writer has stopped; carry forward necessary current draft facts, not its operational history. Use eligible existing children rather than duplicates, subject to tool lifecycle limits.
 

@@ -191,6 +191,26 @@ final class ForkToolContractTest extends TestCase
         $this->assertStringContainsString('Never launch more than 3 forks concurrently', $guidelines);
         $this->assertStringContainsString('Do not set model or thinking unless the user explicitly requested overrides', $guidelines);
     }
+
+    public function testPermanentDefinitionProvidesAssignmentGuidanceWithoutWorkflowSkill(): void
+    {
+        $definition = ForkToolDefinitionBuilder::build(new \stdClass());
+        $guidelines = implode("\n", $definition->promptGuidelines);
+
+        foreach ([
+            'precise implementation specification',
+            'checkout, affected code',
+            'decided behavior and design',
+            'necessary invariants',
+            'relevant validation',
+            'Include existing changes to preserve',
+            'Exclude orchestration history, previous-agent outcomes, workflow bookkeeping, and repeated project instructions',
+            'follow-ups too',
+            'no mandatory headings',
+        ] as $requirement) {
+            $this->assertStringContainsString($requirement, $guidelines);
+        }
+    }
 }
 
 final class FakeForkExecutionService implements ForkExecutionServiceInterface

@@ -23,7 +23,7 @@ final class ForkToolDefinitionBuilder
                 'Parallel forks must NEVER target the same worktree/directory because concurrent edits can corrupt it.',
                 'Never launch more than 3 forks concurrently because forks impose high load.',
                 'Do not set model or thinking unless the user explicitly requested overrides.',
-                'Use forks to implement a decided change; main retains workflow administration.',
+                'Give forks a precise implementation specification covering checkout, affected code, decided behavior and design, necessary invariants, and relevant validation. Include existing changes to preserve. Exclude orchestration history, previous-agent outcomes, workflow bookkeeping, and repeated project instructions. Apply this rule to follow-ups too; no mandatory headings.',
             ],
         );
     }
