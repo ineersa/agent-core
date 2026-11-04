@@ -24,6 +24,8 @@ final class CodeModeBootstrapTest extends TestCase
     public function testTimeoutAndPeerClosureAreDistinguished(bool $body, bool $closed): void
     {
         require_once self::BOOTSTRAP;
+        $read = 'hatfield_code_mode_read';
+        $this->assertIsCallable($read);
         [$reader, $writer] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, 0);
         if ($body) {
             fwrite($writer, pack('N', 2));
@@ -37,7 +39,7 @@ final class CodeModeBootstrapTest extends TestCase
         }
 
         try {
-            hatfield_code_mode_read($reader);
+            $read($reader);
             $this->fail('Expected the incomplete frame to fail.');
         } catch (\RuntimeException $exception) {
             $part = $body ? 'body' : 'header';
