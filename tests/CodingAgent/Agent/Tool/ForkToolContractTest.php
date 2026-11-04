@@ -185,13 +185,31 @@ final class ForkToolContractTest extends TestCase
         $definition = ForkToolDefinitionBuilder::build($handler);
 
         $this->assertSame(ToolExecutionMode::Parallel, $definition->executionMode);
-        $this->assertSame([
-            'Fork children cannot launch fork or subagent; do not instruct them to spawn child agents.',
-            'Parallel forks must NEVER target the same worktree/directory because concurrent edits can corrupt it.',
-            'Never launch more than 3 forks concurrently because forks impose high load.',
-            'Do not set model or thinking unless the user explicitly requested overrides.',
-            'For repository work, structure the task as Checkout, Task, Done when, and optional Validation. Start Task with Implement, Review, or Investigate. Add authorization, constraints, or entry points only when the fork otherwise lacks them.',
-        ], $definition->promptGuidelines);
+        $guidelines = implode("\n", $definition->promptGuidelines);
+        $this->assertStringContainsString('cannot launch fork or subagent', $guidelines);
+        $this->assertStringContainsString('must NEVER target the same worktree/directory', $guidelines);
+        $this->assertStringContainsString('Never launch more than 3 forks concurrently', $guidelines);
+        $this->assertStringContainsString('Do not set model or thinking unless the user explicitly requested overrides', $guidelines);
+    }
+
+    public function testPermanentDefinitionProvidesAssignmentGuidanceWithoutWorkflowSkill(): void
+    {
+        $definition = ForkToolDefinitionBuilder::build(new \stdClass());
+        $guidelines = implode("\n", $definition->promptGuidelines);
+
+        foreach ([
+            'precise implementation specification',
+            'checkout, affected code',
+            'decided behavior and design',
+            'necessary invariants',
+            'relevant validation',
+            'Include existing changes to preserve',
+            'Exclude orchestration history, previous-agent outcomes, workflow bookkeeping, and repeated project instructions',
+            'follow-ups too',
+            'no mandatory headings',
+        ] as $requirement) {
+            $this->assertStringContainsString($requirement, $guidelines);
+        }
     }
 }
 

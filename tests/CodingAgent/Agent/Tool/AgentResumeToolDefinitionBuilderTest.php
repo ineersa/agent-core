@@ -22,6 +22,8 @@ final class AgentResumeToolDefinitionBuilderTest extends TestCase
         $this->assertStringContainsString('subagent or fork', $definition->description);
         $this->assertStringContainsString('you will be notified when it finishes. Do not poll for completion.', $definition->description);
         $this->assertStringContainsString('subagent or fork', $definition->promptLine);
-        $this->assertStringNotContainsString('checkout ownership', implode("\n", $definition->promptGuidelines));
+        $guidelines = implode("\n", $definition->promptGuidelines);
+        $this->assertStringNotContainsString('checkout ownership', $guidelines);
+        $this->assertStringNotContainsString('update_task', $guidelines);
     }
 }

@@ -50,14 +50,5 @@
 
 ## Task workflow
 
-- Use the external board at `/home/ineersa/projects/agent-core-tasks`; never commit board metadata to this repository.
-- Use task tools for transitions and metadata. Run `task_list` before tracked work.
-- Before phase work or transitions, load the active `task-workflow` skill and its exact phase procedure.
-- Reload the router and current procedure after phase changes or compaction; run `task_list` after compaction.
-- Load the ownership procedure before delegation. Main coordinates, explores initial scope, and owns transitions.
-- Keep one-off implementation that touches 1–2 files with main. Delegate every larger implementation slice to a fork.
-- Keep scouts for exploration, reviewers for review, and researchers for web findings. All three stay read-only.
-- Use one writer per worktree and explicit ownership handoffs. Independent review is required.
-- Main must send reviewers only a PR identifier, a commit SHA, or both: `Review PR <url>.`, `Review commit <sha>.`, or `Review PR <url> at commit <sha>.` Use PR plus commit for PR follow-ups. Do not attach context, prior findings, fix summaries, validation claims, desired verdicts, or scope hints.
-- Reviewers must refuse assignments with framing beyond those identifiers and request a clean assignment. Obtain requirements and evidence independently. Review the full change at the target revision, including on follow-ups; confirmation of known fixes does not establish approval.
-- Run focused validation during implementation. The CODE-REVIEW transition owns the full `castor check` gate; do not run it separately first.
+- Main alone manages tracked workflow and loads the active `task-workflow` skill. Use the external board at `/home/ineersa/projects/agent-core-tasks`; never commit board metadata to this repository.
+- Implementation forks follow development, architecture, and testing rules, implement the assigned change, and return results. They do not manage task or ownership records, phases, other agents, reviews, PRs, or commits; main owns that administration.

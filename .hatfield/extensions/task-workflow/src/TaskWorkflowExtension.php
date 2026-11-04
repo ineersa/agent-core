@@ -139,7 +139,7 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
             handler: new MoveTaskHandler($store, $git, $worktrees, $pr, $exec, $codeRoot),
             promptSummary: 'move_task task to [from] — change task status and perform the transition’s Git/worktree/PR actions',
             promptGuidelines: [
-                'Use move_task rather than manual task-status or worktree moves. Read the task-workflow router and exact phase procedure before a transition; follow its ownership rules.',
+                'Main uses move_task rather than manual task-status or worktree moves and follows the consolidated task-workflow skill for transitions.',
             ],
         ));
 
