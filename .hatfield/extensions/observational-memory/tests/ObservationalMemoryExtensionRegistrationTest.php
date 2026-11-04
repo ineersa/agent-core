@@ -25,8 +25,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Thesis: OM registers exact public command names om-status/om-view and permanent memory_search/recall tools
- * whose model-facing metadata retains the faithful Pi decision/provenance/no-search guidance
- * plus the Hatfield 12..64 hex id schema (so future shortening fails this test).
+ * whose compact model-facing metadata retains decision/provenance/no-search guidance
+ * and the Hatfield 12..64 hex id schema.
  */
 final class ObservationalMemoryExtensionRegistrationTest extends TestCase
 {
@@ -163,15 +163,19 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertSame(50, $search->parametersJsonSchema['properties']['limit']['maximum'] ?? null);
         $this->assertStringContainsString('Find prior work', $search->description);
         $this->assertStringContainsString('Not semantic search', $search->description);
+        $this->assertSame('memory_search query [after] [before] [limit=20] — search retained memories across sessions', $search->promptSummary);
         $searchGuidelines = implode("\n", $search->promptGuidelines);
         $this->assertStringContainsString('prior work, conversations, PRs, issues', $searchGuidelines);
-        $this->assertStringContainsString('all retained history', $searchGuidelines);
+        $this->assertStringContainsString('all retained history', $search->parametersJsonSchema['properties']['after']['description']);
         $this->assertStringContainsString('No hits is not proof', $searchGuidelines);
-        $this->assertStringContainsString('one contiguous literal substring', $searchGuidelines);
+        $this->assertStringContainsString('one contiguous literal substring', $search->description);
         $this->assertStringContainsString('exact phrase', $search->parametersJsonSchema['properties']['query']['description']);
+        $this->assertStringContainsString('ASCII case-insensitive', $search->parametersJsonSchema['properties']['query']['description']);
+        $this->assertStringContainsString('newest first', $search->parametersJsonSchema['properties']['limit']['description']);
+        $this->assertStringContainsString('older matches were omitted', $search->parametersJsonSchema['properties']['limit']['description']);
         $this->assertStringContainsString('not a query match score', $searchGuidelines);
-        $this->assertStringContainsString('not raw transcript events', $searchGuidelines);
-        $this->assertStringContainsString('recall with that memory id and session_id for provenance', $searchGuidelines);
+        $this->assertStringContainsString('not raw transcript events', $search->description);
+        $this->assertStringContainsString('Use recall for source context behind useful hits', $searchGuidelines);
 
         $recall = $tools[1];
         $this->assertSame('recall', $recall->name);
@@ -179,8 +183,8 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertArrayHasKey('session_id', $recall->parametersJsonSchema['properties'] ?? []);
 
         $this->assertStringContainsString('Recover exact evidence and source context', $recall->description);
-        $this->assertStringContainsString('current session', $recall->description);
-        $this->assertStringContainsString('session_id', $recall->description);
+        $this->assertStringContainsString('current session', $recall->parametersJsonSchema['properties']['session_id']['description']);
+        $this->assertStringContainsString('Originating session_id from memory_search', $recall->parametersJsonSchema['properties']['session_id']['description']);
         $this->assertStringNotContainsString('current branch', $recall->description);
 
         $idDescription = (string) ($recall->parametersJsonSchema['properties']['id']['description'] ?? '');
@@ -189,19 +193,16 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringContainsString('memory_search', $idDescription);
 
         $this->assertSame(
-            'Use recall(id) or recall(id, session_id) to recover provenance for a selected memory.',
+            'recall id [session_id] — retrieve source context for a selected memory',
             $recall->promptSummary,
         );
 
         $guidelines = implode("\n", $recall->promptGuidelines);
-        $this->assertCount(6, $recall->promptGuidelines);
-        $this->assertStringContainsString('selected memory id', $guidelines);
-        $this->assertStringContainsString('recover provenance rather than the whole session', $guidelines);
+        $this->assertStringContainsString('not the whole session', $recall->description);
         $this->assertStringContainsString('exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance', $guidelines);
         $this->assertStringContainsString('user asks why you believe something', $guidelines);
-        $this->assertStringContainsString('not a query match score', $guidelines);
-        $this->assertStringContainsString('semantic search or transcript browsing', $guidelines);
-        $this->assertStringContainsString('verify current repo or PR state', $guidelines);
+        $this->assertStringContainsString('semantic search or transcript browsing', $recall->description);
+        $this->assertStringContainsString('Verify current repo or PR state', $guidelines);
         $this->assertStringNotContainsString('12-character memory id', $guidelines);
     }
 
