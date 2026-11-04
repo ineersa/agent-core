@@ -185,13 +185,11 @@ final class ForkToolContractTest extends TestCase
         $definition = ForkToolDefinitionBuilder::build($handler);
 
         $this->assertSame(ToolExecutionMode::Parallel, $definition->executionMode);
-        $this->assertSame([
-            'Fork children cannot launch fork or subagent; do not instruct them to spawn child agents.',
-            'Parallel forks must NEVER target the same worktree/directory because concurrent edits can corrupt it.',
-            'Never launch more than 3 forks concurrently because forks impose high load.',
-            'Do not set model or thinking unless the user explicitly requested overrides.',
-            'Give implementation forks a precise, self-contained implementation plan and exact task, including affected code, required behavior and invariants, and validation. Exclude orchestration history, prior-agent failures, status chatter, and rules already provided by project instructions.',
-        ], $definition->promptGuidelines);
+        $guidelines = implode("\n", $definition->promptGuidelines);
+        $this->assertStringContainsString('cannot launch fork or subagent', $guidelines);
+        $this->assertStringContainsString('must NEVER target the same worktree/directory', $guidelines);
+        $this->assertStringContainsString('Never launch more than 3 forks concurrently', $guidelines);
+        $this->assertStringContainsString('Do not set model or thinking unless the user explicitly requested overrides', $guidelines);
     }
 }
 

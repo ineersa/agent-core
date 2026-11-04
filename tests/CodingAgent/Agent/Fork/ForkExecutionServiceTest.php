@@ -117,7 +117,8 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $compaction->method('compactMessages')->willReturnCallback(static fn (string $runId, int $turnNo, array $history): MessageSnapshotCompactionResult => MessageSnapshotCompactionResult::structuralNoOp($history));
         $container->set(CompactionServiceInterface::class, $compaction);
         $fork = $container->get(ForkExecutionService::class);
-        $launch = $this->withToolContext($parent, 'native-fork', static fn () => $fork->execute($parent, 'Continue independently', $snapshot, modelOverride: 'openai-codex/gpt-5.5', reasoningOverride: 'low'), launchContext: $snapshot);
+        $specification = "Implement the decided change.\nPreserve fixture ordering and validate the result.";
+        $launch = $this->withToolContext($parent, 'native-fork', static fn () => $fork->execute($parent, $specification, $snapshot, modelOverride: 'openai-codex/gpt-5.5', reasoningOverride: 'low'), launchContext: $snapshot);
         $this->assertCount(1, $commandBus->messages);
         $command = $commandBus->messages[0];
         $this->assertInstanceOf(StartRun::class, $command);
@@ -134,10 +135,16 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $store = $container->get(AgentChildRunEventStoreFactory::class)->create($parent, $childId, $child->artifactId);
         $assignment = $inherited[array_key_last($inherited)];
         $this->assertSame(['agent_task' => ['artifact_id' => $child->artifactId]], $assignment->metadata);
-        $this->assertSame(new ForkTaskPromptBuilder()->buildTaskUserMessage('Continue independently'), $assignment->content[0]['text']);
+        $this->assertSame($specification, $assignment->content[0]['text']);
+        $this->assertSame($assignment, $started->messages[array_key_last($started->messages)]);
+        $this->assertCount(1, array_filter($started->messages, static fn (AgentMessage $message): bool => $message->content === [['type' => 'text', 'text' => $specification]]));
+        $this->assertCount(1, array_filter($started->messages, static fn (AgentMessage $message): bool => $message->content === [['type' => 'text', 'text' => $inheritedHuman]]));
+        $system = array_values(array_filter($started->messages, static fn (AgentMessage $message): bool => 'system' === $message->role));
+        $this->assertCount(1, $system);
+        $this->assertSame(1, substr_count($system[0]->content[0]['text'], new ForkTaskPromptBuilder()->forkChildSystemPromptAppend()));
         $start = $container->get(StartRunHandler::class)->handle($command, RunState::queued($childId));
         $canonical = PreparedEventStoreSeeder::append($store, $start->events[0]);
-        $this->assertAgentTaskPresentation([$canonical], $child->artifactId, $assignment->content[0]['text'], 'Continue independently', $inheritedHuman);
+        $this->assertAgentTaskPresentation([$canonical], $child->artifactId, $assignment->content[0]['text'], 'Implement the decided change.', $inheritedHuman);
         $em->clear();
         $cold = $container->get(AgentChildRunEventStoreFactory::class)->create($parent, $childId, $child->artifactId);
         $coordinator = $container->get(\Ineersa\CodingAgent\Session\Replay\SessionReplayCoordinator::class);
@@ -145,6 +152,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
         $state = $replay->rebuildIfStale(RunState::queued($childId), $childId)->rebuiltState;
         $this->assertNotNull($state);
         $this->assertSame($assignment->metadata, $state->messages[array_key_last($state->messages)]->metadata);
+        $this->assertSame($specification, $state->messages[array_key_last($state->messages)]->content[0]['text']);
         foreach ([0, 1] as $restart) {
             $em->clear();
             $result = $this->forkProviderAdapter($this->httpProvider($http))->invoke(new ModelInvocationRequest('', new ModelInvocationInput(runId: $childId, messages: $state->messages)));

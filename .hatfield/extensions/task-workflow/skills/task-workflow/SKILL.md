@@ -1,24 +1,39 @@
 ---
 name: task-workflow
-description: "Load for task phases, ownership, review, or compaction recovery."
-version: 1.1.7
+description: "Main-agent procedure for tracked work, review, and delivery."
+version: 1.1.8
 ---
 
 # Task workflow
 
-- Use task tools for board transitions and metadata; never edit or move board files manually.
-- Before phase work or `move_task`, read the exact procedure below and its required references. Load only files needed for the current operation.
-- Main owns transitions; forks must not transition tasks.
-- Before ownership decisions outside a phase, read [ownership](references/implementation-ownership.md). Before review, also read [specification fidelity](references/specification-fidelity.md).
-- For tracked fork resumes, record the worktree, resumed scope, and ownership handoff in workflow metadata; require current-state inspection before edits. Stop if the handoff is missing. Keep implementation assignments focused on the decided plan, not launch/resume logistics.
-- After compaction, run `task_list`, reload this router, and read the current procedure. Reread the procedure after every phase change.
+## Establish current state
 
-| Phase | Procedure |
-|---|---|
-| `task-explain` | [Explain](references/task-explain.md) |
-| `task-start` | [Start](references/task-start.md) |
-| `task-to-pr` | [Submit](references/task-to-pr.md) |
-| `task-review-iterate` | [Iterate](references/task-review-iterate.md) |
-| `task-done` | [Merge](references/task-done.md) |
+Main alone uses this procedure and task tools; implementation forks implement their assignments and return results. Use the resolved checkout and external board from the project workflow context. Never commit board metadata to the code repository.
 
-For board configuration, read [board](references/board.md).
+Run `task_list`, read the task and applicable project instructions, and inspect Git status, log, and diff. After context loss, recover the task, Git state, and active children before continuing. Reuse current findings. Main investigates affected code, callers, boundaries, and tests; read-only scouts may resolve bounded unknowns. Resolve behavior, design, and public API decisions before implementation. Keep a concise implementation plan in the task record. Map additions to finalized requirements; do not add speculative APIs, compatibility, or fallback behavior.
+
+For a planning-only request, present the plan, risks, open decisions, and validation, then stop without editing or changing task state.
+
+## Implement
+
+Move the task to IN-PROGRESS before changing code. Main keeps 1–2-file one-offs and delegates larger cohesive slices to implementation forks. Settle behavior and design first. Give each fork a precise, self-contained plan and exact task, including affected code, required behavior and invariants, and validation. Routine local inspection and implementation details remain the fork's judgment. Include necessary existing-draft facts, such as changes to preserve, but no orchestration chatter, prior-agent history, or rules already supplied by project instructions. Do not require headings. Apply this assignment rule to initial work, resumes, and replacements.
+
+Keep one writer per checkout. Main alone tracks child identity and progress in workflow metadata, without ownership handshakes or mandatory log formats. Before replacement, verify the previous writer has stopped; carry forward necessary current draft facts, not its operational history. Use eligible existing children rather than duplicates, subject to tool lifecycle limits.
+
+Inspect returned changes and run focused Castor validation at the lowest useful layer, following the testing skill. Reuse proof for the same revision and environment; broaden checks only after changes, failures, or unresolved concerns. Main owns commits and records meaningful results and blockers with task tools. For an implementation-only request, report the result and stop before review or PR administration.
+
+## Submit or update PR
+
+Inspect the full task diff. For PR feedback, read the PR and inline comments, distinguish blockers from suggestions, move to IN-PROGRESS, and implement accepted fixes using the same assignment rule.
+
+Obtain independent full-change review from the `reviewer` subagent at the committed target SHA. Send only `Review commit <sha>.` before a PR exists, or `Review PR <url> at commit <sha>.` for PR follow-ups. The reviewer definition owns assignment, evidence, scope, and verdict rules. Record reviewer identity, baseline, target, decision, validation, and blockers in workflow metadata, not the request. Approval must cover the full task change at the same revision being submitted; fix-only confirmation or an earlier approval is insufficient. Resolve blockers and repeat review as needed.
+
+Call `move_task(to="CODE-REVIEW")` only when ready. This transition owns the full `castor check` gate, clean-tree check, push, and PR creation/update; do not run a separate full gate first. If a transition fails, inspect actual task/Git/PR state and completed side effects before acting. Record the bounded failure, available QA artifacts, and safe next action; do not blindly repeat completed steps. See the extension README for failure operations.
+
+## Finish
+
+Merge only with user authorization and confirmed PR approval or an already-merged PR. Call `move_task(to="DONE")`; leave conflicts unresolved rather than forcing a merge. Run required integration `castor check` in the integration checkout separately from the pre-merge gate. Record and report failures or unavailable prerequisites as incomplete post-merge validation even if status is already DONE. Confirm clean Git state and task-worktree removal before reporting completion.
+
+## Scope
+
+Honor explicit planning-only and implementation-only endpoints. For an end-to-end request, continue through the authorized endpoint rather than stopping after a local implementation. Never infer merge authorization. Report a concrete blocker when unable to continue safely. Board/IDE setup and transition operations live in the extension README; development and test-safety rules apply to every agent.
