@@ -12,6 +12,7 @@ Required error handling and explicitly required local degradation remain valid.
 
 ## Independent reviewer assignment
 
+- Use the `reviewer` subagent for this project's independent review, not a structured review-fork assignment. Generic fork task templates do not override this reviewer route or its identifier-only assignment format.
 - Send only the identifier-based request allowed by `AGENTS.md`: a PR, a commit, or both. Before a PR exists, send the task branch's committed HEAD. For PR follow-ups, send the PR and new target SHA. Do not append requirements, earlier findings, resolution summaries, test results, preferred outcomes, or instructions to check only fixes.
 - Keep checkout, baseline, target revision, scope, and reviewer identity in the task work log, not the assignment. The reviewer obtains requirements, the checkout, and the full change baseline independently from Git, PR metadata, and task records.
 - On resumption, require the same full-change review as on the first pass. Previous findings are not the scope, and previous approval is not evidence.

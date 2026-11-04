@@ -43,6 +43,20 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
         $this->assertSame($this->bundledSkillVersion(), TaskWorkflowMarkdownFrontmatter::versionOf((string) file_get_contents($skill)));
         $this->assertFileExists($this->destinationDir().'/references/implementation-ownership.md');
         $this->assertSame(file_get_contents($this->packageRoot.'/skills/task-workflow/SKILL.md'), file_get_contents($skill));
+
+        $ownership = (string) file_get_contents($this->destinationDir().'/references/implementation-ownership.md');
+        $this->assertStringContainsString('Before launching a fork', $ownership);
+        $this->assertStringContainsString('`fork_run=none`', $ownership);
+        $this->assertStringContainsString('After launch returns the run ID, immediately append', $ownership);
+        $this->assertStringContainsString('Before edits, the fork must verify the recorded checkout, scope, and its own run ID', $ownership);
+        $this->assertStringContainsString('notify main and do only independent prerequisite reads', $ownership);
+        $this->assertStringContainsString('After an explicit parent-lifetime or context-budget resume refusal', $ownership);
+        $this->assertStringContainsString('make the ownership transfer explicit', $ownership);
+        $review = (string) file_get_contents($this->destinationDir().'/references/specification-fidelity.md');
+        $this->assertStringContainsString('Use the `reviewer` subagent', $review);
+        $this->assertStringContainsString('identifier-only assignment format', $review);
+        $start = (string) file_get_contents($this->destinationDir().'/references/task-start.md');
+        $this->assertStringContainsString('attach the run ID immediately after launch', $start);
     }
 
     #[Test]
@@ -88,7 +102,7 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
     {
         yield 'missing' => [''];
         yield 'different' => ["version: 1.0.0\n"];
-        yield 'previous bundled guidance' => ["version: 1.1.4\n"];
+        yield 'previous bundled guidance' => ["version: 1.1.5\n"];
         yield 'malformed' => ["version: [\n"];
     }
 

@@ -1,7 +1,7 @@
 ---
 name: task-workflow
 description: "Load for task phases, ownership, review, or compaction recovery."
-version: 1.1.5
+version: 1.1.6
 ---
 
 # Task workflow

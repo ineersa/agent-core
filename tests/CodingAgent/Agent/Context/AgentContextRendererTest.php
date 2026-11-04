@@ -37,6 +37,10 @@ final class AgentContextRendererTest extends TestCase
         $this->assertStringContainsString('<name>scout</name>', $output);
         $this->assertStringContainsString('<description>Explore the codebase</description>', $output);
         $this->assertStringNotContainsString('# Scout body', $output);
+        $this->assertStringContainsString('wait for a running child', $output);
+        $this->assertStringContainsString('agent_resume for a terminal child', $output);
+        $this->assertStringContainsString('after agent_resume explicitly refuses for parent-lifetime or context-budget limits', $output);
+        $this->assertStringContainsString('Carry forward the relevant handoff', $output);
     }
 
     public function testRenderAvailableAgentsEmptyReturnsEmptyString(): void

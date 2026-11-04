@@ -20,12 +20,16 @@ Give the fork the goal, criteria, constraints, entry points, ownership boundary,
 
 - Use one owner per slice and one writer per worktree. Parallel writers need separate worktrees and an integration order.
 - Make every ownership change an explicit handoff.
+- Before launching a fork, record its checkout, baseline, bounded scope, and sole-writer assignment with `fork_run=none`. After launch returns the run ID, immediately append the matching ownership record with that ID.
+- Before edits, the fork must verify the recorded checkout, scope, and its own run ID. If attachment is missing or mismatched, notify main and do only independent prerequisite reads; verify the corrected record before editing. A prelaunch assignment is not a verified run-ID attachment.
 - Batch independent child work; serialize dependent work. Retrieve omitted evidence only when needed.
 - Require independent review before accepting implementation.
 
 ## Resuming a tracked fork
 
-Use `agent_resume` when the existing parent-scoped fork context applies. Before edits, name the checkout and resumed scope, require current-state inspection, and record the handoff. The fork must stop and request a missing handoff. Keep these tracked-work rules here, not in global tool prompts.
+Use `agent_resume` for relevant terminal fork context in the current parent lifetime while it remains within the context budget. Wait for a running fork or use `agent_steer` for current guidance; do not launch a duplicate. Before resumed edits, name the checkout and resumed scope, require current-state inspection, and record the handoff. The fork must verify the matching ownership record and stop and request a missing handoff.
+
+After an explicit parent-lifetime or context-budget resume refusal, assign a replacement using the prelaunch and postlaunch steps above. Record why the prior fork cannot resume, carry forward its relevant handoff and current repository state, and make the ownership transfer explicit. Do not retry the same non-resumable child or treat refusal as permission for overlapping writers. Keep these tracked-work rules here, not in global tool prompts.
 
 ## Ownership log
 
