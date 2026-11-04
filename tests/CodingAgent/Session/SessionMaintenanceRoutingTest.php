@@ -32,10 +32,15 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
@@ -49,6 +54,7 @@ use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\RepairHandler;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\SelectHistoryTurnHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
+use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -56,14 +62,21 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
+use Ineersa\Tui\Listener\BackgroundProcessCommandHandler;
+use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
+use Symfony\Component\Tui\Event\TickEvent;
 
 final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCase
 {
+    use TuiRuntimeContextBuilderTrait;
+
     /** @var list<object> */
     private array $autoCompactionBusMessages = [];
     private int $afterTurnCount = 0;
@@ -483,6 +496,108 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
                 $this->assertEquals($events, $after, 'Parent and completed sibling histories must remain unchanged.');
             }
         }
+    }
+
+    #[DataProvider('settledChildRepairCases')]
+    public function testRepairReconcilesSettledChildWithoutReopeningParent(string $parentReason, bool $childEnded): void
+    {
+        $c = self::getContainer();
+        $run = $c->get(HatfieldSessionStore::class)->createSession('settled child repair');
+        $store = $c->get(PreparedTransitionEventStoreInterface::class);
+        PreparedEventStoreSeeder::appendMany($store, [
+            RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'llama_cpp_test/test', 'session' => []], 'messages' => []]]),
+            RunEvent::forAppend($run, 0, 'agent_end', ['reason' => $parentReason]),
+        ]);
+        $factory = new DeferredSubagentBatchIdentityFactory();
+        $batchId = $factory->batchLifecycleId($run, 'old-fork');
+        $identity = $factory->childIdentity($run, 'old-fork', 1);
+        $child = $identity['childRunId'];
+        $c->get(AgentArtifactRegistry::class)->create($run, $identity['artifactId'], $child, 'fork', AgentArtifactKindEnum::Fork);
+        $batches = $c->get(DeferredSubagentBatchRepository::class);
+        $children = $c->get(DeferredSubagentChildRepository::class);
+        $batches->reserveBatch($batchId, $run, 0, 'old-fork', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, $child, $identity['artifactId'], 'fork', 'STALE_FORK', 'llama_cpp_test/test', 'medium'));
+        $batches->applyLaunchSuccessState($run, 'old-fork', $batchId, new \DateTimeImmutable());
+        $batches->markBackgrounded($batchId, new \DateTimeImmutable());
+        PreparedEventStoreSeeder::appendMany($store, [
+            RunEvent::forAppend($child, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'llama_cpp_test/test', 'session' => ['kind' => 'agent_child', 'child_kind' => 'fork', 'parent_run_id' => $run, 'artifact_id' => $identity['artifactId']]], 'messages' => []]]),
+            RunEvent::forAppend($child, 0, 'agent_command_applied', ['kind' => 'cancel', 'idempotency_key' => 'cancel-old', 'options' => []]),
+        ]);
+        $cursor = $store->latestSequenceFor($child);
+        $this->assertNotNull($cursor);
+        $batches->applyBatchChildLifecycleProjection($batchId, 1, new DeferredChildRunLifecycleProjectionDTO(RunStatus::Cancelling, 0, $cursor, 'llama_cpp_test/test', 'medium'), $cursor, $children->findByChildRunId($child)->projectionVersion, $batches->findByLifecycleId($batchId)->projectionVersion, true);
+        $batches->persistInterruptionIntent($batchId, DeferredSubagentInterruptionKindEnum::ParentCancelled, new \DateTimeImmutable(), $batches->findByLifecycleId($batchId)->projectionVersion);
+        $batches->markTerminalCompletionEnqueued($batchId, new \DateTimeImmutable(), $batches->findByLifecycleId($batchId)->projectionVersion);
+        $foreignBatch = $factory->batchLifecycleId('other-owner', 'old-fork');
+        $foreignChild = $factory->childIdentity('other-owner', 'old-fork', 1);
+        $batches->reserveBatch($foreignBatch, 'other-owner', 0, 'old-fork', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, $foreignChild['childRunId'], $foreignChild['artifactId'], 'fork', 'FOREIGN_FORK', 'llama_cpp_test/test', 'medium'));
+        $batches->applyLaunchSuccessState('other-owner', 'old-fork', $foreignBatch, new \DateTimeImmutable());
+        $batches->markTerminalCompletionEnqueued($foreignBatch, new \DateTimeImmutable(), $batches->findByLifecycleId($foreignBatch)->projectionVersion);
+        if ($childEnded) {
+            PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 0, 'agent_end', ['reason' => 'cancelled']));
+        }
+        $beforeChild = $store->allFor($child);
+        $beforeParent = $store->allFor($run);
+        $marker = $batches->findByLifecycleId($batchId)->terminalCompletionEnqueuedAt;
+        $harness = new VirtualTuiHarness(columns: 100, rows: 20, sessionId: $run);
+        $state = new TuiSessionState($run);
+        $state->sessionReady = true;
+        // Fresh native adapters avoid elapsed-time polling in this deterministic
+        // test while sharing the catalog's observed child identity across repair.
+        $render = function () use ($c, $harness, $state): string {
+            $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($state)->withClient($c->get(InProcessAgentSessionClient::class))->withSessionStore($c->get(HatfieldSessionStore::class))->build();
+            new BackgroundProcessCommandHandler($context, new TestLogger());
+            $context->ticks->dispatch(new TickEvent());
+
+            return $harness->plainScreenText();
+        };
+        $this->assertStringContainsString('fork [cancelling]', $render());
+        $bus = $c->get('agent.command.bus');
+        $preview = $bus->dispatch(new RepairSession($run, false, 'settled-preview'));
+        $previewResult = $bus->dispatch($preview->with(new ReceivedStamp('run_control')))->last(HandledStamp::class)->getResult();
+        $this->assertSame('Deferred child lifecycle projections would be reconciled.', $previewResult->message);
+        $this->assertSame(0, $previewResult->activeOperationsRedriven);
+        $this->assertSame($cursor, $children->findByChildRunId($child)->childEventCursor, 'Preview must not reconcile projections.');
+        $this->assertNull($children->findByChildRunId($child)->terminalStatus);
+        $version = null;
+        foreach (['settled-apply', 'settled-repeat'] as $id) {
+            $command = $bus->dispatch(new RepairSession($run, true, $id));
+            $handled = $bus->dispatch($command->with(new ReceivedStamp('run_control')));
+            $result = $handled->last(HandledStamp::class)->getResult();
+            $this->assertNull($result->refusalReason);
+            $this->assertSame('settled-repeat' === $id && $childEnded ? 0 : 1, $result->activeOperationsRedriven);
+            $row = $children->findByChildRunId($child);
+            $this->assertSame($childEnded ? 'cancelled' : null, $row->terminalStatus);
+            $this->assertSame($childEnded ? RunStatus::Cancelled : RunStatus::Cancelling, $row->childLifecycleProjection->childStatus);
+            $this->assertEquals($marker, $batches->findByLifecycleId($batchId)->terminalCompletionEnqueuedAt);
+            $this->assertEquals($beforeChild, $store->allFor($child), 'Projection reconciliation must not cancel or rerun the child.');
+            $this->assertEquals($beforeParent, $store->allFor($run), 'The settled parent must not receive another handoff.');
+            $this->assertSame($childEnded ? [] : [$batchId], array_column($batches->findSettledHeadersWithUnfinishedChildren($run), 'lifecycleId'));
+            $this->assertCount($childEnded ? 0 : 1, $batches->findOwnedChildStatuses($run));
+            if (null !== $version) {
+                $this->assertSame($version, $row->projectionVersion, 'Repeated repair must not rewrite an unchanged child projection.');
+            }
+            $version = $row->projectionVersion;
+            if ($childEnded) {
+                $this->assertStringNotContainsString('STALE_FORK', $render());
+            } else {
+                $this->assertStringContainsString('fork [cancelling]', $render());
+            }
+        }
+        $this->assertSame([], $c->get('messenger.transport.llm')->getSent());
+        $this->assertSame([], $c->get('messenger.transport.tool')->getSent());
+        $this->assertSame(0, $children->findByChildRunId($foreignChild['childRunId'])->childEventCursor, 'Another owner must not be reconciled.');
+        foreach ($c->get('messenger.transport.run_control')->getSent() as $envelope) {
+            $this->assertNotInstanceOf(DeliverDeferredSubagentBatchLifecycleMessage::class, $envelope->getMessage());
+            $this->assertNotInstanceOf(InterruptDeferredSubagentBatchMessage::class, $envelope->getMessage());
+        }
+    }
+
+    public static function settledChildRepairCases(): iterable
+    {
+        yield 'idle parent, terminal child' => ['completed', true];
+        yield 'cancelled parent, terminal child' => ['cancelled', true];
+        yield 'idle parent, pending cancellation' => ['completed', false];
+        yield 'cancelled parent, pending cancellation' => ['cancelled', false];
     }
 
     public static function deferredRepairCases(): iterable

@@ -122,14 +122,24 @@ final readonly class SessionMaintenanceHandler
      */
     private function prepareDeferredChildMaintenance(RepairSession $command): array|RepairResult
     {
-        $parent = $this->registry->requireLoaded($command->runId);
-        if (RunStatus::Running !== $parent->status) {
-            return ['obligations' => [], 'message' => null, 'activeOperationsRedriven' => 0];
-        }
-
         $obligations = [];
         $redriven = 0;
         $message = null;
+        foreach ($this->deferredBatches->findSettledHeadersWithUnfinishedChildren($command->runId) as $batch) {
+            // A settled parent can retain a stale child projection. Reconcile
+            // canonical facts without another cancellation or parent delivery.
+            if ($command->apply) {
+                $obligations[] = new RepairDeferredChildObligationDTO(RepairDeferredChildObligationDTO::KIND_SETTLE, $batch->lifecycleId, $batch->parentTurnNo);
+                ++$redriven;
+            }
+            $message = $command->apply ? 'Deferred child lifecycle reconciliation requested.' : 'Deferred child lifecycle projections would be reconciled.';
+        }
+
+        $parent = $this->registry->requireLoaded($command->runId);
+        if (RunStatus::Running !== $parent->status) {
+            return ['obligations' => $obligations, 'message' => $message, 'activeOperationsRedriven' => $redriven];
+        }
+
         foreach (array_keys($parent->pendingToolCalls) as $toolCallId) {
             $batch = $this->deferredBatches->findByParentRunAndToolCall($command->runId, $toolCallId);
             if (null === $batch || $batch->parentTurnNo !== $parent->turnNo || DeferredSubagentBatchLaunchStatusEnum::Launched !== $batch->launchStatus || null !== $batch->terminalCompletionEnqueuedAt) {
