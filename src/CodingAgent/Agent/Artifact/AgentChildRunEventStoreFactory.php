@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
@@ -31,6 +32,7 @@ final readonly class AgentChildRunEventStoreFactory
         private LoggerInterface $logger,
         private RunSequenceAllocatorInterface $sequenceAllocator,
         private RunPresentationProjectorFactory $presentations,
+        private RunLockManager $readLocks,
         private EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
     ) {
     }
@@ -48,6 +50,7 @@ final readonly class AgentChildRunEventStoreFactory
             artifactId: $artifactId,
             bootstrapReader: $this->bootstrapReader,
             presentations: $this->presentations,
+            readLocks: $this->readLocks,
         );
     }
 }

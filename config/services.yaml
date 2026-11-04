@@ -1314,6 +1314,15 @@ services:
     arguments:
       $parentStore: '@Ineersa\CodingAgent\Session\SessionRunEventStore'
 
+  coding_agent.child_event_read_locks:
+    class: Ineersa\AgentCore\Application\Handler\RunLockManager
+    arguments:
+      $lockKeyPrefix: 'hatfield-run-'
+
+  Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory:
+    arguments:
+      $readLocks: '@coding_agent.child_event_read_locks'
+
   Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver:
     arguments:
       $catalogStore: '@Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface'

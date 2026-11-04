@@ -73,6 +73,14 @@ final class DeferredChildRunEventProjector
             $payload = $summary->payload;
             $type = $summary->type;
 
+            if (RunEventTypeEnum::AgentCommandApplied->value === $type
+                && CoreCommandKind::Cancel === ($payload['kind'] ?? null)) {
+                $status = RunStatus::Cancelling;
+                $errorMessage = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
+                $endsWithQueuedFollowUpWake = false;
+                continue;
+            }
+
             if (RunEventTypeEnum::AgentCommandQueued->value === $type
                 && CoreCommandKind::FollowUp === ($payload['kind'] ?? null)) {
                 $status = RunStatus::Running;
@@ -171,7 +179,11 @@ final class DeferredChildRunEventProjector
                 if (\count($recentTools) > self::MAX_RECENT_TOOLS) {
                     $recentTools = \array_slice($recentTools, -self::MAX_RECENT_TOOLS);
                 }
-                $status = RunStatus::Running;
+                // A tool can settle after canonical cancellation was applied.
+                // Its result does not revive the cancelled operation.
+                if (RunStatus::Cancelling !== $status) {
+                    $status = RunStatus::Running;
+                }
                 $endsWithQueuedFollowUpWake = false;
                 continue;
             }

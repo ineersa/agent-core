@@ -26,6 +26,21 @@ use PHPUnit\Framework\TestCase;
  */
 final class DeferredChildRunEventProjectorTest extends TestCase
 {
+    public function testCanonicalCancellationReconstructsPendingStatusWithoutOperationalOverride(): void
+    {
+        $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));
+        foreach ([RunStatus::Running, RunStatus::WaitingHuman] as $initialStatus) {
+            $current = new DeferredChildRunLifecycleProjectionDTO($initialStatus, 1, 10, 'test/model', 'medium');
+            $cancelled = $projector->apply($current, [new AfterTurnCommitEventSummary(11, RunEventTypeEnum::AgentCommandApplied->value, ['kind' => CoreCommandKind::Cancel])], committedStatus: null, committedTurnNo: 1);
+            $this->assertSame(RunStatus::Cancelling, $cancelled->childStatus);
+            $this->assertSame(11, $cancelled->lastCommittedSeq);
+            $unchanged = $projector->apply($cancelled, [], committedStatus: null, committedTurnNo: 1);
+            $this->assertSame(RunStatus::Cancelling, $unchanged->childStatus);
+            $terminal = $projector->apply($unchanged, [new AfterTurnCommitEventSummary(12, RunEventTypeEnum::AgentEnd->value, ['reason' => 'cancelled'])], committedStatus: null, committedTurnNo: 1);
+            $this->assertSame(RunStatus::Cancelled, $terminal->childStatus);
+        }
+    }
+
     public function testCanonicalRunStartedModelOverridesStaleDefinitionAndSurvivesResume(): void
     {
         $projector = new DeferredChildRunEventProjector(AttributeSerializerValidatorTestFactory::denormalizer(), new \Ineersa\AgentCore\Application\Pipeline\ToolExecutionEndPayloadCodec(AttributeSerializerValidatorTestFactory::serializer()));

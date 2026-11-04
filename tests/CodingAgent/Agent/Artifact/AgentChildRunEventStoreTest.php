@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
@@ -563,6 +564,7 @@ final class AgentChildRunEventStoreTest extends TestCase
             parentRunId: $parentRunId,
             agentRunId: $agentRunId,
             artifactId: $artifactId,
-            presentations: HistoryEventStoreFactory::presentationFactory());
+            presentations: HistoryEventStoreFactory::presentationFactory(),
+            readLocks: new RunLockManager(new LockFactory(new FlockStore()), lockKeyPrefix: 'hatfield-run-'));
     }
 }
