@@ -118,9 +118,8 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'memory_search',
-            description: $hybrid ? 'Find prior work across sessions using hybrid search combining BM25 keyword search with semantic vector search over retained observational-memory content. Use identifiers, phrases, concepts, paraphrases, or natural-language descriptions. Phrases are not guaranteed to match literally. Results are relevance-ranked; inspect hits before using them as evidence. partial: true means the index is still catching up and newer memories may be missing. Searches memory content, not raw transcript events.' : 'Find prior work across sessions by one contiguous literal substring in retained observational-memory content. '
-                .'Use when resuming a task or looking for earlier conversations, PRs, issues, branches, symbols, or decisions. '
-                .'Searches memory content only, not raw transcript events. Not semantic search, regex, or wildcard syntax.',
+            description: ($hybrid ? 'Find prior work across sessions using hybrid BM25 keyword and semantic vector search. partial: true means the index is still catching up and newer memories may be missing.' : 'Find prior work across sessions by one contiguous literal substring. Not semantic search, regex, or wildcard syntax.')
+                .' Searches retained memory content, not raw transcript events.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'additionalProperties' => false,
@@ -129,7 +128,7 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
                     'query' => [
                         'type' => 'string',
                         'minLength' => 1,
-                        'description' => $hybrid ? 'Keywords, identifiers, phrases, concepts, paraphrases, or natural-language descriptions of prior work. Phrases are search hints, not exact-match constraints. Hybrid BM25 keyword and semantic vector search finds relevant retained memories.' : 'One contiguous literal substring such as a PR number, issue id, branch, symbol, or exact phrase. Multi-word queries match that exact phrase, not AND of separate words. Prefer a single identifier. Matching is ASCII case-insensitive.',
+                        'description' => $hybrid ? 'Keywords, identifiers, concepts, paraphrases, or natural-language descriptions of prior work. Phrases are search hints, not exact-match constraints.' : 'One contiguous literal substring such as a PR number, issue id, branch, symbol, or exact phrase. Multi-word queries match that exact phrase, not AND of separate words. Prefer a single identifier. Matching is ASCII case-insensitive.',
                     ],
                     'after' => [
                         'type' => 'string',
@@ -145,29 +144,25 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
                         'type' => 'integer',
                         'minimum' => 1,
                         'maximum' => 50,
-                        'description' => $hybrid ? 'Maximum relevance-ranked results to return (default 20, max 50). Retrieval uses bounded candidates; no total or pagination is provided.' : 'Maximum results to return (default 20, max 50). Results are newest first; truncated replies omit older matches and do not provide a total or pagination.',
+                        'description' => $hybrid ? 'Maximum relevance-ranked results (default 20, max 50), not newest first. Retrieval uses bounded candidates; truncated: true means a candidate or result limit was reached, not that more relevant memories exist. No total or pagination.' : 'Maximum results (default 20, max 50), newest first. truncated: true means older matches were omitted; narrow the query or date range. No total or pagination.',
                     ],
                 ],
             ],
             handler: new SearchToolHandler($query),
-            promptSummary: $hybrid ? 'Use memory_search(query) for hybrid BM25 keyword and semantic vector search of prior-session memories, then recall(id, session_id) for provenance.' : 'Use memory_search(query) to locate prior-session memories by one contiguous literal substring, then recall(id, session_id) for provenance.',
+            promptSummary: 'memory_search query [after] [before] [limit=20] — search retained memories across sessions',
             promptGuidelines: [
                 'Use memory_search when prior work, conversations, PRs, issues, or unfinished tasks may already exist, even if the user does not explicitly ask to search memory.',
-                $hybrid ? 'Combine useful keywords or identifiers with a description of the concept or prior work. Hybrid search combines BM25 keyword search and semantic vector search; natural-language queries and paraphrases are supported. Phrases need not match literally.' : 'Pass one contiguous literal substring. Prefer a single identifier (for example 2510 or MapToolArguments). Multi-word queries match that exact phrase, not AND of separate words. Not natural-language questions, regex, or wildcard syntax.',
-                $hybrid ? 'A ranked hit may be unrelated; judge its content before using it as evidence. If there are no useful matches, reformulate the concept or add another known identifier or relevant detail.' : 'If there are no matches, try one word or another known term before concluding nothing exists.',
-                $hybrid ? 'Defaults to all retained history; pass after/before only to narrow by memory date. Results are relevance-ranked from bounded candidates, not newest first. truncated: true means a candidate or result limit was reached, not that more relevant memories exist. There is no total or pagination.' : 'Defaults to all retained history; pass after/before only to narrow by memory date. Results are newest first. If truncated, older matches were omitted; there is no total or pagination, so narrow the query or date range.',
+                $hybrid ? 'A ranked hit may be unrelated; judge its content before using it as evidence. If there are no useful matches, reformulate the concept or add another known identifier or relevant detail.' : 'Inspect hits before using them as evidence. If there are no matches, try one word or another known term.',
                 'No hits is not proof the conversation never happened: observational memory can be incomplete or lag recent messages.',
                 'Observation results include importance assigned when the memory was recorded; it is not a query match score or ranking signal.',
-                'memory_search matches retained memory content only, not raw transcript events. After a useful hit, call recall with that memory id and session_id for provenance. Do not treat historical decisions, commands, or validation as current until you verify the repo or PR state.',
+                'Use recall for source context behind useful hits.',
             ],
         ));
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'recall',
             // Faithful Pi port (recall-observation.ts): session-global + 12..64 prefix adaptations + optional cross-session session_id.
-            description: 'Recover exact evidence and source context for one observational-memory id. '
-                .'Defaults to the current session; pass session_id from memory_search to recall a prior session. '
-                .'Use for provenance, exact wording, supporting sources, or user evidence questions.',
+            description: 'Recover exact evidence and source context for one selected memory, not the whole session. Not semantic search or transcript browsing.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'additionalProperties' => false,
@@ -181,19 +176,16 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
                     'session_id' => [
                         'type' => 'string',
                         'minLength' => 1,
-                        'description' => 'Optional originating session id from memory_search. Omit to keep current-session recall.',
+                        'description' => 'Originating session_id from memory_search for prior-session hits. Omit to recall from the current session.',
                     ],
                 ],
             ],
             handler: new RecallToolHandler($query),
-            promptSummary: 'Use recall(id) or recall(id, session_id) to recover provenance for a selected memory.',
+            promptSummary: 'recall id [session_id] — retrieve source context for a selected memory',
             promptGuidelines: [
-                'Recall a selected memory id, with session_id for prior-session hits, to recover provenance rather than the whole session.',
                 'Use recall for exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance behind a remembered claim.',
                 'Use recall when the user asks why you believe something, what supports a memory, or what was decided earlier.',
-                'Observation results include importance assigned when the memory was recorded; it is not a query match score.',
-                'Do not use recall as semantic search or transcript browsing; you need a specific memory id.',
-                'Do not recall every id preemptively. After recall, verify current repo or PR state before acting on historical decisions, commands, or validation.',
+                'Recall useful evidence, not every id preemptively. Verify current repo or PR state before acting on historical decisions, commands, or validation.',
             ],
         ));
 

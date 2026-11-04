@@ -25,9 +25,8 @@ final readonly class WorkflowPrompt implements PromptContributorInterface
 
 '.$context.'
 
-Tasks use the external board under TODO, IN-PROGRESS, CODE-REVIEW, DONE, ARCHIVE, and CANCELLED. These paths come from the active project and the same board resolver used by the task tools; do not copy them into installed skill files.
-
-Use task tools for status transitions; task-board metadata never commits to the code repository. Before phase work or a status transition, read the Hatfield task-workflow router and the exact phase procedure it links. The router alone is not the procedure.
+Use task tools for board transitions and metadata; never commit board metadata to the code repository or copy these project paths into installed skills.
+Before phase work or a status transition, read the task-workflow router AND the exact phase procedure it links. The router alone is not the procedure. Follow the procedure’s ownership rules.
 ';
     }
 }
