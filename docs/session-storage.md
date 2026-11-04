@@ -275,6 +275,16 @@ children keep their results. Late child responses cannot revive cancelled execut
 Active streaming and human-input waits retain their safety checks; existing batch
 interruptions and deadlines retain their lifecycle owner. A preview does not cancel work.
 
+For a settled parent tool call, `/repair` also reconciles unfinished child lifecycle
+projections from their canonical child events. This includes an idle or cancelled
+parent with a stale `[cancelling]` background row. A canonical terminal event clears
+the active row on the next background refresh. Without that event, cancellation
+remains pending and the row stays visible. This reconciliation does not cancel or
+restart the child, deliver another parent result, or rewrite canonical history.
+Repeating it without new child events leaves the projection unchanged. Protocol
+preview reports the planned reconciliation without updating the child projection.
+Restarting the parent alone does not reconcile these settled batches.
+
 Parent repair captures child-maintenance obligations before committing its decision.
 Recovery finishes the captured plan without reevaluating newer children. Its captured
 generation checks prevent that plan from changing newer work. A completed repair

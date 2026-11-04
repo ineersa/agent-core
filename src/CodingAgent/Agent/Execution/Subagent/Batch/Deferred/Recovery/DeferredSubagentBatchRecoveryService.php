@@ -42,17 +42,13 @@ final readonly class DeferredSubagentBatchRecoveryService
             return;
         }
 
-        if (null !== $batch->terminalCompletionEnqueuedAt) {
-            return;
-        }
-
-        if (null !== $batch->completionSource) {
+        if (null === $batch->terminalCompletionEnqueuedAt && null !== $batch->completionSource) {
             $this->dispatchDeliver($batchLifecycleId);
 
             return;
         }
 
-        if (null !== $batch->interruptionKind) {
+        if (null === $batch->terminalCompletionEnqueuedAt && null !== $batch->interruptionKind) {
             $this->dispatchInterrupt($batchLifecycleId, $batch->interruptionKind);
 
             return;
@@ -61,18 +57,18 @@ final readonly class DeferredSubagentBatchRecoveryService
         $children = $this->childRepository->findOrderedByBatchLifecycleId($batchLifecycleId);
         foreach ($children as $child) {
             $batch = $this->batchRepository->findEntityByLifecycleId($batchLifecycleId);
-            if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt) {
+            if (null === $batch) {
                 return;
             }
 
-            if (null !== $batch->interruptionKind) {
+            if (null === $batch->terminalCompletionEnqueuedAt && null !== $batch->interruptionKind) {
                 $this->dispatchInterrupt($batchLifecycleId, $batch->interruptionKind);
 
                 return;
             }
 
             $childEntity = $this->childRepository->findEntityByBatchLifecycleAndIndex($batchLifecycleId, $child->batchIndex);
-            if (null === $childEntity) {
+            if (null === $childEntity || null !== $childEntity->terminalStatus) {
                 continue;
             }
 
@@ -144,7 +140,11 @@ final readonly class DeferredSubagentBatchRecoveryService
             }
         }
 
-        $this->dispatchDeliver($batchLifecycleId);
+        // Parent interruption completion can precede child termination. Repair
+        // its projection without redelivering the settled parent tool result.
+        if (null === $batch->terminalCompletionEnqueuedAt) {
+            $this->dispatchDeliver($batchLifecycleId);
+        }
     }
 
     private function dispatchDeliver(string $batchLifecycleId): void

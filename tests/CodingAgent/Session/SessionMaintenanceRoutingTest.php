@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Amp\DeferredFuture;
+use Amp\TimeoutCancellation;
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker;
 use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\ActiveRunContextInterface;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
@@ -30,12 +34,21 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\PreparedEventStoreSeeder;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchChildIntentDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\DeferredSubagentBatchRecoveryService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Application\Message\AttachRun;
 use Ineersa\CodingAgent\Application\Message\RepairSession;
 use Ineersa\CodingAgent\Application\Message\SelectHistoryEntry;
@@ -49,21 +62,43 @@ use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\RepairHandler;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\SelectHistoryTurnHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
+use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Messenger\FiberMessageExecutionStrategy;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\History\RunPresentationProjectorFactory;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
+use Ineersa\Tui\Listener\BackgroundProcessCommandHandler;
+use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\Exception\LockConflictedException;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\SharedLockInterface;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
+use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
+use Symfony\Component\Messenger\Worker;
+use Symfony\Component\Tui\Event\TickEvent;
+
+use function Amp\async;
 
 final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCase
 {
+    use TuiRuntimeContextBuilderTrait;
+
     /** @var list<object> */
     private array $autoCompactionBusMessages = [];
     private int $afterTurnCount = 0;
@@ -485,6 +520,121 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         }
     }
 
+    #[DataProvider('settledChildRepairCases')]
+    public function testRepairReconcilesSettledChildWithoutReopeningParent(string $parentReason, bool $childEnded, ?string $contention = null): void
+    {
+        $c = self::getContainer();
+        $run = $c->get(HatfieldSessionStore::class)->createSession('settled child repair');
+        $store = $c->get(PreparedTransitionEventStoreInterface::class);
+        PreparedEventStoreSeeder::appendMany($store, [
+            RunEvent::forAppend($run, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'llama_cpp_test/test', 'session' => []], 'messages' => []]]),
+            RunEvent::forAppend($run, 0, 'agent_end', ['reason' => $parentReason]),
+        ]);
+        $factory = new DeferredSubagentBatchIdentityFactory();
+        $batchId = $factory->batchLifecycleId($run, 'old-fork');
+        $identity = $factory->childIdentity($run, 'old-fork', 1);
+        $child = $identity['childRunId'];
+        $c->get(AgentArtifactRegistry::class)->create($run, $identity['artifactId'], $child, 'fork', AgentArtifactKindEnum::Fork);
+        $batches = $c->get(DeferredSubagentBatchRepository::class);
+        $children = $c->get(DeferredSubagentChildRepository::class);
+        $batches->reserveBatch($batchId, $run, 0, 'old-fork', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, $child, $identity['artifactId'], 'fork', 'STALE_FORK', 'llama_cpp_test/test', 'medium'));
+        $batches->applyLaunchSuccessState($run, 'old-fork', $batchId, new \DateTimeImmutable());
+        $batches->markBackgrounded($batchId, new \DateTimeImmutable());
+        PreparedEventStoreSeeder::appendMany($store, [
+            RunEvent::forAppend($child, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'llama_cpp_test/test', 'session' => ['kind' => 'agent_child', 'child_kind' => 'fork', 'parent_run_id' => $run, 'artifact_id' => $identity['artifactId']]], 'messages' => []]]),
+            RunEvent::forAppend($child, 0, 'agent_command_applied', ['kind' => 'cancel', 'idempotency_key' => 'cancel-old', 'options' => []]),
+        ]);
+        $cursor = 1; // The stored projection predates the canonical cancel command.
+        $batches->applyBatchChildLifecycleProjection($batchId, 1, new DeferredChildRunLifecycleProjectionDTO(RunStatus::Running, 0, $cursor, 'llama_cpp_test/test', 'medium'), $cursor, $children->findByChildRunId($child)->projectionVersion, $batches->findByLifecycleId($batchId)->projectionVersion, true);
+        $batches->persistInterruptionIntent($batchId, DeferredSubagentInterruptionKindEnum::ParentCancelled, new \DateTimeImmutable(), $batches->findByLifecycleId($batchId)->projectionVersion);
+        $batches->markTerminalCompletionEnqueued($batchId, new \DateTimeImmutable(), $batches->findByLifecycleId($batchId)->projectionVersion);
+        $foreignBatch = $factory->batchLifecycleId('other-owner', 'old-fork');
+        $foreignChild = $factory->childIdentity('other-owner', 'old-fork', 1);
+        $batches->reserveBatch($foreignBatch, 'other-owner', 0, 'old-fork', 0, new \DateTimeImmutable('+1 hour'), new DeferredSubagentBatchChildIntentDTO(1, $foreignChild['childRunId'], $foreignChild['artifactId'], 'fork', 'FOREIGN_FORK', 'llama_cpp_test/test', 'medium'));
+        $batches->applyLaunchSuccessState('other-owner', 'old-fork', $foreignBatch, new \DateTimeImmutable());
+        $batches->markTerminalCompletionEnqueued($foreignBatch, new \DateTimeImmutable(), $batches->findByLifecycleId($foreignBatch)->projectionVersion);
+        if ($childEnded) {
+            PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 0, 'agent_end', ['reason' => 'cancelled']));
+        }
+        $beforeChild = $store->allFor($child);
+        $beforeParent = $store->allFor($run);
+        $marker = $batches->findByLifecycleId($batchId)->terminalCompletionEnqueuedAt;
+        $harness = new VirtualTuiHarness(columns: 100, rows: 20, sessionId: $run);
+        $state = new TuiSessionState($run);
+        $state->sessionReady = true;
+        // Fresh native adapters avoid elapsed-time polling in this deterministic
+        // test while sharing the catalog's observed child identity across repair.
+        $render = function () use ($c, $harness, $state): string {
+            $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())->withState($state)->withClient($c->get(InProcessAgentSessionClient::class))->withSessionStore($c->get(HatfieldSessionStore::class))->build();
+            new BackgroundProcessCommandHandler($context, new TestLogger());
+            $context->ticks->dispatch(new TickEvent());
+
+            return $harness->plainScreenText();
+        };
+        $this->assertFalse($c->get(EntityManagerInterface::class)->getConnection()->fetchOne('SELECT status FROM run_operational_state WHERE run_id = ?', [$child]), 'No operational status may mask the lifecycle projection.');
+        $this->assertStringContainsString('fork [running]', $render());
+        $bus = $c->get('agent.command.bus');
+        $preview = $bus->dispatch(new RepairSession($run, false, 'settled-preview'));
+        $previewResult = $bus->dispatch($preview->with(new ReceivedStamp('run_control')))->last(HandledStamp::class)->getResult();
+        $this->assertSame('Deferred child lifecycle projections would be reconciled.', $previewResult->message);
+        $this->assertSame(0, $previewResult->activeOperationsRedriven);
+        $this->assertSame($cursor, $children->findByChildRunId($child)->childEventCursor, 'Preview must not reconcile projections.');
+        $this->assertNull($children->findByChildRunId($child)->terminalStatus);
+        $version = null;
+        foreach (['settled-apply', 'settled-repeat'] as $id) {
+            $command = $bus->dispatch(new RepairSession($run, true, $id));
+            if ('settled-apply' === $id && null !== $contention) {
+                $this->consumeContendedRepair($command, $child, 'refuse' === $contention);
+            }
+            $handled = $bus->dispatch($command->with(new ReceivedStamp('run_control')));
+            $result = $handled->last(HandledStamp::class)->getResult();
+            $this->assertNull($result->refusalReason);
+            $alreadyReconciled = $childEnded && ('settled-repeat' === $id || null !== $contention);
+            $this->assertSame($alreadyReconciled ? 0 : 1, $result->activeOperationsRedriven);
+            $row = $children->findByChildRunId($child);
+            $this->assertSame($childEnded ? 'cancelled' : null, $row->terminalStatus);
+            $this->assertSame($childEnded ? RunStatus::Cancelled : RunStatus::Cancelling, $row->childLifecycleProjection->childStatus);
+            $this->assertEquals($marker, $batches->findByLifecycleId($batchId)->terminalCompletionEnqueuedAt);
+            $this->assertEquals($beforeChild, $store->allFor($child), 'Projection reconciliation must not cancel or rerun the child.');
+            $this->assertEquals($beforeParent, $store->allFor($run), 'The settled parent must not receive another handoff.');
+            $this->assertSame($childEnded ? [] : [$batchId], array_column($batches->findSettledHeadersWithUnfinishedChildren($run), 'lifecycleId'));
+            $this->assertCount($childEnded ? 0 : 1, $batches->findOwnedChildStatuses($run));
+            if (null !== $version) {
+                $this->assertSame($version, $row->projectionVersion, 'Repeated repair must not rewrite an unchanged child projection.');
+            }
+            $version = $row->projectionVersion;
+            if ($childEnded) {
+                $this->assertStringNotContainsString('STALE_FORK', $render());
+            } else {
+                $this->assertStringContainsString('fork [cancelling]', $render());
+            }
+        }
+        $this->assertSame([], $c->get('messenger.transport.llm')->getSent());
+        $this->assertSame([], $c->get('messenger.transport.tool')->getSent());
+        $this->assertSame(0, $children->findByChildRunId($foreignChild['childRunId'])->childEventCursor, 'Another owner must not be reconciled.');
+        foreach ($c->get('messenger.transport.run_control')->getSent() as $envelope) {
+            $this->assertNotInstanceOf(DeliverDeferredSubagentBatchLifecycleMessage::class, $envelope->getMessage());
+            $this->assertNotInstanceOf(InterruptDeferredSubagentBatchMessage::class, $envelope->getMessage());
+        }
+        if (!$childEnded) {
+            PreparedEventStoreSeeder::append($store, RunEvent::forAppend($child, 0, 'agent_end', ['reason' => 'cancelled']));
+            $last = $bus->dispatch(new RepairSession($run, true, 'settled-final'));
+            $bus->dispatch($last->with(new ReceivedStamp('run_control')));
+            $this->assertSame('cancelled', $children->findByChildRunId($child)->terminalStatus);
+            $this->assertStringNotContainsString('STALE_FORK', $render());
+        }
+    }
+
+    public static function settledChildRepairCases(): iterable
+    {
+        yield 'idle parent, terminal child' => ['completed', true];
+        yield 'cancelled parent, terminal child' => ['cancelled', true];
+        yield 'idle parent, pending cancellation' => ['completed', false];
+        yield 'cancelled parent, pending cancellation' => ['cancelled', false];
+        yield 'worker progresses during child lock contention' => ['completed', true, 'release'];
+        yield 'refused child lock retains journaled repair' => ['completed', true, 'refuse'];
+    }
+
     public static function deferredRepairCases(): iterable
     {
         yield 'fork' => [1, false];
@@ -677,7 +827,7 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
         $handler->expects($this->once())->method('handle')->willReturn(new \Ineersa\AgentCore\Application\Pipeline\HandlerResult(postCommitActions: [new \Ineersa\AgentCore\Domain\Coordination\DispatchCoordinationMessageDTO(new AdvanceRun($run, 0, 'user-advance', 1, 'user-advance'))]));
         $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
             $active,
-            self::getContainer()->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            self::getContainer()->get(RunLockManager::class),
             self::getContainer()->get(\Ineersa\AgentCore\Application\Pipeline\RunCommit::class),
             [$handler],
             self::getContainer()->get(\Ineersa\AgentCore\Contract\CommandStoreInterface::class),
@@ -876,8 +1026,107 @@ final class SessionMaintenanceRoutingTest extends PerMethodIsolatedKernelTestCas
             $container->get(\Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery::class),
             $container->get(DeferredSubagentBatchRepository::class),
             $container->get(\Ineersa\CodingAgent\Session\Bootstrap\SessionBootstrapProducer::class),
-            $container->get(\Ineersa\AgentCore\Application\Handler\RunLockManager::class),
+            $container->get(RunLockManager::class),
         ));
+    }
+
+    private function consumeContendedRepair(Envelope $command, string $child, bool $refuse): void
+    {
+        $c = self::getContainer();
+        $factory = $c->get(LockFactory::class);
+        $held = $factory->createLock('hatfield-run-'.$child);
+        $this->assertTrue($held->acquire(false));
+        $probe = $factory->createLock('hatfield-run-'.$child);
+        $entered = new DeferredFuture();
+        $reject = false;
+        $lock = $this->createMock(SharedLockInterface::class);
+        $lock->expects($this->atLeastOnce())->method('acquire')->willReturnCallback(function (bool $blocking = false) use ($probe, $entered, &$reject): bool {
+            $this->assertFalse($blocking, 'Child recovery must never block the cooperative worker.');
+            if ($reject) {
+                throw new LockConflictedException('Bounded child lock refusal.');
+            }
+            $acquired = $probe->acquire(false);
+            if (!$acquired && !$entered->isComplete()) {
+                $entered->complete();
+            }
+
+            return $acquired;
+        });
+        $lock->method('isAcquired')->willReturnCallback($probe->isAcquired(...));
+        $lock->method('release')->willReturnCallback($probe->release(...));
+        $observed = $this->createMock(LockFactory::class);
+        $observed->expects($this->atLeastOnce())->method('createLock')->with('hatfield-run-'.$child)->willReturn($lock);
+        $childStores = new AgentChildRunEventStoreFactory($c->get(SessionAgentArtifactPathResolver::class), $c->get(EventPayloadNormalizer::class), $observed, new TestLogger(), $c->get(RunSequenceAllocatorInterface::class), $c->get(RunPresentationProjectorFactory::class), new RunLockManager($observed, lockKeyPrefix: 'hatfield-run-'));
+        $c->set(DeferredSubagentBatchRecoveryService::class, new DeferredSubagentBatchRecoveryService($c->get(DeferredSubagentBatchRepository::class), $c->get(DeferredSubagentChildRepository::class), $childStores, $c->get(DeferredChildRunEventProjector::class), $c->get('agent.command.bus'), new TestLogger()));
+        $other = $c->get(HatfieldSessionStore::class)->createSession('unrelated repair');
+        $store = $c->get(PreparedTransitionEventStoreInterface::class);
+        PreparedEventStoreSeeder::appendMany($store, [RunEvent::forAppend($other, 0, 'run_started', ['payload' => ['metadata' => ['model' => 'llama_cpp_test/test', 'session' => []], 'messages' => []]]), RunEvent::forAppend($other, 0, 'agent_end', ['reason' => 'completed'])]);
+        // A broker reserves receipts until settlement; the ordinary in-memory
+        // transport instead returns unacked receipts again on each fetch.
+        $transport = new class extends InMemoryTransport {
+            private bool $received = false;
+
+            public function get(): iterable
+            {
+                if ($this->received) {
+                    return [];
+                }
+                $this->received = true;
+
+                return parent::get(2);
+            }
+        };
+        $transport->send($command);
+        $transport->send(new Envelope(new RepairSession($other, true, 'unrelated-repair')));
+        $events = new EventDispatcher();
+        $progressed = false;
+        $failure = null;
+        $onDispatch = function (Envelope $envelope) use ($other, $entered, $held, $refuse, &$reject, &$progressed): void {
+            if ($envelope->getMessage()->runId === $other) {
+                $this->assertTrue($entered->isComplete(), 'The unrelated command must run after child lock contention begins.');
+                $this->assertTrue($held->isAcquired());
+                $progressed = true;
+                if ($refuse) {
+                    $reject = true;
+                } else {
+                    $held->release();
+                }
+            }
+        };
+        $events->addListener(WorkerMessageFailedEvent::class, static function (WorkerMessageFailedEvent $event) use (&$failure, $other): void {
+            $failure = $event->getThrowable();
+            if ($event->getEnvelope()->getMessage()->runId === $other) {
+                throw $failure;
+            }
+        });
+        $bus = new class($c->get('agent.command.bus'), $onDispatch) implements MessageBusInterface {
+            public function __construct(private MessageBusInterface $inner, private \Closure $onDispatch)
+            {
+            }
+
+            public function dispatch(object $message, array $stamps = []): Envelope
+            {
+                $result = $this->inner->dispatch($message, $stamps);
+                ($this->onDispatch)($result);
+
+                return $result;
+            }
+        };
+        $worker = new Worker(['run_control' => $transport], $bus, $events, messageExecutionStrategy: new FiberMessageExecutionStrategy($bus));
+        try {
+            async(static fn () => $worker->run(['sleep' => 0, 'stop_when_empty' => true, 'fetch_size' => 2]))->await(new TimeoutCancellation(5));
+            $this->assertTrue($progressed);
+            if ($refuse) {
+                $this->assertNotNull($failure);
+                $this->assertNotNull($store->verifiedPendingTransition($command->getMessage()->runId), 'Refusal must retain the captured repair obligation.');
+                $reject = false;
+            } else {
+                $this->assertNull($failure);
+            }
+        } finally {
+            $held->release();
+            $probe->release();
+        }
     }
 
     /** @return array{string, string, list<string>} */
