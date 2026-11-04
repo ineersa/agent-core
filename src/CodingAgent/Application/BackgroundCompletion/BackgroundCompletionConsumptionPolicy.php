@@ -57,6 +57,11 @@ final readonly class BackgroundCompletionConsumptionPolicy implements CommandCon
             return new CommandConsumptionDecisionDTO('Background completion already consumed or transferred.');
         }
         $interrupted = $this->interrupted($receipt->deferredId) || $this->notificationInterruption($receipt->origin, $state);
+        // Passive completions must not authorize a new turn that abandons the
+        // owner's human question. Interrupted receipts still retire immediately.
+        if (!$interrupted && (RunStatus::WaitingHuman === $state->status || [] !== $state->pendingHumanInputRequests)) {
+            return new CommandConsumptionDecisionDTO(defer: true);
+        }
         // Receipt admission is passive. Do not launch a divergent turn from a
         // selected prefix; explicit continuation at the tip can drain it later.
         if (!$interrupted && ($this->parked($receipt->deferredId) || $this->events->hasForwardTail($state->runId, $state->turnNo))) {

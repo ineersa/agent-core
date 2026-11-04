@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Application\BackgroundCompletion;
 
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
+use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
 use Ineersa\AgentCore\Application\Pipeline\PendingTransitionRecovery;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\PreparedTransitionEventStoreInterface;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
@@ -31,6 +35,38 @@ use PHPUnit\Framework\Attributes\TestWith;
 
 final class BackgroundCompletionRunHandlerTest extends IsolatedKernelTestCase
 {
+    #[TestWith(['bash', RunStatus::WaitingHuman, true])]
+    #[TestWith(['subagent', RunStatus::WaitingHuman, true])]
+    #[TestWith(['bash', RunStatus::WaitingHuman, false])]
+    #[TestWith(['subagent', RunStatus::Running, true])]
+    public function testPassiveCompletionDefersForHumanWait(string $kind, RunStatus $status, bool $pendingRequest): void
+    {
+        $c = self::getContainer();
+        $f = new SubmissionFixture($c);
+        $question = PendingHumanInputRequestDTO::modelTurnFromInterruptPayload(['question_id' => 'pending-question']);
+        $waiting = $f->parentState->with(['status' => $status, 'pendingToolCalls' => [], 'activeStepId' => null, 'pendingHumanInputRequests' => $pendingRequest ? [$question] : []]);
+        $handler = $c->get(BackgroundCompletionRunHandler::class);
+        $accepted = $handler->handle(new DeliverBackgroundCompletionDTO($f->parent, 'passive-result', 'Result', origin: ['kind' => $kind]), $waiting);
+        $this->commit($waiting, $accepted);
+        $advance = $c->get(AdvanceRunHandler::class)->handle(new AdvanceRun($f->parent, 1, 'boundary', 1, 'boundary'), $accepted->nextState);
+        $this->assertNull($advance->nextState);
+        $this->assertSame([], $advance->events);
+        $this->assertCount(1, $c->get(CommandStoreInterface::class)->pending($f->parent));
+        $this->assertSame(BackgroundCompletionDispositionEnum::Pending, $c->get(BackgroundCompletionReceiptRepository::class)->receipt('passive-result')->disposition);
+    }
+
+    public function testExplicitRunCancellationStillClearsQuestionWithPendingCompletion(): void
+    {
+        $c = self::getContainer();
+        $f = new SubmissionFixture($c);
+        $waiting = $f->parentState->with(['status' => RunStatus::WaitingHuman, 'pendingToolCalls' => [], 'activeStepId' => null, 'pendingHumanInputRequests' => [PendingHumanInputRequestDTO::modelTurnFromInterruptPayload(['question_id' => 'pending-question'])]]);
+        $accepted = $c->get(BackgroundCompletionRunHandler::class)->handle(new DeliverBackgroundCompletionDTO($f->parent, 'passive-result', 'Result'), $waiting);
+        $this->commit($waiting, $accepted);
+        $cancelled = $c->get(ApplyCommandHandler::class)->handle(new ApplyCommand($f->parent, 1, 'cancel', 1, 'cancel', CoreCommandKind::Cancel), $accepted->nextState);
+        $this->assertSame(RunStatus::Cancelled, $cancelled->nextState->status);
+        $this->assertSame([], $cancelled->nextState->pendingHumanInputRequests);
+    }
+
     #[TestWith(['bash'])]
     #[TestWith(['subagent'])]
     public function testFrozenOriginSurvivesForwardRetryCanonicalReplayAndConsumption(string $kind): void
