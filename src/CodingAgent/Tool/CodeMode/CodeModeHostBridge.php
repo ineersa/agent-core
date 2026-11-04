@@ -290,7 +290,12 @@ final readonly class CodeModeHostBridge
             }
 
             $result = $this->invokeTool($name, $arguments, $parentContext, $cancelToken, $timeoutSeconds, $startedAtNs);
-            $result = $this->normalizeResult($result, $name);
+            // Encoding/size failures are still tool errors that the script can catch.
+            $packet = CodeModeIpc::encode([
+                'id' => $id,
+                'ok' => true,
+                'result' => $this->normalizeResult($result, $name),
+            ]);
         } catch (\Throwable $exception) {
             try {
                 CodeModeIpc::write($connection, [
@@ -299,7 +304,8 @@ final readonly class CodeModeHostBridge
                     'error' => $this->formatException($exception),
                 ], $waiter);
             } catch (\Throwable $deliveryException) {
-                // A disconnected peer must not replace the original tool failure.
+                // Preserve the tool cause, but never retry an entire script after
+                // failed delivery: earlier statements may have had side effects.
                 $this->logger->warning('code_mode.error_reply_failed', [
                     'run_id' => $parentContext?->runId(),
                     'session_id' => $parentContext?->runId(),
@@ -307,18 +313,14 @@ final readonly class CodeModeHostBridge
                     'event_type' => 'code_mode.error_reply_failed',
                     'error_type' => $deliveryException::class,
                 ]);
-                throw $exception;
+                throw new ToolCallException('Failed to deliver code-mode tool error: '.$this->formatException($exception), retryable: false, previous: $exception);
             }
 
             return;
         }
 
         // A failed reply write is a transport failure, not another tool result.
-        CodeModeIpc::write($connection, [
-            'id' => $id,
-            'ok' => true,
-            'result' => $result,
-        ], $waiter);
+        CodeModeIpc::writeAll($connection, $packet, $waiter);
     }
 
     /**
