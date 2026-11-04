@@ -25,9 +25,9 @@ final readonly class WorkflowPrompt implements PromptContributorInterface
 
 '.$context.'
 
-Tasks use the external board under TODO, IN-PROGRESS, CODE-REVIEW, DONE, ARCHIVE, and CANCELLED. These paths come from the active project and the same board resolver used by the task tools; do not copy them into installed skill files.
+Use task tools for board transitions and metadata; never commit board metadata to the code repository or copy these project paths into installed skills.
 
-Main alone manages tracked work using task tools and the consolidated `task-workflow` skill. Implementation forks implement their assigned specification and return results; they do not manage task records, phases, commits, reviews, or PRs. Task-board metadata never commits to the code repository.
+Main alone manages tracked work using task tools and the consolidated `task-workflow` skill. Implementation forks implement their assigned specification and return results; they do not manage task records, phases, commits, reviews, or PRs.
 ';
     }
 }

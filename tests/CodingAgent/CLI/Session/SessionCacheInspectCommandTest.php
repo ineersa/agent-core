@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\CLI\Session;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
@@ -424,7 +425,8 @@ final class SessionCacheInspectCommandTest extends IsolatedKernelTestCase
             lockFactory: new LockFactory(new FlockStore()),
             logger: new TestLogger(),
             sequenceAllocator: new FileRunSequenceAllocator(),
-            presentations: HistoryEventStoreFactory::presentationFactory());
+            presentations: HistoryEventStoreFactory::presentationFactory(),
+            readLocks: new RunLockManager(new LockFactory(new FlockStore()), lockKeyPrefix: 'hatfield-run-'));
     }
 
     private function diagStore(

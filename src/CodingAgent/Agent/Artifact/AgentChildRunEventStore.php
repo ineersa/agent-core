@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Coordination\VerifiedTransitionDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -51,13 +52,14 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
     public function __construct(
         private readonly SessionAgentArtifactPathResolver $pathResolver,
         EventPayloadNormalizer $eventPayloadNormalizer,
-        private readonly LockFactory $lockFactory,
+        LockFactory $lockFactory,
         private readonly LoggerInterface $logger,
         RunSequenceAllocatorInterface $sequenceAllocator,
         private readonly string $parentRunId,
         private readonly string $agentRunId,
         private readonly string $artifactId,
         RunPresentationProjectorFactory $presentations,
+        private readonly RunLockManager $readLocks,
         EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
     ) {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
@@ -75,10 +77,8 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
     public function readAfterSeq(int $cursor): array
     {
         $path = $this->eventsPath();
-        $lock = $this->lockFactory->createLock("hatfield-run-{$this->agentRunId}");
-        $lock->acquire(true);
 
-        try {
+        return $this->readLocks->synchronized($this->agentRunId, function () use ($path, $cursor): array {
             $observation = new JsonlPhysicalReadObservation();
             $decodedEventCount = 0;
             $events = [];
@@ -102,9 +102,7 @@ final class AgentChildRunEventStore implements \Ineersa\AgentCore\Contract\Prepa
             }
 
             return array_reverse($events);
-        } finally {
-            $lock->release();
-        }
+        });
     }
 
     public function appendTransition(array $events, array $work): array

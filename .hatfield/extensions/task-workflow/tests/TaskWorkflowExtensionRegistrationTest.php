@@ -52,7 +52,16 @@ final class TaskWorkflowExtensionRegistrationTest extends TestCase
 
         $this->assertCount(0, $api->skills);
         $this->assertGreaterThanOrEqual(4, \count($api->tools));
+        $this->assertSame([
+            'task_list' => 'task_list [status] [include_archive=false] — list tasks on the project’s external board',
+            'create_task' => 'create_task title [body] [acceptance] [id] — create a TODO task',
+            'move_task' => 'move_task task to [from] — change task status and perform the transition’s Git/worktree/PR actions',
+            'update_task' => 'update_task task [from] [summary] [validation] [workLog] — update task metadata or append work-log entries without changing status',
+        ], array_column($api->tools, 'promptSummary', 'name'));
         $this->assertCount(1, $api->prompts);
+        $prompt = $api->prompts[0]->contribute();
+        $this->assertStringContainsString('Use task tools for board transitions and metadata', $prompt);
+        $this->assertStringContainsString('never commit board metadata to the code repository', $prompt);
         $this->assertGreaterThanOrEqual(5, \count($api->commands));
     }
 

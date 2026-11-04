@@ -71,7 +71,7 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'task_list',
-            description: 'List workflow tasks from the external task board (TODO, IN-PROGRESS, CODE-REVIEW, DONE). CANCELLED and ARCHIVE are omitted by default; pass status=CANCELLED to list cancelled tasks, include_archive=true or status=ARCHIVE to list archived tasks.',
+            description: 'List tasks and their workflow metadata from the external task board.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -84,7 +84,7 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
                 'additionalProperties' => false,
             ],
             handler: new ListTasksHandler($store),
-            promptSummary: 'List project workflow tasks from the external task board',
+            promptSummary: 'task_list [status] [include_archive=false] — list tasks on the project’s external board',
             promptGuidelines: [
                 'Use task_list before starting tracked project work to understand TODO and IN-PROGRESS tasks.',
             ],
@@ -92,7 +92,7 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'create_task',
-            description: 'Create a Markdown task file in the external task board TODO directory.',
+            description: 'Create a TODO task on the external task board.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -105,7 +105,7 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
                 'additionalProperties' => false,
             ],
             handler: new CreateTaskHandler($store),
-            promptSummary: 'Create a tracked project task (external task board)',
+            promptSummary: 'create_task title [body] [acceptance] [id] — create a TODO task',
             promptGuidelines: [
                 'Use create_task for user-approved follow-up work that should be tracked on the task board.',
             ],
@@ -137,9 +137,9 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
                 'additionalProperties' => false,
             ],
             handler: new MoveTaskHandler($store, $git, $worktrees, $pr, $exec, $codeRoot),
-            promptSummary: 'Move tracked project tasks between statuses; creates worktrees, opens PRs, and merges completed task branches',
+            promptSummary: 'move_task task to [from] — change task status and perform the transition’s Git/worktree/PR actions',
             promptGuidelines: [
-                'Use move_task rather than manual status-file or worktree moves. Its schema and result describe transition preconditions, side effects, and errors; load the task-workflow skill for orchestration.',
+                'Main uses move_task rather than manual task-status or worktree moves and follows the consolidated task-workflow skill for transitions.',
             ],
         ));
 
@@ -162,10 +162,9 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
                 'additionalProperties' => false,
             ],
             handler: new UpdateTaskHandler($store),
-            promptSummary: 'Update task metadata fields or append work log entries without moving the task between statuses',
+            promptSummary: 'update_task task [from] [summary] [validation] [workLog] — update task metadata or append work-log entries without changing status',
             promptGuidelines: [
-                'Use update_task instead of editing task files directly when recording fork run IDs, summaries, validation results, PR information, or work log entries.',
-                'update_task does not change the task status or move the file. Use move_task for status changes.',
+                'Use update_task instead of editing task files directly to record ownership, summaries, validation, or PR information. Use move_task for status changes.',
             ],
         ));
 

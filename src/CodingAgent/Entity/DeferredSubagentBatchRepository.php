@@ -509,6 +509,24 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             ->getResult();
     }
 
+    /** @return list<DeferredSubagentBatch> */
+    public function findSettledHeadersWithUnfinishedChildren(string $parentRunId): array
+    {
+        // Explicit repair only, never the periodic background-row refresh.
+        return $this->createQueryBuilder('b')
+            ->innerJoin(DeferredSubagentChild::class, 'child', Join::WITH, 'child.batchLifecycleId = b.lifecycleId')
+            ->andWhere('b.parentRunId = :parentRunId')
+            ->andWhere('b.terminalCompletionEnqueuedAt IS NOT NULL')
+            ->andWhere('child.terminalStatus IS NULL AND child.terminalCompletedAt IS NULL')
+            ->andWhere('child.launchStatus = :launched')
+            ->setParameter('parentRunId', $parentRunId)
+            ->setParameter('launched', DeferredSubagentChildLaunchStatusEnum::Launched->value)
+            ->distinct()
+            ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getResult();
+    }
+
     /**
      * Persist first-wins interruption intent with optimistic lock guard.
      */

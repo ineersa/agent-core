@@ -97,7 +97,7 @@ final class FiberMessageExecutionStrategy implements MessageExecutionStrategyInt
 
         $deadline = null === $timeout ? null : hrtime(true) + (int) (1e9 * $timeout);
 
-        while ([] !== $this->pending) {
+        while (0 < $this->pendingCount()) {
             $heartbeat = null === $deadline ? 0.1 : min(0.1, ($deadline - hrtime(true)) / 1e9);
             if ($heartbeat <= 0) {
                 return false;

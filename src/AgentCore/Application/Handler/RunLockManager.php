@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Fiber;
+use Symfony\Component\Lock\Exception\LockConflictedException;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\LockInterface;
 
@@ -22,6 +23,7 @@ final class RunLockManager
         private LockFactory $lockFactory,
         private float $ttlSeconds = 30.0,
         private float $acquireTimeoutSeconds = 5.0,
+        private string $lockKeyPrefix = 'agent_loop.run.',
     ) {
     }
 
@@ -54,7 +56,7 @@ final class RunLockManager
 
         while (isset($this->activeLocks[$key]) || !$lock->acquire()) {
             if (microtime(true) >= $acquireUntil) {
-                throw new \RuntimeException(\sprintf('Failed to acquire run lock for "%s" within %.3f seconds.', $runId, $this->acquireTimeoutSeconds));
+                throw new LockConflictedException(\sprintf('Failed to acquire run lock for "%s" within %.3f seconds.', $runId, $this->acquireTimeoutSeconds));
             }
 
             delay(0.02);
@@ -98,6 +100,6 @@ final class RunLockManager
 
     private function lockKey(string $runId): string
     {
-        return \sprintf('agent_loop.run.%s', $runId);
+        return $this->lockKeyPrefix.$runId;
     }
 }
