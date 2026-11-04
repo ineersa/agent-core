@@ -31,8 +31,8 @@ final readonly class AgentContextRenderer
         $parts[] = '<agents_instructions>';
         $parts[] = 'The following agent definitions can be launched via the subagent tool.';
         $parts[] = 'Use the listed agent name and a clear task description. Do not guess agent names.';
-        $parts[] = 'Reuse relevant child context: wait for a running child or use agent_resume for a terminal child by artifact or run identifier.';
-        $parts[] = 'Launch a new child when no relevant child exists, or a replacement after agent_resume explicitly refuses for parent-lifetime or context-budget limits. Carry forward the relevant handoff.';
+        $parts[] = 'Use subagent to launch a new child only when no existing child has relevant context.';
+        $parts[] = 'Use agent_resume to continue an existing child by artifact or run identifier; do not duplicate it with subagent.';
         $parts[] = 'Child runs cannot launch or resume other children.';
         $parts[] = 'Agent bodies and full instructions are not included here; only name and description are shown.';
         $parts[] = '';

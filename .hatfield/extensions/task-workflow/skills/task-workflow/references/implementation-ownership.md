@@ -2,11 +2,13 @@
 
 ## Route before delegating
 
-Main must read the task and applicable instructions, inspect entry points, callers, tests, and boundaries, then identify cohesive slices, unknowns, and validation. Do not replace this pass with a scout report. Stop before designing edits for a slice assigned to a fork.
+Main must complete the investigation, inspect the task, applicable instructions, entry points, callers, tests, and boundaries, and decide the implementation plan before delegation. Resolve design questions and investigation unknowns before assigning implementation. Do not replace this pass with a scout report.
 
 Main coordinates, explores initial scope, and owns transitions. Keep a small one-off implementation that touches 1–2 files with main. Delegate every larger implementation slice to a fork.
 
-Give the fork the goal, criteria, constraints, entry points, ownership boundary, and validation contract, not a completed edit design.
+Give the fork a precise, self-contained implementation plan and exact task: affected code, required behavior and invariants, and validation. The fork implements that plan. Do not impose mandatory headings. Exclude orchestration history, prior-agent failures, status chatter, and rules already provided by project instructions.
+
+Apply this content rule to initial assignments, resumes, and replacements. Include necessary existing-draft facts, such as current changes to preserve, but not why a previous writer stopped. Keep ownership records and launch/resume logistics in workflow metadata, not implementation assignment text.
 
 ## Roles
 
@@ -27,9 +29,9 @@ Give the fork the goal, criteria, constraints, entry points, ownership boundary,
 
 ## Resuming a tracked fork
 
-Use `agent_resume` for relevant terminal fork context in the current parent lifetime while it remains within the context budget. Wait for a running fork or use `agent_steer` for current guidance; do not launch a duplicate. Before resumed edits, name the checkout and resumed scope, require current-state inspection, and record the handoff. The fork must verify the matching ownership record and stop and request a missing handoff.
+Use `agent_resume` for relevant terminal fork context in the current parent lifetime while it remains within the context budget. Wait for a running fork or use `agent_steer` for current guidance; do not launch a duplicate. Before resumed edits, record the checkout, resumed scope, and handoff in workflow metadata and require current-state inspection. The fork must verify the matching ownership record and stop and request a missing handoff.
 
-After an explicit parent-lifetime or context-budget resume refusal, assign a replacement using the prelaunch and postlaunch steps above. Record why the prior fork cannot resume, carry forward its relevant handoff and current repository state, and make the ownership transfer explicit. Do not retry the same non-resumable child or treat refusal as permission for overlapping writers. Keep these tracked-work rules here, not in global tool prompts.
+After an explicit parent-lifetime or context-budget resume refusal, assign a replacement using the prelaunch and postlaunch steps above and the same implementation-plan content rule. Record the refusal and make the ownership transfer explicit in workflow metadata; include only necessary current-state and existing-draft facts in the implementation assignment. Do not retry the same non-resumable child or treat refusal as permission for overlapping writers. Keep these tracked-work rules here, not in global tool prompts.
 
 ## Ownership log
 

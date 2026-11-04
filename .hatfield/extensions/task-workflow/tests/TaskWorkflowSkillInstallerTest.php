@@ -52,6 +52,16 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
         $this->assertStringContainsString('notify main and do only independent prerequisite reads', $ownership);
         $this->assertStringContainsString('After an explicit parent-lifetime or context-budget resume refusal', $ownership);
         $this->assertStringContainsString('make the ownership transfer explicit', $ownership);
+        $this->assertStringContainsString('decide the implementation plan before delegation', $ownership);
+        $this->assertStringContainsString('Resolve design questions and investigation unknowns before assigning implementation', $ownership);
+        $this->assertStringContainsString('precise, self-contained implementation plan and exact task', $ownership);
+        $this->assertStringContainsString('The fork implements that plan', $ownership);
+        $this->assertStringContainsString('initial assignments, resumes, and replacements', $ownership);
+        $this->assertStringContainsString('current changes to preserve, but not why a previous writer stopped', $ownership);
+        $this->assertStringContainsString('Keep ownership records and launch/resume logistics in workflow metadata, not implementation assignment text', $ownership);
+        $this->assertStringNotContainsString('Stop before designing edits', $ownership);
+        $this->assertStringNotContainsString('not a completed edit design', $ownership);
+        $this->assertStringNotContainsString('carry forward its relevant handoff', $ownership);
         $review = (string) file_get_contents($this->destinationDir().'/references/specification-fidelity.md');
         $this->assertStringContainsString('Use the `reviewer` subagent', $review);
         $this->assertStringContainsString('identifier-only assignment format', $review);
@@ -103,6 +113,7 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
         yield 'missing' => [''];
         yield 'different' => ["version: 1.0.0\n"];
         yield 'previous bundled guidance' => ["version: 1.1.5\n"];
+        yield 'previous planning guidance' => ["version: 1.1.6\n"];
         yield 'malformed' => ["version: [\n"];
     }
 
