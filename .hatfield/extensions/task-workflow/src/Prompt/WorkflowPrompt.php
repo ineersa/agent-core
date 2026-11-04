@@ -26,7 +26,8 @@ final readonly class WorkflowPrompt implements PromptContributorInterface
 '.$context.'
 
 Use task tools for board transitions and metadata; never commit board metadata to the code repository or copy these project paths into installed skills.
-Before phase work or a status transition, read the task-workflow router AND the exact phase procedure it links. The router alone is not the procedure. Follow the procedure’s ownership rules.
+
+Main alone manages tracked work using task tools and the consolidated `task-workflow` skill. Implementation forks implement their assigned specification and return results; they do not manage task records, phases, commits, reviews, or PRs.
 ';
     }
 }

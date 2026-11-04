@@ -12,7 +12,7 @@ Do not retry until green, increase timeouts, add delayed fixtures, or disable th
 
 Validate from the same worktree with concurrent normal `castor check`, standalone `castor test:tui`, and standalone `castor test:llm-real`. Give each process a unique reports directory; the gate prints its generated directory. Do not edit while lanes run. Wait for all exits and inspect case durations. Solo green is insufficient.
 
-For tracked implementation, keep focused contention checks in task-start; the CODE-REVIEW transition owns the full gate. Follow the active phase procedure before running transition validation.
+Implementation forks run focused contention checks and report results; main owns full-gate and transition validation.
 
 - Shared SQLite or missing transport databases require isolation fixes, not waits.
 - Readiness failures need child-liveness-aware predicates and diagnostics.

@@ -2,11 +2,12 @@
 
 ## Choose the lowest layer
 
-- Use `castor test` and `VirtualTuiHarness` for layout, input, local commands, and widget rendering.
-- Use `castor test:controller-replay` for runtime JSONL, events, and tool ordering.
-- Use one minimal `castor test:tui` case for a unique real TTY or packaged-boot contract.
+- Every changed user-visible TUI behavior needs automated proof at the lowest correct layer.
+- Use `castor test` and `VirtualTuiHarness` for layout, widgets, editor input, slash commands, local routing, and rendering.
+- Use `castor test:controller-replay` for runtime JSONL, sessions, events, and shell or tool ordering.
+- Use one minimal `castor test:tui` case with `#[Group('tui-e2e-replay')]` for terminal integration that virtual tests or controller replay cannot prove, or the existing packaged-boot case for that contract.
 - Use live LLM only when replay cannot prove provider behavior; read [live-llm.md](live-llm.md).
-- Do not add journeys that repeat virtual proofs. Custom smoke scripts or service DTO assertions are not sole runtime/TUI proof.
+- Do not require tmux or add journeys for behavior virtual tests can prove. Mocks, service-only DTO tests, custom smoke scripts, and picker or footer visibility assertions cannot be the only proof. Report the proof layer, what the test proves, and exact validation commands; reject missing proof or tests placed at a higher layer than needed.
 - If a reported live hang survives replay, reproduce it with the real controller instead of adding more fixture-only assertions.
 
 ## Harness and lifecycle

@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
 use Ineersa\CodingAgent\Agent\Fork\ForkLaunchTaskDTO;
+use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
@@ -68,7 +69,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             $messages,
         ));
         $this->assertSame('user', $roles[array_key_last($roles)]);
-        $this->assertStringContainsString('You are the fork child.', $prepared->startRunInput->systemPrompt);
+        $this->assertStringContainsString(new ForkTaskPromptBuilder()->forkChildSystemPromptAppend(), $prepared->startRunInput->systemPrompt);
 
         $inheritedUser = array_values(array_filter($messages, static fn (AgentMessage $m): bool => 'user' === $m->role && 'prior user' === ($m->content[0]['text'] ?? '')));
         $this->assertCount(1, $inheritedUser);
@@ -265,7 +266,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         $this->assertNotContains('subagent', $active->toolNames);
     }
 
-    public function testForkChildOmitsAgentChildContractAndKeepsFinalityPlusCompactHandoffContract(): void
+    public function testForkChildKeepsRoleContractInSystemAndSpecificationInFinalUserMessage(): void
     {
         $parentRunId = 'parent-fork-no-contract';
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
@@ -303,13 +304,11 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
 
         $this->assertStringNotContainsString('Artifact ID: artifact-fork-no-contract', $joined);
         $this->assertStringNotContainsString('agent_child_contract', $joined);
-        $this->assertStringContainsString('You are the fork child.', $prepared->startRunInput->systemPrompt);
-        $this->assertStringContainsString('Do not emit progress narration, request tools in the handoff message, or replace it with a later recap.', $prepared->startRunInput->systemPrompt);
-        $this->assertStringContainsString('Outcome: complete | partial | blocked | failed', $joined);
-        $this->assertStringContainsString('Repository:', $joined);
-        $this->assertStringContainsString('Result:', $joined);
-        $this->assertStringContainsString('Validation:', $joined);
-        $this->assertStringContainsString('Report only new information the parent needs to evaluate or continue the work.', $joined);
-        $this->assertSame('user', $prepared->startRunInput->messages[array_key_last($prepared->startRunInput->messages)]->role);
+        $roleContract = new ForkTaskPromptBuilder()->forkChildSystemPromptAppend();
+        $this->assertStringContainsString($roleContract, $prepared->startRunInput->systemPrompt);
+        $this->assertSame(1, substr_count($joined, $roleContract));
+        $assignment = $prepared->startRunInput->messages[array_key_last($prepared->startRunInput->messages)];
+        $this->assertSame('user', $assignment->role);
+        $this->assertSame([['type' => 'text', 'text' => 'Task']], $assignment->content);
     }
 }

@@ -11,6 +11,7 @@ use Ineersa\HatfieldExt\TaskWorkflow\Assets\TaskWorkflowSkillInstaller;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Finder\Finder;
 
 final class TaskWorkflowSkillInstallerTest extends TestCase
 {
@@ -38,11 +39,9 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
     {
         $this->installer()->install();
 
-        $skill = $this->destinationDir().'/SKILL.md';
-        $this->assertFileExists($skill);
-        $this->assertSame($this->bundledSkillVersion(), TaskWorkflowMarkdownFrontmatter::versionOf((string) file_get_contents($skill)));
-        $this->assertFileExists($this->destinationDir().'/references/implementation-ownership.md');
-        $this->assertSame(file_get_contents($this->packageRoot.'/skills/task-workflow/SKILL.md'), file_get_contents($skill));
+        $this->assertSame($this->treeContents($this->packageRoot.'/skills/task-workflow'), $this->treeContents($this->destinationDir()));
+        $this->assertSame($this->bundledSkillVersion(), TaskWorkflowMarkdownFrontmatter::versionOf((string) file_get_contents($this->destinationDir().'/SKILL.md')));
+        $this->assertDirectoryDoesNotExist($this->destinationDir().'/references');
     }
 
     #[Test]
@@ -50,55 +49,62 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
     public function reinstallsWholeSkillTreeWhenInstalledVersionMissingOrDifferent(string $versionLine): void
     {
         $dest = $this->destinationDir();
-        mkdir($dest.'/references', 0o777, true);
+        TestDirectoryIsolation::ensureDirectory($dest.'/references');
+        $this->assertStringStartsWith(realpath($this->root).'/', realpath($dest).'/');
         file_put_contents($dest.'/SKILL.md', "---\nname: task-workflow\ndescription: stale\n".$versionLine."---\nstale body\n");
-        file_put_contents($dest.'/references/stale.md', "stale reference\n");
-        file_put_contents($dest.'/references/implementation-ownership.md', "old ownership\n");
-        file_put_contents($dest.'/references/board.md', "# Task board\n\n- Code checkout: `/home/ineersa/projects/agent-core`.\n- External board: `/home/ineersa/projects/agent-core-tasks`.\n");
+        foreach (['board', 'implementation-ownership', 'specification-fidelity', 'task-done', 'task-explain', 'task-review-iterate', 'task-start', 'task-to-pr', 'tui-proof', 'stale'] as $reference) {
+            file_put_contents($dest.'/references/'.$reference.'.md', "stale reference\n");
+        }
 
         $this->installer()->install();
 
-        $installed = (string) file_get_contents($dest.'/SKILL.md');
-        $this->assertSame($this->bundledSkillVersion(), TaskWorkflowMarkdownFrontmatter::versionOf($installed));
-        $this->assertSame(file_get_contents($this->packageRoot.'/skills/task-workflow/SKILL.md'), $installed);
-        $this->assertFileExists($dest.'/references/implementation-ownership.md');
-        $this->assertSame(file_get_contents($this->packageRoot.'/skills/task-workflow/references/implementation-ownership.md'), file_get_contents($dest.'/references/implementation-ownership.md'));
-        $this->assertFileDoesNotExist($dest.'/references/stale.md');
-        $this->assertSame(file_get_contents($this->packageRoot.'/skills/task-workflow/references/board.md'), file_get_contents($dest.'/references/board.md'));
-        $this->assertStringNotContainsString('/home/ineersa/projects/agent-core', (string) file_get_contents($dest.'/references/board.md'));
+        $this->assertSame($this->treeContents($this->packageRoot.'/skills/task-workflow'), $this->treeContents($dest));
+        $this->assertSame($this->bundledSkillVersion(), TaskWorkflowMarkdownFrontmatter::versionOf((string) file_get_contents($dest.'/SKILL.md')));
+        $this->assertDirectoryDoesNotExist($dest.'/references');
     }
 
     #[Test]
     public function leavesSameVersionSkillTreeUntouched(): void
     {
         $dest = $this->destinationDir();
-        mkdir($dest.'/references', 0o777, true);
+        TestDirectoryIsolation::ensureDirectory($dest.'/references');
+        $this->assertStringStartsWith(realpath($this->root).'/', realpath($dest).'/');
         $customSkill = "---\nname: task-workflow\ndescription: custom\nversion: ".$this->bundledSkillVersion()."\n---\ncustom body\n";
-        $customReference = "custom ownership\n";
         file_put_contents($dest.'/SKILL.md', $customSkill);
-        file_put_contents($dest.'/references/implementation-ownership.md', $customReference);
+        file_put_contents($dest.'/references/custom.md', "custom guidance\n");
+        $before = $this->treeContents($dest);
 
         $this->installer()->install();
 
-        $this->assertSame($customSkill, file_get_contents($dest.'/SKILL.md'));
-        $this->assertSame($customReference, file_get_contents($dest.'/references/implementation-ownership.md'));
+        $this->assertSame($before, $this->treeContents($dest));
     }
 
     public static function outdatedVersions(): iterable
     {
         yield 'missing' => [''];
         yield 'different' => ["version: 1.0.0\n"];
-        yield 'previous bundled guidance' => ["version: 1.1.4\n"];
+        yield 'previous ownership guidance' => ["version: 1.1.5\n"];
+        yield 'previous planning guidance' => ["version: 1.1.6\n"];
+        yield 'previous multi-file skill' => ["version: 1.1.7\n"];
+        yield 'previous consolidated skill' => ["version: 1.1.8\n"];
         yield 'malformed' => ["version: [\n"];
     }
 
-    private function installer(?TestLogger $logger = null): TaskWorkflowSkillInstaller
+    /** @return array<string, string> */
+    private function treeContents(string $directory): array
     {
-        return new TaskWorkflowSkillInstaller(
-            $this->projectDir,
-            $this->packageRoot,
-            $logger ?? new TestLogger(),
-        );
+        $contents = [];
+        foreach (Finder::create()->files()->in($directory) as $file) {
+            $contents[$file->getRelativePathname()] = $file->getContents();
+        }
+        ksort($contents);
+
+        return $contents;
+    }
+
+    private function installer(): TaskWorkflowSkillInstaller
+    {
+        return new TaskWorkflowSkillInstaller($this->projectDir, $this->packageRoot, new TestLogger());
     }
 
     private function destinationDir(): string
@@ -108,8 +114,7 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
 
     private function bundledSkillVersion(): string
     {
-        $bundled = (string) file_get_contents($this->packageRoot.'/skills/task-workflow/SKILL.md');
-        $version = TaskWorkflowMarkdownFrontmatter::versionOf($bundled);
+        $version = TaskWorkflowMarkdownFrontmatter::versionOf((string) file_get_contents($this->packageRoot.'/skills/task-workflow/SKILL.md'));
         $this->assertNotNull($version);
 
         return $version;

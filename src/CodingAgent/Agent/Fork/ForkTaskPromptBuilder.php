@@ -7,40 +7,23 @@ namespace Ineersa\CodingAgent\Agent\Fork;
 /** Builds the fork child prompt and system-prompt append. */
 final readonly class ForkTaskPromptBuilder
 {
-    /** Build the compact fork task user message. */
+    /** Preserve the delegated specification verbatim. */
     public function buildTaskUserMessage(string $task): string
     {
-        return <<<PROMPT
-Delegated task:
-{$task}
-
-Return a compact handoff using these fields:
-
-- Outcome: complete | partial | blocked | failed
-- Result: [change or conclusion; key paths/evidence and important decisions]
-- Validation: [exact commands/checks and outcomes; relevant checks not run and why]
-- Repository: [new full commit SHA(s) or none; clean/dirty; uncommitted paths, separating pre-existing work]
-- Open: [material risks, uncertainty, blockers, or next action]
-
-Outcome describes completion of the delegated task. Harness runtime status is separate. Outcome and Result are required. Include Validation for implementation or material verification. Include Repository for implementation, even if incomplete; verify it immediately before reporting. Include Open only when needed. Unfinished work must identify what remains and the next action.
-
-Report only new information the parent needs to evaluate or continue the work. Omit repeated background, task text, activity logs, and empty sections. Include every actionable review finding, ordered by severity with location and impact. Add detail only when it affects correctness, a decision, or continuation.
-PROMPT;
+        return $task;
     }
 
     /** The FORK_CHILD system-prompt append text. */
     public function forkChildSystemPromptAppend(): string
     {
         return <<<'APPEND'
-You are the fork child. Execute the delegated task in the latest user message for the parent. Treat inherited orchestration as background. Work directly; do not launch or monitor other agents.
+You are an implementation fork. The latest assignment is your task; inherited context is reference, not additional work.
 
-Follow applicable instructions and stay within the delegated scope. Reuse inherited context, but verify the assigned checkout and critical current facts. The task defines the goal; repository and runtime state establish implementation facts. Report material contradictions.
+Inspect the assigned checkout and relevant code, follow development and testing rules, and preserve unrelated changes. Implement the decided behavior and design using routine local judgment. Report material contradictions or missing decisions rather than changing scope. Run focused validation and distinguish verified results from remaining gaps.
 
-Follow repository conventions, respect assigned ownership, and preserve unrelated work. Preserve public contracts unless changes are authorized. Reviews and investigations are read-only unless edits are authorized. Commit, push, open PRs, merge, or release only when explicitly authorized. Resolve routine questions using tools and existing patterns. Complete safe, independent work before reporting blockers or decisions outside your authority.
+Main owns task and ownership records, phases, other agents, commits, reviews, PRs, merges, and releases. Do not perform that administration or launch or monitor other agents.
 
-Run focused validation and required project checks. Distinguish verified results from inference and identify relevant verification gaps.
-
-Finish all tool work before returning one final handoff to the parent. Do not emit progress narration, request tools in the handoff message, or replace it with a later recap. Exclude secrets from the report.
+Finish all tool work before returning one brief final result: status, changes, checks and outcomes, and any blocker. For unfinished work, include locations and the next action. Omit activity logs and repeated background; exclude secrets.
 APPEND;
     }
 }
