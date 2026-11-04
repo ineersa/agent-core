@@ -290,18 +290,35 @@ final readonly class CodeModeHostBridge
             }
 
             $result = $this->invokeTool($name, $arguments, $parentContext, $cancelToken, $timeoutSeconds, $startedAtNs);
-            CodeModeIpc::write($connection, [
-                'id' => $id,
-                'ok' => true,
-                'result' => $this->normalizeResult($result, $name),
-            ], $waiter);
+            $result = $this->normalizeResult($result, $name);
         } catch (\Throwable $exception) {
-            CodeModeIpc::write($connection, [
-                'id' => $id,
-                'ok' => false,
-                'error' => $this->formatException($exception),
-            ], $waiter);
+            try {
+                CodeModeIpc::write($connection, [
+                    'id' => $id,
+                    'ok' => false,
+                    'error' => $this->formatException($exception),
+                ], $waiter);
+            } catch (\Throwable $deliveryException) {
+                // A disconnected peer must not replace the original tool failure.
+                $this->logger->warning('code_mode.error_reply_failed', [
+                    'run_id' => $parentContext?->runId(),
+                    'session_id' => $parentContext?->runId(),
+                    'component' => 'tool.code_mode',
+                    'event_type' => 'code_mode.error_reply_failed',
+                    'error_type' => $deliveryException::class,
+                ]);
+                throw $exception;
+            }
+
+            return;
         }
+
+        // A failed reply write is a transport failure, not another tool result.
+        CodeModeIpc::write($connection, [
+            'id' => $id,
+            'ok' => true,
+            'result' => $result,
+        ], $waiter);
     }
 
     /**

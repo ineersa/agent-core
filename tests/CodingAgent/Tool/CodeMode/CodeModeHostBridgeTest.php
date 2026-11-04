@@ -174,6 +174,121 @@ PHP);
         }
     }
 
+    public function testFailedSuccessReplyIsNotRetriedAsAnErrorReply(): void
+    {
+        [$host, $peer] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, 0);
+        stream_set_blocking($host, false);
+        // Saturate the socket before invoking the handler so its writer must wait.
+        while (0 < fwrite($host, str_repeat('x', 8192))) {
+        }
+        $original = new \RuntimeException('original reply failure');
+        $waits = 0;
+        $waiter = static function () use (&$waits, $original): void {
+            if (++$waits > 1) {
+                throw new \RuntimeException('secondary reply failure');
+            }
+            throw $original;
+        };
+
+        try {
+            $method = new \ReflectionMethod(CodeModeHostBridge::class, 'handleToolRequest');
+            $method->invoke($this->bridgeWithToolbox(static fn () => null), $host, ['id' => 'reply', 'name' => 'noop'], null, new NullCancellationToken(), 10, hrtime(true), $waiter);
+            $this->fail('Expected the reply writer to fail.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame($original, $exception);
+            $this->assertSame(1, $waits);
+        } finally {
+            fclose($host);
+            fclose($peer);
+        }
+    }
+
+    public function testToolFailureSurvivesAnUndeliverableErrorReply(): void
+    {
+        [$host, $peer] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, 0);
+        fclose($peer);
+        $original = new \RuntimeException('original nested tool failure');
+        $bridge = $this->bridgeWithToolbox(static function () use ($original): never {
+            throw $original;
+        });
+
+        try {
+            $method = new \ReflectionMethod(CodeModeHostBridge::class, 'handleToolRequest');
+            $method->invoke($bridge, $host, ['id' => 'failure', 'name' => 'noop'], null, new NullCancellationToken(), 10, hrtime(true), null);
+            $this->fail('Expected the nested tool to fail.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame($original, $exception);
+        } finally {
+            fclose($host);
+        }
+    }
+
+    public function testBlockedSocketWaitRetainsDeadlineAndCancellationOwnership(): void
+    {
+        [$host, $peer] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, 0);
+        $process = new Process(['unused']);
+        $method = new \ReflectionMethod(CodeModeHostBridge::class, 'waitWhileBlocked');
+        $cancelled = new class implements CancellationTokenInterface {
+            public function isCancellationRequested(): bool
+            {
+                return true;
+            }
+        };
+
+        try {
+            foreach ([[new NullCancellationToken(), hrtime(true) - 2_000_000_000, 'timed out'], [$cancelled, hrtime(true), 'cancelled']] as [$token, $startedAt, $message]) {
+                try {
+                    $method->invoke($this->bridge(), $host, $process, $token, 1, $startedAt, false);
+                    $this->fail('Expected the existing host wait guard to terminate.');
+                } catch (ToolCallException $exception) {
+                    $this->assertStringContainsString($message, $exception->getMessage());
+                }
+            }
+        } finally {
+            fclose($host);
+            fclose($peer);
+        }
+    }
+
+    public function testNestedToolWaitIsIndependentOfPhpDefaultSocketTimeout(): void
+    {
+        // Only the spawned CLI reads this disposable additional ini directory.
+        $this->assertSame($this->tmpDir, realpath($this->tmpDir));
+        $this->assertFalse(is_link($this->tmpDir));
+        file_put_contents($this->tmpDir.'/socket-timeout.ini', "default_socket_timeout=0\n");
+        $previous = getenv('PHP_INI_SCAN_DIR');
+        $previousEnv = $_ENV;
+        $previousServer = $_SERVER;
+        $scanned = php_ini_scanned_files();
+        $directories = false === $scanned ? [] : array_unique(array_map(\dirname(...), preg_split('/,\\s*/', trim($scanned)) ?: []));
+        $_ENV['PHP_INI_SCAN_DIR'] = $_SERVER['PHP_INI_SCAN_DIR'] = implode(\PATH_SEPARATOR, [...$directories, $this->tmpDir]);
+        putenv('PHP_INI_SCAN_DIR='.$_ENV['PHP_INI_SCAN_DIR']);
+        $calls = [];
+
+        try {
+            $bridge = $this->bridgeWithToolbox(static function (string $name) use (&$calls): void {
+                $calls[] = $name;
+            });
+            $this->assertSame(['socket_timeout' => '0', 'result' => null], $this->runScript($bridge, 'return ["socket_timeout" => ini_get("default_socket_timeout"), "result" => tool("noop")];'));
+            $this->assertSame(['noop'], $calls);
+        } finally {
+            putenv(false === $previous ? 'PHP_INI_SCAN_DIR' : 'PHP_INI_SCAN_DIR='.$previous);
+            $_ENV = $previousEnv;
+            $_SERVER = $previousServer;
+        }
+    }
+
+    public function testScriptFailureSurvivesAnUndeliverableReturnFrame(): void
+    {
+        try {
+            $this->runScript($this->bridge(), 'global $connection; stream_socket_shutdown($connection, STREAM_SHUT_RDWR); throw new RuntimeException("original script failure");');
+            $this->fail('Expected the disconnected child to fail.');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('original script failure', $exception->getMessage());
+            $this->assertStringContainsString('Code-mode failed to deliver its error result', $exception->getMessage());
+        }
+    }
+
     public function testExecuteReturnsScalarAndArrayFromFastScripts(): void
     {
         $bridge = $this->bridge();
