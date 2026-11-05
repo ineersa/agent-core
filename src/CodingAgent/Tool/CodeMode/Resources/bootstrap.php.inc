@@ -58,7 +58,10 @@ if (!\function_exists('hatfield_code_mode_read')) {
         while (\strlen($header) < 4) {
             $chunk = fread($stream, 4 - \strlen($header));
             if (false === $chunk || '' === $chunk) {
-                throw new RuntimeException('Unexpected EOF while reading code-mode IPC header.');
+                if (stream_get_meta_data($stream)['timed_out']) {
+                    throw new RuntimeException('Timed out while reading code-mode IPC header.');
+                }
+                throw new RuntimeException(feof($stream) ? 'Unexpected EOF while reading code-mode IPC header.' : 'Failed to read code-mode IPC header.');
             }
             $header .= $chunk;
         }
@@ -77,7 +80,10 @@ if (!\function_exists('hatfield_code_mode_read')) {
         while (\strlen($body) < $length) {
             $chunk = fread($stream, $length - \strlen($body));
             if (false === $chunk || '' === $chunk) {
-                throw new RuntimeException('Unexpected EOF while reading code-mode IPC body.');
+                if (stream_get_meta_data($stream)['timed_out']) {
+                    throw new RuntimeException('Timed out while reading code-mode IPC body.');
+                }
+                throw new RuntimeException(feof($stream) ? 'Unexpected EOF while reading code-mode IPC body.' : 'Failed to read code-mode IPC body.');
             }
             $body .= $chunk;
         }
@@ -254,6 +260,9 @@ if (false === $connection) {
 }
 
 stream_set_blocking($connection, true);
+// The host owns invocation deadlines and cancellation and stops this process.
+// A separate PHP socket timeout would prematurely fail valid nested tool calls.
+stream_set_timeout($connection, -1);
 
 register_shutdown_function(static function () use (&$connection): void {
     $error = error_get_last();
@@ -300,8 +309,9 @@ try {
             'ok' => false,
             'error' => $message,
         ]);
-    } catch (Throwable) {
-        fwrite(\STDERR, "Code-mode failed to deliver its error result.\n");
+    } catch (Throwable $deliveryException) {
+        // Preserve the execution/read failure when the peer cannot receive it.
+        fwrite(\STDERR, $message."\nCode-mode failed to deliver its error result: ".$deliveryException->getMessage()."\n");
     }
     exit(1);
 }
