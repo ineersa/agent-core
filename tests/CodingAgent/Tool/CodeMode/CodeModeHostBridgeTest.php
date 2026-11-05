@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\CodeMode;
 
+use Amp\DeferredFuture;
+use Amp\TimeoutCancellation;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolCallResultFactory;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
@@ -50,6 +52,7 @@ use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
+use Revolt\EventLoop;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
@@ -171,6 +174,192 @@ PHP);
         } finally {
             fclose($host);
             fclose($peer);
+        }
+    }
+
+    public function testFailedSuccessReplyIsNotRetriedAsAnErrorReply(): void
+    {
+        [$host, $peer] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, 0);
+        stream_set_blocking($host, false);
+        // Saturate the socket before invoking the handler so its writer must wait.
+        while (0 < fwrite($host, str_repeat('x', 8192))) {
+        }
+        $original = new \RuntimeException('original reply failure');
+        $waits = 0;
+        $waiter = static function () use (&$waits, $original): void {
+            if (++$waits > 1) {
+                throw new \RuntimeException('secondary reply failure');
+            }
+            throw $original;
+        };
+
+        try {
+            $method = new \ReflectionMethod(CodeModeHostBridge::class, 'handleToolRequest');
+            $method->invoke($this->bridgeWithToolbox(static fn () => null), $host, ['id' => 'reply', 'name' => 'noop'], null, new NullCancellationToken(), 10, hrtime(true), $waiter);
+            $this->fail('Expected the reply writer to fail.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame($original, $exception);
+            $this->assertSame(1, $waits);
+        } finally {
+            fclose($host);
+            fclose($peer);
+        }
+    }
+
+    public function testOversizedNestedResultRemainsCatchableByTheScript(): void
+    {
+        $bridge = $this->bridgeWithToolbox(static fn (): string => str_repeat('x', CodeModeIpc::MAX_FRAME_BYTES + 1));
+
+        $this->assertSame(['recovered' => true], $this->runScript($bridge, <<<'PHP'
+try {
+    tool('oversized');
+} catch (RuntimeException $exception) {
+    return ['recovered' => str_contains($exception->getMessage(), 'IPC frame exceeds 8388608 bytes')];
+}
+return ['recovered' => false];
+PHP));
+    }
+
+    public function testUndeliverableRetryableToolErrorCannotRetryTheWholeScript(): void
+    {
+        $original = new ToolCallException('nested transient failure', retryable: true);
+        $bridge = $this->bridgeWithToolbox(static function () use ($original): never {
+            throw $original;
+        });
+
+        try {
+            $this->runScript($bridge, 'global $connection; stream_socket_shutdown($connection, STREAM_SHUT_RD); tool("retryable");');
+            $this->fail('Expected the disconnected error reply to fail.');
+        } catch (ToolCallException $exception) {
+            $this->assertFalse($exception->retryable());
+            $this->assertStringContainsString('nested transient failure', $exception->getMessage());
+            $this->assertSame($original, $exception->getPrevious()?->getPrevious());
+        }
+    }
+
+    public function testToolFailureSurvivesAnUndeliverableErrorReply(): void
+    {
+        [$host, $peer] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, 0);
+        fclose($peer);
+        $original = new \RuntimeException('original nested tool failure');
+        $bridge = $this->bridgeWithToolbox(static function () use ($original): never {
+            throw $original;
+        });
+
+        try {
+            $method = new \ReflectionMethod(CodeModeHostBridge::class, 'handleToolRequest');
+            $method->invoke($bridge, $host, ['id' => 'failure', 'name' => 'noop'], null, new NullCancellationToken(), 10, hrtime(true), null);
+            $this->fail('Expected the nested tool to fail.');
+        } catch (ToolCallException $exception) {
+            $this->assertSame($original, $exception->getPrevious());
+            $this->assertStringContainsString($original->getMessage(), $exception->getMessage());
+            $this->assertFalse($exception->retryable());
+        } finally {
+            fclose($host);
+        }
+    }
+
+    public function testBlockedSocketWaitRetainsDeadlineAndCancellationOwnership(): void
+    {
+        [$host, $peer] = stream_socket_pair(\STREAM_PF_UNIX, \STREAM_SOCK_STREAM, 0);
+        $process = new Process(['unused']);
+        $method = new \ReflectionMethod(CodeModeHostBridge::class, 'waitWhileBlocked');
+        $cancelled = new class implements CancellationTokenInterface {
+            public function isCancellationRequested(): bool
+            {
+                return true;
+            }
+        };
+
+        try {
+            foreach ([[new NullCancellationToken(), hrtime(true) - 2_000_000_000, 'timed out'], [$cancelled, hrtime(true), 'cancelled']] as [$token, $startedAt, $message]) {
+                try {
+                    $method->invoke($this->bridge(), $host, $process, $token, 1, $startedAt, false);
+                    $this->fail('Expected the existing host wait guard to terminate.');
+                } catch (ToolCallException $exception) {
+                    $this->assertStringContainsString($message, $exception->getMessage());
+                }
+            }
+        } finally {
+            fclose($host);
+            fclose($peer);
+        }
+    }
+
+    public function testNestedToolWaitIsIndependentOfPhpDefaultSocketTimeout(): void
+    {
+        if ('Linux' !== \PHP_OS_FAMILY || !is_readable('/proc/self/status')) {
+            $this->markTestSkipped('Pending-read readiness requires readable Linux process status.');
+        }
+        // Only the spawned CLI reads this disposable additional ini directory.
+        $this->assertSame($this->tmpDir, realpath($this->tmpDir));
+        $this->assertFalse(is_link($this->tmpDir));
+        file_put_contents($this->tmpDir.'/socket-timeout.ini', "default_socket_timeout=0\n");
+        $previous = getenv('PHP_INI_SCAN_DIR');
+        $previousEnv = $_ENV;
+        $previousServer = $_SERVER;
+        $scanned = php_ini_scanned_files();
+        $directories = false === $scanned ? [] : array_unique(array_map(\dirname(...), preg_split('/,\\s*/', trim($scanned)) ?: []));
+        $_ENV['PHP_INI_SCAN_DIR'] = $_SERVER['PHP_INI_SCAN_DIR'] = implode(\PATH_SEPARATOR, [...$directories, $this->tmpDir]);
+        putenv('PHP_INI_SCAN_DIR='.$_ENV['PHP_INI_SCAN_DIR']);
+        $calls = [];
+        $pidMarker = $this->tmpDir.'/script.pid';
+        $readinessUnsupported = false;
+
+        try {
+            $bridge = $this->bridgeWithToolbox(function (string $name) use (&$calls, $pidMarker, &$readinessUnsupported): void {
+                $calls[] = $name;
+                $pid = (int) file_get_contents($pidMarker);
+                $this->assertGreaterThan(1, $pid);
+                $statusPath = '/proc/'.$pid.'/status';
+                if (!is_readable($statusPath)) {
+                    $readinessUnsupported = true;
+
+                    return;
+                }
+
+                // The request is already received; this child has no other
+                // blocking operations. Withhold the reply until it is sleeping
+                // in its socket read, rather than relying on a delayed reply.
+                $pending = new DeferredFuture();
+                $watcher = EventLoop::repeat(0.001, static function () use ($statusPath, $pending): void {
+                    if ($pending->isComplete()) {
+                        return;
+                    }
+                    $status = @file_get_contents($statusPath);
+                    if (false === $status || preg_match('/^State:\\s+[ZX]\\b/m', $status)) {
+                        $pending->error(new \RuntimeException('Script exited before waiting for the tool reply.'));
+                    } elseif (preg_match('/^State:\\s+S\\b/m', $status)) {
+                        $pending->complete(true);
+                    }
+                });
+                try {
+                    // Safety cap only; the process-state predicate releases us.
+                    $this->assertTrue($pending->getFuture()->await(new TimeoutCancellation(2)));
+                } finally {
+                    EventLoop::cancel($watcher);
+                }
+            });
+            $this->assertSame(['socket_timeout' => '0', 'result' => null], $this->runScript($bridge, 'file_put_contents('.var_export($pidMarker, true).', (string) getmypid()); return ["socket_timeout" => ini_get("default_socket_timeout"), "result" => tool("noop")];'));
+            if ($readinessUnsupported) {
+                $this->markTestSkipped('Child process status is not readable in this environment.');
+            }
+            $this->assertSame(['noop'], $calls);
+        } finally {
+            putenv(false === $previous ? 'PHP_INI_SCAN_DIR' : 'PHP_INI_SCAN_DIR='.$previous);
+            $_ENV = $previousEnv;
+            $_SERVER = $previousServer;
+        }
+    }
+
+    public function testScriptFailureSurvivesAnUndeliverableReturnFrame(): void
+    {
+        try {
+            $this->runScript($this->bridge(), 'global $connection; stream_socket_shutdown($connection, STREAM_SHUT_RDWR); throw new RuntimeException("original script failure");');
+            $this->fail('Expected the disconnected child to fail.');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('original script failure', $exception->getMessage());
+            $this->assertStringContainsString('Code-mode failed to deliver its error result', $exception->getMessage());
         }
     }
 
@@ -955,9 +1144,7 @@ PHP);
 
                     public function execute(ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
                     {
-                        ($this->executor)($toolCall->getName());
-
-                        return new \Symfony\AI\Agent\Toolbox\ToolResult($toolCall, null);
+                        return new \Symfony\AI\Agent\Toolbox\ToolResult($toolCall, ($this->executor)($toolCall->getName()));
                     }
                 };
             }

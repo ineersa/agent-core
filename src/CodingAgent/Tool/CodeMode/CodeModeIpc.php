@@ -22,6 +22,16 @@ final class CodeModeIpc
      */
     public static function write(mixed $stream, array $payload, ?callable $onWait = null): void
     {
+        self::writeAll($stream, self::encode($payload), $onWait);
+    }
+
+    /**
+     * Prepare the complete frame before attempting any transport writes.
+     *
+     * @param array<string, mixed> $payload
+     */
+    public static function encode(array $payload): string
+    {
         $payload = CodeModeValueCodec::assertEncodable($payload, 'Code-mode frame');
         $json = json_encode($payload, \JSON_THROW_ON_ERROR);
         $length = \strlen($json);
@@ -29,7 +39,7 @@ final class CodeModeIpc
             throw new \RuntimeException(\sprintf('Code-mode IPC frame exceeds %d bytes.', self::MAX_FRAME_BYTES));
         }
 
-        self::writeAll($stream, pack('N', $length).$json, $onWait);
+        return pack('N', $length).$json;
     }
 
     /**
@@ -73,7 +83,7 @@ final class CodeModeIpc
      * @param resource                $stream
      * @param (callable(): void)|null $onWait
      */
-    private static function writeAll(mixed $stream, string $data, ?callable $onWait): void
+    public static function writeAll(mixed $stream, string $data, ?callable $onWait = null): void
     {
         $offset = 0;
         $length = \strlen($data);
