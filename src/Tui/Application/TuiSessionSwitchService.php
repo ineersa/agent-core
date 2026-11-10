@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Contract\ProcessReloadIntentDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Tui;
@@ -197,10 +198,10 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
             return;
         }
 
-        // Never cancel terminal runs — they are already done and the
-        // cancel would poison them with a Cancelling status, blocking
-        // all future commands (continue, follow_up, steer).
-        if ($this->state->activity->isTerminal()) {
+        // History selection leaves the run idle. Idle/terminal runs have
+        // nothing to cancel; preserve cancellation during compaction, which
+        // is deliberately excluded from isActive() for steer routing.
+        if (RunActivityStateEnum::Idle === $this->state->activity || $this->state->activity->isTerminal()) {
             return;
         }
 

@@ -194,12 +194,17 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         $state->activity = \Ineersa\Tui\Runtime\RunActivityStateEnum::Completed;
         $state->sessionReady = true;
         $client = $container->get(\Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient::class);
+        $snapshot = $container->get(\Ineersa\CodingAgent\Session\SessionTranscriptProvider::class)->transcriptAtPosition($run, 80);
+        $state->applyTranscriptChangeSet(\Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet::full($snapshot->transcriptBlocks));
+        $harness->screen()->setTranscriptBlocks($state->transcript);
+        $this->assertStringContainsString('A2_LAST_ANSWER', $harness->plainScreenText());
         $services = $container->get(\Ineersa\Tui\Application\TuiSessionCompositionFactory::class)->create($harness->tui(), $harness->screen(), $state, $client);
         $history = $container->get(HistoryProviderInterface::class);
         $ticks = new \Ineersa\Tui\Runtime\TuiTickDispatcher();
         $context = new \Ineersa\Tui\Runtime\TuiRuntimeContext($harness->tui(), $client, $state, $harness->screen(), $sessions, $ticks, $services->switch, new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(), $history, $services);
         (new \Ineersa\Tui\Listener\TickPollListener(new \Ineersa\Tui\Listener\RuntimeQuestionEventHandler()))->register($context);
-        $consumeSelection = function (int $turn, string $role) use ($container, $ticks, $state): void {
+        $harness->tui()->onTick($ticks->dispatch(...));
+        $consumeSelection = function (int $turn, string $role) use ($container, $harness, $state): void {
             $sent = $container->get('messenger.transport.run_control')->getSent();
             $envelope = $sent[array_key_last($sent)];
             $command = $envelope->getMessage();
@@ -211,10 +216,20 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
             $this->assertSame('run.history_position_changed', $reply->type, json_encode($reply->payload, \JSON_THROW_ON_ERROR));
             // Drive an eligible tick without depending on the 15ms poll throttle.
             $state->lastPoll = 0.0;
-            $ticks->dispatch(new \Symfony\Component\Tui\Event\TickEvent());
+            $harness->tui()->tick();
+            $harness->tui()->processRender();
+        };
+        // Do not force a render: prove the native tick invalidates the visible frame.
+        $visibleTranscript = static function () use ($harness): string {
+            $buffer = new \Symfony\Component\Tui\Terminal\ScreenBuffer(width: 120, height: 40);
+            $buffer->write($harness->terminal()->getOutput());
+
+            return $buffer->getScreen();
         };
         (new HistoryCommandHandler($services->historyPicker))->handle(new SlashCommand('history', '', '/history'));
         $pickerText = $harness->plainScreenText();
+        // Inspect only the overlay; the mounted conversation also shows commentary.
+        $pickerText = substr($pickerText, strpos($pickerText, 'Session history —'));
         $this->assertStringContainsString('user: U1_FIRST_PROMPT', $pickerText);
         $this->assertStringContainsString('assistant: A1_FINAL_ANSWER', $pickerText);
         $this->assertStringContainsString('◉ assistant: A2_LAST_ANSWER', $pickerText);
@@ -231,6 +246,9 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         $this->assertContains('A1_FINAL_ANSWER', $texts);
         $this->assertNotContains('A2_LAST_ANSWER', $texts);
         $this->assertNotContains($nextPrompt, $texts);
+        $visible = $visibleTranscript();
+        $this->assertStringContainsString('A1_FINAL_ANSWER', $visible);
+        $this->assertStringNotContainsString('A2_LAST_ANSWER', $visible);
         $registry = $container->get(\Ineersa\AgentCore\Contract\ActiveRunContextInterface::class);
         $selected = $registry->requireLoaded($run);
         $this->assertSame(100, $selected->turnNo);
@@ -249,6 +267,7 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         $consumeSelection(80, 'assistant');
         $this->assertSame('', $harness->screen()->editorText());
         $this->assertContains('A2_LAST_ANSWER', array_column($state->transcript, 'text'));
+        $this->assertStringContainsString('A2_LAST_ANSWER', $visibleTranscript());
         // Selecting U1 still positions before U1 and prefills U1.
         $services->historyPicker->open(after: 0);
         for ($i = 0; $i < 3; ++$i) {
@@ -258,6 +277,8 @@ final class TuiHistoryPickerOverlayVirtualTest extends PerMethodIsolatedKernelTe
         $consumeSelection(100, 'user');
         $this->assertSame('U1_FIRST_PROMPT', $harness->screen()->editorText());
         $this->assertSame([], $state->transcript);
+        $this->assertStringNotContainsString('A1_FINAL_ANSWER', $visibleTranscript());
+        $this->assertStringNotContainsString('A2_LAST_ANSWER', $visibleTranscript());
         // Return to A1 before editing U2. Only mutation discards the forward branch.
         $services->historyPicker->open(after: 0);
         $harness->tui()->handleInput("\x1b[B");
