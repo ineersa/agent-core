@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Tests\Extension;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
-use Ineersa\HatfieldExt\FileRewind\FileRewindConfig;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticSettings;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
@@ -21,7 +20,7 @@ final class ExtensionConfigurationTest extends TestCase
     public function testExtensionOwnedDefinitionsLoadAndValidateThroughTheNativeProcessor(): void
     {
         $extensions = [new SafeGuardExtension()];
-        foreach (['file-rewind', 'task-workflow', 'observational-memory'] as $package) {
+        foreach (['task-workflow', 'observational-memory'] as $package) {
             $manifest = json_decode(file_get_contents(ProjectDir::get().'/.hatfield/extensions/'.$package.'/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
             $class = $manifest['extra']['hatfield']['extension'];
             $extension = new $class();
@@ -34,14 +33,14 @@ final class ExtensionConfigurationTest extends TestCase
             $definition = $extension->getConfiguration();
             $definitions[$definition->getConfigTreeBuilder()->buildTree()->getName()] = $definition;
         }
-        $this->assertCount(4, $definitions);
+        $this->assertSame(['safe_guard', 'task_workflow', 'observational_memory'], array_keys($definitions));
         $processor = new Processor();
         $patterns = ['echo hello, world', '  literal spacing  ', 'quote " and \\'];
         $safeGuard = $processor->processConfiguration($definitions['safe_guard'], [['allow_command_patterns' => $patterns, 'tool_names' => ['bash' => 'shell']]]);
         $this->assertSame($patterns, $safeGuard['allow_command_patterns']);
         $this->assertSame(['bash' => 'shell'], $safeGuard['tool_names']);
-        $rewind = FileRewindConfig::fromSettings($processor->processConfiguration($definitions['file_rewind'], [[]]));
-        $this->assertSame(FileRewindConfig::DEFAULT_MAX_RETAINED_TURNS, $rewind->maxRetainedTurns);
+        $workflowDefaults = TaskWorkflowSettings::fromArray($processor->processConfiguration($definitions['task_workflow'], [[]]));
+        $this->assertNull($workflowDefaults->taskRoot);
         $workflow = TaskWorkflowSettings::fromArray($processor->processConfiguration($definitions['task_workflow'], [['task_root' => '/tmp/board']]));
         $this->assertSame('/tmp/board', $workflow->taskRoot);
 

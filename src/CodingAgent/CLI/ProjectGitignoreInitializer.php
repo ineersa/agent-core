@@ -17,7 +17,6 @@ cache/
 cache-*/
 logs/
 extensions-data/
-rewind/
 state.sqlite*
 messenger-transport.sqlite*
 messenger.sqlite*
