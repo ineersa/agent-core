@@ -73,7 +73,7 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
         $screen = $harness->screen();
         $tui = $harness->tui();
         $picker = new HistoryPickerController($tui, $screen, $state, $provider, $this->createStub(TuiSessionSwitchServiceInterface::class));
-        $screen->setTransientStatus('rewind', 'File rewind requires an active session.');
+        $screen->setTransientStatus('fixture', 'Previous command notice.');
         $catalog = new SlashCommandCatalog();
         (new \Ineersa\Tui\Listener\HistoryCommandRegistrar())->registerCatalog($catalog);
         $registry = new SlashCommandRegistry($catalog);
@@ -84,12 +84,12 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
 
         $tui->setFocus($screen->editorWidget());
         $tui->handleInput("\r");
-        $this->assertStringContainsString('File rewind requires an active session.', $harness->plainScreenText());
+        $this->assertStringContainsString('Previous command notice.', $harness->plainScreenText());
         $tui->handleInput('/history');
-        $this->assertStringContainsString('File rewind requires an active session.', $harness->plainScreenText());
+        $this->assertStringContainsString('Previous command notice.', $harness->plainScreenText());
         $tui->handleInput("\r");
         $text = $harness->plainScreenText();
-        $this->assertStringNotContainsString('File rewind requires an active session.', $text);
+        $this->assertStringNotContainsString('Previous command notice.', $text);
         $this->assertStringContainsString('Session has no conversation history yet', $text);
         $tui->handleInput('/unknown-command');
         $tui->handleInput("\r");

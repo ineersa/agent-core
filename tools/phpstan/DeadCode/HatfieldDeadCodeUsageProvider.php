@@ -75,9 +75,9 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
             return VirtualUsageData::withNote('Published ExtensionApiInterface method with no current extension callers');
         }
 
-        // Third-party extensions can still publish startup warnings through the
-        // public TUI contract even without a bundled extension using this method.
-        if ('setExtensionWarning' === $method->getName()
+        // External extensions consume these exact public TUI methods even when
+        // no bundled extension calls them; keep internal methods analyzable.
+        if (\in_array($method->getName(), ['setExtensionWarning', 'formatMuted', 'formatRolePrefix', 'turnRowsInDisplayOrder'], true)
             && $method->getDeclaringClass()->implementsInterface(TuiExtensionContextInterface::class)) {
             return VirtualUsageData::withNote('Published TuiExtensionContextInterface method with no current extension callers');
         }

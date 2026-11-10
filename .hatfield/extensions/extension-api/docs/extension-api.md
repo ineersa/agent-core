@@ -65,7 +65,7 @@ Focused references: [extension-api-tools.md](extension-api-tools.md),
 
 ## Settings and CWD
 
-`getSettings('file_rewind')` returns `extensions.settings.file_rewind` (array, possibly empty).
+`getSettings('task_workflow')` returns `extensions.settings.task_workflow` (array, possibly empty).
 Paths should resolve against `getCwd()`, not the extension install path, unless you intentionally use `__DIR__` for package assets.
 
 ## Skills

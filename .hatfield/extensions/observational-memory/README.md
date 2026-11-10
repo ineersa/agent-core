@@ -139,7 +139,7 @@ composer update ineersa/hatfield-ext-observational-memory
 - **Source refs** stay SQLite-only; compact summaries do not include footnotes.
   Model-facing compacted-memory IDs are lowercase first-12-char prefixes (same as `/om-view`);
   full SHA-256 identities remain in SQLite/generation links only.
-- **Session-global MVP:** non-branch-aware. Rewind (package-local) does not rewind the OM pool.
+- **Session-global MVP:** non-branch-aware. Conversation history navigation does not roll back the OM pool.
 - **Delivery gap:** events and OM SQLite can diverge after worker loss; later turn
   boundaries advance Observer coverage asynchronously.
 
