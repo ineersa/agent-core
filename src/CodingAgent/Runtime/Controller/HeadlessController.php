@@ -23,6 +23,9 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\LockInterface;
 
+use function Amp\ByteStream\getStdin;
+use function Amp\ByteStream\splitLines;
+
 /**
  * Non-blocking headless controller using Revolt event loop.
  *
@@ -207,35 +210,31 @@ final class HeadlessController
             payload: ['version' => '1.0', 'transport' => 'controller'],
         ));
 
-        // Non-blocking stdin: read JSONL commands from TUI.
-        EventLoop::onReadable(\STDIN, function (string $watcherId, $stream): void {
-            if ($this->shuttingDown) {
-                return;
+        // Amp drains buffered lines as well as native readability. A single
+        // fgets per readiness callback can strand the second command from a
+        // cancel + history-select write inside PHP's stream buffer.
+        EventLoop::queue(function (): void {
+            foreach (splitLines(getStdin()) as $line) {
+                if ($this->shuttingDown) {
+                    return;
+                }
+
+                $trimmed = trim($line);
+                if ('' !== $trimmed) {
+                    $this->handleCommandLine($trimmed);
+                }
             }
 
-            $line = fgets($stream);
-            if (false === $line) {
-                // EOF or error — the parent TUI process has disconnected
-                // (crash, SIGKILL, terminal close).  If we only cancel the
-                // watcher, the event loop and consumer subprocesses will
-                // continue running as orphans consuming resources silently.
+            if (!$this->shuttingDown) {
+                // The parent TUI has disconnected. Shut down the owned workers
+                // rather than leaving the controller event loop running orphaned.
                 $this->logger->warning('Controller stdin EOF — parent process disconnected, shutting down', [
                     'component' => 'HeadlessController',
                     'event_type' => 'stdin_eof',
                     'session_id' => $this->sessionId,
                 ]);
-                EventLoop::cancel($watcherId);
                 $this->shutdown();
-
-                return;
             }
-
-            $trimmed = trim($line);
-            if ('' === $trimmed) {
-                return;
-            }
-
-            $this->handleCommandLine($trimmed);
         });
 
         // Poll all messenger consumer stdout pipes for committed + streaming RuntimeEvents.

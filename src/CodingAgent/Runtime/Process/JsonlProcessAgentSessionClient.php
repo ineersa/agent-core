@@ -464,6 +464,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'shell_command' => ['text' => $command->text],
             'select_history_turn' => array_filter([
                 'turn_no' => $command->payload['turn_no'] ?? null,
+                'role' => $command->payload['role'] ?? null,
             ], static fn (mixed $v): bool => null !== $v),
             default => array_filter([
                 'text' => $command->text,

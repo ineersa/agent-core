@@ -27,7 +27,16 @@ final class ControllerReplayHistorySelectionTest extends ControllerReplayE2eTest
         $secondTypes = $this->indexByType($second);
         $this->assertArrayHasKey('run.completed', $secondTypes, $this->collectDiagnostics($second));
         $secondTurn = $secondTypes['turn.started'][0]['payload']['turn_no'];
-        $this->writeCommand(['v' => 1, 'id' => 'select-answer', 'type' => 'select_history_turn', 'runId' => $run, 'payload' => ['turn_no' => $firstTurn, 'role' => 'assistant']]);
+        // Native history navigation can cancel and select back-to-back. A single
+        // pipe write must dispatch both lines without needing a third command
+        // to wake stdin. The deadline below is a safety cap for the event proof.
+        $commands = [
+            ['v' => 1, 'id' => 'cancel-before-select', 'type' => 'cancel', 'runId' => $run],
+            ['v' => 1, 'id' => 'select-answer', 'type' => 'select_history_turn', 'runId' => $run, 'payload' => ['turn_no' => $firstTurn, 'role' => 'assistant']],
+        ];
+        $batch = implode("\n", array_map(static fn (array $command): string => json_encode($command, \JSON_THROW_ON_ERROR), $commands))."\n";
+        $this->assertSame(\strlen($batch), fwrite($this->pipes[0], $batch));
+        fflush($this->pipes[0]);
         $selected = $this->collectEventsUntil('run.history_position_changed', 5.0);
         $selectedTypes = $this->indexByType($selected);
         $this->assertArrayHasKey('run.history_position_changed', $selectedTypes, $this->collectDiagnostics($selected));
