@@ -125,6 +125,7 @@ final class SessionSwitchServiceTest extends TestCase
 
         $state = new TuiSessionState('old', false);
         $state->handle = new RunHandle('old-run-id', 'running');
+        $state->activity = RunActivityStateEnum::Running;
 
         $service = $this->createService($state, $client);
 
@@ -226,6 +227,7 @@ final class SessionSwitchServiceTest extends TestCase
 
         $state = new TuiSessionState('old', false);
         $state->handle = new RunHandle('old-run-id', 'running');
+        $state->activity = RunActivityStateEnum::Running;
 
         $service = $this->createService($state, $client, $logger);
 
@@ -239,12 +241,21 @@ final class SessionSwitchServiceTest extends TestCase
 
     // ── selectHistoryTurn ────────────────────────────────────────────────────
 
-    public function testSelectHistoryTurnSendsCommand(): void
+    /** @return iterable<string, array{RunActivityStateEnum, int}> */
+    public static function historySelectionActivityStates(): iterable
     {
-        // Thesis: selectHistoryTurn cancels the current run and sends
-        // a select_history_turn UserCommand with the correct turn_no.
+        yield 'idle after prior selection' => [RunActivityStateEnum::Idle, 0];
+        yield 'completed' => [RunActivityStateEnum::Completed, 0];
+        yield 'running' => [RunActivityStateEnum::Running, 1];
+        yield 'compaction remains cancellable' => [RunActivityStateEnum::Compacting, 1];
+    }
+
+    #[DataProvider('historySelectionActivityStates')]
+    public function testSelectHistoryTurnSendsCommand(RunActivityStateEnum $activity, int $cancels): void
+    {
+        // Cancel work only when needed, then send the selected history entry.
         $client = $this->createMock(AgentSessionClient::class);
-        $client->expects($this->once())
+        $client->expects($this->exactly($cancels))
             ->method('cancel')
             ->with('test-run-id');
         $client->expects($this->once())
@@ -258,6 +269,7 @@ final class SessionSwitchServiceTest extends TestCase
 
         $state = new TuiSessionState('test', false);
         $state->handle = new RunHandle('test-run-id', 'running');
+        $state->activity = $activity;
 
         $service = $this->createService($state, $client);
 
