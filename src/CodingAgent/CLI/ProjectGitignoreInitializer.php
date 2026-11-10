@@ -17,6 +17,7 @@ cache/
 cache-*/
 logs/
 extensions-data/
+# Retained global extensions may still create snapshots after host upgrades.
 rewind/
 state.sqlite*
 messenger-transport.sqlite*

@@ -12,7 +12,6 @@ parameters:
     - ./src
     - .hatfield/extensions/extension-api/src
     - .hatfield/extensions/task-workflow/src
-    - .hatfield/extensions/file-rewind/src
     - .hatfield/extensions/observational-memory/src
   exclude_files:
     - .*\.test\.php$
@@ -159,11 +158,6 @@ parameters:
         - type: classNameRegex
           value: '#^Ineersa\\HatfieldExt\\TaskWorkflow\\#'
 
-
-    - name: HatfieldExtFileRewind
-      collectors:
-        - type: classNameRegex
-          value: '#^Ineersa\\HatfieldExt\\FileRewind\\#'
 
     - name: HatfieldExtObservationalMemory
       collectors:
@@ -848,9 +842,6 @@ parameters:
       - AppExtensionApi
       - HatfieldExtTaskWorkflow
       - SymfonyYaml
-    HatfieldExtFileRewind:
-      - AppExtensionApi
-      - SymfonyTui
     # OM may use ExtensionApi + vendor libs, including its optional retrieval stores.
     # Vendor packages are not Deptrac layers; only forbid project-layer leakage.
     HatfieldExtObservationalMemory:

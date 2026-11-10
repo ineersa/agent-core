@@ -25,4 +25,5 @@ messenger.sqlite
 messenger.sqlite-journal
 messenger.sqlite-wal
 messenger.sqlite-shm
+# Keep retained legacy snapshots out of project commits.
 rewind/

@@ -32,7 +32,7 @@ final class ChildExtensionSelectionServiceTest extends TestCase
     {
         $always = 'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension';
         $optional = 'Ineersa\\HatfieldExt\\TaskWorkflow\\TaskWorkflowExtension';
-        $globalOnly = 'Ineersa\\HatfieldExt\\FileRewind\\FileRewindExtension';
+        $globalOnly = 'Ineersa\\HatfieldExt\\ObservationalMemory\\ObservationalMemoryExtension';
 
         $service = $this->service(
             agentsAlwaysOn: [$always, $optional],
@@ -54,17 +54,17 @@ final class ChildExtensionSelectionServiceTest extends TestCase
     public function testForkUnionUsesEnabledNotGlobal(): void
     {
         $always = 'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension';
-        $fileRewind = 'Ineersa\\HatfieldExt\\FileRewind\\FileRewindExtension';
+        $workflow = 'Ineersa\\HatfieldExt\\TaskWorkflow\\TaskWorkflowExtension';
         $globalOnly = 'Ineersa\\HatfieldExt\\ObservationalMemory\\ObservationalMemoryExtension';
 
         $service = $this->service(
             agentsAlwaysOn: [$always],
             forksAlwaysOn: [$always],
-            forksEnabled: [$fileRewind],
-            globallyEnabled: [$always, $fileRewind, $globalOnly],
+            forksEnabled: [$workflow],
+            globallyEnabled: [$always, $workflow, $globalOnly],
         );
 
-        $this->assertSame([$always, $fileRewind], $service->resolveForFork());
+        $this->assertSame([$always, $workflow], $service->resolveForFork());
     }
 
     public function testAssertSelectedAvailableFailsWhenNotGloballyEnabled(): void

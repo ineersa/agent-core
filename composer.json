@@ -4,7 +4,6 @@
     "license": "MIT",
     "description": "Monorepo for the agent-core ecosystem, consolidated into a single modular monolith.",
     "suggest": {
-        "ineersa/hatfield-ext-file-rewind": "File Rewind",
         "ineersa/hatfield-ext-task-workflow": "Task Workflow",
         "ineersa/hatfield-ext-observational-memory": "Observational Memory"
     },
@@ -181,7 +180,6 @@
             "DoctrineMigrations\\": "migrations/application/",
             "Ineersa\\Platform\\": "src/Platform/",
             "Ineersa\\HatfieldExt\\TaskWorkflow\\": ".hatfield/extensions/task-workflow/src/",
-            "Ineersa\\HatfieldExt\\FileRewind\\": ".hatfield/extensions/file-rewind/src/",
             "Ineersa\\HatfieldExt\\ObservationalMemory\\": ".hatfield/extensions/observational-memory/src/"
         },
         "classmap": [
@@ -195,7 +193,6 @@
             "Ineersa\\Tui\\Tests\\": "tests/Tui/",
             "Ineersa\\Platform\\Tests\\": "tests/Platform/",
             "Ineersa\\HatfieldExt\\TaskWorkflow\\Tests\\": ".hatfield/extensions/task-workflow/tests/",
-            "Ineersa\\HatfieldExt\\FileRewind\\Tests\\": ".hatfield/extensions/file-rewind/tests/",
             "Ineersa\\HatfieldExt\\ObservationalMemory\\Tests\\": ".hatfield/extensions/observational-memory/tests/",
             "Ineersa\\Tools\\PHPStan\\": "tools/phpstan/"
         }

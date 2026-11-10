@@ -268,8 +268,6 @@ jobs:
             repository: hatfield-extension-api
           - directory: .hatfield/extensions/task-workflow
             repository: hatfield-ext-task-workflow
-          - directory: .hatfield/extensions/file-rewind
-            repository: hatfield-ext-file-rewind
           - directory: .hatfield/extensions/observational-memory
             repository: hatfield-ext-observational-memory
     steps:

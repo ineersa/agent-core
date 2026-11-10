@@ -856,12 +856,12 @@ Body
         $with = $this->validFrontmatter();
         $with['extensions'] = [
             'Ineersa\\HatfieldExt\\TaskWorkflow\\TaskWorkflowExtension',
-            'Ineersa\\HatfieldExt\\FileRewind\\FileRewindExtension',
+            'Ineersa\\HatfieldExt\\ObservationalMemory\\ObservationalMemoryExtension',
         ];
         $dto = $this->rawParse($this->wrapContent($with, "body\n"));
         $this->assertSame([
             'Ineersa\\HatfieldExt\\TaskWorkflow\\TaskWorkflowExtension',
-            'Ineersa\\HatfieldExt\\FileRewind\\FileRewindExtension',
+            'Ineersa\\HatfieldExt\\ObservationalMemory\\ObservationalMemoryExtension',
         ], $dto->extensions);
 
         $minimal = $this->rawParse($this->wrapContent([

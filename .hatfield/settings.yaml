@@ -12,11 +12,8 @@ extensions:
     enabled:
         - Ineersa\CodingAgent\Extension\Builtin\Scheduling\SchedulingExtension
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
-        - Ineersa\HatfieldExt\FileRewind\FileRewindExtension
         - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
     settings:
-        file_rewind:
-            enabled: false
         task_workflow:
             task_root: /home/ineersa/projects/agent-core-tasks
         observational_memory:

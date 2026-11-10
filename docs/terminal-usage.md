@@ -110,6 +110,6 @@ arbitrary call-level cancellation. See [MCP](mcp.md).
 ## Continue saved work
 
 Use `/resume` to reopen a session and rebuild its transcript. `/history` changes the
-conversation position, not files on disk. File rewind requires a separate extension.
+conversation position, not files on disk.
 See [sessions](session-storage.md) for storage locations, backups, recovery limits,
 and explicit repair safety. For long conversations, see [compaction](compaction.md).

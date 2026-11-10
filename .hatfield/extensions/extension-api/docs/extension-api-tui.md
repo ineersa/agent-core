@@ -29,7 +29,7 @@ That is part of the public API. Do **not** depend on in-repo `Ineersa\Tui\*` cla
 - `requestRender` / `getSessionId`
 - `formatMuted` / `formatRolePrefix` — themed text helpers for pickers
 - `turnRowsInDisplayOrder($sessionId)` — **read-only** retained user-prompt rows
-  (`turnNo`, `title`, `displayRole`) for history/rewind pickers
+  (`turnNo`, `title`, `displayRole`) for session-history pickers
 
 There is no footer-segment API and no API to retain/write transcript rows from this context.
 Extensions must not mutate core transcript widgets directly.
