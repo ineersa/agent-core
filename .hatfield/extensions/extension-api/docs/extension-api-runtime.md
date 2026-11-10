@@ -9,7 +9,7 @@ description: Commands, prompts, exec, session events, compaction hooks, lifecycl
 
 ```php
 $api->registerCommand(
-    new CommandDefinitionDTO(name: 'rewind', description: '…', usage: '/rewind'),
+    new CommandDefinitionDTO(name: 'review', description: 'Review the current session', usage: '/review'),
     $handler, // ExtensionCommandHandlerInterface
 );
 ```

@@ -188,8 +188,8 @@ New session creation uses atomic exclusive `mkdir` of the leaf session path and 
 
 `/history` lists user prompts and final assistant answers in retained conversation
 order, with a role prefix on each row. Reasoning, commentary and intermediate
-tool-call responses are not selectable answers. File restore remains separate in
-the extension-owned `/rewind` command.
+tool-call responses are not selectable answers. History navigation changes conversation
+context, not files on disk.
 
 Selected history position and retained-history replay are derived from the canonical event stream; details of projection live in the TUI/runtime implementation.
 

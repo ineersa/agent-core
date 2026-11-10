@@ -24,6 +24,7 @@ final class ProjectGitignoreInitializerTest extends TestCase
             $this->assertStringContainsString("sessions/\n", $rules);
             $this->assertStringContainsString("tmp/\n", $rules);
             $this->assertStringContainsString("cache-*/\n", $rules);
+            $this->assertStringContainsString("\nrewind/\n", $rules);
             $this->assertStringContainsString("state.sqlite*\n", $rules);
             $this->assertStringNotContainsString("\nsettings.yaml\n", $rules);
         } finally {

@@ -139,7 +139,7 @@ those scripts bypasses toolbox hooks, and any launcher sandbox such as
 `hatfield-safe` is inherited rather than added by the tool. See the
 [tool catalog](docs/tools.md) and [settings](docs/settings.md).
 
-Optional extension packages provide task workflow, file rewind, and observational
+Optional extension packages provide task workflow and observational
 memory. Installing and enabling extensions is separate from launching the agent.
 See [extension settings](docs/settings-agents.md) and the
 [public Extension API](.hatfield/extensions/extension-api/docs/extension-api.md).

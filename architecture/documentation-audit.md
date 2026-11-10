@@ -55,7 +55,6 @@ Snapshot from the Markdown audit at `9f744008c`. Historical and imported documen
 | `.hatfield/extensions/extension-api/docs/extension-api-tools.md` | audited-accurate |
 | `.hatfield/extensions/extension-api/docs/extension-api-tui.md` | audited-accurate |
 | `.hatfield/extensions/extension-api/docs/extension-api.md` | corrected |
-| `.hatfield/extensions/file-rewind/README.md` | audited-accurate |
 | `.hatfield/extensions/observational-memory/README.md` | audited-accurate |
 | `.hatfield/extensions/task-workflow/README.md` | audited-accurate |
 | `.hatfield/extensions/task-workflow/skills/task-workflow/SKILL.md` | audited-accurate |
@@ -93,7 +92,6 @@ Snapshot from the Markdown audit at `9f744008c`. Historical and imported documen
 | `.pi/plans/openai-codex-bridge.md` | historic-leave |
 | `.pi/plans/prompt-templates-implementation-plan.md` | historic-leave |
 | `.pi/plans/runtime-transcript-vertical-slice-plan.md` | historic-leave |
-| `.pi/plans/session-08-hidden-git-file-rewind-plan.md` | historic-leave |
 | `.pi/plans/subagent-live-child-replay-stream-plan.md` | historic-leave |
 | `.pi/plans/symfony_ai_platform_integration_plan.md` | historic-leave |
 | `.pi/plans/test-suite-rationalization-inventory.md` | historic-leave |

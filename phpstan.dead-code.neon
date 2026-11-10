@@ -77,5 +77,4 @@ parameters:
                 devPaths:
                     - %currentWorkingDirectory%/tests
                     - %currentWorkingDirectory%/.hatfield/extensions/task-workflow/tests
-                    - %currentWorkingDirectory%/.hatfield/extensions/file-rewind/tests
                     - %currentWorkingDirectory%/.hatfield/extensions/observational-memory/tests
