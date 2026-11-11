@@ -52,6 +52,8 @@ use Symfony\Component\Tui\Event\InputEvent;
  */
 final class CompletionListener implements TuiListenerRegistrar
 {
+    private const string BRACKETED_PASTE_START = "\x1b[200~";
+
     public function __construct(
         private readonly CompletionProvider $provider,
     ) {
@@ -65,10 +67,10 @@ final class CompletionListener implements TuiListenerRegistrar
         $editor = $screen->promptEditor();
         $menu = new CompletionMenu($screen->theme());
 
-        // ── Priority 105: close overlay on Ctrl+C / Ctrl+D ──────────
-        // Runs BEFORE CtrlCInputInterceptor (100) so the completion
-        // overlay is torn down cleanly.  Does NOT stop propagation;
-        // CtrlCInputInterceptor still performs clear/quit logic.
+        // ── Priority 105: close overlay on interrupt or paste ───────
+        // Runs BEFORE CtrlCInputInterceptor (100) and image paste (96)
+        // so neither can consume input while leaving stale suggestions.
+        // Does NOT stop propagation; their normal handling still runs.
         $editorWidget = $screen->editorWidget();
         $context->tui->addListener(
             static function (InputEvent $event) use (
@@ -77,13 +79,12 @@ final class CompletionListener implements TuiListenerRegistrar
                 $data = $event->getData();
                 $keys = $editorWidget->getKeybindings();
 
-                if ($keys->matches($data, 'copy') || $keys->matches($data, 'delete_char_forward')) {
+                if (str_contains($data, self::BRACKETED_PASTE_START) || $keys->matches($data, 'copy') || $keys->matches($data, 'delete_char_forward')) {
                     if ($state->isOpen()) {
                         $menu->close($screen);
                         $state->close();
                         $screen->requestRender();
-                        // Do NOT stop propagation — let CtrlCInputInterceptor
-                        // handle clear/quit.
+                        // Do NOT stop propagation — preserve interrupt/paste handling.
                     }
                 }
             },

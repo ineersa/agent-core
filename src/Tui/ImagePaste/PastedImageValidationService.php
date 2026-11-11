@@ -78,6 +78,16 @@ final class PastedImageValidationService
         return new PastedImageValidatedDTO(self::extensionForMime($mediaType));
     }
 
+    public function isSupportedImageFile(string $path): bool
+    {
+        $header = @file_get_contents($path, false, null, 0, 8192);
+        if (false === $header || '' === $header) {
+            return false;
+        }
+
+        return \in_array((new FinfoMimeTypeDetector())->detectMimeTypeFromBuffer($header), self::SUPPORTED_TYPES, true);
+    }
+
     /**
      * Centralizes structured, privacy-safe validation diagnostics for paste-time and submit-time checks.
      *
