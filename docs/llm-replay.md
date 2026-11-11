@@ -1,7 +1,7 @@
 # LLM Replay Fixtures
 
 Deterministic provider/LLM regression without live model calls.
-Visual runtime context: [`../architecture/index.html`](../architecture/index.html) when present.
+Runtime context: [architecture index](../architecture/README.md).
 
 ## Purpose
 

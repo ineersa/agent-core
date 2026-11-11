@@ -21,12 +21,14 @@ keeps the separately published API stable and is not an internal boundary workar
 
 1. Install the extension package under the project `.hatfield/extensions` Composer root (or ship with the monorepo).
 2. List the extension class in `.hatfield/settings.yaml` → `extensions.enabled`.
-3. Start a **new** session — `HatfieldExtensionInterface::register(ExtensionApiInterface $api)` runs at startup.
+3. Restart Hatfield. `HatfieldExtensionInterface::register(ExtensionApiInterface $api)`
+   runs on console command startup in each process, including consumers. `/new`
+   inside a running host does not reload classes. Session-start hooks are a
+   separate interactive-controller lifecycle, not worker-start callbacks.
    Construction, logger injection, and subscriber attachment are **not** fully
    isolated today: a throwing constructor (or uncaught failure outside
-   `register()`) can abort host startup. Treat per-extension degradation as
-   incomplete until the tracked startup-isolation fix lands; do not document a
-   guarantee that every extension failure is contained.
+   `register()`) can abort host startup. Registration is not transactional;
+   do not assume complete per-extension failure isolation or rollback.
 
 ```php
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
@@ -67,6 +69,13 @@ Focused references: [extension-api-tools.md](extension-api-tools.md),
 
 `getSettings('task_workflow')` returns `extensions.settings.task_workflow` (array, possibly empty).
 Paths should resolve against `getCwd()`, not the extension install path, unless you intentionally use `__DIR__` for package assets.
+
+For editable setup fields, implement `ConfigurableExtensionInterface::getConfiguration()`
+with Symfony Config's `ConfigurationInterface`. Its tree root names the
+`extensions.settings` key; use native node defaults, validation and `info()`.
+Set node attribute `hatfield.model_picker` to `true` for a generation-model picker.
+Declare the entry class as Composer `extra.hatfield.extension` so setup can discover
+the package. Configuration inspection does not call `register()`.
 
 ## Skills
 

@@ -32,6 +32,19 @@ to navigate suggestions instead.
 Enter accepts a highlighted completion and submits it. Escape dismisses completion
 or the current overlay before normal run cancellation applies.
 
+## Paste text and images
+
+Ctrl+V attaches an image from the system clipboard when the platform clipboard
+reader is available. Bracketed paste containing only an absolute path to a readable
+supported image also becomes an `[Image #N]` attachment. This supports terminals
+that save clipboard images to files and paste their paths. Hatfield stages its own
+copy; it does not delete the source image. Existing image size/dimension limits
+still apply. Other pasted content remains text.
+
+An existing absolute file/directory path submitted as a message is a normal
+prompt, not a slash command. Missing paths can still parse as slash commands.
+Ordinary prose containing a path does not automatically attach that file.
+
 ## Read tool activity
 
 Tool calls and their results appear in the transcript. Press Ctrl+O to expand or
@@ -45,7 +58,7 @@ The agent can read and edit files and execute commands with your local permissio
 Inspect changes before committing them. Approval policy can block a call or ask you
 to authorize it, but tool access is not a sandbox. See [approvals](approvals.md).
 
-Press Ctrl+B during a `bash`, `subagent`, `fork` or `agent_resume` call to background it.
+Press Ctrl+B during a `bash`, `code_mode`, `subagent`, `fork` or `agent_resume` call to background it.
 Open `/bg` to inspect or cancel background work without a model call, or ask the agent
 to use `bg_status` for background Bash jobs. See
 [background processes](background-processes.md) for ownership and cleanup.

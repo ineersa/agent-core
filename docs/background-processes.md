@@ -1,184 +1,93 @@
 ---
 builtin: true
-description: Background process tracking, logs, stop behavior, and related settings.
+description: Background Bash, PHP scripts and child calls; inspect or stop work; enable and use recurring schedules.
 ---
 
-# Background Processes
+# Background and recurring work
 
-Long-running shell work can detach into tracked background processes so the conversation loop stays responsive.
+## Start background work
 
-Press **Ctrl+B** while a `bash`, `code_mode`, `subagent`, `fork` or `agent_resume` tool runs to move it to background.
-If several eligible invocations are running in the visible session, choose one in the
-picker. Enter or Ctrl+B confirms; Escape cancels. In child live view, the shortcut
-targets eligible work in that child's run rather than its parent's invocation.
-Questions, modal dialogs and completion overlays retain their keyboard handling.
-Without an eligible invocation, Ctrl+B keeps its editor cursor-left behavior.
-Models can set `backgrounded: true` on these five tools to request background launch after startup. Omitted or false keeps foreground behavior. There is no `bg_start` tool.
+Direct `bash`, `code_mode`, `subagent`, `fork` and `agent_resume` calls accept
+`backgrounded: true`. Default `false` waits for their result. Background launch
+returns an acknowledgement after startup; fast completion can win that race.
+There is no `bg_start` tool.
+
+You can also press **Ctrl+B** while eligible foreground work runs. Select a call
+if several are eligible; Enter/Ctrl+B confirms and Escape cancels. In child live
+view it targets the child's work. Dialogs retain their handling; without eligible
+work Ctrl+B keeps its cursor-left behavior.
+
+Completion arrives automatically. Continue independent work, or end the turn;
+do not sleep or poll just to wait. Inspect output only for a concrete decision,
+diagnosis or requested progress check. Backgrounding does not reset timeouts.
+Nested `tool()` calls inside code mode cannot background Bash or another script.
+
+## Inspect and stop
+
+| Interface | Scope |
+|---|---|
+| `/bg` | Main-view picker for accepted Bash jobs and background PHP scripts, including owned children |
+| `bg_status list` | Accepted Bash jobs for the calling session only |
+| `bg_status log` with `pid` | Bounded Bash log tail and full-log reference |
+| `bg_status stop` with `pid` | Stop that accepted Bash process group |
+| `/agents-live` or Ctrl+backslash | Child status/live view; agents and forks are not `/bg` entries |
+
+`/bg` asks for confirmation, default No, then requests stop without blocking the
+terminal through termination grace. Its list is a snapshot: reopen to refresh.
+An unavailable record/reply is an unknown outcome, not confirmed termination or
+permission to signal a guessed PID. Stops still deliver normal completion notices.
+
+Active work appears below the editor; children needing input are marked without
+stealing focus. Completed work leaves this active area; artifacts remain available
+through `agent_retrieve`.
+
+### Ownership and recovery limits
+
+- Bash detaches the same process, never launches a second copy. Its original
+  deadline continues. Only explicitly accepted jobs are visible to `bg_status`.
+- Accepted Bash survives worker recycling, not controller shutdown/restart.
+  Shutdown stops owned jobs but retains native evidence for unresolved replay.
+  Missing exit status does not mean an external action did not happen.
+- Background code mode keeps its PHP stack/socket and original host worker.
+  `/bg` can request cooperative stop. Worker loss cannot restore a lost PHP stack;
+  repair must not rerun the script as a replacement.
+- Background child launch/resume releases the parent's wait; the same child keeps
+  its deadline and later supplies a handoff. Retrieve its existing artifact rather
+  than launching a duplicate. A child Bash completion can be forwarded to the root
+  parent after its owner settles; it does not automatically resume the child.
+- Use Hatfield stop controls, not arbitrary signals to host processes.
+
+Bash settings: `tools.background_process.path` (`.hatfield/tmp/bg`),
+`stop_grace_seconds` (`5`) and `log_tail_chars` (`5000`). See [settings](settings.md).
 
 ## Recurring work: `schedule`
 
-The optional Scheduling extension is disabled by default. Run
-`hatfield extensions:setup`, select **Scheduling (built in)**, enable it for the
-parent, save, and start a new session. While disabled, neither the `schedule`
-tool nor the `/schedule` command is available.
+Enable the optional built-in extension with `hatfield extensions:setup`: select
+**Scheduling (built in)**, enable for the parent, save and restart Hatfield.
+No Composer package is needed. If `schedule` is absent from the current tool
+catalog, explain this prerequisite; do not assume availability or change settings
+without user approval.
 
-For agents, the current tool catalog determines availability. Call `schedule`
-only when it is listed. If it is absent, explain the enablement prerequisite;
-do not assume availability or change settings without user approval.
+Example tool arguments:
 
-Use `schedule` with `action: create`, `tool: bash` or `code_mode`, the target's
-existing `arguments`, and `every` to repeat work during this live session.
-Use intervals such as `"30 seconds"`, `"5 minutes"`, or `"PT1H"`. Arguments default
-to an empty object when omitted. Add `for_seconds` to limit the lifetime.
-Without a lifetime, the schedule lasts until cancelled or Hatfield closes.
-The first execution is immediately eligible. The `next` field denotes the next
-recurring occurrence, not a delay before initial execution.
+```json
+{"action":"create","tool":"bash","arguments":{"command":"git status --short"},"every":"5 minutes","for_seconds":3600}
+```
 
-Use `action: list` to inspect schedules and `action: cancel` with the returned `id`
-to prevent future invocations. `/schedule` lists the current session's targets,
-intervals, next occurrences and expiry, with a cancellation picker. It does not call
-the model. Cancellation and expiry do not stop work that has already started.
+Use `action: list` to inspect definitions and `action: cancel` with the returned
+`id` to cancel one. `/schedule` provides the terminal list/cancellation picker.
+Intervals accept forms such as `30 seconds`, `5 minutes` or `PT1H`.
+`code_mode` is also a target when enabled; pass its ordinary `script` arguments.
 
-Schedules require the process-backed controller. Definitions are not restored on
-reopening Hatfield, and no work runs while it is closed. Changes reach Symfony's
-schedule through a one-second refresh. Waiting schedules do not occupy execution
-Fibers; running invocations share the cooperative tool/agent worker and can overlap.
+- First execution is immediately eligible. `next` describes the next recurring
+  occurrence, not an initial delay.
+- Without `for_seconds`, a definition lasts until cancellation or Hatfield closes.
+  Definitions require the live process controller and are not restored on reopen.
+- Cancellation/expiry prevents future invocations, not work already running.
+- Results arrive automatically. Do not use `backgrounded: true`, sleep or polling.
+- Scheduled work is noninteractive: approval-required calls and human questions
+  are denied, even if the main session has an approval channel.
+- There is no caller card to detach, and scheduled invocations are not stoppable
+  `/bg` entries. Use execution timeouts or cancel the owning run.
 
-Results arrive through automatic notifications after normal output processing.
-Scheduled execution is noninteractive: operations requiring approval or human input
-are denied, even when the main conversation has an approval channel. Do not pass
-`backgrounded: true`; scheduled work is already asynchronous to the agent. Do not
-sleep or poll to wait for results; notifications arrive automatically.
-There is no caller card to detach with Ctrl+B. Scheduled invocations are not listed
-as stoppable work in `/bg`; use execution timeouts or cancel the owning run.
-
-## Code-mode scripts
-
-`backgrounded: true` or Ctrl+B detaches a ready top-level `code_mode` without replacing its PHP host, socket, workspace, stack or nested calls.
-The card freezes at acknowledgment; results and saved diagnostics arrive as agent notifications, not human input or another call result.
-
-Detachment preserves the 1,800-second default deadline and 3,600-second maximum.
-Suspended hosts retain a Fiber and subprocess resources, not an exclusive consumer slot.
-The shared worker has no handler-admission concurrency cap. Cooperative waits let
-sibling tools progress, but synchronous filesystem or CPU work can still block the
-shared thread. Memory-limit recycling remains enabled.
-
-Cooperative stop targets one invocation, not its parent or siblings; `stopping` lasts until terminal evidence arrives.
-Controller restart or shutdown fences old hosts and parks unresolved delivery.
-Explicit `/repair` recovers outcomes without rerunning scripts or clearing fences. It cannot restore a lost PHP stack.
-
-## Child invocations
-
-Backgrounding a `subagent`, `fork` or `agent_resume` invocation releases the parent's wait with one acknowledgment.
-The same child continues under its original deadline and cancellation supervision.
-Its handoff arrives as a follow-up when it settles, not as a second result for the
-original tool call. Independent child calls can run concurrently.
-Use `agent_retrieve` for existing artifact details and handoff history.
-The transcript acknowledgment stays compact and frozen; Ctrl+O opens its details.
-Use Ctrl+\ or `/agents-live` for current child status, inspection or steering.
-
-A child can also background its own Bash tool. If a completion reaches an active owner,
-it uses that owner's existing follow-up mailbox. If the owner has finished or is cancelling,
-the completion goes to the root parent instead. The forwarded note identifies the original
-child's name, agent/artifact ID and run ID. It never resumes the child or rewrites a completed
-handoff. The parent can explicitly use `agent_resume` if more child work is needed.
-
-## Persistent background rows
-
-Active background work appears below the editor, above the footer. Bash, code mode,
-agents and forks have distinct type colors. Child rows show the same status, task,
-model and available context usage as the Ctrl+\ picker. A child waiting for an answer
-shows **[⚠ needs input]** without taking focus from the parent editor.
-
-Child rows stay in launch order while their context and status update, including
-when the parent is idle. Unchanged rows do not repaint; metadata updates repaint
-only changed rows. Completed, failed and cancelled work disappears immediately.
-The area uses at most five physical rows, including a `+N more` summary linking to
-`/bg` and Ctrl+\. On short terminals it shrinks further to leave room for the editor
-and footer. Under overflow, children needing input appear first; launch order stays
-stable within attention and ordinary groups. Without overflow, launch order is unchanged.
-Adding or removing rows can change the layout height. Child rows reserve space for
-status, model and context usage before truncating task and identity details. The
-Ctrl+\ picker retains the full identity label. While a question or another
-above-editor input overlay is open, background rows are hidden so the focused
-question can use that space; they return when the overlay closes. At heights too
-small for the editor and footer themselves, background rows are hidden.
-
-Periodic refresh reads active work and the final status of children still shown as
-unfinished. It does not reload completed child history or artifact registries.
-Opening Ctrl+\ loads the complete child inventory, including completed children.
-
-## Background work picker: `/bg`
-
-Run `/bg` from the main view. It lists background code-mode scripts and
-accepted unfinished Bash jobs owned by the root session, including its children.
-Agents and forks remain in Ctrl+\ or `/agents-live`. Entries identify the owning
-agent and run. Bash entries also show command, PID and elapsed seconds; jobs in termination
-grace appear as `stopping`. `bg_status` remains a Bash-only tool scoped to its current run.
-Select work and press Enter to open a Yes/No cancellation confirmation, defaulting to No.
-Escape returns to the original list; Escape again closes it. Confirming Yes closes
-the picker and requests a native stop or code-mode cancellation without waiting for exit.
-The terminal remains responsive during grace. The controller observes exit or escalates
-to KILL, even if the caller dies. Reopen `/bg` to inspect the current status.
-Opening the picker does not call the model.
-
-The status panel shows cancellation requested until operational state confirms the outcome.
-The terminal notice clears on the next nonempty submission. Unavailable records do not
-count as confirmed termination. Explicit Bash stops still deliver the ordinary completion
-follow-up with the observed exit status; stop does not suppress that notification.
-In process mode, Bash stop requests go through the live session controller. If the
-controller is unavailable, the request is refused without starting or restarting it.
-A lost stop reply is an unknown outcome, not permission to repeat native signalling.
-
-The list is a snapshot fetched once on opening. It never refreshes while open, even
-after confirmation cancellation or process events. Reopen `/bg` for a fresh snapshot.
-An already-finished or removed selection never targets another job with a reused PID.
-
-## Model / user tool: `bg_status`
-
-| Action | Meaning |
-|---|---|
-| `list` | Show accepted background processes for the current session |
-| `log` | Read recent log output for an accepted process (`pid` required) |
-| `stop` | TERM the accepted process group, wait grace, then KILL if needed (`pid` required) |
-
-## Lifecycle
-
-1. Bash derives stable native paths from the invocation identity. Its wrapper exclusively claims `.pid` and publishes readiness before running the command. Actual launch facts are stored after startup, without owner preparation or reply messages.
-2. Redelivery of the same invocation reattaches to the live wrapper or returns its retained output. Existing but unverifiable execution evidence fails closed rather than launching again. A different invocation uses different native paths.
-3. Ctrl+B records a request against an actual launched process. The supervising worker checks completion/cancellation, persists acceptance, and returns an ordinary acknowledgment. Replayed accepted invocations return that acknowledgment without taking foreground ownership again.
-4. Startup and shutdown stop owned processes but retain scoped process rows and sidecars so the same unresolved intent can return its existing outcome after restart. Retained evidence does not keep a background job running. Permanent session deletion removes the scoped rows and sidecars. Cleanup also checks exact session-prefixed native sidecars for launches whose SQL insert was interrupted. Unverifiable process ownership is not permission to signal another process. A post-launch persistence failure stops the locally owned foreground process while retaining scoped native evidence, so retry does not silently launch it again.
-5. `bg_status stop` is the explicit operator/model path for an accepted job in the current session: `SIGTERM` to the process group, wait `tools.background_process.stop_grace_seconds`, then `SIGKILL` if still alive. Controller lifecycle cleanup can stop the same accepted jobs without a `bg_status` call.
-
-Backgrounding preserves the original monotonic timeout deadline. The existing controller
-completion poller enforces it after detachment, with its two-second polling granularity
-and the configured termination grace period. Timeout handling sends TERM without blocking
-the controller; subsequent polls observe exit or send KILL after grace. Explicit stop and
-shutdown still wait for termination. Completion uses the existing follow-up queue.
-
-Explicit stops do not suppress completion delivery. When the command finishes around the
-same time as a stop request, the ordinary completion follow-up still reports the observed
-exit status without claiming stop caused it. Duplicate delivery receipts still prevent a
-second notification. Natural completion, failure, and timeout keep the same path.
-
-Tracking is **session-scoped**. `bg_status` exposes only rows explicitly accepted as background work; private foreground supervision is never listed, tailed, or stopped through that tool. Durable records live in `.hatfield/state.sqlite`; filesystem sidecars (PID/status/log) live under the configured tool path.
-
-### PID identity
-
-Launch uses `setsid -f`. The wrapper publishes its PID on the launch pipe and in the `.pid` sidecar before starting the command. Status and stop use that PID, not the transient launcher PID. The command runs in a separate `bash -c`, so command syntax cannot bypass the wrapper's status recording. Ownership checks require the exact sidecar PID, a live wrapper command containing its status-path marker, and a process group led by that PID. Command inspection uses untruncated `ps` output; failed or unverifiable inspection refuses ownership. An unclean exit means the tracked wrapper exited without recording a status. The result states that absence inline, retains any existing command log through the session attachment store, and reports the PID. Do not rerun a side-effecting command merely because its exit status is unavailable. Truncated completed output also retains the full log through that same attachment path so the referenced file outlives disposable batch bodies and private sidecar cleanup.
-
-## Settings
-
-| Key | Role | Default |
-|---|---|---|
-| `tools.background_process.path` | Storage directory | `.hatfield/tmp/bg` |
-| `tools.background_process.stop_grace_seconds` | TERM grace period | `5` |
-| `tools.background_process.log_tail_chars` | Default log tail size | `5000` |
-
-See [settings.md](settings.md).
-
-## Safety
-
-- Prefer stop via `bg_status` rather than guessing PIDs.
-- Background workloads may outlive a single LLM turn; still stop them when finished.
-- Never signal unrelated host processes; tracking is limited to Hatfield-managed records for the session.
+Related: [tools](tools.md), [agents](agents.md), [approvals](approvals.md).

@@ -12,7 +12,7 @@ Type "Hello"
 Sleep 500ms
 Enter
 Sleep 2s
-Type "Summarize @docs/tui-architecture.md"
+Type "Summarize @architecture/tui.md"
 Sleep 500ms
 Enter
 Sleep 10s

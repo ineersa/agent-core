@@ -56,7 +56,9 @@ Auto-discovery (before settings paths):
 1. `~/.hatfield/prompts/*.md`
 2. `<cwd>/.hatfield/prompts/*.md`
 
-CLI may pass repeatable `--prompt-template` paths (highest practical override for a run).
+Repeatable CLI `--prompt-template` paths are scanned last. The first duplicate
+name wins, so these do not override an auto-discovered name. Use
+`--no-prompt-templates` with explicit CLI paths to suppress the earlier sources.
 
 ## Skills
 
@@ -76,12 +78,16 @@ Behavioral detail (discoverable vs on-demand-only, `/skill:<name>`, frontmatter)
 | `extensions.settings.<key>` | Opaque settings bag returned by `ExtensionApiInterface::getSettings()` |
 
 Extensions load from project `.hatfield/extensions/vendor/autoload.php` when present.
-They register **once at session start** — enablement changes require a new session.
+Registrations are process-local and load on console command startup, including
+workers. Restart Hatfield after changing extension code or enablement; `/new`
+inside an already running host does not reload PHP classes.
 
 Keep `.hatfield/extensions/composer.json` with `config.prepend-autoloader: false`.
 Otherwise the extensions autoloader can shadow host packages such as `symfony/tui`.
 
-Built-in SafeGuard class may appear in defaults/`always_on` without a Composer package.
+Built-in SafeGuard and Scheduling need no Composer package; use
+`hatfield extensions:setup` to select enablement. SafeGuard is in child always-on
+defaults; Scheduling is optional and disabled by default.
 Project packages (task-workflow, observational-memory) document their own settings keys in **package-local README files** shipped with each extension repository/package. Those keys are **not** core `hatfield_docs` catalog entries.
 
 Example:

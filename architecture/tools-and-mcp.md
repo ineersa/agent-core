@@ -1,227 +1,115 @@
 # Tools and MCP
 
-[Architecture map](README.md) · [Child agents](extensions-and-agents.md)
+[Architecture](README.md) · [Usage](../docs/tools.md) · [Code mode and scheduling](code-mode-and-scheduling.md)
 
-## Tool catalog and owning implementations
+## Catalog and boundaries
 
-The [bundled tool reference](../docs/tools.md) describes user-visible purpose and
-limits. These are host-owned registrations, not a promise that every run exposes
-every tool. MCP and enabled extensions contribute additional registrations.
+Built-ins provide `ToolDefinitionDTO` through `HatfieldToolProviderInterface`.
+Enabled extensions register public `ToolRegistrationDTO`s; connected MCP servers
+contribute runtime schemas. `ToolRegistry` and `CodingAgentToolSetResolver` form
+the active per-turn toolset after allowlists, exclusions and child policy.
+Registration owns execution mode; file mutation tools are sequential.
 
-| Names | Owning source |
-|---|---|
-| `read`, `write`, `edit`, `view_image` | `ReadFileTool`, `WriteFileTool`, `EditFileTool`, `ViewImageTool` under `src/CodingAgent/Tool` |
-| `bash`, `bg_status` | `BashTool`, `BgStatusTool`, `BackgroundProcessManager` |
-| `ask_human` | `AskHumanTool` and runtime human-input continuation |
-| `hatfield_docs` | `HatfieldDocsTool` |
-| `subagent`, `agent_resume`, `agent_retrieve`, `fork` | `src/CodingAgent/Agent/Tool` handlers and providers |
-| Task-board operations | task-workflow extension registrations |
-| `recall` | observational-memory extension registration |
-| Server-advertised names | MCP catalog and `McpToolRegistrar` |
+Typed built-ins expose flat argument DTO fields through Symfony AI argument
+resolution and Symfony Validator. Dynamic MCP/extension tools use runtime schemas
+and raw argument maps rather than the built-in DTO path. Schemas describe inputs;
+they are not authorization rules.
 
-## Design from definition to invocation
+## Execution
 
 ```mermaid
-flowchart TB
-    Provider[HatfieldToolProviderInterface] -->|definition| DTO[ToolDefinitionDTO]
-    DTO --> Metadata[Name, description, handler, schema, execution mode, prompt guidance]
-    Metadata --> Registry[ToolRegistry]
-    Registry --> Permanent[Permanent registrations contribute prompt metadata]
-    Registry --> Dynamic[Dynamic registrations carry runtime schemas]
-    Permanent --> Resolver[CodingAgentToolSetResolver]
-    Dynamic --> Resolver
-    Resolver --> Allowed[Allowed and excluded names for active run]
-    Allowed --> Toolbox[RegistryBackedToolbox]
-    Toolbox --> Definition[One-definition native Symfony AI Toolbox]
-    Definition --> Factory[SingleToolFactory returns canonical metadata]
-    Definition --> Args[Native argument resolution and Validator for typed handlers]
-    Args --> Handler[Invoke handler]
-    Raw[Dynamic raw arguments] --> Handler
-    Handler --> Result[Result normalization and output cap]
+flowchart TD
+    Model["Assistant tool calls"] --> Batch["run_control: commit assistant message and batch"]
+    Batch --> Hooks{"Tool-call hooks"}
+    Hooks -->|Block / replace| Result["Matching tool result"]
+    Hooks -->|Require approval| Human["Pending exact call + human request"]
+    Human -->|Allow| Route["tool / agent / mcp routing"]
+    Human -->|Block / replace| Result
+    Hooks -->|Allow| Route
+    Route --> Executor["Worker + ToolExecutor"]
+    Executor --> Reuse{"Recorded same-call result?"}
+    Reuse -->|Yes| Result
+    Reuse -->|No| Handler["Toolbox: resolve, validate, invoke"]
+    Handler --> Presentation["Result hooks and output cap"]
+    Presentation --> Result
+    Result --> Collect["run_control: validate identity, collect in invocation order"]
+    Collect --> Continue["Commit tool messages, AdvanceRun"]
 ```
 
-Registration owns execution mode; file mutation tools are sequential. Tool scheduling,
-Messenger transport choice, and process cancellation are separate concerns. AgentCore
-owns batch transitions through its contracts, while CodingAgent owns concrete tool
-registration and framework integration. A provider schema is not an authorization rule.
+Tool-batch admission and worker capacity are separate. `tools.execution.max_parallelism`
+bounds a batch; the shared tool worker does not impose a second admission cap.
+`subagent` / `agent_resume` route to `agent`; fork stays on `tool`; MCP-backed
+calls route to `mcp`. See [processes](processes-and-queues.md).
 
-## Registration becomes model-visible schemas
+Stored-result reuse is not concurrent exclusion or exactly-once execution. A
+redelivery can repeat an external effect before a result has been recorded.
+Handlers with critical effects need their own same-intent idempotency contract.
+Deferred outcomes register correlation and settle later instead of returning a
+final result immediately.
 
-```mermaid
-flowchart TB
-    Builtin["Built-in HatfieldToolProviderInterface"] --> Registry[ToolRegistry]
-    Extension["ExtensionApi registerTool<br/>ToolRegistrationDTO"] --> Registry
-    Servers[Configured MCP servers] --> Connect[Connect and discover tool catalog]
-    Connect --> Names[Namespaced MCP tools and runtime schemas]
-    Names --> Registry
-    Registry --> Policy[Active run tool allowlist and child policy]
-    Policy --> Set[Per-turn toolset]
-    Set --> Schemas[Symfony AI tool metadata and JSON schemas]
-    Schemas --> Model[Provider request]
-    Model --> Calls[Assistant tool calls with flat arguments]
-    Calls --> Routing[Execution routing]
-```
+There is no global executor timeout that rewrites a successful late result.
+Bash, PHP scripts and deferred child supervision own their deadlines. Registration
+can declare a tool budget; supported handlers check cancellation cooperatively.
+Oversized output becomes bounded text plus an inspection-file notice. Artifacts
+are transient; replay does not require their continued existence.
 
-Typed built-ins use DTO field schemas and validation. Dynamic MCP arguments follow
-the server's runtime schema rather than the built-in DTO validation path.
+## Questions versus approvals
 
-## Built-in argument ownership (inventory)
+- `ask_human` creates a model question. Its answer settles the waiting call;
+  cancellation returns `Cancelled by user`, never implied approval.
+- Approval hooks suspend an exact existing call. The originating answer hook
+  chooses allow, block or replacement. Allow redispatches that stored call without
+  asking the model for an extra decision turn.
+- Parent/child questions retain the owning run and request identity. Attaching a
+  session cancels obsolete waits; a late answer cannot reopen them.
 
-| Tool | Argument owner | Input constraints | Kept in handler |
-|---|---|---|---|
-| `read` | `ReadFileArgumentsDTO` + `ReadFileTarget` | path/offset/limit; target policy | I/O read failures |
-| `write` | `WriteFileArgumentsDTO` | path/content | write I/O failures |
-| `edit` | `EditFileArgumentsDTO` + `EditFileTarget` | path/patch; target exists | patch apply / lock failures |
-| `view_image` | `ViewImageArgumentsDTO` (path only) | path shape | single handler inspection owns vision/size/MIME/dimensions + metadata |
-| `bash` | `BashArgumentsDTO` + `BashTimeoutMax` | command; timeout bounds | process lifecycle, cancel, exit failures |
-| `bg_status` | `BgStatusArgumentsDTO` | action; conditional pid | process lookup / stop / log failures |
-| `ask_human` | `AskHumanArgumentsDTO` | question/kind/choices exclusivity | none (interrupt payload only) |
-| `hatfield_docs` | `HatfieldDocsArgumentsDTO` | operation; conditional id | catalog/unknown-id / doc load failures |
-| `subagent` / `agent_resume` / `agent_retrieve` / `fork` | respective Arguments DTOs (+ task schema providers where needed) | typed launch/resume/retrieve fields | active parent run context / locator wiring |
-| MCP / extension raw tools | runtime `parametersJsonSchema` + `raw_arguments` | server/extension schema | handler or remote server |
+Public contracts: [question usage](../docs/human-input.md),
+[approval policy](../docs/approvals.md),
+[extension tool API](../.hatfield/extensions/extension-api/docs/extension-api-tools.md).
 
-Justified non-DTO path: tools whose schema is defined at runtime (MCP and
-public extension adapters). Input errors for typed tools use Symfony validation
-messages instead of `ToolCallException` with a separate hint.
-
-## Execute a batch, then continue the model
+## MCP lifecycle
 
 ```mermaid
-%%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
 sequenceDiagram
-    participant Core as run_control handlers
-    participant Hooks as Tool-call hooks
-    participant Queue as tool / agent / mcp
-    participant Worker as ExecuteToolCallWorker
-    participant Executor as ToolExecutor
-    participant Store as Stored results
-    participant Toolbox as FaultTolerantToolbox
-    participant Handler as Registered tool handler
-    participant Collector as ToolCallResultHandler / batch collector
-
-    Core->>Core: Persist assistant tool calls and batch identity
-    Core->>Hooks: Evaluate call policy
-    alt Require approval
-        Hooks-->>Core: Suspend exact call awaiting answer
-    else Block or replace
-        Hooks-->>Core: Result without invoking original handler
-    else Allow
-        Core->>Queue: ExecuteToolCall
-        Queue->>Worker: Deliver envelope
-        Worker->>Executor: Execute domain ToolCall
-        Executor->>Executor: Check tool access and identity
-        Executor->>Store: Find previously stored result
-        alt Recorded outcome exists
-            Store-->>Executor: Reuse result
-        else No recorded outcome
-            Executor->>Toolbox: Execute registered tool
-            Toolbox->>Handler: Resolve arguments and invoke
-            Handler-->>Toolbox: Value or error
-            Toolbox-->>Executor: Tool result
-            Executor->>Store: Record outcome
-        end
-        Executor-->>Worker: Result
-        Worker->>Core: ToolCallResult on command bus
-    end
-    Core->>Collector: Match current batch and tool-call identity
-    alt Other calls still pending
-        Collector->>Collector: Retain partial batch results
-    else Batch complete
-        Collector->>Core: Ordered tool messages
-        Core->>Core: Commit messages, dispatch AdvanceRun
-    end
-```
-
-Result hooks and output capping can transform the returned presentation. Large
-outputs become bounded text plus a temporary-file inspection notice. A stored result
-lookup does not prevent two concurrent workers from starting the same side effect.
-
-## Two human continuations
-
-```mermaid
-%%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
-sequenceDiagram
-    actor User
-    participant Model
-    participant Tool as Tool execution
-    participant Hook as Approval policy
-    participant Runtime as Run control and pending request
-    participant TUI as Question UI
-
-    alt Model asks a question
-        Model->>Tool: ask_human(question, kind or choices)
-        Tool->>Runtime: Suspend with model question
-        Runtime-->>TUI: human_input.requested
-        TUI-->>User: Render question
-        User->>TUI: Answer or cancel
-        TUI->>Runtime: answer_human for exact request
-        Runtime->>Tool: Resume waiting question call with answer
-        Tool->>Runtime: Model-visible answer result
-        Runtime->>Model: Continue with result at next model step
-    else Policy requires tool approval
-        Tool->>Hook: Check original tool call
-        Hook->>Runtime: RequireApproval and hook identity
-        Runtime-->>TUI: Approval question
-        TUI-->>User: Allow, block, or replace-result choice
-        User->>TUI: Decision
-        TUI->>Runtime: answer_human for exact request
-        Runtime->>Hook: Originating ApprovalAnswerHookInterface
-        alt Allow
-            Hook->>Tool: Redispatch exact stored call
-            Tool->>Runtime: Tool result
-        else Block or replace
-            Hook->>Runtime: Result without original execution
-        end
-        Note over Hook,Model: Approval itself needs no extra model decision turn
-    end
-```
-
-A cancelled model question returns `Cancelled by user`; it is not an answer to
-invent or an approval. Parent and child requests must retain their owning run ID.
-
-## MCP connection and invocation lifecycle
-
-```mermaid
-%%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
-sequenceDiagram
-    participant Config as User and project mcp.json
     participant Runtime as Session runtime
-    participant Q as mcp consumer
+    participant MCP as MCP consumer
     participant Manager as McpConnectionManager
-    participant Server as STDIO or HTTP server
-    participant Catalog as Session tool catalog
-    participant Model as Model tool call
-
-    Config->>Runtime: Merge by server name, project replaces whole server entry
-    Runtime->>Q: McpInitializeSessionCommand
-    Q->>Manager: Initialize session connections
-    Manager->>Server: Connect and negotiate
-    Server-->>Manager: Advertised tools
-    Manager->>Catalog: Register filtered namespaced tools
-    Catalog-->>Model: Schemas in allowed per-turn toolset
-    Model->>Runtime: Call MCP-backed tool
-    Runtime->>Q: ExecuteToolCall with mcp transport stamp
-    Q->>Manager: Invoke on active connection
-    Manager->>Server: Tool name and arguments
-    Server-->>Manager: Result or protocol error
-    Manager-->>Q: Converted tool result
-    Q-->>Runtime: ToolCallResult through run_control
-    opt User requests reconnect while no active run
-        Runtime->>Q: Disconnect and refresh catalog commands
-        Q->>Manager: Drop clients and rediscover
-        Manager->>Server: Reconnect
-        Manager->>Catalog: Rewrite discovered catalog
+    participant Server as STDIO / HTTP server
+    Runtime->>MCP: Initialize configured session servers
+    MCP->>Manager: Connect and discover
+    Manager->>Server: Negotiate, list tools
+    Server-->>Manager: Tool schemas
+    Manager-->>Runtime: Filtered namespaced catalog
+    Runtime->>MCP: MCP-backed ExecuteToolCall
+    MCP->>Manager: Invoke with run cancellation and deadline
+    Manager->>Server: Tool request
+    Server-->>Manager: Result / protocol error
+    Manager-->>Runtime: ToolCallResult through run_control
+    opt Reconnect while run idle
+        Runtime->>MCP: Disconnect and rediscover
+        MCP->>Manager: Replace connections and catalog
     end
-    Runtime->>Q: Stop owned consumer
-    Q->>Manager: Best-effort graceful disconnect
-    Manager->>Server: Close transport
+    Runtime->>MCP: Stop consumer
+    MCP->>Manager: Best-effort disconnect
 ```
 
-Connection construction timeouts and in-flight tool deadlines are different.
-Hatfield cannot enforce arbitrary per-call MCP timeout or cancellation through the
-current SDK integration. Unmanaged grandchildren of STDIO servers can escape graceful
-shutdown; do not interpret disconnect as a sandbox guarantee.
+User/project `mcp.json` merge by server name, with whole-entry project replacement.
+Server availability and agent selectors constrain the child toolset; see
+[MCP configuration](../docs/mcp.md).
 
-Sources: [tool execution](../docs/tool-execution.md), [MCP](../docs/mcp.md),
-[approvals](../docs/approvals.md), [human input](../docs/human-input.md),
-[Messenger routing](../config/packages/messenger.yaml).
+Calls use the run cancellation token and the shorter of server `timeoutMs` and
+remaining tool budget. Interrupted connected clients can be reused; disconnected
+clients are evicted for reconnect. STDIO sends `notifications/cancelled`; HTTP
+closes the response body. HTTP protocols through `2025-11-25` also send a
+best-effort cancellation POST; `2026-07-28` uses stream closure alone. Blocking
+HTTP requests/body reads or that POST delay checks: this is not a hard wall-clock
+limit or a guarantee the server stopped/rolled back work.
+
+Worker shutdown attempts graceful disconnect. Unmanaged STDIO grandchildren can
+escape cleanup; MCP is a process/network trust boundary, not a sandbox.
+
+Sources: [ToolExecutor](../src/AgentCore/Application/Handler/ToolExecutor.php),
+[tool worker](../src/AgentCore/Application/Handler/ExecuteToolCallWorker.php),
+[ToolRegistry](../src/CodingAgent/Tool/ToolRegistry.php),
+[MCP manager](../src/CodingAgent/Mcp/Client/McpConnectionManager.php),
+[Messenger routes](../config/packages/messenger.yaml).

@@ -467,7 +467,7 @@ final class ReadFileToolTest extends TestCase
     {
         $targetPath = $this->tmpDir.'/box_drawing.txt';
         // Box drawing characters (U+2500-U+257F) are 3-byte UTF-8.
-        // These appear in docs/tui-architecture.md and are common
+        // These appear in architecture/tui.md and are common
         // in text files that read should handle correctly.
         $content = "┌───┐\n│ x │\n└───┘\n";
         file_put_contents($targetPath, $content);

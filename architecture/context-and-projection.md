@@ -1,121 +1,59 @@
-# Context, providers, and TUI projection
+# Context and projection
 
-[Architecture map](README.md) · [Request lifecycle](request-lifecycle.md)
+[Architecture](README.md) · [Request lifecycle](request-lifecycle.md) · [TUI](tui.md)
 
-## Model context construction
-
-```mermaid
-flowchart TB
-    Defaults[Bundled defaults and provider catalog] --> Config[Effective configuration]
-    User[User overrides] --> Config
-    Project[Project overrides] --> Config
-    Config --> Selection[Exact provider, model, reasoning selection]
-    System[System prompt] --> Initial[Initial AgentMessage context]
-    Instructions[AGENTS.md project instructions] --> Initial
-    Skills[Discovered or preloaded skills] --> Initial
-    Agents[Available agent definitions] --> Initial
-    Prompt[Expanded real user prompt] --> Initial
-    Initial --> History[RunState messages from canonical history]
-    History --> Hooks[Context-transform hooks]
-    Hooks --> Validate[Validate assistant tool-call and tool-result ordering]
-    Validate --> Bag[Symfony AI MessageBag]
-    Tools[Active per-turn toolset] --> Schema[Tool schemas]
-    Bag --> Request[Platform invocation request]
-    Schema --> Request
-    Selection --> Request
-    Request --> Route[Provider and ModelClient routing]
-    Route --> Generic[Generic provider protocol]
-    Route --> Codex[OpenAI Codex bridge]
-    Route --> Grok[Grok bridge]
-```
-
-Configuration does not automatically enable providers. `providers:setup` is manual.
-Catalog refresh updates known metadata; it does not silently add arbitrary upstream
-models. Context transforms and compaction are distinct operations.
-
-## Live deltas and canonical finalization
-
-```mermaid
-%%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
-sequenceDiagram
-    participant Provider
-    participant Adapter as LlmPlatformAdapter
-    participant Observer as LlmStreamDispatchObserver
-    participant Stream as Stream subscribers
-    participant Controller
-    participant Client
-    participant Poller as RuntimeEventPoller
-    participant Applier as TuiRuntimeEventApplier
-    participant Projector as TranscriptProjector
-    participant Screen as ChatScreen
-    participant Log as Canonical event log
-    participant Mapper as RuntimeEventMapper / Translator
-
-    loop Live provider response
-        Provider-->>Adapter: Reasoning, text, or tool-argument chunk
-        Adapter->>Observer: Stream notification
-        Observer->>Stream: Typed stream dispatch
-        Stream-->>Controller: Transient RuntimeEvent on worker stdout, seq 0
-        Controller-->>Client: JSONL event
-        Client-->>Poller: events(runId)
-        Poller->>Applier: Apply event
-        Applier->>Projector: accept(event)
-        Projector-->>Screen: Incremental transcript change set
-    end
-    Note over Adapter,Log: Final worker result returns to run_control for canonical commit
-    Log->>Mapper: Committed RunEvent
-    Mapper-->>Controller: Mapped runtime event through worker publication
-    Controller-->>Client: Final committed message and lifecycle event
-    Client-->>Poller: events(runId)
-    Poller->>Applier: Apply committed event
-    Applier->>Projector: Finalize streamed block
-    Projector-->>Screen: Complete text, reasoning, tool-call blocks
-    opt Resume without live stream
-        Log->>Mapper: Replay retained canonical history
-        Mapper->>Applier: Historical runtime events
-        Applier->>Projector: Rebuild complete transcript
-        Projector-->>Screen: Initial transcript
-    end
-```
-
-`RuntimeEventTranslator` consumes `RunEvent`, not `RunState`. A `run.completed` event
-clears activity without adding an extra conversational answer. Sequence-0 deltas do
-not become the resume source.
-
-## Per-session TUI composition
+## Provider request
 
 ```mermaid
 flowchart TD
-    Mode[InteractiveMode session-switch loop] --> Init[Initialize draft, new, or resumed session]
-    Init --> Screen[Create and mount ChatScreen]
-    Screen --> Factory[TuiSessionCompositionFactory]
-    Factory --> Services[Fresh commands, questions, history, projectors, pollers]
-    Services --> Replay[Build initial retained transcript]
-    Replay --> Bind[Register session listeners and extension UI]
-    Bind --> Loop[Tui event loop]
-    Loop --> Input[Input and command dispatch]
-    Loop --> Tick[TickPollListener]
-    Tick --> Parent[RuntimeEventPoller]
-    Tick --> Child[Selected child live-view polling]
-    Parent --> Patches[Apply transcript and status changes]
-    Child --> Patches
-    Patches --> Render[ChatScreen and Symfony TUI renderer]
-    Input --> Switch{Session switch requested?}
-    Switch -->|Yes: stop loop, consume target| Init
-    Switch -->|No| Loop
+    Config["Catalog + defaults + user/project settings"] --> Model["Exact provider/model and reasoning"]
+    Instructions["System prompt, AGENTS.md, skills and agent catalog"] --> Context["Current canonical conversation context"]
+    Context --> Hooks["Context-transform hooks"]
+    Hooks --> Validate["Validate call/result ordering; convert for target"]
+    Validate --> Bag["Symfony AI MessageBag"]
+    Tools["Allowed per-turn tool schemas"] --> Request["Platform request"]
+    Bag --> Request
+    Model --> Request
+    Request --> Generic["Generic provider bridge"]
+    Request --> ChatGPT["ChatGPT Responses bridge"]
+    Request --> Grok["Grok bridge"]
 ```
 
-The screen owns widgets and focus, not the whole application service graph. Parent
-and child polling have different recovery and ownership rules; they are not merely
-two names for one interchangeable loop.
+Catalog metadata does not enable providers; setup is manual. Request-time
+[history conversion](history-conversion.md) preserves canonical events while
+adapting tool IDs and nonportable reasoning metadata for the target model.
+Compaction changes model context separately from request conversion.
 
-At the terminal output boundary, Symfony TUI's stock `ScreenWriter` hides
-the hardware cursor during repaints and restores cursor state before releasing
-synchronized output. See
-[frame and cursor output](../docs/tui-architecture.md#frame-and-cursor-output).
+## Transient stream versus committed history
 
-Sources: [InteractiveMode](../src/Tui/Application/InteractiveMode.php),
-[LlmPlatformAdapter](../src/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapter.php),
-[RuntimeEventMapper](../src/CodingAgent/Runtime/Protocol/RuntimeEventMapper.php),
-[TUI reference](../docs/tui-architecture.md), [provider catalog](../docs/ai-catalog.md).
+```mermaid
+flowchart LR
+    Provider["Provider stream"] --> Observer["LLM stream observer"]
+    Observer -->|Transient sequence 0| Controller["Controller stdout"]
+    Commit["run_control commit"] --> Log[(events.jsonl)]
+    Log --> Mapper["RuntimeEventMapper / Translator"]
+    Mapper -->|Committed events| Controller
+    Controller --> Client["AgentSessionClient"]
+    Client --> Poller["RuntimeEventPoller"]
+    Poller --> Projector["TuiRuntimeEventApplier / TranscriptProjector"]
+    Projector --> Screen["ChatScreen updates"]
+```
 
+The mapper consumes `RunEvent`, not `RunState`. Canonical finalization completes
+streamed blocks; `run.completed` clears activity without creating another answer.
+Sequence-0 deltas never become a replay source.
+
+Cold attach is owner-led: run control builds state and bounded transcript together,
+then transfers sealed bootstrap frames. The TUI verifies and mounts them,
+acknowledges the exact cut and applies the suffix through `session.ready`.
+It does not read the event archive and construct a second execution state.
+
+Active observers advance their canonical cursor only after successful application.
+A failed poll can retry the same suffix; transient deltas remain separate. Child
+live views rebuild on entry and release their projection on exit. Main transcript
+retention follows successful compaction segments, not a fixed byte/row budget.
+
+Sources: [LLM adapter](../src/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapter.php),
+[runtime mapper](../src/CodingAgent/Runtime/Protocol/RuntimeEventMapper.php),
+[InteractiveMode](../src/Tui/Application/InteractiveMode.php),
+[session runtime](session-runtime.md).

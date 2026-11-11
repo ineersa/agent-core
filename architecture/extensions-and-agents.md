@@ -5,17 +5,17 @@
 ## Extension registration is process-local
 
 ```mermaid
-%%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
+%%{init: {"sequence": {"wrap": true, "width": 160, "actorMargin": 30, "diagramMarginX": 10, "messageMargin": 30}}}%%
 sequenceDiagram
     participant Console
-    participant Loader as ExtensionLoaderSubscriber
-    participant Manager as ExtensionManager
-    participant Autoload as Project extensions Composer autoload
+    participant Loader as Command loader
+    participant Manager as Extension manager
+    participant Autoload as Project autoload
     participant Extension as Enabled extension class
-    participant API as Host ExtensionApi implementation
-    participant Registry as Tools, hooks, commands, TUI registrations
+    participant API as Public API adapter
+    participant Registry as Registrations
 
-    Console->>Loader: ConsoleEvents::COMMAND
+    Console->>Loader: Console command event
     Loader->>Manager: Load enabled classes
     Manager->>Autoload: Load project extension classes
     loop Configured extensions
@@ -68,15 +68,15 @@ writers from editing the same checkout.
 ## Durable supervision, not one controller per child
 
 ```mermaid
-%%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
+%%{init: {"sequence": {"wrap": true, "width": 160, "actorMargin": 30, "diagramMarginX": 10, "messageMargin": 30}}}%%
 sequenceDiagram
     participant Parent as Parent run_control
     participant Launch as agent or tool consumer
     participant Prepare as Child launch preparation
     participant Batch as Deferred batch records
     participant Child as Child run on shared queues
-    participant Observe as Batch observation / lifecycle handlers
-    participant Artifact as Parent-owned artifacts
+    participant Observe as Lifecycle observer
+    participant Artifact as Handoff artifacts
 
     Parent->>Launch: ExecuteToolCall for subagent, fork, or resume
     Launch->>Prepare: Validate launch or existing child identity
@@ -84,7 +84,7 @@ sequenceDiagram
     Prepare->>Batch: Persist batch and child supervision records
     Prepare->>Child: Start child or continue existing child
     Launch-->>Parent: Deferred waiting outcome, not final handoff
-    Batch->>Parent: Delayed InterruptDeferredSubagentBatchMessage at deadline
+    Batch->>Parent: Durable batch interruption at deadline
     loop Child progress
         Child->>Child: LLM and tools through shared consumer pools
         Child-->>Observe: Child lifecycle observation
@@ -134,18 +134,18 @@ be retrieved or resumed from an unrelated parent session.
 ## Extension agent jobs are a separate pipeline
 
 ```mermaid
-%%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
+%%{init: {"sequence": {"wrap": true, "width": 160, "actorMargin": 30, "diagramMarginX": 10, "messageMargin": 30}}}%%
 sequenceDiagram
-    participant Hook as Extension hook, such as after-turn commit
-    participant Dispatcher as ExtensionAgentJobDispatcher
+    participant Hook as Extension hook
+    participant Dispatcher as Job dispatcher
     participant Queue as extension_agent transport
     participant Runner as Public extension agent runner
     participant Model as Isolated model invocation
-    participant Package as Extension-owned storage
+    participant Package as Package storage
     participant UI as Runtime status event
 
     Hook->>Dispatcher: Submit extension job payload
-    Dispatcher->>Queue: ExtensionAgentJobMessage
+    Dispatcher->>Queue: Enqueue registered job
     Note over Dispatcher,Queue: Sync transport is refused<br/>Model work must not run inline in the hook
     Queue->>Runner: Invoke registered extension job handler
     Runner->>Model: Extension context and private tools
