@@ -7,8 +7,11 @@ namespace Ineersa\Tui\Tests\Listener;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Command\SlashCommandCatalog;
+use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
 use Ineersa\Tui\ImagePaste\ClipboardImageReadResultDTO;
 use Ineersa\Tui\ImagePaste\PastedImageValidationService;
+use Ineersa\Tui\Listener\CompletionListener;
 use Ineersa\Tui\Listener\ImagePasteInputListener;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
@@ -21,7 +24,10 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Event\TickEvent;
+use Symfony\Component\Tui\Terminal\ScreenBuffer;
+use Symfony\Component\Tui\Widget\InputWidget;
 
 #[CoversClass(ImagePasteInputListener::class)]
 final class ImagePasteInputVirtualTest extends TestCase
@@ -238,6 +244,178 @@ final class ImagePasteInputVirtualTest extends TestCase
         $this->assertNull($result);
         $plain = $harness->plainScreenText();
         $this->assertStringContainsString('still being read', $plain);
+    }
+
+    #[Test]
+    public function bracketedImagePathStagesOwnedCopyAndPreservesSource(): void
+    {
+        $privateDirectory = $this->tempDir.'/private';
+        mkdir($privateDirectory, 0700);
+        $source = $privateDirectory.'/image with spaces.png';
+        $original = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
+        $this->assertNotFalse($original);
+        $previousUmask = umask(0022);
+        $staged = null;
+        $harness = null;
+        try {
+            file_put_contents($source, $original);
+            chmod($source, 0644);
+            $this->assertSame(0700, fileperms($privateDirectory) & 0777);
+            $this->assertSame(0644, fileperms($source) & 0777);
+            [$harness, $state] = $this->pathPasteHarness();
+            $harness->sendInput("\x1b[200~  ".$source);
+            $this->assertSame([], $state->pastedImagePendingByIndex);
+            $harness->sendInput(" \n\x1b[201~");
+            $this->assertSame('[Image #1]', $harness->screen()->promptEditor()->getText());
+            $staged = $state->pastedImagePendingByIndex[1]->stagedPath;
+            $this->assertNotSame($source, $staged);
+            $this->assertFileEquals($source, $staged);
+            $this->assertSame(0600, fileperms($staged) & 0777);
+            // Pending cleanup owns the staged copy, never the pasted source.
+            unlink($staged);
+            $this->assertFileExists($source);
+            $this->assertSame($original, file_get_contents($source));
+            $this->assertSame(0644, fileperms($source) & 0777);
+        } finally {
+            umask($previousUmask);
+            $harness?->stopInputLoop();
+            if (null !== $staged && is_file($staged)) {
+                unlink($staged);
+            }
+            TestDirectoryIsolation::removeDirectory($privateDirectory);
+        }
+    }
+
+    #[Test]
+    public function bracketedPasteClosesCompletionBeforeImageListenerConsumesIt(): void
+    {
+        [$harness, $state] = $this->pathPasteHarness();
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->build();
+        (new CompletionListener(new SlashCommandCompletionProvider(new SlashCommandCatalog())))->register($context);
+        $submitted = null;
+        $harness->screen()->editorWidget()->onSubmit(static function (SubmitEvent $event) use (&$submitted): void {
+            $submitted = $event->getValue();
+        });
+
+        try {
+            $harness->sendInput('/');
+            $harness->sendInput('h');
+            $harness->sendInput('e');
+            $this->assertStringContainsString('Completions — arrows move', $harness->plainScreenText());
+            $this->assertStringContainsString('/help', $harness->plainScreenText());
+            $harness->sendInput("\x1b[200~lp\x1b[201~");
+            $this->assertSame('/help', $harness->screen()->promptEditor()->getText());
+            $this->assertStringNotContainsString('Completions — arrows move', $harness->plainScreenText());
+            $harness->sendInput("\r");
+            $this->assertSame('/help', $submitted);
+        } finally {
+            $harness->stopInputLoop();
+        }
+    }
+
+    #[Test]
+    public function ordinaryBracketedPastesRemainText(): void
+    {
+        $nonImage = $this->tempDir.'/not-image.png';
+        file_put_contents($nonImage, 'ordinary text');
+        foreach (['ordinary text', $nonImage, $this->tempDir.'/missing.png', 'prefix '.$nonImage] as $text) {
+            [$harness, $state] = $this->pathPasteHarness();
+            $harness->sendInput("\x1b[200~".$text."\x1b[201~");
+            $this->assertSame($text, $harness->screen()->promptEditor()->getText());
+            $this->assertSame([], $state->pastedImagePendingByIndex);
+        }
+        $this->assertFileExists($nonImage);
+    }
+
+    #[Test]
+    public function ordinaryPasteRequestsRenderedFrameWithoutForcedRender(): void
+    {
+        [$harness] = $this->pathPasteHarness();
+        try {
+            $harness->tui()->processRender();
+            $harness->sendInput("\x1b[200~visible plain paste\x1b[201~");
+            // Read the actual output; plainScreenText() would force a render and mask regressions.
+            $buffer = new ScreenBuffer(width: $harness->terminal()->getColumns(), height: $harness->terminal()->getRows());
+            $buffer->write($harness->terminal()->getOutput());
+            $this->assertStringContainsString('visible plain paste', $buffer->getScreen());
+            $harness->sendInput("\x1b[200~ more\x1b[201~ trailing");
+            $buffer->write($harness->terminal()->consumeOutput());
+            $this->assertStringContainsString('visible plain paste more trailing', $buffer->getScreen());
+        } finally {
+            $harness->stopInputLoop();
+        }
+    }
+
+    #[Test]
+    public function imagePathPasteRoutesToOtherFocusedWidget(): void
+    {
+        $source = $this->tempDir.'/focused-image.png';
+        copy(__DIR__.'/../E2E/fixtures/paste-test-1x1.png', $source);
+        [$harness, $state] = $this->pathPasteHarness();
+        $other = new InputWidget();
+        $harness->tui()->getFocusManager()->setFocus($other);
+        try {
+            $harness->sendInput("\x1b[200~".$source."\x1b[201~");
+            $this->assertSame($source, $other->getValue());
+            $this->assertSame('', $harness->screen()->promptEditor()->getText());
+            $this->assertSame([], $state->pastedImagePendingByIndex);
+            $this->assertSame(1, $state->nextPastedImageIndex);
+            $this->assertFileExists($source);
+        } finally {
+            $harness->stopInputLoop();
+        }
+    }
+
+    #[Test]
+    public function oversizedImagePathShowsValidationErrorWithoutDeletingSource(): void
+    {
+        $source = $this->tempDir.'/large.png';
+        copy(__DIR__.'/../E2E/fixtures/paste-test-1x1.png', $source);
+        [$harness, $state] = $this->pathPasteHarness(new ImageToolConfig(maxBytes: 1));
+        $harness->sendInput("\x1b[200~".$source."\x1b[201~");
+        $this->assertSame([], $state->pastedImagePendingByIndex);
+        $this->assertSame('', $harness->screen()->promptEditor()->getText());
+        $this->assertStringContainsString('exceeds maximum size', $harness->plainScreenText());
+        $this->assertFileExists($source);
+    }
+
+    #[Test]
+    public function damagedSupportedImageShowsValidationErrorAndPreservesSource(): void
+    {
+        $source = $this->tempDir.'/damaged.gif';
+        file_put_contents($source, 'GIF89a');
+        [$harness, $state] = $this->pathPasteHarness();
+        $harness->sendInput("\x1b[200~".$source."\x1b[201~");
+        $this->assertSame([], $state->pastedImagePendingByIndex);
+        $this->assertSame('', $harness->screen()->promptEditor()->getText());
+        $this->assertStringContainsString('Failed to read pasted image dimensions', $harness->plainScreenText());
+        $this->assertSame('GIF89a', file_get_contents($source));
+    }
+
+    /** @return array{VirtualTuiHarness, TuiSessionState} */
+    private function pathPasteHarness(?ImageToolConfig $config = null): array
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'path-paste');
+        $state = new TuiSessionState('path-paste');
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->build();
+        $listener = new ImagePasteInputListener(
+            new FakeClipboardImageReader(ClipboardImageReadResultDTO::noImage('no image')),
+            new PastedImageValidationService($config ?? new ImageToolConfig(), new TestLogger()),
+            new TranscriptBlockFactory(),
+            new TestLogger(),
+        );
+        $listener->register($context);
+        $harness->startInputLoop();
+
+        return [$harness, $state];
     }
 
     private function dispatchTicks(TuiTickDispatcher $ticks, int $count): void
