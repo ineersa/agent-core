@@ -184,6 +184,10 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
                 $editorWidget,
                 $context,
             ): void {
+                if ($context->tui->getFocusManager()->getFocus() !== $editorWidget) {
+                    return;
+                }
+
                 $data = $event->getData();
                 $buffering = $this->isBufferingPaste();
                 $paste = $this->processBracketedPaste($data);
@@ -197,6 +201,7 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
                     if ('' !== $data) {
                         $editorWidget->handleInput($data);
                     }
+                    $screen->requestRender();
 
                     return;
                 }

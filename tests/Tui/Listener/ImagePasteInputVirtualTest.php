@@ -22,6 +22,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Event\TickEvent;
+use Symfony\Component\Tui\Terminal\ScreenBuffer;
+use Symfony\Component\Tui\Widget\InputWidget;
 
 #[CoversClass(ImagePasteInputListener::class)]
 final class ImagePasteInputVirtualTest extends TestCase
@@ -276,6 +278,45 @@ final class ImagePasteInputVirtualTest extends TestCase
             $this->assertSame([], $state->pastedImagePendingByIndex);
         }
         $this->assertFileExists($nonImage);
+    }
+
+    #[Test]
+    public function ordinaryPasteRequestsRenderedFrameWithoutForcedRender(): void
+    {
+        [$harness] = $this->pathPasteHarness();
+        try {
+            $harness->tui()->processRender();
+            $harness->sendInput("\x1b[200~visible plain paste\x1b[201~");
+            // Read the actual output; plainScreenText() would force a render and mask regressions.
+            $buffer = new ScreenBuffer(width: $harness->terminal()->getColumns(), height: $harness->terminal()->getRows());
+            $buffer->write($harness->terminal()->getOutput());
+            $this->assertStringContainsString('visible plain paste', $buffer->getScreen());
+            $harness->sendInput("\x1b[200~ more\x1b[201~ trailing");
+            $buffer->write($harness->terminal()->consumeOutput());
+            $this->assertStringContainsString('visible plain paste more trailing', $buffer->getScreen());
+        } finally {
+            $harness->stopInputLoop();
+        }
+    }
+
+    #[Test]
+    public function imagePathPasteRoutesToOtherFocusedWidget(): void
+    {
+        $source = $this->tempDir.'/focused-image.png';
+        copy(__DIR__.'/../E2E/fixtures/paste-test-1x1.png', $source);
+        [$harness, $state] = $this->pathPasteHarness();
+        $other = new InputWidget();
+        $harness->tui()->getFocusManager()->setFocus($other);
+        try {
+            $harness->sendInput("\x1b[200~".$source."\x1b[201~");
+            $this->assertSame($source, $other->getValue());
+            $this->assertSame('', $harness->screen()->promptEditor()->getText());
+            $this->assertSame([], $state->pastedImagePendingByIndex);
+            $this->assertSame(1, $state->nextPastedImageIndex);
+            $this->assertFileExists($source);
+        } finally {
+            $harness->stopInputLoop();
+        }
     }
 
     #[Test]
