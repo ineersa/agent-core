@@ -108,6 +108,40 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
     }
 
     #[Test]
+    public function pastedImagePathSubmissionPreservesOriginalFile(): void
+    {
+        $store = self::getContainer()->get(HatfieldSessionStore::class);
+        $sessionId = $store->createSession('seed');
+        $source = $this->projectDir.'/source.png';
+        copy(__DIR__.'/../E2E/fixtures/paste-test-1x1.png', $source);
+        $state = new TuiSessionState($sessionId);
+        $harness = new VirtualTuiHarness(sessionId: $sessionId);
+        $context = $this->buildTuiContext()->withTui($harness->tui())->withScreen($harness->screen())
+            ->withState($state)->withSessionStore($store)->build();
+        (new ImagePasteInputListener(
+            new FakeClipboardImageReader(ClipboardImageReadResultDTO::noImage('no image')),
+            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            new TranscriptBlockFactory(),
+            new TestLogger(),
+        ))->register($context);
+        $harness->startInputLoop();
+        try {
+            $harness->sendInput("\x1b[200~".$source."\x1b[201~");
+            $staged = $state->pastedImagePendingByIndex[1]->stagedPath;
+            $resolved = self::getContainer()->get(PastedImageSubmissionService::class)->resolveSubmittedText(
+                $harness->screen()->editorText(), $state, $harness->screen(),
+            );
+            $this->assertNotNull($resolved);
+            $this->assertStringContainsString('/attachments/pasted-image-1.png', $resolved);
+            $this->assertFileDoesNotExist($staged);
+            $this->assertFileEquals($source, $store->ensureSessionAttachmentsDirectory($sessionId).'/pasted-image-1.png');
+            $this->assertSame([], $state->pastedImagePendingByIndex);
+        } finally {
+            $harness->stopInputLoop();
+        }
+    }
+
+    #[Test]
     public function failedPromotionStillAllowsTypedAndPastedErrorTextToBeSubmitted(): void
     {
         $store = self::getContainer()->get(HatfieldSessionStore::class);

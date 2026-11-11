@@ -14,17 +14,21 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Tui\Event\InputEvent;
+use Symfony\Component\Tui\Widget\BracketedPasteTrait;
 
 /**
  * Intercepts standalone Ctrl+V for image clipboard paste.
  *
  * Clipboard helpers run asynchronously: start() returns immediately, poll() runs
- * on TuiTickDispatcher. Bracketed text paste is unchanged (Symfony EditorWidget).
+ * on TuiTickDispatcher. Native bracketed paste buffering also recognizes image paths.
  * GitHub issue #119.
  */
 final class ImagePasteInputListener implements TuiListenerRegistrar
 {
+    use BracketedPasteTrait;
+
     public function __construct(
         private readonly ClipboardImageReaderInterface $clipboardReader,
         private readonly PastedImageValidationService $validationService,
@@ -170,7 +174,7 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
         });
 
         $context->tui->addListener(
-            static function (InputEvent $event) use (
+            function (InputEvent $event) use (
                 $screen,
                 $state,
                 $editor,
@@ -178,7 +182,25 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
                 $blockFactory,
                 $logger,
                 $editorWidget,
+                $context,
             ): void {
+                $data = $event->getData();
+                $buffering = $this->isBufferingPaste();
+                $paste = $this->processBracketedPaste($data);
+                if ($buffering || $this->isBufferingPaste() || null !== $paste) {
+                    $event->stopPropagation();
+                    if (null !== $paste) {
+                        if (!$this->stageImagePath($paste, $context)) {
+                            $editorWidget->handleInput("\x1b[200~".$paste."\x1b[201~");
+                        }
+                    }
+                    if ('' !== $data) {
+                        $editorWidget->handleInput($data);
+                    }
+
+                    return;
+                }
+
                 if (!$editorWidget->getKeybindings()->matches($event->getData(), 'paste_image')) {
                     return;
                 }
@@ -248,6 +270,50 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
             },
             priority: InputPriority::IMAGE_PASTE,
         );
+    }
+
+    private function stageImagePath(string $paste, TuiRuntimeContext $context): bool
+    {
+        $source = trim($paste);
+        if (str_contains($source, "\0") || !(new Filesystem())->isAbsolutePath($source) || !is_file($source) || !is_readable($source)) {
+            return false;
+        }
+
+        // Non-images stay text; supported but damaged/oversized images use normal validation errors.
+        if (!$this->validationService->isSupportedImageFile($source)) {
+            return false;
+        }
+
+        $staged = null;
+        try {
+            $this->validationService->validateFile($source);
+            $filesystem = new Filesystem();
+            $staged = $filesystem->tempnam(sys_get_temp_dir(), 'hatfield-paste-');
+            $filesystem->copy($source, $staged, true);
+            $this->validationService->validateFile($staged);
+        } catch (\Throwable $e) {
+            $this->validationService->logValidationFailure('image_path_paste_validation_failed', $e);
+            if (null !== $staged) {
+                (new Filesystem())->remove($staged);
+            }
+            self::appendSystemMessage($context->state, $context->screen, $this->blockFactory, $e->getMessage());
+            $context->screen->requestRender();
+
+            return true;
+        }
+
+        // Only owned copies enter pending state: submission and cancellation may delete them.
+        $index = $context->state->nextPastedImageIndex++;
+        $context->state->pastedImagePendingByIndex[$index] = new PastedImagePendingDTO(stagedPath: $staged);
+        $editor = $context->screen->promptEditor();
+        $prefix = $editor->getText();
+        if ('' !== $prefix && !str_ends_with($prefix, ' ') && !str_ends_with($prefix, "\n")) {
+            $editor->getWidget()->handleInput(' ');
+        }
+        $editor->getWidget()->handleInput(PastedImagePlaceholderFormatter::placeholder($index));
+        $context->screen->requestRender();
+
+        return true;
     }
 
     private static function appendSystemMessage(
