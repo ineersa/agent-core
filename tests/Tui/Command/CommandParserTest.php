@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Command;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\NormalPromptCommand;
 use Ineersa\Tui\Command\ShellCommand;
@@ -42,6 +43,43 @@ final class CommandParserTest extends TestCase
         $result = $this->parser->parse('hello world');
 
         $this->assertInstanceOf(NormalPromptCommand::class, $result);
+    }
+
+    public function testExistingAbsolutePathsReturnNormalPrompts(): void
+    {
+        $directory = TestDirectoryIsolation::createProjectTempDir('test-command-paths');
+        try {
+            $this->assertSame($directory, realpath($directory));
+            $file = $directory.'/example.txt';
+            $spacedFile = $directory.'/file with spaces.txt';
+            file_put_contents($file, 'example');
+            file_put_contents($spacedFile, 'example');
+
+            foreach ([$directory, $directory.'/', $file, $spacedFile] as $path) {
+                $this->assertInstanceOf(NormalPromptCommand::class, $this->parser->parse($path));
+            }
+            foreach ([$directory, $file] as $path) {
+                $this->assertInstanceOf(NormalPromptCommand::class, $this->parser->parse($path.' please inspect this'));
+                $this->assertInstanceOf(NormalPromptCommand::class, $this->parser->parse('  '.$path."\nplease inspect this  "));
+            }
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    public function testMissingAbsolutePathStillUsesSlashCommandParsing(): void
+    {
+        $directory = TestDirectoryIsolation::createProjectTempDir('test-command-paths');
+        try {
+            $path = $directory.'/missing';
+            $result = $this->parser->parse($path.' details');
+
+            $this->assertInstanceOf(SlashCommand::class, $result);
+            $this->assertSame(substr($path, 1), $result->name);
+            $this->assertSame('details', $result->args);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
     }
 
     // ─── SlashCommand cases ────────────────────────────────────────────

@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Command;
 
 /**
- * Pure parser that distinguishes normal prompts from slash commands and
+ * Parser that distinguishes normal prompts from slash commands and
  * shell commands in submitted editor text.
  *
- * No Symfony TUI or AgentCore dependencies — pure domain logic.
+ * Existing filesystem paths take precedence over slash commands.
  */
 final readonly class CommandParser
 {
@@ -18,6 +18,7 @@ final readonly class CommandParser
      * Rules (applied after trimming leading/trailing whitespace):
      *  - Empty string → NormalPrompt
      *  - Starts with "//" → NormalPrompt (escaped slash, not a command)
+     *  - Starts with an existing file/directory path → NormalPrompt
      *  - Starts with "/" followed by word chars → SlashCommand
      *    (name = first word after "/", lowercased; args = rest, trimmed)
      *  - Starts with "!!" → unsupported (EDITOR-11 MVP: only single !)
@@ -66,6 +67,11 @@ final readonly class CommandParser
             // Extract name (first word) and args (rest)
             $parts = preg_split('/\s+/', $rest, 2);
             \assert(\is_array($parts));
+            $path = '/'.$parts[0];
+            if (is_file($text) || is_dir($text) || is_file($path) || is_dir($path)) {
+                return new NormalPromptCommand();
+            }
+
             $name = strtolower(trim($parts[0]));
             $args = isset($parts[1]) ? trim($parts[1]) : '';
 
