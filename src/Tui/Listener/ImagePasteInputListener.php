@@ -294,7 +294,7 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
             $this->validationService->validateFile($source);
             $filesystem = new Filesystem();
             $staged = $filesystem->tempnam(sys_get_temp_dir(), 'hatfield-paste-');
-            $filesystem->copy($source, $staged, true);
+            $filesystem->dumpFile($staged, $filesystem->readFile($source));
             $this->validationService->validateFile($staged);
         } catch (\Throwable $e) {
             $this->validationService->logValidationFailure('image_path_paste_validation_failed', $e);
