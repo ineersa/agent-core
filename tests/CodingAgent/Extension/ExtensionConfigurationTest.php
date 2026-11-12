@@ -40,9 +40,10 @@ final class ExtensionConfigurationTest extends TestCase
         $this->assertSame($patterns, $safeGuard['allow_command_patterns']);
         $this->assertSame(['bash' => 'shell'], $safeGuard['tool_names']);
         $workflowDefaults = TaskWorkflowSettings::fromArray($processor->processConfiguration($definitions['task_workflow'], [[]]));
-        $this->assertNull($workflowDefaults->taskRoot);
-        $workflow = TaskWorkflowSettings::fromArray($processor->processConfiguration($definitions['task_workflow'], [['task_root' => '/tmp/board']]));
-        $this->assertSame('/tmp/board', $workflow->taskRoot);
+        $this->assertSame('', $workflowDefaults->repository);
+        $workflow = TaskWorkflowSettings::fromArray($processor->processConfiguration($definitions['task_workflow'], [['repository' => 'acme/project', 'workflow_field' => 'Hatfield Status']]));
+        $this->assertSame('acme/project', $workflow->repository);
+        $this->assertSame('Hatfield Status', $workflow->workflowField);
 
         $input = [
             'model' => 'local/Qwen/Qwen3',
