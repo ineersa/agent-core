@@ -91,9 +91,4 @@ final class TaskBoardLock
             fclose($handle);
         }
     }
-
-    public static function lockPathForRoot(string $taskRoot): string
-    {
-        return rtrim($taskRoot, '/').'/.task-workflow.lock';
-    }
 }

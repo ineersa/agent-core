@@ -9,6 +9,7 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\DTO\GitHubTaskDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\DTO\PullRequestDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\DTO\TaskInputDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\DTO\WorkspaceBindingDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Exception\TaskTransitionException;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
@@ -52,17 +53,17 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         $to = TaskStatusEnum::fromMixed($input->to);
         $task = $this->store->read($input->task, $control);
         $lock = $this->states->lock($this->settings->repository, $task->number);
-        $result = $lock->withLock(function () use ($task, $to, $arguments, $control): string {
+        $result = $lock->withLock(function () use ($task, $to, $input, $control): string {
             // A local lock is cooperative, not a distributed GitHub lock. Always read
             // again under it and detect conflicting remote writes before publication.
             $current = $this->store->read($task->number, $control);
             if (null === $current->status) {
-                if (true !== ($arguments['adopt'] ?? false)) {
+                if (!$input->adopt) {
                     throw new TaskTransitionException('Issue is unmanaged. Explicit adopt=true is required, including historical closed issues.');
                 }
                 $current = $this->store->adopt($current, $control);
             }
-            if (isset($arguments['from']) && $current->status->value !== $arguments['from']) {
+            if (null !== $input->from && $current->status->value !== $input->from) {
                 throw new TaskTransitionException('Workflow differs from the expected source status.');
             }
             $state = $this->states->load($this->settings->repository, $current->number);
@@ -89,22 +90,19 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             }
 
             return match ($to) {
-                TaskStatusEnum::IN_PROGRESS => $this->start($current, $state, $arguments, $control),
-                TaskStatusEnum::CODE_REVIEW => $this->review($current, $state, $arguments, $control),
-                default => $this->finish($current, $state, $arguments, $to, $control),
+                TaskStatusEnum::IN_PROGRESS => $this->start($current, $state, $input, $control),
+                TaskStatusEnum::CODE_REVIEW => $this->review($current, $state, $input, $control),
+                default => $this->finish($current, $state, $input, $to, $control),
             };
         }, $control->cancellationToken, $control->deadlineNs, $control->timeoutSeconds);
 
         return \is_array($result) ? ToolResult::structured($result) : $result;
     }
 
-    /**
-     * @param array<string,mixed>|null $state
-     * @param array<string,mixed>      $arguments
-     */
-    private function start(GitHubTaskDTO $task, ?array $state, array $arguments, InvocationControl $control): string
+    /** @param array<string,mixed>|null $state */
+    private function start(GitHubTaskDTO $task, ?array $state, TaskInputDTO $input, InvocationControl $control): string
     {
-        $pr = $this->resolvePr($task, $state, $arguments, $control);
+        $pr = $this->resolvePr($task, $state, $input, $control);
         if (null !== $pr && ('MERGED' === $pr->state || null !== $pr->mergedAt)) {
             throw new TaskTransitionException('PR is already merged. Use DONE finalization instead of restarting implementation.');
         }
@@ -112,8 +110,8 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         $base = $pr->baseBranch ?? $this->settings->baseBranch;
         if (null === $branch) {
             $branches = array_values(array_filter($this->store->relationships($task->number, $control), static fn ($link): bool => 'branch' === $link->type));
-            if (isset($arguments['branch'])) {
-                $branches = array_values(array_filter($branches, static fn ($link): bool => $link->branch === $arguments['branch']));
+            if (null !== $input->branch) {
+                $branches = array_values(array_filter($branches, static fn ($link): bool => $link->branch === $input->branch));
             }
             if (\count($branches) > 1) {
                 throw new TaskTransitionException('Multiple linked branches; provide an explicit branch.');
@@ -176,18 +174,15 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         return ToolResult::text('Workspace ready; Workflow IN-PROGRESS.', ['task' => $published, 'branch' => $binding->branch, 'worktree' => $binding->worktree, 'setup' => 'passed']);
     }
 
-    /**
-     * @param array<string,mixed>|null $state
-     * @param array<string,mixed>      $arguments
-     */
-    private function review(GitHubTaskDTO $task, ?array $state, array $arguments, InvocationControl $control): string
+    /** @param array<string,mixed>|null $state */
+    private function review(GitHubTaskDTO $task, ?array $state, TaskInputDTO $input, InvocationControl $control): string
     {
         if (null === $state || true !== ($state['setup_complete'] ?? false)) {
             throw new TaskTransitionException('No complete owned workspace on this machine. Resume IN-PROGRESS first.');
         }
         $this->assertWorkspace($state, $control);
         $sha = $this->worktrees->head($state['worktree'], $control);
-        $pr = $this->resolvePr($task, $state, $arguments, $control);
+        $pr = $this->resolvePr($task, $state, $input, $control);
         if (null !== $pr && 'OPEN' !== $pr->state) {
             throw new TaskTransitionException('Associated PR is closed or merged; reconcile it before submitting.');
         }
@@ -211,7 +206,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             if (\count($matches) > 1) {
                 throw new TaskTransitionException('Multiple matching PRs; select one explicitly.');
             }
-            $pr = $matches[0] ?? $this->pr->create($task->number, $state['branch'], $base, $arguments['prTitle'] ?? $task->title, $arguments['prBody'] ?? $task->body, $control);
+            $pr = $matches[0] ?? $this->pr->create($task->number, $state['branch'], $base, $input->prTitle ?? $task->title, $input->prBody ?? $task->body, $control);
         }
         $this->pr->assertIdentity($pr, $state['branch'], $base, $task->number);
         $pr = $this->pr->view($pr->number, $control);
@@ -230,15 +225,12 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         return ToolResult::text('Validation passed; PR ready for review.', ['task' => $published, 'pr' => $pr->url, 'validated_sha' => $sha, 'validation' => ['exit_code' => 0, 'outcome' => 'passed']]);
     }
 
-    /**
-     * @param array<string,mixed>|null $state
-     * @param array<string,mixed>      $arguments
-     */
-    private function finish(GitHubTaskDTO $task, ?array $state, array $arguments, TaskStatusEnum $to, InvocationControl $control): string
+    /** @param array<string,mixed>|null $state */
+    private function finish(GitHubTaskDTO $task, ?array $state, TaskInputDTO $input, TaskStatusEnum $to, InvocationControl $control): string
     {
         $done = TaskStatusEnum::DONE === $to;
         $reason = $done ? 'done' : 'cancel';
-        $pr = $this->resolvePr($task, $state, $arguments, $control);
+        $pr = $this->resolvePr($task, $state, $input, $control);
         if ($done && null === $pr) {
             throw new TaskTransitionException('DONE requires a verified task PR, including on repeated finalization.');
         }
@@ -256,7 +248,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
             $state = $this->states->initialize($this->settings->repository, $task->number, $task->url, $pr->headBranch ?? '', '');
         }
         if ($done) {
-            $accepted = $arguments['acceptedHead'] ?? $state['submitted_sha'] ?? null;
+            $accepted = $input->acceptedHead ?? $state['submitted_sha'] ?? null;
             if (null === $accepted) {
                 throw new TaskTransitionException('No local submitted revision. Inspect actual PR head/review state and provide acceptedHead explicitly.');
             }
@@ -312,14 +304,11 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         return ToolResult::text('Finalization confirmed: cleanup passed, owned workspace absent, Workflow '.$to->value.'.', ['task' => $published, 'cleanup' => 'passed', 'worktree_removed' => true, 'execution_checkout' => $this->primaryRoot]);
     }
 
-    /**
-     * @param array<string,mixed>|null $state
-     * @param array<string,mixed>      $arguments
-     */
-    private function resolvePr(GitHubTaskDTO $task, ?array $state, array $arguments, InvocationControl $control): ?PullRequestDTO
+    /** @param array<string,mixed>|null $state */
+    private function resolvePr(GitHubTaskDTO $task, ?array $state, TaskInputDTO $input, InvocationControl $control): ?PullRequestDTO
     {
         $links = array_values(array_filter($this->store->relationships($task->number, $control), static fn ($link): bool => 'pull_request' === $link->type));
-        $reference = $arguments['pr'] ?? $state['pr_url'] ?? null;
+        $reference = $input->pr ?? $state['pr_url'] ?? null;
         if (null !== $reference) {
             $links = array_values(array_filter($links, static fn ($link): bool => $link->url === $reference || (string) $link->number === (string) $reference));
             if (1 !== \count($links)) {

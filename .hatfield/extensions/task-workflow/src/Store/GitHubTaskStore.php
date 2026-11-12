@@ -253,24 +253,6 @@ final class GitHubTaskStore
         return array_values($relationships);
     }
 
-    /** @return list<array<string, mixed>> */
-    public function artifacts(int|string $reference, int $page = 1, int $perPage = 30, ?InvocationControl $control = null): array
-    {
-        $this->bounds($page, $perPage);
-
-        return $this->api('GET', $this->path().'/issues/'.$this->number($reference).'/artifacts?page='.$page.'&per_page='.$perPage, [], $control);
-    }
-
-    /** @return array<string, mixed> */
-    public function createArtifact(int|string $reference, string $name, string $body, string $type = 'plan', ?InvocationControl $control = null): array
-    {
-        if ('' === trim($name) || !\in_array($type, ['generic', 'link', 'plan', 'embedded_html'], true)) {
-            throw new GitHubTaskException('Artifact requires a name and supported type.');
-        }
-
-        return $this->api('POST', $this->path().'/issues/'.$this->number($reference).'/artifacts', ['name' => $name, 'body' => $body, 'type' => $type], $control);
-    }
-
     /**
      * Stale-read detection only; artifact editing has no atomic compare-and-set contract.
      *
@@ -301,14 +283,6 @@ final class GitHubTaskStore
         }
 
         return $this->api('POST', $this->path().'/issues/'.$this->number($reference).'/comments', ['body' => $body], $control);
-    }
-
-    /** @return list<array<string, mixed>> */
-    public function comments(int|string $reference, int $page = 1, int $perPage = 30, ?InvocationControl $control = null): array
-    {
-        $this->bounds($page, $perPage);
-
-        return $this->api('GET', $this->path().'/issues/'.$this->number($reference).'/comments?page='.$page.'&per_page='.$perPage, [], $control);
     }
 
     /**

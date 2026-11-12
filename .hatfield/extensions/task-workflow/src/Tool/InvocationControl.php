@@ -79,16 +79,4 @@ final readonly class InvocationControl
 
         return min($explicitTimeout, $remaining);
     }
-
-    /**
-     * Detect structured interrupt maps returned from lock wait / nested helpers.
-     */
-    public static function isInterruptMap(mixed $value): bool
-    {
-        if (!\is_array($value)) {
-            return false;
-        }
-
-        return true === ($value['cancelled'] ?? false) || true === ($value['timed_out'] ?? false);
-    }
 }
