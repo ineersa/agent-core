@@ -27,4 +27,19 @@ final class UpdateTaskHandlerTest extends TestCase
             $fixture->workspace->close();
         }
     }
+
+    public function testSelectedArtifactReceivesEditWithoutChangingIssue(): void
+    {
+        $fixture = new TransitionFixture();
+        try {
+            $result = (new UpdateTaskHandler($fixture->store, $fixture->states, $fixture->settings))(['task' => '7', 'artifact' => '2', 'title' => 'Revised plan', 'body' => 'Updated artifact content'], new ToolInvocationContextDTO(runId: 'test'));
+            $this->assertSame('Updated artifact content', Toon::decode($result)['artifact']['body']);
+            $this->assertSame('Revised plan', $fixture->artifact['name']);
+            $this->assertSame('Title', $fixture->taskTitle);
+            $this->assertSame('Specification', $fixture->taskBody);
+            $this->assertSame('TODO', $fixture->status);
+        } finally {
+            $fixture->workspace->close();
+        }
+    }
 }

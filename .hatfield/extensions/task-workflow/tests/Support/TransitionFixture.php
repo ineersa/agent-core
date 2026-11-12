@@ -27,6 +27,7 @@ final class TransitionFixture implements ExecInterface
     public TaskWorkflowSettings $settings;
     public string $taskTitle = 'Title';
     public string $taskBody = 'Specification';
+    public array $artifact = ['number' => 2, 'name' => 'Plan', 'body' => 'Original plan'];
     public ?string $comment = null;
     public string $status = 'TODO';
     public string $issueState = 'open';
@@ -163,6 +164,13 @@ final class TransitionFixture implements ExecInterface
             }
 
             return $this->json('' === $this->status ? [] : [['issue_field_id' => 42, 'data_type' => 'single_select', 'value' => 10, 'single_select_option' => ['id' => 10, 'name' => $this->status]]]);
+        }
+        if ('repos/acme/project/issues/7/artifacts/2' === $endpoint) {
+            if (\in_array('PATCH', $args, true)) {
+                $this->artifact = [...$this->artifact, ...$payload];
+            }
+
+            return $this->json($this->artifact);
         }
         if ('repos/acme/project/issues/7/comments' === $endpoint) {
             $this->comment = $payload['body'];

@@ -97,8 +97,14 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
         ));
         $api->registerTool(new ToolRegistrationDTO(
             name: 'update_task',
-            description: 'Edit the current issue title/body, an explicitly selected artifact, or add an intentional discussion comment. Does not change Workflow.',
-            parametersJsonSchema: $schema(['task' => $reference, 'title' => $text, 'body' => $text, 'artifact' => $text, 'comment' => $text], ['task']),
+            description: 'Edit the current issue title/body, or set artifact to target those edits at that document instead. At least one edit or intentional discussion comment is required. Does not change Workflow.',
+            parametersJsonSchema: $schema([
+                'task' => $reference,
+                'title' => ['type' => 'string', 'description' => 'New issue title, or artifact name when artifact is selected.'],
+                'body' => ['type' => 'string', 'description' => 'Replacement issue body, or artifact body when artifact is selected.'],
+                'artifact' => ['type' => 'string', 'description' => 'Artifact number or URL selecting the document to edit with title/body. Selection alone is not an edit.'],
+                'comment' => $text,
+            ], ['task']),
             handler: new UpdateTaskHandler($store, $states, $settings),
             promptSummary: 'update_task task [title] [body] [artifact] [comment] — edit current task content',
             promptGuidelines: ['Keep the specification, decisions, test plan and actual QA current in the issue body. Do not append work logs or agent metadata.'],

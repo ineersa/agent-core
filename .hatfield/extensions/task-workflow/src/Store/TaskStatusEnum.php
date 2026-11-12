@@ -33,33 +33,4 @@ enum TaskStatusEnum: string
 
         throw new \RuntimeException('Unknown task status: '.$value);
     }
-
-    /**
-     * @return list<self>
-     */
-    public static function all(): array
-    {
-        return [
-            self::TODO,
-            self::IN_PROGRESS,
-            self::CODE_REVIEW,
-            self::DONE,
-            self::CANCELLED,
-        ];
-    }
-
-    /**
-     * Default task_list statuses: active + DONE, omitting CANCELLED unless requested.
-     *
-     * @return list<self>
-     */
-    public static function defaultListed(): array
-    {
-        return [
-            self::TODO,
-            self::IN_PROGRESS,
-            self::CODE_REVIEW,
-            self::DONE,
-        ];
-    }
 }
