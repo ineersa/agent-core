@@ -4,145 +4,83 @@ declare(strict_types=1);
 
 namespace HatfieldProject\TaskHooks;
 
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Filesystem\Path;
+
+/** Optional parent-project indexing exclusions; never creates an IDEA project. */
 final class WorktreeIdeaExclusions
 {
-    /** @var list<string> */
-    private const WORKTREE_EXCLUDE_PATHS = [
-        '.hatfield',
-        '.vera',
-        'var',
-        'vendor',
-        'apps/coding-agent/var',
-        'apps/coding-agent/vendor',
-        'packages/agent-core/var',
-        'packages/agent-core/vendor',
-        'packages/ai-index/vendor',
-    ];
-
-    /** @return array{updated: bool, note?: string} */
-    public function addWorktreeExclusions(string $slug, string $worktreeBase): array
+    public function update(string $worktree): string
     {
-        $imlPath = $this->findParentIdeaModule($worktreeBase);
-        if (null === $imlPath) {
-            return ['updated' => false, 'note' => 'Parent IDEA module not found or ambiguous; skipping exclusion update.'];
+        $base = \dirname($worktree);
+        $modules = glob($base.'/.idea/*.iml');
+        if (false === $modules || 1 !== \count($modules)) {
+            return 'Skipped IDEA exclusions: parent module is missing or ambiguous.';
         }
-
-        $content = file_get_contents($imlPath);
-        if (false === $content) {
-            return ['updated' => false, 'note' => 'Failed to read parent IDEA module: '.$imlPath];
+        $module = $modules[0];
+        $document = new \DOMDocument();
+        $document->preserveWhiteSpace = true;
+        if (!$document->load($module, \LIBXML_NONET)) {
+            throw new \RuntimeException('Failed to parse parent IDEA module.');
         }
-
-        $startTag = self::startMarker($slug);
-        $endTag = self::endMarker($slug);
-        $startIdx = strpos($content, $startTag);
-        $endIdx = strpos($content, $endTag);
-        $hasStart = false !== $startIdx;
-        $hasEnd = false !== $endIdx;
-        if ($hasStart !== $hasEnd) {
-            return ['updated' => false, 'note' => 'Parent IDEA module has mismatched exclusion markers for '.$slug.' ('.($hasStart ? 'start-only' : 'end-only').'); skipping update to avoid corruption.'];
+        $workspace = realpath($worktree);
+        if (false === $workspace) {
+            return 'Skipped IDEA exclusions: workspace directory is missing.';
         }
-        if ($hasStart && false !== $endIdx && false !== $startIdx && $endIdx < $startIdx) {
-            return ['updated' => false, 'note' => 'Parent IDEA module has reversed exclusion markers for '.$slug.' (end before start); skipping update to avoid corruption.'];
-        }
-
-        $newBlock = $this->buildExclusionBlock($slug);
-        if ($hasStart && false !== $startIdx && false !== $endIdx) {
-            $content = substr($content, 0, $startIdx).$newBlock.substr($content, $endIdx + \strlen($endTag));
-        } else {
-            $contentCloseIdx = strpos($content, '</content>');
-            if (false === $contentCloseIdx) {
-                return ['updated' => false, 'note' => 'Parent IDEA module has no <content> element; cannot insert exclusions.'];
+        $matches = [];
+        foreach ($document->getElementsByTagName('content') as $content) {
+            $url = $content->getAttribute('url');
+            if (!str_starts_with($url, 'file://')) {
+                continue;
             }
-            $content = substr($content, 0, $contentCloseIdx).$newBlock."\n".substr($content, $contentCloseIdx);
+            $path = str_replace(['$MODULE_DIR$', '$PROJECT_DIR$'], [\dirname($module), $base], substr($url, 7));
+            $resolved = realpath($path);
+            if (false !== $resolved && Path::isBasePath($resolved, $workspace)) {
+                $matches[] = [$content, $resolved];
+            }
+        }
+        if (1 !== \count($matches)) {
+            return 'Skipped IDEA exclusions: containing content element is missing or ambiguous.';
+        }
+        /** @var \DOMElement $content */
+        [$content, $contentRoot] = $matches[0];
+        $existing = [];
+        foreach ($content->childNodes as $child) {
+            if ($child instanceof \DOMElement && 'excludeFolder' === $child->tagName) {
+                $existing[] = $child->getAttribute('url');
+            }
+        }
+        $paths = ['vendor', 'var', '.vera', '.hatfield/cache', '.hatfield/locks', '.hatfield/extensions/vendor', '.hatfield/tmp'];
+        $caches = glob($worktree.'/.hatfield/cache-*', \GLOB_ONLYDIR);
+        foreach (false === $caches ? [] : $caches as $cache) {
+            $paths[] = Path::makeRelative($cache, $worktree);
+        }
+        $changed = false;
+        foreach ($paths as $path) {
+            $directory = realpath($worktree.'/'.$path);
+            if (false === $directory || !is_dir($directory) || !Path::isBasePath($workspace, $directory)) {
+                continue;
+            }
+            // Preserve the selected content URL's anchor (including IDEA macros),
+            // not an assumed relationship between MODULE_DIR and the worktree.
+            $url = rtrim($content->getAttribute('url'), '/').'/'.Path::makeRelative($directory, $contentRoot);
+            if (\in_array($url, $existing, true)) {
+                continue;
+            }
+            $exclusion = $document->createElement('excludeFolder');
+            $exclusion->setAttribute('url', $url);
+            $content->appendChild($exclusion);
+            $existing[] = $url;
+            $changed = true;
+        }
+        if ($changed) {
+            $xml = $document->saveXML();
+            if (false === $xml) {
+                throw new \RuntimeException('Failed to serialize parent IDEA module.');
+            }
+            (new Filesystem())->dumpFile($module, $xml);
         }
 
-        if (false === file_put_contents($imlPath, $content)) {
-            return ['updated' => false, 'note' => 'Failed to write parent IDEA module: '.$imlPath];
-        }
-
-        return ['updated' => true];
-    }
-
-    /** @return array{updated: bool, note?: string} */
-    public function removeWorktreeExclusions(string $slug, string $worktreeBase): array
-    {
-        $imlPath = $this->findParentIdeaModule($worktreeBase);
-        if (null === $imlPath) {
-            return ['updated' => false, 'note' => 'Parent IDEA module not found; skipping exclusion cleanup.'];
-        }
-
-        $content = file_get_contents($imlPath);
-        if (false === $content) {
-            return ['updated' => false, 'note' => 'Failed to read parent IDEA module for cleanup: '.$imlPath];
-        }
-
-        $startTag = self::startMarker($slug);
-        $endTag = self::endMarker($slug);
-        $startIdx = strpos($content, $startTag);
-        $endIdx = strpos($content, $endTag);
-        $hasStart = false !== $startIdx;
-        $hasEnd = false !== $endIdx;
-        if ($hasStart !== $hasEnd) {
-            return ['updated' => false, 'note' => 'Parent IDEA module has mismatched exclusion markers for '.$slug.' ('.($hasStart ? 'start-only' : 'end-only').'); skipping cleanup to avoid corruption.'];
-        }
-        if ($hasStart && false !== $endIdx && false !== $startIdx && $endIdx < $startIdx) {
-            return ['updated' => false, 'note' => 'Parent IDEA module has reversed exclusion markers for '.$slug.' (end before start); skipping cleanup to avoid corruption.'];
-        }
-        if (!$hasStart || false === $startIdx || false === $endIdx) {
-            return ['updated' => false];
-        }
-
-        $beforeStart = strrpos(substr($content, 0, $startIdx), "\n");
-        $removeStart = false !== $beforeStart && $beforeStart > 0 ? $beforeStart : $startIdx;
-        $content = substr($content, 0, $removeStart).substr($content, $endIdx + \strlen($endTag));
-
-        if (false === file_put_contents($imlPath, $content)) {
-            return ['updated' => false, 'note' => 'Failed to write parent IDEA module for cleanup: '.$imlPath];
-        }
-
-        return ['updated' => true];
-    }
-
-    private function findParentIdeaModule(string $worktreeBase): ?string
-    {
-        $ideaDir = $worktreeBase.'/.idea';
-        if (!is_dir($ideaDir)) {
-            return null;
-        }
-        $primary = $ideaDir.'/'.basename($worktreeBase).'.iml';
-        if (is_file($primary)) {
-            return $primary;
-        }
-        $entries = scandir($ideaDir);
-        if (false === $entries) {
-            return null;
-        }
-        $imlFiles = array_values(array_filter($entries, static fn (string $e): bool => str_ends_with($e, '.iml')));
-        if (1 === \count($imlFiles)) {
-            return $ideaDir.'/'.$imlFiles[0];
-        }
-
-        return null;
-    }
-
-    private function buildExclusionBlock(string $slug): string
-    {
-        $lines = ['', self::startMarker($slug)];
-        foreach (self::WORKTREE_EXCLUDE_PATHS as $relPath) {
-            $lines[] = '    <excludeFolder url="file://$MODULE_DIR$/'.$slug.'/'.$relPath.'" />';
-        }
-        $lines[] = self::endMarker($slug);
-
-        return implode("\n", $lines);
-    }
-
-    private static function startMarker(string $slug): string
-    {
-        return '<!-- pi-task-workflow:start '.$slug.' -->';
-    }
-
-    private static function endMarker(string $slug): string
-    {
-        return '<!-- pi-task-workflow:end '.$slug.' -->';
+        return $changed ? 'Updated parent IDEA generated-directory exclusions.' : 'Parent IDEA exclusions already up to date.';
     }
 }

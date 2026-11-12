@@ -20,4 +20,4 @@ fi
 if [[ -f .hatfield/extensions/composer.json ]]; then
     composer install -d .hatfield/extensions --no-interaction --no-progress
 fi
-php "$HATFIELD_PROJECT_ROOT/.hatfield/task-hooks/idea.php" setup
+php "$HATFIELD_PROJECT_ROOT/.hatfield/task-hooks/idea.php"
