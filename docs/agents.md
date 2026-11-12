@@ -8,7 +8,7 @@ description: Agent definitions, discovery, subagent execution, retrieval, and li
 Named child-agent roles live in Markdown files with YAML frontmatter. The
 model-visible `subagent` tool launches one child per call. Submit independent
 calls together for concurrent execution through the normal tool scheduler.
-Launches wait in the foreground by default. Set `backgrounded: true` for an acknowledgement and a later handoff, or use Ctrl+B while a child invocation runs. The separate model-visible `fork` tool is shipped (see below).
+Launches wait in the foreground by default. Set `backgrounded: true` for an acknowledgement and a later handoff, or use Ctrl+B while a child invocation runs.
 
 Settings keys: [settings-agents.md](settings-agents.md). Sessions/artifacts: [session-storage.md](session-storage.md).
 
@@ -162,8 +162,6 @@ Provide at least one identifier. Cross-parent retrieval is rejected. Use when a 
 
 `mode=handoff` returns the latest handoff. `mode=handoff_history` lists prior handoffs by default; pass `handoff_id=<uuid>` to fetch one body.
 
-Pre-upgrade sessions that only have mutable `handoff.md` or numeric `handoffs/<n>.md` archives are not migrated; `mode=handoff` / `handoff_history` may be empty for those children (files remain on disk).
-
 ## Subagent live view (parent TUI)
 
 - `/agents-live` — picker of known child runs; Enter opens interactive live view for steering / child HITL.
@@ -177,7 +175,7 @@ Shipped model tool for **implementation delegation** to an isolated child with
 inherited parent conversation context (snapshot → sanitize → compact → deferred
 single-child launch). Distinct from `subagent`. Transport note: `subagent` and
 `agent_resume` route to the `agent` Messenger transport; `fork` stays on the
-default `tool` transport (see unmarked repository `docs/tool-execution.md`).
+default `tool` transport (see repository `architecture/tools-and-mcp.md`).
 
 | | `subagent` | `fork` |
 |---|---|---|

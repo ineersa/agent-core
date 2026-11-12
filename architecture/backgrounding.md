@@ -1,141 +1,78 @@
-# Background command architecture
+# Background execution ownership
 
-[Architecture map](README.md) · [Processes](processes-and-queues.md) · [Tools](tools-and-mcp.md)
+[Architecture](README.md) · [Usage](../docs/background-processes.md) · [Code mode](code-mode-and-scheduling.md)
 
-Backgrounding changes ownership of an already running bash command. It does not
-launch a second copy. Private foreground supervision and accepted background work
-share record infrastructure but have different visibility and cleanup rules.
+## Bash: one launch, ownership transfer
 
-## Foreground command becomes background work
-
-```mermaid
-%%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
-sequenceDiagram
-    participant Model
-    participant Bash as BashTool
-    participant Manager as BackgroundProcessManager
-    participant Process as Owned shell process group
-    participant Records as background_process and sidecars
-    participant Controller as Session runtime command handler
-    participant TUI
-    actor User
-
-    Model->>Bash: bash(command, timeout)
-    Bash->>Manager: Start supervised command
-    Manager->>Records: Private row with PID, status, log paths
-    Manager->>Process: Launch once, capture output and exit status
-    loop While running in foreground
-        Bash->>Manager: Check status, cancellation, timeout, output
-        Manager->>Records: Read owned status and log
-    end
-    alt Finishes before background choice
-        Process->>Records: Exit code and final output
-        Manager-->>Bash: Exact foreground outcome
-        Bash-->>Model: Result
-    else User requests backgrounding with Ctrl+B
-        User->>TUI: Ctrl+B, select a command if several are eligible
-        TUI->>Controller: background_bash(run ID, record ID, tool-call ID)
-        Controller->>Manager: Request backgrounding for exact invocation
-        Manager->>Records: Set background_requested after eligibility checks
-        Bash->>Manager: Recheck completion before accepting request
-        alt Still running and eligible
-            Bash->>Manager: Mark existing row backgrounded_at
-            Manager->>Records: Publish accepted background ownership
-            Bash-->>Model: One original-call acknowledgment with PID and log reference
-            Note over Process,Records: Same process and original deadline continue
-        else Already finished
-            Bash-->>Model: Foreground result
-        end
-    end
-```
-
-There is no `bg_start` tool or model-set background flag. The user controls the
-transition. Child-run Bash and directly entered shell commands cannot detach.
-Foreground timeout/cancellation remains separate from `bg_status`.
-
-## Record state and visibility
+`BashTool` starts one supervised shell process group. Foreground supervision is
+private; accepted background work is visible through `/bg` and `bg_status`.
+The same record/process changes ownership—backgrounding never launches a copy.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PrivateRunning: bash launches command
-    PrivateRunning --> PrivateFinished: foreground process exits
-    PrivateRunning --> AcceptedRunning: user accepts backgrounding
-    PrivateRunning --> PrivateFinished: foreground timeout or cancellation stops process
-    PrivateFinished --> Removed: provisional scheduler cleanup
-    AcceptedRunning --> AcceptedFinished: process exits; completion can be notified
-    AcceptedRunning --> AcceptedFinished: bg_status stop
-    AcceptedRunning --> Removed: controller lifecycle stop and cleanup
-    AcceptedFinished --> Removed: controller startup or shutdown cleanup
+    [*] --> PrivateRunning: Bash launch
+    PrivateRunning --> PrivateFinished: Exit / timeout / cancel
+    PrivateRunning --> AcceptedRunning: Background request accepted
+    PrivateFinished --> RetainedEvidence: Release handle with session + tool-call identity
+    PrivateFinished --> Removed: Unscoped invocation cleanup
+    RetainedEvidence --> Removed: Permanent session deletion
+    AcceptedRunning --> AcceptedFinished: Exit / explicit stop
+    AcceptedRunning --> AcceptedFinished: Controller startup / shutdown stop
+    AcceptedFinished --> Removed: Permanent session deletion
     Removed --> [*]
-    note right of PrivateRunning
-        Not listed by bg_status
-        Private foreground owner
-    end note
-    note right of AcceptedRunning
-        backgrounded_at is set
-        Visible to owning session
-    end note
 ```
 
-## Completion notification and explicit stop
+A direct model call can set `backgrounded: true`; the user can request backgrounding
+of an eligible foreground call with Ctrl+B. The manager validates the exact run,
+record and tool-call identity and rechecks completion before acceptance. If the
+process already finished, its ordinary foreground result wins. Acceptance persists
+before returning the original call's acknowledgement; its deadline still applies.
+There is no `bg_start` tool. Nested code-mode Bash cannot detach, and child/direct
+shell eligibility follows the native supervision policy rather than PID alone.
 
 ```mermaid
-%%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
 sequenceDiagram
-    participant Process as Accepted background process
-    participant Store as Record and status sidecar
-    participant Poller as BackgroundProcessCompletionPoller
-    participant Runtime as Controller / runtime event delivery
-    participant Model
-    participant Tool as BgStatusTool
-    participant Manager as BackgroundProcessManager
-
-    Process->>Store: Exit status becomes available
-    Poller->>Store: Poll accepted session processes
-    Poller->>Runtime: Report newly completed background work
-    Runtime-->>Model: Completion notification
-    Model->>Tool: bg_status(action=log, pid)
-    Tool->>Manager: Resolve accepted record for current session
-    Manager->>Store: Read bounded log tail
-    Store-->>Model: Log tail and artifact reference
-    opt Stop a still-running accepted job
-        Model->>Tool: bg_status(action=stop, pid)
-        Tool->>Manager: Resolve owned accepted process group
-        Manager->>Process: SIGTERM
-        Manager->>Process: Check exit during configured grace
-        alt Still alive after grace
-            Manager->>Process: SIGKILL
-        end
-        Manager-->>Tool: Stop outcome
-    end
+    participant Bash as BashTool / manager
+    participant Process as Owned process group
+    participant Store as Record + sidecars
+    participant Poller as Controller completion poller
+    participant Owner as Owning session
+    Bash->>Process: Launch once
+    Bash->>Store: Private supervision evidence
+    Bash->>Store: Persist accepted background ownership
+    Bash-->>Owner: PID / log acknowledgement
+    Process->>Store: Exit status and output
+    Poller->>Store: Observe accepted completion
+    Poller-->>Owner: Automatic completion notification
 ```
 
-`bg_status` cannot list, read, or stop a private foreground row. A PID alone does not
-grant authority over an arbitrary host process.
+`bg_status` resolves accepted Bash records for the current session. It cannot list
+or stop private foreground supervision or arbitrary host PIDs. Stop validates owned
+process-group evidence before TERM, then escalates after the configured grace if
+still necessary. Missing/unverifiable evidence is not permission to signal.
 
-## Two cleanup owners
+## Cleanup owners
 
-```mermaid
-flowchart TD
-    Scheduler["scheduler_default<br/>every 300 seconds"] --> Provisional[BackgroundProcessProvisionalCleanupTask]
-    Provisional --> Private[Finished private foreground rows]
-    Private --> DeletePrivate[Remove exact row-owned sidecars and row]
-    Startup[Controller startup after owner lock] --> Lifecycle[BackgroundProcessControllerSessionLifecycleListener]
-    Shutdown[Controller shutdown] --> Lifecycle
-    Lifecycle --> Scope[Accepted jobs for owned parent and child scopes]
-    Scope --> Running{Process still running?}
-    Running -->|Yes| Stop[Stop recorded owned process group]
-    Running -->|No| DeleteAccepted[Remove exact sidecars and row]
-    Stop --> DeleteAccepted
-```
+- Invocation cleanup releases the local native handle. When session and tool-call
+  identity exist, foreground PID/status/log sidecars remain as replay evidence;
+  release does not delete them or expose private work through `bg_status`.
+  Unscoped launches instead delete their exact owned sidecars.
+- Controller startup (after acquiring its owner lock) and shutdown clean recorded
+  parent/child scopes by stopping owned groups. Scoped rows and native sidecars
+  remain as replay evidence; permanent session deletion removes that evidence.
+- Accepted Bash jobs can outlive a turn and worker recycling. They do not survive
+  session-controller shutdown as a supported service.
+- Code-mode scripts retain their original worker's IPC host. Backgrounded scripts
+  still occupy a cooperative handler and fail when that host is lost.
+- Background child calls use durable deferred supervision and later handoff
+  delivery, not Bash process records. See [child agents](extensions-and-agents.md).
 
-Startup cleans leftovers after abrupt controller loss. Shutdown cleans current
-accepted jobs. Background work may outlive an LLM turn, but it is not a service
-promised to survive session-controller shutdown. Never clean unrelated or root-owned
-processes, and never signal active workers tagged with `HATFIELD_SESSION_ID`.
+Cancel before Bash background acceptance stops foreground work; acceptance first
+releases foreground ownership and preserves the accepted job. These checks do not
+promise exactly-once signals or rollback. Never clean unrelated/root-owned
+processes or manually signal active `HATFIELD_SESSION_ID` workers.
 
-Sources: [background process behavior](../docs/background-processes.md),
-[BashTool](../src/CodingAgent/Tool/BashTool.php),
+Sources: [BashTool](../src/CodingAgent/Tool/BashTool.php),
 [BackgroundProcessManager](../src/CodingAgent/Tool/BackgroundProcessManager.php),
 [completion poller](../src/CodingAgent/Runtime/Controller/BackgroundProcessCompletionPoller.php),
-[lifecycle listener](../src/CodingAgent/Runtime/Controller/BackgroundProcessControllerSessionLifecycleListener.php).
+[lifecycle cleanup](../src/CodingAgent/Runtime/Controller/BackgroundProcessControllerSessionLifecycleListener.php).

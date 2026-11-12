@@ -359,7 +359,7 @@ final class PharSmokeTest extends TestCase
 
         $this->assertFalse(isset($phar['internal-docs/settings.md']), 'PHAR must not contain internal-docs');
         $this->assertFalse(isset($phar['docs/datadog.md']), 'PHAR must not bundle unmarked repository docs');
-        $this->assertFalse(isset($phar['docs/async-runtime-architecture.md']), 'PHAR must not bundle repository-only docs');
+        $this->assertFalse(isset($phar['architecture/runtime.md']), 'PHAR must not bundle repository-only docs');
         // Unmarked decoys under Extension API docs must not ship even if present in source.
         $this->assertFalse(
             isset($phar['.hatfield/extensions/extension-api/docs/private-unmarked.md']),
