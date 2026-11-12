@@ -32,6 +32,7 @@ final class TaskInputMapperTest extends TestCase
                 $this->fail('Expected unsupported argument refusal');
             } catch (TaskInputException $exception) {
                 $this->assertSame($key, $exception->errors[0]['path']);
+                $this->assertStringContainsString($key, $exception->getMessage());
             }
         }
     }
