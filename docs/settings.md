@@ -241,14 +241,31 @@ Only exit zero succeeds. Hooks must tolerate retries and partial/missing workspa
 they must not remove worktrees or operate PRs/Workflow. No arbitrary hook commands
 are accepted in transition calls.
 
-This repository configures `.hatfield/task-hooks/{setup,validate,cleanup}.sh`
-with timeouts 900/1800/300 seconds; validation executes `castor check`.
-Copy the three Markdown templates into `.github/ISSUE_TEMPLATE/`, commit them to
-the default branch, then deliberately run `/tasks-init` to check capabilities and
-initialize owner-scoped Workflow options. It preserves unrelated fields/options.
-The credential needs access to owner issue fields (personal-owner reads require
-`read:user`) and the repository/artifact APIs. A capability failure is an error,
-never a fallback to local task files.
+After installation/enablement, ask “set up task workflow” for the discoverable
+setup skill; a Git repository is a prerequisite even before task configuration.
+The extension README's **Project setup** guide covers inspection, project-specific
+hooks and shared feature/bug/experiment Markdown templates. Reuse the project's
+established checks, preserve existing settings, commit setup to the primary checkout
+and restart Hatfield to load it before `/tasks-init`. Task tools/commands remain
+unregistered until `repository` is configured.
+
+Workflow is an owner-level **single-select issue field**, not a Projects field or
+label; select an existing differently named field with `workflow_field` rather than
+renaming it or creating a duplicate. Leave unrelated fields untouched. Issue types
+and pinning are not runtime prerequisites. For personal owners,
+classic OAuth definition reads require `read:user`; creating/updating definitions
+needs broader `user` scope. Prefer manually creating Workflow and all five options
+through account Settings → Planning → Issue fields over requesting broad scopes;
+organization fields live under organization Settings → Planning → Issue fields.
+Manual setup avoids definition writes, not definition reads or the repository/API
+permissions required for per-issue Workflow values and artifacts. Never silently
+escalate credentials; see the README for manual steps and permission references.
+
+`/tasks-init` deliberately checks capabilities and can create missing owner-level
+definitions/options while preserving unrelated configuration. It needs an existing
+ordinary issue for a read-only artifact probe; do not create a dummy production task
+for setup. It does not exercise hooks or prove the full lifecycle. Report exact
+blockers and unrun checks. A capability failure is an error, never a local fallback.
 
 Before switching an existing project, finish legacy active tasks, import outstanding
 TODO specifications and useful QA into issues, and retain the old repository as

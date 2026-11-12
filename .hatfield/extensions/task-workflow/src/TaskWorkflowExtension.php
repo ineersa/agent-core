@@ -54,20 +54,20 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
     public function register(ExtensionApiInterface $api): void
     {
         $settings = TaskWorkflowSettings::fromArray($api->getSettings('task_workflow'));
+        $exec = $api->exec();
+        $git = new GitExecutor($exec);
+        $worktrees = new WorktreeManager($git);
+        $primary = $worktrees->primaryRoot($api->getCwd());
+        // The stable checkout owns installed guidance, including before configuration.
+        (new TaskWorkflowSkillInstaller($primary, \dirname(__DIR__), $this->logger))->install();
         if ('' === $settings->repository) {
             $this->logger->warning('task_workflow.unconfigured', ['component' => 'task_workflow', 'event_type' => 'configuration_required']);
 
             return;
         }
-        $exec = $api->exec();
-        $git = new GitExecutor($exec);
-        $worktrees = new WorktreeManager($git);
-        $primary = $worktrees->primaryRoot($api->getCwd());
         $states = new WorkspaceStateStore($git, $primary);
         $store = new GitHubTaskStore($exec, $primary, $settings);
         $pr = new PrManager($exec, $primary, $settings);
-        // The stable checkout owns hooks and installed guidance, not the task directory.
-        (new TaskWorkflowSkillInstaller($primary, \dirname(__DIR__), $this->logger))->install();
         $api->registerPromptContributor(new WorkflowPrompt($primary, $settings->repository));
         $statuses = array_map(static fn (TaskStatusEnum $status): string => $status->value, TaskStatusEnum::cases());
         $text = ['type' => 'string'];

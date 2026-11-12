@@ -14,16 +14,88 @@ common directory, shared by linked worktrees. They are not a second task store.
 
 ## Project setup
 
-Configure `.hatfield/settings.yaml`:
+After installing and enabling the extension, ask **“set up task workflow”**.
+The bundled skill supplies setup guidance even before a repository is configured;
+task tools and commands remain unavailable until configuration is loaded.
+Follow the same steps manually below. Setup prepares the project, not a real task:
+do not create, migrate, transition or merge production tasks to demonstrate setup.
+
+### 1. Inspect the project and prerequisites
+
+Start in a Git repository with a committed primary checkout, a GitHub repository
+and a configured remote. Install Git and a current `gh` CLI with issue-artifact
+support; use the existing `gh` authentication for the correct host. Inspect the
+remote, default/base branch, project instructions, CI, dependency installation,
+build and test commands before proposing settings or scripts. Do not assume a
+particular language, package manager or validation command.
+
+Preserve existing settings, templates and hook customizations. Determine what
+task-local resources the project needs and which resources cleanup may own;
+ask only about unresolved product/review policy, resource ownership or required
+authorization, not facts that can be read from the checkout. Credentials remain
+in `gh` authentication, never in project settings or scripts.
+
+### 2. Prepare owner-level GitHub issue fields and permissions
+
+Use the repository owner's **issue fields**, not GitHub Projects fields or labels.
+For a personal repository the definitions belong to the personal account; for an
+organization repository they belong to the organization. The production default
+is a **single-select field named `Workflow`**, with these five options exactly:
+
+`TODO`, `IN-PROGRESS`, `CODE-REVIEW`, `DONE`, `CANCELLED`.
+
+If the owner already has a suitable field with another name (for example,
+`Hatfield Status`), set `workflow_field` to that exact name and reuse it. Do not
+require a rename or create a duplicate Workflow field. Other fields such as
+GitHub's native Priority, Effort or dates are independent; leave them untouched.
+
+Colors are cosmetic; choose any available colors without making them a setup
+decision. Issue types are independent and are not a prerequisite for this
+workflow. Existing native Task/Bug/Feature types can be kept as-is; do not recreate
+them or add an Experiment type just to use the experiment Markdown template.
+Templates structure issue bodies, not Workflow statuses or issue types.
+Pin Workflow in the issue UI if useful for visibility, including on
+issues without a type; pinning is not required for runtime correctness.
+
+Manual setup is often the least-privilege route:
+
+- **Personal account:** avatar → **Settings** → **Planning** → **Issue fields** →
+  **New field**. Create Workflow as single-select and add all five options.
+- **Organization:** organization **Settings** → **Planning** → **Issue fields**;
+  an authorized organization administrator can create the same field/options.
+
+See GitHub's [personal account UI announcement](https://github.blog/changelog/2026-11-11-issue-types-and-fields-are-available-for-personal-accounts).
+Do not replace unrelated fields/options or reset values on existing issues.
+
+Definition management and task writes have different permissions. With classic
+OAuth tokens, personal-owner **definition reads** need `read:user`; creating or
+updating those definitions needs the broader `user` scope. Organization
+definitions require the corresponding organization permissions. **Per-issue
+Workflow value operations**, ordinary issue edits and artifact operations use
+their repository/API permissions; owner-definition write access is not a
+prerequisite when the complete field already exists. Manually creating all five
+options lets initialization reuse them without writing owner definitions.
+See the [personal issue-field API permissions](https://docs.github.com/en/rest/users/issue-fields).
+Do not automatically refresh credentials or request broader account scopes.
+Explain the missing permission and manual setup alternative, then obtain human
+authorization for any credential change; manual setup still requires readable
+definitions and the repository permissions needed for normal task operations.
+
+### 3. Configure the project, preserving existing settings
+
+Merge this example into the project's `.hatfield/settings.yaml`; do not replace
+the whole file. Values and timeouts are project choices, not universal defaults:
 
 ```yaml
 extensions:
+  enabled:
+    - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
   settings:
     task_workflow:
-      repository: ineersa/agent-core  # [HOST/]OWNER/REPO
+      repository: owner/repository  # [HOST/]OWNER/REPO
       remote: origin
       base_branch: main
-      worktree_root: ../agent-core-worktrees
+      worktree_root: ../project-worktrees
       workflow_field: Workflow
       merge_method: merge            # merge, squash, rebase
       hooks:
@@ -38,29 +110,97 @@ extensions:
           timeout_seconds: 300
 ```
 
-Enable the extension through Hatfield extension settings. An unconfigured
-repository registers no task tools; there is no automatic task-root discovery
-or filesystem fallback. Relative paths resolve from the primary Git checkout,
-not the current task directory. Credentials stay in `gh` authentication.
+`repository` is the explicit GitHub identity; `remote` is the existing Git remote,
+`base_branch` the intended PR target, `workflow_field` the exact existing field
+name (default `Workflow`), and `merge_method` must respect project review/merge
+policy. Relative `worktree_root` and hook paths resolve from the
+**primary Git checkout**, not a task worktree. There is no automatic task-root
+discovery or filesystem task-store fallback.
 
-Commit feature, bug and experiment Markdown templates under
-`.github/ISSUE_TEMPLATE/`. Templates are shared with GitHub's issue chooser
-(which reads the default branch), not parsed forms. Projects may change their
-headings. Use `name` and `about` frontmatter. Fill the selected template, strip
-its frontmatter, and submit its prepared body to `create_task`; do not combine
-`gh issue create --template` with `--body-file`.
+### 4. Prepare all three project-owned Bash hooks
+
+Inspect and reuse the project's established commands. Commit scripts at the
+configured paths, each with a positive `timeout_seconds`:
+
+| Hook | Project responsibility |
+| --- | --- |
+| `setup` | Install/provision dependencies and uniquely owned task-local resources. |
+| `validate` | Run the established pre-review build/test/lint checks for the committed revision; propagate failures. Never substitute a no-op for validation. |
+| `cleanup` | Remove **only resources owned by this task**. Be idempotent and handle partial setup, never-started setup and a missing task directory. |
+
+An explicit `exit 0` setup or cleanup script is acceptable when that phase has
+nothing to do. Do not remove shared databases, containers, caches or other
+checkouts just because they exist. Use the stable task resource ID/data directory
+for ownership where needed. Hooks must not merge PRs, update Workflow or remove
+Git worktrees; Hatfield owns those operations.
+
+Scripts run noninteractively through Bash; only exit zero succeeds. Setup and
+validation use the task worktree as cwd; cleanup uses the stable primary checkout.
+All scripts are read from that primary checkout. Each timeout is also limited by
+the enclosing invocation budget. See the [hook contract](#hook-contract) for the
+complete environment, including `HATFIELD_PROJECT_ROOT`, `HATFIELD_TASK_WORKTREE`,
+`HATFIELD_TASK_RESOURCE_ID` and persistent `HATFIELD_TASK_DATA_DIR`. Quote these as
+data; never interpolate issue text into executable shell source. Design cleanup
+before provisioning resources, not after a task fails.
+
+### 5. Prepare shared Markdown issue templates
+
+Preserve or prepare `.github/ISSUE_TEMPLATE/feature.md`, `bug.md` and
+`experiment.md`. These are ordinary Markdown templates with `name` and `about`
+YAML frontmatter, shared by the GitHub issue chooser and Hatfield. They are not
+issue forms, and the extension does not require fixed headings. Keep them short:
+
+| Template | Useful prepared-body content |
+| --- | --- |
+| Feature | Intended result, scope, acceptance criteria, approach/decisions, test plan, actual QA (initially not run). |
+| Bug | Expected/actual behavior, reproduction/evidence, known root cause or labeled uncertainty, fix plan, tests and actual QA. |
+| Experiment | Question/hypothesis, bounded method, success/stop criteria, planned verification and findings/actual QA. |
+
+Fill the selected template and submit its prepared Markdown body to `create_task`,
+not a filename. Strip frontmatter; do not combine `gh issue create --template`
+with `--body-file`. Do not create unnecessary plan artifacts or cosmetic metadata.
 
 All templates use the PR lifecycle. An experiment can finish with reviewed
 findings or a negative result; an unknown bug root cause is valid at creation.
 Result-only investigations without a PR are not a completion path in this version.
 
-Commit all three hook scripts, then deliberately run `/tasks-init`. It validates
-the current CLI/artifact capability and resolves owner-scoped Workflow field and
-option identities, creating missing definitions/options while preserving unrelated
-configuration. It requires an existing ordinary issue for a read-only artifact
-probe. Only pin Workflow in the GitHub UI. Missing permissions or unsupported
-capabilities fail explicitly; personal-owner field reads need `read:user`.
-Normal listing/reading does not initialize definitions or execute scripts.
+### 6. Commit, reload and deliberately initialize
+
+Commit the settings, scripts and templates to the stable primary checkout with
+the project's normal authorization. GitHub's issue chooser reads templates from
+the default branch; publish them through the usual review process. Restart
+Hatfield after extension enablement/code changes and reload changed configuration
+by starting a fresh host before initialization; `/new` in an already running host
+does not reload extension PHP classes. The setup skill is installed at extension
+registration; task tools/commands are registered only with a configured repository.
+
+With permission to initialize, run **`/tasks-init`**. This is deliberate: it checks
+current CLI/artifact capabilities and resolves owner-scoped Workflow identities;
+it **can create missing field definitions/options**, preserving unrelated
+configuration. If all five options were created manually, it reuses them.
+Normal listing/reading does not initialize definitions or run scripts.
+
+Initialization needs an **existing ordinary issue**, not a PR, for a read-only
+artifact endpoint probe (searched in bounded repository pages). If the repository
+has no suitable issue, report this prerequisite and defer initialization. Do not
+silently create a dummy issue or real production task. Authentication or capability
+failures are explicit refusals, never a local backend fallback. `/tasks-init` is
+**not a full lifecycle test**: it does not prove hooks, PR review/merge or cleanup
+have run. A live lifecycle exercise belongs in an explicitly authorized disposable
+integration repository, not setup of production work.
+
+### Readiness checklist
+
+- Git primary checkout, repository/remote, base branch and `gh` host/auth inspected.
+- Owner-level Workflow field and all five option names readable; required
+  repository permissions available or manual authorization steps clearly listed.
+- Existing settings preserved; all three project-owned scripts and shared
+  templates prepared and committed in the stable checkout.
+- Validation uses the project's real checks; cleanup ownership and idempotence
+  are understood; hook cwd/environment/timeouts reviewed.
+- Fresh host loaded configuration; `/tasks-init` outcome recorded (or its exact
+  blocker reported). State separately which checks actually ran and which remain
+  unrun. Do not claim end-to-end readiness from fixture tests or initialization.
 
 ## Current content, not a diary
 
@@ -170,9 +310,9 @@ directory disappears. It is deleted only after confirmed remote finalization.
 
 Hooks own generated files/project resources, never PR merges, Workflow updates or
 worktree deletion. Diagnostics are bounded tool output, not appended to issues.
-Agent-core scripts own vendor/`.vera` copies, Composer/link repair and IDEA setup/
-exclusions outside the reusable extension. Validation is `exec castor check`.
-Explicit exit-zero setup/cleanup scripts are valid for projects needing no work.
+Dependency provisioning, editor setup and validation commands belong to the
+project's scripts, not the reusable extension. Explicit exit-zero setup/cleanup
+scripts are valid for projects needing no work; validation must run real checks.
 
 ## Deletion and recovery
 

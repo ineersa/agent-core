@@ -19,7 +19,7 @@ extensions:
             remote: origin
             base_branch: main
             worktree_root: ../agent-core-worktrees
-            workflow_field: Workflow
+            workflow_field: Hatfield Status
             merge_method: merge
             hooks:
                 setup:

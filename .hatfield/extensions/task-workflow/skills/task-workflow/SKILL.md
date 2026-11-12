@@ -1,10 +1,27 @@
 ---
 name: task-workflow
-description: Plan, implement, validate, and deliver work tracked in GitHub issues.
-version: 2.0.0
+description: Set up task workflow for this project, or plan, implement, validate, and deliver work tracked in GitHub issues.
+version: 2.1.0
 ---
 
 # Task workflow
+
+## Set up this project
+
+For “set up task workflow”, read the installed extension's
+[project setup guide](../../extensions/vendor/ineersa/hatfield-ext-task-workflow/README.md#project-setup)
+(relative to this installed project skill). Git and a committed repository are
+prerequisites. Inspect instructions, remote/base branch, CI and existing build/test
+commands first; propose discovered settings, shared feature/bug/experiment Markdown
+templates and all three project-owned hooks. Preserve existing files/settings and
+customization. Ask only unresolved product/review/resource-ownership decisions or
+required human authorization. Reuse a suitable existing owner field by its exact
+`workflow_field` name; otherwise prefer manual creation over broad account scopes.
+Leave unrelated fields alone; colors and extra artifacts are not prerequisites.
+Commit approved setup in the stable primary checkout, restart Hatfield to load it,
+then deliberately run `/tasks-init` with an existing ordinary issue for its read-only
+capability probe. Setup must not create, migrate or merge real tasks. Report verified
+readiness, exact blockers and unrun checks; initialization is not a lifecycle test.
 
 ## Plan
 

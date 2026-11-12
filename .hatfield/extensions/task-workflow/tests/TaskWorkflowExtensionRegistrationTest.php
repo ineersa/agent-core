@@ -8,6 +8,7 @@ use Ineersa\HatfieldExt\TaskWorkflow\Assets\TaskWorkflowSkillInstaller;
 use Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension;
 use Ineersa\HatfieldExt\TaskWorkflow\Tests\Support\TestExtensionApi;
 use Ineersa\HatfieldExt\TaskWorkflow\Tests\Support\TransitionFixture;
+use Ineersa\HatfieldExt\TaskWorkflow\Tests\Support\WorkspaceFixture;
 use PHPUnit\Framework\TestCase;
 
 final class TaskWorkflowExtensionRegistrationTest extends TestCase
@@ -41,10 +42,26 @@ final class TaskWorkflowExtensionRegistrationTest extends TestCase
         }
     }
 
-    public function testUnconfiguredExtensionDoesNotDiscoverOrCreateLocalBoard(): void
+    public function testUnconfiguredExtensionInstallsSetupGuidanceWithoutTaskTools(): void
     {
-        $api = new TestExtensionApi('/not-used');
-        (new TaskWorkflowExtension())->register($api);
-        $this->assertSame([], $api->tools);
+        $workspace = new WorkspaceFixture();
+        try {
+            // Installer writes must stay inside the owned nonsymlink fixture tree.
+            $this->assertSame($workspace->root, realpath($workspace->root));
+            $this->assertStringStartsWith(realpath($workspace->directory).'/', $workspace->root);
+            $this->assertFalse(is_link($workspace->root.'/.hatfield'));
+            $api = new TestExtensionApi($workspace->root, exec: $workspace);
+            (new TaskWorkflowExtension())->register($api);
+            $skill = $workspace->root.'/.hatfield/skills/'.TaskWorkflowSkillInstaller::SKILL_NAME.'/SKILL.md';
+            $this->assertFileExists($skill);
+            $content = file_get_contents($skill);
+            $this->assertStringContainsString('Set up this project', $content);
+            $this->assertStringContainsString('set up task workflow', $content);
+            $this->assertSame([], $api->tools);
+            $this->assertSame([], $api->commands);
+            $this->assertSame([], $api->prompts);
+        } finally {
+            $workspace->close();
+        }
     }
 }
