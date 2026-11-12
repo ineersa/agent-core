@@ -44,7 +44,8 @@ failed rather than hiding the original broker failure behind a generic reconnect
 
 `HATFIELD_BINARY_PATH` chooses the subprocess executable for source, PHAR and
 static builds. MCP disconnect and process cancellation are best-effort, not a
-sandbox or rollback guarantee. Extension construction/registration can fail startup.
+sandbox or rollback guarantee. Extension load failures are caught and logged;
+loading continues without rolling back partial registrations.
 
 Sources: [process client](../src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php),
 [controller](../src/CodingAgent/Runtime/Controller/HeadlessController.php),

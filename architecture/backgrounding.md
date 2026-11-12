@@ -13,7 +13,9 @@ stateDiagram-v2
     [*] --> PrivateRunning: Bash launch
     PrivateRunning --> PrivateFinished: Exit / timeout / cancel
     PrivateRunning --> AcceptedRunning: Background request accepted
-    PrivateFinished --> Removed: Invocation cleanup
+    PrivateFinished --> RetainedEvidence: Release handle with session + tool-call identity
+    PrivateFinished --> Removed: Unscoped invocation cleanup
+    RetainedEvidence --> Removed: Permanent session deletion
     AcceptedRunning --> AcceptedFinished: Exit / explicit stop
     AcceptedRunning --> AcceptedFinished: Controller startup / shutdown stop
     AcceptedFinished --> Removed: Permanent session deletion
@@ -51,11 +53,13 @@ still necessary. Missing/unverifiable evidence is not permission to signal.
 
 ## Cleanup owners
 
-- Invocation cleanup removes unaccepted private launches and their exact owned
-  sidecars. It is not cleanup of accepted user jobs.
-- Controller startup (after acquiring its owner lock) and shutdown clean accepted
-  parent/child scopes by stopping recorded owned groups. Rows and native sidecars
-  remain as replay evidence; only permanent deletion removes that evidence.
+- Invocation cleanup releases the local native handle. When session and tool-call
+  identity exist, foreground PID/status/log sidecars remain as replay evidence;
+  release does not delete them or expose private work through `bg_status`.
+  Unscoped launches instead delete their exact owned sidecars.
+- Controller startup (after acquiring its owner lock) and shutdown clean recorded
+  parent/child scopes by stopping owned groups. Scoped rows and native sidecars
+  remain as replay evidence; permanent session deletion removes that evidence.
 - Accepted Bash jobs can outlive a turn and worker recycling. They do not survive
   session-controller shutdown as a supported service.
 - Code-mode scripts retain their original worker's IPC host. Backgrounded scripts

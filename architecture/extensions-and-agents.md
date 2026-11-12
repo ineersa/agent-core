@@ -24,14 +24,15 @@ sequenceDiagram
         API->>Registry: Register public contracts through host adapters
         Manager->>Registry: Attach event subscriber when applicable
     end
-    Note over Manager,Extension: Construction, logger injection, and subscriber attachment are not all isolated today
+    Note over Manager,Extension: Load failures are logged, other extensions continue<br/>Partial registrations are not rolled back
     Note over Console,Registry: Every console process builds its own registrations<br/>No shared PHP registry across consumers
 ```
 
 Public ExtensionApi remains independent of AgentCore, CodingAgent, and in-repo TUI
 classes. Packages use public contracts. The host owns adapters and runtime execution.
-A throwing extension constructor can abort startup; the diagrams do not imply
-transactional registration or rollback of partially registered extensions.
+`ExtensionManager::loadSingle()` catches failures in construction, logger injection,
+registration and subscriber attachment, records the failure and continues loading
+other extensions. Partial registrations are not rolled back.
 
 ## Subagent, resume, and fork entry points
 

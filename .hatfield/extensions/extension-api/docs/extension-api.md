@@ -25,10 +25,9 @@ keeps the separately published API stable and is not an internal boundary workar
    runs on console command startup in each process, including consumers. `/new`
    inside a running host does not reload classes. Session-start hooks are a
    separate interactive-controller lifecycle, not worker-start callbacks.
-   Construction, logger injection, and subscriber attachment are **not** fully
-   isolated today: a throwing constructor (or uncaught failure outside
-   `register()`) can abort host startup. Registration is not transactional;
-   do not assume complete per-extension failure isolation or rollback.
+   Failures in construction, logger injection, registration or subscriber attachment
+   are caught and logged; other extensions continue loading. Partial registrations
+   are **not rolled back**, so a failed load can leave earlier registrations active.
 
 ```php
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
@@ -74,8 +73,13 @@ For editable setup fields, implement `ConfigurableExtensionInterface::getConfigu
 with Symfony Config's `ConfigurationInterface`. Its tree root names the
 `extensions.settings` key; use native node defaults, validation and `info()`.
 Set node attribute `hatfield.model_picker` to `true` for a generation-model picker.
-Declare the entry class as Composer `extra.hatfield.extension` so setup can discover
-the package. Configuration inspection does not call `register()`.
+Configuration inspection does not call `register()`.
+
+`hatfield extensions:setup` lists built-ins and matching packages from Hatfield's
+own Composer `suggest` catalog, not every installed extension. For catalog packages,
+Composer `extra.hatfield.extension` identifies the entry class; it does not add an
+arbitrary package to setup. Configure other custom extensions manually through
+`extensions.enabled` and `extensions.settings.<tree-root>` in settings YAML.
 
 ## Skills
 
