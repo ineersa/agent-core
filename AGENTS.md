@@ -59,5 +59,6 @@
 
 ## Task workflow
 
-- Main alone manages tracked workflow and loads the active `task-workflow` skill. Use the external board at `/home/ineersa/projects/agent-core-tasks`; never commit board metadata to this repository.
-- Implementation forks follow development, architecture, and testing rules, implement the assigned change, and return results. They do not manage task or ownership records, phases, other agents, reviews, PRs, or commits; main owns that administration.
+- Main alone manages tracked workflow and loads the active `task-workflow` skill. Use the configured GitHub issue as the current specification, plan, decisions, test plan and QA results; Workflow is authoritative. List only when choosing work or resolving identity. Use task tools for transitions, not manual status edits.
+- Implement directly or use optional bounded implementation forks, one writer per checkout. Forks follow development, architecture and testing rules and return changes, blockers and relevant QA. They do not manage task updates, transitions, other agents, reviews, PRs or commits.
+- Transition hooks own the full validation gate and project cleanup; do not duplicate the full gate as a separate workflow ceremony. Honor project review and merge authorization. Report terminal success only after confirmed cleanup, registry removal and directory absence.

@@ -15,7 +15,22 @@ extensions:
         - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
     settings:
         task_workflow:
-            task_root: /home/ineersa/projects/agent-core-tasks
+            repository: ineersa/agent-core
+            remote: origin
+            base_branch: main
+            worktree_root: ../agent-core-worktrees
+            workflow_field: Workflow
+            merge_method: merge
+            hooks:
+                setup:
+                    script: .hatfield/task-hooks/setup.sh
+                    timeout_seconds: 900
+                validate:
+                    script: .hatfield/task-hooks/validate.sh
+                    timeout_seconds: 1800
+                cleanup:
+                    script: .hatfield/task-hooks/cleanup.sh
+                    timeout_seconds: 300
         observational_memory:
             storage: { database: .hatfield/extensions-data/observational-memory/om.sqlite }
             model: llama_cpp/flash

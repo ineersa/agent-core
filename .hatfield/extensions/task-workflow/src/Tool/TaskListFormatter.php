@@ -4,39 +4,30 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\TaskWorkflow\Tool;
 
-use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardStore;
-use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo;
+use Ineersa\HatfieldExt\TaskWorkflow\DTO\GitHubTaskDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskStatusEnum;
 
 final class TaskListFormatter
 {
-    public function __construct(
-        private readonly TaskBoardStore $store,
-    ) {
-    }
-
     /**
-     * @param list<TaskInfo> $tasks
+     * @param list<GitHubTaskDTO>            $tasks
+     * @param array<int,array<string,mixed>> $local
      */
-    public function format(string $taskRoot, array $tasks): string
+    public function format(array $tasks, array $local = []): string
     {
-        if ([] === $tasks) {
-            return 'No tasks.';
-        }
-
         $lines = [];
         foreach ($tasks as $task) {
-            $extra = [];
-            if (null !== $task->branch && '' !== $task->branch) {
-                $extra[] = $task->branch;
+            $suffix = '';
+            if ('CLOSED' === strtoupper($task->state) && \in_array($task->status, [TaskStatusEnum::IN_PROGRESS, TaskStatusEnum::CODE_REVIEW], true)) {
+                $suffix = ' — closed on GitHub, awaiting finalization';
             }
-            if (null !== $task->prUrl && '' !== $task->prUrl) {
-                $extra[] = 'PR: '.$task->prUrl;
+            $pending = $local[$task->number]['pending_operation'] ?? null;
+            if (null !== $pending) {
+                $suffix .= ' — local pending '.$pending;
             }
-            $extras = [] !== $extra ? ' ['.implode(' ', $extra).']' : '';
-
-            $lines[] = '- '.$task->status->value.'/'.$task->file.': '.$task->title.$extras.' ('.$this->store->rel($taskRoot, $task->path).')';
+            $lines[] = '#'.$task->number.' ['.($task->status->value ?? 'unmanaged').'] '.$task->title.$suffix."\n".$task->url;
         }
 
-        return implode("\n", $lines);
+        return [] === $lines ? 'No tasks on this page.' : implode("\n", $lines);
     }
 }

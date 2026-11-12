@@ -1,51 +1,228 @@
-# Hatfield task-workflow extension
+# GitHub task workflow
 
-Native Hatfield port of the pi `task-workflow` extension. It registers task board tools, slash commands, and system prompt guidance. It installs the `task-workflow` skill into the project.
+GitHub issues hold the current specification, implementation plan, decisions,
+test plan and actual QA results. The five-value single-select **Workflow** field
+is authoritative: `TODO`, `IN-PROGRESS`, `CODE-REVIEW`, `DONE`, `CANCELLED`.
+GitHub open/closed state is lifecycle metadata, not proof of local cleanup.
+There is no separate task repository, owner record, work log, fork history,
+reviewer form, mandatory artifact, or ARCHIVE status.
 
-This package requires `ineersa/hatfield-extension-api` for `Ineersa\Hatfield\ExtensionApi\*` contracts. In this monorepo that dependency is a path repository; released consumers install the published API package.
+All GitHub operations use the installed authenticated `gh` CLI. Native linked
+branches and PRs provide development identity; task titles can change freely.
+Only small machine-local ownership/recovery checkpoints live under the Git
+common directory, shared by linked worktrees. They are not a second task store.
 
-## Runtime loading
+## Project setup
 
-`ExtensionManager` requires `.hatfield/extensions/vendor/autoload.php` to autoload project extension classes. After cloning or pulling this repository (or updating extension packages), refresh **both** autoload contexts from the **repository root**:
+Configure `.hatfield/settings.yaml`:
 
-```bash
-composer install
-composer install -d .hatfield/extensions
+```yaml
+extensions:
+  settings:
+    task_workflow:
+      repository: ineersa/agent-core  # [HOST/]OWNER/REPO
+      remote: origin
+      base_branch: main
+      worktree_root: ../agent-core-worktrees
+      workflow_field: Workflow
+      merge_method: merge            # merge, squash, rebase
+      hooks:
+        setup:
+          script: .hatfield/task-hooks/setup.sh
+          timeout_seconds: 900
+        validate:
+          script: .hatfield/task-hooks/validate.sh
+          timeout_seconds: 1800
+        cleanup:
+          script: .hatfield/task-hooks/cleanup.sh
+          timeout_seconds: 300
 ```
 
-- **Root `composer install`** — updates the host `vendor/autoload.php` when root `composer.json` maps extension namespaces (e.g. for tests and Castor QA).
-- **`composer install -d .hatfield/extensions`** — installs path packages and creates `.hatfield/extensions/vendor/autoload.php`, which Hatfield loads at startup when `extensions.enabled` lists this extension.
+Enable the extension through Hatfield extension settings. An unconfigured
+repository registers no task tools; there is no automatic task-root discovery
+or filesystem fallback. Relative paths resolve from the primary Git checkout,
+not the current task directory. Credentials stay in `gh` authentication.
 
-If dependencies are already installed and only autoload maps changed, `composer dump-autoload` at the root is sufficient for (1); you still need (2) whenever `.hatfield/extensions/vendor/` is missing or stale.
+Commit feature, bug and experiment Markdown templates under
+`.github/ISSUE_TEMPLATE/`. Templates are shared with GitHub's issue chooser
+(which reads the default branch), not parsed forms. Projects may change their
+headings. Use `name` and `about` frontmatter. Fill the selected template, strip
+its frontmatter, and submit its prepared body to `create_task`; do not combine
+`gh issue create --template` with `--body-file`.
 
-Enable `Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension` in `.hatfield/settings.yaml` under `extensions.enabled`, then **start a new Hatfield session** — extensions register at startup; an existing TUI session will not show new tools or slash commands until restart.
+All templates use the PR lifecycle. An experiment can finish with reviewed
+findings or a negative result; an unknown bug root cause is valid at creation.
+Result-only investigations without a PR are not a completion path in this version.
 
-See `docs/settings.md` (`extensions.enabled`, `extensions.settings.task_workflow`) for configuration.
+Commit all three hook scripts, then deliberately run `/tasks-init`. It validates
+the current CLI/artifact capability and resolves owner-scoped Workflow field and
+option identities, creating missing definitions/options while preserving unrelated
+configuration. It requires an existing ordinary issue for a read-only artifact
+probe. Only pin Workflow in the GitHub UI. Missing permissions or unsupported
+capabilities fail explicitly; personal-owner field reads need `read:user`.
+Normal listing/reading does not initialize definitions or execute scripts.
 
-## Skill install
+## Current content, not a diary
 
-On `register()`, the extension installs or refreshes the project skill at `.hatfield/skills/task-workflow/`:
+Keep intended behavior, scope, acceptance criteria, approach, consequential
+decisions with rationale, planned tests and actual QA in the issue body. Update
+changed understanding in place. For bugs include expected/actual behavior,
+reproduction, evidence-based root cause or labeled uncertainty, and the fix plan.
+Use comments for intentional discussion; fold accepted conclusions into the body.
+Keep small tasks concise. A linked artifact is optional extended design/research,
+not another mandatory copy of the plan. Artifacts are addressed by per-issue
+number or canonical URL, never by ambiguous display name.
 
-- create the skill directory when absent
-- refresh the whole bundled skill tree when the installed `SKILL.md` frontmatter `version` is missing or differs from the package, removing superseded files such as the old `references/` tree
-- leave same-version installs untouched so local edits survive
+QA states what actually ran and remaining gaps. Unrun checks stay unrun; a passing
+hook does not imply manual acceptance checks happened. There is no machine-readable
+QA-report object or permanent task-level validation-passed flag.
 
-Host skill discovery loads the installed copy from `.hatfield/skills/`. The extension does not register a duplicate package copy. Host discovery ignores unknown frontmatter keys such as `version`.
+## Tools and commands
 
-The consolidated skill is a main-agent procedure. Implementation forks receive the implementation specification, not workflow administration.
+- `create_task(title, body)`: prepared Markdown to a GitHub TODO issue. Frontmatter
+  is stripped defensively. The result identifies a created issue even if its final
+  Workflow publication fails, so recovery need not create a duplicate.
+- `read_task(task, artifact?)`: current issue, native development links and local
+  recovery. `task` is the immutable issue number or canonical URL. An explicit
+  artifact adds that document; comment history is not fetched unnecessarily.
+- `task_list(status?, page?, perPage?)`: defaults to active Workflow values,
+  including native-closed issues. Filtered page applies independently to each
+  requested status, up to `perPage` per status (maximum 100); at most 20 filtered
+  pages are traversed. Uses actual field IDs in server-side GraphQL filters,
+  never guessed field slugs or a scan of all historical issues. Local owned
+  workspaces are separately bounded and remain visible despite remote status edits.
+- `update_task(task, title?, body?, artifact?, comment?)`: edit current issue or
+  explicitly selected artifact; optionally add intentional discussion. Does not
+  change Workflow. No agent metadata, PR mirrors, summary/validation appenders
+  or work-log arguments exist.
+- `move_task(task, to, from?, adopt?, pr?, branch?, acceptedHead?, prTitle?, prBody?)`:
+  transitions own hooks, Git/PR operations and recovery. `from` guards expected
+  source Workflow. `adopt=true` explicitly adopts an unmanaged ordinary issue as
+  TODO, including historical closed issues; native closure never implies cleanup.
+  Select ambiguous native PR/branch relationships explicitly. `acceptedHead`
+  identifies the inspected/reviewed completion revision, required without a local
+  submitted-SHA checkpoint. It is not merge authorization or a review bypass.
 
-## Board setup
+`/tasks`, `/tasks-todo`, `/tasks-in-progress`, `/tasks-code-review`, `/tasks-done`
+accept an optional page. Native closure with active Workflow is displayed as
+awaiting finalization. `/tasks-init` is deliberate project initialization.
+Task command prompts preserve planning-only, implementation-only, review,
+feedback iteration and completion endpoints. Main performs task administration;
+implementation forks are optional bounded help, one writer per checkout.
 
-Use the checkout and resolved board from the active project workflow prompt; task tools use the same resolver. Configure `extensions.settings.task_workflow.task_root`; `HATFIELD_TASK_WORKFLOW_ROOT` takes precedence. Without either, the extension discovers a valid sibling `<checkout-name>-tasks` board. Keep installed guidance portable: never bake resolved paths into it or infer a board from another project's instructions. Board metadata stays outside the code repository; the user may commit it separately.
+## Transition order
 
-## Worktree and IDE setup
+| Transition | Behavior |
+| --- | --- |
+| TODO → IN-PROGRESS | Recover/create native `task/issue-N`, record owned path, create workspace, setup, publish last |
+| IN-PROGRESS → IN-PROGRESS | Resume this machine's workspace; completed setup is reused for the same existing workspace |
+| CODE-REVIEW → IN-PROGRESS | Return for changes using native PR head/base; provision/setup only if needed |
+| IN-PROGRESS → CODE-REVIEW | Require committed clean workspace, validate actual SHA, recheck HEAD/cleanliness, push without force, verify remote and PR SHA, publish last |
+| CODE-REVIEW → DONE | Protected GitHub merge/head guard, require confirmed MERGED, fast-forward actual merged base, cleanup, verified removal, close completed, publish last |
+| TODO / IN-PROGRESS / CODE-REVIEW → CANCELLED | Reject merged PR, close/verify unmerged PR, cleanup even if never started, verified removal, recheck PR, close not planned, publish last |
+| DONE → DONE / CANCELLED → CANCELLED | Reconcile unfinished local/remote finalization rather than returning early |
 
-Moving to IN-PROGRESS creates the task worktree and branch, copies `vendor/`, updates parent IDEA exclusions when present, and creates minimal local `.idea` metadata. No IDE server is required. DONE or CANCELLED cleanup removes exclusions after successful worktree removal. Run task-branch checks in that exact checkout.
+Other transitions are rejected. An active task without its pushed native branch
+cannot be "resumed" by making a new branch from base. PR relationships replace
+linked-branch relationships after PR creation; closed/merged native PR references
+are paginated explicitly. Query failure is never interpreted as no match.
 
-## Transition failure operations
+Submission reruns validation for the submitted revision. Nonzero exit, launch
+failure, timeout, cancellation, changed HEAD, tracked changes or nonignored
+untracked files prevent advancement. A formatter's changes must be committed
+and revalidated. Successful push/PR effects are reconciled after uncertain errors.
 
-A failed CODE-REVIEW transition reports the failing lane, bounded error, QA report directory, and lane log when one ran. Setup, lock, preflight, and finalizer failures report the actual error and available QA directory; do not invent a lane or log. Do not quarantine flakes, retry blindly, or raise timeouts. Fix the deterministic cause, document unrelated fixes, obtain review at the new target, and rerun the transition. Ask the user when a fix requires a broader product decision.
+Completion uses `gh pr merge --match-head-commit` and the configured merge method,
+never `--admin`, local remerging, force push or `--delete-branch`. Repository
+protections and project review requirements still apply. An enabled auto-merge
+or queued merge is pending and retains the workspace. Squash/rebase completion
+updates from the actual merged base, not the old implementation branch.
 
-Partial failures after side effects, such as a successful push followed by failed PR creation, keep the task IN-PROGRESS. Inspect actual task path/status, Git state, and PR state. Record completed steps, the failed step and bounded cause, available QA reports, session/run identity, and a safe next action without blindly repeating completed steps. Redact credentials and raw authentication output.
+## Hook contract
 
-DONE merges the task branch into the integration checkout and runs `git pull`. A conflict leaves the task in CODE-REVIEW; do not force it. Integration validation remains required after a successful merge, even if task status is already DONE. Record any failure or missing prerequisite rather than claiming completion.
+Scripts are invoked as `bash --noprofile --norc /absolute/script`, noninteractively
+through the existing cancellable execution interface. Inherited `BASH_ENV` is
+neutralized. No issue content, branch or path is interpolated into shell source.
+Scripts always come from the stable primary checkout: setup/validate run with the
+task workspace as cwd; cleanup runs with the primary checkout as cwd. Hook updates
+must remain compatible with active workspaces; scripts are not snapshotted.
+
+| Environment variable | Meaning |
+| --- | --- |
+| `HATFIELD_PROJECT_ROOT` | Stable primary checkout, source of scripts/config |
+| `HATFIELD_TASK_REPOSITORY` | Explicit GitHub identity |
+| `HATFIELD_TASK_NUMBER`, `HATFIELD_TASK_URL` | Stable issue identity |
+| `HATFIELD_TASK_BRANCH`, `HATFIELD_TASK_BASE_BRANCH` | Implementation/target branches |
+| `HATFIELD_TASK_WORKTREE` | Owned path, empty if never provisioned |
+| `HATFIELD_TASK_WORKTREE_EXISTS` | Current directory existence: `1`/`0` |
+| `HATFIELD_TASK_SETUP_ATTEMPTED` | Provisioning started: `1`/`0` |
+| `HATFIELD_TASK_REASON` | `start`, `review`, `done`, `cancel` |
+| `HATFIELD_TASK_RESOURCE_ID` | Unique stable local resource name across retries |
+| `HATFIELD_TASK_DATA_DIR` | Persistent hook-owned data outside task workspace |
+
+Only exit zero succeeds. Output saying "passed" does not override failure.
+Timeouts honor both project and enclosing invocation budgets; destructive steps
+wait for hook termination. Setup/cleanup tolerate retries and partial provisioning.
+A crash can make hook outcome uncertain: exactly-once execution is not promised.
+Never-started cancellation passes an empty worktree and setup-attempted `0`;
+cleanup normally does nothing. Retained hook data allows cleanup after a task
+directory disappears. It is deleted only after confirmed remote finalization.
+
+Hooks own generated files/project resources, never PR merges, Workflow updates or
+worktree deletion. Diagnostics are bounded tool output, not appended to issues.
+Agent-core scripts own vendor/`.vera` copies, Composer/link repair and IDEA setup/
+exclusions outside the reusable extension. Validation is `exec castor check`.
+Explicit exit-zero setup/cleanup scripts are valid for projects needing no work.
+
+## Deletion and recovery
+
+After cleanup exits zero, ordinary **non-forced** `git worktree remove` must
+succeed and both exact-path postconditions must hold:
+
+1. No entry in `git worktree list --porcelain -z` for the expected repository.
+2. No filesystem entry, including a dangling symlink or unexpected replacement.
+
+A registered missing directory still requires targeted removal. A present
+unregistered directory is preserved as a mismatch. No global prune, forced
+removal, `rm -rf` fallback, automatic stash or branch deletion is performed.
+Cleanliness is checked again after cleanup; DONE also guards the local committed
+HEAD against the confirmed merged PR head. Cancellation retains branch/commits.
+Primary/unrelated workspaces are never removal targets.
+
+A successful merge is not rolled back when cleanup fails. Retain active Workflow
+and machine recovery until finalization succeeds, even if GitHub auto-closed the
+issue. Cleanup invalidates setup first, so partial teardown cannot be silently
+resumed as implementation. Pending terminal operations must resume as the same
+finalization; a verified concurrent merge during cancellation requires explicit
+DONE reconciliation with cleanup evaluated for the new reason.
+
+Checkpoints are atomic JSON under the Git common directory's `hatfield/tasks/`,
+keyed by host/repository and issue. Cooperative locking detects local conflicts,
+not distributed ownership. One orchestrator writes a task. Re-read before
+publication; stale-read detection is not an atomic compare-and-set guarantee.
+External status/closure edits never execute hooks. Conflicting already-closed
+issue reasons prevent terminal publication; do not pretend closing again changed
+GitHub's reason. If removal succeeded but GitHub publication failed, retry remote
+finalization without recreating workspaces or re-merging. Subsequent execution
+must use the returned primary checkout rather than a removed directory.
+
+## Cutover, integration and export
+
+Finish legacy active tasks before switching an existing project. Import outstanding
+TODO requirements, current plans, useful decisions and QA into GitHub. Keep the
+old repository as read-only history and old-path-to-issue mappings only in one-off
+migration output, never the new runtime. Configure/test hooks and templates once.
+A dedicated integration repository, not production history, must exercise the live
+lifecycle and failure paths before cutover. Fixture tests are not live GitHub proof.
+
+A Git clone is not an issue backup. Export issue metadata/current body, Workflow
+values, comment history and numbered artifact metadata/bytes separately:
+
+```bash
+bash .hatfield/extensions/task-workflow/bin/export-task.sh OWNER/REPO 123 NEW_OUTPUT_DIRECTORY
+```
+
+The command refuses an existing destination and marks success with `COMPLETE`.
+Artifact pages are requested explicitly with a bound because their endpoint has
+no Link header. Failed/limited exports remain visibly incomplete; exports are
+not consumed as a runtime fallback or synchronization database.

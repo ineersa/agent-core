@@ -1,10 +1,16 @@
 ---
-description: Prepare an IN-PROGRESS task for PR by reviewing, recording, and moving to CODE-REVIEW
-argument-hint: "<task>"
+description: Validate and submit a GitHub task for PR review
+argument-hint: "<issue-number-or-url>"
 ---
 
-Prepare tracked task for PR and code review: `$ARGUMENTS`
+Selected task: `$ARGUMENTS`
 
-If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing.
+If the argument is empty or still a placeholder, ask for an issue number or URL
+rather than guessing. Listing is for choosing work, not a prerequisite for reading
+an already selected issue.
 
-Follow **Submit or update PR** in the `task-workflow` skill.
+Read the selected issue directly. Follow **Verify and deliver** in the
+`task-workflow` skill through review submission only. Inspect the change and
+record actual focused QA. Use `move_task(to="CODE-REVIEW")` for the configured
+validation gate, push and native PR. Update the issue QA from the actual hook
+outcome. Do not merge.

@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\TaskWorkflow\Tool;
 
 use HelgeSverre\Toon\Toon;
-use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo;
+use Ineersa\HatfieldExt\TaskWorkflow\DTO\GitHubTaskDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\DTO\PullRequestDTO;
 
 /**
  * Shared builder for Hatfield task-workflow tool return values.
@@ -67,16 +68,12 @@ final class ToolResult
 
     private static function normalizeValue(mixed $value): mixed
     {
-        if ($value instanceof TaskInfo) {
-            return [
-                'status' => $value->status->value,
-                'file' => $value->file,
-                'path' => $value->path,
-                'title' => $value->title,
-                'branch' => $value->branch,
-                'worktree' => $value->worktree,
-                'prUrl' => $value->prUrl,
-            ];
+        if ($value instanceof \BackedEnum) {
+            return $value->value;
+        }
+
+        if ($value instanceof GitHubTaskDTO || $value instanceof PullRequestDTO) {
+            return self::normalizeDetails(get_object_vars($value));
         }
 
         if (\is_array($value)) {

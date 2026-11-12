@@ -1,10 +1,15 @@
 ---
-description: Start a tracked task by moving TODO -> IN-PROGRESS and choosing implementation ownership
-argument-hint: "<task>"
+description: Start a selected GitHub issue and implement in its task workspace
+argument-hint: "<issue-number-or-url>"
 ---
 
-Start tracked task: `$ARGUMENTS`
+Selected task: `$ARGUMENTS`
 
-If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing.
+If the argument is empty or still a placeholder, ask for an issue number or URL
+rather than guessing. Listing is for choosing work, not a prerequisite for reading
+an already selected issue.
 
-Follow **Establish current state** and **Implement** in the `task-workflow` skill. Stop after implementation.
+Read the selected issue with `read_task` and follow **Plan** and **Implement**
+in the `task-workflow` skill. Use `move_task` to start/resume the workspace.
+Implement directly or use a useful bounded implementation fork. Stop after
+implementation; do not submit, merge or finalize.

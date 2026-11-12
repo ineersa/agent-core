@@ -5,92 +5,33 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\TaskWorkflow\Tests;
 
 use HelgeSverre\Toon\Toon;
-use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo;
+use Ineersa\HatfieldExt\TaskWorkflow\DTO\GitHubTaskDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskStatusEnum;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\ToolResult;
-use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 final class ToolResultTest extends TestCase
 {
-    #[Test]
-    public function returnsTopLevelToonStringWithMessageAndStructuredFields(): void
+    public function testTopLevelToonPreservesCanonicalTaskIdentityAndEnum(): void
     {
-        // Thesis: without this test, ToolResult could silently return a Pi-shaped
-        // content/details array that ToolExecutor JSON-encodes, so the model never
-        // sees top-level TOON.
-        $text = "Moved task to DONE/example.md.\nSummary: ok";
-        $result = ToolResult::text($text, [
-            'from' => 'CODE-REVIEW',
-            'to' => 'DONE',
-            'notes' => ['Merged branch', 'Removed worktree'],
-        ]);
-
-        $this->assertIsString($result);
-        $this->assertStringNotContainsString('"content"', $result);
-        $this->assertStringNotContainsString('"details"', $result);
-        $this->assertNull(json_decode($result, true), 'Top-level result must not be a JSON envelope');
-
+        // Generic ToolExecutor passes strings through but JSON-encodes arrays;
+        // this boundary must not reintroduce a content/details envelope.
+        $task = new GitHubTaskDTO(7, 'https://github.com/acme/project/issues/7', 'Title', 'Current plan', 'closed', 'completed', '2026-01-01T00:00:00Z', 'acme/project', TaskStatusEnum::CODE_REVIEW);
+        $result = ToolResult::text('Awaiting finalization', ['task' => $task]);
+        $this->assertNull(json_decode($result, true));
         $decoded = Toon::decode($result);
-        $this->assertIsArray($decoded);
-        $this->assertSame($text, $decoded['message'] ?? null);
-        $this->assertSame('CODE-REVIEW', $decoded['from'] ?? null);
-        $this->assertSame('DONE', $decoded['to'] ?? null);
-        $this->assertSame(['Merged branch', 'Removed worktree'], $decoded['notes'] ?? null);
+        $this->assertSame('Awaiting finalization', $decoded['message']);
+        $this->assertSame('CODE-REVIEW', $decoded['task']['status']);
+        $this->assertSame(7, $decoded['task']['number']);
+        $this->assertSame($task->url, $decoded['task']['url']);
+        $this->assertArrayNotHasKey('file', $decoded['task']);
+        $this->assertArrayNotHasKey('content', $decoded);
     }
 
-    #[Test]
-    public function normalizesTaskInfoObjectsAtTheExtensionBoundary(): void
+    public function testStructuredListDoesNotDuplicateFormattedMessage(): void
     {
-        // Thesis: without this test, handlers that pass TaskInfo objects into details
-        // could lose status/file/path fields or encode opaque object noise.
-        $task = new TaskInfo(
-            status: TaskStatusEnum::TODO,
-            file: 'example.md',
-            path: '/tmp/board/TODO/example.md',
-            title: 'Example',
-            branch: 'task/example',
-            worktree: null,
-            prUrl: null,
-        );
-
-        $result = ToolResult::text('No updates to apply (no fields provided).', ['task' => $task]);
-        $decoded = Toon::decode($result);
-
-        $this->assertIsArray($decoded);
-        $this->assertSame('No updates to apply (no fields provided).', $decoded['message'] ?? null);
-        $this->assertSame([
-            'status' => 'TODO',
-            'file' => 'example.md',
-            'path' => '/tmp/board/TODO/example.md',
-            'title' => 'Example',
-            'branch' => 'task/example',
-            'worktree' => null,
-            'prUrl' => null,
-        ], $decoded['task'] ?? null);
-    }
-
-    #[Test]
-    public function structuredReturnsTopLevelToonWithoutMessageField(): void
-    {
-        // Thesis: without this method, task_list could only use text(), which
-        // always prepends a formatted message and duplicates the canonical list.
-        $result = ToolResult::structured([
-            'tasks' => [
-                ['status' => 'TODO', 'file' => 'demo.md', 'title' => 'Demo task'],
-            ],
-            'include_archive' => false,
-        ]);
-
-        $this->assertIsString($result);
-        $this->assertNull(json_decode($result, true), 'Top-level result must not be a JSON envelope');
-
-        $decoded = Toon::decode($result);
-        $this->assertIsArray($decoded);
+        $decoded = Toon::decode(ToolResult::structured(['tasks' => [['number' => 7, 'status' => 'TODO']], 'page' => 1]));
         $this->assertArrayNotHasKey('message', $decoded);
-        $this->assertFalse($decoded['include_archive'] ?? true);
-        $this->assertSame('TODO', $decoded['tasks'][0]['status'] ?? null);
-        $this->assertSame('demo.md', $decoded['tasks'][0]['file'] ?? null);
-        $this->assertSame('Demo task', $decoded['tasks'][0]['title'] ?? null);
+        $this->assertSame(7, $decoded['tasks'][0]['number']);
     }
 }

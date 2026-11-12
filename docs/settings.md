@@ -224,6 +224,37 @@ Run `hatfield extensions:setup` to install and configure Hatfield extensions. Th
 - Extensions load from `.hatfield/extensions` Composer autoload when enabled. Task workflow and observational memory document their settings in their package-local READMEs.
 - Built-in docs for the model are selected with `builtin: true` under approved roots; repository-only docs stay unmarked.
 
+### GitHub task workflow
+
+Task workflow uses the installed authenticated `gh` CLI and GitHub issues, not a
+separate filesystem task repository. Configure `extensions.settings.task_workflow`
+once per project: `repository` (`[HOST/]OWNER/REPO`), `remote` (default `origin`),
+`base_branch` (default `main`), `worktree_root` (default `../worktrees`),
+`workflow_field` (default `Workflow`), and `merge_method` (`merge`, `squash`, or `rebase`).
+Relative paths resolve from the primary project checkout, including hook scripts.
+
+All three `hooks.setup`, `hooks.validate`, and `hooks.cleanup` entries need a
+committed Bash `script` and positive `timeout_seconds`. Explicit no-op setup or
+cleanup scripts are allowed; missing validation refuses submission. Setup and
+validation run in the task worktree; cleanup runs in the stable primary checkout.
+Only exit zero succeeds. Hooks must tolerate retries and partial/missing workspaces;
+they must not remove worktrees or operate PRs/Workflow. No arbitrary hook commands
+are accepted in transition calls.
+
+This repository configures `.hatfield/task-hooks/{setup,validate,cleanup}.sh`
+with timeouts 900/1800/300 seconds; validation executes `castor check`.
+Copy the three Markdown templates into `.github/ISSUE_TEMPLATE/`, commit them to
+the default branch, then deliberately run `/tasks-init` to check capabilities and
+initialize owner-scoped Workflow options. It preserves unrelated fields/options.
+The credential needs access to owner issue fields (personal-owner reads require
+`read:user`) and the repository/artifact APIs. A capability failure is an error,
+never a fallback to local task files.
+
+Before switching an existing project, finish legacy active tasks, import outstanding
+TODO specifications and useful QA into issues, and retain the old repository as
+read-only history. Do not use production issue history as an integration-test fixture.
+See the extension README for tool contracts, hook environment, recovery and export.
+
 ## Validation tip
 
 After editing docs or packaging selection:
