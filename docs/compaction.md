@@ -1,91 +1,64 @@
 ---
 builtin: true
-description: Context compaction settings, /compact command behavior, events, and failure rules.
+description: Compact parent-session context manually or automatically, configure thresholds, and handle failures.
 ---
 
-# Context Compaction
+# Context compaction
 
-Context compaction replaces older conversation history with a concise handoff summary while keeping the most recent messages raw. This keeps long sessions inside the model context window without discarding recent local detail.
+Compaction summarizes older model context while retaining recent raw messages.
+Leading system/project instructions stay raw, and tool-call/result groups are not
+split. It changes what the model receives, not files in the workspace or canonical
+history. Repeated compaction can summarize a previous summary again.
 
-## Resulting message shape
-
-```text
-[summary message — compacted older history]
-[recent retained message 1]
-[recent retained message 2]
-…
-```
-
-Repeated compaction is supported: a later `/compact` treats an existing summary as part of the current list and re-summarizes older material.
-
-The algorithm never splits tool-call/tool-result groups. Leading system / user-context instruction messages stay raw and are not summarized away.
-
-## Manual command
+## Manual compaction
 
 ```text
 /compact [optional custom instructions]
 ```
 
-Alias: `/cmp`
+Alias: `/cmp`. Manual compaction is available for parent sessions even when
+automatic compaction is off. After cancellation settles, it can compact without
+restarting cancelled work; requests during cancellation are rejected.
 
-Manual compaction is always available for **parent** sessions regardless of `compaction.auto_enabled`.
-
-After cancellation finishes, `/compact` can compact the parent conversation without a follow-up message or another agent turn. It does not resume cancelled work. Requests made while cancellation is still in progress are rejected.
-
-The TUI displays `Compaction requested.` when it sends the command. It displays `Compacting conversation` only after the backend starts compaction. Rejection displays the backend reason and clears the pending request.
-
-Messages submitted while compaction is pending or active wait locally and are sent in submission order after settlement. If the run fails, the TUI returns these messages to the editor before any existing draft. It does not start another turn automatically or send the restored text after a later compaction.
+The UI first shows `Compaction requested.`, then `Compacting conversation` when
+execution starts. Rejection displays its reason. Messages entered while compaction
+is pending wait locally in submission order. If the run fails, they return to the
+editor instead of starting another turn automatically.
 
 ## Automatic compaction
 
-When enabled, parent runs become eligible for automatic compaction when the latest provider-reported input usage reaches or exceeds `compaction.compact_after_tokens`. Before the next LLM request, the scheduler waits for the current tool batch to finish, compacts the eligible history, and resumes the same work on compacted context. No final assistant answer or new user prompt is required. Outstanding tools and human-input waits stop advancement before this boundary.
+Parent runs become eligible when the latest provider-reported input usage reaches
+`compaction.compact_after_tokens`. The runtime waits for a safe boundary after
+tools/human waits, compacts, then continues. It can also compact as maintenance
+after a turn. Without provider usage, the threshold does not trigger; each usage
+measurement authorizes only one attempt.
 
-The after-turn hook also schedules compaction as maintenance when work has finished. Neither path uses the context-budget reminder thresholds or suppression flags. Without a provider usage measurement, automatic compaction does not trigger. Each measurement can trigger only one attempt. Preparation can refuse an unsafe partition, and failed compaction preserves the original messages.
-
-Settings:
-
-| Key | Role |
+| Setting | Purpose |
 |---|---|
-| `compaction.auto_enabled` | Master switch |
-| `compaction.compact_after_tokens` | Trigger threshold |
+| `compaction.auto_enabled` | Enable automatic compaction |
+| `compaction.compact_after_tokens` | Input-usage threshold |
 | `compaction.keep_recent_tokens` | Raw tail to retain |
-| `compaction.model` / `thinking_level` | Compaction model selection |
-| `compaction.provider_overrides` / `model_overrides` | Sparse overrides |
+| `compaction.model` / `thinking_level` | Summary model/reasoning |
+| `compaction.provider_overrides` / `model_overrides` | Sparse per-provider/model overrides |
 
-See [settings.md](settings.md).
+See [settings](settings.md) for defaults. Context-budget reminders are separate
+from compaction thresholds.
 
-## Child runs
+## Limits and failure
 
-**Fork and subagent child runs do not compact.** Children complete, hand off, or fail at the provider context limit. Parent automatic and manual compaction is unchanged. Parent-side fork snapshot compaction before launch remains a parent concern, not a child-run feature.
+- Child subagents/forks do not compact. They finish, hand off or hit the provider
+  context limit. Parent fork-snapshot preparation is a separate parent concern.
+- A provider context-too-large error fails normally; it does not trigger automatic
+  error-recovery compaction.
+- A failed/empty summary preserves original messages. Pending active work continues
+  on that context unless cancelled; maintenance compaction simply settles.
+- Cancellation wins over a pending continuation.
+- The transcript retains the latest completed compaction segment plus the current
+  segment; successful compactions advance that window. Canonical history stays on
+  disk. This is not a fixed byte/row memory limit.
 
-## Provider context-limit errors
+Extensions can contribute compaction notes through the public hooks documented in
+`extension-api-runtime`. Package-specific memory settings belong to that
+extension's README, not core settings.
 
-If a provider rejects a request as context-too-large, the run fails through the ordinary LLM error path. Hatfield does **not** auto-recover by compacting on that error. Compaction still occurs only via manual `/compact` (parents) or automatic threshold scheduling (parents).
-
-## Events, failure, and resume
-
-Compaction records canonical session events so resume rebuilds the compacted LLM-visible history correctly. Transcript projection follows the event log — see [session-storage.md](session-storage.md).
-
-On failure (`context_compaction_failed`), original messages are **preserved**
-(`messages_replaced: false`). Status resolution:
-
-- If cancel was accepted during compaction (`Cancelling`), the run becomes
-  `Cancelled`. Cancellation dominates; no `AdvanceRun` is dispatched.
-- If the compaction was holding a pending LLM turn (`continueAfterCompaction`),
-  the run returns to `Running` and dispatches `AdvanceRun` so the turn continues
-  on the original messages.
-- Otherwise (manual / maintenance compaction) the run resolves to `Completed`.
-
-The TUI retains the most recently completed compaction segment and the current segment. The first successful compaction keeps the initial conversation. The second drops content before the first completion marker. Each later success advances that window once. Failed compactions do not advance it. Resume and history selection rebuild the same window at the selected position.
-
-Retention removes old projected blocks and mounted widgets, including local notices in the evicted segment. Canonical events remain on disk for history and replay. This is a segment limit, not a byte or rendered-row limit: one large segment can still be expensive. Full event reads are temporary and are not cached by the session event store. Child views rebuild from durable state on every entry and release their projection on exit.
-
-## Extension hooks
-
-Extensions may register `BeforeCompactionHookInterface` via the public Extension API to contribute notes within the public contract. Package-specific observational-memory settings, when that extension is installed, live under `extensions.settings.observational_memory` and are documented in that package’s own README — not as core `hatfield_docs` entries.
-
-## Related
-
-- Sessions: [session-storage.md](session-storage.md)
-- Settings: [settings.md](settings.md)
-- Extension API runtime hooks: `extension-api-runtime` via `hatfield_docs`
+Related: [sessions](session-storage.md), [model settings](settings-models.md).

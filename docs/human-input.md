@@ -1,112 +1,49 @@
 ---
 builtin: true
-description: Model-facing ask_human questions, answers, cancellation, and child-agent routing.
+description: Ask for text, confirmation or a choice; handle cancellation and child-agent questions safely.
 ---
 
-# Human Input
+# Human input
 
-Human input (Path B) is the model-driven question flow: the LLM calls `ask_human`,
-the runtime pauses in a waiting-human state, the TUI renders a schema-driven overlay,
-and the answer is applied without inventing tool results.
+Use `ask_human` when a genuine user decision or missing information blocks progress.
+Inspect observable behavior yourself instead of asking the user to guess it.
+Tool-policy approvals are a separate flow: see [approvals](approvals.md).
 
-Tool-approval suspensions (SafeGuard / `RequireApproval`) are a separate path —
-see [approvals.md](approvals.md).
+## Call shapes
 
-## Model-facing tool: `ask_human`
+```json
+{"question":"What should the report be called?"}
+```
 
-The model supplies structured arguments — **not** raw JSON Schema:
+```json
+{"question":"Publish this release?","kind":"confirm"}
+```
 
-| Argument | Meaning |
-|---|---|
-| `question` | **Required** non-empty user-facing text |
-| `kind` | Optional; sole accepted value is `confirm` (yes/no or approval) |
-| `choices` | Optional non-empty string list for selection mode |
-| `header` | Optional short UI header |
+```json
+{"question":"Choose a target environment","choices":["staging","production"]}
+```
 
-There is **no** model input or compatibility alias for `prompt`, `ui_kind`, `default`,
-or `question_id`. Those names may appear only in internal interrupt payloads or TUI
-plumbing, never as tool arguments.
+`question` must be nonempty. Optional `header` adds a short UI heading.
+`kind` accepts only `confirm` and cannot be combined with `choices`.
+Omit both for free text; a choices list must be nonempty. Do not supply a JSON
+Schema, `question_id`, `prompt`, defaults or internal UI fields.
 
-### Modes (mutually exclusive)
+A confirmation returns a boolean; choices/free text return a string.
+Cancellation returns **`Cancelled by user`**. Treat it as an abort signal, not
+approval, and do not immediately retry the same question or invent an answer.
 
-| Mode | Call shape | Derived answer schema | Output `ui_kind` |
-|---|---|---|---|
-| Free-form | `question` only (omit `kind` and `choices`) | `{"type":"string"}` | `text` |
-| Confirm | `kind=confirm` without `choices` | `{"type":"boolean"}` | `confirm` |
-| Selection | non-empty `choices`, omit `kind` | `{"type":"string","enum":[...]}` | `choice` |
+## Answering in the terminal
 
-`kind=confirm` together with any provided `choices` is rejected. Empty `choices` is
-also rejected. Hatfield always derives the answer schema and output `ui_kind`
-internally — do not send a schema object as a tool argument.
+The question overlay pauses the waiting tool call. Enter submits the selected
+answer; ordinary arrows select choices. If a long prompt shows `Partial prompt`,
+Ctrl+Up / Ctrl+Down page through its text without changing selection.
 
-`question_id` is generated from `question` / `kind` / `choices` / `header` for
-internal correlation only; the model does not supply it.
+For a child question, open `/agents-live`, select that child and answer there.
+Return with `/agents-main` or Ctrl+backslash. Answers belong to the exact run and
+request, not whichever question was displayed most recently.
 
-Typical outcomes:
+Cancellation, advancing beyond a human wait, or reattaching through resume/reload
+can cancel outstanding questions. Late answers do not reopen cancelled requests.
+Questions from the same waiting turn remain FIFO until that lifecycle boundary.
 
-| Outcome | Meaning |
-|---|---|
-| Structured answer | Matches the derived schema and resumes the agent turn |
-| Free-text escape | UI may offer a plain-answer path when schema entry is impractical |
-| Cancel | Answer is the string `'Cancelled by user'` — treat as an abort signal, not a successful answer; do not immediately retry the same question |
-
-## End-to-end flow
-
-1. Model invokes `ask_human` with one exclusive mode above (`question` required).
-2. Runtime records a pending human-input request and projects the runtime event
-   `human_input.requested` from AgentCore `waiting_human`.
-3. TUI `QuestionCoordinator` / controller renders the overlay.
-4. Human submits the runtime command `answer_human` or cancels.
-5. Runtime resumes the agent with the answer payload attached to the waiting tool call.
-
-Answers are correlated to the exact pending request — not “latest question wins” across unrelated ids.
-
-## Reading long prompts
-
-Choice, confirmation, and tool-approval overlays show a `Partial prompt` notice
-when the prompt exceeds the available rows. While the answer list has focus,
-press **Ctrl+Up** or **Ctrl+Down** to page through the prompt without changing
-the selected answer. The notice shows the visible row range. Ordinary arrow
-keys still select answers, and Enter submits the selection.
-
-## Child agents / live view
-
-Child subagents may also request human input. In the parent TUI:
-
-- Open `/agents-live`, select the child, and answer in the child’s live view context.
-- Return to the parent with `/agents-main` or `Ctrl+\` when finished.
-
-Parent and child questions must not be answered into the wrong run context.
-
-Each live-view entry reconstructs the child transcript from that child's
-`events.jsonl`. Outside agents-live, the parent TUI does not retain child
-transcript or event archives. Unresolved canonical `human_input.requested`
-events are rediscovered from the snapshot on reopening.
-
-## Cancellation
-
-Cancel returns the answer string `'Cancelled by user'`. Treat it as an abort signal:
-reformulate or continue without treating the question as answered, and do not
-immediately retry the same question. Do not invent answers in tool results.
-
-### Lifecycle cancellation (cancel / resume / relaunch / reload)
-
-Outstanding pending human questions are cancelled when the run is cancelled, when
-a follow-up / steer / append advances past WaitingHuman, and when a session
-attaches again (`/resume`, relaunch, reload). Attach cancel is durable: it writes
-the same cancel / terminal events as an Esc cancel so live state and event replay
-agree.
-
-- Same-turn multi-question queues remain FIFO until that lifecycle boundary.
-- Late `human_response` commands for cancelled or superseded question ids are
-  ignored (no model-history message). Malformed empty question ids still reject.
-- Deferred tool-call approvals (`pendingToolCalls === false` while WaitingHuman)
-  synthesize cancelled tool results on cancel so the run reaches Cancelled instead
-  of hanging in Cancelling with no worker.
-- Ordinary `context_refreshed` alone does not cancel pending questions.
-
-## Related
-
-- Approvals / SafeGuard: [approvals.md](approvals.md)
-- Agents live view: [agents.md](agents.md)
-- Sessions: [session-storage.md](session-storage.md)
+Related: [agents](agents.md), [sessions](session-storage.md).

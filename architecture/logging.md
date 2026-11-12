@@ -29,7 +29,7 @@ is absent from every application log message.
 
 ```mermaid
 flowchart TB
-    Settings["logging.path, logging.level, logging.maxFiles"] --> Loader[AppConfigLoader resolves configuration]
+    Settings["logging.path, logging.level, logging.max_files"] --> Loader[AppConfigLoader resolves configuration]
     Loader --> Config[LoggingConfig]
     Config --> Handler[HatfieldRotatingLogHandler]
     Handler --> Directory{Log directory exists?}
@@ -46,8 +46,8 @@ flowchart TB
 | Application directory | Resolved `logging.path`, normally project `.hatfield/logs` |
 | File basename | Handler starts from `agent.log`; Monolog adds the rotation date |
 | Format | One JSON object per line, stack traces included |
-| Default minimum level | `info` in `LoggingConfig` |
-| Default retained file count | 14 in `LoggingConfig` |
+| Shipped minimum level | `warning` in `config/hatfield.defaults.yaml` |
+| Shipped retained file count | 2 in `config/hatfield.defaults.yaml` |
 | Creation permissions | Directory `0755`, log file `0644`, subject to process umask |
 | File locking | Handler explicitly sets `useLocking: false` |
 | Sink failure | Can propagate; this is not a best-effort discard handler |
@@ -59,15 +59,15 @@ one automatically retargets every log or capture file. Check the owning writer.
 ## Correlation belongs to each execution scope
 
 ```mermaid
-%%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
+%%{init: {"sequence": {"wrap": true, "width": 160, "actorMargin": 30, "diagramMarginX": 10, "messageMargin": 30}}}%%
 sequenceDiagram
     participant Controller
     participant Queue as Messenger transport
     participant Worker as Run-control, LLM, or tool worker
-    participant Context as RunLogContext
+    participant Context as Run log context
     participant Operation as Handler or provider/tool operation
     participant Logger as PSR logger
-    participant Processor as LogContextProcessor
+    participant Processor as Context processor
     participant Sink as Rotating JSONL handler
 
     Controller->>Queue: Message carrying run and operation identity
@@ -105,7 +105,7 @@ ownership from that field alone. Correlate worker, PID, run, and message identit
 ## Trace logs
 
 ```mermaid
-%%{init: {"sequence": {"wrap": true, "width": 110, "actorMargin": 20, "diagramMarginX": 10, "messageMargin": 30}}}%%
+%%{init: {"sequence": {"wrap": true, "width": 180, "actorMargin": 30, "diagramMarginX": 10, "messageMargin": 30}}}%%
 sequenceDiagram
     participant Worker
     participant Tracer as RunTracer

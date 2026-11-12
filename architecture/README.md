@@ -1,117 +1,78 @@
 # Hatfield architecture
 
-The default interactive path crosses process boundaries. Commands go in, workers
-execute effects, and runtime events return to the terminal. The response does not
-return through one synchronous call stack.
+Hatfield runs a terminal client, a session controller, a session queue broker,
+and execution consumers. Processes provide isolation; Amp Fibers overlap waiting
+handlers **inside** the LLM and tool consumer processes.
 
-View these repository-only diagrams in a Markdown renderer with Mermaid support.
-This overview and [processes and queues](processes-and-queues.md) describe the
-shared Fiber workers. Older lifecycle diagrams describe logical roles, not one
-process per queue; historical audits state their own source revision.
+## Read by question
 
-## Diagram map
-
-| Question | Diagrams |
+| Question | Reference |
 |---|---|
-| How does a prompt become an answer? | [Request lifecycle](request-lifecycle.md): end-to-end sequence, input routing, tool loop, live projection |
-| How do processes and Fibers share work? | [Processes and queues](processes-and-queues.md): topology, admission, state isolation, metadata ownership, shutdown |
-| Who owns state and how does recovery work? | [State and recovery](state-and-recovery.md): commit order, storage, replay, repair, compaction, cancellation |
-| Which database queries need refresh? | [Database query decisions](orm-freshness-map.md): methods, reads/writes, refresh decisions, and reasons |
-| How do tool calls, approvals, and MCP work? | [Tools and MCP](tools-and-mcp.md): registration, execution, human continuations, connection lifecycle |
-| How do extensions and child agents run? | [Extensions and agents](extensions-and-agents.md): loading, child supervision, jobs, background commands |
-| How does bash become background work? | [Backgrounding](backgrounding.md): user decision, process ownership, completion notification, stop, cleanup |
-| What reaches the model and the screen? | [Context and projection](context-and-projection.md): prompt composition, provider request, streaming, TUI sessions |
-| What goes into a release? | [Build and observability](build-and-observability.md): packaging, QA lanes, logging |
-| Where do logs, traces, and metrics go? | [Logging](logging.md): record enrichment, Fiber scopes, rotation, Datadog ingestion, privacy, sink failures |
+| Which processes own execution? | [Processes and queues](processes-and-queues.md), [runtime supervision](runtime.md) |
+| How does a prompt become an answer? | [Request lifecycle](request-lifecycle.md) |
+| What is durable, and what can recover? | [State and recovery](state-and-recovery.md), [session runtime](session-runtime.md) |
+| How do PHP scripts and recurring work run? | [Code mode and scheduling](code-mode-and-scheduling.md) |
+| How are tools, approvals and MCP routed? | [Tools and MCP](tools-and-mcp.md) |
+| How do extensions and child agents run? | [Extensions and agents](extensions-and-agents.md), [agent communication](agent-communication.md) |
+| Who owns background work? | [Backgrounding](backgrounding.md) |
+| What reaches the model and screen? | [Context and projection](context-and-projection.md), [history conversion](history-conversion.md), [TUI](tui.md) |
+| Where are fresh database reads required? | [ORM freshness](orm-freshness-map.md) |
+| How are releases and diagnostics produced? | [Build](build-and-observability.md), [logging](logging.md) |
 
-## Discovery proposals
+For configuration and daily use, start with [usage docs](../docs/README.md).
+Architecture pages are repository references, not part of `hatfield_docs`.
 
-[PHP code mode](php-code-mode-discovery.md) is a superseded discovery note. The
-implemented direct `code_mode` tool is documented in
-[tools.md](../docs/tools.md).
-
-## Process topology
-
-This map keeps only process boundaries. The linked sequences expand handlers and
-messages within each boundary. Parent and child runs have separate identities but
-share the controller's workers. LLM calls overlap in one PHP process; generic
-tools and child launch/resume calls overlap in another. Each uses cooperative
-Fibers, not one PHP process per invocation.
+## Process map
 
 ```mermaid
 flowchart TB
-    User([User]) --> TUI["TUI process<br/>editor, transcript, runtime client"]
-    TUI -->|JSONL commands| Controller["Controller process<br/>owner lock and consumer supervision"]
-    Controller -->|ACK and runtime events| TUI
-    Controller -->|Command bus| Broker["Session sqlite-queue broker<br/>durable queues and lifecycle replies"]
-    Broker -->|Commands and results| RC["run_control process<br/>serialized transitions and lifecycle writes"]
-    RC -->|Execution effects and replies| Broker
-    Broker -->|llm queue| LLM["One LLM process<br/>up to 10 concurrent handlers by default"]
-    Broker -->|tool and agent queues| Tool["One tool process<br/>no worker admission cap"]
-    Broker -->|mcp queue| MCP["One MCP process<br/>serialized connection ownership"]
-    LLM -->|Results| Broker
-    Tool -->|Results and lifecycle commands| Broker
-    MCP -->|Results| Broker
-    RC -->|Canonical append| Events[(events.jsonl)]
-    RC -->|Operational and lifecycle state| State[(state.sqlite)]
-    RC -->|Mapped committed events| Controller
-    LLM -->|Transient deltas| Controller
-    LLM <-->|HTTP| Providers[Model providers]
-    Tool --> Children["Bash and code-mode subprocesses"]
-    MCP <--> Servers[MCP servers]
+    TUI["TUI process"] <-->|JSONL commands and events| Controller["Session controller"]
+    Controller -->|Supervises| Broker["Session queue broker + SQLite helper"]
+    Controller -->|Supervises| RC["run_control process"]
+    Controller -->|Supervises| LLM["LLM process: handler Fibers"]
+    Controller -->|Supervises| Tool["Tool process: handler Fibers"]
+    Controller -->|Supervises| MCP["MCP process"]
+    Controller -->|Supervises| Scheduler["scheduler_default process"]
+    Controller -.->|When handlers registered| Extension["extension_agent process"]
+    RC <-->|Commands and results| Broker
+    LLM <-->|LLM queue| Broker
+    Tool <-->|tool + agent queues| Broker
+    MCP <-->|MCP queue| Broker
+    RC --> Events[(events.jsonl)]
+    RC --> State[(Operational state)]
+    Tool --> Scripts["Bash / PHP subprocesses"]
+    LLM --> Providers["Model providers"]
+    MCP --> Servers["MCP servers"]
 ```
 
-The queue arrows summarize delivery. They are not direct calls between worker
-processes. The broker and its SQLite helper remain separate from execution workers.
-The `agent` queue still exists, but has no separate consumer process. Scheduler and
-optional extension-agent workers are detailed in [processes and queues](processes-and-queues.md).
-
-`runtime.llm_concurrency` bounds active LLM handlers, not process counts.
-The shared tool consumer has no worker-level admission cap. A waiting
-handler yields so another Fiber can run; synchronous CPU or blocking I/O still
-blocks its process. `tools.execution.max_parallelism` separately limits admission
-within a tool batch.
-
-Run control sends an immutable tool intent and receives its result. The tool
-handler owns execution and same-intent idempotency. Bash persists native launch
-and background acceptance locally and returns an ordinary result. Agent and
-communication handlers prepare their execution locally; workers register deferred
-correlation from returned outcomes without a registration reply RPC.
-Tool context, log/trace scopes and run-lock reentrancy are isolated by
-Fiber. See the
-[persistence ownership flow](processes-and-queues.md#lifecycle-persistence-ownership)
-for the current boundary.
+Parent and child runs share these consumers; a child does not get a new controller.
+The scheduler generates recurring messages; it is not the durable deadline queue.
+See [scheduling](code-mode-and-scheduling.md#scheduling) for its dispatch path.
 
 ## Code boundaries
 
 ```mermaid
 flowchart LR
-    Tui["src/Tui<br/>terminal rendering and interaction"] --> App["src/CodingAgent<br/>CLI, tools, sessions, runtime integration"]
-    App --> Core["src/AgentCore<br/>run engine, contracts, domain, infrastructure"]
-    App --> API["ExtensionApi<br/>public extension contracts"]
-    Packages["Concrete extension packages"] --> API
-    HostBridge["Host extension adapters"] --> API
-    Tui -.->|"specific approved edges only"| Core
-    CLI["CodingAgent CLI bridge"] -.->|"specific approved edge"| Tui
+    TUI["src/Tui"] --> App["src/CodingAgent"]
+    App --> Core["src/AgentCore"]
+    App --> API["ExtensionApi"]
+    Packages["Extension packages"] --> API
+    TUI -.->|Specific approved edges| Core
+    App -.->|Approved CLI bootstrap| TUI
 ```
 
-[depfile.yaml](../depfile.yaml) and `castor deptrac` define exact edges. This is not
-a blanket ban on every dependency omitted from the diagram. AgentCore does not
-reference CodingAgent or TUI. ExtensionApi does not reference host internals.
+[depfile.yaml](../depfile.yaml) and `castor deptrac` define the exact allowed
+edges. AgentCore has no CodingAgent, TUI or concrete-extension dependency.
+ExtensionApi exposes public contracts, not host implementation services.
 
-## Event legend
+## Event channels
 
-| Channel | Sequence | Durable? | Use |
-|---|---|---|---|
-| Canonical `RunEvent` | Positive | `events.jsonl` | History, replay, committed lifecycle |
-| Mapped runtime event | Preserves canonical identity where applicable | Delivery of committed data | TUI projection |
-| Streaming delta | `0` | No | Live text, reasoning, tool arguments |
-| Messenger envelope | Not an event sequence | Session sqlite-queue broker in controller mode | Commands, execution, results, delayed work |
+| Channel | Authority |
+|---|---|
+| Canonical `RunEvent`, positive sequence | Append-only `events.jsonl`: history and replay |
+| Mapped runtime event | Delivery/projection of committed events |
+| Streaming delta, sequence `0` | Transient text, reasoning and tool arguments; never replay authority |
+| Messenger envelope | Work delivery through queues, not conversation history |
 
-Sources: [Messenger configuration](../config/packages/messenger.yaml),
-[HeadlessController](../src/CodingAgent/Runtime/Controller/HeadlessController.php),
-[RunCommit](../src/AgentCore/Application/Pipeline/RunCommit.php),
-[session runtime internals](../docs/session-runtime-internals.md).
-
-The [documentation audit inventory](documentation-audit.md) records the earlier
-Markdown pass and explicitly marks unfinished instruction-audit work.
+A session's `session_id` equals its `run_id`. State transitions belong to
+`run_control`; execution workers return results rather than mutating `RunState`.

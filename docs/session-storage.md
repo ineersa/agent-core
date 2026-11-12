@@ -1,320 +1,87 @@
 ---
 builtin: true
-description: Session identity, storage layout, events, resume, locking, and history operations.
+description: Resume and name sessions, navigate history, repair interrupted work, and understand backup limits.
 ---
 
-# Hatfield Sessions
+# Sessions and history
 
-**One directory = one session = one agent run.** `session_id === run_id`.
+Each session has one identity: `session_id === run_id`. Child agents have their
+own sessions. A new empty interactive draft may not create storage until its first
+message.
 
-## Invariants
+## Daily commands
 
-- The TUI session and AgentCore run share one identity (DB-issued numeric string).
-- Each session row also stores immutable `provider_cache_key` (UUIDv7). ChatGPT maps it to `prompt_cache_key`; generic providers omit Hatfield correlation fields, while Grok maps the session id to its `prompt_cache_key`.
-- Resume uses the session directory and application database, including active tool batches and pending commands. There is no global `.hatfield/runs/` registry.
-- Canonical conversation source is append-only `events.jsonl`. Transcript projection rebuilds from events on resume.
-- There is **no** `metadata.yaml` in the session directory.
+| Command | Action |
+|---|---|
+| `/new` | Start a new conversation |
+| `/resume` | Pick a saved session and continue it |
+| `/rename` | Change its display name, not its identity |
+| `/history` | Select a conversation position; does not revert files |
+| `/reload` | Reload the current session |
+| `/repair` | Apply explicit repair to the current session; no arguments |
 
-## Refreshed instructions
+Resume refreshes the system prompt, project instructions, skills and agent catalog.
+Conversation messages and compaction summaries remain. This does not start a model
+turn or refresh existing children. Changed instructions/tool schemas can reduce
+provider prompt-cache reuse.
 
-On resume, Hatfield rebuilds its system prompt, project instructions, skills catalog,
-and agent definitions. The run-control worker replaces these generated messages
-after recovering the session and appends `context_refreshed` to `events.jsonl`.
-Conversation messages and compaction summaries are preserved. Refresh does not start
-a model turn or change existing child sessions.
+During restoration, execution input stays blocked until the transcript is verified
+and caught up. Failed restoration leaves the session unattached; use reload,
+resume, new session or Escape rather than assuming an empty transcript is usable.
+Pending human questions are cancelled on attach, not silently answered.
 
-Changing instructions or tool definitions can reduce provider prompt-cache reuse.
-The effect depends on the provider and the first changed part of the request.
-Conversation history and the session's provider cache key are not deleted.
+## History selection
 
-## Directory layout
+`/history` lists user prompts and final assistant answers, not reasoning or
+intermediate tool responses. Use `Older entries...` / `Newer entries...` to page.
 
-Base path: `sessions.path` setting (default under project `.hatfield/sessions/`).
+- Selecting a **user prompt** positions context before it and restores that prompt
+  to the editor.
+- Selecting an **assistant answer** keeps the answer in context and loads the next
+  user prompt, if present.
+- Selection alone neither runs the model nor discards forward history. A later
+  context-changing action can discard the forward branch.
+- File changes are never undone. Check Git separately.
+
+Resume preserves the selected position. Draft edits made during attach are not
+overwritten by restored text. There is no session-tree browser or `/tree` command;
+`fork` launches a child agent, not a Git branch.
+
+## Storage and backups
+
+Default storage is project-local:
 
 ```text
-.hatfield/sessions/<session_id>/
-  events.jsonl          # canonical event log
-  sequence.cursor       # event sequence allocation
-  artifacts/            # child agent artifacts (when used)
-  ...                   # other runtime sidecars as created
+.hatfield/state.sqlite                # application metadata and coordination
+.hatfield/sessions/<id>/events.jsonl   # canonical conversation history
+.hatfield/sessions/<id>/artifacts/     # child handoffs, when present
 ```
 
-### Database metadata
+`sessions.path` can override the session root. Keep runtime files out of Git.
+Do not edit event logs, queues or runtime metadata while a controller is live.
+Stop Hatfield before a consistent backup and preserve both session directories
+and application state; events alone do not recover all pending work.
 
-Table `hatfield_session` stores id, display name, timestamps, provider cache key, and related session metadata. Directory name is canonical; embedded IDs are validated on read.
+If catalog rows are lost but valid numeric session directories remain, startup can
+recover basic session entries from events. It cannot recover DB-only renames,
+pending questions, child supervision, queues or background records. SQLite WAL
+with `synchronous=NORMAL` can lose recent transactions on machine/power failure.
 
-SQLite application metadata, session queues, history indexes, and observational
-memory use WAL with `synchronous=NORMAL`. WAL preserves database consistency,
-but a machine crash or power failure can lose recent committed transactions.
-An application process crash does not have that durability trade-off. History
-indexes can be rebuilt from canonical events; application metadata and queue
-commits do not gain extra durability from that rebuild. This setting does not
-change canonical event-journal synchronization.
+Large tool outputs are temporary inspection files, not permanent attachments.
+Their notices can remain in history after files expire or are cleared on
+controller restart/shutdown. Save important output into a project file explicitly.
 
-The `reasoning` column stores the selected effort. ChatGPT sends that selection as
-request-level `reasoning.effort`, including after resume. No native reasoning
-transition ledger is stored.
+## Repair safely
 
-### Naming
+`/repair` applies repair; it is not a preview. It may redispatch reconstructable
+current work, so first check whether a command or remote tool already performed
+its external action. Repair does not roll back effects or promise exactly-once
+execution. Restarting a worker alone is not repair of a stranded effect.
 
-Sessions may be renamed via `/rename`. Display names are metadata only — they do not change `session_id`.
+Repair refuses unsafe/ambiguous cases and does not redispatch human-input waits.
+Abandoned child waits can be cancelled and settled without launching replacements;
+artifacts and completed child results remain. A failed send can be partial: inspect
+state before retrying. Do not force recovery by editing queue rows.
 
-## Events and operational state
-
-- `events.jsonl` is the canonical conversation history used for resume.
-- Parent and child event stores stream JSONL line-by-line. They record scalar
-  physical-read diagnostics (`archive_bytes_read`, decoded count, early-exit vs
-  EOF). `allFor()` still returns the full decoded event list for current callers,
-  but it no longer duplicates the whole file text in memory first.
-- The runtime rebuilds its working state and disposable database projections from
-  canonical events. Those projections do not contain a second copy of prompt history.
-- New and resumed runs do not read or write `state.json`. Older event schemas are
-  not supported through a compatibility reader.
-- `sequence.cursor` allocates event sequence numbers. It is not itself conversation history.
-- Transient streamed text is separate from durable events. Resume rebuilds from
-  committed history, not from an unfinished stream.
-
-Active `tool_batch` rows retain scheduling order, admission and human-input waits.
-`tool_batch_call` and `tool_batch_result` retain bounded file references under unique
-run, turn, step and call identities. `tool_deferred_completion` retains correlation
-and completion markers, with its invocation data in a separate file. These rows
-contain no invocation arguments, result bodies or serialized Messenger envelopes.
-Normal collection reads scheduling metadata and loads only newly admitted calls.
-Accepting one result inserts its reference without rewriting earlier results.
-Completion reads collected bodies in invocation order.
-
-Tool data lives beside the batch runtime directory in
-`runtime/tool-payloads/<call-id-sha256>/<body-sha256>.json`. Each private immutable
-file contains a typed JSON data document, not a Messenger envelope or stamps.
-References include producing identity, SHA-256 and byte length, never a path.
-Publication seals the file before transport or SQL receives its reference.
-Payload callers hold the existing run lock across admission and publication,
-reads or deletion. The payload store adds no per-call lock. Transport middleware,
-deferred registration and lookup, owner metadata preparation, repair and cleanup
-use that same ownership boundary. Nested same-run operations reuse its lock.
-Batch publication, loading and cleanup resolve the run's payload root once per
-operation. They do not retain a process-wide path cache. Reads validate file size
-before loading JSON, then check its byte count and SHA-256 from the loaded bytes.
-Tool execution, direct shell commands, ordinary results and deferred completions
-cross the broker as `ToolPayloadMessage` references. Routing retains the small
-tool identity. Owner initialization and journal recovery precede result-body
-admission. Superseded deliveries do not require legitimately cleaned files;
-missing or corrupt active data fails closed.
-
-Batch cleanup removes the header and reference rows together after human and
-deferred work settles, then removes unreferenced call data under the run lock.
-The SQL transaction commits before file removal, within the same critical section;
-cleanup does not wait for lock release or reacquire it through a callback.
-The SQL deletes are scoped to the requested run or batch. One surviving-ID lookup
-protects call data still referenced by another batch before filesystem cleanup.
-Direct shell completion, terminal commits without unresolved work and permanent
-session deletion also clean their data. Approval and deferred waits retain it.
-
-The schema replaces and discards obsolete `tool_batch_schedule` and
-`deferred_tool_completion` rows on upgrade. There is no backfill of unfinished
-tool batches or old-format reader. Canonical history, broker queues and deferred
-child-supervision records are not deleted by this cutover.
-
-`run_command` retains pending command bodies only. Applying
-or rejecting a command deletes its whole row, so a completed command ID can be
-submitted again. Redelivery after completion can repeat user input.
-
-There is no import of legacy batch files or cached commands. Rebuilding the runtime
-database does not recover their pending payloads from conversation events.
-Permanent session deletion removes pending command and batch rows for the owner
-and all descendants found through artifact registries and deferred reservations.
-The owner session tree and captured descendant payload directories are removed
-only after that metadata transaction succeeds. Nested child registries can live
-outside the numeric owner's tree, so their paths are captured before ownership
-metadata disappears. A metadata rollback leaves all those payload files intact.
-Ordinary shutdown retains those rows. Startup and idle recovery use the same
-ownership traversal to finish interrupted canonical transitions, not to resend
-completed transitions.
-
-Provider or model switches convert that canonical history at request time. See
-[history-conversion.md](history-conversion.md).
-
-## Child artifacts
-
-Foreground subagent runs store parent-scoped artifacts under the parent session (handoff text, metadata, bounded event/history summaries). Retrieve with `agent_retrieve` (see [agents.md](agents.md)).
-
-Deferred child invocations use durable supervision records and timeouts configured by `agents.subagent_tool_timeout_seconds` (default 24h, minimum 60s). Recovery reads child event logs backward from the durable tail until its stored event sequence cursor, then restores chronological order; it does not treat `sequence.cursor` as event-tail truth because allocation may leave valid sequence holes.
-
-Each child row in `deferred_subagent_child` stores an immutable UUIDv7 `provider_cache_key`, separate from its run ID.
-ChatGPT uses that key across turns, worker recreation, and `agent_resume`. Resume rebinds the child to a new batch without changing the key.
-The upgrade backfills provider keys without changing operational event cursors, lifecycle state, or per-resume usage counters.
-
-Fork and subagent cards show cumulative cache reuse as `↻ N%` while running and after completion. The child live-view footer shows the same percentage.
-The percentage divides the child's accumulated cache-read tokens by its accumulated input tokens, matching the main-session footer.
-Reported zero hits appear as `↻ 0%`. Missing cache telemetry or zero input tokens hides the indicator.
-Legacy checkpoints without lifetime cache counters keep the indicator hidden, including after resume. Partial post-upgrade usage cannot reconstruct their lifetime percentage.
-
-## Resume and new session
-
-| Flow | Behavior |
-|---|---|
-| `/resume` | Pick an existing session; mount the owner-produced transcript; continue with the same `session_id` |
-| `/new` | Start a new session identity |
-| Lazy draft | New interactive session without an initial prompt may delay DB row creation until first message |
-| Process restart | Controller/runtime recover from session dir + DB; event projection rebuilds |
-| Catalog recovery | On startup after schema migrations, orphan numeric `sessions/<id>/events.jsonl` dirs without a `hatfield_session` row are reinserted into the catalog (same id) |
-
-Resume, relaunch, and reload attach through the controller `resume` command into
-`InProcessAgentSessionClient::attach()`. If the rebuilt run is WaitingHuman or still
-has pending human-input requests, attach cancels those waits before
-`context_refreshed`. The run becomes Cancelled rather than remaining WaitingHuman.
-History events are kept; late answers to cancelled question ids do not reopen them.
-See [human-input.md](human-input.md).
-
-The screen stays in a restoring state until it validates the bounded transcript
-transfer. It mounts the view, acknowledges the committed cursor, and catches up
-before enabling normal input. A failed transfer leaves the screen unattached,
-not usable with an empty transcript. `/reload`, `/resume`, `/new` and Escape remain
-available to reload, switch sessions or cancel restoration.
-
-### Catalog recovery after state DB loss
-
-If `.hatfield/state.sqlite` is deleted or loses `hatfield_session` rows while session directories remain, startup reconciles **canonical** positive-digit directories that contain `events.jsonl`:
-
-- **Canonical IDs only:** directory name must be a positive decimal whose integer round-trip equals the original string (rejects `0`, `007`, non-digits, and integer-overflow aliases).
-- **Preserved:** directory name as `session_id` / `run_id`; existing canonical `events.jsonl` bytes are never rewritten or truncated.
-- **Recovered into the row when present in events:** initial user prompt (and default display name from it), current model (including later `model_changed`), reasoning from `run_started` metadata, child `parent_run_id` when present.
-- **Not event-backed:** a fresh UUIDv7 `provider_cache_key` is generated; renames and other DB-only fields are not restored when absent from events.
-- **Not recoverable from session events (SQLite-only):** deferred subagent batches/children, background processes, pending tool questions, messenger queues, and other app-state tables.
-
-New session creation uses atomic exclusive `mkdir` of the leaf session path and fails closed before writing `events.jsonl` when any directory, file, or symlink already occupies that path (including malformed orphans). Concurrent recovery inserts are idempotent via `ON CONFLICT(id) DO NOTHING` on the primary key. Corrupt event logs are skipped with privacy-safe diagnostics; DB/storage infrastructure failures hard-fail startup.
-
-## History (`/history`)
-
-`/history` lists user prompts and final assistant answers in retained conversation
-order, with a role prefix on each row. Reasoning, commentary and intermediate
-tool-call responses are not selectable answers. History navigation changes conversation
-context, not files on disk.
-
-Selected history position and retained-history replay are derived from the canonical event stream; details of projection live in the TUI/runtime implementation.
-
-The picker opens near the selected position and loads at most 32 entry previews,
-each capped at 240 UTF-8 bytes. Select `Older entries...` or `Newer entries...` with
-Enter to navigate pages. Internal turns remain valid predecessors, not picker rows.
-Selecting a user prompt positions context before it and restores its complete
-original text to the editor. Selecting an assistant answer positions context after
-it and before the following user prompt, which is loaded into the editor. If there
-is no following prompt, the editor is empty. The answer stays in context and the
-transcript. Selection does not discard forward history or start a model turn;
-later context-mutating actions discard forward history as before. The same
-positions and editor text are available after session resume.
-Cold attach restores the current selection's editor text from one indexed
-canonical prompt lookup, then applies it with the verified bootstrap view.
-If the user edits the editor after attach begins and before that mount, the
-local draft is kept and the bootstrap restore or clear is skipped.
-Automatic recovery of an already-ready session keeps the current editor,
-including an intentionally emptied draft, instead of reapplying historical
-prefill from the replacement bootstrap.
-Once a context-mutating action consumes the selection, later attaches do not
-restore that old prompt.
-
-The disposable `history-index.sqlite` stores stable anchors, bounded previews and
-canonical record locations, not full prompt bodies. Missing, invalid or obsolete
-indexes rebuild from `events.jsonl`. Warm page reads validate the indexed boundary;
-assistant pages seek a partial index on retained answer sequences without sorting
-the full history. Exact prompt lookup reads its canonical record. The published
-extension history API still returns only user prompts with complete titles and
-reads their records explicitly.
-
-## Concurrency and locking
-
-Session access uses cooperative locking so two interactive controllers do not corrupt the same session directory. Contenders fail closed or wait according to runtime lock helpers — do not hand-edit `events.jsonl` while a session is live.
-
-## Storage notes
-
-- SQLite (and other DBs) back metadata/queues as configured by the app; session **conversation** remains file-based events for portability and replay.
-- Attachments and large tool outputs may live under tool temp paths (for example output-cap storage) with references from events — not as free-form copies inside every event payload. Lifecycle detail: [Ephemeral output-cap artifacts](#ephemeral-output-cap-artifacts).
-- The model-visible `fork` tool is **shipped** (isolated child with inherited parent context; see [agents.md](agents.md)). Linear history remains the supported user model: multi-branch session **trees**, `/tree` UI, and session-graph browsing are **not** shipped end-user workflows.
-
-## Transition validity
-
-Execution handlers reject completed or stale results where their lifecycle supports
-that check. The pending-only `ApplyCommand` mailbox does not retain completed IDs
-for deduplication. Direct-shell commands separately check canonical applied identities.
-Tool execution is not an exactly-once guarantee: a retried operation can repeat external effects.
-
-### Repair safety
-
-`/repair` is explicit recovery, never automatic. The terminal command applies repairs.
-The runtime protocol also supports a preview with `apply=false`. Restarting a session
-does not make abandoned claimed queue messages available again.
-
-Repair reuses the current operation identity. It does not mark unfinished work as
-completed, roll back side effects, or clear abandoned claimed messages. Check whether
-the original command or external tool already performed its action before redispatching.
-
-Repair reconstructs model and shell requests from canonical state and evidence.
-Ordinary tools reuse their current calls from the active SQL batch. Collected sibling
-results can be delivered to the owner without executing those siblings again.
-Queued calls stay behind the collector's capacity and sequential barriers. A batch
-awaiting human input is not redriven, including independent in-flight siblings.
-
-Repair preserves invocation identities where available, but canonical events do not
-prove whether an external action already happened. There is no generic execution
-claim, saved worker-result protocol, or receipt retirement. Explicit repair can
-repeat external execution. Tools with critical side effects must provide their own
-idempotency contract.
-
-Repair responses report redispatch requests, not completed execution or queue
-acceptance. Sends run after the owner lock releases. If a send fails, a transient
-error notification reports accepted and failed sends; some work may still run.
-There is no persistent sending buffer or automatic resend. Retry explicitly with
-`/repair` after checking for prior external effects. The transition journal recovers
-unfinished canonical appends and local coordination, not lost sends after finalization.
-
-For a pending deferred child call, repair cancels unfinished children instead of
-retrying their operations or launching replacements. It durably aborts abandoned
-requests and settles the existing parent tool call, so queued parent input can continue.
-Child run IDs, artifacts, worktrees, and provider cache keys remain intact. Completed
-children keep their results. Late child responses cannot revive cancelled executions.
-Active streaming and human-input waits retain their safety checks; existing batch
-interruptions and deadlines retain their lifecycle owner. A preview does not cancel work.
-
-For a settled parent tool call, `/repair` also reconciles unfinished child lifecycle
-projections from their canonical child events. This includes an idle or cancelled
-parent with a stale `[cancelling]` background row. A canonical terminal event clears
-the active row on the next background refresh. Without that event, cancellation
-remains pending and the row stays visible. This reconciliation does not cancel or
-restart the child, deliver another parent result, or rewrite canonical history.
-Repeating it without new child events leaves the projection unchanged. Protocol
-preview reports the planned reconciliation without updating the child projection.
-Restarting the parent alone does not reconcile these settled batches.
-
-Parent repair captures child-maintenance obligations before committing its decision.
-Recovery finishes the captured plan without reevaluating newer children. Its captured
-generation checks prevent that plan from changing newer work. A completed repair
-command ID is not retained; resubmission can prepare a new plan for the current generation.
-
-If a cancelled or failed terminal history has unmatched assistant tool calls, repair
-appends synthetic error tool results and a batch commit. This restores valid model
-history without repeating tool execution or appending another terminal event.
-
-Calls waiting for human input are not redispatched. Compaction repair requires a
-request from the canonical compaction-start event matching the current operation,
-and refuses when that input cannot be reconstructed.
-Do not edit queue rows or event logs to force recovery while a controller is live.
-
-Existing `idempotency.jsonl` files are inert legacy data. Current runs do not create
-them, and they are not a repair mechanism.
-
-## Compaction interaction
-
-Compaction rewrites the LLM-visible history while retaining a recent raw tail and recording compaction events. Resume after compaction replays the compacted view correctly — see [compaction.md](compaction.md).
-
-## Ephemeral output-cap artifacts
-
-Oversized tool output is saved under `tools.output_cap.path/run-<sha256(run_id)>/` only while a controller owns that session. Controller start/resume clears prior parent and child scopes; controller shutdown and explicit deletion dispatch the same cleanup before canonical session metadata is removed. Completion, cancellation, and failure remain resumable boundaries and do not clear these artifacts. Saved output-cap paths in canonical notices are metadata only: replay, repair, and projection never read the artifact, so historical notices can refer to deleted files. A 24-hour first-use stale cleanup remains the crash/orphan fallback.
-
-Legacy date-prefixed root files are intentionally not lifecycle-deleted, but exact date-prefixed files are covered by the existing 24-hour automatic fallback and the separately authorized dry-run procedure. Operators may clean them only with quiesced controllers after verifying the configured root, dry-running an exact `^\d{8}-[a-f0-9]{16}\.txt$` name/date selection, reviewing names, and deleting each approved direct file non-recursively. Historical custom `session_prefix` root files match neither lifecycle nor automatic fallback patterns: they are inert, operator-owned artifacts requiring separate exact-name review and individual non-recursive authorization.
-
-## Related
-
-- Terminal commands: [terminal-usage.md](terminal-usage.md)
-- Settings: [settings.md](settings.md)
-- Agents: [agents.md](agents.md)
-- Human input: [human-input.md](human-input.md)
+Related: [terminal](terminal-usage.md), [compaction](compaction.md),
+[human input](human-input.md), [agents](agents.md), [settings](settings.md).

@@ -167,7 +167,7 @@ can add tools and commands tailored to the repository.
 | Reduce a long conversation's model context | [Compaction](docs/compaction.md) |
 | Manage long-running commands | [Background processes](docs/background-processes.md) |
 | Build an extension | [Extension API](.hatfield/extensions/extension-api/docs/extension-api.md) |
-| Understand the implementation | [Architecture diagrams](architecture/README.md), [runtime](docs/async-runtime-architecture.md), [TUI](docs/tui-architecture.md) |
+| Understand the implementation | [Architecture diagrams](architecture/README.md), [runtime](architecture/runtime.md), [TUI](architecture/tui.md) |
 
 The architecture guide uses Markdown with Mermaid flowcharts and sequence diagrams.
 View it on GitHub or in a Markdown preview with Mermaid support.

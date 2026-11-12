@@ -40,4 +40,4 @@ castor check             # full gate; TUI lane includes PHAR ensure
 
 - Standards: `tests/AGENTS.md`, `.agents/skills/testing/SKILL.md`
 - LLM fixtures: [llm-replay.md](llm-replay.md)
-- Architecture: [tui-architecture.md](tui-architecture.md)
+- Architecture: [TUI architecture](../architecture/tui.md)

@@ -102,7 +102,7 @@ Child denylist `agents.subagent_excluded_tools` still removes named tools after 
 - MCP tools are registered into the Hatfield tool registry for the session after servers connect and advertise tools.
 - Tool names are namespaced/unique per registry rules to avoid collisions with built-ins.
 - Invocations use the MCP client session for the active run; transient disconnects may reconnect according to client manager policy.
-- MCP-backed `ExecuteToolCall` messages route to the dedicated `mcp` transport (one consumer per session). Repository maintainers: see unmarked `docs/async-runtime-architecture.md`.
+- MCP-backed `ExecuteToolCall` messages route to the dedicated `mcp` transport (one consumer per session). Repository maintainers: see `architecture/processes-and-queues.md`.
 - MCP calls use the run's cancellation token. The call deadline is the shorter of
   the server's `timeoutMs` and the tool execution budget. When the SDK observes
   cancellation or deadline expiry, Hatfield stops waiting and keeps a still-connected

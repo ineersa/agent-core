@@ -1,5 +1,14 @@
 # Agent Core
 
+## Documentation index
+
+- Usage and configuration: [docs index](docs/README.md), [settings](docs/settings.md), [model/provider settings](docs/settings-models.md).
+- Agent workflows: [agents](docs/agents.md), [skills](docs/skills.md), [tools](docs/tools.md), [background work and schedules](docs/background-processes.md).
+- Extension authoring: [public Extension API](.hatfield/extensions/extension-api/docs/extension-api.md).
+- Implementation: [architecture index](architecture/README.md), [processes and cooperative consumers](architecture/processes-and-queues.md), [code mode and scheduling](architecture/code-mode-and-scheduling.md).
+- Validation and releases: [TUI testing](docs/tui-testing.md), [distribution](docs/distribution.md), [logging setup](docs/datadog.md).
+- `hatfield_docs` exposes curated operational guides, not architecture internals. Use `list`, then `read` by ID; do not assume every Markdown file is bundled.
+
 ## Project rules
 
 - Read the nearest nested `AGENTS.md` before editing an area. Local rules cannot weaken root rules.

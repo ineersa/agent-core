@@ -9,7 +9,7 @@
 - CodingAgent must not depend on TUI.
 - `Runtime/InProcess` calls AgentCore directly; `Runtime/Process` uses headless JSONL subprocess.
 - `src/CodingAgent/CLI/AgentCommand.php` wires TUI via `Ineersa\Tui\Application\InteractiveMode`.
-- Canonical source: `.hatfield/sessions/<id>/events.jsonl` via `EventStoreInterface`. Overview: `docs/async-runtime-architecture.md`.
+- Canonical source: `.hatfield/sessions/<id>/events.jsonl` via `EventStoreInterface`. Overview: `architecture/runtime.md`.
 
 ## Application maintenance commands
 

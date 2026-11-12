@@ -1,165 +1,100 @@
 ---
 builtin: true
-description: Built-in tool catalog, file and command operations, child agents, and extension or MCP tools.
+description: Choose workspace tools, use code mode safely, recover capped output, and find optional tools.
 ---
 
 # Tools
 
-Hatfield exposes tools to the model so it can inspect and change your workspace.
-The available set depends on your configuration, agent role, extensions, and MCP
-servers. Tool availability does not bypass approval policy.
+Use the current tool schemas for exact arguments and availability. Agent policy,
+extensions and MCP configuration can change the catalog; listing a tool does not
+bypass approvals or sandbox it.
 
-## Built-in catalog
+## Choose the right tool
 
-| Tool | Purpose | Important limits |
-|---|---|---|
-| `read` | Read a text file, optionally by line range | Use `offset` and `limit` for long files. Not an image or PDF reader. |
-| `write` | Create or overwrite a text file | Creates parent directories. Overwrites existing content. |
-| `edit` | Apply context-matched patches to an existing file | Requires matching file context. Read the target before editing. |
-| `view_image` | Attach an image for model inspection | JPEG, PNG, GIF, and WebP. Size and dimension limits apply. |
-| `bash` | Run a shell command in the workspace | Local permissions apply. Timeout and cancellation do not undo completed effects. |
-| `bg_status` | List, inspect logs, or stop accepted background processes | Session-scoped. Does not expose private foreground supervision. |
-| `schedule` | Schedule recurring Bash commands or code-mode scripts, or list and cancel schedules | Optional Scheduling extension, disabled by default. Enable through `hatfield extensions:setup`, select **Scheduling (built in)**, enable for the parent, save, and start a new session. While disabled, neither `schedule` nor `/schedule` is available. Results arrive automatically; schedules end when Hatfield closes. Live controller only; noninteractive. See [recurring work](background-processes.md#recurring-work-schedule) for execution and cancellation limits. |
-| `ask_human` | Ask for text, confirmation, or a choice | Waits for a human response. Cancellation is not approval. |
-| `code_mode` | Run a PHP script that calls other tools through `tool(name, arguments)` | Disabled by default (`tools.code_mode.enabled`). Raw PHP bypasses toolbox hooks. Checkout/PHAR reuse the launching PHP CLI; fused native builds need `php` on PATH. |
-| `hatfield_docs` | List and read packaged Hatfield documentation | Does not automatically discover extension-package READMEs. |
-| `subagent` | Launch one named child agent | Uses discovered agent definitions and child tool policy. |
-| `agent_resume` | Continue an existing child or fork with a follow-up task | Artifacts must belong to the current parent session. |
-| `agent_steer` | Send short guidance to one active direct child | Parent-only. Exactly one child handle. Does not resume terminal children. |
-| `notify_parent` | Send a short notice to the child's recorded parent | Child policy must allow it. Receipt confirms source persistence, not attention. |
-| `agent_retrieve` | Read child handoffs, metadata, or bounded history | Retrieves existing artifacts; does not launch work. |
-| `fork` | Launch a child with inherited conversation context | Waits for a handoff by default. Not a Git worktree creation tool. |
+| Tool | Use |
+|---|---|
+| `read` | Text files; use `offset` + `limit` for a range. Not images/PDFs. |
+| `write` | New files or intentional full replacement; creates parent directories. |
+| `edit` | Context-matched changes to existing files; read current context first. |
+| `view_image` | Inspect JPEG/PNG/GIF/WebP content; size/dimension limits apply. |
+| `bash` | Shell commands with local permissions, timeout and cancellation limits. |
+| `bg_status` | List/log/stop accepted session-owned background Bash. |
+| `ask_human` | Ask for text, confirmation or a choice; cancellation is not approval. |
+| `code_mode` | Opt-in PHP scripts calling tools through `tool(name, arguments)`. |
+| `hatfield_docs` | `list` available product guides, then `read` by logical ID. |
+| `subagent` | Launch one discovered named role. |
+| `fork` | Launch a child with inherited context; does not create a Git worktree. |
+| `agent_resume` | Continue an existing parent-owned child/fork. |
+| `agent_retrieve` | Read existing handoff/metadata/history, not launch work. |
+| `agent_steer` / `notify_parent` | Native active-child guidance/notices; not human input. |
+| `schedule` | Optional recurring Bash/code-mode work; enable Scheduling first. |
 
-Tool argument schemas supplied to the model are the authoritative call format.
-The catalog above explains purpose rather than duplicating every argument.
-For agents, the current tool catalog is authoritative for availability. Use
-`schedule` only when listed. If absent, explain its enablement prerequisite;
-do not assume it is available or change settings without user approval.
+Task-board and observational-memory tools come from optional extensions, not every
+Hatfield installation. MCP tools use server-advertised runtime names/schemas.
+See [agents](agents.md), [MCP](mcp.md) and [background/scheduled work](background-processes.md).
 
-## File changes and commands
+## Output and failures
 
-Use `read` to inspect existing content, `edit` for a targeted change, and `write`
-for a new file or an intentional full replacement. `view_image` supplies image
-content to the model instead of treating binary data as text.
+Oversized text returns a bounded preview plus a saved-file inspection reference.
+Follow the returned range-reading instructions; do not repeat the full original
+read. Saved tool-output files are temporary and can expire while their notices
+remain in session history. Copy important results into an intentional project
+artifact if they must survive restart.
 
-Shell commands can modify files and contact external services. Hatfield is not a
-sandbox. Inspect changes before committing them. [SafeGuard approvals](approvals.md)
-can require your decision or block a call.
-
-Oversized text results are capped. The response can include a saved-file path and
-instructions for reading the omitted content. Those files are temporary; a path
-preserved in session history can outlive the actual saved output.
-
-`read` also applies an internal 1 MiB byte-safety threshold to its selected
-output. Larger selections are saved in full, even if their Unicode character
-count fits the normal character cap. Use the original file's line range for
-follow-up reads. This threshold does not change the normal character caps.
+A tool failure can happen after side effects. Inspect the workspace, logs and
+returned artifact references before retrying; failure does not imply rollback.
+Error redaction is not a reason to include prompts, credentials or environment
+values in diagnostics.
 
 ## code_mode
 
-`code_mode` is off by default. Enable it with `tools.code_mode.enabled: true` in
-user or project settings, then restart Hatfield.
+Enable `tools.code_mode.enabled: true` in settings and restart Hatfield. The tool
+accepts a PHP **function body** in `script`, not a file path. It is useful for
+multi-step tool work whose intermediate results do not need model interpretation.
+For a single call, image, human question or child-agent operation, use direct tools.
 
-Prefer `code_mode` for multi-step tool work when intermediate results do not need
-model interpretation. Batch related reads and lookups, filter or compare inside
-the script, and return the evidence needed for the next decision. Use direct tools
-for single calls, images, human input, and child-agent operations. Do not wrap a
-single call or dump entire intermediate results merely to use `code_mode`.
+Example script to collect small excerpts without returning every intermediate:
 
-The script can call registered tools, including MCP tools, through
-`tool(name, arguments)` using each tool's runtime name. Values returned by
-`tool()` stay as JSON-compatible PHP values. Strings stay strings. Extra
-`tool()` arguments fail. Use `toon_encode()` and `toon_decode()` when you need
-TOON conversion. `toon_encode()` rejects unsupported or lossy values.
-`toon_decode()` leaves valid scalar text unchanged. Nested tool failures throw
-`RuntimeException`. Missing or explicit `null` returns are visible as `null`.
-Boolean returns are visible as `true` or `false`.
-Script stdout/stderr, including PHP warnings, are appended to the
-model-facing return text. The child process starts with `display_errors=0` and
-`xdebug.mode=off`, so warnings log once on stderr without an stdout mirror or
-Xdebug stacks. Small diagnostics keep useful stacks and use stable `script.php`
-and `bootstrap.php` path labels. The host redirects stdout and stderr into its
-private workspace. An internal 1 MiB byte-safety threshold applies to each
-diagnostic stream separately. Larger streams are saved in full as run-owned
-output artifacts; labeled notices replace their inline text. These raw artifacts
-preserve whitespace and paths unchanged. The script's structured return value is
-unchanged by diagnostic capture. The combined return text and diagnostic notices use
-ordinary output capping with the document-report 50,000-character selection and
-saved-output recovery for both successful and failed `code_mode` results.
-Timeout and memory limits still bound the subprocess. Arbitrary script return
-values and nested tool payloads are not covered by the diagnostic byte threshold.
-`die()`/`exit` without a return reports that the script exited without returning
-a value, even on exit code 0.
+```php
+$excerpts = [];
+foreach (['composer.json', 'config/bundles.php'] as $path) {
+    $text = tool('read', ['path' => $path, 'offset' => 1, 'limit' => 10]);
+    $excerpts[$path] = $text;
+}
+return $excerpts;
+```
 
-Raw PHP filesystem and process functions also work inside the script. Those
-calls bypass toolbox hooks and approvals. If you launch Hatfield under
-`hatfield-safe` or another bubblewrap wrapper, the script inherits that sandbox.
-`code_mode` does not create a separate sandbox. Checkout and PHAR reuse the PHP
-interpreter that launched Hatfield. Fused native/static binaries still need an
-installed PHP CLI available as `php` on `PATH`.
+`tool()` accepts a registered runtime name and argument array, including MCP names.
+Values stay as returned; strings are not implicitly decoded. Use `json_decode()`,
+`toon_decode()` or `toon_encode()` explicitly when appropriate. Nested failures
+throw `RuntimeException`; catch only when you can handle/report the failure.
+Return JSON-compatible scalars/arrays. Objects, resources, closures, non-finite
+floats, invalid UTF-8 and cycles fail. Missing/null returns show `null`;
+`exit`/`die` without a return is not successful completion.
 
-`tool()` rejects `subagent`, `fork`, `agent_resume`, `agent_steer`, `notify_parent`,
-and `ask_human` before the handler runs. Those tools need native deferred ownership or interactive pause
-flow that this bridge cannot complete. Script return values and nested tool results must be JSON-compatible scalars
-or arrays. Closures, resources, objects, non-finite floats, invalid UTF-8, and
-cyclic graphs fail instead of becoming empty or substituted data. Each script
-accepts optional `timeout_seconds` (default 1800, max 3600) and `memory_limit_mb`
-(default 256, max 1024). The remaining parent tool budget wins when smaller.
-Nested tool calls receive the remaining script budget as cooperative ToolContext
-metadata. The host can enforce that budget only while it is polling the script; a
-nested handler that blocks synchronously can still overrun until it returns.
+| Argument | Default | Maximum |
+|---|---|---|
+| `timeout_seconds` | `1800` | `3600` |
+| `memory_limit_mb` | `256` | `1024` |
+| `backgrounded` | `false` | Boolean |
 
-## Background work
+The remaining parent tool budget can shorten the script deadline. Nested handlers
+receive a cooperative budget, not a guarantee that synchronous code is preempted.
+Stdout/stderr accompany the return value; large diagnostics use saved artifacts
+and normal output caps. Prefer a small final `return` to dumping intermediates.
 
-`bash`, `subagent`, `fork`, `agent_resume` and `code_mode` accept optional boolean `backgrounded` (default false). True requests an acknowledgement after startup and later completion delivery through the existing background lifecycle. Fast terminal results may win the acknowledgement race. There is no `bg_start` tool. The user can also choose
-backgrounding with Ctrl+B and inspect or stop root-owned work through `/bg`.
-Background launch of Bash and code mode requires a direct tool invocation, not a nested `tool()` call. Deferred child tools remain unsupported inside code mode.
-`bg_status` inspects or stops Bash jobs only. See [code-mode backgrounding](background-processes.md#code-mode-scripts) for script occupancy, stopping and recovery.
+### Trust and unsupported operations
 
-## Child agents
+Raw PHP filesystem/process functions bypass toolbox hooks and approvals. Use
+`tool()` for audited operations. Code mode inherits a launcher sandbox such as
+bubblewrap; it does not create one. Checkout/PHAR use their launching PHP CLI;
+fused native builds require `php` on PATH.
 
-Use named [subagents](agents.md) for role-specific tasks, `agent_resume` for follow-up
-work on an existing child or fork, and `agent_retrieve` to inspect their artifacts. A
-fork inherits parent context rather than starting only with a named role prompt.
-Resume an eligible fork instead of launching a duplicate when its context still
-applies. Nested child launches are blocked.
+`subagent`, `fork`, `agent_resume`, `agent_steer`, `notify_parent` and `ask_human`
+are unsupported inside code mode. Call them directly. Nested Bash/code-mode calls
+cannot detach; use a direct `backgrounded: true` call for background work.
+A background PHP script still depends on its original host worker and cannot
+restore its stack after worker loss.
 
-Use `agent_steer` for guidance to a current active child, and `notify_parent` for
-an intermediate notice from a child. Both accept nonblank UTF-8 `text` up to
-8,192 bytes and return a source-persistence receipt, not a delivery or attention
-guarantee. Text reaches a safe model boundary without interrupting human waits or
-in-flight work. Neither tool changes approval, cancellation, or permissions, and
-terminal handoffs are unchanged. See [active-child communication](agents.md#active-child-communication).
-
-Children do not automatically receive every parent tool or optional extension.
-MCP inheritance and explicit selectors are described in [MCP](mcp.md).
-
-## Extension and MCP tools
-
-Enabled extensions can register additional tools. For example, task-workflow adds
-task-board operations, while observational-memory provides `memory_search` and `recall`. These are
-extension tools, not universally available built-ins. Observer and reflector jobs
-also have private tools that are not the main session's catalog.
-
-MCP servers advertise their own tool names and schemas. `/mcp` shows configured
-servers and discovered tools. [MCP configuration](mcp.md) controls availability.
-
-## Failure diagnostics
-
-Tool failures retain a failed outcome in runtime events and the transcript.
-Handler exceptions expose a bounded cause instead of a generic execution error.
-Common credential patterns are redacted before display. Redaction cannot identify
-arbitrary secrets embedded in prose; tool handlers must not include sensitive
-arguments or environment values in exception messages.
-
-Results retain the tool-call identity. Available task, log, and status references
-describe where to inspect partial work before retrying. A failed tool call does
-not imply that earlier side effects were rolled back. Bash supervision failure
-does not establish the workload's exit status. See [Background processes](background-processes.md).
-
-## Related
-
-- [Terminal usage](terminal-usage.md)
-- [Human input](human-input.md)
-- [Settings](settings.md)
-- [Sessions and temporary outputs](session-storage.md)
+Related: [settings](settings.md), [human input](human-input.md),
+[approvals](approvals.md), [sessions](session-storage.md).

@@ -21,12 +21,13 @@ keeps the separately published API stable and is not an internal boundary workar
 
 1. Install the extension package under the project `.hatfield/extensions` Composer root (or ship with the monorepo).
 2. List the extension class in `.hatfield/settings.yaml` → `extensions.enabled`.
-3. Start a **new** session — `HatfieldExtensionInterface::register(ExtensionApiInterface $api)` runs at startup.
-   Construction, logger injection, and subscriber attachment are **not** fully
-   isolated today: a throwing constructor (or uncaught failure outside
-   `register()`) can abort host startup. Treat per-extension degradation as
-   incomplete until the tracked startup-isolation fix lands; do not document a
-   guarantee that every extension failure is contained.
+3. Restart Hatfield. `HatfieldExtensionInterface::register(ExtensionApiInterface $api)`
+   runs on console command startup in each process, including consumers. `/new`
+   inside a running host does not reload classes. Session-start hooks are a
+   separate interactive-controller lifecycle, not worker-start callbacks.
+   Failures in construction, logger injection, registration or subscriber attachment
+   are caught and logged; other extensions continue loading. Partial registrations
+   are **not rolled back**, so a failed load can leave earlier registrations active.
 
 ```php
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
@@ -67,6 +68,18 @@ Focused references: [extension-api-tools.md](extension-api-tools.md),
 
 `getSettings('task_workflow')` returns `extensions.settings.task_workflow` (array, possibly empty).
 Paths should resolve against `getCwd()`, not the extension install path, unless you intentionally use `__DIR__` for package assets.
+
+For editable setup fields, implement `ConfigurableExtensionInterface::getConfiguration()`
+with Symfony Config's `ConfigurationInterface`. Its tree root names the
+`extensions.settings` key; use native node defaults, validation and `info()`.
+Set node attribute `hatfield.model_picker` to `true` for a generation-model picker.
+Configuration inspection does not call `register()`.
+
+`hatfield extensions:setup` lists built-ins and matching packages from Hatfield's
+own Composer `suggest` catalog, not every installed extension. For catalog packages,
+Composer `extra.hatfield.extension` identifies the entry class; it does not add an
+arbitrary package to setup. Configure other custom extensions manually through
+`extensions.enabled` and `extensions.settings.<tree-root>` in settings YAML.
 
 ## Skills
 
