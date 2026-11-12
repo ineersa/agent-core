@@ -59,8 +59,8 @@ final class GitExecutor
     public function branchExists(string $root, string $branch, ?InvocationControl $control = null): bool
     {
         $result = $this->git(['show-ref', '--verify', '--quiet', 'refs/heads/'.$branch], $root, 120.0, $control);
-        if ($result->cancelled || $result->timedOut) {
-            return false;
+        if ($result->cancelled || $result->timedOut || !\in_array($result->exitCode, [0, 1], true)) {
+            throw new \RuntimeException('Branch discovery failed or was interrupted; absence was not established.');
         }
 
         return 0 === $result->exitCode;

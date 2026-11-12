@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\HatfieldExt\TaskWorkflow\Ide;
+namespace HatfieldProject\TaskHooks;
 
 /**
  * Minimal per-worktree .idea metadata derived from the integration primary module.
