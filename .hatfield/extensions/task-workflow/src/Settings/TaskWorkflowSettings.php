@@ -6,20 +6,29 @@ namespace Ineersa\HatfieldExt\TaskWorkflow\Settings;
 
 final readonly class TaskWorkflowSettings
 {
+    /** @param array<string, array{script: string, timeout_seconds: int}> $hooks */
     public function __construct(
-        public ?string $taskRoot = null,
+        public string $repository = '',
+        public string $remote = 'origin',
+        public string $baseBranch = 'main',
+        public string $worktreeRoot = '../worktrees',
+        public string $workflowField = 'Workflow',
+        public string $mergeMethod = 'merge',
+        public array $hooks = [],
     ) {
     }
 
-    /**
-     * @param array<string, mixed> $settings
-     */
+    /** @param array<string, mixed> $settings */
     public static function fromArray(array $settings): self
     {
-        $taskRoot = isset($settings['task_root']) && \is_string($settings['task_root']) && '' !== $settings['task_root']
-            ? $settings['task_root']
-            : null;
-
-        return new self($taskRoot);
+        return new self(
+            repository: $settings['repository'] ?? '',
+            remote: $settings['remote'] ?? 'origin',
+            baseBranch: $settings['base_branch'] ?? 'main',
+            worktreeRoot: $settings['worktree_root'] ?? '../worktrees',
+            workflowField: $settings['workflow_field'] ?? 'Workflow',
+            mergeMethod: $settings['merge_method'] ?? 'merge',
+            hooks: $settings['hooks'] ?? [],
+        );
     }
 }
