@@ -88,29 +88,10 @@ Otherwise the extensions autoloader can shadow host packages such as `symfony/tu
 Built-in SafeGuard and Scheduling need no Composer package; use
 `hatfield extensions:setup` to select enablement. SafeGuard is in child always-on
 defaults; Scheduling is optional and disabled by default.
-Project packages (task-workflow, observational-memory) document their own settings keys in **package-local README files** shipped with each extension repository/package. Those keys are **not** core `hatfield_docs` catalog entries.
-
-Example:
-
-```yaml
-extensions:
-  enabled:
-    - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
-  settings:
-    task_workflow:
-      repository: owner/repository
-      remote: origin
-      base_branch: main
-      worktree_root: ../worktrees
-      hooks:
-        setup: { script: .hatfield/task-hooks/setup.sh, timeout_seconds: 900 }
-        validate: { script: .hatfield/task-hooks/validate.sh, timeout_seconds: 1800 }
-        cleanup: { script: .hatfield/task-hooks/cleanup.sh, timeout_seconds: 300 }
-```
-
-Commit the hook scripts and shared Markdown issue templates before deliberate
-`/tasks-init` initialization. GitHub Workflow is authoritative; no local task-board
-discovery or persistence fallback remains. See [task workflow settings](settings.md#github-task-workflow).
+Project packages (task-workflow, observational-memory) document setup and settings
+in **package-local README files** shipped with each extension repository/package.
+For task workflow, read the installed `ineersa/hatfield-ext-task-workflow` package's
+`README.md`. Extension-specific settings are **not** core `hatfield_docs` catalog entries.
 
 ## MCP
 

@@ -125,7 +125,7 @@ configured paths, each with a positive `timeout_seconds`:
 | Hook | Project responsibility |
 | --- | --- |
 | `setup` | Install/provision dependencies and uniquely owned task-local resources. |
-| `validate` | Run the established pre-review build/test/lint checks for the committed revision; propagate failures. Never substitute a no-op for validation. |
+| `validate` | Run established checks at review for the committed revision and at completion for the merged base in the primary checkout; propagate failures. Never substitute a no-op for validation. |
 | `cleanup` | Remove **only resources owned by this task**. Be idempotent and handle partial setup, never-started setup and a missing task directory. |
 
 An explicit `exit 0` setup or cleanup script is acceptable when that phase has
@@ -135,7 +135,8 @@ for ownership where needed. Hooks must not merge PRs, update Workflow or remove
 Git worktrees; Hatfield owns those operations.
 
 Scripts run noninteractively through Bash; only exit zero succeeds. Setup and
-validation use the task worktree as cwd; cleanup uses the stable primary checkout.
+review validation use the task worktree as subprocess cwd; cleanup and completion
+validation use the stable primary checkout. This never changes the agent's cwd.
 All scripts are read from that primary checkout. Each timeout is also limited by
 the enclosing invocation budget. See the [hook contract](#hook-contract) for the
 complete environment, including `HATFIELD_PROJECT_ROOT`, `HATFIELD_TASK_WORKTREE`,
@@ -145,8 +146,12 @@ before provisioning resources, not after a task fails.
 
 ### 5. Prepare shared Markdown issue templates
 
-Preserve or prepare `.github/ISSUE_TEMPLATE/feature.md`, `bug.md` and
-`experiment.md`. These are ordinary Markdown templates with `name` and `about`
+During agent-guided setup, prepare the project's `.github/ISSUE_TEMPLATE/feature.md`,
+`bug.md` and `experiment.md` from this package's defaults in
+[`templates/issue/`](templates/issue/). Copy missing files; inspect and merge useful
+body structure into existing files without overwriting customization. These defaults
+ship with the extension, so no Agent Core checkout is needed. `/tasks-init` does
+not create or replace template files. These are ordinary Markdown templates with `name` and `about`
 YAML frontmatter, shared by the GitHub issue chooser and Hatfield. They are not
 issue forms, and the extension does not require fixed headings. Keep them short:
 
@@ -246,9 +251,12 @@ QA-report object or permanent task-level validation-passed flag.
 `/tasks`, `/tasks-todo`, `/tasks-in-progress`, `/tasks-code-review`, `/tasks-done`
 accept an optional page. Native closure with active Workflow is displayed as
 awaiting finalization. `/tasks-init` is deliberate project initialization.
-Task command prompts preserve planning-only, implementation-only, review,
-feedback iteration and completion endpoints. Main performs task administration;
-implementation forks are optional bounded help, one writer per checkout.
+The bundled skill covers planning-only, implementation-only, review, feedback
+iteration and completion endpoints; separate project task prompts are unnecessary.
+Main performs task administration and transitions; implementation forks are optional
+bounded help, one writer per checkout. Hooks own the full validation gate; honor
+project review and explicit merge authorization rather than repeating that gate
+as a separate ceremony or inferring permission to merge.
 
 ## Transition order
 
@@ -258,7 +266,7 @@ implementation forks are optional bounded help, one writer per checkout.
 | IN-PROGRESS → IN-PROGRESS | Resume this machine's workspace; completed setup is reused for the same existing workspace |
 | CODE-REVIEW → IN-PROGRESS | Return for changes using native PR head/base; provision/setup only if needed |
 | IN-PROGRESS → CODE-REVIEW | Require committed clean workspace, validate actual SHA, recheck HEAD/cleanliness, push without force, verify remote and PR SHA, publish last |
-| CODE-REVIEW → DONE | Protected GitHub merge/head guard, require confirmed MERGED, fast-forward actual merged base, cleanup, verified removal, close completed, publish last |
+| CODE-REVIEW → DONE | Protected GitHub merge/head guard, require confirmed MERGED, fast-forward actual merged base, cleanup, verified removal, validate merged base in primary checkout, close completed, publish last |
 | TODO / IN-PROGRESS / CODE-REVIEW → CANCELLED | Reject merged PR, close/verify unmerged PR, cleanup even if never started, verified removal, recheck PR, close not planned, publish last |
 | DONE → DONE / CANCELLED → CANCELLED | Reconcile unfinished local/remote finalization rather than returning early |
 
@@ -277,15 +285,23 @@ never `--admin`, local remerging, force push or `--delete-branch`. Repository
 protections and project review requirements still apply. An enabled auto-merge
 or queued merge is pending and retains the workspace. Squash/rebase completion
 updates from the actual merged base, not the old implementation branch.
+After cleanup and verified task-worktree removal, the existing validate hook runs
+again with `HATFIELD_TASK_REASON=done` in the primary checkout. Only then may remote
+DONE finalization proceed. A failure retains pending recovery and does not publish
+DONE; retry the same finalization without recreating the worktree or merging again.
 
 ## Hook contract
 
 Scripts are invoked as `bash --noprofile --norc /absolute/script`, noninteractively
 through the existing cancellable execution interface. Inherited `BASH_ENV` is
 neutralized. No issue content, branch or path is interpolated into shell source.
-Scripts always come from the stable primary checkout: setup/validate run with the
-task workspace as cwd; cleanup runs with the primary checkout as cwd. Hook updates
-must remain compatible with active workspaces; scripts are not snapshotted.
+Scripts always come from the stable primary checkout. Setup (`HATFIELD_TASK_REASON=start`)
+and pre-review validation (`HATFIELD_TASK_REASON=review`) run with the task workspace as subprocess cwd.
+Cleanup runs in the primary checkout, including missing-worktree recovery; validate
+at completion (`HATFIELD_TASK_REASON=done`) also runs there, after merge/base update,
+cleanup and verified removal. These are subprocess cwd choices, not a change to
+the agent's cwd. No new hook or settings are required. Hook updates must remain
+compatible with active workspaces; scripts are not snapshotted.
 
 | Environment variable | Meaning |
 | --- | --- |
@@ -309,7 +325,10 @@ cleanup normally does nothing. Retained hook data allows cleanup after a task
 directory disappears. It is deleted only after confirmed remote finalization.
 
 Hooks own generated files/project resources, never PR merges, Workflow updates or
-worktree deletion. Diagnostics are bounded tool output, not appended to issues.
+worktree deletion. Hook diagnostics visible to the model in tool results retain
+stdout and stderr tails independently, up to 2,000 characters each; they are not
+full streamed hook output, and noisy stdout cannot displace stderr. Diagnostics
+are not automatically appended to issues; summarize actual outcomes in QA.
 Dependency provisioning, editor setup and validation commands belong to the
 project's scripts, not the reusable extension. Explicit exit-zero setup/cleanup
 scripts are valid for projects needing no work; validation must run real checks.
@@ -329,7 +348,7 @@ Cleanliness is checked again after cleanup; DONE also guards the local committed
 HEAD against the confirmed merged PR head. Cancellation retains branch/commits.
 Primary/unrelated workspaces are never removal targets.
 
-A successful merge is not rolled back when cleanup fails. Retain active Workflow
+A successful merge is not rolled back when cleanup or completion validation fails. Retain active Workflow
 and machine recovery until finalization succeeds, even if GitHub auto-closed the
 issue. Cleanup invalidates setup first, so partial teardown cannot be silently
 resumed as implementation. Pending terminal operations must resume as the same
@@ -337,7 +356,9 @@ finalization; a verified concurrent merge during cancellation requires explicit
 DONE reconciliation with cleanup evaluated for the new reason.
 
 Checkpoints are atomic JSON under the Git common directory's `hatfield/tasks/`,
-keyed by host/repository and issue. Cooperative locking detects local conflicts,
+keyed by host/repository and issue. They track machine-local ownership and pending
+recovery, not task specifications or a second task board; GitHub remains authoritative.
+Cooperative locking detects local conflicts,
 not distributed ownership. One orchestrator writes a task. Re-read before
 publication; stale-read detection is not an atomic compare-and-set guarantee.
 External status/closure edits never execute hooks. Conflicting already-closed
@@ -355,7 +376,9 @@ migration output, never the new runtime. Configure/test hooks and templates once
 A dedicated integration repository, not production history, must exercise the live
 lifecycle and failure paths before cutover. Fixture tests are not live GitHub proof.
 
-A Git clone is not an issue backup. Export issue metadata/current body, Workflow
+A Git clone is not an issue backup. The optional export helper produces a separate
+backup or handoff snapshot; normal setup and task operations do not require it.
+Export issue metadata/current body, Workflow
 values, comment history and numbered artifact metadata/bytes separately:
 
 ```bash

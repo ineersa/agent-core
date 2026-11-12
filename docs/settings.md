@@ -221,56 +221,8 @@ Run `hatfield extensions:setup` to install and configure Hatfield extensions. Th
 
 - Settings and extension enablement are project/user config.
 - Sessions, tmp, cache, logs are runtime and should stay untracked.
-- Extensions load from `.hatfield/extensions` Composer autoload when enabled. Task workflow and observational memory document their settings in their package-local READMEs.
+- Extensions load from `.hatfield/extensions` Composer autoload when enabled. Task workflow and observational memory document setup and settings in their package-local READMEs. For task workflow, read the installed `ineersa/hatfield-ext-task-workflow` package's `README.md`.
 - Built-in docs for the model are selected with `builtin: true` under approved roots; repository-only docs stay unmarked.
-
-### GitHub task workflow
-
-Task workflow uses the installed authenticated `gh` CLI and GitHub issues, not a
-separate filesystem task repository. Configure `extensions.settings.task_workflow`
-once per project: `repository` (`[HOST/]OWNER/REPO`), `remote` (default `origin`),
-`base_branch` (default `main`), `worktree_root` (default `../worktrees`),
-`workflow_field` (default `Workflow`), and `merge_method` (`merge`, `squash`, or `rebase`).
-Relative paths resolve from the primary project checkout, including hook scripts.
-
-All three `hooks.setup`, `hooks.validate`, and `hooks.cleanup` entries need a
-committed Bash `script` and positive `timeout_seconds`. Explicit no-op setup or
-cleanup scripts are allowed; missing validation refuses submission. Setup and
-validation run in the task worktree; cleanup runs in the stable primary checkout.
-Only exit zero succeeds. Hooks must tolerate retries and partial/missing workspaces;
-they must not remove worktrees or operate PRs/Workflow. No arbitrary hook commands
-are accepted in transition calls.
-
-After installation/enablement, ask “set up task workflow” for the discoverable
-setup skill; a Git repository is a prerequisite even before task configuration.
-The extension README's **Project setup** guide covers inspection, project-specific
-hooks and shared feature/bug/experiment Markdown templates. Reuse the project's
-established checks, preserve existing settings, commit setup to the primary checkout
-and restart Hatfield to load it before `/tasks-init`. Task tools/commands remain
-unregistered until `repository` is configured.
-
-Workflow is an owner-level **single-select issue field**, not a Projects field or
-label; select an existing differently named field with `workflow_field` rather than
-renaming it or creating a duplicate. Leave unrelated fields untouched. Issue types
-and pinning are not runtime prerequisites. For personal owners,
-classic OAuth definition reads require `read:user`; creating/updating definitions
-needs broader `user` scope. Prefer manually creating Workflow and all five options
-through account Settings → Planning → Issue fields over requesting broad scopes;
-organization fields live under organization Settings → Planning → Issue fields.
-Manual setup avoids definition writes, not definition reads or the repository/API
-permissions required for per-issue Workflow values and artifacts. Never silently
-escalate credentials; see the README for manual steps and permission references.
-
-`/tasks-init` deliberately checks capabilities and can create missing owner-level
-definitions/options while preserving unrelated configuration. It needs an existing
-ordinary issue for a read-only artifact probe; do not create a dummy production task
-for setup. It does not exercise hooks or prove the full lifecycle. Report exact
-blockers and unrun checks. A capability failure is an error, never a local fallback.
-
-Before switching an existing project, finish legacy active tasks, import outstanding
-TODO specifications and useful QA into issues, and retain the old repository as
-read-only history. Do not use production issue history as an integration-test fixture.
-See the extension README for tool contracts, hook environment, recovery and export.
 
 ## Validation tip
 
