@@ -289,6 +289,14 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
                 throw new TaskTransitionException('Worktree deletion postconditions failed. Retained finalization must be retried.');
             }
         }
+        if ($done) {
+            // Validate the integrated checkout after removal, not the pre-merge task
+            // tree. Failure retains recovery evidence and must not publish DONE.
+            $result = $this->runHook('validate', 'done', $task, $state, $pr->baseBranch, $control);
+            if (!$this->hookSucceeded($result)) {
+                return $this->hookFailure('validate', $task, $state, $result);
+            }
+        }
         // PR state can change during cleanup. Never publish cancelled after a merge
         // or reopened PR; keep deletion evidence for explicit reconciliation.
         if (null !== $pr) {
@@ -301,7 +309,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         $published = $this->store->publish($closed, $to, $control);
         $this->states->forget($this->settings->repository, $task->number);
 
-        return ToolResult::text('Finalization confirmed: cleanup passed, owned workspace absent, Workflow '.$to->value.'.', ['task' => $published, 'cleanup' => 'passed', 'worktree_removed' => true, 'execution_checkout' => $this->primaryRoot]);
+        return ToolResult::text('Finalization confirmed: cleanup passed'.($done ? ', merged-base validation passed' : '').', owned workspace absent, Workflow '.$to->value.'.', ['task' => $published, 'cleanup' => 'passed', 'worktree_removed' => true, 'execution_checkout' => $this->primaryRoot]);
     }
 
     /** @param array<string,mixed>|null $state */
@@ -415,7 +423,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         return ToolResult::text($name.' hook did not succeed. Workflow unchanged; preserve/repair resources and retry the same transition.', [
             'task' => $task, 'pending' => true, 'worktree' => $state['worktree'], 'hook' => $name,
             'exit_code' => $result->exitCode, 'timed_out' => $result->timedOut, 'cancelled' => $result->cancelled,
-            'diagnostics' => substr($result->stderr."\n".$result->stdout, -4000),
+            'diagnostics' => "stderr:\n".substr($result->stderr, -2000)."\nstdout:\n".substr($result->stdout, -2000),
         ]);
     }
 }

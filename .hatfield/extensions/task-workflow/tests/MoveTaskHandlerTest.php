@@ -43,7 +43,11 @@ final class MoveTaskHandlerTest extends TestCase
         $this->assertSame('MERGED', $this->fixture->pr['state']);
         $this->assertDirectoryDoesNotExist($path);
         $this->assertNull($this->fixture->record());
-        $this->assertSame(['setup', 'validate', 'cleanup'], array_column($this->fixture->hookCalls, 0));
+        $this->assertSame(['setup', 'validate', 'cleanup', 'validate'], array_column($this->fixture->hookCalls, 0));
+        $postMerge = $this->fixture->hookCalls[3];
+        $this->assertSame('done', $postMerge[1]['HATFIELD_TASK_REASON']);
+        $this->assertSame('0', $postMerge[1]['HATFIELD_TASK_WORKTREE_EXISTS']);
+        $this->assertSame($this->fixture->workspace->root, $postMerge[2]);
     }
 
     public function testTodoCancellationRunsCleanupWithoutWorkspace(): void
@@ -58,10 +62,28 @@ final class MoveTaskHandlerTest extends TestCase
     public function testFailedValidationDoesNotSubmitReview(): void
     {
         $this->move('IN-PROGRESS');
-        $this->fixture->hookResults['validate'] = new ExecResultDTO('', 'validation failed', 1);
-        $this->move('CODE-REVIEW');
+        $this->fixture->hookResults['validate'] = new ExecResultDTO(str_repeat('progress ', 1000).'report-path', 'validation failed', 1);
+        $result = $this->move('CODE-REVIEW');
+        $this->assertStringContainsString('validation failed', $result);
+        $this->assertStringContainsString('report-path', $result);
         $this->assertSame('IN-PROGRESS', $this->fixture->status);
         $this->assertNull($this->fixture->pr);
+    }
+
+    public function testFailedPostMergeValidationKeepsPendingWorkflow(): void
+    {
+        $this->move('IN-PROGRESS');
+        $this->move('CODE-REVIEW');
+        $path = $this->fixture->record()['worktree'];
+        $this->fixture->hookResults['validate'] = new ExecResultDTO('', 'integrated check failed', 1);
+
+        $result = $this->move('DONE');
+
+        $this->assertStringContainsString('integrated check failed', $result);
+        $this->assertSame('MERGED', $this->fixture->pr['state']);
+        $this->assertDirectoryDoesNotExist($path);
+        $this->assertSame('CODE-REVIEW', $this->fixture->status);
+        $this->assertSame('done', $this->fixture->record()['pending_operation']);
     }
 
     public function testDirtyWorkspaceCannotBeCancelled(): void

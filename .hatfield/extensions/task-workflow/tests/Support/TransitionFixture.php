@@ -81,7 +81,7 @@ final class TransitionFixture implements ExecInterface
         }
         if ('bash' === $command) {
             $phase = basename($args[2], '.sh');
-            $this->hookCalls[] = [$phase, $options->env];
+            $this->hookCalls[] = [$phase, $options->env, $options->cwd];
 
             return $this->hookResults[$phase] ?? new ExecResultDTO('', '', 0);
         }
