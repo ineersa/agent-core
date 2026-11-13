@@ -151,6 +151,13 @@ final class ExtensionsSetupScreen
                     $this->menu();
                 } elseif (isset($this->flow->members[$id])) {
                     $this->flow->members[$id] = $value;
+                    if ('parent' === $id && 'false' === $value) {
+                        // Child-selected extensions must also be available in the parent.
+                        foreach (['forks' => 'off', 'agents' => 'false'] as $child => $disabled) {
+                            $this->flow->members[$child] = $disabled;
+                            $settings->updateValue($child, $disabled);
+                        }
+                    }
                 } else {
                     // Apply overlapping mapping/leaf edits in the user's latest edit order.
                     unset($edits[$id]);

@@ -22,4 +22,16 @@ final class ExtensionsSetupFlowTest extends IsolatedKernelTestCase
             'ineersa/hatfield-ext-observational-memory' => ['label' => 'Observational Memory', 'installed' => false, 'class' => null],
         ], $flow->packages());
     }
+
+    public function testDisablingParentWithDefaultChildSelectionsIsRefused(): void
+    {
+        $flow = self::getContainer()->get(ExtensionsSetupFlow::class);
+        $flow->select('safe_guard');
+        $this->assertSame(['parent' => 'true', 'forks' => 'always_on', 'agents' => 'true'], $flow->members);
+        $flow->members['parent'] = 'false';
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Enable the parent extension before selecting it for forks or agents.');
+        $flow->save([]);
+    }
 }
