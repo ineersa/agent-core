@@ -60,7 +60,7 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
         $primary = $worktrees->primaryRoot($api->getCwd());
         // The stable checkout owns installed guidance, including before configuration.
         (new TaskWorkflowSkillInstaller($primary, \dirname(__DIR__), $this->logger))->install();
-        $current = trim($git->gitOk(['rev-parse', '--show-toplevel'], $api->getCwd())->stdout);
+        $current = $api->getCwd();
         if ($current !== $primary) {
             (new TaskWorkflowSkillInstaller($current, \dirname(__DIR__), $this->logger))->install(existingManagedOnly: true);
         }

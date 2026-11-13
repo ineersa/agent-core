@@ -81,6 +81,30 @@ final class TaskWorkflowExtensionRegistrationTest extends TestCase
         }
     }
 
+    public function testRefreshesOlderManagedSkillAtNestedWorktreeCwd(): void
+    {
+        $workspace = new WorkspaceFixture();
+        try {
+            $linked = $this->linkedWorktree($workspace);
+            $cwd = $linked.'/src';
+            $localSkill = $cwd.'/.hatfield/skills/task-workflow';
+            (new Filesystem())->mkdir($localSkill);
+            $this->assertSame($localSkill, realpath($localSkill));
+            $this->assertStringStartsWith(realpath($workspace->directory).'/', realpath($localSkill).'/');
+            file_put_contents($localSkill.'/SKILL.md', "---\nname: task-workflow\ndescription: stale\nversion: 2.2.0\n---\nstale\n");
+
+            $api = new TestExtensionApi($cwd, exec: $workspace);
+            (new TaskWorkflowExtension())->register($api);
+
+            $this->assertSame(file_get_contents(\dirname(__DIR__).'/skills/task-workflow/SKILL.md'), file_get_contents($localSkill.'/SKILL.md'));
+            $this->assertFileExists($localSkill.'/README.md');
+            $this->assertSame([$workspace->root.'/.hatfield/skills/task-workflow'], $api->skills);
+            $this->assertDirectoryDoesNotExist($linked.'/.hatfield/skills/task-workflow');
+        } finally {
+            $workspace->close();
+        }
+    }
+
     private function linkedWorktree(WorkspaceFixture $workspace): string
     {
         $this->assertSame($workspace->directory, realpath($workspace->directory));
