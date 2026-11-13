@@ -16,7 +16,7 @@ final class TaskStatusEnumTest extends TestCase
         $this->assertSame(TaskStatusEnum::IN_PROGRESS, TaskStatusEnum::fromMixed('IN_PROGRESS'));
         $this->assertSame(TaskStatusEnum::IN_PROGRESS, TaskStatusEnum::fromMixed('in-progress'));
         $this->assertSame(TaskStatusEnum::CODE_REVIEW, TaskStatusEnum::fromMixed('CODE_REVIEW'));
-        $this->assertSame(TaskStatusEnum::ARCHIVE, TaskStatusEnum::fromMixed('archive'));
+        $this->assertCount(5, TaskStatusEnum::cases());
         $this->assertSame(TaskStatusEnum::CANCELLED, TaskStatusEnum::fromMixed('CANCELLED'));
         $this->assertSame(TaskStatusEnum::CANCELLED, TaskStatusEnum::fromMixed('canceled'));
     }

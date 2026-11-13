@@ -22,7 +22,7 @@ final class TaskBoardLockTest extends TestCase
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tw-command-lock');
         $server = listen('127.0.0.1:0');
-        $lock = new TaskBoardLock(TaskBoardLock::lockPathForRoot($dir));
+        $lock = new TaskBoardLock($dir.'/workflow.lock');
         $holder = \Amp\async(static fn () => $lock->withLock(static fn () => new ExtensionExecBridge()->exec(\PHP_BINARY, ['-r', '$c=stream_socket_client($argv[1]); fwrite($c,"READY\n"); fgets($c); echo "released";', 'tcp://'.$server->getAddress()->toString()], new ExecOptionsDTO(timeout: 3))));
         $socket = null;
         $waiter = null;
@@ -56,7 +56,7 @@ final class TaskBoardLockTest extends TestCase
         $dir = TestDirectoryIsolation::createProjectTempDir('tw-lock-fiber');
         try {
             foreach ([false, true] as $cancel) {
-                $path = TaskBoardLock::lockPathForRoot($dir);
+                $path = $dir.'/workflow.lock';
                 $owner = fopen($path, 'c+b');
                 $this->assertTrue(flock($owner, \LOCK_EX | \LOCK_NB));
                 $cancelled = false;
@@ -109,7 +109,7 @@ final class TaskBoardLockTest extends TestCase
         // Thesis: if flock release is moved out of finally, a thrown callback would deadlock the next withLock call.
         $dir = TestDirectoryIsolation::createProjectTempDir('tw-lock-ex');
         try {
-            $lockPath = TaskBoardLock::lockPathForRoot($dir);
+            $lockPath = $dir.'/workflow.lock';
             $lock = new TaskBoardLock($lockPath);
 
             try {
@@ -133,7 +133,7 @@ final class TaskBoardLockTest extends TestCase
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tw-lock');
         try {
-            $lockPath = TaskBoardLock::lockPathForRoot($dir);
+            $lockPath = $dir.'/workflow.lock';
             $lock = new TaskBoardLock($lockPath);
             $ran = $lock->withLock(static fn (): int => 42);
             $this->assertSame(42, $ran);
@@ -147,7 +147,7 @@ final class TaskBoardLockTest extends TestCase
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tw-lock-cancel');
         try {
-            $lockPath = TaskBoardLock::lockPathForRoot($dir);
+            $lockPath = $dir.'/workflow.lock';
             $holder = fopen($lockPath, 'c+b');
             $this->assertNotFalse($holder);
             $this->assertTrue(flock($holder, \LOCK_EX | \LOCK_NB));

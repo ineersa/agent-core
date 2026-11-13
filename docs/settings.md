@@ -221,7 +221,7 @@ Run `hatfield extensions:setup` to install and configure Hatfield extensions. Th
 
 - Settings and extension enablement are project/user config.
 - Sessions, tmp, cache, logs are runtime and should stay untracked.
-- Extensions load from `.hatfield/extensions` Composer autoload when enabled. Task workflow and observational memory document their settings in their package-local READMEs.
+- Extensions load from `.hatfield/extensions` Composer autoload when enabled. Task workflow and observational memory document setup and settings in their package-local READMEs. For task workflow, read the installed `ineersa/hatfield-ext-task-workflow` package's `README.md`.
 - Built-in docs for the model are selected with `builtin: true` under approved roots; repository-only docs stay unmarked.
 
 ## Validation tip

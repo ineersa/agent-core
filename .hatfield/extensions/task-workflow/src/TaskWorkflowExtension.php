@@ -9,19 +9,23 @@ use Ineersa\Hatfield\ExtensionApi\ConfigurableExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Assets\TaskWorkflowSkillInstaller;
+use Ineersa\HatfieldExt\TaskWorkflow\Command\InitializeTasksCommandHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Command\TasksCommandHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Pr\PrManager;
 use Ineersa\HatfieldExt\TaskWorkflow\Prompt\WorkflowPrompt;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowConfiguration;
 use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
-use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardStore;
+use Ineersa\HatfieldExt\TaskWorkflow\Store\GitHubTaskStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskStatusEnum;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\CreateTaskHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\ListTasksHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\MoveTaskHandler;
+use Ineersa\HatfieldExt\TaskWorkflow\Tool\ReadTaskHandler;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\TaskListFormatter;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\UpdateTaskHandler;
+use Ineersa\HatfieldExt\TaskWorkflow\Worktree\HookRunner;
+use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorkspaceStateStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
@@ -49,147 +53,85 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
 
     public function register(ExtensionApiInterface $api): void
     {
-        $settings = $api->getSettings('task_workflow');
-        $config = TaskWorkflowSettings::fromArray($settings);
-        $codeRoot = $api->getCwd();
-        $packageRoot = \dirname(__DIR__);
-
+        $settings = TaskWorkflowSettings::fromArray($api->getSettings('task_workflow'));
         $exec = $api->exec();
         $git = new GitExecutor($exec);
-        $worktrees = new WorktreeManager($git, $exec);
-        $pr = new PrManager($exec);
-        $store = new TaskBoardStore($codeRoot, $config);
-        $taskRoot = $store->resolveTaskRoot();
-        $formatter = new TaskListFormatter($store);
+        $worktrees = new WorktreeManager($git);
+        $primary = $worktrees->primaryRoot($api->getCwd());
+        // The stable checkout owns installed guidance, including before configuration.
+        (new TaskWorkflowSkillInstaller($primary, \dirname(__DIR__), $this->logger))->install();
+        $current = $api->getCwd();
+        if ($current !== $primary) {
+            (new TaskWorkflowSkillInstaller($current, \dirname(__DIR__), $this->logger))->install(existingManagedOnly: true);
+        }
+        $api->registerSkill($primary.'/.hatfield/skills/'.TaskWorkflowSkillInstaller::SKILL_NAME);
+        if ('' === $settings->repository) {
+            $this->logger->warning('task_workflow.unconfigured', ['component' => 'task_workflow', 'event_type' => 'configuration_required']);
 
-        // Project skill discovery loads the installed copy.
-        (new TaskWorkflowSkillInstaller($codeRoot, $packageRoot, $this->logger))->install();
-
-        $api->registerPromptContributor(new WorkflowPrompt($codeRoot, $taskRoot));
-
-        $statusEnum = ['TODO', 'IN-PROGRESS', 'CODE-REVIEW', 'DONE', 'ARCHIVE', 'CANCELLED'];
-
+            return;
+        }
+        $states = new WorkspaceStateStore($git, $primary);
+        $store = new GitHubTaskStore($exec, $primary, $settings);
+        $pr = new PrManager($exec, $primary, $settings);
+        $api->registerPromptContributor(new WorkflowPrompt($primary, $settings->repository));
+        $statuses = array_map(static fn (TaskStatusEnum $status): string => $status->value, TaskStatusEnum::cases());
+        $text = ['type' => 'string'];
+        $reference = ['type' => 'string', 'minLength' => 1, 'description' => 'Issue number or canonical GitHub issue URL.'];
+        $schema = static fn (array $properties, array $required = []): array => ['type' => 'object', 'properties' => $properties, 'required' => $required, 'additionalProperties' => false];
         $api->registerTool(new ToolRegistrationDTO(
             name: 'task_list',
-            description: 'List tasks and their workflow metadata from the external task board.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'status' => ['type' => 'string', 'enum' => $statusEnum, 'description' => 'Filter by status; omit to return all statuses except CANCELLED and ARCHIVE.'],
-                    'include_archive' => [
-                        'type' => 'boolean',
-                        'description' => 'When true, include ARCHIVE tasks in addition to the selected status; without status, include all statuses. Default false.',
-                    ],
-                ],
-                'additionalProperties' => false,
-            ],
-            handler: new ListTasksHandler($store),
-            promptSummary: 'task_list [status] [include_archive=false] — list tasks on the project’s external board',
-            promptGuidelines: [
-                'Use task_list before starting tracked project work to understand TODO and IN-PROGRESS tasks.',
-            ],
+            description: 'List bounded GitHub Workflow pages including closed active issues and unfinished local workspaces. Listing never runs hooks.',
+            parametersJsonSchema: $schema(['status' => ['type' => 'string', 'enum' => $statuses], 'page' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 1000], 'perPage' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100]]),
+            handler: new ListTasksHandler($store, $states, $settings),
+            promptSummary: 'task_list [status] [page] [perPage] — list GitHub tasks and local pending work',
+            promptGuidelines: ['List tasks only when choosing work or resolving its identity. Read a selected issue directly.'],
         ));
-
         $api->registerTool(new ToolRegistrationDTO(
             name: 'create_task',
-            description: 'Create a TODO task on the external task board.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'title' => ['type' => 'string', 'minLength' => 1, 'description' => 'Short task title'],
-                    'body' => ['type' => 'string', 'description' => 'Free-form notes/context for the task'],
-                    'acceptance' => ['type' => 'array', 'items' => ['type' => 'string', 'minLength' => 1], 'description' => 'Acceptance criteria bullets'],
-                    'id' => ['type' => 'string', 'minLength' => 1, 'description' => 'Optional filename slug/id. Defaults to date + title slug.'],
-                ],
-                'required' => ['title'],
-                'additionalProperties' => false,
-            ],
+            description: 'Create a GitHub issue with Workflow TODO. Submit prepared Markdown from a project feature, bug or experiment template; no frontmatter.',
+            parametersJsonSchema: $schema(['title' => ['type' => 'string', 'minLength' => 1], 'body' => ['type' => 'string', 'minLength' => 1]], ['title', 'body']),
             handler: new CreateTaskHandler($store),
-            promptSummary: 'create_task title [body] [acceptance] [id] — create a TODO task',
-            promptGuidelines: [
-                'Use create_task for user-approved follow-up work that should be tracked on the task board.',
-            ],
+            promptSummary: 'create_task title body — create a GitHub TODO issue',
         ));
-
         $api->registerTool(new ToolRegistrationDTO(
-            name: 'move_task',
-            description: 'Move a task between TODO, IN-PROGRESS, CODE-REVIEW, DONE, ARCHIVE, and CANCELLED on the external task board. TODO→IN-PROGRESS creates a code worktree; IN-PROGRESS→CODE-REVIEW pushes branch and creates PR; CODE-REVIEW→DONE merges the task branch; DONE→ARCHIVE is metadata-only; ANY→CANCELLED removes a clean worktree (if present) and leaves the branch.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'task' => ['type' => 'string', 'minLength' => 1, 'description' => 'Task filename, slug, or unique substring'],
-                    'to' => ['type' => 'string', 'enum' => $statusEnum, 'description' => 'Destination status.'],
-                    'from' => ['type' => 'string', 'enum' => $statusEnum, 'description' => 'Optional current status used to narrow task lookup.'],
-                    'forkRun' => ['type' => 'string', 'minLength' => 1, 'description' => 'Implementation fork run ID to store in task metadata.'],
-                    'summary' => ['type' => 'string', 'minLength' => 1, 'description' => 'Completion or handoff summary appended to the task work log.'],
-                    'validation' => ['type' => 'array', 'items' => ['type' => 'string', 'minLength' => 1], 'description' => 'Validation commands or results appended to the task work log.'],
-                    'worktreeBase' => ['type' => 'string', 'minLength' => 1, 'description' => 'Directory for task worktrees. Defaults to ../<repo>-worktrees.'],
-                    'cleanupWorktree' => ['type' => 'boolean', 'description' => 'After a successful DONE merge, remove the worktree. Default true.'],
-                    'deleteBranch' => ['type' => 'boolean', 'description' => 'After a successful DONE merge, delete the task branch. Default false.'],
-                    'requireCleanMain' => ['type' => 'boolean', 'description' => 'Require a clean integration checkout before the DONE merge. Default true.'],
-                    'cleanupStaleIndexEntries' => ['type' => 'boolean', 'description' => 'Before the DONE merge, reset stale staged-add/deleted worktree entries (AD) in the integration checkout. Default false.'],
-                    'prTitle' => ['type' => 'string', 'minLength' => 1, 'description' => 'Title for the GitHub PR when moving to CODE-REVIEW. Defaults to the task title.'],
-                    'prBody' => ['type' => 'string', 'minLength' => 1, 'description' => 'Body for the GitHub PR when moving to CODE-REVIEW.'],
-                    'prBaseBranch' => ['type' => 'string', 'minLength' => 1, 'description' => 'Base branch for the PR. Defaults to the repository default branch.'],
-                    'pushOnly' => ['type' => 'boolean', 'description' => 'Push the branch but skip PR creation. Default false.'],
-                ],
-                'required' => ['task', 'to'],
-                'additionalProperties' => false,
-            ],
-            handler: new MoveTaskHandler($store, $git, $worktrees, $pr, $exec, $codeRoot),
-            promptSummary: 'move_task task to [from] — change task status and perform the transition’s Git/worktree/PR actions',
-            promptGuidelines: [
-                'Main uses move_task rather than manual task-status or worktree moves and follows the consolidated task-workflow skill for transitions.',
-            ],
+            name: 'read_task',
+            description: 'Read current issue specification, Workflow, native development links and local recovery. Optionally read an explicitly numbered artifact.',
+            parametersJsonSchema: $schema(['task' => $reference, 'artifact' => $text], ['task']),
+            handler: new ReadTaskHandler($store, $states, $settings),
+            promptSummary: 'read_task task [artifact] — read the selected GitHub task',
         ));
-
         $api->registerTool(new ToolRegistrationDTO(
             name: 'update_task',
-            description: 'Update metadata or append work log entries for an existing task (external task board) without changing its status.',
-            parametersJsonSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'task' => ['type' => 'string', 'minLength' => 1, 'description' => 'Task filename, slug, or unique substring'],
-                    'from' => ['type' => 'string', 'enum' => $statusEnum, 'description' => 'Optional current status used to narrow task lookup.'],
-                    'forkRun' => ['type' => 'string', 'minLength' => 1, 'description' => 'Implementation fork run ID to store in task metadata.'],
-                    'summary' => ['type' => 'string', 'minLength' => 1, 'description' => 'Summary appended to the task work log.'],
-                    'validation' => ['type' => 'array', 'items' => ['type' => 'string', 'minLength' => 1], 'description' => 'Validation commands or results appended to the task work log.'],
-                    'prUrl' => ['type' => 'string', 'minLength' => 1, 'description' => 'PR URL to store in task metadata.'],
-                    'prStatus' => ['type' => 'string', 'enum' => ['open', 'merged', 'closed'], 'description' => 'PR status to store in task metadata.'],
-                    'workLog' => ['type' => 'array', 'items' => ['type' => 'string', 'minLength' => 1], 'description' => 'Custom entries appended to the task work log.'],
-                ],
-                'required' => ['task'],
-                'additionalProperties' => false,
-            ],
-            handler: new UpdateTaskHandler($store),
-            promptSummary: 'update_task task [from] [summary] [validation] [workLog] — update task metadata or append work-log entries without changing status',
-            promptGuidelines: [
-                'Use update_task instead of editing task files directly to record ownership, summaries, validation, or PR information. Use move_task for status changes.',
-            ],
+            description: 'Edit the current issue title/body, or set artifact to target those edits at that document instead. At least one edit or intentional discussion comment is required. Does not change Workflow.',
+            parametersJsonSchema: $schema([
+                'task' => $reference,
+                'title' => ['type' => 'string', 'description' => 'New issue title, or artifact name when artifact is selected.'],
+                'body' => ['type' => 'string', 'description' => 'Replacement issue body, or artifact body when artifact is selected.'],
+                'artifact' => ['type' => 'string', 'description' => 'Artifact number or URL selecting the document to edit with title/body. Selection alone is not an edit.'],
+                'comment' => $text,
+            ], ['task']),
+            handler: new UpdateTaskHandler($store, $states, $settings),
+            promptSummary: 'update_task task [title] [body] [artifact] [comment] — edit current task content',
+            promptGuidelines: ['Keep the specification, decisions, test plan and actual QA current in the issue body. Do not append work logs or agent metadata.'],
         ));
-
-        $this->registerTaskCommands($api, $store, $formatter);
-    }
-
-    private function registerTaskCommands(ExtensionApiInterface $api, TaskBoardStore $store, TaskListFormatter $formatter): void
-    {
-        $commands = [
-            ['tasks', null, 'all', 'List all tasks', '/tasks'],
-            ['tasks-todo', TaskStatusEnum::TODO, 'TODO', 'List TODO tasks', '/tasks-todo'],
-            ['tasks-in-progress', TaskStatusEnum::IN_PROGRESS, 'IN-PROGRESS', 'List IN-PROGRESS tasks', '/tasks-in-progress'],
-            ['tasks-code-review', TaskStatusEnum::CODE_REVIEW, 'CODE-REVIEW', 'List CODE-REVIEW tasks', '/tasks-code-review'],
-            ['tasks-done', TaskStatusEnum::DONE, 'DONE', 'List DONE tasks', '/tasks-done'],
-        ];
-
-        foreach ($commands as [$name, $status, $label, $description, $usage]) {
-            $api->registerCommand(
-                new CommandDefinitionDTO(
-                    name: $name,
-                    description: $description,
-                    usage: $usage,
-                ),
-                new TasksCommandHandler($status, $label, $store, $formatter),
-            );
+        $api->registerTool(new ToolRegistrationDTO(
+            name: 'move_task',
+            description: 'Run an ordered task transition, including configured hooks, native branches/PRs and recoverable cleanup. Terminal success requires cleanup and both Git registry and directory removal. Merge only when authorized and project review is satisfied.',
+            parametersJsonSchema: $schema([
+                'task' => $reference, 'to' => ['type' => 'string', 'enum' => $statuses], 'from' => ['type' => 'string', 'enum' => $statuses],
+                'adopt' => ['type' => 'boolean', 'description' => 'Explicitly adopt an unmanaged issue as TODO, including historical closed issues.'],
+                'pr' => ['type' => 'string', 'description' => 'Select an ambiguous native task PR by number or URL.'],
+                'branch' => ['type' => 'string', 'description' => 'Select an ambiguous native linked branch.'],
+                'acceptedHead' => ['type' => 'string', 'description' => 'Explicit inspected/reviewed PR SHA for DONE, required without a local submitted SHA.'],
+                'prTitle' => $text, 'prBody' => $text,
+            ], ['task', 'to']),
+            handler: new MoveTaskHandler($store, $git, $worktrees, $pr, new HookRunner($exec), $states, $primary, $settings),
+            promptSummary: 'move_task task to [from] — run a recoverable GitHub task transition',
+            promptGuidelines: ['Main alone calls transitions. Honor the requested delivery endpoint. Never infer merge authorization.', 'After a hook attempt, put its actual outcome into the current issue QA summary; unrun checks stay unrun.', 'If finalization fails, retain resources and use the reported state to retry the same operation.'],
+        ));
+        foreach ([['tasks', null], ['tasks-todo', TaskStatusEnum::TODO], ['tasks-in-progress', TaskStatusEnum::IN_PROGRESS], ['tasks-code-review', TaskStatusEnum::CODE_REVIEW], ['tasks-done', TaskStatusEnum::DONE]] as [$name, $status]) {
+            $api->registerCommand(new CommandDefinitionDTO(name: $name, description: 'List GitHub tasks'.(null === $status ? '' : ' in '.$status->value), usage: '/'.$name.' [page]'), new TasksCommandHandler($status, $store, $states, $settings, new TaskListFormatter()));
         }
+        $api->registerCommand(new CommandDefinitionDTO(name: 'tasks-init', description: 'Deliberately validate GitHub capabilities and initialize Workflow definitions', usage: '/tasks-init'), new InitializeTasksCommandHandler($store, $settings, $primary));
     }
 }

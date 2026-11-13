@@ -6,138 +6,161 @@ namespace Ineersa\HatfieldExt\TaskWorkflow\Pr;
 
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
-use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\DTO\PullRequestDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\Exception\TaskTransitionException;
+use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
 use Ineersa\HatfieldExt\TaskWorkflow\Tool\InvocationControl;
+use Symfony\Component\Filesystem\Filesystem;
 
-final class PrManager
+final readonly class PrManager
 {
-    public function __construct(
-        private readonly ExecInterface $exec,
-    ) {
-    }
+    private const string FIELDS = 'number,url,state,mergedAt,headRepository,headRefName,baseRefName,headRefOid,reviewDecision,closingIssuesReferences';
 
-    public function pushTaskBranch(string $root, string $branch, ?InvocationControl $control = null): string|ExecResultDTO
+    public function __construct(private ExecInterface $exec, private string $primaryRoot, private TaskWorkflowSettings $settings)
     {
-        $remoteResult = $this->exec->exec(
-            'git',
-            ['remote', 'get-url', 'origin'],
-            $this->options($root, 120.0, $control),
-        );
-        if ($remoteResult->cancelled || $remoteResult->timedOut) {
-            return $remoteResult;
-        }
-        if (0 !== $remoteResult->exitCode) {
-            throw new \RuntimeException("No git remote 'origin' configured. Push requires a remote repository.\n\nSet one with:\n  git remote add origin <url>");
-        }
-
-        $pushResult = $this->exec->exec(
-            'git',
-            ['push', '-u', 'origin', $branch],
-            $this->options($root, 120.0, $control),
-        );
-        if ($pushResult->cancelled || $pushResult->timedOut) {
-            return $pushResult;
-        }
-        if (0 !== $pushResult->exitCode) {
-            throw new \RuntimeException('git push failed:'.\PHP_EOL.trim('' !== $pushResult->stderr ? $pushResult->stderr : $pushResult->stdout));
-        }
-
-        $out = trim('' !== $pushResult->stdout ? $pushResult->stdout : $pushResult->stderr);
-
-        return '' !== $out ? $out : 'Pushed '.$branch.' to origin.';
     }
 
-    /**
-     * @return array{available: bool, reason?: string}|ExecResultDTO
-     */
-    public function ghAvailable(string $root, ?InvocationControl $control = null): array|ExecResultDTO
+    public function view(int|string $reference, ?InvocationControl $control = null): PullRequestDTO
     {
-        $authResult = $this->exec->exec(
-            'gh',
-            ['auth', 'status'],
-            $this->options($root, 120.0, $control),
-        );
-        if ($authResult->cancelled || $authResult->timedOut) {
-            return $authResult;
+        $data = json_decode($this->gh(['pr', 'view', (string) $reference, '--json', self::FIELDS], $control), true, 512, \JSON_THROW_ON_ERROR);
+        if (!\is_array($data) || !isset($data['number'], $data['headRepository']['nameWithOwner'], $data['headRefOid'], $data['url'])) {
+            throw new TaskTransitionException('Invalid PR response; no state was inferred.');
         }
-        if (0 === $authResult->exitCode) {
-            return ['available' => true];
-        }
-        $err = '' !== $authResult->stderr ? $authResult->stderr : $authResult->stdout;
-        if (str_contains($err, 'not found') || 127 === $authResult->exitCode) {
-            return ['available' => false, 'reason' => 'GitHub CLI (gh) is not installed. Install it from https://cli.github.com/'];
+        $repository = $this->repositoryName();
+        $expectedPrefix = 'https://'.$this->hostname().'/'.$repository.'/pull/';
+        if (!str_starts_with($data['url'], $expectedPrefix) || $repository !== $data['headRepository']['nameWithOwner']) {
+            throw new TaskTransitionException('PR repository/head repository differs from the configured task repository.');
         }
 
-        return ['available' => false, 'reason' => 'gh is not authenticated: '.trim($err)];
+        return new PullRequestDTO(
+            (int) $data['number'], $data['url'], (string) $data['state'], $data['mergedAt'] ?? null,
+            $data['headRepository']['nameWithOwner'], (string) $data['headRefName'], (string) $data['baseRefName'],
+            $data['headRefOid'], (string) ($data['reviewDecision'] ?? ''),
+            array_map(static fn (array $issue): int => (int) $issue['number'], $data['closingIssuesReferences'] ?? []),
+        );
     }
 
-    public function findExistingPr(string $root, string $branch, ?InvocationControl $control = null): string|ExecResultDTO|null
+    /** @return list<PullRequestDTO> */
+    public function find(string $branch, string $base, int $issue, ?InvocationControl $control = null): array
     {
-        $result = $this->exec->exec(
-            'gh',
-            ['pr', 'list', '--head', $branch, '--json', 'url', '--jq', '.[0].url', '--state', 'open'],
-            $this->options($root, 120.0, $control),
-        );
-        if ($result->cancelled || $result->timedOut) {
-            return $result;
+        // The paginated REST lookup distinguishes a failed query from a proven empty
+        // result. It includes closed/merged PRs so uncertain creates are recoverable.
+        $endpoint = 'repos/'.$this->repositoryName().'/pulls?state=all&head='.rawurlencode(explode('/', $this->repositoryName())[0].':'.$branch).'&base='.rawurlencode($base).'&per_page=100';
+        $pages = json_decode($this->gh(['api', '--hostname', $this->hostname(), '--paginate', '--slurp', $endpoint], $control), true, 512, \JSON_THROW_ON_ERROR);
+        if (!\is_array($pages)) {
+            throw new TaskTransitionException('Invalid PR lookup response.');
         }
-        if (0 !== $result->exitCode) {
-            return null;
-        }
-        $url = trim($result->stdout);
-
-        return '' !== $url ? $url : null;
-    }
-
-    public function createPr(
-        string $root,
-        string $branch,
-        string $title,
-        string $body,
-        ?string $baseBranch = null,
-        ?InvocationControl $control = null,
-    ): string|ExecResultDTO {
-        $args = ['pr', 'create', '--head', $branch, '--title', $title];
-        if ('' !== trim($body)) {
-            $args[] = '--body';
-            $args[] = $body;
-        }
-        if (null !== $baseBranch && '' !== $baseBranch) {
-            $args[] = '--base';
-            $args[] = $baseBranch;
-        }
-
-        $result = $this->exec->exec('gh', $args, $this->options($root, 120.0, $control));
-        if ($result->cancelled || $result->timedOut) {
-            return $result;
-        }
-        if (0 !== $result->exitCode) {
-            $err = '' !== $result->stderr ? $result->stderr : $result->stdout;
-            if (str_contains($err, 'already exists') || str_contains($err, 'pull request already exists')) {
-                $existing = $this->findExistingPr($root, $branch, $control);
-                if ($existing instanceof ExecResultDTO) {
-                    return $existing;
-                }
-                if (null !== $existing) {
-                    return $existing;
-                }
+        $matches = [];
+        foreach ($pages as $page) {
+            if (!\is_array($page)) {
+                throw new TaskTransitionException('Invalid PR lookup page.');
             }
-            throw new \RuntimeException('gh pr create failed:'.\PHP_EOL.trim($err));
-        }
-        $url = trim($result->stdout);
-        if ('' === $url) {
-            throw new \RuntimeException('gh pr create succeeded but produced no output URL.');
+            foreach ($page as $row) {
+                $pr = $this->view((int) $row['number'], $control);
+                $this->assertIdentity($pr, $branch, $base, $issue);
+                $matches[] = $pr;
+            }
         }
 
-        return $url;
+        return $matches;
     }
 
-    private function options(string $root, float $timeout, ?InvocationControl $control): ExecOptionsDTO
+    public function assertIdentity(PullRequestDTO $pr, string $branch, string $base, int $issue): void
     {
-        return new ExecOptionsDTO(
-            cwd: $root,
-            timeout: $control?->remainingTimeoutSeconds($timeout) ?? $timeout,
+        if ($pr->headBranch !== $branch || $pr->baseBranch !== $base || !\in_array($issue, $pr->closingIssues, true)) {
+            throw new TaskTransitionException('PR does not match the exact issue, head branch and base branch.');
+        }
+    }
+
+    public function create(int $issue, string $branch, string $base, string $title, string $body, ?InvocationControl $control = null): PullRequestDTO
+    {
+        // Bodies are data, never shell source; temp files survive workspace removal.
+        $filesystem = new Filesystem();
+        $file = $filesystem->tempnam(sys_get_temp_dir(), 'hatfield-pr-');
+        try {
+            $filesystem->dumpFile($file, rtrim($body)."\n\nCloses #".$issue."\n");
+            $url = trim($this->gh(['pr', 'create', '--head', $branch, '--base', $base, '--title', $title, '--body-file', $file], $control));
+            if (!preg_match('~^https://[^\s]+/pull/\d+$~D', $url)) {
+                throw new TaskTransitionException('PR creation returned no canonical URL; reconcile the remote lookup before retrying.');
+            }
+
+            return $this->view($url, $control);
+        } finally {
+            $filesystem->remove($file);
+        }
+    }
+
+    public function merge(PullRequestDTO $pr, string $acceptedHead, ?InvocationControl $control = null): PullRequestDTO
+    {
+        if ($pr->headSha !== $acceptedHead) {
+            throw new TaskTransitionException('PR head changed; inspect/review the actual revision before completion.');
+        }
+        if ('MERGED' === $pr->state) {
+            return $pr;
+        }
+        if ('OPEN' !== $pr->state || \in_array($pr->reviewDecision, ['CHANGES_REQUESTED', 'REVIEW_REQUIRED'], true)) {
+            throw new TaskTransitionException('PR is not open or its required review is not satisfied.');
+        }
+        // GitHub enforces protections. No admin bypass and no premature branch deletion.
+        $this->gh(['pr', 'merge', (string) $pr->number, '--'.$this->settings->mergeMethod, '--match-head-commit', $acceptedHead], $control);
+
+        return $this->view($pr->number, $control);
+    }
+
+    public function close(PullRequestDTO $pr, ?InvocationControl $control = null): PullRequestDTO
+    {
+        if ('MERGED' === $pr->state || null !== $pr->mergedAt) {
+            throw new TaskTransitionException('PR is merged; use DONE reconciliation, never cancellation.');
+        }
+        if ('OPEN' === $pr->state) {
+            $this->gh(['pr', 'close', (string) $pr->number], $control);
+        }
+        $current = $this->view($pr->number, $control);
+        if ('CLOSED' !== $current->state || null !== $current->mergedAt) {
+            throw new TaskTransitionException('PR was not confirmed closed and unmerged; reconcile completion or remote changes.');
+        }
+
+        return $current;
+    }
+
+    public function develop(int $issue, string $branch, string $base, ?InvocationControl $control = null): void
+    {
+        $this->gh(['issue', 'develop', (string) $issue, '--name', $branch, '--base', $base], $control);
+    }
+
+    /** @param list<string> $args */
+    private function gh(array $args, ?InvocationControl $control): string
+    {
+        if (null !== $control?->interrupted()) {
+            throw new TaskTransitionException('GitHub operation interrupted before launch.');
+        }
+        if ('api' !== $args[0]) {
+            $args = [...$args, '--repo', $this->settings->repository];
+        }
+        $result = $this->exec->exec('gh', $args, new ExecOptionsDTO(
+            cwd: $this->primaryRoot,
+            timeout: $control?->remainingTimeoutSeconds(120.0) ?? 120.0,
+            env: ['GH_PROMPT_DISABLED' => '1', 'GH_HOST' => $this->hostname()],
             cancellationToken: $control?->cancellationToken,
-        );
+        ));
+        if (0 !== $result->exitCode || $result->timedOut || $result->cancelled) {
+            throw new TaskTransitionException('GitHub operation failed or was interrupted: '.substr($result->stderr, 0, 3000));
+        }
+
+        return $result->stdout;
+    }
+
+    private function repositoryName(): string
+    {
+        $parts = explode('/', $this->settings->repository);
+
+        return implode('/', \array_slice($parts, -2));
+    }
+
+    private function hostname(): string
+    {
+        $parts = explode('/', $this->settings->repository);
+
+        return 3 === \count($parts) ? $parts[0] : 'github.com';
     }
 }

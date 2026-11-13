@@ -4,635 +4,438 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\TaskWorkflow\Tool;
 
-use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
-use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ContextualExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\DTO\GitHubTaskDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\DTO\PullRequestDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\DTO\TaskInputDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\DTO\WorkspaceBindingDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\Exception\TaskTransitionException;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Pr\PrManager;
-use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardLock;
-use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskBoardStore;
-use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo;
-use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskMarkdown;
+use Ineersa\HatfieldExt\TaskWorkflow\Settings\TaskWorkflowSettings;
+use Ineersa\HatfieldExt\TaskWorkflow\Store\GitHubTaskStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskStatusEnum;
+use Ineersa\HatfieldExt\TaskWorkflow\Validation\TaskInputMapper;
+use Ineersa\HatfieldExt\TaskWorkflow\Worktree\HookRunner;
+use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorkspaceStateStore;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
-
-use function Symfony\Component\String\u;
+use Symfony\Component\Filesystem\Path;
 
 final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerInterface
 {
-    private const int CASTOR_CHECK_WALL_SECONDS = 210;
-    private const int CASTOR_CHECK_OUTER_GUARD_SECONDS = 240;
-    private const int CASTOR_CHECK_HOST_TIMEOUT_SECONDS = 285;
-
     public function __construct(
-        private TaskBoardStore $store,
+        private GitHubTaskStore $store,
         private GitExecutor $git,
         private WorktreeManager $worktrees,
         private PrManager $pr,
-        private ExecInterface $exec,
-        private string $codeRoot,
+        private HookRunner $hooks,
+        private WorkspaceStateStore $states,
+        private string $primaryRoot,
+        private TaskWorkflowSettings $settings,
     ) {
     }
 
-    /**
-     * @param array<string, mixed> $arguments
-     */
+    /** @param array<string, mixed> $arguments */
     public function __invoke(array $arguments, ToolInvocationContextDTO $context): mixed
     {
+        $input = TaskInputMapper::map($arguments, 'move');
         $control = InvocationControl::fromContext($context);
-        if (null !== ($interrupt = $control->interrupted('Cancelled before move_task started.'))) {
-            return $interrupt;
+        if (null !== ($interrupted = $control->interrupted())) {
+            return ToolResult::structured($interrupted);
         }
-
-        $taskQuery = $arguments['task'] ?? null;
-        if (!\is_string($taskQuery) || '' === $taskQuery) {
-            throw new \InvalidArgumentException('task is required');
+        foreach (['setup', 'validate', 'cleanup'] as $hook) {
+            if (!isset($this->settings->hooks[$hook]['script'], $this->settings->hooks[$hook]['timeout_seconds'])) {
+                throw new TaskTransitionException('Configure all three project hooks before task transitions.');
+            }
         }
-        if (!isset($arguments['to']) || !\is_string($arguments['to'])) {
-            throw new \InvalidArgumentException('to is required');
-        }
-
-        $taskRoot = $this->store->resolveTaskRoot();
-        $this->store->ensureTaskDirs($taskRoot);
-        $lock = new TaskBoardLock(TaskBoardLock::lockPathForRoot($taskRoot));
-
-        $locked = $lock->withLock(
-            function () use ($taskRoot, $taskQuery, $arguments, $control, $context): mixed {
-                if (null !== ($interrupt = $control->interrupted('Cancelled before resolving task.'))) {
-                    return $interrupt;
+        $to = TaskStatusEnum::fromMixed($input->to);
+        $task = $this->store->read($input->task, $control);
+        $lock = $this->states->lock($this->settings->repository, $task->number);
+        $transition = function () use ($task, $to, $input, $control): string {
+            // A local lock is cooperative, not a distributed GitHub lock. Always read
+            // again under it and detect conflicting remote writes before publication.
+            $current = $this->store->read($task->number, $control);
+            if (null === $current->status) {
+                if (!$input->adopt) {
+                    throw new TaskTransitionException('Issue is unmanaged. Explicit adopt=true is required, including historical closed issues.');
                 }
-
-                $to = TaskStatusEnum::fromMixed($arguments['to']);
-                $from = null;
-                if (isset($arguments['from']) && \is_string($arguments['from']) && '' !== $arguments['from']) {
-                    $from = TaskStatusEnum::fromMixed($arguments['from']);
-                }
-
-                $task = $this->store->findTask($taskRoot, $taskQuery, $from);
-                if ($task->status === $to) {
-                    return ToolResult::text('Task already in '.$to->value.': '.$task->status->value.'/'.$task->file, ['task' => $task]);
-                }
-
-                $text = file_get_contents($task->path);
-                if (false === $text) {
-                    throw new \RuntimeException('Failed to read task file: '.$task->path);
-                }
-
-                // Do not claim the status move until the transition and board write succeed.
-                $notes = [];
-
-                if (TaskStatusEnum::ARCHIVE === $to) {
-                    $text = $this->transitionToArchive($text, $task, $notes);
-                } elseif (TaskStatusEnum::CANCELLED === $to) {
-                    // Destination collision must fail before any worktree/IDEA cleanup.
-                    // Fail closed before rewriting metadata: if safe worktree cleanup
-                    // cannot complete, the task must stay in its current status folder.
-                    $this->store->assertDestinationAvailable($task, $to, $taskRoot);
-                    $cancelled = $this->transitionToCancelled($text, $task, $notes, $control);
-                    if (\is_array($cancelled)) {
-                        return $cancelled;
-                    }
-                    $text = $cancelled;
-                } elseif (TaskStatusEnum::TODO === $task->status && TaskStatusEnum::IN_PROGRESS === $to) {
-                    $progress = $this->transitionTodoToInProgress($text, $task, $arguments, $notes, $control);
-                    if (\is_array($progress)) {
-                        return $progress;
-                    }
-                    $text = $progress;
-                } elseif (TaskStatusEnum::IN_PROGRESS === $task->status && TaskStatusEnum::CODE_REVIEW === $to) {
-                    $review = $this->transitionInProgressToCodeReview($text, $task, $arguments, $notes, $control, $context->runId);
-                    if (\is_array($review)) {
-                        return $review;
-                    }
-                    $text = $review;
-                } elseif (TaskStatusEnum::DONE === $to) {
-                    $done = $this->transitionToDone($text, $task, $arguments, $notes, $control);
-                    if (\is_array($done)) {
-                        return $done;
-                    }
-                    $text = $done;
-                } else {
-                    $text = TaskMarkdown::updateField($text, 'Status', $to->value);
-                }
-
-                if (null !== ($interrupt = $control->interrupted('Cancelled before writing task metadata move.'))) {
-                    return $interrupt;
-                }
-
-                if (isset($arguments['forkRun']) && \is_string($arguments['forkRun']) && '' !== $arguments['forkRun']) {
-                    $text = TaskMarkdown::updateField($text, 'Fork run', $arguments['forkRun']);
-                }
-                if (isset($arguments['validation']) && \is_array($arguments['validation'])) {
-                    $vals = array_values(array_filter($arguments['validation'], is_string(...)));
-                    if ([] !== $vals) {
-                        $notes[] = 'Validation: '.implode('; ', $vals);
+                $current = $this->store->adopt($current, $control);
+            }
+            if (null !== $input->from && $current->status->value !== $input->from) {
+                throw new TaskTransitionException('Workflow differs from the expected source status.');
+            }
+            $state = $this->states->load($this->settings->repository, $current->number);
+            $pending = $state['pending_operation'] ?? null;
+            if (null !== $pending && !\in_array($pending, ['start', 'review'], true)) {
+                $requested = TaskStatusEnum::DONE === $to ? 'done' : (TaskStatusEnum::CANCELLED === $to ? 'cancel' : '');
+                if ($requested !== $pending) {
+                    // A verified external merge can change cancellation into DONE,
+                    // but cannot silently undo partial teardown into implementation.
+                    if ('cancel' !== $pending || 'done' !== $requested) {
+                        throw new TaskTransitionException('Pending '.$pending.' finalization must be resumed before another transition.');
                     }
                 }
-                if (isset($arguments['summary']) && \is_string($arguments['summary']) && '' !== $arguments['summary']) {
-                    $notes[] = 'Summary: '.$arguments['summary'];
-                }
+            }
+            $allowed = match ($to) {
+                TaskStatusEnum::IN_PROGRESS => \in_array($current->status, [TaskStatusEnum::TODO, TaskStatusEnum::IN_PROGRESS, TaskStatusEnum::CODE_REVIEW], true),
+                TaskStatusEnum::CODE_REVIEW => TaskStatusEnum::IN_PROGRESS === $current->status,
+                TaskStatusEnum::DONE => \in_array($current->status, [TaskStatusEnum::CODE_REVIEW, TaskStatusEnum::DONE], true) || 'cancel' === $pending,
+                TaskStatusEnum::CANCELLED => \in_array($current->status, [TaskStatusEnum::TODO, TaskStatusEnum::IN_PROGRESS, TaskStatusEnum::CODE_REVIEW, TaskStatusEnum::CANCELLED], true),
+                default => false,
+            };
+            if (!$allowed) {
+                throw new TaskTransitionException('Unsupported Workflow transition.');
+            }
 
-                array_unshift($notes, 'Moved '.$task->status->value.' → '.$to->value.'.');
-                $text = TaskMarkdown::appendLog($text, $notes);
-                $target = $this->store->moveFileWithMetadata($task, $to, $text, $taskRoot);
-
-                // NOTE: No git commit to code repo. Task board is external.
-
-                return ToolResult::text(
-                    implode("\n", array_merge(['Moved task to '.$this->store->rel($taskRoot, $target).'.'], $notes)),
-                    ['from' => $task->status->value, 'to' => $to->value, 'path' => $target, 'notes' => $notes]
-                );
-            },
+            return match ($to) {
+                TaskStatusEnum::IN_PROGRESS => $this->start($current, $state, $input, $control),
+                TaskStatusEnum::CODE_REVIEW => $this->review($current, $state, $input, $control),
+                default => $this->finish($current, $state, $input, $to, $control),
+            };
+        };
+        // Acquire the shared checkout lock first, consistently across all issues.
+        // Keep it through completion validation/publication so another transition
+        // cannot update the integrated files while a hook is inspecting them.
+        $result = $this->states->primaryLock()->withLock(
+            static fn () => $lock->withLock($transition, $control->cancellationToken, $control->deadlineNs, $control->timeoutSeconds),
             $control->cancellationToken,
             $control->deadlineNs,
             $control->timeoutSeconds,
         );
 
-        if (InvocationControl::isInterruptMap($locked)) {
-            return $locked;
-        }
-
-        return $locked;
+        return \is_array($result) ? ToolResult::structured($result) : $result;
     }
 
-    /**
-     * @param array<string, mixed> $arguments
-     * @param list<string>         $notes
-     *
-     * @return string|array{cancelled?: true, timed_out?: true, timeout_seconds?: int, message: string}
-     */
-    private function transitionTodoToInProgress(
-        string $text,
-        TaskInfo $task,
-        array $arguments,
-        array &$notes,
-        InvocationControl $control,
-    ): string|array {
-        $mainStatus = $this->git->gitOk(['status', '--porcelain'], $this->codeRoot, 120.0, $control);
-        if (null !== ($interrupt = $this->execInterrupt($mainStatus, $control, 'Interrupted while checking integration checkout status.'))) {
-            return $interrupt;
+    /** @param array<string,mixed>|null $state */
+    private function start(GitHubTaskDTO $task, ?array $state, TaskInputDTO $input, InvocationControl $control): string
+    {
+        $pr = $this->resolvePr($task, $state, $input, $control);
+        if (null !== $pr && ('MERGED' === $pr->state || null !== $pr->mergedAt)) {
+            throw new TaskTransitionException('PR is already merged. Use DONE finalization instead of restarting implementation.');
         }
-        if ('' !== trim($mainStatus->stdout)) {
-            throw new \RuntimeException("Integration checkout is not clean; commit or stash changes before claiming a task.\n".$mainStatus->stdout);
-        }
-
-        if (null !== ($interrupt = $control->interrupted('Cancelled before worktree creation.'))) {
-            return $interrupt;
-        }
-
-        $worktreeBase = isset($arguments['worktreeBase']) && \is_string($arguments['worktreeBase']) ? $arguments['worktreeBase'] : null;
-        $wtResult = $this->worktrees->createWorktreeForTask($this->codeRoot, $task, $worktreeBase, $control);
-        if ($wtResult instanceof ExecResultDTO) {
-            return $this->fromExecResult($wtResult, $control, 'Interrupted during worktree creation.');
-        }
-
-        $text = TaskMarkdown::updateField($text, 'Status', TaskStatusEnum::IN_PROGRESS->value);
-        $text = TaskMarkdown::updateField($text, 'Branch', $wtResult->branch);
-        $text = TaskMarkdown::updateField($text, 'Worktree', $wtResult->worktree);
-        $text = TaskMarkdown::updateField($text, 'Started', (new \DateTimeImmutable('now'))->format(\DateTimeInterface::ATOM));
-        if (isset($arguments['forkRun']) && \is_string($arguments['forkRun']) && '' !== $arguments['forkRun']) {
-            $text = TaskMarkdown::updateField($text, 'Fork run', $arguments['forkRun']);
-        }
-
-        $notes[] = 'Created branch '.$wtResult->branch.'.';
-        $notes[] = 'Created worktree '.$wtResult->worktree.'.';
-        if ($wtResult->vendorCopied) {
-            $notes[] = 'Copied vendor directory into '.$wtResult->worktree.'.';
-        }
-        if ($wtResult->extensionsVendorInstalled) {
-            $notes[] = 'Installed extensions vendor into '.$wtResult->worktree.'.';
-        }
-        if ($wtResult->veraCopied) {
-            $notes[] = 'Copied .vera index into '.$wtResult->worktree.'.';
-        }
-        if ($wtResult->ideaExclusionsUpdated) {
-            $notes[] = 'Updated parent IDEA worktree exclusions for '.$wtResult->worktree.'.';
-        }
-        if (null !== $wtResult->ideaNote && '' !== $wtResult->ideaNote) {
-            $notes[] = $wtResult->ideaNote;
-        }
-        if (null !== $wtResult->ideaSetupNote && '' !== $wtResult->ideaSetupNote) {
-            $notes[] = $wtResult->ideaSetupNote;
-        }
-
-        return $text;
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     * @param list<string>         $notes
-     *
-     * @return string|array{cancelled?: true, timed_out?: true, timeout_seconds?: int, message: string}
-     */
-    private function transitionInProgressToCodeReview(
-        string $text,
-        TaskInfo $task,
-        array $arguments,
-        array &$notes,
-        InvocationControl $control,
-        string $runId,
-    ): string|array {
-        $branch = $task->branch;
-        if (null === $branch || '' === $branch) {
-            throw new \RuntimeException('Task has no Branch metadata. Was it moved to IN-PROGRESS via move_task?');
-        }
-
-        $worktree = $task->worktree;
-        if (null === $worktree || '' === $worktree || !is_dir($worktree)) {
-            throw new \RuntimeException("Task worktree is missing or does not exist. Cannot push without a worktree.\n".'Worktree: '.($worktree ?? '(not set)')."\n".'Claim the task with move_task(to="IN-PROGRESS") to create a worktree first.');
-        }
-
-        $wtStatus = $this->git->gitOk(['status', '--porcelain'], $worktree, 120.0, $control);
-        if (null !== ($interrupt = $this->execInterrupt($wtStatus, $control, 'Interrupted while checking worktree status.'))) {
-            return $interrupt;
-        }
-        if ('' !== trim($wtStatus->stdout)) {
-            throw new \RuntimeException("Worktree has uncommitted changes; commit them before moving to CODE-REVIEW.\n{$worktree}\n{$wtStatus->stdout}");
-        }
-
-        if (null !== ($interrupt = $control->interrupted('Cancelled before castor check.'))) {
-            return $interrupt;
-        }
-
-        $completed = [];
-        $qaReportDir = null;
-        $persistEvidence = function (array $lines) use (&$text, $task): void {
-            $text = $this->persistPartialEvidence($task, $text, $lines);
-        };
-
-        $checkStart = microtime(true);
-        // timeout(1) allows cleanup grace beyond Castor's fixed 210s wall; the host
-        // budget exceeds its maximum 270s lifetime, including --kill-after=30s.
-        $checkResult = $this->exec->exec(
-            'timeout',
-            ['--kill-after=30s', self::CASTOR_CHECK_OUTER_GUARD_SECONDS.'s', 'castor', 'check'],
-            new ExecOptionsDTO(
-                cwd: $worktree,
-                timeout: $control->remainingTimeoutSeconds((float) self::CASTOR_CHECK_HOST_TIMEOUT_SECONDS),
-                cancellationToken: $control->cancellationToken,
-            ),
-        );
-        if (null !== ($interrupt = $this->execInterrupt($checkResult, $control, 'Interrupted during castor check.'))) {
-            return $interrupt;
-        }
-        $checkDuration = microtime(true) - $checkStart;
-        $checkKilled = 124 === $checkResult->exitCode || 137 === $checkResult->exitCode;
-        $qaReportDir = $this->extractQaReportDir($worktree, $checkResult);
-
-        if (0 !== $checkResult->exitCode) {
-            $reason = $checkKilled
-                ? 'outer cleanup guard after Castor\'s '.self::CASTOR_CHECK_WALL_SECONDS.'s wall ('.self::CASTOR_CHECK_OUTER_GUARD_SECONDS.'s)'
-                : 'exit code '.$checkResult->exitCode;
-            $failure = $this->formatCastorCheckFailure($reason, $worktree, $checkResult);
-            $persistEvidence([
-                'Attempted IN-PROGRESS → CODE-REVIEW.',
-                'Failed step: castor check ('.$reason.').',
-                'Task remains IN-PROGRESS: '.$this->store->rel($this->store->resolveTaskRoot(), $task->path).'.',
-                'Session/run: '.$runId.'.',
-                ...(null !== $qaReportDir ? ['QA reports: '.$qaReportDir.'.'] : []),
-                'Next: fix the failures, re-validate with focused Castor commands, then retry move_task(to="CODE-REVIEW").',
-            ]);
-            throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'castor check', cause: $failure, task: $task, runId: $runId, nextAction: 'Fix the failures, re-validate with focused Castor commands, then retry move_task(to="CODE-REVIEW"). Do not assume push or PR already happened.', qaReportDir: $qaReportDir));
-        }
-
-        $completed[] = 'castor check passed ('.number_format($checkDuration, 1).'s).';
-        $persistEvidence([
-            'Attempted IN-PROGRESS → CODE-REVIEW.',
-            'Completed: castor check passed ('.number_format($checkDuration, 1).'s).',
-            ...(null !== $qaReportDir ? ['QA reports: '.$qaReportDir.'.'] : []),
-            'Session/run: '.$runId.'.',
-            'Task remains IN-PROGRESS pending push/PR.',
-        ]);
-
-        if (null !== ($interrupt = $control->interrupted('Cancelled before push.'))) {
-            return $interrupt;
-        }
-
-        try {
-            $pushResult = $this->pr->pushTaskBranch($this->codeRoot, $branch, $control);
-        } catch (\RuntimeException $e) {
-            $persistEvidence([
-                'Attempted IN-PROGRESS → CODE-REVIEW.',
-                'Completed: castor check passed.',
-                ...(null !== $qaReportDir ? ['QA reports: '.$qaReportDir.'.'] : []),
-                'Failed step: git push.',
-                'Cause: '.$this->sanitizeDiagnostic($e->getMessage()).'.',
-                'Task remains IN-PROGRESS: '.$this->store->rel($this->store->resolveTaskRoot(), $task->path).'.',
-                'Session/run: '.$runId.'.',
-                'Next: inspect remote branch state before retrying. A new CODE-REVIEW attempt runs the mandatory QA gate again.',
-            ]);
-            throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'git push', cause: $this->sanitizeDiagnostic($e->getMessage()), task: $task, runId: $runId, nextAction: 'Inspect remote branch state before retrying. A new CODE-REVIEW attempt runs the mandatory QA gate again.', qaReportDir: $qaReportDir), 0, $e);
-        }
-        if ($pushResult instanceof ExecResultDTO) {
-            return $this->fromExecResult($pushResult, $control, 'Interrupted during push.');
-        }
-        $completed[] = 'Pushed '.$branch.' to origin.';
-        $persistEvidence([
-            'Attempted IN-PROGRESS → CODE-REVIEW.',
-            'Completed: castor check passed; pushed '.$branch.' to origin.',
-            ...(null !== $qaReportDir ? ['QA reports: '.$qaReportDir.'.'] : []),
-            'Session/run: '.$runId.'.',
-            'Task remains IN-PROGRESS pending PR creation.',
-        ]);
-
-        $pushOnly = isset($arguments['pushOnly']) && true === $arguments['pushOnly'];
-        if (!$pushOnly) {
-            if (null !== ($interrupt = $control->interrupted('Cancelled before PR creation.'))) {
-                return $interrupt;
+        $branch = $pr->headBranch ?? $state['branch'] ?? null;
+        $base = $pr->baseBranch ?? $this->settings->baseBranch;
+        if (null === $branch) {
+            $branches = array_values(array_filter($this->store->relationships($task->number, $control), static fn ($link): bool => 'branch' === $link->type));
+            if (null !== $input->branch) {
+                $branches = array_values(array_filter($branches, static fn ($link): bool => $link->branch === $input->branch));
             }
-
-            $ghStatus = $this->pr->ghAvailable($this->codeRoot, $control);
-            if ($ghStatus instanceof ExecResultDTO) {
-                return $this->fromExecResult($ghStatus, $control, 'Interrupted while checking gh auth.');
+            if (\count($branches) > 1) {
+                throw new TaskTransitionException('Multiple linked branches; provide an explicit branch.');
             }
-            if (!$ghStatus['available']) {
-                $cause = $this->sanitizeDiagnostic((string) ($ghStatus['reason'] ?? 'unknown'));
-                $persistEvidence([
-                    'Attempted IN-PROGRESS → CODE-REVIEW.',
-                    'Completed: castor check passed; pushed '.$branch.' to origin.',
-                    ...(null !== $qaReportDir ? ['QA reports: '.$qaReportDir.'.'] : []),
-                    'Failed step: PR creation.',
-                    'Cause: '.$cause.'.',
-                    'Task remains IN-PROGRESS: '.$this->store->rel($this->store->resolveTaskRoot(), $task->path).'.',
-                    'Session/run: '.$runId.'.',
-                    'Next: restore GitHub authentication and inspect existing PRs before retrying. CODE-REVIEW retries run mandatory QA again; pushOnly skips PR creation, not QA.',
-                ]);
-                throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'PR creation', cause: $cause, task: $task, runId: $runId, nextAction: 'Restore GitHub authentication and inspect existing PRs before retrying. CODE-REVIEW retries run mandatory QA again; pushOnly skips PR creation, not QA.', qaReportDir: $qaReportDir));
-            }
-
-            $existingPr = $this->pr->findExistingPr($this->codeRoot, $branch, $control);
-            if ($existingPr instanceof ExecResultDTO) {
-                return $this->fromExecResult($existingPr, $control, 'Interrupted while listing PRs.');
-            }
-            if (null !== $existingPr) {
-                $completed[] = 'PR already exists: '.$existingPr;
-                $text = TaskMarkdown::updateField($text, 'PR URL', $existingPr);
-                $text = TaskMarkdown::updateField($text, 'PR Status', 'open');
+            if ([] !== $branches) {
+                $branch = $branches[0]->branch;
+                $expectedRepository = implode('/', \array_slice(explode('/', $this->settings->repository), -2));
+                if ($branches[0]->repository !== $expectedRepository) {
+                    throw new TaskTransitionException('Linked branch belongs to another repository.');
+                }
             } else {
-                $prTitle = isset($arguments['prTitle']) && \is_string($arguments['prTitle']) && '' !== $arguments['prTitle']
-                    ? $arguments['prTitle']
-                    : $task->title;
-                $prBody = isset($arguments['prBody']) && \is_string($arguments['prBody']) && '' !== $arguments['prBody']
-                    ? $arguments['prBody']
-                    : 'Task: '.$task->title."\nBranch: ".$branch."\n\nAuto-created by move_task (CODE-REVIEW).";
-                $prBase = isset($arguments['prBaseBranch']) && \is_string($arguments['prBaseBranch']) ? $arguments['prBaseBranch'] : null;
-                try {
-                    $prUrl = $this->pr->createPr($this->codeRoot, $branch, $prTitle, $prBody, $prBase, $control);
-                } catch (\RuntimeException $e) {
-                    $cause = $this->sanitizeDiagnostic($e->getMessage());
-                    $persistEvidence([
-                        'Attempted IN-PROGRESS → CODE-REVIEW.',
-                        'Completed: castor check passed; pushed '.$branch.' to origin.',
-                        ...(null !== $qaReportDir ? ['QA reports: '.$qaReportDir.'.'] : []),
-                        'Failed step: PR creation.',
-                        'Cause: '.$cause.'.',
-                        'Task remains IN-PROGRESS: '.$this->store->rel($this->store->resolveTaskRoot(), $task->path).'.',
-                        'Session/run: '.$runId.'.',
-                        'Next: inspect existing PRs and resolve the reported cause before retrying. CODE-REVIEW retries run mandatory QA again; pushOnly skips PR creation, not QA.',
-                    ]);
-                    throw new \RuntimeException($this->formatPartialTransitionFailure(attempted: 'IN-PROGRESS → CODE-REVIEW', completed: $completed, failedStep: 'PR creation', cause: $cause, task: $task, runId: $runId, nextAction: 'Inspect existing PRs and resolve the reported cause before retrying. CODE-REVIEW retries run mandatory QA again; pushOnly skips PR creation, not QA.', qaReportDir: $qaReportDir), 0, $e);
+                if (TaskStatusEnum::TODO !== $task->status) {
+                    throw new TaskTransitionException('Active task has no recoverable native branch or PR; do not fabricate a resume from base.');
                 }
-                if ($prUrl instanceof ExecResultDTO) {
-                    return $this->fromExecResult($prUrl, $control, 'Interrupted during PR creation.');
+                $branch = 'task/issue-'.$task->number;
+                $this->pr->develop($task->number, $branch, $base, $control);
+            }
+        }
+        $this->assertRemote($control);
+        $this->gitOk(['check-ref-format', '--branch', $branch], $this->primaryRoot, $control);
+        $remoteRef = 'refs/remotes/'.$this->settings->remote.'/'.$branch;
+        $this->gitOk(['fetch', '--no-tags', $this->settings->remote, 'refs/heads/'.$branch.':'.$remoteRef], $this->primaryRoot, $control);
+        if (null === $state) {
+            $root = Path::makeAbsolute($this->settings->worktreeRoot, $this->primaryRoot);
+            $path = rtrim($root, '/').'/'.substr(hash('sha256', $this->settings->repository), 0, 12).'-issue-'.$task->number;
+            // A matching local branch name is not proof we own its work. A newly
+            // adopted binding may reuse it only at the exact fetched native head.
+            if ($this->git->branchExists($this->primaryRoot, $branch, $control)) {
+                $local = trim($this->gitOk(['rev-parse', 'refs/heads/'.$branch], $this->primaryRoot, $control)->stdout);
+                $remote = trim($this->gitOk(['rev-parse', $remoteRef], $this->primaryRoot, $control)->stdout);
+                if ($local !== $remote) {
+                    throw new TaskTransitionException('Unowned existing local branch differs from the native remote branch; preserve/reconcile it explicitly.');
                 }
-                $completed[] = 'Created PR: '.$prUrl;
-                $text = TaskMarkdown::updateField($text, 'PR URL', $prUrl);
-                $text = TaskMarkdown::updateField($text, 'PR Status', 'open');
             }
-        } else {
-            $completed[] = 'Skipped PR creation (pushOnly: true).';
+            $state = $this->states->initialize($this->settings->repository, $task->number, $task->url, $branch, $path);
         }
+        if ($state['branch'] !== $branch) {
+            throw new TaskTransitionException('Retained workspace branch conflicts with the native task branch.');
+        }
+        $existed = is_dir($state['worktree']);
+        $binding = $this->worktrees->create($this->primaryRoot, $branch, $state['worktree'], $remoteRef, $control);
+        if (!$existed) {
+            $state['setup_complete'] = false;
+        }
+        if (true !== ($state['setup_complete'] ?? false)) {
+            $state['setup_attempted'] = true;
+            $state['pending_operation'] = 'start';
+            $this->save($task, $state);
+            $result = $this->runHook('setup', 'start', $task, $state, $base, $control);
+            if (!$this->hookSucceeded($result)) {
+                return $this->hookFailure('setup', $task, $state, $result);
+            }
+            $state['setup_complete'] = true;
+            $this->save($task, $state);
+        }
+        $published = $this->store->publish($this->fresh($task, $control), TaskStatusEnum::IN_PROGRESS, $control);
+        $state['pending_operation'] = null;
+        $this->save($task, $state);
 
-        // Preserve the PR identity even if result delivery or the final board
-        // move is interrupted. This is evidence, not permission to skip QA.
-        $persistEvidence([
-            ...$completed,
-            'Session/run: '.$runId.'.',
-            'Task remains IN-PROGRESS pending final metadata move.',
-        ]);
-        array_push($notes, ...$completed);
-
-        return TaskMarkdown::updateField($text, 'Status', TaskStatusEnum::CODE_REVIEW->value);
+        return ToolResult::text('Workspace ready; Workflow IN-PROGRESS.', ['task' => $published, 'branch' => $binding->branch, 'worktree' => $binding->worktree, 'setup' => 'passed']);
     }
 
-    private function formatCastorCheckFailure(string $reason, string $worktree, ExecResultDTO $result): string
+    /** @param array<string,mixed>|null $state */
+    private function review(GitHubTaskDTO $task, ?array $state, TaskInputDTO $input, InvocationControl $control): string
     {
-        $output = trim($result->stdout."\n".$result->stderr);
-        $qaRun = preg_match('/QA run:\s*(qa-[A-Za-z0-9_-]+)/', $output, $matches) ? $matches[1] : null;
-        $lane = preg_match('/^\s*-\s*([A-Za-z0-9][A-Za-z0-9:_-]*):\s*exit code\s+\d+\s*$/mi', $output, $matches) ? $matches[1] : null;
-        $reportDir = null === $qaRun ? null : 'var/reports/'.$qaRun;
-        $log = null === $lane || null === $reportDir ? null : $reportDir.'/check-'.$lane.'.log';
-        $logPath = null === $log ? null : $worktree.'/'.$log;
-        $snippet = $output;
-        if (null !== $logPath && is_file($logPath)) {
-            $contents = file_get_contents($logPath);
-            if (false !== $contents && '' !== trim($contents)) {
-                $snippet = trim($contents);
+        if (null === $state || true !== ($state['setup_complete'] ?? false)) {
+            throw new TaskTransitionException('No complete owned workspace on this machine. Resume IN-PROGRESS first.');
+        }
+        $this->assertWorkspace($state, $control);
+        $sha = $this->worktrees->head($state['worktree'], $control);
+        $pr = $this->resolvePr($task, $state, $input, $control);
+        if (null !== $pr && 'OPEN' !== $pr->state) {
+            throw new TaskTransitionException('Associated PR is closed or merged; reconcile it before submitting.');
+        }
+        $base = $pr->baseBranch ?? $this->settings->baseBranch;
+        $result = $this->runHook('validate', 'review', $task, $state, $base, $control);
+        if (!$this->hookSucceeded($result)) {
+            return $this->hookFailure('validate', $task, $state, $result);
+        }
+        $this->assertWorkspace($state, $control);
+        if ($sha !== $this->worktrees->head($state['worktree'], $control)) {
+            throw new TaskTransitionException('Validation changed HEAD. Commit and validate the intended revision again.');
+        }
+        $this->assertRemote($control);
+        $this->gitOk(['push', $this->settings->remote, $sha.':refs/heads/'.$state['branch']], $state['worktree'], $control);
+        $remote = $this->gitOk(['ls-remote', '--exit-code', $this->settings->remote, 'refs/heads/'.$state['branch']], $this->primaryRoot, $control);
+        if ($sha !== strtok(trim($remote->stdout), "\t ")) {
+            throw new TaskTransitionException('Remote branch no longer equals the validated revision.');
+        }
+        if (null === $pr) {
+            $matches = $this->pr->find($state['branch'], $base, $task->number, $control);
+            if (\count($matches) > 1) {
+                throw new TaskTransitionException('Multiple matching PRs; select one explicitly.');
             }
+            $pr = $matches[0] ?? $this->pr->create($task->number, $state['branch'], $base, $input->prTitle ?? $task->title, $input->prBody ?? $task->body, $control);
         }
-        if ('' === $snippet) {
-            $snippet = '(no output)';
+        $this->pr->assertIdentity($pr, $state['branch'], $base, $task->number);
+        $pr = $this->pr->view($pr->number, $control);
+        if ('OPEN' !== $pr->state || $sha !== $pr->headSha) {
+            throw new TaskTransitionException('PR is not open at the validated head.');
         }
-        $message = 'Castor check FAILED ('.$reason.') in the worktree. Fix the failures, re-validate with focused Castor commands, then move to CODE-REVIEW again.'
-            ."\n".'Worktree: '.$worktree;
-        if (null !== $lane && null !== $log && null !== $logPath && is_file($logPath)) {
-            $message .= "\n".'Failing lane: '.$lane."\n".'Log: '.$log;
-        } elseif (null !== $reportDir) {
-            $message .= "\n".'QA reports: '.$reportDir;
-        }
+        $state['submitted_sha'] = $sha;
+        $state['submitted_base'] = $base;
+        $state['pr_url'] = $pr->url;
+        $state['pending_operation'] = 'review';
+        $this->save($task, $state);
+        $published = $this->store->publish($this->fresh($task, $control), TaskStatusEnum::CODE_REVIEW, $control);
+        $state['pending_operation'] = null;
+        $this->save($task, $state);
 
-        return $message."\n".'First failure:'."\n".u($snippet)->truncate(1200)->toString();
+        return ToolResult::text('Validation passed; PR ready for review.', ['task' => $published, 'pr' => $pr->url, 'validated_sha' => $sha, 'validation' => ['exit_code' => 0, 'outcome' => 'passed']]);
     }
 
-    /**
-     * Persist completed/failed step evidence on the current task file without changing status.
-     *
-     * @param list<string> $lines
-     */
-    private function persistPartialEvidence(TaskInfo $task, string $text, array $lines): string
+    /** @param array<string,mixed>|null $state */
+    private function finish(GitHubTaskDTO $task, ?array $state, TaskInputDTO $input, TaskStatusEnum $to, InvocationControl $control): string
     {
-        $safe = [];
-        foreach ($lines as $line) {
-            $sanitized = $this->sanitizeDiagnostic($line);
-            if ('' !== $sanitized) {
-                $safe[] = $sanitized;
+        $done = TaskStatusEnum::DONE === $to;
+        $reason = $done ? 'done' : 'cancel';
+        $pr = $this->resolvePr($task, $state, $input, $control);
+        if ($done && null === $pr) {
+            throw new TaskTransitionException('DONE requires a verified task PR, including on repeated finalization.');
+        }
+        if (!$done && null !== $pr && ('MERGED' === $pr->state || null !== $pr->mergedAt)) {
+            throw new TaskTransitionException('Task PR merged; cancel is forbidden. Use explicit DONE reconciliation.');
+        }
+        if (null !== $state && is_dir($state['worktree'])) {
+            $this->assertWorkspace($state, $control);
+            if ($done && $this->worktrees->head($state['worktree'], $control) !== $pr->headSha) {
+                throw new TaskTransitionException('Local committed work is not the confirmed PR head; preserve it before completion.');
             }
         }
-        if ([] === $safe) {
-            return $text;
+        if (null === $state) {
+            // Even never-started cancellation gets cleanup, but no guessed path.
+            $state = $this->states->initialize($this->settings->repository, $task->number, $task->url, $pr->headBranch ?? '', '');
         }
-
-        $updated = TaskMarkdown::appendLog($text, $safe);
-        if (false === file_put_contents($task->path, $updated)) {
-            throw new \RuntimeException('Failed to write partial transition evidence to task file: '.$task->path);
+        if ($done) {
+            $accepted = $input->acceptedHead ?? $state['submitted_sha'] ?? null;
+            if (null === $accepted) {
+                throw new TaskTransitionException('No local submitted revision. Inspect actual PR head/review state and provide acceptedHead explicitly.');
+            }
+            if ($accepted !== $pr->headSha) {
+                throw new TaskTransitionException('Accepted/submitted SHA differs from the current PR head. Review before retrying.');
+            }
+            $state['pending_operation'] = 'done';
+            $state['submitted_sha'] = $accepted;
+            $state['pr_url'] = $pr->url;
+            $this->save($task, $state);
+            $pr = $this->pr->merge($pr, $accepted, $control);
+            if ('MERGED' !== $pr->state || null === $pr->mergedAt) {
+                return ToolResult::text('Merge is pending (queue or auto-merge); workspace retained. Retry DONE after confirmed merge.', ['pending' => true, 'pr' => $pr->url, 'worktree' => $state['worktree']]);
+            }
+            $this->assertRemote($control);
+            $this->worktrees->fastForwardBase($this->primaryRoot, $pr->baseBranch, $this->settings->remote, $control);
+        } elseif (null !== $pr) {
+            $state['pr_url'] = $pr->url;
+            $state['pending_operation'] = 'cancel';
+            $this->save($task, $state);
+            $pr = $this->pr->close($pr, $control);
         }
-
-        return $updated;
-    }
-
-    /**
-     * @param list<string> $completed
-     */
-    private function formatPartialTransitionFailure(
-        string $attempted,
-        array $completed,
-        string $failedStep,
-        string $cause,
-        TaskInfo $task,
-        string $runId,
-        string $nextAction,
-        ?string $qaReportDir = null,
-    ): string {
-        $taskRoot = $this->store->resolveTaskRoot();
-        $relPath = $this->store->rel($taskRoot, $task->path);
-        $lines = [
-            'move_task partial failure.',
-            'Attempted: '.$attempted.'.',
-            'Completed steps:',
-        ];
-        if ([] === $completed) {
-            $lines[] = '- (none)';
-        } else {
-            foreach ($completed as $step) {
-                $lines[] = '- '.$this->sanitizeDiagnostic($step);
+        $previousReason = $state['cleanup_reason'] ?? null;
+        $cleanupComplete = true === ($state['cleanup_complete'] ?? false) && $previousReason === $reason;
+        $state = $this->states->beginCleanup($this->settings->repository, $task->number, $reason);
+        if (!$cleanupComplete) {
+            $result = $this->runHook('cleanup', $reason, $task, $state, $pr->baseBranch ?? $this->settings->baseBranch, $control);
+            if (!$this->hookSucceeded($result)) {
+                return $this->hookFailure('cleanup', $task, $state, $result);
+            }
+            $state['cleanup_complete'] = true;
+            $state['cleanup_reason'] = $reason;
+            $this->save($task, $state);
+        }
+        if ('' !== $state['worktree']) {
+            $this->worktrees->remove($this->primaryRoot, new WorkspaceBindingDTO($state['branch'], $state['worktree']), $done ? $pr->headSha : null, $control);
+            if (!$this->worktrees->verifyRemoved($this->primaryRoot, $state['worktree'], $control)) {
+                throw new TaskTransitionException('Worktree deletion postconditions failed. Retained finalization must be retried.');
             }
         }
-        $lines[] = 'Failed step: '.$failedStep.'.';
-        $lines[] = 'Cause: '.$this->sanitizeDiagnostic($cause);
-        $lines[] = 'Current task status: '.$task->status->value.' ('.$relPath.').';
-        $lines[] = 'Task identity: '.$task->file.'; Session/run: '.$runId.'.';
-        if (null !== $qaReportDir && '' !== $qaReportDir) {
-            $lines[] = 'QA reports: '.$qaReportDir.'.';
+        if ($done) {
+            // Validate the integrated checkout after removal, not the pre-merge task
+            // tree. Failure retains recovery evidence and must not publish DONE.
+            $result = $this->runHook('validate', 'done', $task, $state, $pr->baseBranch, $control);
+            if (!$this->hookSucceeded($result)) {
+                return $this->hookFailure('validate', $task, $state, $result);
+            }
         }
-        $lines[] = 'Next: '.$nextAction;
+        // PR state can change during cleanup. Never publish cancelled after a merge
+        // or reopened PR; keep deletion evidence for explicit reconciliation.
+        if (null !== $pr) {
+            $currentPr = $this->pr->view($pr->number, $control);
+            if ((!$done && ('CLOSED' !== $currentPr->state || null !== $currentPr->mergedAt)) || ($done && ('MERGED' !== $currentPr->state || $currentPr->headSha !== $pr->headSha || null === $currentPr->mergedAt))) {
+                throw new TaskTransitionException('PR changed during finalization. Cleanup evidence retained; reconcile the remote state.');
+            }
+        }
+        $closed = $this->store->close($this->fresh($task, $control), $done ? 'completed' : 'not_planned', $control);
+        $published = $this->store->publish($closed, $to, $control);
+        $this->states->forget($this->settings->repository, $task->number);
 
-        return implode("\n", $lines);
+        return ToolResult::text('Finalization confirmed: cleanup passed'.($done ? ', merged-base validation passed' : '').', owned workspace absent, Workflow '.$to->value.'.', ['task' => $published, 'cleanup' => 'passed', 'worktree_removed' => true, 'execution_checkout' => $this->primaryRoot]);
     }
 
-    private function extractQaReportDir(string $worktree, ExecResultDTO $result): ?string
+    /** @param array<string,mixed>|null $state */
+    private function resolvePr(GitHubTaskDTO $task, ?array $state, TaskInputDTO $input, InvocationControl $control): ?PullRequestDTO
     {
-        $output = trim($result->stdout."\n".$result->stderr);
-        if (!preg_match('/QA run:\s*(qa-[A-Za-z0-9_-]+)/', $output, $matches)) {
+        $links = array_values(array_filter($this->store->relationships($task->number, $control), static fn ($link): bool => 'pull_request' === $link->type));
+        $reference = $input->pr ?? $state['pr_url'] ?? null;
+        if (null !== $reference) {
+            $links = array_values(array_filter($links, static fn ($link): bool => $link->url === $reference || (string) $link->number === (string) $reference));
+            if (1 !== \count($links)) {
+                throw new TaskTransitionException('Selected PR has no unique native relationship to this issue.');
+            }
+        }
+        if (\count($links) > 1) {
+            throw new TaskTransitionException('Multiple native linked PRs; select one by explicit pr number or URL.');
+        }
+        if ([] === $links) {
             return null;
         }
+        $pr = $this->pr->view($links[0]->url, $control);
+        $this->pr->assertIdentity($pr, $state['branch'] ?? $pr->headBranch, $state['submitted_base'] ?? $pr->baseBranch, $task->number);
 
-        return $worktree.'/var/reports/'.$matches[1];
+        return $pr;
     }
 
-    private function sanitizeDiagnostic(string $raw): string
+    private function fresh(GitHubTaskDTO $expected, InvocationControl $control): GitHubTaskDTO
     {
-        $scrubbed = preg_replace('#https?://\S+#i', '<url>', $raw) ?? $raw;
-        $scrubbed = preg_replace('/bearer\s+\S+/i', 'Bearer <redacted>', $scrubbed) ?? $scrubbed;
-        $scrubbed = preg_replace('/(authorization|token|api[_-]?key|bearer|password|secret)\s*[:=]\s*\S+/i', '$1=<redacted>', $scrubbed) ?? $scrubbed;
-        $scrubbed = preg_replace('/\b(?:gh[pousr]?_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/', '<redacted>', $scrubbed) ?? $scrubbed;
-        $scrubbed = preg_replace("/\n{3,}/", "\n\n", $scrubbed) ?? $scrubbed;
-
-        return u(trim($scrubbed))->truncate(1200)->toString();
-    }
-
-    /**
-     * DONE → ARCHIVE only: metadata/status update + file move by caller; no git side effects.
-     *
-     * @param list<string> $notes
-     */
-    private function transitionToArchive(string $text, TaskInfo $task, array &$notes): string
-    {
-        if (TaskStatusEnum::DONE !== $task->status) {
-            throw new \RuntimeException('ARCHIVE is only allowed from DONE. Task is currently '.$task->status->value.'.');
+        $current = $this->store->read($expected->number, $control);
+        // Native closure/timeline changes are expected during branch/PR operations;
+        // an incompatible Workflow or specification edit is not ours to overwrite.
+        if ($current->status !== $expected->status || $current->title !== $expected->title || $current->body !== $expected->body) {
+            throw new TaskTransitionException('Issue specification or Workflow changed concurrently; inspect it before retrying.');
         }
 
-        $notes[] = 'Archived task without git, worktree, PR, or branch side effects.';
-
-        return TaskMarkdown::updateField($text, 'Status', TaskStatusEnum::ARCHIVE->value);
+        return $current;
     }
 
-    /**
-     * ANY → CANCELLED: update status metadata and, when Worktree metadata is present,
-     * safely remove that worktree + IDEA exclusions. Never merge, pull, push, or delete branch.
-     *
-     * @param list<string> $notes
-     *
-     * @return string|array{cancelled?: true, timed_out?: true, timeout_seconds?: int, message: string}
-     */
-    private function transitionToCancelled(
-        string $text,
-        TaskInfo $task,
-        array &$notes,
-        InvocationControl $control,
-    ): string|array {
-        $cleanupNotes = $this->worktrees->removeTaskWorktreeSafely($this->codeRoot, $task, $control);
-        if ($cleanupNotes instanceof ExecResultDTO) {
-            return $this->fromExecResult($cleanupNotes, $control, 'Interrupted during worktree cleanup.');
+    /** @param array<string,mixed> $state */
+    private function assertWorkspace(array $state, InvocationControl $control): void
+    {
+        $this->worktrees->assertOwned($this->primaryRoot, new WorkspaceBindingDTO($state['branch'], $state['worktree']), $control);
+        if (!$this->worktrees->isClean($state['worktree'], $control)) {
+            throw new TaskTransitionException('Expected owned workspace/branch is missing or contains valuable uncommitted changes.');
         }
-        array_push($notes, ...$cleanupNotes);
-
-        return TaskMarkdown::updateField($text, 'Status', TaskStatusEnum::CANCELLED->value);
     }
 
-    /**
-     * @param array<string, mixed> $arguments
-     * @param list<string>         $notes
-     *
-     * @return string|array{cancelled?: true, timed_out?: true, timeout_seconds?: int, message: string}
-     */
-    private function transitionToDone(
-        string $text,
-        TaskInfo $task,
-        array $arguments,
-        array &$notes,
-        InvocationControl $control,
-    ): string|array {
-        $mergeNotes = $this->worktrees->mergeTaskBranch($this->codeRoot, $task, [
-            'cleanupWorktree' => !isset($arguments['cleanupWorktree']) || false !== $arguments['cleanupWorktree'],
-            'deleteBranch' => isset($arguments['deleteBranch']) && true === $arguments['deleteBranch'],
-            'requireCleanMain' => !isset($arguments['requireCleanMain']) || false !== $arguments['requireCleanMain'],
-            'cleanupStaleIndexEntries' => isset($arguments['cleanupStaleIndexEntries']) && true === $arguments['cleanupStaleIndexEntries'],
+    private function assertRemote(InvocationControl $control): void
+    {
+        $url = trim($this->gitOk(['remote', 'get-url', $this->settings->remote], $this->primaryRoot, $control)->stdout);
+        $parts = explode('/', $this->settings->repository);
+        $repository = implode('/', \array_slice($parts, -2));
+        $host = 3 === \count($parts) ? $parts[0] : 'github.com';
+        $normalized = preg_replace('~\.git$~', '', $url);
+        if (!\in_array($normalized, ['git@'.$host.':'.$repository, 'https://'.$host.'/'.$repository, 'ssh://git@'.$host.'/'.$repository], true)) {
+            throw new TaskTransitionException('Configured Git remote does not match the explicit GitHub repository/host.');
+        }
+    }
+
+    /** @param list<string> $args */
+    private function gitOk(array $args, string $cwd, InvocationControl $control): ExecResultDTO
+    {
+        if (null !== $control->interrupted()) {
+            throw new TaskTransitionException('Git operation interrupted before launch.');
+        }
+        $result = $this->git->git($args, $cwd, 120.0, $control);
+        if (!$this->hookSucceeded($result)) {
+            throw new TaskTransitionException('Git operation failed or interrupted: '.substr($result->stderr, 0, 3000));
+        }
+
+        return $result;
+    }
+
+    /** @param array<string,mixed> $state */
+    private function save(GitHubTaskDTO $task, array $state): void
+    {
+        $this->states->save($this->settings->repository, $task->number, $state);
+    }
+
+    /** @param array<string,mixed> $state */
+    private function runHook(string $name, string $reason, GitHubTaskDTO $task, array $state, string $base, InvocationControl $control): ExecResultDTO
+    {
+        $hook = $this->settings->hooks[$name] ?? null;
+        if (null === $hook) {
+            throw new TaskTransitionException('Required '.$name.' project hook is not configured.');
+        }
+        if (\in_array($reason, ['start', 'review'], true) || ('' !== $state['worktree'] && false !== @lstat($state['worktree']))) {
+            $this->worktrees->assertOwned($this->primaryRoot, new WorkspaceBindingDTO($state['branch'], $state['worktree']), $control);
+        }
+
+        return $this->hooks->run($this->primaryRoot, $hook['script'], (float) $hook['timeout_seconds'], [
+            'HATFIELD_PROJECT_ROOT' => $this->primaryRoot,
+            'HATFIELD_TASK_REPOSITORY' => $this->settings->repository,
+            'HATFIELD_TASK_NUMBER' => (string) $task->number,
+            'HATFIELD_TASK_URL' => $task->url,
+            'HATFIELD_TASK_BRANCH' => $state['branch'],
+            'HATFIELD_TASK_BASE_BRANCH' => $base,
+            'HATFIELD_TASK_WORKTREE' => $state['worktree'],
+            'HATFIELD_TASK_WORKTREE_EXISTS' => is_dir($state['worktree']) ? '1' : '0',
+            'HATFIELD_TASK_SETUP_ATTEMPTED' => true === ($state['setup_attempted'] ?? false) ? '1' : '0',
+            'HATFIELD_TASK_REASON' => $reason,
+            'HATFIELD_TASK_RESOURCE_ID' => $state['resource_id'],
+            'HATFIELD_TASK_DATA_DIR' => $state['data_dir'],
         ], $control);
-        if ($mergeNotes instanceof ExecResultDTO) {
-            return $this->fromExecResult($mergeNotes, $control, 'Interrupted during merge.');
-        }
-
-        $text = TaskMarkdown::updateField($text, 'Status', TaskStatusEnum::DONE->value);
-        $text = TaskMarkdown::updateField($text, 'Completed', (new \DateTimeImmutable('now'))->format(\DateTimeInterface::ATOM));
-        if (null !== $task->prUrl && '' !== $task->prUrl) {
-            $text = TaskMarkdown::updateField($text, 'PR Status', 'merged');
-        }
-
-        array_push($notes, ...$mergeNotes);
-
-        return $text;
     }
 
-    /**
-     * @return array{cancelled?: true, timed_out?: true, timeout_seconds?: int, message: string}|null
-     */
-    private function execInterrupt(ExecResultDTO $result, InvocationControl $control, string $message): ?array
+    private function hookSucceeded(ExecResultDTO $result): bool
     {
-        if ($result->cancelled || $result->timedOut) {
-            return $this->fromExecResult($result, $control, $message);
-        }
-
-        return $control->interrupted($message);
+        return 0 === $result->exitCode && !$result->timedOut && !$result->cancelled;
     }
 
-    /**
-     * @return array{cancelled?: true, timed_out?: true, timeout_seconds?: int, message: string}
-     */
-    private function fromExecResult(ExecResultDTO $result, InvocationControl $control, string $fallbackMessage): array
+    /** @param array<string,mixed> $state */
+    private function hookFailure(string $name, GitHubTaskDTO $task, array $state, ExecResultDTO $result): string
     {
-        if ($result->cancelled || (null !== $control->cancellationToken && $control->cancellationToken->isCancellationRequested())) {
-            return [
-                'cancelled' => true,
-                'message' => '' !== trim($result->stderr) ? trim($result->stderr) : $fallbackMessage,
-            ];
-        }
-
-        return [
-            'timed_out' => true,
-            'timeout_seconds' => $control->timeoutSeconds ?? 0,
-            'message' => '' !== trim($result->stderr) ? trim($result->stderr) : $fallbackMessage,
-        ];
+        return ToolResult::text($name.' hook did not succeed. Workflow unchanged; preserve/repair resources and retry the same transition.', [
+            'task' => $task, 'pending' => true, 'worktree' => $state['worktree'], 'hook' => $name,
+            'exit_code' => $result->exitCode, 'timed_out' => $result->timedOut, 'cancelled' => $result->cancelled,
+            'diagnostics' => "stderr:\n".substr($result->stderr, -2000)."\nstdout:\n".substr($result->stdout, -2000),
+        ]);
     }
 }

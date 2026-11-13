@@ -16,7 +16,7 @@
 - Use the smallest solution. Keep configuration in YAML except `config/bundles.php`. Prefer invokable Symfony commands.
 - Delete dead code and unsupported fallback paths. Add compatibility only when requested or required by a published API.
 - Do not add HTTP controllers, routes, web sessions, or web-serving FrameworkBundle features.
-- Use Hatfield settings for themes. When adding settings, update `.hatfield/settings.yaml` and `docs/settings.md` together.
+- Use Hatfield settings for themes. When adding core settings, update `.hatfield/settings.yaml` and `docs/settings.md` together. Document extension-owned settings in the extension package's documentation.
 - Keep `session_id === run_id`. Use canonical session `events.jsonl`; do not add `metadata.yaml`.
 
 ## Development rules
@@ -56,8 +56,3 @@
 - Never signal root-owned workers or processes tagged with `HATFIELD_SESSION_ID`.
 - **Never issue `tmux kill-session` or `tmux kill-server` from agent commands, delegated agents, or ad hoc cleanup scripts, even when a diagnostic suggests doing so.** Never derive destructive cleanup targets from pane lookups, command substitution, or session-name patterns. A missing or stale target can destroy the user's session and the running agent. Existing automated Castor/test-harness teardown remains permitted under its built-in ownership checks; this is not permission to invoke its destructive commands manually.
 - Exit test TUIs through their own application controls in the exact pane recorded at launch, after verifying that the pane still belongs to the test. If ownership or target identity is uncertain, leave the pane alone and report the uncertainty. Main must enforce these restrictions in every delegated tmux task.
-
-## Task workflow
-
-- Main alone manages tracked workflow and loads the active `task-workflow` skill. Use the external board at `/home/ineersa/projects/agent-core-tasks`; never commit board metadata to this repository.
-- Implementation forks follow development, architecture, and testing rules, implement the assigned change, and return results. They do not manage task or ownership records, phases, other agents, reviews, PRs, or commits; main owns that administration.

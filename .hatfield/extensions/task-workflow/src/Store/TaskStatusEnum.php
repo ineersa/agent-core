@@ -10,7 +10,6 @@ enum TaskStatusEnum: string
     case IN_PROGRESS = 'IN-PROGRESS';
     case CODE_REVIEW = 'CODE-REVIEW';
     case DONE = 'DONE';
-    case ARCHIVE = 'ARCHIVE';
     case CANCELLED = 'CANCELLED';
 
     public static function fromMixed(string $value): self
@@ -28,43 +27,10 @@ enum TaskStatusEnum: string
         if ('DONE' === $upper) {
             return self::DONE;
         }
-        if ('ARCHIVE' === $upper) {
-            return self::ARCHIVE;
-        }
         if ('CANCELLED' === $upper || 'CANCELED' === $upper) {
             return self::CANCELLED;
         }
 
         throw new \RuntimeException('Unknown task status: '.$value);
-    }
-
-    /**
-     * @return list<self>
-     */
-    public static function all(): array
-    {
-        return [
-            self::TODO,
-            self::IN_PROGRESS,
-            self::CODE_REVIEW,
-            self::DONE,
-            self::ARCHIVE,
-            self::CANCELLED,
-        ];
-    }
-
-    /**
-     * Default task_list statuses: active + DONE, omitting CANCELLED and ARCHIVE unless requested.
-     *
-     * @return list<self>
-     */
-    public static function defaultListed(): array
-    {
-        return [
-            self::TODO,
-            self::IN_PROGRESS,
-            self::CODE_REVIEW,
-            self::DONE,
-        ];
     }
 }
