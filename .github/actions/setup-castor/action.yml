@@ -2,7 +2,7 @@
 # Why PHAR (not static): Castor tasks invoke host PHP via PHP_BINARY (e.g. distribution_smoke_artifact
 # for hatfield.phar). A fused static Castor leaves PHP_BINARY empty, so smoke becomes `'' hatfield.phar`.
 # A PHAR shebang uses setup-php's host PHP, so PHP_BINARY stays valid. Do not regress to static Castor.
-# MAINTENANCE: when bumping Castor, update VERSION, ASSET names, and all four SHA256 digests together.
+# MAINTENANCE: when bumping Castor, update VERSION, ASSET names, and all three SHA256 digests together.
 # Do not use setup-php tools: castor (hardcodes amd64 assets; broken on Linux/macOS arm64).
 name: Setup Castor
 description: >
@@ -34,17 +34,13 @@ runs:
             ASSET='castor.linux-arm64.phar'
             EXPECTED_SHA256='60fdabae7291bcfc25aaee0f7b3ecb5ae2348f88a578f3882097d1e02a326fcd'
             ;;
-          Darwin:x86_64)
-            ASSET='castor.darwin-amd64.phar'
-            EXPECTED_SHA256='63057a0953c9523fadb932aa17e1e643f550e1223d63c7a1f3db66c9af8c4611'
-            ;;
           Darwin:arm64)
             ASSET='castor.darwin-arm64.phar'
             EXPECTED_SHA256='73ecc5d57191d5a2bdfec3053e100859939bd9b824b883b6bd2bb5d1f7342505'
             ;;
           *)
             echo "Unsupported runner for Castor PHAR install: os=${os} arch=${arch}" >&2
-            echo "Supported: Linux x86_64/aarch64|arm64, Darwin x86_64/arm64" >&2
+            echo "Supported: Linux x86_64/aarch64|arm64, Darwin arm64" >&2
             exit 1
             ;;
         esac

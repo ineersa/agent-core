@@ -139,7 +139,6 @@ final class TuiArtifactBootE2eTest extends TestCase
         $candidates[] = $root.'/var/tmp/dist/hatfield.phar';
         $candidates[] = $root.'/var/tmp/dist/hatfield.linux-amd64';
         $candidates[] = $root.'/var/tmp/dist/hatfield.linux-arm64';
-        $candidates[] = $root.'/var/tmp/dist/hatfield.darwin-amd64';
         $candidates[] = $root.'/var/tmp/dist/hatfield.darwin-arm64';
 
         foreach ($candidates as $binary) {

@@ -14,12 +14,14 @@ Internals: [phar-packaging.md](phar-packaging.md) · [static-packaging.md](stati
 | `hatfield.phar` | Portable PHAR (system PHP ≥ 8.5) |
 | `hatfield.linux-amd64` | Fused PHP-micro native (Linux x86_64) |
 | `hatfield.linux-arm64` | Fused PHP-micro native (Linux aarch64) |
-| `hatfield.darwin-amd64` | Fused PHP-micro native (macOS x86_64) |
 | `hatfield.darwin-arm64` | Fused PHP-micro native (macOS arm64) |
 | `SHA256SUMS` | SHA-256 for every release asset |
 
 Native releases are single-file per target. Amp SQLite workers relaunch the same
 fused binary through `--internal-sqlite-worker`.
+
+Intel macOS is PHAR-only: install system PHP ≥ 8.5 with the required extensions
+and omit `--static`. Releases do not include an Intel macOS native binary.
 
 **Windows / non-POSIX:** the Bash installer and native matrix are **Linux/macOS only**. There is no
 Windows native binary and no Windows installer path. The PHAR is platform-neutral in packaging, but
@@ -68,7 +70,7 @@ curl --proto '=https' --tlsv1.2 -fsSL \
 
 ### Install the native binary
 
-The native binary includes PHP. Use `--static` on a supported Linux or macOS host:
+The native binary includes PHP. Use `--static` on Linux (x86_64/ARM64) or Apple Silicon macOS:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
@@ -96,7 +98,7 @@ bash installer/bash-installer --version=latest
 # Pinned release tag, custom install dir (quote $HOME — bare ~ in --install-dir is not expanded by the flag parser)
 bash installer/bash-installer --version=v1.2.3 --install-dir="$HOME/.local/bin"
 
-# Fused native binary for the current Linux/macOS platform
+# Fused native binary for Linux or Apple Silicon macOS
 bash installer/bash-installer --static --version=latest
 ```
 
@@ -117,7 +119,8 @@ Run the installer again to upgrade or reinstall. It performs these steps:
 | Symptom | Likely cause / action |
 |---|---|
 | `OS '…' not supported` / Windows | Installer is Linux/macOS only; product runtime needs POSIX PHP (`pcntl`/`posix`) — Windows is unsupported |
-| Architecture not supported | Only `amd64` and `arm64` are in the matrix |
+| Architecture not supported | Native targets are Linux `amd64`/`arm64` and macOS `arm64` |
+| Intel macOS native binaries not supported | Omit `--static`; install PHP ≥ 8.5 with required extensions for the PHAR |
 | PHP required (PHAR path) | Install PHP ≥ 8.5 with required extensions, or pass `--static` on supported OS/arch |
 | Checksum mismatch | Corrupt download or wrong `SHA256SUMS`; retry; do not force-install |
 | Candidate smoke failed | Binary/PHAR will not be installed; inspect smoke error; fix PHP/extensions or pick another asset |

@@ -8,7 +8,7 @@ on:
 permissions:
   contents: write
 
-# Sole GitHub Actions path that builds PHAR + four native binaries and publishes
+# Sole GitHub Actions path that builds PHAR + three native binaries and publishes
 # release assets. Trigger: push of tag v* only. All build/verify logic lives in
 # Castor (distribution:*); this workflow only orchestrates runners and publish.
 jobs:
@@ -70,8 +70,6 @@ jobs:
             runner: ubuntu-latest
           - target: linux-arm64
             runner: ubuntu-24.04-arm
-          - target: darwin-amd64
-            runner: macos-15-intel
           - target: darwin-arm64
             runner: macos-15
     runs-on: ${{ matrix.runner }}
@@ -191,7 +189,6 @@ jobs:
             hatfield.phar
             hatfield.linux-amd64
             hatfield.linux-arm64
-            hatfield.darwin-amd64
             hatfield.darwin-arm64
           )
           for name in "${required[@]}"; do
@@ -210,7 +207,6 @@ jobs:
           done
           chmod +x var/tmp/dist/hatfield.linux-amd64 \
                    var/tmp/dist/hatfield.linux-arm64 \
-                   var/tmp/dist/hatfield.darwin-amd64 \
                    var/tmp/dist/hatfield.darwin-arm64
 
       - name: Generate one SHA256SUMS for every asset via Castor
@@ -219,12 +215,12 @@ jobs:
           castor distribution:checksums
           # Verify checksums + PHAR content; native topology already ran per matrix runner.
           castor distribution:verify --skip-topology
-          # Ensure SHA256SUMS lists exactly the five binaries.
+          # Ensure SHA256SUMS lists exactly the four payloads.
           test -s var/tmp/dist/SHA256SUMS
-          for name in hatfield.phar hatfield.linux-amd64 hatfield.linux-arm64 hatfield.darwin-amd64 hatfield.darwin-arm64; do
+          for name in hatfield.phar hatfield.linux-amd64 hatfield.linux-arm64 hatfield.darwin-arm64; do
             grep -E "^[a-f0-9]{64}  ${name}\$" var/tmp/dist/SHA256SUMS
           done
-          test "$(grep -cE '^[a-f0-9]{64}  ' var/tmp/dist/SHA256SUMS)" -eq 5
+          test "$(grep -cE '^[a-f0-9]{64}  ' var/tmp/dist/SHA256SUMS)" -eq 4
 
       - name: Host-compatible version smoke
         run: |
@@ -247,7 +243,6 @@ jobs:
             var/tmp/dist/hatfield.phar
             var/tmp/dist/hatfield.linux-amd64
             var/tmp/dist/hatfield.linux-arm64
-            var/tmp/dist/hatfield.darwin-amd64
             var/tmp/dist/hatfield.darwin-arm64
             var/tmp/dist/SHA256SUMS
         env:

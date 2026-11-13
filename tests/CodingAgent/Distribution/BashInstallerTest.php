@@ -19,7 +19,7 @@ use Symfony\Component\Process\Process;
  */
 final class BashInstallerTest extends TestCase
 {
-    public function testInstallerSucceedsWithMatchingChecksum(): void
+    public function testPharInstallerSucceedsOnIntelMacWithMatchingChecksum(): void
     {
         $root = ProjectDir::get();
         $fixture = TestDirectoryIsolation::createProjectTempDir('installer-ok');
@@ -43,7 +43,7 @@ final class BashInstallerTest extends TestCase
                 '--version=v9.9.9',
             ], $root, [
                 'HATFIELD_INSTALLER_BASE_URL' => $server['url'],
-                'PATH' => getenv('PATH') ?: '/usr/bin:/bin',
+                'PATH' => $this->createIntelMacBin($fixture).':'.(getenv('PATH') ?: '/usr/bin:/bin'),
             ]);
             $process->setTimeout(30);
             $process->run();
@@ -55,6 +55,34 @@ final class BashInstallerTest extends TestCase
             $this->stopServer($server);
             TestDirectoryIsolation::removeDirectory($fixture);
             TestDirectoryIsolation::removeDirectory($installDir);
+        }
+    }
+
+    public function testIntelMacNativeInstallIsRejectedBeforeDownload(): void
+    {
+        $root = ProjectDir::get();
+        $fixture = TestDirectoryIsolation::createProjectTempDir('installer-intel-mac');
+        try {
+            $bin = $this->createIntelMacBin($fixture);
+            // Any unexpected download fails locally; never contact a real release.
+            file_put_contents($bin.'/curl', "#!/usr/bin/env bash\necho 'unexpected download' >&2\nexit 1\n");
+            chmod($bin.'/curl', 0755);
+            $process = new Process([
+                'bash', $root.'/installer/bash-installer', '--static', '--install-dir='.$fixture.'/install',
+            ], $root, [
+                'PATH' => $bin.':'.(getenv('PATH') ?: '/usr/bin:/bin'),
+                'TMPDIR' => $fixture,
+            ]);
+            $process->setTimeout(10);
+            $process->run();
+            $output = $process->getOutput().$process->getErrorOutput();
+            $this->assertFalse($process->isSuccessful());
+            $this->assertStringContainsString('Intel macOS native binaries are not supported', $output);
+            $this->assertStringContainsString('Omit --static to install the PHAR', $output);
+            $this->assertStringNotContainsString('unexpected download', $output);
+            $this->assertFileDoesNotExist($fixture.'/install/hatfield');
+        } finally {
+            TestDirectoryIsolation::removeDirectory($fixture);
         }
     }
 
@@ -285,6 +313,17 @@ PHP;
             TestDirectoryIsolation::removeDirectory($callerProject);
             TestDirectoryIsolation::removeDirectory($persistentCache);
         }
+    }
+
+    private function createIntelMacBin(string $fixture): string
+    {
+        $bin = $fixture.'/bin';
+        mkdir($bin, 0755);
+        $this->assertSame($bin, realpath($bin));
+        file_put_contents($bin.'/uname', "#!/usr/bin/env bash\ncase \"\$1\" in -s) echo Darwin ;; -m) echo x86_64 ;; *) exit 1 ;; esac\n");
+        chmod($bin.'/uname', 0755);
+
+        return $bin;
     }
 
     private function assertNoInstallTemps(string $installDir): void

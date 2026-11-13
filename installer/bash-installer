@@ -173,6 +173,10 @@ platform="${kernel}-${machine}"
 output "  [*] Platform ${platform}" "success"
 
 if [[ "${static}" == "true" ]]; then
+  if [[ "${platform}" == "darwin-amd64" ]]; then
+    output "ERROR: Intel macOS native binaries are not supported. Omit --static to install the PHAR with PHP >= ${REQUIRED_PHP_VERSION} and its required extensions." "error"
+    exit 1
+  fi
   asset="hatfield.${platform}"
 else
   # Canonical PHAR is platform-neutral (same file for Linux/macOS/Windows with PHP).

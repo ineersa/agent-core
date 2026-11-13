@@ -24,7 +24,7 @@ usage() {
 Usage: scripts/build-distribution.sh [options]
 
 Options:
-  --target=<linux-amd64|linux-arm64|darwin-amd64|darwin-arm64>
+  --target=<linux-amd64|linux-arm64|darwin-arm64>
   --target VALUE
   --output=<dir>          Dist output directory (default: var/tmp/dist)
   --output VALUE
