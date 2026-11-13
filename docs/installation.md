@@ -5,13 +5,16 @@ description: Install the PHAR or native binary, configure a provider, upgrade, a
 
 # Installation and upgrades
 
-Hatfield supports Linux and macOS on x86_64 and ARM64. Windows is unsupported.
+Native binaries support Linux on x86_64/ARM64 and Apple Silicon macOS (ARM64).
+Intel macOS is supported through the PHAR with system PHP, not a native binary.
+Windows is unsupported.
 No repository checkout is required. Choose either the native binary, which includes
 PHP, or the PHAR, which uses your system PHP.
 
 ## Install the native binary
 
-Run the installer with `--static`:
+On Linux or Apple Silicon macOS, run the installer with `--static`.
+For Intel macOS, use [the PHAR](#install-the-phar) instead:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL \
@@ -99,9 +102,10 @@ Provider catalog updates are separate from executable upgrades. See
 | Symptom | Action |
 |---|---|
 | `hatfield: command not found` | Check the install directory and your shell's `PATH`. |
-| Unsupported OS or architecture | Use Linux or macOS on x86_64 or ARM64. |
-| PHP missing or too old | Install PHP 8.5 or later, or choose `--static`. |
-| Missing PHP extensions | Install the extensions listed above for the PHP executable on `PATH`, or choose `--static`. |
+| Unsupported OS or architecture | Native binaries require Linux x86_64/ARM64 or Apple Silicon macOS. Intel macOS requires the PHAR. |
+| Intel macOS native binaries not supported | Omit `--static` and install PHP 8.5 or later with the required extensions. |
+| PHP missing or too old | Install PHP 8.5 or later, or choose `--static` on a supported native platform. |
+| Missing PHP extensions | Install the extensions listed above for the PHP executable on `PATH`, or choose `--static` on a supported native platform. |
 | Checksum mismatch | Check the download and release checksum. Do not bypass verification. |
 | Candidate smoke failed | Read the reported startup error. Correct PHP requirements or select a compatible release asset. |
 | Missing release asset | Check that the requested release published your platform's artifact. |

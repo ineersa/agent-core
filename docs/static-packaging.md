@@ -12,10 +12,10 @@ Related: [distribution.md](distribution.md) · [phar-packaging.md](phar-packagin
 |---|---|
 | `hatfield.linux-amd64` | `ubuntu-latest` |
 | `hatfield.linux-arm64` | `ubuntu-24.04-arm` |
-| `hatfield.darwin-amd64` | `macos-15-intel` |
 | `hatfield.darwin-arm64` | `macos-15` |
 
-Local builds support the **host** target only. The four-target matrix runs on tag `v*` releases.
+Local builds support the **host** target only. The three-target matrix runs on tag `v*` releases.
+Intel macOS has no native target; use the [PHAR with system PHP](installation.md#install-the-phar).
 
 ## Pin file
 

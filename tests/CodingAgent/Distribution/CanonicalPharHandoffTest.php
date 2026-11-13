@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Distribution;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Behavioral contract: distribution_resolve_canonical_phar_for_static prefers an
@@ -144,7 +145,7 @@ PHP;
         $this->assertNotEmpty($pin['static_php_cli_repository'] ?? null);
     }
 
-    public function testReleaseArtifactCatalogIncludesFivePayloads(): void
+    public function testReleaseArtifactCatalogIncludesFourPayloads(): void
     {
         $root = ProjectDir::get();
         require_once $root.'/.castor/helpers.php';
@@ -154,20 +155,35 @@ PHP;
             HATFIELD_DIST_ARTIFACTS,
             static fn (string $name): bool => 'SHA256SUMS' !== $name,
         ));
-        $this->assertCount(5, $payloads);
+        $this->assertCount(4, $payloads);
         $this->assertContains('hatfield.phar', $payloads);
-        foreach (['linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64'] as $target) {
+        $targets = ['linux-amd64', 'linux-arm64', 'darwin-arm64'];
+        $this->assertSame($targets, array_keys(distribution_targets()));
+        foreach ($targets as $target) {
             $this->assertContains('hatfield.'.$target, $payloads);
             $this->assertNotContains('hatfield.'.$target.'.php', $payloads);
         }
 
         $workflow = (string) file_get_contents($root.'/.github/workflows/release.yml');
+        $definition = Yaml::parse($workflow);
+        $this->assertSame($targets, array_column($definition['jobs']['static']['strategy']['matrix']['include'], 'target'));
         $this->assertStringContainsString(
-            'test "$(grep -cE \'^[a-f0-9]{64}  \' var/tmp/dist/SHA256SUMS)" -eq 5',
+            'test "$(grep -cE \'^[a-f0-9]{64}  \' var/tmp/dist/SHA256SUMS)" -eq 4',
             $workflow,
         );
+        $this->assertStringNotContainsString('darwin-amd64', $workflow);
         $this->assertStringNotContainsString('hatfield.${{ matrix.target }}.php', $workflow);
         $this->assertStringNotContainsString('var/tmp/dist/hatfield.linux-amd64.php', $workflow);
         $this->assertStringNotContainsString('-eq 9', $workflow);
+    }
+
+    public function testIntelMacNativeTargetIsRejected(): void
+    {
+        require_once ProjectDir::get().'/.castor/helpers.php';
+        require_once ProjectDir::get().'/.castor/distribution.php';
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Unknown static target: darwin-amd64.');
+        distribution_assert_host_can_build('darwin-amd64');
     }
 }

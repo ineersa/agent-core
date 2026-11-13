@@ -23,7 +23,6 @@ const HATFIELD_DIST_ARTIFACTS = [
     'hatfield.phar',
     'hatfield.linux-amd64',
     'hatfield.linux-arm64',
-    'hatfield.darwin-amd64',
     'hatfield.darwin-arm64',
     'SHA256SUMS',
 ];
@@ -38,7 +37,6 @@ function distribution_targets(): array
     return [
         'linux-amd64' => ['os' => 'linux', 'arch' => 'x86_64', 'host_os' => 'Linux', 'host_arch' => 'x86_64'],
         'linux-arm64' => ['os' => 'linux', 'arch' => 'aarch64', 'host_os' => 'Linux', 'host_arch' => 'aarch64'],
-        'darwin-amd64' => ['os' => 'macos', 'arch' => 'x86_64', 'host_os' => 'Darwin', 'host_arch' => 'x86_64'],
         'darwin-arm64' => ['os' => 'macos', 'arch' => 'aarch64', 'host_os' => 'Darwin', 'host_arch' => 'arm64'],
     ];
 }
@@ -1486,7 +1484,7 @@ function distribution_build(
 
 #[AsTask(name: 'distribution:build-static', description: 'Build host-native static binary from canonical PHAR')]
 function distribution_build_static(
-    #[AsOption(description: 'Target (linux-amd64|linux-arm64|darwin-amd64|darwin-arm64); default host')]
+    #[AsOption(description: 'Target (linux-amd64|linux-arm64|darwin-arm64); default host')]
     ?string $target = null,
     #[AsOption(description: 'Output directory (default var/tmp/dist)')]
     ?string $output = null,
