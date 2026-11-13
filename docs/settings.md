@@ -219,6 +219,8 @@ See [background-processes.md](background-processes.md).
 
 Run `hatfield extensions:setup` to install and configure Hatfield extensions. The native settings form defaults to project scope; choose user scope in the wizard or pass `--user`. Installation alone does not enable an extension: use Configure and Save. Extension packages provide their own Symfony Config definitions; Ctrl+D exits without saving pending edits.
 
+Turning **Enabled for parent** off also turns that extension's fork and agent selections off in the form. Re-enabling the parent does not restore those selections automatically. Save to persist the choices; existing sessions need a restart to load them.
+
 - Settings and extension enablement are project/user config.
 - Sessions, tmp, cache, logs are runtime and should stay untracked.
 - Extensions load from `.hatfield/extensions` Composer autoload when enabled. Task workflow and observational memory document setup and settings in their package-local READMEs. For task workflow, read the installed `ineersa/hatfield-ext-task-workflow` package's `README.md`.
