@@ -97,6 +97,12 @@ final class WorkspaceStateStore
         return new TaskBoardLock($this->path($repository, $issue).'.lock');
     }
 
+    /** Shared by all linked worktrees and issues, not just one repository identity. */
+    public function primaryLock(): TaskBoardLock
+    {
+        return new TaskBoardLock($this->directory.'/primary.lock');
+    }
+
     /** @return list<array<string, mixed>> */
     public function records(string $repository): array
     {

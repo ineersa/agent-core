@@ -10,6 +10,7 @@ use Ineersa\HatfieldExt\TaskWorkflow\Tests\Support\TestExtensionApi;
 use Ineersa\HatfieldExt\TaskWorkflow\Tests\Support\TransitionFixture;
 use Ineersa\HatfieldExt\TaskWorkflow\Tests\Support\WorkspaceFixture;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 
 final class TaskWorkflowExtensionRegistrationTest extends TestCase
 {
@@ -17,7 +18,8 @@ final class TaskWorkflowExtensionRegistrationTest extends TestCase
     {
         $fixture = new TransitionFixture();
         try {
-            $api = new TestExtensionApi($fixture->workspace->root, ['task_workflow' => ['repository' => 'acme/project']], $fixture);
+            $linked = $this->linkedWorktree($fixture->workspace);
+            $api = new TestExtensionApi($linked, ['task_workflow' => ['repository' => 'acme/project']], $fixture);
             (new TaskWorkflowExtension())->register($api);
             $this->assertSame(['task_list', 'create_task', 'read_task', 'update_task', 'move_task'], array_column($api->tools, 'name'));
             foreach ($api->tools as $tool) {
@@ -36,7 +38,8 @@ final class TaskWorkflowExtensionRegistrationTest extends TestCase
             $skill = $fixture->workspace->root.'/.hatfield/skills/'.TaskWorkflowSkillInstaller::SKILL_NAME.'/SKILL.md';
             $this->assertSame(file_get_contents(\dirname(__DIR__).'/skills/task-workflow/SKILL.md'), file_get_contents($skill));
             $this->assertStringNotContainsString($fixture->workspace->root, file_get_contents($skill));
-            $this->assertCount(0, $api->skills);
+            $this->assertSame([\dirname($skill)], $api->skills);
+            $this->assertDirectoryDoesNotExist($linked.'/.hatfield/skills/task-workflow');
         } finally {
             $fixture->workspace->close();
         }
@@ -50,7 +53,8 @@ final class TaskWorkflowExtensionRegistrationTest extends TestCase
             $this->assertSame($workspace->root, realpath($workspace->root));
             $this->assertStringStartsWith(realpath($workspace->directory).'/', $workspace->root);
             $this->assertFalse(is_link($workspace->root.'/.hatfield'));
-            $api = new TestExtensionApi($workspace->root, exec: $workspace);
+            $linked = $this->linkedWorktree($workspace);
+            $api = new TestExtensionApi($linked, exec: $workspace);
             (new TaskWorkflowExtension())->register($api);
             $skill = $workspace->root.'/.hatfield/skills/'.TaskWorkflowSkillInstaller::SKILL_NAME.'/SKILL.md';
             $this->assertFileExists($skill);
@@ -60,8 +64,31 @@ final class TaskWorkflowExtensionRegistrationTest extends TestCase
             $this->assertSame([], $api->tools);
             $this->assertSame([], $api->commands);
             $this->assertSame([], $api->prompts);
+            $this->assertSame([\dirname($skill)], $api->skills);
+            $localSkill = $linked.'/.hatfield/skills/task-workflow';
+            $this->assertDirectoryDoesNotExist($localSkill);
+
+            // An older managed auto-discovery copy outranks the registered path.
+            (new Filesystem())->mkdir($localSkill);
+            $this->assertSame($localSkill, realpath($localSkill));
+            $this->assertStringStartsWith(realpath($workspace->directory).'/', realpath($localSkill).'/');
+            file_put_contents($localSkill.'/SKILL.md', "---\nname: task-workflow\ndescription: stale\nversion: 2.2.0\n---\nstale\n");
+            (new TaskWorkflowExtension())->register(new TestExtensionApi($linked, exec: $workspace));
+            $this->assertSame($content, file_get_contents($localSkill.'/SKILL.md'));
+            $this->assertSame(file_get_contents(\dirname($skill).'/README.md'), file_get_contents($localSkill.'/README.md'));
         } finally {
             $workspace->close();
         }
+    }
+
+    private function linkedWorktree(WorkspaceFixture $workspace): string
+    {
+        $this->assertSame($workspace->directory, realpath($workspace->directory));
+        $this->assertSame($workspace->root, realpath($workspace->root));
+        $linked = $workspace->directory.'/linked';
+        $workspace->git->gitOk(['worktree', 'add', '-b', 'linked', $linked], $workspace->root);
+        $this->assertSame($linked, realpath($linked));
+
+        return $linked;
     }
 }

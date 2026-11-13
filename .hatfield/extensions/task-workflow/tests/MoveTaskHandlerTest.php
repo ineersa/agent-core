@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\TaskWorkflow\Tests;
 
+use Amp\DeferredFuture;
+use Amp\TimeoutCancellation;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolInvocationContextDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Tests\Support\TransitionFixture;
+use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorkspaceStateStore;
 use PHPUnit\Framework\TestCase;
 
 final class MoveTaskHandlerTest extends TestCase
@@ -38,7 +43,30 @@ final class MoveTaskHandlerTest extends TestCase
         $this->assertSame('CODE-REVIEW', $this->fixture->status);
         $this->assertSame('OPEN', $this->fixture->pr['state']);
 
-        $this->move('DONE');
+        $linkedStore = new WorkspaceStateStore($git, $path);
+        $contender = null;
+        $order = [];
+        $this->fixture->onHook = function (string $phase, ExecOptionsDTO $options) use ($linkedStore, &$contender, &$order): void {
+            if ('validate' !== $phase || 'done' !== $options->env['HATFIELD_TASK_REASON']) {
+                return;
+            }
+            $entered = new DeferredFuture();
+            $contender = \Amp\async(static function () use ($linkedStore, $entered, &$order): void {
+                $entered->complete();
+                $linkedStore->primaryLock()->withLock(static function () use (&$order): void {
+                    $order[] = 'other-transition';
+                });
+            });
+            $entered->getFuture()->await(new TimeoutCancellation(2));
+            $this->assertFalse($contender->isComplete());
+            $order[] = 'validation';
+        };
+        try {
+            $this->move('DONE');
+        } finally {
+            $contender?->await(new TimeoutCancellation(2));
+        }
+        $this->assertSame(['validation', 'other-transition'], $order);
         $this->assertSame('DONE', $this->fixture->status);
         $this->assertSame('MERGED', $this->fixture->pr['state']);
         $this->assertDirectoryDoesNotExist($path);
@@ -93,6 +121,19 @@ final class MoveTaskHandlerTest extends TestCase
         file_put_contents($path.'/valuable', 'keep');
         $this->refused(fn () => $this->move('CANCELLED'));
         $this->assertFileExists($path.'/valuable');
+        $this->assertSame('IN-PROGRESS', $this->fixture->status);
+    }
+
+    public function testReplacementRepositoryCannotRunReviewHook(): void
+    {
+        $this->move('IN-PROGRESS');
+        $path = $this->fixture->record()['worktree'];
+        TestDirectoryIsolation::removeDirectory($path);
+        $this->fixture->workspace->git->gitOk(['init', '--initial-branch=task/issue-7', $path], $this->fixture->workspace->root);
+
+        $this->refused(fn () => $this->move('CODE-REVIEW'));
+
+        $this->assertSame(['setup'], array_column($this->fixture->hookCalls, 0));
         $this->assertSame('IN-PROGRESS', $this->fixture->status);
     }
 

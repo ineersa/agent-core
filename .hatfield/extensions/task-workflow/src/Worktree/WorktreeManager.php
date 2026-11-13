@@ -56,7 +56,10 @@ final class WorktreeManager
                     throw new \RuntimeException('Registered workspace does not match requested binding.');
                 }
 
-                return new WorkspaceBindingDTO($branch, $path);
+                $binding = new WorkspaceBindingDTO($branch, $path);
+                $this->assertOwned($primaryRoot, $binding, $control);
+
+                return $binding;
             }
         }
         if (false !== @lstat($path)) {
@@ -66,7 +69,32 @@ final class WorktreeManager
         $this->run($exists ? ['worktree', 'add', '--', $path, $branch] : ['worktree', 'add', '-b', $branch, '--', $path, $baseRef], $primaryRoot, $control);
 
         // Never roll back partial provisioning: retained state lets cleanup retry safely.
-        return new WorkspaceBindingDTO($branch, $path);
+        $binding = new WorkspaceBindingDTO($branch, $path);
+        $this->assertOwned($primaryRoot, $binding, $control);
+
+        return $binding;
+    }
+
+    public function assertOwned(string $primaryRoot, WorkspaceBindingDTO $binding, ?InvocationControl $control = null): void
+    {
+        $primaryRoot = $this->primaryRoot($primaryRoot, $control);
+        $path = $binding->worktree;
+        $this->assertPath($path);
+        if (is_link($path) || !is_dir($path) || realpath($path) !== $path) {
+            throw new \RuntimeException('Workspace path is missing or traverses a symlink.');
+        }
+        $matches = array_filter($this->inspect($primaryRoot, $control), static fn (array $entry): bool => $entry['path'] === $path && $entry['branch'] === $binding->branch);
+        if (1 !== \count($matches)) {
+            throw new \RuntimeException('Workspace registration does not match the owned binding.');
+        }
+        $commonArgs = ['rev-parse', '--path-format=absolute', '--git-common-dir'];
+        $primaryCommon = realpath(trim($this->run($commonArgs, $primaryRoot, $control)));
+        $actualCommon = realpath(trim($this->run($commonArgs, $path, $control)));
+        $actualRoot = trim($this->run(['rev-parse', '--show-toplevel'], $path, $control));
+        $actualBranch = trim($this->run(['symbolic-ref', '--short', 'HEAD'], $path, $control));
+        if (false === $primaryCommon || $actualCommon !== $primaryCommon || $actualRoot !== $path || $actualBranch !== $binding->branch) {
+            throw new \RuntimeException('Actual workspace identity differs from the owned repository, path or branch.');
+        }
     }
 
     public function isClean(string $path, ?InvocationControl $control = null): bool
@@ -107,11 +135,11 @@ final class WorktreeManager
             throw new \RuntimeException('Workspace HEAD differs from confirmed merged revision.');
         }
         if (false !== @lstat($path)) {
-            if (!is_dir($path) || $this->primaryRoot($path, $control) !== $primaryRoot || !$this->isClean($path, $control)) {
-                throw new \RuntimeException('Workspace has valuable changes or is not the owned checkout.');
+            $this->assertOwned($primaryRoot, $binding, $control);
+            if (!$this->isClean($path, $control)) {
+                throw new \RuntimeException('Workspace has valuable changes.');
             }
-            $actualRoot = trim($this->run(['rev-parse', '--show-toplevel'], $path, $control));
-            if ($actualRoot !== $path || (null !== $expectedHead && $this->head($path, $control) !== $expectedHead)) {
+            if (null !== $expectedHead && $this->head($path, $control) !== $expectedHead) {
                 throw new \RuntimeException('Workspace identity changed.');
             }
         }
@@ -141,8 +169,16 @@ final class WorktreeManager
         if (!$this->isClean($primaryRoot, $control) || trim($this->run(['symbolic-ref', '--short', 'HEAD'], $primaryRoot, $control)) !== $baseBranch) {
             throw new \RuntimeException('Primary checkout must be clean and on the configured base branch.');
         }
-        $this->run(['fetch', '--', $remote, $baseBranch], $primaryRoot, $control);
-        $this->run(['merge', '--ff-only', 'FETCH_HEAD'], $primaryRoot, $control);
+        // The caller holds the shared primary-checkout lock across this update.
+        $ref = 'refs/hatfield/base-update/'.hash('sha256', $remote."\0".$baseBranch);
+        $this->run(['fetch', '--', $remote, 'refs/heads/'.$baseBranch.':'.$ref], $primaryRoot, $control);
+        $sha = trim($this->run(['rev-parse', '--verify', $ref.'^{commit}'], $primaryRoot, $control));
+        // Another fetch in primary can replace FETCH_HEAD. Merge only the
+        // captured immutable commit instead.
+        $this->run(['merge', '--ff-only', $sha], $primaryRoot, $control);
+        if ($this->head($primaryRoot, $control) !== $sha) {
+            throw new \RuntimeException('Primary HEAD does not match the fetched base revision.');
+        }
     }
 
     private function assertPath(string $path): void

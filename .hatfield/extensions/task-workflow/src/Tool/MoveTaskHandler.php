@@ -53,7 +53,7 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         $to = TaskStatusEnum::fromMixed($input->to);
         $task = $this->store->read($input->task, $control);
         $lock = $this->states->lock($this->settings->repository, $task->number);
-        $result = $lock->withLock(function () use ($task, $to, $input, $control): string {
+        $transition = function () use ($task, $to, $input, $control): string {
             // A local lock is cooperative, not a distributed GitHub lock. Always read
             // again under it and detect conflicting remote writes before publication.
             $current = $this->store->read($task->number, $control);
@@ -94,7 +94,16 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
                 TaskStatusEnum::CODE_REVIEW => $this->review($current, $state, $input, $control),
                 default => $this->finish($current, $state, $input, $to, $control),
             };
-        }, $control->cancellationToken, $control->deadlineNs, $control->timeoutSeconds);
+        };
+        // Acquire the shared checkout lock first, consistently across all issues.
+        // Keep it through completion validation/publication so another transition
+        // cannot update the integrated files while a hook is inspecting them.
+        $result = $this->states->primaryLock()->withLock(
+            static fn () => $lock->withLock($transition, $control->cancellationToken, $control->deadlineNs, $control->timeoutSeconds),
+            $control->cancellationToken,
+            $control->deadlineNs,
+            $control->timeoutSeconds,
+        );
 
         return \is_array($result) ? ToolResult::structured($result) : $result;
     }
@@ -350,8 +359,8 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
     /** @param array<string,mixed> $state */
     private function assertWorkspace(array $state, InvocationControl $control): void
     {
-        $matches = array_values(array_filter($this->worktrees->inspect($this->primaryRoot, $control), static fn (array $entry): bool => $entry['path'] === $state['worktree'] && $entry['branch'] === $state['branch']));
-        if (1 !== \count($matches) || !$this->worktrees->isClean($state['worktree'], $control)) {
+        $this->worktrees->assertOwned($this->primaryRoot, new WorkspaceBindingDTO($state['branch'], $state['worktree']), $control);
+        if (!$this->worktrees->isClean($state['worktree'], $control)) {
             throw new TaskTransitionException('Expected owned workspace/branch is missing or contains valuable uncommitted changes.');
         }
     }
@@ -394,6 +403,9 @@ final readonly class MoveTaskHandler implements ContextualExtensionToolHandlerIn
         $hook = $this->settings->hooks[$name] ?? null;
         if (null === $hook) {
             throw new TaskTransitionException('Required '.$name.' project hook is not configured.');
+        }
+        if (\in_array($reason, ['start', 'review'], true) || ('' !== $state['worktree'] && false !== @lstat($state['worktree']))) {
+            $this->worktrees->assertOwned($this->primaryRoot, new WorkspaceBindingDTO($state['branch'], $state['worktree']), $control);
         }
 
         return $this->hooks->run($this->primaryRoot, $hook['script'], (float) $hook['timeout_seconds'], [

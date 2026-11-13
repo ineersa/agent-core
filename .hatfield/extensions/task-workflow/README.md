@@ -179,6 +179,23 @@ by starting a fresh host before initialization; `/new` in an already running hos
 does not reload extension PHP classes. The setup skill is installed at extension
 registration; task tools/commands are registered only with a configured repository.
 
+The extension package itself can be installed at project or user scope; its actual
+Composer package path is not assumed to be under this project's `.hatfield` directory.
+At registration, the installer mirrors the canonical package skill, this `README.md`
+and `templates/issue/` into the primary checkout's
+`.hatfield/skills/task-workflow/`. The installed skill links to its adjacent README
+and templates, not back into a project-specific vendor path. Those are managed
+copies, not a second source guide: edit the package assets to change bundled guidance.
+The version is published last; same-version local customization is preserved.
+
+The extension registers that primary skill directory through the public skill API
+before the unconfigured return, so setup is discoverable from linked worktrees too.
+New worktrees use this registered canonical directory without copying skill files.
+Auto-discovered local skills have higher precedence than registered directories;
+an existing versioned task-workflow copy in the current worktree is refreshed using
+the installer semantics so stale managed guidance cannot shadow the canonical skill.
+Unversioned/unrelated copies are left alone, and host discovery precedence is unchanged.
+
 With permission to initialize, run **`/tasks-init`**. This is deliberate: it checks
 current CLI/artifact capabilities and resolves owner-scoped Workflow identities;
 it **can create missing field definitions/options**, preserving unrelated
@@ -358,8 +375,10 @@ DONE reconciliation with cleanup evaluated for the new reason.
 Checkpoints are atomic JSON under the Git common directory's `hatfield/tasks/`,
 keyed by host/repository and issue. They track machine-local ownership and pending
 recovery, not task specifications or a second task board; GitHub remains authoritative.
-Cooperative locking detects local conflicts,
-not distributed ownership. One orchestrator writes a task. Re-read before
+Every `move_task` transition callback takes a shared Git-common primary lock before
+its issue lock, serializing transitions across linked worktrees through primary
+updates and completion validation. This is cooperative local locking, not
+distributed ownership across independent clones. One orchestrator writes a task. Re-read before
 publication; stale-read detection is not an atomic compare-and-set guarantee.
 External status/closure edits never execute hooks. Conflicting already-closed
 issue reasons prevent terminal publication; do not pretend closing again changed
@@ -367,7 +386,7 @@ GitHub's reason. If removal succeeded but GitHub publication failed, retry remot
 finalization without recreating workspaces or re-merging. Subsequent execution
 must use the returned primary checkout rather than a removed directory.
 
-## Cutover, integration and export
+## Cutover and integration
 
 Finish legacy active tasks before switching an existing project. Import outstanding
 TODO requirements, current plans, useful decisions and QA into GitHub. Keep the
@@ -375,17 +394,3 @@ old repository as read-only history and old-path-to-issue mappings only in one-o
 migration output, never the new runtime. Configure/test hooks and templates once.
 A dedicated integration repository, not production history, must exercise the live
 lifecycle and failure paths before cutover. Fixture tests are not live GitHub proof.
-
-A Git clone is not an issue backup. The optional export helper produces a separate
-backup or handoff snapshot; normal setup and task operations do not require it.
-Export issue metadata/current body, Workflow
-values, comment history and numbered artifact metadata/bytes separately:
-
-```bash
-bash .hatfield/extensions/task-workflow/bin/export-task.sh OWNER/REPO 123 NEW_OUTPUT_DIRECTORY
-```
-
-The command refuses an existing destination and marks success with `COMPLETE`.
-Artifact pages are requested explicitly with a bound because their endpoint has
-no Link header. Failed/limited exports remain visibly incomplete; exports are
-not consumed as a runtime fallback or synchronization database.

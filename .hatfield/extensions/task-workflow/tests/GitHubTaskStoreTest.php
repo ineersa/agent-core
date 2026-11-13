@@ -15,6 +15,64 @@ use PHPUnit\Framework\TestCase;
 
 final class GitHubTaskStoreTest extends TestCase
 {
+    public function testArtifactReadUnwrapsNativeEnvelope(): void
+    {
+        $calls = [];
+        $artifact = ['number' => 2, 'name' => 'Plan', 'body' => 'Current content'];
+        // GET default response in GitHub's REST issue artifacts documentation.
+        $store = $this->store([['artifact' => $artifact, 'versions' => [], 'has_next_page' => false, 'total_count' => 0]], $calls);
+        $this->assertSame($artifact, $store->artifact(7, 2));
+        $this->assertContains('repos/acme/project/issues/7/artifacts/2', $calls[0]);
+    }
+
+    public function testArtifactReadRejectsFlattenedResponse(): void
+    {
+        $calls = [];
+        $store = $this->store([['number' => 2, 'name' => 'Plan', 'body' => 'Content']], $calls);
+        $this->expectException(GitHubTaskException::class);
+        $this->expectExceptionMessage('expected an artifact object');
+        $store->artifact(7, 2);
+    }
+
+    public function testMalformedArtifactContentIsTypedRefusal(): void
+    {
+        $calls = [];
+        $store = $this->store([['artifact' => ['number' => 2, 'name' => 'Plan', 'body' => ['invalid']]]], $calls);
+        $this->expectException(GitHubTaskException::class);
+        $this->expectExceptionMessage('number, name or body is missing or invalid');
+        $store->artifact(7, 2);
+    }
+
+    public function testArtifactEditComparesCurrentContentNotHistoryEnvelope(): void
+    {
+        $calls = [];
+        $artifact = ['number' => 2, 'name' => 'Plan', 'body' => 'Current content'];
+        $edited = [...$artifact, 'body' => 'Updated content'];
+        $store = $this->store([
+            ['artifact' => $artifact, 'versions' => [], 'has_next_page' => false, 'total_count' => 0],
+            ['artifact' => $artifact, 'versions' => [['version' => 1, 'name' => 'Plan', 'body' => 'Current content', 'body_html' => null, 'created_at' => null, 'actor' => null]], 'has_next_page' => true, 'total_count' => 2],
+            $edited,
+        ], $calls);
+        $snapshot = $store->artifact(7, 2);
+        $this->assertSame($edited, $store->editArtifact(7, 2, $snapshot, 'Plan', 'Updated content'));
+        $this->assertSame(['name' => 'Plan', 'body' => 'Updated content'], $calls[2]['payload']);
+    }
+
+    public function testArtifactEditRefusesStaleCurrentContentBeforePatch(): void
+    {
+        $calls = [];
+        $expected = ['number' => 2, 'name' => 'Plan', 'body' => 'Original content'];
+        $store = $this->store([['artifact' => [...$expected, 'body' => 'Changed remotely'], 'versions' => [], 'has_next_page' => false, 'total_count' => 0]], $calls);
+        $this->expectException(GitHubTaskException::class);
+        $this->expectExceptionMessage('Artifact changed since it was read');
+        try {
+            $store->editArtifact(7, 2, $expected, 'Plan', 'Updated content');
+        } finally {
+            $this->assertCount(1, $calls);
+            $this->assertContains('GET', $calls[0]);
+        }
+    }
+
     public function testReadUsesTypedOptionAndPreservesClosedActiveTask(): void
     {
         $calls = [];

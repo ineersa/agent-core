@@ -60,6 +60,11 @@ final class TaskWorkflowExtension implements ConfigurableExtensionInterface, Log
         $primary = $worktrees->primaryRoot($api->getCwd());
         // The stable checkout owns installed guidance, including before configuration.
         (new TaskWorkflowSkillInstaller($primary, \dirname(__DIR__), $this->logger))->install();
+        $current = trim($git->gitOk(['rev-parse', '--show-toplevel'], $api->getCwd())->stdout);
+        if ($current !== $primary) {
+            (new TaskWorkflowSkillInstaller($current, \dirname(__DIR__), $this->logger))->install(existingManagedOnly: true);
+        }
+        $api->registerSkill($primary.'/.hatfield/skills/'.TaskWorkflowSkillInstaller::SKILL_NAME);
         if ('' === $settings->repository) {
             $this->logger->warning('task_workflow.unconfigured', ['component' => 'task_workflow', 'event_type' => 'configuration_required']);
 

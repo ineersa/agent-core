@@ -1,20 +1,22 @@
 ---
 name: task-workflow
 description: Set up task workflow for this project, or plan, implement, validate, and deliver work tracked in GitHub issues.
-version: 2.2.0
+version: 2.3.0
 ---
 
 # Task workflow
 
 ## Set up this project
 
-For “set up task workflow”, read the installed extension's
-[project setup guide](../../extensions/vendor/ineersa/hatfield-ext-task-workflow/README.md#project-setup)
-(relative to this installed project skill). Git and a committed repository are
+For “set up task workflow”, read the mirrored
+[project setup guide](README.md#project-setup) beside this installed skill.
+The guide and `templates/issue/` assets resolve relative to this skill directory,
+regardless of whether the extension package is installed at project or user scope.
+Git and a committed repository are
 prerequisites. Inspect instructions, remote/base branch, CI and existing build/test
 commands first; propose discovered settings and all three project-owned hooks.
-Prepare `.github/ISSUE_TEMPLATE/{feature,bug,experiment}.md` from the installed
-extension's `templates/issue/` defaults, preserving existing customization.
+Prepare `.github/ISSUE_TEMPLATE/{feature,bug,experiment}.md` from this skill's
+`templates/issue/` defaults, preserving existing customization.
 This is agent-guided setup, not automatic file creation by `/tasks-init`.
 Preserve existing files/settings. Ask only unresolved product/review/resource-ownership
 decisions or required human authorization. Reuse a suitable existing owner field by its exact

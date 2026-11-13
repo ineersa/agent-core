@@ -28,6 +28,40 @@ final class UpdateTaskHandlerTest extends TestCase
         }
     }
 
+    public function testArtifactBodyOnlyEditPreservesNameWithoutChangingIssue(): void
+    {
+        $fixture = new TransitionFixture();
+        try {
+            $result = (new UpdateTaskHandler($fixture->store, $fixture->states, $fixture->settings))(['task' => '7', 'artifact' => '2', 'body' => 'Updated content'], new ToolInvocationContextDTO(runId: 'test'));
+            $artifact = Toon::decode($result)['artifact'];
+            $this->assertSame('Plan', $artifact['name']);
+            $this->assertSame('Updated content', $artifact['body']);
+            $this->assertSame($fixture->artifact, $artifact);
+            $this->assertSame('Title', $fixture->taskTitle);
+            $this->assertSame('Specification', $fixture->taskBody);
+            $this->assertSame('TODO', $fixture->status);
+        } finally {
+            $fixture->workspace->close();
+        }
+    }
+
+    public function testArtifactRenameOnlyPreservesBodyWithoutChangingIssue(): void
+    {
+        $fixture = new TransitionFixture();
+        try {
+            $result = (new UpdateTaskHandler($fixture->store, $fixture->states, $fixture->settings))(['task' => '7', 'artifact' => '2', 'title' => 'Renamed plan'], new ToolInvocationContextDTO(runId: 'test'));
+            $artifact = Toon::decode($result)['artifact'];
+            $this->assertSame('Renamed plan', $artifact['name']);
+            $this->assertSame('Original plan', $artifact['body']);
+            $this->assertSame($fixture->artifact, $artifact);
+            $this->assertSame('Title', $fixture->taskTitle);
+            $this->assertSame('Specification', $fixture->taskBody);
+            $this->assertSame('TODO', $fixture->status);
+        } finally {
+            $fixture->workspace->close();
+        }
+    }
+
     public function testSelectedArtifactReceivesEditWithoutChangingIssue(): void
     {
         $fixture = new TransitionFixture();

@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\TaskWorkflow\Tests;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\DTO\WorkspaceBindingDTO;
+use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Tests\Support\WorkspaceFixture;
 use Ineersa\HatfieldExt\TaskWorkflow\Worktree\WorktreeManager;
 use PHPUnit\Framework\TestCase;
@@ -105,6 +108,62 @@ final class WorktreeManagerTest extends TestCase
         file_put_contents($root.'/valuable', 'keep');
         $this->expectException(\RuntimeException::class);
         $this->manager->fastForwardBase($root, 'main');
+    }
+
+    public function testUnrelatedFetchCannotChangeTheBaseRevisionBeingMerged(): void
+    {
+        $root = $this->fixture->root;
+        $git = $this->fixture->git;
+        $git->gitOk(['clone', '--bare', $root, $this->fixture->directory.'/remote.git'], $root);
+        $git->gitOk(['remote', 'add', 'origin', $this->fixture->directory.'/remote.git'], $root);
+        $base = $this->manager->create($root, 'base-update', $this->fixture->directory.'/base-update', 'main');
+        $git->gitOk(['commit', '--allow-empty', '-m', 'merged base revision'], $base->worktree);
+        $git->gitOk(['push', 'origin', 'HEAD:main'], $base->worktree);
+        $intended = $this->manager->head($base->worktree);
+        $other = $this->manager->create($root, 'unmerged', $this->fixture->directory.'/unmerged', 'main');
+        $git->gitOk(['commit', '--allow-empty', '-m', 'unmerged revision'], $other->worktree);
+        $git->gitOk(['push', 'origin', 'unmerged'], $other->worktree);
+        $interfered = false;
+        $exec = new StubExec(function (string $command, array $args, ?ExecOptionsDTO $options) use ($root, $git, &$interfered): ExecResultDTO {
+            $result = $this->fixture->exec($command, $args, $options);
+            if ('fetch' === $args[0] && !$interfered) {
+                // Synchronous interference, after the target fetch completed:
+                // replace shared FETCH_HEAD before the manager resolves/merges.
+                $git->gitOk(['fetch', 'origin', 'unmerged'], $root);
+                $interfered = true;
+            }
+
+            return $result;
+        });
+        (new WorktreeManager(new GitExecutor($exec)))->fastForwardBase($root, 'main');
+        $this->assertTrue($interfered);
+        $this->assertSame($intended, $this->manager->head($root));
+        $this->assertNotSame($intended, trim($git->gitOk(['rev-parse', 'FETCH_HEAD'], $root)->stdout));
+        $ref = 'refs/hatfield/base-update/'.hash('sha256', "origin\0main");
+        $this->assertSame($intended, trim($git->gitOk(['rev-parse', $ref], $root)->stdout));
+    }
+
+    public function testSubstitutedForeignCheckoutIsNotOwnedDespiteStaleRegistration(): void
+    {
+        $root = $this->fixture->root;
+        $path = $this->fixture->directory.'/task';
+        $binding = $this->manager->create($root, 'task/substitute', $path, 'main');
+        rename($path, $this->fixture->directory.'/parked');
+        $this->fixture->git->gitOk(['clone', '--no-hardlinks', $root, $path], $root);
+        $this->fixture->git->gitOk(['checkout', '-b', $binding->branch, 'origin/'.$binding->branch], $path);
+        foreach ([
+            fn () => $this->manager->assertOwned($root, $binding),
+            fn () => $this->manager->create($root, $binding->branch, $path, 'main'),
+            fn () => $this->manager->remove($root, $binding),
+        ] as $operation) {
+            try {
+                $operation();
+                $this->fail('Expected substituted checkout refusal');
+            } catch (\RuntimeException $exception) {
+                $this->assertStringContainsString('identity', $exception->getMessage());
+            }
+        }
+        $this->assertDirectoryExists($path.'/.git');
     }
 
     public function testPrimaryAndMismatchedBranchAreRefused(): void

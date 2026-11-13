@@ -36,6 +36,7 @@ final class TransitionFixture implements ExecInterface
     public array $calls = [];
     public array $hookResults = [];
     public array $hookCalls = [];
+    public ?\Closure $onHook = null;
 
     public function __construct()
     {
@@ -82,6 +83,7 @@ final class TransitionFixture implements ExecInterface
         if ('bash' === $command) {
             $phase = basename($args[2], '.sh');
             $this->hookCalls[] = [$phase, $options->env, $options->cwd];
+            $this->onHook?->__invoke($phase, $options);
 
             return $this->hookResults[$phase] ?? new ExecResultDTO('', '', 0);
         }
@@ -168,9 +170,11 @@ final class TransitionFixture implements ExecInterface
         if ('repos/acme/project/issues/7/artifacts/2' === $endpoint) {
             if (\in_array('PATCH', $args, true)) {
                 $this->artifact = [...$this->artifact, ...$payload];
+
+                return $this->json($this->artifact);
             }
 
-            return $this->json($this->artifact);
+            return $this->json(['artifact' => $this->artifact, 'versions' => [], 'has_next_page' => false, 'total_count' => 0]);
         }
         if ('repos/acme/project/issues/7/comments' === $endpoint) {
             $this->comment = $payload['body'];

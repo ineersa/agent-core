@@ -11,6 +11,7 @@ use Ineersa\HatfieldExt\TaskWorkflow\Assets\TaskWorkflowSkillInstaller;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Finder\Finder;
 
 final class TaskWorkflowSkillInstallerTest extends TestCase
@@ -25,6 +26,8 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
         $this->root = TestDirectoryIsolation::createOsTempDir('task-workflow-assets-');
         $this->projectDir = $this->root.'/project';
         TestDirectoryIsolation::ensureDirectory($this->projectDir);
+        $this->assertSame($this->root, realpath($this->root));
+        $this->assertSame($this->projectDir, realpath($this->projectDir));
         $this->packageRoot = \dirname(__DIR__);
     }
 
@@ -39,7 +42,7 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
     {
         $this->installer()->install();
 
-        $this->assertSame($this->treeContents($this->packageRoot.'/skills/task-workflow'), $this->treeContents($this->destinationDir()));
+        $this->assertSame($this->expectedContents(), $this->treeContents($this->destinationDir()));
         $this->assertSame($this->bundledSkillVersion(), TaskWorkflowMarkdownFrontmatter::versionOf((string) file_get_contents($this->destinationDir().'/SKILL.md')));
         $this->assertDirectoryDoesNotExist($this->destinationDir().'/references');
     }
@@ -58,7 +61,7 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
 
         $this->installer()->install();
 
-        $this->assertSame($this->treeContents($this->packageRoot.'/skills/task-workflow'), $this->treeContents($dest));
+        $this->assertSame($this->expectedContents(), $this->treeContents($dest));
         $this->assertSame($this->bundledSkillVersion(), TaskWorkflowMarkdownFrontmatter::versionOf((string) file_get_contents($dest.'/SKILL.md')));
         $this->assertDirectoryDoesNotExist($dest.'/references');
     }
@@ -79,6 +82,44 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
         $this->assertSame($before, $this->treeContents($dest));
     }
 
+    #[Test]
+    public function userScopedPackageInstallsSelfContainedGuideAndTemplates(): void
+    {
+        $package = $this->root.'/user/.hatfield/extensions/vendor/ineersa/hatfield-ext-task-workflow';
+        $filesystem = new Filesystem();
+        $filesystem->mkdir($package);
+        $this->assertSame($package, realpath($package));
+        $this->assertStringStartsWith(realpath($this->root).'/', realpath($package).'/');
+        $filesystem->mirror($this->packageRoot.'/skills', $package.'/skills');
+        $filesystem->mirror($this->packageRoot.'/templates', $package.'/templates');
+        $filesystem->copy($this->packageRoot.'/README.md', $package.'/README.md');
+
+        (new TaskWorkflowSkillInstaller($this->projectDir, $package, new TestLogger()))->install();
+
+        $dest = $this->destinationDir();
+        $this->assertSame($this->expectedContents(), $this->treeContents($dest));
+        $this->assertStringContainsString('(README.md#project-setup)', file_get_contents($dest.'/SKILL.md'));
+        $this->assertStringContainsString('(templates/issue/)', file_get_contents($dest.'/README.md'));
+        $this->assertStringContainsString('## Project setup', file_get_contents($dest.'/README.md'));
+        foreach (['feature', 'bug', 'experiment'] as $template) {
+            $this->assertSame(file_get_contents($package.'/templates/issue/'.$template.'.md'), file_get_contents($dest.'/templates/issue/'.$template.'.md'));
+        }
+    }
+
+    #[Test]
+    public function managedOnlyRefreshLeavesUnversionedCustomSkillAlone(): void
+    {
+        $dest = $this->destinationDir();
+        TestDirectoryIsolation::ensureDirectory($dest);
+        $this->assertSame($dest, realpath($dest));
+        $custom = "---\nname: task-workflow\ndescription: unrelated custom skill\n---\ncustom\n";
+        file_put_contents($dest.'/SKILL.md', $custom);
+
+        $this->installer()->install(existingManagedOnly: true);
+
+        $this->assertSame(['SKILL.md' => $custom], $this->treeContents($dest));
+    }
+
     public static function outdatedVersions(): iterable
     {
         yield 'missing' => [''];
@@ -88,6 +129,19 @@ final class TaskWorkflowSkillInstallerTest extends TestCase
         yield 'previous multi-file skill' => ["version: 1.1.7\n"];
         yield 'previous consolidated skill' => ["version: 1.1.8\n"];
         yield 'malformed' => ["version: [\n"];
+    }
+
+    /** @return array<string, string> */
+    private function expectedContents(): array
+    {
+        $contents = $this->treeContents($this->packageRoot.'/skills/task-workflow');
+        $contents['README.md'] = file_get_contents($this->packageRoot.'/README.md');
+        foreach ($this->treeContents($this->packageRoot.'/templates/issue') as $path => $content) {
+            $contents['templates/issue/'.$path] = $content;
+        }
+        ksort($contents);
+
+        return $contents;
     }
 
     /** @return array<string, string> */

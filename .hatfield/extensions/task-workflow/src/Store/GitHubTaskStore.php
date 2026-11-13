@@ -16,6 +16,8 @@ use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Filesystem\Path;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Validation;
 
 final class GitHubTaskStore
 {
@@ -272,7 +274,25 @@ final class GitHubTaskStore
     /** @return array<string, mixed> */
     public function artifact(int|string $reference, int $artifactNumber, ?InvocationControl $control = null): array
     {
-        return $this->api('GET', $this->artifactPath($reference, $artifactNumber), [], $control);
+        $response = $this->api('GET', $this->artifactPath($reference, $artifactNumber), [], $control);
+        $artifact = $response['artifact'] ?? null;
+        if (!\is_array($artifact)) {
+            throw new GitHubTaskException('GitHub returned an invalid artifact response: expected an artifact object.');
+        }
+        $errors = Validation::createValidator()->validate($artifact, new Assert\Collection(
+            fields: [
+                'number' => new Assert\Required([new Assert\NotNull(), new Assert\Type('integer'), new Assert\EqualTo($artifactNumber)]),
+                'name' => new Assert\Required([new Assert\NotNull(), new Assert\Type('string')]),
+                'body' => new Assert\Required([new Assert\NotNull(), new Assert\Type('string')]),
+            ],
+            allowExtraFields: true,
+        ));
+        if (\count($errors) > 0) {
+            throw new GitHubTaskException('GitHub returned an invalid artifact response: number, name or body is missing or invalid.');
+        }
+
+        // Version-history pagination is not part of the current-content snapshot.
+        return $artifact;
     }
 
     /** @return array<string, mixed> */
