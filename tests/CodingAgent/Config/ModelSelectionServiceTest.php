@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
+use Ineersa\CodingAgent\Config\Ai\AiCatalog;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
@@ -11,6 +12,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Config\ReasoningOptionsResolver;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -620,6 +622,53 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         // AppConfig in-memory must reflect the clamp
         $this->assertNotNull($appConfig->ai);
         $this->assertSame('high', $service->resolveInitialReasoning(null, $this->sessionId));
+    }
+
+    public function testBundledMistralOffersOnlySupportedReasoningChoices(): void
+    {
+        $service = $this->buildService($this->bundledMistralAiData());
+        $expected = [
+            'zai-glm-5-3-flash' => ['off', 'low', 'high', 'max'],
+            'deepseek-v4-1-flash-1017' => ['off', 'low', 'high', 'xhigh', 'max'],
+            'zai-glm-5-3' => ['off', 'low', 'high', 'max'],
+            'mistral-large-4' => ['off', 'low', 'medium', 'high'],
+        ];
+        foreach ($expected as $id => $levels) {
+            $service->changeModel(new AiModelReference('mistral', $id), $this->sessionId);
+            $this->assertSame($levels, $service->getSupportedReasoningLevels($this->sessionId), $id);
+            $service->changeReasoning('off', $this->sessionId);
+            $this->assertSame('off', $service->getCurrentReasoning($this->sessionId));
+        }
+    }
+
+    public function testBundledMistralSwitchFromMaxToLarge4ClampsSessionDisplayAndOptions(): void
+    {
+        [$service, $appConfig] = $this->buildServiceWithConfig($this->bundledMistralAiData());
+        $service->changeModel(new AiModelReference('mistral', 'zai-glm-5-3-flash'), $this->sessionId);
+        $service->changeReasoning('max', $this->sessionId);
+        $this->assertSame('max', $service->getDisplayReasoning($this->sessionId));
+
+        $large = new AiModelReference('mistral', 'mistral-large-4');
+        $service->changeModel($large, $this->sessionId);
+
+        $this->assertSame('high', $service->getDisplayReasoning($this->sessionId));
+        $this->assertSame('high', $service->getCurrentReasoning($this->sessionId));
+        $this->assertSame('high', $this->findSessionEntity($this->sessionId)?->reasoning);
+        $this->assertSame('high', $appConfig->ai?->defaultReasoning);
+        $this->assertNotNull($appConfig->catalog);
+        $options = new ReasoningOptionsResolver($appConfig->catalog);
+        $this->assertSame(['reasoning_effort' => 'high'], $options->resolve($large, $service->getCurrentReasoning($this->sessionId)));
+    }
+
+    /** @return array<string, mixed> */
+    private function bundledMistralAiData(): array
+    {
+        $catalog = new AiCatalog(\dirname(__DIR__, 3).'/config/ai-catalog.yaml', $this->homeDir);
+        $aiData = $catalog->loadProviders()['ai'];
+        $aiData['providers']['mistral']['enabled'] = true;
+        $aiData['default_reasoning'] = 'low';
+
+        return $aiData;
     }
 
     private function buildService(array $aiData): ModelSelectionService
