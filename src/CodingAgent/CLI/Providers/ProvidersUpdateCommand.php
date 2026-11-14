@@ -28,6 +28,7 @@ final class ProvidersUpdateCommand
      * @var array<string, string>
      */
     private const PROVIDER_ID_MAP = [
+        'mistral' => 'mistral',
         'zai' => 'zai',
         'deepseek' => 'deepseek',
         'openai-codex' => 'openai',

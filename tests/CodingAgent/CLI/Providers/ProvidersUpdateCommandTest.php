@@ -92,6 +92,27 @@ YAML);
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
+    public function testMistralMetadataRefreshPreservesNativeTransportAndCuratedModelList(): void
+    {
+        copy(\dirname(__DIR__, 4).'/config/ai-catalog.yaml', $this->catalogPath);
+        $bundled = Yaml::parseFile($this->catalogPath);
+        $before = $bundled['providers']['mistral'];
+        $payload = json_encode(['mistral' => ['models' => [
+            'zai-glm-5-3-flash' => [
+                'limit' => ['context' => 1048576, 'output' => 128000],
+                'cost' => ['input' => 0.15, 'cache_read' => 0.03, 'output' => 0.5],
+                'base_url' => 'https://untrusted.example', 'api_key' => 'untrusted',
+            ],
+            'unwanted-model' => ['limit' => ['context' => 10000]],
+        ]]], \JSON_THROW_ON_ERROR);
+        $this->assertSame(Command::SUCCESS, $this->runCommand(new MockHttpClient(new MockResponse($payload))));
+        $updated = Yaml::parseFile($this->userCatalogPath)['providers']['mistral'];
+        $this->assertSame(array_keys($before['models']), array_keys($updated['models']));
+        $this->assertSame(128000, $updated['models']['zai-glm-5-3-flash']['max_tokens']);
+        unset($before['models'], $updated['models']);
+        $this->assertSame($before, $updated);
+    }
+
     public function testRebaseAndSyncUpdatesMetadataWithoutAddingNewUpstreamIds(): void
     {
         $before = (string) file_get_contents($this->userCatalogPath);

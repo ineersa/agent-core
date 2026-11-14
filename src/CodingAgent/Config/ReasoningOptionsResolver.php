@@ -48,6 +48,13 @@ final readonly class ReasoningOptionsResolver
                 return [];
             }
 
+            if ('mistral' === $this->thinkingFormat($ref, $model)) {
+                // Omitting this option leaves the model's default reasoning on.
+                $effort = $model->thinkingLevelMap['off'] ?? null;
+
+                return null === $effort ? [] : ['reasoning_effort' => $effort];
+            }
+
             if (\in_array($this->thinkingFormat($ref, $model), ['zai', 'deepseek'], true)) {
                 // z.ai and DeepSeek may reason by default; omitting options does
                 // not honor an explicit off selection.
