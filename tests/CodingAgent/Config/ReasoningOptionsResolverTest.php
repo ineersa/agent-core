@@ -17,6 +17,38 @@ use PHPUnit\Framework\TestCase;
 
 class ReasoningOptionsResolverTest extends TestCase
 {
+    public function testBundledMistralUsesOnlyModelSupportedEfforts(): void
+    {
+        $home = TestDirectoryIsolation::createProjectTempDir('mistral-reasoning-catalog');
+        try {
+            $catalog = new AiCatalog(\dirname(__DIR__, 3).'/config/ai-catalog.yaml', $home);
+            $settings = $catalog->loadProviders()['ai'];
+            $settings['providers']['mistral']['enabled'] = true;
+            $resolver = new ReasoningOptionsResolver(new HatfieldModelCatalog(AiConfig::fromArray($settings)));
+            foreach (['zai-glm-5-3', 'zai-glm-5-3-flash'] as $id) {
+                $ref = $this->modelRef('mistral', $id);
+                $this->assertSame([], $resolver->resolve($ref, 'off'));
+                $this->assertSame([], $resolver->resolve($ref, 'medium'));
+                $this->assertSame(['reasoning_effort' => 'max'], $resolver->resolve($ref, 'max'));
+            }
+            $deepseek = $this->modelRef('mistral', 'deepseek-v4-1-flash-1017');
+            $this->assertSame(['reasoning_effort' => 'none'], $resolver->resolve($deepseek, 'off'));
+            $this->assertSame(['reasoning_effort' => 'xhigh'], $resolver->resolve($deepseek, 'xhigh'));
+            $large = $this->modelRef('mistral', 'mistral-large-4');
+            $this->assertSame([], $resolver->resolve($large, 'off'));
+            $this->assertSame([], $resolver->resolve($large, 'max'));
+            $this->assertSame(['reasoning_effort' => 'medium'], $resolver->resolve($large, 'medium'));
+            foreach (array_keys($settings['providers']['mistral']['models']) as $id) {
+                $ref = $this->modelRef('mistral', $id);
+                $this->assertSame(['reasoning_effort' => 'low'], $resolver->resolve($ref, 'low'));
+                $this->assertSame(['reasoning_effort' => 'high'], $resolver->resolve($ref, 'high'));
+                $this->assertSame([], $resolver->resolve($ref, 'minimal'));
+            }
+        } finally {
+            TestDirectoryIsolation::removeDirectory($home);
+        }
+    }
+
     public function testBundledOpenCodeGoMapsOnlyAdvertisedEffortLevels(): void
     {
         $home = TestDirectoryIsolation::createProjectTempDir('go-reasoning-catalog');

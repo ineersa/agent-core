@@ -148,6 +148,42 @@ YAML);
     }
 
     #[Test]
+    public function bundledMistralSetupListsOnlyRequestedModelsAndWritesSparseKey(): void
+    {
+        copy(\dirname(__DIR__, 4).'/config/ai-catalog.yaml', $this->catalogPath);
+        $catalog = new AiCatalog($this->catalogPath, $this->homeDir);
+        $provider = $catalog->loadProviders()['ai']['providers']['mistral'];
+        $this->assertFalse($provider['enabled']);
+        $this->assertSame('mistral', $provider['type']);
+        $this->assertSame('env:MISTRAL_API_KEY', $provider['api_key']);
+        $expected = [
+            'zai-glm-5-3-flash' => [0.15, 0.03, 0.50],
+            'deepseek-v4-1-flash-1017' => [0.30, 0.007, 1.20],
+            'zai-glm-5-3' => [1.40, 0.14, 4.40],
+            'mistral-large-4' => [0.70, 0.07, 2.10],
+        ];
+        $this->assertSame(array_keys($expected), array_keys($provider['models']));
+        foreach ($expected as $id => [$input, $cached, $output]) {
+            $cost = $provider['models'][$id]['cost'];
+            $this->assertSame($input, $cost['input']);
+            $this->assertSame($cached, $cost['cache_read']);
+            $this->assertSame($output, $cost['output']);
+        }
+        $flow = $this->createFlow();
+        $rows = array_column($flow->providerRows(), null, 'id');
+        $this->assertSame('Mistral', $rows['mistral']['label']);
+        $this->assertSame('apikey', $rows['mistral']['kind']);
+        $this->assertNull($rows['mistral']['authCommand']);
+        $this->assertSame(array_keys($expected), $rows['mistral']['models']);
+        $flow->enableApiKey('mistral', $flow->formatEnvApiKey('MISTRAL_API_KEY'));
+        $this->assertSame(['enabled' => true, 'api_key' => 'env:MISTRAL_API_KEY'], $this->parseUserSettings()['ai']['providers']['mistral']);
+        $this->assertSame([], $flow->pendingAuthCommands());
+        foreach (array_keys($expected) as $id) {
+            $this->assertContains('mistral/'.$id, $flow->configuredModelRefs());
+        }
+    }
+
+    #[Test]
     public function presetRawKeyWritesSparseApiKey(): void
     {
         $flow = $this->createFlow();

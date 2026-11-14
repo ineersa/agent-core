@@ -8,7 +8,7 @@ description: AI providers, model selection, reasoning levels, HTTP and retry set
 Model configuration lives under the top-level `ai:` section in Hatfield settings.
 Secrets (API keys) belong in `~/.hatfield/settings.yaml` using `env:VAR` syntax, not plain text in project files when avoidable.
 
-Known providers (`zai`, `deepseek`, `opencode-go`, `openai-codex`, `grok-cli`) ship as the bundled
+Known providers (`mistral`, `zai`, `deepseek`, `opencode-go`, `openai-codex`, `grok-cli`) ship as the bundled
 `config/ai-catalog.yaml` (definitions present, `enabled: false`) and are copied to
 `~/.hatfield/ai-catalog.yaml` on first run. That user catalog is the source of
 provider/model defaults; enablement is manual (`providers:setup` or sparse settings).
@@ -45,11 +45,50 @@ OpenCode restricts Muse by region and permits training on Contributor prompts
 and completions. `/usage` does not report Go subscription limits because the
 console endpoint requires separate browser-session credentials.
 
+### Mistral and Vibe subscription keys
+
+Mistral uses Symfony AI's native Mistral bridge at `https://api.mistral.ai`, including
+Mistral-specific tool/message formatting and streamed thinking content. Run
+`hatfield providers:update`, then `hatfield providers:setup` and select **Mistral**.
+The default environment variable is `MISTRAL_API_KEY`; set it in the environment
+that launches Hatfield. A manually obtained Vibe/subscription API key or a regular
+Mistral API key can be supplied. Hatfield does not perform Mistral browser sign-in
+or read Vibe's credential files.
+
+Sparse settings are sufficient:
+
+```yaml
+ai:
+  providers:
+    mistral:
+      enabled: true
+      api_key: env:MISTRAL_API_KEY
+```
+
+Only these models are bundled (prices in USD per million tokens):
+
+| Model reference | Input | Cached input | Output | Reasoning levels |
+|---|---:|---:|---:|---|
+| `mistral/zai-glm-5-3-flash` | 0.15 | 0.03 | 0.50 | low, high, max |
+| `mistral/deepseek-v4-1-flash-1017` | 0.30 | 0.007 | 1.20 | off, low, high, xhigh, max |
+| `mistral/zai-glm-5-3` | 1.40 | 0.14 | 4.40 | low, high, max |
+| `mistral/mistral-large-4` | 0.70 | 0.07 | 2.10 | low, medium, high |
+
+All four support tools; all except GLM 5.3 support image input. GLM 5.3/Flash
+and Large 4 cannot disable reasoning; an inherited **off** setting leaves the
+API's default reasoning enabled. Model access depends on the key and plan.
+An explicit `api_key` setting overrides the catalog default.
+
+Subscription usage consumes the plan's shared Studio/API/Vibe budget; it is not
+unlimited. Regular API keys may incur ordinary API charges. Hatfield's token cost
+display uses API-equivalent prices, not your subscription balance or bill.
+Hatfield does not currently query Mistral subscription quota.
+
 Common fields:
 
 | Field | Meaning |
 |---|---|
-| `type` | Provider bridge type (for example `generic`, `chatgpt`, `grok`) |
+| `type` | Provider bridge type (for example `generic`, `mistral`, `chatgpt`, `grok`) |
 | `enabled` | Whether the provider is active |
 | `base_url` | API base URL |
 | `api` | Wire API family (for example `openai-completions`) |
