@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionRegistrationContext;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
@@ -192,6 +193,8 @@ final class ExtensionOwnerFilteringTest extends TestCase
             children: $this->createStub(\Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface::class),
             recurringJobs: new \Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), ''),
             commandBus: $this->createStub(MessageBusInterface::class),
+            runRelationships: $this->createStub(RunRelationshipReaderInterface::class),
+            sessions: $this->emptySessionRepository(),
         );
     }
 

@@ -131,6 +131,11 @@ final class TestExtensionApi implements ExtensionApiInterface
     {
     }
 
+    public function isChildRun(string $runId): bool
+    {
+        return false;
+    }
+
     public function agent(): AgentRunnerInterface
     {
         throw new \LogicException('unused');

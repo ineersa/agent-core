@@ -31,6 +31,10 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
     public function beforeCompaction(BeforeCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
     {
         try {
+            // A parent snapshot for a fork still has the parent's run identity.
+            if ($this->api->isChildRun($context->runId)) {
+                return BeforeCompactionHookResultDTO::continue();
+            }
             $text = ActiveMemoryProjector::renderActive(
                 $this->api,
                 $this->settings,

@@ -50,6 +50,8 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
 
     private ?string $databasePath = null;
 
+    private ExtensionApiInterface $api;
+
     public function __construct()
     {
         $this->logger = new NullLogger();
@@ -68,7 +70,8 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
 
     public function register(ExtensionApiInterface $api): void
     {
-        // Presence on extensions.enabled is the sole enable switch.
+        // Selection enables registration; each runtime entry point enforces main-only OM.
+        $this->api = $api;
         $settings = OmSettings::fromApi($api);
         $this->databasePath = OmPaths::fromSettings($settings, $api->getCwd())->databasePath;
         $query = new OmQueryService($api, $settings, $this->logger);
@@ -149,6 +152,7 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
                 ],
             ],
             handler: new SearchToolHandler($query),
+            mainOnly: true,
             promptSummary: 'memory_search query [after] [before] [limit=20] — search retained memories across sessions',
             promptGuidelines: [
                 'Use memory_search when prior work, conversations, PRs, issues, or unfinished tasks may already exist, even if the user does not explicitly ask to search memory.',
@@ -181,6 +185,7 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
                 ],
             ],
             handler: new RecallToolHandler($query),
+            mainOnly: true,
             promptSummary: 'recall id [session_id] — retrieve source context for a selected memory',
             promptGuidelines: [
                 'Use recall for exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance behind a remembered claim.',
@@ -208,7 +213,7 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
             return;
         }
 
-        $poller = new OmBackgroundStatusPoller($context, $databasePath, $this->logger);
+        $poller = new OmBackgroundStatusPoller($context, $databasePath, $this->logger, $this->api);
         $context->onTick(static function () use ($poller): void {
             $poller->tick();
         });

@@ -208,6 +208,11 @@ final class ChildExtensionSelectionServiceTest extends TestCase
                 {
                 }
 
+                public function isChildRun(string $runId): bool
+                {
+                    return false;
+                }
+
                 public function agent(): \Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface
                 {
                     throw new \LogicException('unused');

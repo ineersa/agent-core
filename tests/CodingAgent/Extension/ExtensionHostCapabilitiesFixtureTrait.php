@@ -4,18 +4,25 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
+use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunOperationalStatusReaderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolPayloadStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
 use Ineersa\CodingAgent\Extension\ExtensionToolInvoker;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /** Constructor wiring only; existing fixtures do not exercise standalone invocation. */
 trait ExtensionHostCapabilitiesFixtureTrait
 {
+    private function emptySessionRepository(): HatfieldSessionRepository
+    {
+        return new HatfieldSessionRepository($this->createStub(ManagerRegistry::class));
+    }
+
     private function unusedToolInvoker(): ExtensionToolInvoker
     {
         return new ExtensionToolInvoker(

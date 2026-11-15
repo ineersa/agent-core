@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\CodingAgent\Tests\Extension\InMemoryExtensionApiBridge;
+use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitEventSummaryDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryTerminalHook;
@@ -17,6 +18,22 @@ use Psr\Log\NullLogger;
  */
 final class ObserveBoundaryTerminalHookTest extends TestCase
 {
+    public function testExplicitlySelectedChildrenNeverDispatch(): void
+    {
+        foreach (['subagent-run', 'fork-run'] as $runId) {
+            $api = $this->createMock(ExtensionApiInterface::class);
+            $api->expects($this->once())->method('isChildRun')->with($runId)->willReturn(true);
+            $api->expects($this->never())->method('dispatchExtensionAgentJob');
+            $api->expects($this->never())->method('sessionEvents');
+            $hook = new ObserveBoundaryTerminalHook($api, OmSettings::fromArray([]), new NullLogger());
+            $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
+                runId: $runId, turnNo: 1, status: 'completed',
+                events: [new AfterTurnCommitEventSummaryDTO(seq: 2, type: 'agent_end', payload: ['reason' => 'completed'])],
+                effectsCount: 0,
+            ));
+        }
+    }
+
     public function testDispatchesOnAgentEndCompleted(): void
     {
         $api = new InMemoryExtensionApiBridge('/tmp');

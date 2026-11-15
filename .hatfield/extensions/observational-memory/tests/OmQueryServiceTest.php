@@ -50,6 +50,22 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
     }
 
     #[Test]
+    public function childQueriesAreRefusedBeforeOpeningStorage(): void
+    {
+        foreach (['subagent-run', 'fork-run'] as $runId) {
+            $api = $this->createMock(ExtensionApiInterface::class);
+            $api->expects($this->exactly(4))->method('isChildRun')->with($runId)->willReturn(true);
+            $api->expects($this->never())->method('getCwd');
+            $api->expects($this->never())->method('sessionEvents');
+            $query = new OmQueryService($api, OmSettings::fromArray([]));
+            $this->assertSame('Observational memory is available only in main runs.', $query->formatStatus($runId));
+            $this->assertSame('Observational memory is available only in main runs.', $query->formatView($runId));
+            $this->assertSame('main_only', $query->search('query', runId: $runId)['error']);
+            $this->assertSame('main_only', $query->recall($runId, str_repeat('a', 64))['error']);
+        }
+    }
+
+    #[Test]
     public function statusAndViewAreSessionScopedAndHumanFormatted(): void
     {
         $dbPath = $this->tmpDir.'/om.sqlite';
@@ -779,6 +795,11 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
             {
             }
 
+            public function isChildRun(string $runId): bool
+            {
+                return false;
+            }
+
             public function agent(): AgentRunnerInterface
             {
                 throw new \LogicException('unused');
@@ -881,6 +902,11 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
 
             public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
             {
+            }
+
+            public function isChildRun(string $runId): bool
+            {
+                return false;
             }
 
             public function agent(): AgentRunnerInterface

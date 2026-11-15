@@ -390,6 +390,11 @@ final class ObserveBoundaryThresholdDispatchTest extends IsolatedKernelTestCase
             {
             }
 
+            public function isChildRun(string $runId): bool
+            {
+                return false;
+            }
+
             public function agent(): AgentRunnerInterface
             {
                 $onAgentRun = $this->onAgentRun;
