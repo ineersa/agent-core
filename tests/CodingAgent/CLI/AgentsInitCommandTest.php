@@ -42,7 +42,7 @@ final class AgentsInitCommandTest extends TestCase
         TestDirectoryIsolation::ensureDirectory($this->homeDir);
 
         $repoAgents = \dirname(__DIR__, 3).'/src/CodingAgent/Resources/agents';
-        foreach (['scout.md', 'reviewer.md', 'researcher.md', 'architect.md', 'browser.md'] as $file) {
+        foreach (['scout.md', 'reviewer.md', 'verifier.md', 'researcher.md', 'architect.md', 'browser.md'] as $file) {
             $source = $repoAgents.'/'.$file;
             $this->assertFileExists($source, 'Bundled agent source missing: '.$source);
             (new Filesystem())->copy($source, $this->sourceDir.'/'.$file, true);
@@ -62,13 +62,13 @@ final class AgentsInitCommandTest extends TestCase
 
         $this->assertSame(Command::SUCCESS, $exitCode, $tester->getDisplay());
         $destination = $this->homeDir.'/.hatfield/agents';
-        foreach (['scout', 'reviewer', 'researcher', 'architect', 'browser'] as $name) {
+        foreach (['scout', 'reviewer', 'verifier', 'researcher', 'architect', 'browser'] as $name) {
             $path = $destination.'/'.$name.'.md';
             $this->assertFileExists($path);
             $this->assertFileEquals($this->sourceDir.'/'.$name.'.md', $path);
         }
 
-        $this->assertStringContainsString('Installed 5 bundled agent definition(s)', $tester->getDisplay());
+        $this->assertStringContainsString('Installed 6 bundled agent definition(s)', $tester->getDisplay());
     }
 
     #[Test]
@@ -92,6 +92,7 @@ final class AgentsInitCommandTest extends TestCase
         $this->assertStringContainsString('--force', $display);
         $this->assertSame($staleBefore, (string) file_get_contents($destination.'/scout.md'));
         $this->assertFileDoesNotExist($destination.'/reviewer.md');
+        $this->assertFileDoesNotExist($destination.'/verifier.md');
         $this->assertFileDoesNotExist($destination.'/researcher.md');
         $this->assertFileDoesNotExist($destination.'/architect.md');
         $this->assertFileDoesNotExist($destination.'/browser.md');
@@ -102,6 +103,7 @@ final class AgentsInitCommandTest extends TestCase
         $this->assertSame(Command::SUCCESS, $forceExit, $forceTester->getDisplay());
         $this->assertFileEquals($this->sourceDir.'/scout.md', $destination.'/scout.md');
         $this->assertFileEquals($this->sourceDir.'/reviewer.md', $destination.'/reviewer.md');
+        $this->assertFileEquals($this->sourceDir.'/verifier.md', $destination.'/verifier.md');
         $this->assertFileEquals($this->sourceDir.'/researcher.md', $destination.'/researcher.md');
         $this->assertFileEquals($this->sourceDir.'/architect.md', $destination.'/architect.md');
         $this->assertFileEquals($this->sourceDir.'/browser.md', $destination.'/browser.md');
@@ -112,7 +114,7 @@ final class AgentsInitCommandTest extends TestCase
     public function bundledDefinitionsAreParserValid(): void
     {
         $parser = $this->createParser();
-        foreach (['scout', 'reviewer', 'researcher', 'architect', 'browser'] as $name) {
+        foreach (['scout', 'reviewer', 'verifier', 'researcher', 'architect', 'browser'] as $name) {
             $path = $this->sourceDir.'/'.$name.'.md';
             $dto = $parser->parseFile($path);
             $this->assertSame($name, $dto->name);
@@ -122,11 +124,16 @@ final class AgentsInitCommandTest extends TestCase
     }
 
     #[Test]
-    public function bundledReviewerUsesHighReasoning(): void
+    public function reviewAgentsInheritModelAndReasoningWithRestrictedInspectionTools(): void
     {
-        $reviewer = $this->createParser()->parseFile($this->sourceDir.'/reviewer.md');
+        foreach (['reviewer', 'verifier'] as $name) {
+            $agent = $this->createParser()->parseFile($this->sourceDir.'/'.$name.'.md');
 
-        $this->assertSame('high', $reviewer->thinking);
+            $this->assertNull($agent->model);
+            $this->assertNull($agent->thinking);
+            $this->assertSame(['read', 'bash', 'mcp:-'], $agent->tools);
+            $this->assertTrue($agent->inheritProjectContext);
+        }
     }
 
     private function createCommand(): AgentsInitCommand

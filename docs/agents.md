@@ -66,11 +66,15 @@ Load order (low → high precedence), non-recursive `*.md`:
 4. `<cwd>/.hatfield/agents/`
 5. `agents.paths`
 
-Bundled starters (`scout`, `reviewer`, `researcher`, `architect`, `browser`) install with:
+Bundled starters (`scout`, `reviewer`, `verifier`, `researcher`, `architect`, `browser`) install with:
 
 ```bash
 hatfield agents:init
 ```
+
+The bundled reviewer produces candidate findings; verifier independently checks
+them. Use [code review](code-review.md) for the main-orchestrated two-stage workflow
+and safe starter-update instructions.
 
 ## `subagent` tool
 

@@ -75,6 +75,9 @@ discovered wins).
 
 ## Skill commands
 
+The bundled [code-review](code-review.md) skill also has a `/code-review [request]`
+adapter that forwards a free-form request to main with the skill body loaded.
+
 Every discovered skill (including on-demand-only) registers as `/skill:<name>`:
 
 ```text

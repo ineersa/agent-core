@@ -80,6 +80,7 @@ to use `bg_status` for background Bash jobs. See
 | `/mcp` | Inspect MCP server status and discovered tools. |
 | `/agents-live` | Select a child agent's live view. |
 | `/agents-main` | Return from a child view to the parent. |
+| `/code-review [request]` | Run skill-orchestrated [code review](code-review.md) when its skill is discovered. |
 
 Extensions and discovered prompt templates can add commands. `/help` reflects the
 commands available in your installation. For reusable instructions, see

@@ -397,6 +397,7 @@ final class PharSmokeTest extends TestCase
         );
         $this->assertFileExists($locator->getBuiltinSkillsPath().'/subagents/SKILL.md');
         $this->assertFileExists($locator->getBuiltinSkillsPath().'/subagents/references/frontmatter.md');
+        $this->assertFileExists($locator->getBuiltinSkillsPath().'/code-review/SKILL.md');
         $skillBody = (string) file_get_contents('phar://'.$pharPath.'/'.$skillMd);
         $this->assertStringContainsString('name: subagents', $skillBody);
         $this->assertStringContainsString('agent_retrieve', $skillBody);
@@ -405,7 +406,7 @@ final class PharSmokeTest extends TestCase
             'phar://'.$pharPath.'/src/CodingAgent/Resources/agents',
             $locator->getBuiltinAgentsPath(),
         );
-        foreach (['scout', 'reviewer', 'researcher', 'architect', 'browser'] as $name) {
+        foreach (['scout', 'reviewer', 'verifier', 'researcher', 'architect', 'browser'] as $name) {
             $agentEntry = 'src/CodingAgent/Resources/agents/'.$name.'.md';
             $this->assertTrue(isset($phar[$agentEntry]), 'Missing PHAR entry '.$agentEntry);
             $this->assertFileExists($locator->getBuiltinAgentsPath().'/'.$name.'.md');
@@ -424,8 +425,8 @@ final class PharSmokeTest extends TestCase
         );
         $init->mustRun();
         $initOut = $init->getOutput().$init->getErrorOutput();
-        $this->assertStringContainsString('Installed 5 bundled agent definition(s)', $initOut);
-        foreach (['scout', 'reviewer', 'researcher', 'architect', 'browser'] as $name) {
+        $this->assertStringContainsString('Installed 6 bundled agent definition(s)', $initOut);
+        foreach (['scout', 'reviewer', 'verifier', 'researcher', 'architect', 'browser'] as $name) {
             $installed = $home.'/.hatfield/agents/'.$name.'.md';
             $this->assertFileExists($installed);
             $this->assertFileEquals(
