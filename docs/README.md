@@ -9,6 +9,7 @@
 | Change settings or discover effective configuration | [Settings](settings.md) |
 | Connect providers and select models | [Model settings](settings-models.md), [provider catalog](ai-catalog.md) |
 | Define agents, tools, skills or prompts | [Agent settings](settings-agents.md), [agents](agents.md), [skills](skills.md), [prompt templates](prompt-templates.md) |
+| Review a committed change | [Code review](code-review.md) |
 | Choose tools or enable PHP orchestration | [Tools and code mode](tools.md) |
 | Run background or recurring work | [Background work and schedules](background-processes.md) |
 | Connect MCP servers | [MCP](mcp.md) |
