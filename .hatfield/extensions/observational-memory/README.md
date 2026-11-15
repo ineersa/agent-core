@@ -10,7 +10,9 @@ OM never operates in named subagents or forks, even if explicitly enabled in the
 extension allowlists. OM checks the public `isChildRun(runId)` capability before
 observation dispatch, queued observation/reflection/index work, startup backfill,
 compaction projection, queries and TUI status polling. Unknown identity fails
-closed. These checks use operational run relationships, not transcript scans.
+closed. These checks use persisted session identity and native-child operational
+relationships, not transcript scans. Startup backfill and its worker can recognize
+a persisted main session even before disposable operational projections recover.
 `memory_search` and `recall` are also registered as main-only tools, so children
 cannot inherit them through a tool allowlist or invoke them through code mode.
 

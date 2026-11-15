@@ -189,7 +189,9 @@ interface ExtensionApiInterface
     /**
      * Whether a known run is a child (named subagent or fork).
      *
-     * Uses host-owned operational identity, without reading session transcripts.
+     * Uses persisted session identity or native-child operational identity,
+     * without reading session transcripts. Persisted sessions remain identifiable
+     * during controller startup before disposable projections are rebuilt.
      * Safe on hot hooks. Unknown identity or unavailable storage throws; never
      * interpret a failed lookup as a top-level run.
      *

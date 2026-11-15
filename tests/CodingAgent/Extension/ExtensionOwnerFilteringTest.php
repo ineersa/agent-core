@@ -194,6 +194,7 @@ final class ExtensionOwnerFilteringTest extends TestCase
             recurringJobs: new \Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), ''),
             commandBus: $this->createStub(MessageBusInterface::class),
             runRelationships: $this->createStub(RunRelationshipReaderInterface::class),
+            sessions: $this->emptySessionStore($appConfig),
         );
     }
 

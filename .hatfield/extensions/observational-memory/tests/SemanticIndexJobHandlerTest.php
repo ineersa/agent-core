@@ -17,6 +17,20 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 final class SemanticIndexJobHandlerTest extends IsolatedKernelTestCase
 {
     #[Test]
+    public function unknownQueuedIdentityStillFailsClosedBeforeSettingsOrStorage(): void
+    {
+        $api = $this->createMock(ExtensionApiInterface::class);
+        $api->expects($this->once())->method('isChildRun')->with('unknown')
+            ->willThrowException(new \RuntimeException('Unknown identity'));
+        $api->expects($this->never())->method('getSettings');
+        $api->expects($this->never())->method('getCwd');
+        $api->expects($this->never())->method('dispatchExtensionAgentJob');
+
+        $this->expectException(\RuntimeException::class);
+        (new SemanticIndexJobHandler(new TestLogger()))->handle($api, ['run_id' => 'unknown'], 'queued-job', 'unknown');
+    }
+
+    #[Test]
     public function explicitlyQueuedChildJobsNeverOpenStorageOrCallEmbedding(): void
     {
         foreach (['subagent-run', 'fork-run'] as $runId) {

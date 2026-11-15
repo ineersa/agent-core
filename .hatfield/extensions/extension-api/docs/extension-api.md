@@ -58,7 +58,7 @@ final class ExampleExtension implements HatfieldExtensionInterface
 | `registerSessionStartHook` | Interactive controller session start |
 | `registerBeforeCompactionHook` | Compaction contribution/trim |
 | `sessionEvents` | Read canonical session events |
-| `isChildRun` | Hot-path operational identity: named subagent/fork vs main run; unknown identity throws |
+| `isChildRun` | Host-owned session/native-child identity: child vs main run; unknown identity throws |
 | `agent` / extension-agent jobs | Isolated agent calls + async jobs |
 
 Focused references: [extension-api-tools.md](extension-api-tools.md),
