@@ -62,7 +62,9 @@ mandatory project-rule violations, tracing surrounding contracts and contradicto
 evidence. Each candidate has an ID, location, priority, trigger, impact and minimal
 correction. Optional improvements are separate; there is no finding quota.
 
-The verifier receives the same scope and all candidate claims in a fresh context.
+Reviewer and main deduplicate by underlying defect/remedy before verification,
+keeping the strongest failure scenario and combining applicable rule evidence.
+The verifier receives the same scope and deduplicated claims in a fresh context.
 It independently inspects the evidence and returns `confirmed`, `refuted` or
 `uncertain` for every ID. It can correct severity/remedy but does not perform another
 broad review or silently promote new observations to verified findings. Clear static
@@ -73,6 +75,15 @@ confirmed findings plus unresolved checks and actual limitations. Verification i
 skipped only after a complete empty reviewer report. Missing/failed reports are
 incomplete, not clean; uncertain actionable claims prevent a clean conclusion.
 Same-model verification is allowed but does not guarantee independent errors.
+
+The prompt core preserves the Codex review rubric and the Claude finder-angle and
+three-state verification blocks from Piebald's **third-party extraction** (not
+Anthropic's published source), tag `v2.1.325`. Each copied block records its source
+path, pinned commit and adaptations. The skill description is adapted from
+Anthropic's official review command. Intentional differences: one reviewer executes
+all passes, one verifier checks the set, only introduced defects are in scope, and
+upstream `PLAUSIBLE` maps to unresolved `uncertain`, not an actionable finding.
+License texts/notices ship in the bundled skill's `references/LICENSE.txt`.
 
 ## Background work and limits
 

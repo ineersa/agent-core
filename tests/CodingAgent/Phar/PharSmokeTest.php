@@ -398,6 +398,7 @@ final class PharSmokeTest extends TestCase
         $this->assertFileExists($locator->getBuiltinSkillsPath().'/subagents/SKILL.md');
         $this->assertFileExists($locator->getBuiltinSkillsPath().'/subagents/references/frontmatter.md');
         $this->assertFileExists($locator->getBuiltinSkillsPath().'/code-review/SKILL.md');
+        $this->assertFileExists($locator->getBuiltinSkillsPath().'/code-review/references/LICENSE.txt');
         $skillBody = (string) file_get_contents('phar://'.$pharPath.'/'.$skillMd);
         $this->assertStringContainsString('name: subagents', $skillBody);
         $this->assertStringContainsString('agent_retrieve', $skillBody);

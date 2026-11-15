@@ -1,7 +1,10 @@
 ---
 name: code-review
-description: Review committed PR or branch changes through a fresh reviewer followed by an independent verifier. Main coordinates scope, evidence and final reporting.
+description: Code review a pull request or branch.
 ---
+
+<!-- Description source: anthropics/claude-plugins-official@b5b01ac4f889fec0c4c6bb89f27ca7c8574473f6,
+plugins/code-review/commands/code-review.md. Adaptation: add branch scope. -->
 
 # Code review
 
@@ -60,17 +63,44 @@ observations without approving the current change. Do not write concurrently to
 the reviewed checkout while either stage runs.
 
 Skip verification ONLY for a complete reviewer report with no candidates. Otherwise
-launch a NEW `verifier` subagent for the WHOLE candidate set, passing the same pinned
-scope/requirements and exact candidate claims. Pass the report text or an accessible
+use the adapted verification phase below:
+
+<!-- Source: Piebald-AI/claude-code-system-prompts@d545d4147af1ff0a165622ecd55e7fdc0d51a1f6
+(tag v2.1.325), system-prompts/skill-code-review-phase-2-verify-3-state.md.
+Third-party extraction, not Anthropic's published source; upstream block ccVersion 2.1.173.
+Adaptations: one NEW verifier for the entire deduplicated set, not per-candidate
+fan-out; PLAUSIBLE maps to uncertain and is not actionable. License: references/LICENSE.txt. -->
+
+Dedup candidates that point at the same line/mechanism, keeping the one with
+the most concrete failure scenario. For the remaining candidates, run **one
+verifier** via the `subagent` tool: give it the diff, the relevant
+file(s), and the candidates, and have it return exactly one of CONFIRMED,
+PLAUSIBLE, or REFUTED for each candidate, using the verifier's three-state definitions.
+
+Keep only candidates where the vote is CONFIRMED as actionable findings.
+Report PLAUSIBLE separately as unresolved checks (`uncertain`), never clean approval.
+
+<!-- End adapted verification phase. -->
+
+Merge by underlying defect/remedy, not just equal IDs or line numbers. Preserve
+the strongest failure scenario and union applicable rule evidence when merging;
+retain original IDs as aliases to the surviving ID for traceability. Reviewer's
+deduplication does not replace main's check. Do not send duplicates to the verifier.
+
+Pass the same pinned scope/requirements and deduplicated candidate claims. Pass
+the report text or an accessible
 artifact/file reference; opaque child references are not automatically readable by
 another child. Main retrieves and relays evidence when necessary. Do not forward
 the reviewer's reasoning transcript or direct the verifier toward any disposition.
 
 Require one `confirmed`, `refuted`, or `uncertain` decision with evidence per candidate.
-Check every ID is covered exactly once, including optional suggestions. Missing or
+Map the upstream labels to these handoff states (PLAUSIBLE → uncertain).
+Check every surviving ID is covered exactly once, including optional suggestions. Missing or
 contradictory output is incomplete; do not assume confirmation or rejection. The
 verifier may correct severity/remedy. A genuinely new issue is an unverified concern,
 not a verified finding, and does not trigger recursive agents or automatic repairs.
+If verification exposes duplicate aliases, show one final finding per underlying
+defect, preserving combined evidence and all dispositions in the stage reports.
 
 ## Report honestly
 
