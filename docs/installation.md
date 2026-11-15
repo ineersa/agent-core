@@ -97,6 +97,56 @@ on `PATH`. Quote `$HOME`; a bare `~` inside `--install-dir=...` does not expand.
 Provider catalog updates are separate from executable upgrades. See
 [the provider catalog](ai-catalog.md) for `hatfield providers:update`.
 
+### Extension updates at interactive startup
+
+Extensions are separate Composer installations. Before an interactive `hatfield`
+or `hatfield agent` session loads extensions, Hatfield checks installed extension
+packages in both `~/.hatfield/extensions` and the selected project's
+`.hatfield/extensions`. Identical physical roots (including symlink aliases) are
+checked once. Project-local packages continue to take precedence over user-wide
+packages; updating a user-wide package does not override a project-local copy.
+
+Composer must be on `PATH` when installed extensions need checking. Hatfield
+resolves updates only for installed packages marked `hatfield-extension` or
+declaring `extra.hatfield.extension`, allowing their dependencies to update within
+the installation's existing Composer constraints. This includes optional
+extensions not currently enabled. No application-level Composer installation or
+settings are changed, and constraints are never broadened automatically.
+
+When changes are available, the terminal shows each package's installed and
+proposed versions/references, including dependency additions/removals, the scope
+and physical path, the proposed lockfile hash, and the exact install commands and
+environment. **Yes** applies those lockfiles and installs their resolved versions;
+it does not resolve another, potentially different set after consent. **No** (the
+default) leaves package files and lockfiles unchanged and starts with the installed
+versions. Up-to-date installations do not ask for consent. Existing development
+dependency installation mode is preserved.
+
+Resolution uses disposable manifests/lockfiles outside the installations, with
+the original working directories so relative repositories keep working. Composer
+scripts and plugins are disabled during both checking and installation. Network
+access and Composer cache writes may occur during checks, but installed packages,
+installation manifests and lockfiles are not changed before consent.
+
+The installation must have a lockfile and effective Composer `config.lock=true`;
+otherwise an install could resolve unapproved versions. Escaping internal
+manifest/lock/vendor symlinks are also refused, rather than updating another
+application through them.
+
+Any check/resolution or approved-update failure displays the error and **stops
+startup**. If an installation changed since the preview, restart and review a new
+plan. A failed install can be partial: inspect and repair the named Composer root
+before retrying; Hatfield does not claim an automatic rollback or silently start
+with mixed code. Another Hatfield startup already checking the same installation
+also causes a reported failure instead of concurrent updates.
+
+The gate runs before extension classes, the TUI session, controllers and consumers
+start. Headless/controller commands, workers, child runs and `--no-interaction`
+invocations never check, prompt or update. Same-process `/reload` does not check
+again because PHP cannot replace already-declared classes; exit and launch a new
+Hatfield process to check again. `extensions:setup` retains its install/configure
+purpose and does not implicitly upgrade installed packages.
+
 ## Troubleshoot installation
 
 | Symptom | Action |

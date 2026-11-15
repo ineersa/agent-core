@@ -753,6 +753,10 @@ parameters:
       - SymfonyEventDispatcher
       - SymfonyMessenger
       - SymfonyProcess
+      # Composer update plans validate external metadata and hold per-root locks.
+      - SymfonySerializer
+      - SymfonyValidator
+      - SymfonyLock
 
     AppAgent:
       - AppConfig
