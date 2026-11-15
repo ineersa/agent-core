@@ -47,6 +47,15 @@ before the event loop and before any turn. Use it for startup background work th
 call `dispatchExtensionAgentJob()` on the async extension_agent transport. The TUI parent
 process remains fail-closed for that dispatch path.
 
+## Run identity
+
+`isChildRun($runId)` returns true for a known named subagent or fork, false only
+for a known main run. It reads the host's operational relationship projection,
+not canonical transcripts, so it is suitable for hot hooks and queued-job gates.
+Unknown identity or unavailable storage throws; never treat a failed lookup as
+main-run permission. Recheck eligibility when a queued job executes as well as
+when it is dispatched. Parent-side fork snapshot hooks carry the parent's run ID.
+
 ## Session events
 
 `sessionEvents()` returns a `SessionEventReaderInterface` for canonical session events.

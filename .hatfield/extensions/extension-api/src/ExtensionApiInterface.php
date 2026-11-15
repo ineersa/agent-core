@@ -187,6 +187,17 @@ interface ExtensionApiInterface
     public function agent(): AgentRunnerInterface;
 
     /**
+     * Whether a known run is a child (named subagent or fork).
+     *
+     * Uses host-owned operational identity, without reading session transcripts.
+     * Safe on hot hooks. Unknown identity or unavailable storage throws; never
+     * interpret a failed lookup as a top-level run.
+     *
+     * @throws \RuntimeException when run identity cannot be established
+     */
+    public function isChildRun(string $runId): bool;
+
+    /**
      * Canonical session event reader for recovery/compaction catch-up only.
      *
      * Do not call this on every turn or boundary. Hot paths must use the

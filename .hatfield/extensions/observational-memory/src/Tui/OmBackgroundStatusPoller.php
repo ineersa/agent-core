@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tui;
 
 use Doctrine\DBAL\Connection;
+use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmActivityStatusText;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ActivityRepository;
@@ -30,6 +31,7 @@ final class OmBackgroundStatusPoller
         private readonly TuiExtensionContextInterface $tui,
         private readonly string $databasePath,
         private readonly LoggerInterface $logger,
+        private readonly ExtensionApiInterface $api,
     ) {
     }
 
@@ -43,7 +45,7 @@ final class OmBackgroundStatusPoller
 
         try {
             $runId = trim($this->tui->getSessionId());
-            if ('' === $runId) {
+            if ('' === $runId || $this->api->isChildRun($runId)) {
                 $this->apply(null);
 
                 return;

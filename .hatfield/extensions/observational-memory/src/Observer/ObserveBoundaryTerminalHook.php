@@ -34,6 +34,10 @@ final readonly class ObserveBoundaryTerminalHook implements AfterTurnCommitHookI
         if (null === $terminal) {
             return;
         }
+        // OM is main-only even when explicitly selected in a child's allowlist.
+        if ($this->api->isChildRun($context->runId)) {
+            return;
+        }
 
         $jobId = hash('sha256', implode('|', [
             $context->runId,

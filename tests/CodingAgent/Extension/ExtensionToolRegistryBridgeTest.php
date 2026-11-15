@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHandlerAdapter;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
@@ -57,6 +58,30 @@ use Symfony\Component\Filesystem\Filesystem;
 final class ExtensionToolRegistryBridgeTest extends TestCase
 {
     use ExtensionHostCapabilitiesFixtureTrait;
+
+    public function testChildIdentityUsesOperationalRelationshipsForBothChildKinds(): void
+    {
+        $relationships = $this->createMock(RunRelationshipReaderInterface::class);
+        $relationships->expects($this->exactly(3))->method('isAgentChild')->willReturnMap([
+            ['main-run', false], ['subagent-run', true], ['fork-run', true],
+        ]);
+        $bridge = $this->bridgeFor(new ToolRegistry(), runRelationships: $relationships);
+
+        $this->assertFalse($bridge->isChildRun('main-run'));
+        $this->assertTrue($bridge->isChildRun('subagent-run'));
+        $this->assertTrue($bridge->isChildRun('fork-run'));
+    }
+
+    public function testUnknownIdentityIsNotReportedAsMain(): void
+    {
+        $relationships = $this->createMock(RunRelationshipReaderInterface::class);
+        $relationships->expects($this->once())->method('isAgentChild')->with('unknown')
+            ->willThrowException(new \RuntimeException('Unknown identity'));
+        $bridge = $this->bridgeFor(new ToolRegistry(), runRelationships: $relationships);
+
+        $this->expectException(\RuntimeException::class);
+        $bridge->isChildRun('unknown');
+    }
 
     // ── Basic registration flow ──
 
@@ -584,6 +609,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         ?ExecInterface $execBridge = null,
         ?CommandRegistryInterface $commandRegistry = null,
         ?StackToolExecutionContextAccessor $toolContextAccessor = null,
+        ?RunRelationshipReaderInterface $runRelationships = null,
     ): ExtensionToolRegistryBridge {
         $logger = new \Psr\Log\NullLogger();
 
@@ -617,6 +643,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             children: $this->createStub(\Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface::class),
             recurringJobs: new \Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), ''),
             commandBus: $this->createStub(\Symfony\Component\Messenger\MessageBusInterface::class),
+            runRelationships: $runRelationships ?? $this->createStub(RunRelationshipReaderInterface::class),
         );
     }
 

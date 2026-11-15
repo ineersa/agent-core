@@ -129,6 +129,11 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
             {
             }
 
+            public function isChildRun(string $runId): bool
+            {
+                return false;
+            }
+
             public function agent(): AgentRunnerInterface
             {
                 throw new \LogicException('unused');
@@ -157,6 +162,7 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertSame(['memory_search', 'recall'], $toolNames);
 
         $search = $tools[0];
+        $this->assertTrue($search->mainOnly);
         $this->assertSame('query', ($search->parametersJsonSchema['required'] ?? [])[0] ?? null);
         $this->assertArrayHasKey('after', $search->parametersJsonSchema['properties'] ?? []);
         $this->assertArrayHasKey('before', $search->parametersJsonSchema['properties'] ?? []);
@@ -178,6 +184,7 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringContainsString('Use recall for source context behind useful hits', $searchGuidelines);
 
         $recall = $tools[1];
+        $this->assertTrue($recall->mainOnly);
         $this->assertSame('recall', $recall->name);
         $this->assertSame('^[a-f0-9]{12,64}$', $recall->parametersJsonSchema['properties']['id']['pattern'] ?? null);
         $this->assertArrayHasKey('session_id', $recall->parametersJsonSchema['properties'] ?? []);

@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
@@ -70,6 +71,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private ChildRunExtensionAllowlistReaderInterface $children,
         private ExtensionRecurringJobRegistry $recurringJobs,
         #[Autowire(service: 'agent.command.bus')] private MessageBusInterface $commandBus,
+        private RunRelationshipReaderInterface $runRelationships,
     ) {
     }
 
@@ -213,6 +215,11 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function sessionEvents(): SessionEventReaderInterface
     {
         return $this->sessionEventReader;
+    }
+
+    public function isChildRun(string $runId): bool
+    {
+        return $this->runRelationships->isAgentChild($runId);
     }
 
     public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void

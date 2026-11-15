@@ -762,6 +762,11 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             {
             }
 
+            public function isChildRun(string $runId): bool
+            {
+                return false;
+            }
+
             public function agent(): AgentRunnerInterface
             {
                 throw new \LogicException('unused');

@@ -51,6 +51,19 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
         parent::tearDown();
     }
 
+    public function testExplicitlySelectedChildJobsDoNoWork(): void
+    {
+        foreach (['subagent-run', 'fork-run'] as $runId) {
+            $api = $this->createMock(ExtensionApiInterface::class);
+            $api->expects($this->once())->method('isChildRun')->with($runId)->willReturn(true);
+            foreach (['getSettings', 'getCwd', 'sessionEvents', 'agent', 'dispatchExtensionAgentJob'] as $capability) {
+                $api->expects($this->never())->method($capability);
+            }
+
+            (new ObserveBoundaryJobHandler(new NullLogger()))->handle($api, ['run_id' => $runId], 'queued-job', $runId);
+        }
+    }
+
     public function testPersistsObservationsAndCoverageFromStubAgent(): void
     {
         $events = [
@@ -654,6 +667,11 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
 
             public function registerBeforeCompactionHook(\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface $hook): void
             {
+            }
+
+            public function isChildRun(string $runId): bool
+            {
+                return false;
             }
 
             public function agent(): AgentRunnerInterface

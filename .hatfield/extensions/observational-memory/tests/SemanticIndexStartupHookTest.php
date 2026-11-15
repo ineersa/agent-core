@@ -16,6 +16,19 @@ use PHPUnit\Framework\TestCase;
 final class SemanticIndexStartupHookTest extends TestCase
 {
     #[Test]
+    public function explicitlySelectedChildrenNeverScheduleBackfill(): void
+    {
+        $settings = OmSettings::fromArray(['semantic' => ['embedding_api' => ['base_url' => 'http://embed.test/v1', 'model_id' => 'embed']]]);
+        foreach (['subagent-run', 'fork-run'] as $runId) {
+            $api = $this->createMock(ExtensionApiInterface::class);
+            $api->expects($this->once())->method('isChildRun')->with($runId)->willReturn(true);
+            $api->expects($this->never())->method('dispatchExtensionAgentJob');
+            $api->expects($this->never())->method('getCwd');
+            (new SemanticIndexStartupHook($api, $settings))->onAfterSessionStart(new AfterSessionStartHookContextDTO($runId));
+        }
+    }
+
+    #[Test]
     public function startupSchedulesBackfillWithoutEmbeddingInTheController(): void
     {
         $settings = OmSettings::fromArray(['semantic' => ['embedding_api' => ['base_url' => 'http://embed.test/v1', 'model_id' => 'embed']]]);

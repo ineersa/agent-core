@@ -198,6 +198,11 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
         // Test bridge does not inspect compaction hooks yet.
     }
 
+    public function isChildRun(string $runId): bool
+    {
+        return false;
+    }
+
     public function agent(): AgentRunnerInterface
     {
         return new class implements AgentRunnerInterface {

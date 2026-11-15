@@ -17,6 +17,20 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 final class SemanticIndexJobHandlerTest extends IsolatedKernelTestCase
 {
     #[Test]
+    public function explicitlyQueuedChildJobsNeverOpenStorageOrCallEmbedding(): void
+    {
+        foreach (['subagent-run', 'fork-run'] as $runId) {
+            $api = $this->createMock(ExtensionApiInterface::class);
+            $api->expects($this->once())->method('isChildRun')->with($runId)->willReturn(true);
+            foreach (['getSettings', 'getCwd', 'sessionEvents', 'agent', 'dispatchExtensionAgentJob'] as $capability) {
+                $api->expects($this->never())->method($capability);
+            }
+            $http = new MockHttpClient(static fn () => throw new \LogicException('Child embedding must not run.'));
+            (new SemanticIndexJobHandler(new TestLogger(), $http))->handle($api, ['run_id' => $runId], 'queued-job', $runId);
+        }
+    }
+
+    #[Test]
     public function workerEnqueuesContinuationOnlyUntilAllChunksAreDurable(): void
     {
         $directory = TestDirectoryIsolation::createProjectTempDir('om-semantic-job');

@@ -28,6 +28,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
 
 /**
@@ -51,7 +52,37 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
         parent::tearDown();
     }
 
-    public function testProjectsActiveMemoryWithoutDispatchModelOrEventReads(): void
+    public function testChildrenAndUnknownIdentityNeverReadOrProjectMemory(): void
+    {
+        foreach (['subagent-run', 'fork-run', 'unknown-run'] as $runId) {
+            $api = $this->createMock(ExtensionApiInterface::class);
+            $api->expects($this->once())->method('isChildRun')->with($runId)->willReturnCallback(
+                static fn (): bool => 'unknown-run' === $runId ? throw new \RuntimeException('Unknown identity') : true,
+            );
+            foreach (['getCwd', 'sessionEvents', 'agent', 'dispatchExtensionAgentJob'] as $capability) {
+                $api->expects($this->never())->method($capability);
+            }
+            $hook = new OmBeforeCompactionHook($api, OmSettings::fromArray([]), new NullLogger());
+            $result = $hook->beforeCompaction(new BeforeCompactionHookContextDTO(
+                runId: $runId, turnNo: 1, trigger: 'fork', requiredStartSeq: null, requiredEndSeq: null,
+                tokenEstimateBefore: 1000, messagesCompacted: 10, messagesRetained: 5,
+                firstRetainedIndex: 10, priorSummaryPresent: false, customInstructions: null,
+                resolvedModel: null, thinkingLevel: null,
+            ));
+            $this->assertSame('unknown-run' === $runId, $result->cancels());
+            $this->assertFalse($result->hasReplacementSummary());
+        }
+    }
+
+    /** @return iterable<string, array{string, ?int, ?int}> */
+    public static function compactionTriggers(): iterable
+    {
+        yield 'ordinary main compaction' => ['manual', 1, 5];
+        yield 'parent snapshot for fork' => ['fork', null, null];
+    }
+
+    #[DataProvider('compactionTriggers')]
+    public function testProjectsActiveMemoryWithoutDispatchModelOrEventReads(string $trigger, ?int $startSeq, ?int $endSeq): void
     {
         $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
         $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
@@ -152,9 +183,9 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
         $result = $hook->beforeCompaction(new BeforeCompactionHookContextDTO(
             runId: 'run-1',
             turnNo: 1,
-            trigger: 'manual',
-            requiredStartSeq: 1,
-            requiredEndSeq: 5,
+            trigger: $trigger,
+            requiredStartSeq: $startSeq,
+            requiredEndSeq: $endSeq,
             tokenEstimateBefore: 1000,
             messagesCompacted: 10,
             messagesRetained: 5,
@@ -189,6 +220,7 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
         $this->assertSame($expected, $result->replacementSummary);
         $this->assertSame('observational_memory', $result->metadata['om_source'] ?? null);
         $this->assertSame('active_durable_memory', $result->metadata['om_projection'] ?? null);
+        $this->assertSame(null !== $startSeq, $result->metadata['om_has_coverage_watermark'] ?? null);
 
         // No compaction request/result rows are created on the Pi path.
         $requestCount = (int) $connection->fetchOne('SELECT COUNT(1) FROM om_compaction_request');
@@ -380,6 +412,11 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
             public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
             {
                 throw new \LogicException('Pi-style compaction must not dispatch extension_agent jobs.');
+            }
+
+            public function isChildRun(string $runId): bool
+            {
+                return false;
             }
 
             public function agent(): AgentRunnerInterface

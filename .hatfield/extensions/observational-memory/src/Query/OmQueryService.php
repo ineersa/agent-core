@@ -47,6 +47,9 @@ final class OmQueryService
 
     public function formatStatus(string $runId): string
     {
+        if ($this->api->isChildRun($runId)) {
+            return 'Observational memory is available only in main runs.';
+        }
         $connection = $this->connect();
         $observations = new ObservationRepository($connection);
         $generations = new MemoryGenerationRepository($connection);
@@ -118,6 +121,9 @@ final class OmQueryService
 
     public function formatView(string $runId): string
     {
+        if ($this->api->isChildRun($runId)) {
+            return 'Observational memory is available only in main runs.';
+        }
         $connection = $this->connect();
         $observations = new ObservationRepository($connection);
         $generations = new MemoryGenerationRepository($connection);
@@ -207,6 +213,9 @@ final class OmQueryService
         ?int $deadlineNs = null,
         ?string $runId = null,
     ): array {
+        if (null !== $runId && $this->api->isChildRun($runId)) {
+            return ['ok' => false, 'error' => 'main_only', 'message' => 'Observational memory is available only in main runs.'];
+        }
         $query = trim($query);
         if ('' === $query) {
             return [
@@ -380,6 +389,9 @@ final class OmQueryService
         ?int $timeoutSeconds = null,
         ?int $deadlineNs = null,
     ): array {
+        if ($this->api->isChildRun($runId)) {
+            return ['ok' => false, 'error' => 'main_only', 'message' => 'Observational memory is available only in main runs.'];
+        }
         $id = strtolower(trim($id));
         if (1 !== preg_match(self::ID_PATTERN, $id)) {
             return [

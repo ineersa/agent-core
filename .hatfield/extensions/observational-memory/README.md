@@ -4,6 +4,21 @@ Extension-owned observational memory storage, asynchronous Observer pipeline,
 threshold Reflector + Dropper generations, and CompactRun replacement summaries via
 instant durable-memory projection.
 
+## Main runs only
+
+OM never operates in named subagents or forks, even if explicitly enabled in their
+extension allowlists. OM checks the public `isChildRun(runId)` capability before
+observation dispatch, queued observation/reflection/index work, startup backfill,
+compaction projection, queries and TUI status polling. Unknown identity fails
+closed. These checks use operational run relationships, not transcript scans.
+`memory_search` and `recall` are also registered as main-only tools, so children
+cannot inherit them through a tool allowlist or invoke them through code mode.
+
+Parent-side compaction used to prepare a fork still runs OM for the **parent**.
+Its memory summary may therefore appear in the fork's inherited conversation;
+this is existing parent context, not OM running in the child. No inherited
+conversation content is scrubbed by this restriction.
+
 ## Architecture (OM-03 + OM-04 + OM-05)
 
 Hatfield provides a **generic** async extension-agent job facility. OM uses the
@@ -49,7 +64,7 @@ Snapshot / fork parent (CompactionService::compactMessages, trigger=fork)
       → empty / OM not registered → continue → ordinary model snapshot compaction
       → hook failure → fail closed (snapshot hard-fail, no silent model fallback)
   → structural below-threshold snapshots still no-op before hooks (unchanged)
-  → child extension loading/exclusion is out of scope for OM
+  → OM's own eligibility checks block work once executing under a child run_id
 ```
 
 OM does **not** own a private Symfony Kernel, bin/console, Messenger bus, consumer

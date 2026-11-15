@@ -23,7 +23,7 @@ final readonly class SemanticIndexJobHandler implements ExtensionAgentJobHandler
 
     public static function schedule(ExtensionApiInterface $api, OmSettings $settings, string $runId): void
     {
-        if (null === $settings->semantic) {
+        if (null === $settings->semantic || $api->isChildRun($runId)) {
             return;
         }
         $api->dispatchExtensionAgentJob(new ExtensionAgentJobRequestDTO(
@@ -36,13 +36,16 @@ final readonly class SemanticIndexJobHandler implements ExtensionAgentJobHandler
 
     public function handle(ExtensionApiInterface $api, array $payload, ?string $jobId, ?string $correlationId): void
     {
-        $settings = OmSettings::fromApi($api);
-        if (null === $settings->semantic) {
-            return;
-        }
         $runId = $payload['run_id'] ?? null;
         if (!\is_string($runId) || '' === $runId) {
             throw new \InvalidArgumentException('Semantic index job requires run_id.');
+        }
+        if ($api->isChildRun($runId)) {
+            return;
+        }
+        $settings = OmSettings::fromApi($api);
+        if (null === $settings->semantic) {
+            return;
         }
         $path = OmPaths::fromSettings($settings, $api->getCwd())->databasePath;
         $connection = OmDatabaseFactory::connectAndMigrate($path, $this->logger);
