@@ -30,6 +30,29 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
     }
 
     /**
+     * Authoritative persisted-session parentage, independent of disposable run
+     * projections and of potentially stale ORM-managed entities.
+     *
+     * @return array{parent_run_id: ?string}|null
+     */
+    public function findRelationship(string $runId): ?array
+    {
+        // Native child UUIDs must not be coerced into numeric session IDs.
+        if ('' === $runId || !ctype_digit($runId)) {
+            return null;
+        }
+
+        // Bind the original string, not an int cast: oversized unknown IDs
+        // must not saturate to an unrelated primary key.
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
+            'SELECT parent_id FROM hatfield_session WHERE id = ?',
+            [$runId],
+        );
+
+        return false === $row ? null : ['parent_run_id' => null === $row['parent_id'] ? null : (string) $row['parent_id']];
+    }
+
+    /**
      * Return all sessions sorted by updated_at DESC for catalog/picker display.
      *
      * No sort/order/limit parameters — callers get the full list in a

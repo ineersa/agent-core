@@ -87,7 +87,7 @@ final class SemanticIndexStartupHookTest extends IsolatedKernelTestCase
             // Persisted fork identity is still a child; absence from both
             // authoritative identity sources must never imply a main run.
             $this->assertTrue($api->isChildRun($forkId));
-            foreach ([$forkId, 'unknown-startup-run'] as $excludedId) {
+            foreach ([$forkId, 'unknown-startup-run', $runId.'d451-native-child', str_repeat('9', 30)] as $excludedId) {
                 $transport->reset();
                 $events->dispatch(new ControllerSessionStartingEvent($excludedId));
                 $this->assertCount(0, $transport->getSent());

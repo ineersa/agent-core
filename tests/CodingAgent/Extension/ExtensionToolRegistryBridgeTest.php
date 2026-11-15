@@ -644,7 +644,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             recurringJobs: new \Ineersa\CodingAgent\Extension\ExtensionRecurringJobRegistry(static fn () => throw new \LogicException('Unused fixture capability.'), new ExtensionAgentJobRegistry(), ''),
             commandBus: $this->createStub(\Symfony\Component\Messenger\MessageBusInterface::class),
             runRelationships: $runRelationships ?? $this->createStub(RunRelationshipReaderInterface::class),
-            sessions: $this->emptySessionStore($appConfig),
+            sessions: $this->emptySessionRepository(),
         );
     }
 

@@ -7,10 +7,10 @@ namespace Ineersa\CodingAgent\Extension;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Application\Message\DTO\DeliverBackgroundCompletionDTO;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
 use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
@@ -73,7 +73,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private ExtensionRecurringJobRegistry $recurringJobs,
         #[Autowire(service: 'agent.command.bus')] private MessageBusInterface $commandBus,
         private RunRelationshipReaderInterface $runRelationships,
-        private HatfieldSessionStore $sessions,
+        private HatfieldSessionRepository $sessions,
     ) {
     }
 
@@ -224,9 +224,9 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         // Persisted session identity is authoritative even during controller
         // startup, which clears disposable projections before invoking hooks.
         // Native children live outside this registry and use operational identity.
-        $session = $this->sessions->findSession($runId);
+        $session = $this->sessions->findRelationship($runId);
         if (null !== $session) {
-            return null !== $session->parentId;
+            return null !== $session['parent_run_id'];
         }
 
         return $this->runRelationships->isAgentChild($runId);
