@@ -153,10 +153,17 @@ final class ExtensionUpdateService
         $devMode = $this->readMetadata($root.'/vendor/composer/installed.json')->dev;
         $flags = [...($devMode ? [] : ['--no-dev']), ...self::FLAGS];
         $workspace = $this->cacheDirectory.'/extension-update-plans/'.Uuid::v7();
-        $this->filesystem->mkdir($workspace);
+        $this->filesystem->mkdir($workspace, 0o700);
         $this->workspaces[] = $workspace;
         $this->filesystem->copy($root.'/composer.json', $workspace.'/composer.json');
         $this->filesystem->copy($root.'/composer.lock', $workspace.'/composer.lock');
+        // Composer reads local auth beside COMPOSER's manifest, not its CWD.
+        // Keep the copy private even when the original has broader permissions;
+        // it shares the workspace's normal success/failure cleanup lifecycle.
+        if (is_file($root.'/auth.json')) {
+            $this->filesystem->copy($root.'/auth.json', $workspace.'/auth.json');
+            $this->filesystem->chmod($workspace.'/auth.json', 0o600);
+        }
         // Composer's working directory stays the original root so relative
         // repositories/platform configuration retain their normal meaning.
         // COMPOSER redirects all resolution writes to the disposable manifest
@@ -235,7 +242,7 @@ final class ExtensionUpdateService
     private function stateHash(string $root): string
     {
         $state = [];
-        foreach (['composer.json', 'composer.lock', 'vendor/composer/installed.json', 'vendor/composer/installed.php', 'vendor/autoload.php', 'vendor/composer/autoload_real.php'] as $path) {
+        foreach (['composer.json', 'composer.lock', 'auth.json', 'vendor/composer/installed.json', 'vendor/composer/installed.php', 'vendor/autoload.php', 'vendor/composer/autoload_real.php'] as $path) {
             $state[$path] = is_file($root.'/'.$path) ? hash_file('sha256', $root.'/'.$path) : null;
         }
 

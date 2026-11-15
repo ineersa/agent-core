@@ -83,6 +83,7 @@ final class ExtensionUpdateStartupSubscriberTest extends IsolatedKernelTestCase
     {
         $this->fixture->seed('home');
         $this->fixture->seed('project');
+        $this->fixture->writeAuthentication();
         $this->fixture->writePackage('home', '1.1.0');
         $this->fixture->writePackage('project', '1.2.0');
         $beforeHome = $this->fixture->snapshot('home');
@@ -95,6 +96,9 @@ final class ExtensionUpdateStartupSubscriberTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('Updates declined', $output);
         $this->assertStringContainsString('User extensions', $output);
         $this->assertStringContainsString('Project extensions', $output);
+        $this->assertStringNotContainsString('fixture-user', $output);
+        $this->assertStringNotContainsString('fixture-password', $output);
+        $this->assertSame([], glob($this->fixture->directory.'/cache/extension-update-plans/*', \GLOB_ONLYDIR));
     }
 
     public function testUpToDateDoesNotAskForConsent(): void

@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Extension\ExtensionPackageInstaller;
 use Ineersa\CodingAgent\Extension\ExtensionUpdateService;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Filesystem\Path;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Process\ExecutableFinder;
@@ -34,6 +35,7 @@ final class ExtensionUpdateFixture
             'COMPOSER_HOME' => $this->directory.'/composer-home',
             'COMPOSER_CACHE_DIR' => $this->directory.'/composer-cache',
             'COMPOSER_DISABLE_NETWORK' => '1',
+            'COMPOSER_AUTH' => '{}',
         ] as $name => $value) {
             $this->environment[$name] = getenv($name);
             putenv($name.'='.$value);
@@ -86,6 +88,17 @@ final class ExtensionUpdateFixture
         ))->mustRun();
     }
 
+    public function writeAuthentication(string $scope = 'project'): void
+    {
+        $root = realpath($this->root($scope));
+        if (false === $root || !Path::isBasePath(realpath($this->directory), $root) || is_link($root.'/auth.json')) {
+            throw new \LogicException('Authentication fixtures must stay inside the disposable installation.');
+        }
+        $this->filesystem->dumpFile($root.'/auth.json', json_encode([
+            'http-basic' => ['private.example' => ['username' => 'fixture-user', 'password' => 'fixture-password']],
+        ], \JSON_THROW_ON_ERROR));
+    }
+
     public function writePackage(string $scope, string $version, ?string $dependency = null): void
     {
         $path = $this->directory.'/'.$scope.'/packages/ext';
@@ -110,6 +123,9 @@ final class ExtensionUpdateFixture
         $result = [];
         foreach (['composer.json', 'composer.lock', 'vendor/composer/installed.json', 'vendor/composer/installed.php', 'vendor/autoload.php', 'vendor/test/update-extension/src/Version.php'] as $path) {
             $result[$path] = file_get_contents($this->root($scope).'/'.$path);
+        }
+        if (is_file($this->root($scope).'/auth.json')) {
+            $result['auth.json'] = file_get_contents($this->root($scope).'/auth.json');
         }
 
         return $result;

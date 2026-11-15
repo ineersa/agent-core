@@ -128,6 +128,11 @@ scripts and plugins are disabled during both checking and installation. Network
 access and Composer cache writes may occur during checks, but installed packages,
 installation manifests and lockfiles are not changed before consent.
 
+Local Composer credentials in an installation's `auth.json` remain available
+during resolution through a private temporary copy (`0700` directory, `0600`
+file). The copy is removed on normal completion or failure, the original stays
+unchanged, and credentials are not included in the preview.
+
 The installation must have a lockfile and effective Composer `config.lock=true`;
 otherwise an install could resolve unapproved versions. Escaping internal
 manifest/lock/vendor symlinks are also refused, rather than updating another
@@ -138,7 +143,9 @@ startup**. If an installation changed since the preview, restart and review a ne
 plan. A failed install can be partial: inspect and repair the named Composer root
 before retrying; Hatfield does not claim an automatic rollback or silently start
 with mixed code. Another Hatfield startup already checking the same installation
-also causes a reported failure instead of concurrent updates.
+also causes a reported failure instead of concurrent updates. This coordination
+uses a shared per-user lock directory, including across different source checkouts
+and PHAR installations.
 
 The gate runs before extension classes, the TUI session, controllers and consumers
 start. Headless/controller commands, workers, child runs and `--no-interaction`

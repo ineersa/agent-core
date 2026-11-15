@@ -65,6 +65,11 @@ services:
     alias: hatfield.controller.session_owner.lock_factory
     public: true
 
+  # Retain the real updater and its dedicated factory for the wiring proof.
+  test.hatfield.extension_update.service:
+    alias: Ineersa\CodingAgent\Extension\ExtensionUpdateService
+    public: true
+
   # Test HTTP client for LLM requests.  Two modes:
   #
   #  1. Replay  (HATFIELD_LLM_REPLAY_FIXTURE_PATH set):

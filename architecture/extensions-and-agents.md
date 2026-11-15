@@ -18,9 +18,17 @@ plugins. Serializer/Validator DTOs validate the resulting package metadata.
 The preview compares the complete installed/target package sets, not just direct
 extensions. Existing dev-dependency mode is retained.
 
+Installation-local `auth.json` is copied beside the disposable manifest, where
+Composer looks for local authentication. Planning directories are owner-only
+(`0700`) and credential copies are `0600`; normal success/failure cleanup removes
+them without changing the original or including credentials in the preview.
+
 Yes applies each approved lock and runs its displayed `composer install`, avoiding
 a second resolution after consent. Per-physical-root Symfony locks coordinate
-Hatfield startups. All scope aliases and manifest/lock/installed/autoloader hashes
+Hatfield startups through a dedicated flock store under
+`~/.hatfield/tmp/extension-update-locks`, shared across projects and source/PHAR
+installations for the same user, not partitioned by `kernel.project_dir`.
+All scope aliases and manifest/lock/auth/installed/autoloader hashes
 are revalidated before any scope is updated and again before each install. Changed
 inputs, failed resolution or installation, or a final package/lock mismatch abort
 startup. A partially failed multi-scope update is not claimed atomic or rolled

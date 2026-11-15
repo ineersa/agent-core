@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Extension\Exception\ExtensionUpdateException;
 use Ineersa\CodingAgent\Extension\ExtensionUpdateService;
 use Ineersa\CodingAgent\Tests\Support\ExtensionUpdateFixture;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\InMemoryStore;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -59,6 +60,38 @@ final class ExtensionUpdateServiceTest extends IsolatedKernelTestCase
         $this->assertSame($plans[0]->lockContents, file_get_contents($plans[0]->root.'/composer.lock'));
         $this->assertSame($before['composer.json'], file_get_contents($plans[0]->root.'/composer.json'));
         $this->assertSame('1.1.0', $this->fixture->loadedVersion());
+    }
+
+    public function testLocalAuthenticationRemainsAvailableToComposerInAPrivateWorkspace(): void
+    {
+        $this->fixture->seed();
+        $this->fixture->writeAuthentication();
+        $sourceAuth = $this->fixture->root('project').'/auth.json';
+        $this->fixture->filesystem->chmod($sourceAuth, 0o644);
+        $this->fixture->writePackage('project', '1.1.0');
+        $before = $this->fixture->snapshot();
+        $plans = $this->service->prepare($this->fixture->project());
+        $this->assertCount(1, $plans);
+        $workspaces = glob($this->fixture->directory.'/cache/extension-update-plans/*', \GLOB_ONLYDIR);
+        $this->assertCount(1, $workspaces);
+        $workspace = $workspaces[0];
+        $this->assertSame($before['auth.json'], file_get_contents($workspace.'/auth.json'));
+        $this->assertSame(0o700, fileperms($workspace) & 0o777);
+        $this->assertSame(0o600, fileperms($workspace.'/auth.json') & 0o777);
+
+        // Exercise Composer's real auth lookup with the redirected manifest,
+        // without a network server or exposing real/inherited credentials.
+        $auth = new Process(
+            [$this->fixture->composer, 'config', '--auth', 'http-basic.private.example', '--no-plugins', '--no-interaction', '--no-ansi'],
+            $plans[0]->root, ExtensionUpdateService::environment($workspace), timeout: 10,
+        );
+        $auth->mustRun();
+        $this->assertSame(['username' => 'fixture-user', 'password' => 'fixture-password'], json_decode($auth->getOutput(), true, flags: \JSON_THROW_ON_ERROR));
+        $this->service->apply($plans);
+        $this->assertSame($before['auth.json'], file_get_contents($sourceAuth));
+        $this->assertSame(0o644, fileperms($sourceAuth) & 0o777);
+        $this->service->cleanup();
+        $this->assertDirectoryDoesNotExist($workspace);
     }
 
     public function testUpToDateAndAbsentInstallationsHaveNoPlan(): void
@@ -134,6 +167,7 @@ final class ExtensionUpdateServiceTest extends IsolatedKernelTestCase
     public function testResolutionFailureLeavesTheInstallationUntouched(): void
     {
         $this->fixture->seed();
+        $this->fixture->writeAuthentication();
         $this->fixture->writePackage('project', '2.0.0');
         $before = $this->fixture->snapshot();
         try {
@@ -142,6 +176,7 @@ final class ExtensionUpdateServiceTest extends IsolatedKernelTestCase
             $this->service->prepare($this->fixture->project());
         } finally {
             $this->assertSame($before, $this->fixture->snapshot());
+            $this->assertSame([], glob($this->fixture->directory.'/cache/extension-update-plans/*', \GLOB_ONLYDIR));
         }
     }
 
@@ -221,21 +256,36 @@ final class ExtensionUpdateServiceTest extends IsolatedKernelTestCase
         }
     }
 
-    public function testConcurrentOwningStartupIsRefusedWithoutChangingTheInstallation(): void
+    public function testProductionWiringCoordinatesIndependentInstallationsThroughSharedFilesystemLocks(): void
     {
         $this->fixture->seed();
         $this->fixture->writePackage('project', '1.1.0');
-        $locks = new LockFactory(new InMemoryStore());
-        $first = $this->fixture->service(self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(ValidatorInterface::class), $locks);
-        $second = $this->fixture->service(self::getContainer()->get(SerializerInterface::class), self::getContainer()->get(ValidatorInterface::class), $locks);
+        $container = self::getContainer();
+        // Use the actual production updater binding, not a shared injected
+        // InMemoryStore. A separate startup opens its own flock store at the
+        // same home path regardless of app.cwd/kernel.project_dir/cache root.
+        $first = $container->get('test.hatfield.extension_update.service');
+        $this->assertInstanceOf(ExtensionUpdateService::class, $first);
+        $home = $container->get(SettingsPathResolver::class)->getHomeDir();
+        $second = $this->fixture->service(
+            $container->get(SerializerInterface::class), $container->get(ValidatorInterface::class),
+            new LockFactory(new FlockStore($home.'/.hatfield/tmp/extension-update-locks')),
+        );
+        $before = $this->fixture->snapshot();
         try {
-            $first->prepare($this->fixture->project());
+            $this->assertCount(1, $first->prepare($this->fixture->project()));
             $this->expectException(ExtensionUpdateException::class);
             $this->expectExceptionMessage('Another Hatfield startup');
             $second->prepare($this->fixture->project());
         } finally {
             $first->cleanup();
             $second->cleanup();
+            $this->assertSame($before, $this->fixture->snapshot());
+            try {
+                $this->assertCount(1, $second->prepare($this->fixture->project()), 'Releasing the owning startup must allow a new startup.');
+            } finally {
+                $second->cleanup();
+            }
         }
     }
 }
