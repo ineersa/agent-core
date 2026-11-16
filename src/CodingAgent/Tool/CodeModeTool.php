@@ -69,6 +69,7 @@ final class CodeModeTool implements HatfieldToolProviderInterface
                 'Raw PHP filesystem and process functions are available. They bypass toolbox hooks and approvals; use tool() when you need audited tool behavior.',
                 'Use timeout_seconds (default 1800, max 3600) and memory_limit_mb (default 256, max 1024) to set execution budgets. The remaining parent tool budget still applies.',
                 'Set backgrounded=true when you can continue other work without the script\'s result. The default, false, waits for completion. The entire script continues in the background, including its nested tool calls, and you will be notified when it finishes. Do not poll for completion or launch another copy while it is running.',
+                'Background calls notify on completion, not on intermediate output or status changes. Backgrounding does not reset the original timeout.',
                 'Use echo or stderr for diagnostics. stdout/stderr accompany the returned value and then follow ordinary output capping with saved-output recovery.',
             ],
         );
