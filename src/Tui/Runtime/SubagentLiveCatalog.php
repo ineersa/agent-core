@@ -51,6 +51,10 @@ final class SubagentLiveCatalog
     {
         $items = array_values($this->byArtifactId);
         usort($items, static function (SubagentLiveChildDTO $a, SubagentLiveChildDTO $b): int {
+            if ($a->isRunning() !== $b->isRunning()) {
+                return $b->isRunning() <=> $a->isRunning();
+            }
+
             if ($a->needsAttention() !== $b->needsAttention()) {
                 return $b->needsAttention() <=> $a->needsAttention();
             }

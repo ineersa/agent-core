@@ -64,7 +64,22 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
     public function findForCatalog(): array
     {
         return $this->getEntityManager()->getConnection()->fetchAllAssociative(
-            'SELECT id, name, cwd, prompt, model, model_provider, model_name, reasoning, created_at, updated_at FROM hatfield_session ORDER BY updated_at DESC',
+            'SELECT id, name, cwd, prompt, model, model_provider, model_name, reasoning, created_at, updated_at FROM hatfield_session ORDER BY updated_at DESC, id DESC',
+        );
+    }
+
+    public function recordActivity(string $runId, \DateTimeImmutable $at): void
+    {
+        // Native children have UUID identities and no session catalog row.
+        // Keep numeric IDs as strings so oversized unknown IDs cannot saturate.
+        if ('' === $runId || !ctype_digit($runId)) {
+            return;
+        }
+
+        // Do not hydrate stale ORM metadata or move recency backwards.
+        $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE hatfield_session SET updated_at = :at WHERE id = :id AND updated_at < :at',
+            ['at' => $at->format('Y-m-d H:i:s'), 'id' => $runId],
         );
     }
 
@@ -92,6 +107,7 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
             ->where('CAST(id AS TEXT) LIKE :prefix')
             ->setParameter('prefix', $prefix.'%')
             ->orderBy('updated_at', 'DESC')
+            ->addOrderBy('id', 'DESC')
             ->setMaxResults($limit)
             ->executeQuery()->fetchAllAssociative();
     }

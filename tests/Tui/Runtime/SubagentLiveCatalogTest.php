@@ -15,6 +15,28 @@ use PHPUnit\Framework\TestCase;
 /** @covers \Ineersa\Tui\Runtime\SubagentLiveCatalog */
 final class SubagentLiveCatalogTest extends TestCase
 {
+    public function testAllActiveStatusesPrecedeFinishedChildrenAndReorderOnCompletion(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $rows = [];
+        foreach (['completed', 'failed', 'cancelled', 'done', 'unknown', 'pending', 'running', 'waiting_human', 'cancelling'] as $status) {
+            $rows[] = new BackgroundChildStatusDTO($status, $status, 'fork', 'task', 'provider/model', 'low', $status, true);
+        }
+        $catalog->synchronizeOperationalStatus($rows);
+        $children = $catalog->all();
+        $this->assertSame('waiting_human', $children[0]->artifactId);
+        $this->assertSame([true, true, true, true, false, false, false, false, false], array_map(static fn ($child): bool => $child->isRunning(), $children));
+
+        $catalog->synchronizeOperationalStatus([
+            new BackgroundChildStatusDTO('running', 'running', 'fork', 'task', 'provider/model', 'low', 'completed', true),
+            new BackgroundChildStatusDTO('completed', 'completed', 'scout', 'resumed task', 'provider/model', 'low', 'running', true),
+        ]);
+        $children = $catalog->all();
+        $this->assertSame([true, true, true, true, false, false, false, false, false], array_map(static fn ($child): bool => $child->isRunning(), $children));
+        $this->assertContains('completed', array_column(\array_slice($children, 0, 4), 'artifactId'));
+        $this->assertContains('running', array_column(\array_slice($children, 4), 'artifactId'));
+    }
+
     public function testActiveIdentityIndexSettlesReactivatesAndRemovesChildren(): void
     {
         $catalog = new SubagentLiveCatalog();
