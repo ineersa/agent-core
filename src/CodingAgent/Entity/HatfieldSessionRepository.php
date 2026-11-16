@@ -109,6 +109,18 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
         );
     }
 
+    public function clearGoalIfMatches(string $runId, string $expectedObjective): bool
+    {
+        if ('' === $runId || !ctype_digit($runId)) {
+            return false;
+        }
+
+        return 1 === $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE hatfield_session SET goal = NULL WHERE id = ? AND parent_id IS NULL AND goal = ?',
+            [$runId, $expectedObjective],
+        );
+    }
+
     /**
      * Return whether a session row currently exists in the database.
      *

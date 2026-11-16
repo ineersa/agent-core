@@ -38,6 +38,14 @@ final readonly class SessionGoalService
         return $this->sessions->findGoal($runId);
     }
 
+    /** Agent completion must not erase a replacement submitted during its work. */
+    public function clear(string $runId, string $expectedObjective): bool
+    {
+        $this->get($runId);
+
+        return $this->sessions->clearGoalIfMatches($runId, $expectedObjective);
+    }
+
     public function set(string $runId, ?string $objective): ?string
     {
         $objective = null === $objective ? null : $this->validateObjective($objective);

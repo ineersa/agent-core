@@ -32,6 +32,7 @@ final class GoalFollowUpHookSubscriberTest extends IsolatedKernelTestCase
         $state = new RunState($id, RunStatus::Running);
         $events = [
             RunEvent::forAppend($id, 0, 'run_started', ['payload' => ['messages' => []]]),
+            RunEvent::forAppend($id, 1, 'llm_step_completed', ['step_id' => 'answer', 'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Answer']]]]),
             RunEvent::forAppend($id, 1, 'agent_end', ['reason' => 'completed']),
         ];
         $container->get(ActiveRunContextInterface::class)->loadRecovered($state);
@@ -39,7 +40,7 @@ final class GoalFollowUpHookSubscriberTest extends IsolatedKernelTestCase
         $commands = array_values(array_filter($container->get('messenger.transport.run_control')->getSent(), static fn ($envelope): bool => $envelope->getMessage() instanceof ApplyCommand && $envelope->getMessage()->runId() === $id));
         $this->assertCount(1, $commands);
         $command = $commands[0]->getMessage();
-        $this->assertSame('goal-follow-up-2', $command->stepId());
+        $this->assertSame('goal-follow-up-3', $command->stepId());
         $processor = $container->get(RunMessageProcessor::class);
         $processor->process('command', $command);
         $processor->process('command', $command);
@@ -85,10 +86,26 @@ final class GoalFollowUpHookSubscriberTest extends IsolatedKernelTestCase
         $this->assertSame([], $hook->prepareAfterTurnCommit($this->context($store->createSession(), 'agent_end', 'completed'), 41));
     }
 
+    public function testStandaloneShellCompletionDoesNotStartGoalPursuit(): void
+    {
+        $id = self::getContainer()->get(HatfieldSessionStore::class)->createSession('', 'Objective');
+        $state = new RunState($id, RunStatus::Completed);
+        $events = [
+            new AfterTurnCommitEventSummary(41, 'tool_execution_end', ['tool_name' => 'bash', 'standalone' => true]),
+            new AfterTurnCommitEventSummary(42, 'agent_end', ['reason' => 'completed']),
+        ];
+        $context = new AfterTurnCommitHookContext($id, 4, 'completed', $events, 0, $state);
+        $this->assertSame([], self::getContainer()->get(GoalFollowUpHookSubscriber::class)->prepareAfterTurnCommit($context, 40));
+    }
+
     private function context(string $id, string $type, string $reason, ?string $parent = null): AfterTurnCommitHookContext
     {
         $state = new RunState($id, RunStatus::Completed, parentRunId: $parent);
+        $events = [new AfterTurnCommitEventSummary(42, $type, ['reason' => $reason])];
+        if ('agent_end' === $type) {
+            array_unshift($events, new AfterTurnCommitEventSummary(41, 'llm_step_completed', []));
+        }
 
-        return new AfterTurnCommitHookContext($id, 4, 'completed', [new AfterTurnCommitEventSummary(42, $type, ['reason' => $reason])], 0, $state);
+        return new AfterTurnCommitHookContext($id, 4, 'completed', $events, 0, $state);
     }
 }

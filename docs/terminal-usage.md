@@ -103,7 +103,7 @@ whole phrase as the objective. Objectives are limited to 4,000 Unicode character
 After a successful main-agent exchange, a saved goal queues an internal follow-up
 through the normal message path. The agent checks the current objective and its
 evidence, clears it when complete, or continues unfinished work. Intermediate
-model/tool steps, child completions, failures and cancellation do not trigger this
+model/tool steps, standalone `!` shell commands, child completions, failures and cancellation do not trigger this
 follow-up. Goals survive compaction and session resume; resuming alone does not
 start work. Forks and subagents do not own or change the main session's goal.
 
@@ -112,6 +112,18 @@ the agent is busy. They do not stop already executing tools; use normal cancella
 for that. A previously queued goal reminder instructs the agent to read the current
 goal first and do nothing if it has been cleared. Goals are mutable session metadata,
 not a versioned history timeline, and have no separate pause state or budget.
+
+While the current session has a goal, `ask_human` remains in the tool catalog but
+returns a tool-call error instead of opening a question. This does not change its
+schema or grant missing permissions/authorization. The agent must not clear a goal
+merely to ask a question. A question already pending when a goal is set is not
+automatically cancelled; goal commands during that existing question retain the
+normal question-input behavior.
+
+Agent completion uses `clear_goal` with the exact objective it verified. If the
+user has replaced it meanwhile, the compare-and-clear leaves the replacement
+intact and returns `cleared: false` with the current goal for re-evaluation.
+Explicit user `/goal clear` or `/goal cancel` remains unconditional.
 
 ## Choose a model
 

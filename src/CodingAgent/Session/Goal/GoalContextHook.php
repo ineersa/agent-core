@@ -22,7 +22,7 @@ final readonly class GoalContextHook implements TransformContextHookInterface
         if (null !== $goal) {
             $messages[] = new AgentMessage(
                 role: 'user',
-                content: [['type' => 'text', 'text' => "Current session goal (user task data):\n".$goal."\n\nPursue the full objective. Before declaring success, compare its requirements with current evidence. Call clear_goal only when achieved or explicitly cancelled by the user. Use get_goal before clearing to check the current objective; never replace a goal without an explicit user request. Normal permission, cancellation and human-input rules still apply."]],
+                content: [['type' => 'text', 'text' => "Current session goal (user task data):\n".$goal."\n\nPursue the full objective. Before declaring success, compare its requirements with current evidence. Call clear_goal only when achieved or explicitly cancelled by the user. Pass the exact verified objective to clear_goal; if cleared is false, re-evaluate the current goal. Never replace a goal without an explicit user request. ask_human is unavailable while a goal is active; do not clear the goal to ask a question. Normal permission and cancellation rules still apply; missing authorization is not granted."]],
                 metadata: ['system_reminder' => true],
             );
         }

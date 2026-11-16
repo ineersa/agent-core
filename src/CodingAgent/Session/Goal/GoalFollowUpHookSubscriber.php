@@ -16,7 +16,7 @@ use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
 /** Use the existing durable follow-up path, only at a real main exchange end. */
 final readonly class GoalFollowUpHookSubscriber implements EssentialAfterTurnHookInterface
 {
-    public const string FOLLOW_UP = 'A session goal remains. Call get_goal first: if it has been cleared, stop; if changed, use the current objective. Verify the entire current goal against current evidence. If achieved, call clear_goal and report the evidence. Otherwise continue the necessary work with the existing tools and follow-up/completion facilities. A final answer alone is not goal completion. Do not invent a replacement goal or new authorization.';
+    public const string FOLLOW_UP = 'A session goal remains. Call get_goal first: if it has been cleared, stop; if changed, use the current objective. Verify the entire current goal against current evidence. If achieved, call clear_goal with the exact verified objective and report the evidence; if cleared is false, re-evaluate the current goal. Otherwise continue the necessary work with the existing tools and follow-up/completion facilities. A final answer alone is not goal completion. Do not invent a replacement goal or new authorization.';
 
     public function __construct(private HatfieldSessionRepository $sessions)
     {
@@ -25,6 +25,11 @@ final readonly class GoalFollowUpHookSubscriber implements EssentialAfterTurnHoo
     public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
     {
         if (null !== $context->runState->parentRunId || RunStatus::Completed->value !== $context->status) {
+            return [];
+        }
+        // Standalone !shell commands also emit agent_end(completed), but are
+        // not LLM exchanges and must not start goal pursuit.
+        if (!\in_array(RunEventTypeEnum::LlmStepCompleted->value, array_column($context->events, 'type'), true)) {
             return [];
         }
         foreach ($context->events as $index => $event) {
