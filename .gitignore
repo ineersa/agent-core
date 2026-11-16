@@ -33,3 +33,6 @@ callgraph.html
 
 # Versioned skills installed from extension packages
 /.hatfield/skills/task-workflow/
+
+# Claude Code local overrides
+/.claude/settings.local.json
