@@ -47,6 +47,10 @@ class HatfieldSession
     #[ORM\Column(type: 'string', nullable: true)]
     public ?string $prompt = null;
 
+    /** Current main-session objective; null after completion or cancellation. */
+    #[ORM\Column(type: 'text', nullable: true)]
+    public ?string $goal = null;
+
     /** Future fork tree parent ID; null for root sessions. */
     #[ORM\Column(name: 'parent_id', type: 'string', nullable: true)]
     public ?string $parentId = null;

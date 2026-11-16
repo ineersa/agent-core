@@ -98,6 +98,21 @@ final class RegistryBackedToolboxTest extends TestCase
 
     /* ───────── getTools() ───────── */
 
+    public function testZeroArgumentNativeToolsPreserveFrameworkMetadataAndExecute(): void
+    {
+        $handler = new class {
+            public function __invoke(): array
+            {
+                return ['goal' => null];
+            }
+        };
+        $registry = new ToolRegistry();
+        $registry->registerTool(name: 'get_goal', description: 'Read goal', handler: $handler, promptLine: 'get_goal');
+        $toolbox = $this->createToolbox($registry);
+        $this->assertNull($toolbox->getTools()[0]->getParameters());
+        $this->assertSame(['goal' => null], $toolbox->execute(new ToolCall('goal-call', 'get_goal', []))->getResult());
+    }
+
     public function testGetToolsReturnsEmptyForEmptyRegistry(): void
     {
         $registry = new ToolRegistry();

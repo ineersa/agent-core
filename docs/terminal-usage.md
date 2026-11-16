@@ -78,6 +78,7 @@ to use `bg_status` for background Bash jobs. See
 | `/resume` | Select a saved session and continue it. |
 | `/rename` | Change the session's display name. |
 | `/history` | Navigate conversation history, not file restore. |
+| `/goal [objective]` | Show or replace the session objective; `edit` prefills it, `clear` or `cancel` removes it. |
 | `/model` | Select an enabled model. |
 | `/settings-show` | Inspect settings through the session UI. |
 | `/compact` | Compact model-visible conversation context. |
@@ -90,6 +91,27 @@ to use `bg_status` for background Bash jobs. See
 Extensions and discovered prompt templates can add commands. `/help` reflects the
 commands available in your installation. For reusable instructions, see
 [skills](skills.md) and [prompt templates](prompt-templates.md).
+
+## Session goals
+
+`/goal <objective>` saves one objective for the current main session and submits
+ordinary agent work. It also works in a fresh draft. `/goal` displays the current
+objective without a model call; `/goal edit` puts it back in the editor for revision.
+Only exact control words are special: `/goal cancel the migration` stores that
+whole phrase as the objective. Objectives are limited to 4,000 Unicode characters.
+
+After a successful main-agent exchange, a saved goal queues an internal follow-up
+through the normal message path. The agent checks the current objective and its
+evidence, clears it when complete, or continues unfinished work. Intermediate
+model/tool steps, child completions, failures and cancellation do not trigger this
+follow-up. Goals survive compaction and session resume; resuming alone does not
+start work. Forks and subagents do not own or change the main session's goal.
+
+`/goal clear` and `/goal cancel` remove the objective immediately, including while
+the agent is busy. They do not stop already executing tools; use normal cancellation
+for that. A previously queued goal reminder instructs the agent to read the current
+goal first and do nothing if it has been cleared. Goals are mutable session metadata,
+not a versioned history timeline, and have no separate pause state or budget.
 
 ## Choose a model
 

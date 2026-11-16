@@ -105,11 +105,12 @@ final class HatfieldSessionStore
      *
      * @throws \RuntimeException if session creation cannot complete
      */
-    public function createSession(string $prompt = ''): string
+    public function createSession(string $prompt = '', ?string $goal = null): string
     {
         $session = new HatfieldSession();
         $session->cwd = $this->appConfig->cwd;
         $session->prompt = '' !== $prompt ? $prompt : null;
+        $session->goal = $goal;
         $session->name = $this->resolveDefaultName($prompt);
 
         $this->entityManager->persist($session);

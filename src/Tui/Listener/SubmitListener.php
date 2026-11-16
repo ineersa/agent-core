@@ -500,7 +500,8 @@ final class SubmitListener implements TuiListenerRegistrar
             return;
         }
 
-        $state->sessionId = $sessionStore->createSession($seedPrompt);
+        $state->sessionId = $sessionStore->createSession($seedPrompt, $state->pendingGoal);
+        $state->pendingGoal = null;
         $screen->updateSessionId($state->sessionId);
         $lifecycle->dispatch(\Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted);
         $logger->info('Draft session promoted to real session', [
