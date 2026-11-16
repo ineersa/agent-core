@@ -163,41 +163,6 @@ final class ObservationRepository
     }
 
     /**
-     * Exact observation lookup for recall / status-view (SQL-scoped to current run).
-     *
-     * @return array{
-     *   observation_id: string,
-     *   run_id: string,
-     *   content: string,
-     *   content_hash: string,
-     *   relevance: string,
-     *   timestamp: string,
-     *   token_count: int,
-     *   source_refs_json: string,
-     *   source_start_seq: int,
-     *   source_end_seq: int,
-     *   created_at: string
-     * }|null
-     */
-    public function findObservation(string $runId, string $observationId): ?array
-    {
-        $row = $this->connection->fetchAssociative(
-            'SELECT observation_id, run_id, content, content_hash, relevance, timestamp, token_count,
-                    source_refs_json, source_start_seq, source_end_seq, created_at
-             FROM om_observation WHERE run_id = ? AND observation_id = ?',
-            [$runId, $observationId],
-        );
-        if (false === $row) {
-            return null;
-        }
-
-        $mapped = $this->mapObservationRow($row);
-        $mapped['run_id'] = (string) ($row['run_id'] ?? '');
-
-        return $mapped;
-    }
-
-    /**
      * Bounded project-wide exact or unique-prefix observation lookup.
      *
      * @return list<array{
