@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "8350629a7320df695c6568b20ee79c6b",
+    "content-hash": "4a977fa00ab14e4683e04d79e9d7ec0f",
     "packages": [
         {
             "name": "amphp/amp",
@@ -3143,11 +3143,11 @@
         },
         {
             "name": "ineersa/symfony-ai-openai-chatgpt-platform",
-            "version": "v0.3.3",
+            "version": "v0.3.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/ineersa/symfony-ai-openai-chatgpt-platform.git",
-                "reference": "5b970ced5e20429f0370d025d40cd3a5c156c741"
+                "reference": "9aa091477847a26329a279a2f6d4287fbf3f93c9"
             },
             "require": {
                 "ext-openssl": "*",
@@ -3173,7 +3173,7 @@
                 "phpunit/phpunit": "^13.2"
             },
             "suggest": {
-                "ext-zstd": "Lossless level-4 compression of Responses request bodies to mitigate gateway upload-size failures."
+                "ext-zstd": "Lossless level-3 compression of Responses request bodies to mitigate gateway upload-size failures."
             },
             "type": "library",
             "autoload": {
@@ -3190,7 +3190,7 @@
                 "MIT"
             ],
             "description": "Single-account Sign in with ChatGPT OAuth and HTTP Responses bridge for Symfony AI.",
-            "time": "2026-11-16T22:55:51+00:00"
+            "time": "2026-11-16T15:30:11+00:00"
         },
         {
             "name": "kelunik/certificate",
