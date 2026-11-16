@@ -198,7 +198,7 @@ final class ObservationRepository
     }
 
     /**
-     * Exact or unique-prefix observation lookup (SQL-scoped to current run).
+     * Bounded project-wide exact or unique-prefix observation lookup.
      *
      * @return list<array{
      *   observation_id: string,
@@ -214,28 +214,21 @@ final class ObservationRepository
      *   created_at: string
      * }>
      */
-    public function findObservationsByIdPrefix(string $runId, string $idPrefix): array
+    public function findObservationsByIdPrefix(string $idPrefix): array
     {
         $idPrefix = strtolower(trim($idPrefix));
         if ('' === $idPrefix) {
             return [];
         }
 
-        // Exact full id first (cheap primary-key path).
-        if (64 === \strlen($idPrefix)) {
-            $exact = $this->findObservation($runId, $idPrefix);
-
-            return null === $exact ? [] : [$exact];
-        }
-
         $rows = $this->connection->fetchAllAssociative(
             'SELECT observation_id, run_id, content, content_hash, relevance, timestamp, token_count,
                     source_refs_json, source_start_seq, source_end_seq, created_at
              FROM om_observation
-             WHERE run_id = ? AND observation_id LIKE ?
+             WHERE observation_id LIKE ?
              ORDER BY observation_id ASC
-             LIMIT 3',
-            [$runId, $idPrefix.'%'],
+             LIMIT 51',
+            [$idPrefix.'%'],
         );
 
         $out = [];

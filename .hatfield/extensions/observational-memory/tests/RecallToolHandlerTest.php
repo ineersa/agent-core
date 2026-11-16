@@ -258,10 +258,8 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('"ok":', $cross);
         $cross = Toon::decode($cross);
         $this->assertIsArray($cross);
-        $this->assertFalse($cross['ok']);
-        $this->assertSame('not_found', $cross['error']);
-        $this->assertStringContainsString('session run-current', (string) $cross['message']);
-        $this->assertStringContainsString('If this id came from memory_search, pass its session_id.', (string) $cross['message']);
+        $this->assertTrue($cross['ok']);
+        $this->assertSame('run-other', $cross['session_id']);
 
         // Reflection support ids that only exist in another run must not leak events.
         $refOtherSupport = str_repeat('4', 64);
@@ -653,10 +651,8 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         );
         $withoutSession = Toon::decode($withoutSession);
         $this->assertIsArray($withoutSession);
-        $this->assertFalse($withoutSession['ok']);
-        $this->assertSame('not_found', $withoutSession['error']);
-        $this->assertStringContainsString('session run-current', (string) $withoutSession['message']);
-        $this->assertStringContainsString('If this id came from memory_search, pass its session_id.', (string) $withoutSession['message']);
+        $this->assertTrue($withoutSession['ok']);
+        $this->assertSame('run-prior', $withoutSession['session_id']);
 
         $withSession = $accessor->with(
             new ToolContext(
@@ -669,7 +665,6 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             ),
             static fn (): mixed => $adapter([
                 'id' => substr($priorId, 0, 12),
-                'session_id' => 'run-prior',
             ]),
         );
         $withSession = Toon::decode($withSession);

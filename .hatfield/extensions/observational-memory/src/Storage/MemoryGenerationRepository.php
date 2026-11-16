@@ -67,7 +67,7 @@ final class MemoryGenerationRepository
     }
 
     /**
-     * Exact or unique-prefix reflection lookup (SQL-scoped to current run).
+     * Bounded project-wide exact or unique-prefix reflection lookup.
      *
      * @return list<array{
      *   reflection_id: string,
@@ -77,26 +77,20 @@ final class MemoryGenerationRepository
      *   token_count: int
      * }>
      */
-    public function findReflectionsByIdPrefix(string $runId, string $idPrefix): array
+    public function findReflectionsByIdPrefix(string $idPrefix): array
     {
         $idPrefix = strtolower(trim($idPrefix));
         if ('' === $idPrefix) {
             return [];
         }
 
-        if (64 === \strlen($idPrefix)) {
-            $exact = $this->findReflection($runId, $idPrefix);
-
-            return null === $exact ? [] : [$exact];
-        }
-
         $rows = $this->connection->fetchAllAssociative(
             'SELECT reflection_id, run_id, content, supporting_observation_ids_json, token_count
              FROM om_reflection
-             WHERE run_id = ? AND reflection_id LIKE ?
+             WHERE reflection_id LIKE ?
              ORDER BY reflection_id ASC
-             LIMIT 3',
-            [$runId, $idPrefix.'%'],
+             LIMIT 51',
+            [$idPrefix.'%'],
         );
 
         $out = [];

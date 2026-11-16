@@ -201,6 +201,24 @@ still need `php` on `PATH`. See [tools.md](tools.md).
 
 See [background-processes.md](background-processes.md).
 
+### Observational memory retrieval
+
+OM owns `extensions.settings.observational_memory.librarian`: omit it or set `null`
+for local literal-substring search and project-wide ID-only recall without a connection.
+Set `{url: 'http://127.0.0.1:8093/_mcp', timeout_seconds: 30}` to use a shared Librarian
+HTTP MCP service for both tools. The URL is the full absolute HTTP(S) endpoint, without
+credentials/query/fragment; timeout defaults to 30 seconds and is bounded to 1–300.
+Malformed configured settings fail rather than silently selecting local mode.
+
+No authentication settings or ordinary MCP registration are added. The worker lazily
+calls `ensure_project` once per connection with its canonical project-root header;
+registration does not wait for discovery/index readiness. Configured backend failures
+are explicit, never local fallback. Recall accepts only `id`, with `session_id` retained
+as output provenance. Observation/reflection remain local; child/fork OM stays disabled.
+Local embedding/reranker/semantic settings and indexing jobs have been removed, without
+deleting canonical memories or old derived storage. See the installed observational
+memory package's `README.md` for lifecycle, limits, and tool guidance.
+
 ## Environment variables
 
 | Variable | Role |

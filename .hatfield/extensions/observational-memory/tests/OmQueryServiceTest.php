@@ -41,6 +41,9 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
     {
         parent::setUp();
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('om-query');
+        $this->assertSame($this->tmpDir, realpath($this->tmpDir));
+        $this->assertFalse(is_link($this->tmpDir));
+        $this->assertStringStartsWith(realpath(\dirname(__DIR__, 4)).'/var/tmp/', $this->tmpDir);
     }
 
     protected function tearDown(): void
@@ -279,12 +282,42 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
         $missing = $service->recall('run-prefix', str_repeat('f', 12));
         $this->assertFalse($missing['ok']);
         $this->assertSame('not_found', $missing['error']);
-        $this->assertStringContainsString('session run-prefix', (string) $missing['message']);
-        $this->assertStringContainsString('If this id came from memory_search, pass its session_id.', (string) $missing['message']);
 
         $invalid = $service->recall('run-prefix', 'short');
         $this->assertFalse($invalid['ok']);
         $this->assertSame('invalid_id', $invalid['error']);
+
+        // An exact observation ID is not allowed to win over a reflection with the same ID.
+        $reflection = [
+            'reflection_id' => $id1, 'run_id' => 'another-session',
+            'compaction_request_id' => 'collision', 'observation_set_hash' => hash('sha256', 'collision'),
+            'content' => 'Actual reflection content', 'supporting_observation_ids_json' => '[]',
+            'compression_level' => '0', 'token_count' => 1, 'reflector_model' => 'test/model',
+            'reflector_schema_version' => '1', 'created_at' => '2026-07-28T12:00:00+00:00',
+        ];
+        $connection->insert('om_reflection', $reflection);
+        $collision = $service->recall('unrelated-current-run', $id1);
+        $this->assertSame('ambiguous_id', $collision['error']);
+        $this->assertSame([
+            ['id' => $id1, 'content' => 'first'],
+            ['id' => $id1, 'content' => 'Actual reflection content'],
+        ], $collision['candidates']);
+        $this->assertFalse($collision['candidates_truncated']);
+
+        for ($i = 0; $i < 51; ++$i) {
+            $reflection['reflection_id'] = 'aaaaaaaaaaaa'.str_pad(dechex($i), 52, '0', \STR_PAD_LEFT);
+            $connection->insert('om_reflection', $reflection);
+        }
+        $bounded = $service->recall('unrelated-current-run', 'aaaaaaaaaaaa');
+        $this->assertSame('ambiguous_id', $bounded['error']);
+        $this->assertCount(50, $bounded['candidates']);
+        $this->assertTrue($bounded['candidates_truncated']);
+
+        $connection->update('om_reflection', ['content' => str_repeat('x', 900_001)], ['reflection_id' => $id1]);
+        $oversize = $service->recall('unrelated-current-run', $id1);
+        $this->assertSame('ambiguous_id', $oversize['error']);
+        $this->assertTrue($oversize['candidates_truncated']);
+        $this->assertCount(1, $oversize['candidates']);
     }
 
     #[Test]
@@ -606,7 +639,7 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
     }
 
     #[Test]
-    public function recallAcceptsExplicitSessionIdAndKeepsOmittedCurrentSessionBehavior(): void
+    public function recallDerivesPriorAndCurrentEvidenceSessionsFromProjectWideIds(): void
     {
         $dbPath = $this->tmpDir.'/om-recall-session.sqlite';
         $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
@@ -692,13 +725,7 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
             ]),
         );
 
-        $missingCross = $service->recall('run-current', substr($priorId, 0, 12));
-        $this->assertFalse($missingCross['ok']);
-        $this->assertSame('not_found', $missingCross['error']);
-        $this->assertStringContainsString('session run-current', (string) $missingCross['message']);
-        $this->assertStringContainsString('If this id came from memory_search, pass its session_id.', (string) $missingCross['message']);
-
-        $cross = $service->recall('run-current', substr($priorId, 0, 12), 'run-prior');
+        $cross = $service->recall('run-current', substr($priorId, 0, 12));
         $this->assertTrue($cross['ok']);
         $this->assertSame('observation', $cross['kind']);
         $this->assertSame('run-prior', $cross['session_id']);

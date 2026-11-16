@@ -12,8 +12,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 /**
  * Permanent ambient recall tool: exact/prefix one-ID lookup.
  *
- * Default scope is the current session. Pass session_id to recover a memory from an
- * explicit originating session returned by search.
+ * Resolve project-wide IDs; the matched record determines the evidence session.
  *
  * Returns TOON-encoded structured results for model correction; never logs recalled payloads.
  * Cooperative cancel/timeout maps are returned as plain structured arrays (not TOON) so
@@ -56,19 +55,9 @@ final class RecallToolHandler implements ContextualExtensionToolHandlerInterface
             ]);
         }
 
-        $sessionId = $arguments['session_id'] ?? null;
-        if (null !== $sessionId && !\is_string($sessionId)) {
-            return Toon::encode([
-                'ok' => false,
-                'error' => 'invalid_session_id',
-                'message' => 'session_id must be a non-empty session/run id when provided.',
-            ]);
-        }
-
         $result = $this->query->recall(
             $context->runId,
             $id,
-            $sessionId,
             $context->cancellationToken,
             $context->timeoutSeconds,
             $deadlineNs,
