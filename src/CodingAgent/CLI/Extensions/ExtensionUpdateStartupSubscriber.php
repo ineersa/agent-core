@@ -51,6 +51,13 @@ final class ExtensionUpdateStartupSubscriber implements EventSubscriberInterface
                         static fn (array $change): array => [$change['package'], $change['current'], $change['target']],
                         $plan->changes,
                     ));
+                    if ([] !== $plan->requirementChanges) {
+                        $io->table(['Direct extension requirement', 'Current', 'Proposed'], array_map(
+                            static fn (array $change): array => [$change['package'], $change['current'], $change['target']],
+                            $plan->requirementChanges,
+                        ));
+                    }
+                    $io->text('Apply proposed composer.json SHA256 '.hash('sha256', $plan->manifestContents));
                     $io->text('Apply proposed composer.lock SHA256 '.hash('sha256', $plan->lockContents).', then run:');
                     $environment = [];
                     foreach (ExtensionUpdateService::environment($plan->root) as $name => $value) {
