@@ -22,7 +22,6 @@ use Ineersa\HatfieldExt\ObservationalMemory\Runtime\ObservationalMemoryConfigura
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Tool\RecallToolHandler;
-use Ineersa\HatfieldExt\ObservationalMemory\Tool\RetrievalResultHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Tool\SearchToolHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Tui\OmBackgroundStatusPoller;
 use Psr\Log\LoggerAwareInterface;
@@ -75,7 +74,6 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
         $this->databasePath = OmPaths::fromSettings($settings, $api->getCwd())->databasePath;
         $query = new OmQueryService($api, $settings, $this->logger);
         $hybrid = null !== $settings->librarian;
-        $api->registerToolResultHook(new RetrievalResultHook($this->logger));
 
         $api->registerExtensionAgentJobHandler(
             ObserveBoundaryTerminalHook::HANDLER_ID,
