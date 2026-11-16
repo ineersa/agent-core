@@ -252,6 +252,21 @@ Run `hatfield extensions:setup` to install and configure Hatfield extensions. Th
 
 Turning **Enabled for parent** off also turns that extension's fork and agent selections off in the form. Re-enabling the parent does not restore those selections automatically. Save to persist the choices; existing sessions need a restart to load them.
 
+New extension packages use a direct Composer requirement of `*`, allowing published
+releases without Composer's inferred patch-level restriction. Dependency and PHP
+requirements still apply. Interactive startup previews updates only when an installed
+extension's version or source revision changes, not for dependency-only or constraint-only
+refreshes. Composer minimizes dependency changes; dependencies required by an extension
+update remain visible in the proposed package table.
+
+An update preview can also propose replacing an old installer-generated `^0.0.<patch>`
+extension requirement with `*`. Explicit pins, development requirements and unrelated
+library constraints are preserved. The preview displays requirement changes and hashes
+of the exact proposed `composer.json` and `composer.lock`; declining changes neither file
+nor installed packages. Approval installs that reviewed pair with Composer scripts and
+plugins disabled, before extension classes load. Restart Hatfield to check for updates;
+`/new` inside a running host does not reload PHP extension code.
+
 - Settings and extension enablement are project/user config.
 - Sessions, tmp, cache, logs are runtime and should stay untracked.
 - Extensions load from `.hatfield/extensions` Composer autoload when enabled. Task workflow and observational memory document setup and settings in their package-local READMEs. For task workflow, read the installed `ineersa/hatfield-ext-task-workflow` package's `README.md`.

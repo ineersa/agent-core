@@ -75,7 +75,7 @@ final readonly class ExtensionPackageInstaller
         if (null === $composer) {
             throw new ExtensionPackageInstallException('Composer executable was not found on PATH.');
         }
-        $arguments = $installed ? ['dump-autoload'] : ['require', $package];
+        $arguments = $installed ? ['dump-autoload'] : ['require', $package.':*'];
         $process = new Process([$composer, ...$arguments, '--no-interaction', '--no-ansi'], $root, timeout: 300);
         $process->mustRun();
         if (!isset($this->packages($layer, $cwd)[$package])) {

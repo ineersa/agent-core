@@ -60,16 +60,16 @@ final class ExtensionUpdateFixture
         return $this->directory.'/'.$scope.'/.hatfield/extensions';
     }
 
-    public function seed(string $scope = 'project', bool $dependency = false, bool $devMode = false): void
+    public function seed(string $scope = 'project', bool $dependency = false, bool $devMode = false, string $version = '1.0.0', string $requirement = '^1.0'): void
     {
         $root = $this->root($scope);
         $this->filesystem->mkdir($root);
-        $this->writePackage($scope, '1.0.0', $dependency ? '^1.0' : null);
+        $this->writePackage($scope, $version, $dependency ? '^1.0' : null);
         if ($dependency || $devMode) {
             $this->writeDependency($scope, '1.0.0');
         }
         $manifest = [
-            'name' => 'hatfield/test-extensions', 'require' => ['test/update-extension' => '^1.0'],
+            'name' => 'hatfield/test-extensions', 'require' => ['test/update-extension' => $requirement],
             'repositories' => [
                 'packagist.org' => false,
                 'local' => ['type' => 'path', 'url' => '../../packages/*', 'options' => ['symlink' => false]],

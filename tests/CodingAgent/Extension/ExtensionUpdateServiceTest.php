@@ -94,6 +94,101 @@ final class ExtensionUpdateServiceTest extends IsolatedKernelTestCase
         $this->assertDirectoryDoesNotExist($workspace);
     }
 
+    public function testLegacyRequirementIsRepairedOnlyInTheApprovedManifestAndLock(): void
+    {
+        $this->fixture->seed(dependency: true, version: '0.0.43', requirement: '^0.0.43');
+        $path = $this->fixture->root('project').'/composer.json';
+        $manifest = json_decode(file_get_contents($path), true, flags: \JSON_THROW_ON_ERROR);
+        $manifest['require']['test/update-dependency'] = '^1.0';
+        $manifest['extra'] = ['custom' => 'preserved', 'empty' => new \stdClass()];
+        $this->fixture->filesystem->dumpFile($path, json_encode($manifest, \JSON_THROW_ON_ERROR));
+        $before = $this->fixture->snapshot();
+        $this->fixture->writePackage('project', '0.0.54', '^1.1');
+        $this->fixture->writeDependency('project', '1.1.0');
+        $plans = $this->service->prepare($this->fixture->project());
+        $this->assertCount(1, $plans);
+        $this->assertSame($before, $this->fixture->snapshot());
+        $this->assertSame([['package' => 'test/update-extension', 'current' => '^0.0.43', 'target' => '*']], $plans[0]->requirementChanges);
+        $manifest = json_decode($plans[0]->manifestContents, true, flags: \JSON_THROW_ON_ERROR);
+        $expected = json_decode($before['composer.json'], true, flags: \JSON_THROW_ON_ERROR);
+        $expected['require']['test/update-extension'] = '*';
+        $this->assertSame($expected, $manifest);
+        $this->assertStringContainsString('"empty": {}', $plans[0]->manifestContents);
+        $this->assertSame(['test/update-dependency', 'test/update-extension'], array_column($plans[0]->changes, 'package'));
+        $this->service->apply($plans);
+        $this->assertSame($plans[0]->manifestContents, file_get_contents($plans[0]->root.'/composer.json'));
+        $this->assertSame($plans[0]->lockContents, file_get_contents($plans[0]->root.'/composer.lock'));
+        $this->assertSame('0.0.54', $this->fixture->loadedVersion());
+    }
+
+    public function testLegacyConstraintCorrectionAloneDoesNotProduceAPlanOrLiveWrites(): void
+    {
+        $this->fixture->seed(version: '0.0.43', requirement: '^0.0.43');
+        $before = $this->fixture->snapshot();
+        $this->assertSame([], $this->service->prepare($this->fixture->project()));
+        $this->service->cleanup();
+        $this->assertSame($before, $this->fixture->snapshot());
+    }
+
+    public function testDependencyOnlyCandidateDoesNotProduceAnExtensionUpdatePlan(): void
+    {
+        $this->fixture->seed(dependency: true);
+        $this->fixture->writeDependency('project', '1.1.0');
+        $before = $this->fixture->snapshot();
+        $this->assertSame([], $this->service->prepare($this->fixture->project()));
+        $this->assertSame($before, $this->fixture->snapshot());
+    }
+
+    public function testMinimalChangesKeepsCompatibleDependencyWhileUpdatingTheExtension(): void
+    {
+        $this->fixture->seed(dependency: true);
+        // Both releases must remain available: replacing the only path package
+        // would force Composer to move even with --minimal-changes.
+        $this->fixture->filesystem->mirror($this->fixture->directory.'/project/packages/dependency', $this->fixture->directory.'/project/packages/locked-dependency');
+        $this->fixture->writePackage('project', '1.1.0', '^1.0');
+        $this->fixture->writeDependency('project', '1.1.0');
+        $plans = $this->service->prepare($this->fixture->project());
+        $this->assertCount(1, $plans);
+        $this->assertSame(['test/update-extension'], array_column($plans[0]->changes, 'package'));
+        $this->assertSame([], $plans[0]->requirementChanges);
+    }
+
+    public function testDevelopmentTargetRevisionChangeStillProducesAnUpdate(): void
+    {
+        $this->fixture->seed(dependency: true, version: 'dev-main', requirement: '@dev');
+        $this->fixture->writePackage('project', 'dev-main', '^1.1');
+        $this->fixture->writeDependency('project', '1.1.0');
+        $plans = $this->service->prepare($this->fixture->project());
+        $this->assertCount(1, $plans);
+        $this->assertSame([], $plans[0]->requirementChanges);
+        $this->assertSame(file_get_contents($plans[0]->root.'/composer.json'), $plans[0]->manifestContents);
+        $extension = array_values(array_filter($plans[0]->changes, static fn (array $change): bool => 'test/update-extension' === $change['package']))[0];
+        $this->assertStringStartsWith('dev-main @ ', $extension['current']);
+        $this->assertStringStartsWith('dev-main @ ', $extension['target']);
+        $this->assertNotSame($extension['current'], $extension['target']);
+    }
+
+    public function testExactUserPinIsNotBroadenedToPermitANewerRelease(): void
+    {
+        $this->fixture->seed(version: '0.0.43', requirement: '0.0.43');
+        // Keep the exact pinned package available alongside the newer release.
+        $this->fixture->filesystem->mirror($this->fixture->directory.'/project/packages/ext', $this->fixture->directory.'/project/packages/pinned');
+        $this->fixture->writePackage('project', '0.0.54');
+        $before = $this->fixture->snapshot();
+        $this->assertSame([], $this->service->prepare($this->fixture->project()));
+        $this->assertSame($before, $this->fixture->snapshot());
+    }
+
+    public function testDiscardingALegacyRequirementUpdateLeavesLiveFilesUntouched(): void
+    {
+        $this->fixture->seed(version: '0.0.43', requirement: '^0.0.43');
+        $this->fixture->writePackage('project', '0.0.54');
+        $before = $this->fixture->snapshot();
+        $this->assertCount(1, $this->service->prepare($this->fixture->project()));
+        $this->service->cleanup();
+        $this->assertSame($before, $this->fixture->snapshot());
+    }
+
     public function testUpToDateAndAbsentInstallationsHaveNoPlan(): void
     {
         $this->assertSame([], $this->service->prepare($this->fixture->project()));

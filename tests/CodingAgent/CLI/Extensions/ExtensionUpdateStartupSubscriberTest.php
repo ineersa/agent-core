@@ -109,6 +109,29 @@ final class ExtensionUpdateStartupSubscriberTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('composer.lock SHA256', $output);
     }
 
+    public function testLegacyRequirementRepairIsDisplayedAndDecliningPreservesBothFiles(): void
+    {
+        $this->fixture->seed(version: '0.0.43', requirement: '^0.0.43');
+        $this->fixture->writePackage('project', '0.0.54');
+        $before = $this->fixture->snapshot();
+        $output = $this->dispatch("no\n");
+        foreach (['Direct extension requirement', '^0.0.43', '*', '0.0.54', 'composer.json SHA256', 'composer.lock SHA256', 'Updates declined'] as $text) {
+            $this->assertStringContainsString($text, $output);
+        }
+        $this->assertSame($before, $this->fixture->snapshot());
+    }
+
+    public function testConstraintAndDependencyOnlyCandidatesDoNotAskForConsent(): void
+    {
+        $this->fixture->seed(dependency: true, version: '0.0.43', requirement: '^0.0.43');
+        $this->fixture->writeDependency('project', '1.1.0');
+        $before = $this->fixture->snapshot();
+        $output = $this->dispatch('');
+        $this->assertStringNotContainsString('Apply exactly', $output);
+        $this->assertStringNotContainsString('composer.json SHA256', $output);
+        $this->assertSame($before, $this->fixture->snapshot());
+    }
+
     public function testCheckFailureStopsLowerPriorityLoaderAndSessionStartup(): void
     {
         $this->fixture->seed();
