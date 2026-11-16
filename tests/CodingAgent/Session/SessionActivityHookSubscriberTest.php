@@ -85,12 +85,59 @@ final class SessionActivityHookSubscriberTest extends IsolatedKernelTestCase
         $this->assertSame([$second, $first], array_column($this->sessions->listCompletionSessions('', 10), 'sessionId'));
     }
 
+    public function testOnlyAcceptedUserInputsRefreshRecency(): void
+    {
+        $id = $this->sessions->createSession('Conversation');
+        $subscriber = self::getContainer()->get(SessionActivityHookSubscriber::class);
+        $inputs = [new AfterTurnCommitEventSummary(1, 'run_started', [])];
+        foreach (['follow_up', 'steer', 'append_message'] as $kind) {
+            $inputs[] = new AfterTurnCommitEventSummary(2, 'agent_command_queued', ['kind' => $kind]);
+        }
+        foreach (['human_response', 'shell_command'] as $kind) {
+            $inputs[] = new AfterTurnCommitEventSummary(3, 'agent_command_applied', ['kind' => $kind]);
+        }
+        foreach ($inputs as $event) {
+            $this->clock->modify('+1 minute');
+            $subscriber->handleAfterTurnCommit($this->context($id, [$event]));
+            $this->assertSame($this->clock->now()->format(\DateTimeInterface::ATOM), $this->sessions->listSessions()[0]['updated_at'], $event->type);
+        }
+
+        $before = $this->sessions->listSessions();
+        foreach (['llm_step_completed', 'llm_step_failed', 'llm_step_aborted', 'tool_execution_start', 'tool_execution_update', 'tool_execution_end', 'tool_batch_committed', 'turn_advanced', 'agent_end', 'waiting_human', 'context_compacted', 'agent_command_rejected'] as $type) {
+            $this->clock->modify('+1 minute');
+            $subscriber->handleAfterTurnCommit($this->context($id, [new AfterTurnCommitEventSummary(4, $type, [])]));
+            $this->assertSame($before, $this->sessions->listSessions(), $type);
+        }
+        foreach (['follow_up', 'steer', 'append_message', 'cancel', 'compact'] as $kind) {
+            $this->clock->modify('+1 minute');
+            $subscriber->handleAfterTurnCommit($this->context($id, [new AfterTurnCommitEventSummary(5, 'agent_command_applied', ['kind' => $kind])]));
+            $this->assertSame($before, $this->sessions->listSessions(), $kind.' application must not double-count input');
+        }
+    }
+
+    public function testAutomaticMessagesDoNotRefreshRecency(): void
+    {
+        $id = $this->sessions->createSession('Conversation');
+        $before = $this->sessions->listSessions();
+        $subscriber = self::getContainer()->get(SessionActivityHookSubscriber::class);
+        foreach (['agent_communication' => [], 'background_completion' => [], 'agent_task' => [], 'system_reminder' => true] as $key => $value) {
+            foreach (['follow_up', 'steer', 'append_message'] as $kind) {
+                $this->clock->modify('+1 minute');
+                $subscriber->handleAfterTurnCommit($this->context($id, [new AfterTurnCommitEventSummary(1, 'agent_command_queued', [
+                    'kind' => $kind,
+                    'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Automatic notice']], 'metadata' => [$key => $value]],
+                ])]));
+                $this->assertSame($before, $this->sessions->listSessions(), $key);
+            }
+        }
+    }
+
     /** @param list<AfterTurnCommitEventSummary>|null $events */
     private function context(string $runId, ?array $events = null): AfterTurnCommitHookContext
     {
         return new AfterTurnCommitHookContext(
             runId: $runId, turnNo: 1, status: RunStatus::Running->value,
-            events: $events ?? [new AfterTurnCommitEventSummary(1, 'llm_step_completed', [])],
+            events: $events ?? [new AfterTurnCommitEventSummary(1, 'agent_command_queued', ['kind' => 'follow_up'])],
             effectsCount: 0, runState: new RunState($runId, RunStatus::Running, turnNo: 1),
         );
     }

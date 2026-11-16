@@ -55,7 +55,7 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
             $clock->modify('+1 minute');
             self::getContainer()->get(HookDispatcher::class)->dispatchAfterTurnCommit(new AfterTurnCommitHookContext(
                 runId: $older, turnNo: 1, status: RunStatus::Running->value,
-                events: [new AfterTurnCommitEventSummary(1, 'llm_step_completed', [])],
+                events: [new AfterTurnCommitEventSummary(1, 'agent_command_queued', ['kind' => 'follow_up'])],
                 effectsCount: 0, runState: new RunState($older, RunStatus::Running, turnNo: 1),
             ));
 
