@@ -198,7 +198,8 @@ final class LibrarianClient
         if (!\is_array($payload)) {
             throw new \UnexpectedValueException('Librarian did not return structured content.');
         }
-        if (\strlen(json_encode($payload, \JSON_THROW_ON_ERROR)) > self::MAX_PAYLOAD_BYTES) {
+        // Match Librarian's byte budget, not JSON's expanded Unicode/slash escaping.
+        if (\strlen(json_encode($payload, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES)) > self::MAX_PAYLOAD_BYTES) {
             throw new \LengthException('Librarian response exceeded the payload limit.');
         }
         $payload['isError'] = $result->isError || false === ($payload['ok'] ?? null);

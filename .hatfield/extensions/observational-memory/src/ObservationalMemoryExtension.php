@@ -73,7 +73,7 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
         $settings = OmSettings::fromApi($api);
         $this->databasePath = OmPaths::fromSettings($settings, $api->getCwd())->databasePath;
         $query = new OmQueryService($api, $settings, $this->logger);
-        $hybrid = null !== $settings->librarian;
+        $hybrid = $query->usesLibrarian();
 
         $api->registerExtensionAgentJobHandler(
             ObserveBoundaryTerminalHook::HANDLER_ID,

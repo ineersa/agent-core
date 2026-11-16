@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
@@ -11,6 +12,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
@@ -229,11 +231,36 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringNotContainsString('reranker', $text);
     }
 
-    private function hybridTool(): ToolRegistrationDTO
+    #[Test]
+    public function inheritedLibrarianInWorktreeRegistersLocalToolGuidance(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('om-worktree-registration');
+        $this->assertSame($directory, realpath($directory));
+        $this->assertFalse(is_link($directory));
+        try {
+            mkdir($directory.'/metadata');
+            mkdir($directory.'/metadata/worktree');
+            file_put_contents($directory.'/.git', 'gitdir: metadata/worktree');
+            $exec = $this->createMock(ExecInterface::class);
+            $exec->expects($this->once())->method('exec')->willReturn(new ExecResultDTO($directory.'/metadata/worktree'."\n".$directory.'/metadata', '', 0));
+            $tool = $this->hybridTool($directory, $exec);
+            $text = $tool->description.' '.implode(' ', $tool->promptGuidelines);
+            $this->assertStringContainsString('one contiguous literal substring', $text);
+            $this->assertStringNotContainsString('hybrid keyword', $text);
+            $this->assertStringNotContainsString('through Librarian', $text);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    private function hybridTool(string $cwd = '/project', ?ExecInterface $exec = null): ToolRegistrationDTO
     {
         $tools = [];
         $api = $this->createMock(ExtensionApiInterface::class);
-        $api->method('getCwd')->willReturn('/project');
+        $api->method('getCwd')->willReturn($cwd);
+        if (null !== $exec) {
+            $api->method('exec')->willReturn($exec);
+        }
         $api->method('getSettings')->willReturn(['librarian' => ['url' => 'http://librarian.test/_mcp']]);
         $api->expects($this->never())->method('registerSessionStartHook');
         $api->expects($this->exactly(2))->method('registerTool')->willReturnCallback(static function (ToolRegistrationDTO $tool) use (&$tools): void {

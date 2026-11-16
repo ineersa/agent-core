@@ -120,6 +120,22 @@ final class LibrarianClientTest extends TestCase
         $this->assertSame('librarian_unavailable', $client->call('recall', ['id' => str_repeat('a', 12)])['error']);
     }
 
+    public function testUnicodeAndSlashPayloadBudgetsMatchLibrarianEncoding(): void
+    {
+        foreach ([str_repeat('Я', 4000), str_repeat('/', 12000)] as $content) {
+            $payload = ['ok' => true, 'count' => 50, 'results' => array_fill(0, 50, ['content' => $content])];
+            $this->assertGreaterThan(1_048_576, \strlen(json_encode($payload, \JSON_THROW_ON_ERROR)));
+            $this->assertLessThan(1_048_576, \strlen(json_encode($payload, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES)));
+            $calls = [];
+            $client = $this->client($calls, static fn (string $tool): array => 'ensure_project' === $tool ? ['ok' => true] : $payload);
+            $result = $client->call('memory_search', ['query' => 'identifier']);
+            $this->assertTrue($result['ok']);
+            $this->assertFalse($result['isError']);
+            $this->assertSame($payload['results'], $result['results']);
+            $this->assertSame(['ensure_project', 'memory_search'], $calls);
+        }
+    }
+
     /** @param list<string> $calls */
     private function client(array &$calls, callable $payload): LibrarianClient
     {

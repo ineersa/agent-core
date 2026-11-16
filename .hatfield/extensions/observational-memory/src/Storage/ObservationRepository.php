@@ -186,14 +186,18 @@ final class ObservationRepository
             return [];
         }
 
+        // IDs are validated hex by OmQueryService. GLOB keeps prefix lookup indexable
+        // against the BINARY primary key; default case-insensitive LIKE does not.
+        $exact = 64 === \strlen($idPrefix);
+        $predicate = $exact ? 'observation_id = ?' : 'observation_id GLOB ?';
         $rows = $this->connection->fetchAllAssociative(
             'SELECT observation_id, run_id, content, content_hash, relevance, timestamp, token_count,
                     source_refs_json, source_start_seq, source_end_seq, created_at
              FROM om_observation
-             WHERE observation_id LIKE ?
+             WHERE '.$predicate.'
              ORDER BY observation_id ASC
              LIMIT 51',
-            [$idPrefix.'%'],
+            [$exact ? $idPrefix : $idPrefix.'*'],
         );
 
         $out = [];

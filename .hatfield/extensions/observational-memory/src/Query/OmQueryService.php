@@ -9,6 +9,7 @@ use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Exception\SearchInterruptedException;
 use Ineersa\HatfieldExt\ObservationalMemory\Librarian\LibrarianClient;
+use Ineersa\HatfieldExt\ObservationalMemory\Librarian\LibrarianProjectPolicy;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
@@ -36,6 +37,7 @@ final class OmQueryService
 
     private const string MEMORY_DATE_PATTERN = '/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/';
     private ?LibrarianClient $librarian = null;
+    private ?bool $externalAllowed = null;
 
     public function __construct(
         private readonly ExtensionApiInterface $api,
@@ -43,6 +45,13 @@ final class OmQueryService
         private readonly LoggerInterface $logger = new NullLogger(),
         private readonly ?HttpClientInterface $librarianHttpClient = null,
     ) {
+    }
+
+    public function usesLibrarian(): bool
+    {
+        return null !== $this->settings->librarian && ($this->externalAllowed ??= (new LibrarianProjectPolicy(
+            $this->api->exec(), $this->logger,
+        ))->allows($this->api->getCwd()));
     }
 
     public function formatStatus(string $runId): string
@@ -251,7 +260,7 @@ final class OmQueryService
             return $interrupt;
         }
 
-        if (null !== $this->settings->librarian) {
+        if ($this->usesLibrarian()) {
             return $this->external()->call('memory_search', array_filter([
                 'query' => $query, 'after' => $after, 'before' => $before, 'limit' => $limit,
             ], static fn (mixed $value): bool => null !== $value), $cancellationToken, $deadlineNs, $runId);
@@ -364,7 +373,7 @@ final class OmQueryService
             ];
         }
 
-        if (null !== $this->settings->librarian) {
+        if ($this->usesLibrarian()) {
             return $this->external()->call('recall', ['id' => $id], $cancellationToken, $deadlineNs, $runId);
         }
 

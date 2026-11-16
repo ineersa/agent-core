@@ -13,6 +13,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
@@ -28,6 +29,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\HttpClient\MockHttpClient;
 
 /**
  * Thesis: human /om-status and /om-view read current-run OM SQLite only;
@@ -50,6 +52,49 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
         parent::tearDown();
+    }
+
+    #[Test]
+    public function inheritedLibrarianInLinkedWorktreeUsesLocalSearchAndRecallWithoutHttp(): void
+    {
+        mkdir($this->tmpDir.'/metadata');
+        mkdir($this->tmpDir.'/metadata/worktree');
+        file_put_contents($this->tmpDir.'/.git', 'gitdir: metadata/worktree');
+        $dbPath = $this->tmpDir.'/custom-om.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $id = str_repeat('a', 64);
+        (new ObservationRepository($connection))->commitChunkPartCoverage(
+            coverageKey: 'local-policy', runId: 'source-run', boundaryKey: 'boundary',
+            sourceStartSeq: 1, sourceEndSeq: 1, chunkKey: 'chunk', partIndex: 1, partCount: 1,
+            sourceDigest: 'source', partDigest: 'part', rendererVersion: '1', observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test', observations: [[
+                'observation_id' => $id, 'content' => 'local worktree memory',
+                'content_hash' => hash('sha256', 'local worktree memory'), 'relevance' => 'medium',
+                'timestamp' => '2026-11-16 12:00', 'token_count' => 5, 'source_refs_json' => '[]',
+            ]], coveredAt: '2026-11-16T12:00:00+00:00',
+        );
+        $exec = $this->createMock(ExecInterface::class);
+        $exec->expects($this->once())->method('exec')->willReturn(new ExecResultDTO($this->tmpDir.'/metadata/worktree'."\n".$this->tmpDir.'/metadata', '', 0));
+        $api = $this->createStub(ExtensionApiInterface::class);
+        $api->method('getCwd')->willReturn($this->tmpDir);
+        $api->method('exec')->willReturn($exec);
+        $api->method('sessionEvents')->willReturn($this->createStub(SessionEventReaderInterface::class));
+        $http = new MockHttpClient(static function (): never {
+            throw new \LogicException('Worktrees must not contact Librarian.');
+        });
+        $service = new OmQueryService($api, OmSettings::fromArray([
+            'storage' => ['database' => $dbPath],
+            'librarian' => ['url' => 'http://librarian.test/_mcp'],
+        ]), librarianHttpClient: $http);
+        $this->assertFalse($service->usesLibrarian());
+        $search = $service->search('local worktree', runId: 'worktree-run');
+        $this->assertTrue($search['ok']);
+        $this->assertSame($id, $search['results'][0]['id']);
+        $recall = $service->recall('worktree-run', substr($id, 0, 12));
+        $this->assertTrue($recall['ok']);
+        $this->assertSame('source-run', $recall['session_id']);
+        $this->assertSame('local worktree memory', $recall['content']);
+        $this->assertSame(0, $http->getRequestsCount());
     }
 
     #[Test]

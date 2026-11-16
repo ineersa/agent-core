@@ -210,6 +210,12 @@ HTTP MCP service for both tools. The URL is the full absolute HTTP(S) endpoint, 
 credentials/query/fragment; timeout defaults to 30 seconds and is bounded to 1–300.
 Malformed configured settings fail rather than silently selecting local mode.
 
+Linked Git worktrees explicitly stay local even when they inherit this setting:
+literal search, ID-only recall, observation and reflection remain local, with no
+Librarian connection or project registration. Existing Git metadata that cannot be
+inspected also keeps retrieval local. Worktrees are never redirected to the primary
+checkout; this policy is separate from remote-failure handling in normal checkouts.
+
 No authentication settings or ordinary MCP registration are added. The worker lazily
 calls `ensure_project` once per connection with its canonical project-root header;
 registration does not wait for discovery/index readiness. Configured backend failures

@@ -53,13 +53,16 @@ final class MemoryGenerationRepository
             return [];
         }
 
+        // Match the BINARY primary key for both full IDs and validated hex prefixes.
+        $exact = 64 === \strlen($idPrefix);
+        $predicate = $exact ? 'reflection_id = ?' : 'reflection_id GLOB ?';
         $rows = $this->connection->fetchAllAssociative(
             'SELECT reflection_id, run_id, content, supporting_observation_ids_json, token_count
              FROM om_reflection
-             WHERE reflection_id LIKE ?
+             WHERE '.$predicate.'
              ORDER BY reflection_id ASC
              LIMIT 51',
-            [$idPrefix.'%'],
+            [$exact ? $idPrefix : $idPrefix.'*'],
         );
 
         $out = [];

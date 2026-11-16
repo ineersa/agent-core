@@ -222,6 +222,16 @@ URLs must be absolute HTTP(S) endpoints without credentials, query, or fragment.
 This integration adds no authentication policy or settings; anonymous Librarian works
 unchanged. Do not register duplicate ordinary MCP tools or start a Librarian per session.
 
+Linked Git worktrees always use local OM, even if they inherit a Librarian setting.
+Their tools advertise literal search, use the configured local database for search/recall,
+and never connect to Librarian or call `ensure_project`. This is an explicit checkout
+policy, not fallback after a remote failure; normal checkouts still surface remote failures.
+Git's resolved worktree/common metadata identifies linked worktrees, including nested CWDs;
+a `.git` file alone does not exclude submodules or separate-git-dir checkouts. If existing
+Git metadata cannot be inspected, retrieval stays local rather than risking registration.
+No worktree is redirected to the primary checkout. Observation/reflection remain enabled
+for main runs in worktrees; child/fork OM remains disabled.
+
 The official PHP MCP SDK client connects lazily in the tool worker, reuses its connection,
 and sends only `X-Librarian-Project` for project selection. The canonical absolute project
 root follows the configured OM `.hatfield` storage location (or CWD for a custom external
