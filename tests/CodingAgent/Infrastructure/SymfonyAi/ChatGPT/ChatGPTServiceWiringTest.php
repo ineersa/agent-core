@@ -88,7 +88,9 @@ final class ChatGPTServiceWiringTest extends PerMethodIsolatedKernelTestCase
             $container->get(\Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\IdTokenVerifier::class)->verifyReceived($token, $record->clientId, $record->nonce, $clock->now()->getTimestamp());
             $this->fail('An unavailable signing key must still prevent identity verification.');
         } catch (\Symfony\AI\Platform\Bridge\OpenAIChatGPT\Auth\AuthException $error) {
-            $this->assertSame('ChatGPT ID-token signature verification failed.', $error->getMessage());
+            $this->assertSame("HTTP 503\n{}", $error->getMessage());
+            $this->assertNotNull($error->getPrevious());
+            $this->assertSame($error->getMessage(), $error->getPrevious()->getMessage());
         }
         $this->assertSame([['POST', 'https://auth.openai.com/api/accounts/oauth/token'], ['GET', 'https://auth.openai.com/.well-known/jwks.json']], $requests);
     }
