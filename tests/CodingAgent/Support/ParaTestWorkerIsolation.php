@@ -35,6 +35,24 @@ final class ParaTestWorkerIsolation
             : '.hatfield/cache-paraT'.self::sanitizeSegment($token);
     }
 
+    /** Each process owns its mutable HOME, including built-in skill extraction. */
+    public static function createHome(string $templateHome): string
+    {
+        $home = TestDirectoryIsolation::createProjectTempDir('qa-worker-home');
+        $temporaryRoot = realpath(ProjectDir::get().'/var/tmp');
+        $resolvedHome = realpath($home);
+        if (false === $temporaryRoot || false === $resolvedHome || !str_starts_with($resolvedHome, $temporaryRoot.'/')) {
+            throw new \RuntimeException('Worker HOME must resolve inside the disposable project temporary directory.');
+        }
+        TestDirectoryIsolation::createHatfieldTree($resolvedHome);
+        $template = $templateHome.'/.hatfield/settings.yaml';
+        if ('' !== $templateHome && is_file($template) && !copy($template, $resolvedHome.'/.hatfield/settings.yaml')) {
+            throw new \RuntimeException('Unable to copy isolated QA settings into worker HOME.');
+        }
+
+        return $resolvedHome;
+    }
+
     private static function resourceStem(string $qaRunId, string $lane, string $token): string
     {
         $parts = [];

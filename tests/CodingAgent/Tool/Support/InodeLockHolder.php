@@ -7,7 +7,13 @@ namespace Ineersa\CodingAgent\Tests\Tool\Support;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
-/** Independent owned holder: stdout proves acquisition, stdin releases it. */
+/**
+ * Independent owned holder: stdout proves acquisition, stdin releases it.
+ * A real external holder proves kernel lock ownership and visible holder PID/fds;
+ * an in-process double cannot establish that cross-process diagnostic contract.
+ * The five-second process timeout is only a safety cap, never synchronization;
+ * tests advance an injected clock to expire the edit and release this holder via stdin.
+ */
 final class InodeLockHolder
 {
     public readonly int $pid;
