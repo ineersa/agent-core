@@ -210,6 +210,13 @@ HTTP MCP service for both tools. The URL is the full absolute HTTP(S) endpoint, 
 credentials/query/fragment; timeout defaults to 30 seconds and is bounded to 1–300.
 Malformed configured settings fail rather than silently selecting local mode.
 
+For user-wide OM, install/configure the package once with `hatfield extensions:setup --user`
+and put its enablement and settings under `extensions` in `~/.hatfield/settings.yaml`.
+Keep the database path relative so each project retains its own local OM database.
+Omit project-level OM settings to inherit the user configuration; a project-level
+`librarian: null` explicitly selects local retrieval instead. A project that replaces
+`extensions.enabled` must include OM in that list to keep it enabled.
+
 Linked Git worktrees explicitly stay local even when they inherit this setting:
 literal search, ID-only recall, observation and reflection remain local, with no
 Librarian connection or project registration. Existing Git metadata that cannot be
