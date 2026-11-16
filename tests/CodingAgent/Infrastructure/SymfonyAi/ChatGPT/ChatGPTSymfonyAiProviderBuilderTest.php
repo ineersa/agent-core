@@ -121,7 +121,7 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         $client = new MockHttpClient(static function () use (&$calls, $code, $stream): MockResponse {
             ++$calls;
 
-            $error = ['code' => $code, 'message' => 'sensitive-body'];
+            $error = ['code' => $code, 'message' => 'Provider rejected subscription request'];
 
             return $stream
                 ? self::response([['type' => 'response.failed', 'response' => ['status' => 'failed', 'error' => $error]]])
@@ -132,7 +132,9 @@ final class ChatGPTSymfonyAiProviderBuilderTest extends TestCase
         $this->assertNotNull($result->error);
         $this->assertSame($exceptionClass, $result->error['type']);
         $this->assertFalse($result->error['retryable']);
-        $this->assertStringNotContainsString('sensitive-body', $result->error['message']);
+        $this->assertStringContainsString('Provider rejected subscription request', $result->error['message']);
+        $this->assertStringContainsString($code, $result->error['message']);
+        $this->assertStringContainsString('Provider rejected subscription request', $result->error['user_message']);
     }
 
     public static function subscriptionFailureProvider(): array

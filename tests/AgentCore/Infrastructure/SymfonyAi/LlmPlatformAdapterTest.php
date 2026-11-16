@@ -47,7 +47,7 @@ final class LlmPlatformAdapterTest extends TestCase
                 'code' => 'string_above_max_length',
                 'type' => 'invalid_request_error',
                 'param' => 'input[3].call_id',
-                'message' => 'PRIVATE_PROVIDER_BODY_PROMPT',
+                'message' => 'input[3].call_id exceeds maximum length',
             ], 400);
         };
         $platform->expects($this->exactly(2))->method('invoke')->willReturnCallback(static function () use ($stream, $throw): DeferredResult {
@@ -91,7 +91,11 @@ final class LlmPlatformAdapterTest extends TestCase
             $this->assertSame('invalid_request_error', $streamErrors[0]['context']['response_error_type']);
             $this->assertSame('input[3].call_id', $streamErrors[0]['context']['response_error_param']);
         }
-        $this->assertStringNotContainsString('PRIVATE_PROVIDER_BODY_PROMPT', json_encode([$logger->records, $result->error], \JSON_THROW_ON_ERROR));
+        $cause = 'input[3].call_id exceeds maximum length';
+        $this->assertStringContainsString($cause, $result->error['message']);
+        $this->assertStringContainsString($cause, $result->error['user_message']);
+        $this->assertStringContainsString($cause, $retry[0]['context']['reason']);
+        $this->assertStringContainsString($cause, $failed[0]['context']['error_message']);
     }
 
     /** @return iterable<string, array{bool}> */
