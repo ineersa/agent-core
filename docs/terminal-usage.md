@@ -113,8 +113,9 @@ for that. A previously queued goal reminder instructs the agent to read the curr
 goal first and do nothing if it has been cleared. Goals are mutable session metadata,
 not a versioned history timeline, and have no separate pause state or budget.
 
-While the current session has a goal, `ask_human` remains in the tool catalog but
-returns a tool-call error instead of opening a question. This does not change its
+While the owning main session has a goal, `ask_human` remains in the tool catalog but
+returns a tool-call error instead of opening a question, including in its forks and
+subagents. This does not change its
 schema or grant missing permissions/authorization. The agent must not clear a goal
 merely to ask a question. A question already pending when a goal is set is not
 automatically cancelled; goal commands during that existing question retain the

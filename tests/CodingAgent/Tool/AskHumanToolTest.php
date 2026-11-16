@@ -8,7 +8,11 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Session\Goal\SessionGoalService;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -52,12 +56,13 @@ final class AskHumanToolTest extends IsolatedKernelTestCase
         ]);
         $this->validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
 
-        $this->tool = new AskHumanTool(new AskHumanPayloadFactory(), self::getContainer()->get(HatfieldSessionRepository::class), self::getContainer()->get(StackToolExecutionContextAccessor::class));
+        $this->tool = new AskHumanTool(new AskHumanPayloadFactory(), self::getContainer()->get(HatfieldSessionRepository::class), self::getContainer()->get(StackToolExecutionContextAccessor::class), self::getContainer()->get(RunRelationshipReaderInterface::class));
     }
 
     public function testActiveGoalRefusesQuestionWithoutChangingCatalogAndClearRestoresIt(): void
     {
         $id = self::getContainer()->get(HatfieldSessionStore::class)->createSession('', 'Complete the task');
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(new RunState($id, RunStatus::Running));
         $schema = NativeToolSchemaProbe::for($this->tool);
         $context = self::getContainer()->get(StackToolExecutionContextAccessor::class);
         $call = new ToolContext($id, 1, 'question', 'ask_human', new NullCancellationToken(), 30);
@@ -71,6 +76,57 @@ final class AskHumanToolTest extends IsolatedKernelTestCase
         self::getContainer()->get(SessionGoalService::class)->set($id, null);
         $this->assertSame('interrupt', $context->with($call, fn () => $this->invoke(['question' => 'What next?']))['kind']);
         $this->assertSame($schema, NativeToolSchemaProbe::for($this->tool));
+    }
+
+    #[DataProvider('goalChildKinds')]
+    public function testChildrenUseOwningMainGoalAndOrdinaryQuestionsRemainAvailable(string $kind): void
+    {
+        $store = self::getContainer()->get(HatfieldSessionStore::class);
+        $root = $store->createSession();
+        $projection = self::getContainer()->get(RunOperationalProjectionRepository::class);
+        $projection->replace(new RunState($root, RunStatus::Running));
+        $parent = $root;
+        if ('descendant' === $kind) {
+            $parent = 'intermediate-child';
+            $projection->replace(new RunState($parent, RunStatus::Running, parentRunId: $root));
+        }
+        $child = 'persisted-fork' === $kind ? $store->createSession() : $kind.'-child';
+        if ('persisted-fork' === $kind) {
+            $store->updateMetadata($child, ['parent_id' => $root, 'root_id' => $root]);
+        }
+        $projection->replace(new RunState($child, RunStatus::Running, parentRunId: $parent));
+        $this->assertNull(self::getContainer()->get(HatfieldSessionRepository::class)->findGoal($child));
+        $context = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $call = new ToolContext($child, 1, 'child-question', 'ask_human', new NullCancellationToken(), 30);
+        $this->assertSame('interrupt', $context->with($call, fn () => $this->invoke(['question' => 'What next?']))['kind']);
+        $goals = self::getContainer()->get(SessionGoalService::class);
+        $goals->set($root, 'Complete the parent task');
+        try {
+            $context->with($call, fn () => $this->invoke(['question' => 'What next?']));
+            $this->fail('A child must not bypass the owning main session goal restriction.');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('ask_human is unavailable while a session goal is active', $exception->getMessage());
+            $this->assertFalse($exception->retryable());
+        }
+        $goals->set($root, null);
+        $this->assertSame('interrupt', $context->with($call, fn () => $this->invoke(['question' => 'What next?']))['kind']);
+    }
+
+    public static function goalChildKinds(): iterable
+    {
+        yield 'subagent' => ['subagent'];
+        yield 'native fork' => ['fork'];
+        yield 'persisted fork' => ['persisted-fork'];
+        yield 'descendant' => ['descendant'];
+    }
+
+    public function testUnknownRunRelationshipCannotBypassRestriction(): void
+    {
+        $context = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $call = new ToolContext('unknown-child', 1, 'unknown-question', 'ask_human', new NullCancellationToken(), 30);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Operational relationship for run "unknown-child" is missing');
+        $context->with($call, fn () => $this->invoke(['question' => 'What next?']));
     }
 
     /* ── definition() tests ── */
