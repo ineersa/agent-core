@@ -18,8 +18,6 @@
         "ineersa/hatfield-extension-api": "@dev",
         "mcp/sdk": "^0.9",
         "psr/log": "^3.0",
-        "symfony/ai-generic-platform": "^1.0@beta",
-        "symfony/ai-platform": "^1.0@beta",
         "symfony/clock": "^8.0",
         "symfony/config": "^8.1",
         "symfony/filesystem": "^8.0",

@@ -16,6 +16,15 @@ use Symfony\Component\Config\Definition\Processor;
 
 final class ExtensionConfigurationTest extends TestCase
 {
+    public function testOmManifestDropsTheRemovedSemanticImplementationsDependencies(): void
+    {
+        $manifest = json_decode(file_get_contents(ProjectDir::get().'/.hatfield/extensions/observational-memory/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
+        // Model execution uses host contracts. These unused beta dependencies
+        // silently kept stable-only Composer consumers on the old OM release.
+        $this->assertArrayNotHasKey('symfony/ai-generic-platform', $manifest['require']);
+        $this->assertArrayNotHasKey('symfony/ai-platform', $manifest['require']);
+    }
+
     public function testExtensionOwnedDefinitionsLoadAndValidateThroughTheNativeProcessor(): void
     {
         $extensions = [new SafeGuardExtension()];
