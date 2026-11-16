@@ -652,6 +652,22 @@ services:
     arguments:
       - '@hatfield.controller.session_owner.lock_store'
 
+  # User-wide extensions are shared across projects and source/PHAR installs.
+  # Neither kernel.project_dir nor app.cwd may partition their startup locks.
+  hatfield.extension_update.lock_store:
+    class: Symfony\Component\Lock\Store\FlockStore
+    arguments:
+      - '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir() ~ "/.hatfield/tmp/extension-update-locks"'
+
+  hatfield.extension_update.lock_factory:
+    class: Symfony\Component\Lock\LockFactory
+    arguments:
+      - '@hatfield.extension_update.lock_store'
+
+  Ineersa\CodingAgent\Extension\ExtensionUpdateService:
+    arguments:
+      $lockFactory: '@hatfield.extension_update.lock_factory'
+
   hatfield.bash.sidecar_lock_store:
     class: Symfony\Component\Lock\Store\FlockStore
     arguments:

@@ -20,6 +20,11 @@ cd /path/to/your/project
 hatfield agent
 ```
 
+Before the session opens, installed extensions are checked for updates. When
+changes are available, review the version/dependency and command preview and
+answer Yes or No (default No). Check/update errors stop startup. See
+[extension updates](installation.md#extension-updates-at-interactive-startup).
+
 Type a request in the editor and press Enter to submit it. For example:
 
 > Explain this project's entry point. Do not change files.

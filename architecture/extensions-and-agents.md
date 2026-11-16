@@ -2,6 +2,39 @@
 
 [Architecture map](README.md) · [Tools](tools-and-mcp.md) · [Background commands](backgrounding.md)
 
+## Interactive startup update gate
+
+`ExtensionUpdateStartupSubscriber` handles `ConsoleEvents::COMMAND` at priority
+256, before `ExtensionLoaderSubscriber` at priority 0. Only the owning interactive
+`agent` invocation participates; headless/controller/worker/child and noninteractive
+commands do not. A process-local completion flag also excludes same-process
+`/reload`, whose already-declared classes cannot be replaced.
+
+`ExtensionUpdateService` reuses installation scope resolution and runs Composer
+with `COMPOSER` pointing at disposable manifests/lockfiles under the kernel cache,
+but with the installation as working directory to preserve relative repository
+semantics. Update resolution uses `--no-install`; both stages disable scripts and
+plugins. Serializer/Validator DTOs validate the resulting package metadata.
+The preview compares the complete installed/target package sets, not just direct
+extensions. Existing dev-dependency mode is retained.
+
+Installation-local `auth.json` is copied beside the disposable manifest, where
+Composer looks for local authentication. Planning directories are owner-only
+(`0700`) and credential copies are `0600`; normal success/failure cleanup removes
+them without changing the original or including credentials in the preview.
+
+Yes applies each approved lock and runs its displayed `composer install`, avoiding
+a second resolution after consent. Per-physical-root Symfony locks coordinate
+Hatfield startups through a dedicated flock store under
+`~/.hatfield/tmp/extension-update-locks`, shared across projects and source/PHAR
+installations for the same user, not partitioned by `kernel.project_dir`.
+All scope aliases and manifest/lock/auth/installed/autoloader hashes
+are revalidated before any scope is updated and again before each install. Changed
+inputs, failed resolution or installation, or a final package/lock mismatch abort
+startup. A partially failed multi-scope update is not claimed atomic or rolled
+back; no session starts. No leaves installation files unchanged. Cleanup removes
+planning workspaces and releases locks before extension registration.
+
 ## Extension registration is process-local
 
 ```mermaid
