@@ -16,6 +16,30 @@ metrics defined in Datadog. `castor run:agent` also opts in to session resource 
 - Normal events omit raw prompts and tool output. The bounded error-only captures in [Provider failure diagnostics](#provider-failure-diagnostics) are explicit exceptions. Never capture full session history, env secrets, or API keys.
 - Application work never depends on Datadog. Normal launches run no Datadog transport or buffer. The opt-in Castor sampler sends best-effort UDP without a client package.
 
+### Edit lock contention
+
+An edit that cannot acquire its target inode lock within five seconds emits one
+ERROR event, `edit.inode_lock_timeout`, before closing its waiting descriptor.
+Search by `context.event_type:edit.inode_lock_timeout`, then correlate `run_id`,
+`tool_call_id`, `step_id` and `waiter_pid` with other tool/process events.
+
+The event includes target/resolved paths, opened and current-path device/inode
+identity (including link count), elapsed wait and acquisition attempts. On Linux,
+it also captures matching `/proc/locks` records, original lock PIDs, process start
+ticks/parent/state/executable/namespaces, and matching descriptor numbers/flags/mount
+IDs for the waiter and visible holders. A 24-frame argument-free call stack shows
+the invocation path. File and patch contents, command lines,
+environment values and unrelated lock records are never included.
+
+Evidence is a best-effort snapshot, not proof of ownership history. Procfs may be
+unavailable, permission/namespace restricted, or change during collection. An
+inherited flock can survive its original PID; the reported PID does not enumerate
+all inheriting holders. Reads are bounded to 1 MiB of lock records, 16 matches and
+256 descriptors per relevant process, with unavailable/truncated markers. There
+is no global process scan. An empty match does **not** mean no holder existed.
+Preserve these diagnostics and investigate; do not infer a root cause from the
+timeout alone or terminate a process based only on a stale PID.
+
 ### Process memory samples
 
 `LogContextProcessor` adds sampler fields on every record:

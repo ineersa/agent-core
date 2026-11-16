@@ -5,18 +5,20 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\Edit;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Clock\ClockInterface;
 
 use function Amp\delay;
 
 /**
- * Applies Codex-style single-file hunks under a Symfony Lock critical section.
+ * Applies single-file hunks while holding the target inode lock.
  */
 final class PatchApplier
 {
+    private const float LOCK_WAIT_SECONDS = 5.0;
+
     public function __construct(
-        private readonly LockFactory $lockFactory,
-        private readonly \Psr\Log\LoggerInterface $logger,
+        private readonly ClockInterface $clock,
+        private readonly EditLockDiagnosticsService $lockDiagnostics,
         private readonly PatchFailureFormatter $failureFormatter,
         private readonly EditPatchParser $parser = new EditPatchParser(),
         private readonly EditPatchApplicator $patchApplicator = new EditPatchApplicator(),
@@ -36,37 +38,34 @@ final class PatchApplier
      */
     public function apply(string $targetPath, string $rawPatch, \Closure $checkpoint): array
     {
-        $realPath = false !== ($r = realpath($targetPath)) ? $r : $targetPath;
-        $lockKey = 'edit-file-'.hash('sha256', $realPath);
-        $lock = $this->lockFactory->createLock($lockKey);
-        $acquired = false;
         $stream = false;
         $fileLocked = false;
 
         try {
-            do {
-                $checkpoint();
-                $acquired = $lock->acquire(false);
-                if (!$acquired) {
-                    delay(0.02);
-                }
-            } while (!$acquired);
             $checkpoint();
 
             // Keep the inode (including hardlinks/symlinks) and do not truncate
-            // before both locks and the final cancellation checkpoint succeed.
+            // before the inode lock and final cancellation checkpoint succeed.
             $stream = @fopen($targetPath, 'r+b');
             if (false === $stream) {
                 throw new ToolCallException(\sprintf('[E_PATCH_WRITE] Failed to open "%s" for writing.', $targetPath), retryable: true);
             }
+            $startedAt = $this->clock->now();
+            $attempts = 0;
             do {
                 $checkpoint();
+                $elapsed = (float) $this->clock->now()->format('U.u') - (float) $startedAt->format('U.u');
+                if ($elapsed >= self::LOCK_WAIT_SECONDS) {
+                    $this->lockDiagnostics->logTimeout($targetPath, $stream, $elapsed, $attempts);
+                    throw new ToolCallException('[E_PATCH_LOCK_TIMEOUT] Target inode lock was not acquired within 5 seconds; target file is untouched. Contention diagnostics were logged.', retryable: false);
+                }
+                ++$attempts;
                 $fileLocked = flock($stream, \LOCK_EX | \LOCK_NB, $wouldBlock);
                 if (!$fileLocked) {
                     if (0 === $wouldBlock) {
                         throw $this->infraError('Failed to lock target file.', $targetPath);
                     }
-                    delay(0.02);
+                    delay(min(0.02, self::LOCK_WAIT_SECONDS - $elapsed));
                 }
             } while (!$fileLocked);
             $checkpoint();
@@ -117,18 +116,6 @@ final class PatchApplier
                     flock($stream, \LOCK_UN);
                 }
                 fclose($stream);
-            }
-            try {
-                // acquire() can throw after the store has granted ownership.
-                // Symfony release() also safely handles an unacquired key.
-                $lock->release();
-            } catch (\Throwable $e) {
-                $this->logger->warning('Lock release failed during edit tool cleanup', [
-                    'component' => 'edit_tool',
-                    'event_type' => 'edit_tool.lock_release_failed',
-                    'exception' => $e::class,
-                    'exception_message' => $e->getMessage(),
-                ]);
             }
         }
     }

@@ -10,7 +10,6 @@ use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\Edit\PatchApplier;
 use Ineersa\CodingAgent\Tool\Edit\PatchFailureFormatter;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
-use Symfony\Component\Lock\LockFactory;
 
 /**
  * Edit an existing file by applying @@ hunks.
@@ -21,20 +20,11 @@ final class EditFileTool implements HatfieldToolProviderInterface
 
     public const string DESCRIPTION = 'Apply @@ hunks to an existing file. Every hunk body line must start with a diff prefix: a leading space for unchanged context, `-` for removal, or `+` for addition. The target file must exist; use the write tool for new files.';
 
-    private readonly PatchApplier $applier;
-
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
-        private readonly LockFactory $lockFactory,
-        private readonly \Psr\Log\LoggerInterface $logger,
+        private readonly PatchApplier $applier,
         private readonly PatchFailureFormatter $failureFormatter = new PatchFailureFormatter(),
-        ?PatchApplier $applier = null,
     ) {
-        $this->applier = $applier ?? new PatchApplier(
-            $this->lockFactory,
-            $this->logger,
-            $this->failureFormatter,
-        );
     }
 
     public function __invoke(

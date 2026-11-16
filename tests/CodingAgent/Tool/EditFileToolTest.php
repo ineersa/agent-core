@@ -10,22 +10,21 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Tool\Support\InodeLockHolder;
 use Ineersa\CodingAgent\Tests\Tool\Support\ToolValidationHarness;
 use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
+use Ineersa\CodingAgent\Tool\Edit\EditLockDiagnosticsService;
+use Ineersa\CodingAgent\Tool\Edit\PatchApplier;
+use Ineersa\CodingAgent\Tool\Edit\PatchFailureFormatter;
 use Ineersa\CodingAgent\Tool\EditFileTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Contract\JsonSchema\Attribute\Schema;
 use Symfony\AI\Platform\Result\ToolCall;
-use Symfony\Component\Lock\Exception\LockAcquiringException;
-use Symfony\Component\Lock\Lock;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\SharedLockInterface;
-use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Clock\MockClock;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\EditFileTool
@@ -38,7 +37,8 @@ final class EditFileToolTest extends TestCase
 {
     private StackToolExecutionContextAccessor $contextAccessor;
     private ToolRuntime $toolRuntime;
-    private LockFactory $lockFactory;
+    private MockClock $clock;
+    private TestLogger $logger;
     private string $tmpDir;
     private EditFileTool $editFileTool;
 
@@ -46,9 +46,10 @@ final class EditFileToolTest extends TestCase
     {
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->toolRuntime = new ToolRuntime($this->contextAccessor);
-        $this->lockFactory = new LockFactory(new FlockStore());
+        $this->clock = new MockClock();
+        $this->logger = new TestLogger();
         $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_edit_test');
-        $this->editFileTool = new EditFileTool($this->toolRuntime, $this->lockFactory, new NullLogger());
+        $this->editFileTool = new EditFileTool($this->toolRuntime, new PatchApplier($this->clock, new EditLockDiagnosticsService($this->logger, $this->contextAccessor), new PatchFailureFormatter()));
     }
 
     protected function tearDown(): void
@@ -335,94 +336,103 @@ PATCH;
         $this->assertSame($original, file_get_contents($targetPath));
     }
 
-    public function testEditUsesNonblockingSymfonyAcquisition(): void
-    {
-        $path = $this->tmpDir.'/nonblocking.txt';
-        file_put_contents($path, "old\n");
-        $lock = $this->createMock(SharedLockInterface::class);
-        $lock->expects($this->once())->method('acquire')->with(false)->willReturn(true);
-        $lock->expects($this->once())->method('release');
-        $factory = $this->createStub(LockFactory::class);
-        $factory->method('createLock')->willReturn($lock);
-        $tool = new EditFileTool($this->toolRuntime, $factory, new NullLogger());
-        $tool(new EditFileArgumentsDTO(path: $path, patch: "@@\n-old\n+new"));
-        $this->assertSame("new\n", file_get_contents($path));
-    }
-
-    public function testAcquisitionThrowAfterStoreGrantReleasesBeforeLockDestruction(): void
-    {
-        $path = $this->tmpDir.'/throwing-acquire.txt';
-        file_put_contents($path, "old\n");
-        $key = 'edit-file-'.hash('sha256', realpath($path));
-        $lock = $this->lockFactory->createLock($key);
-        $this->assertInstanceOf(Lock::class, $lock);
-        $failure = new \RuntimeException('acquire logging failed');
-        $logger = $this->createStub(LoggerInterface::class);
-        $logger->method('debug')->willReturnCallback(static function (string $message) use ($failure): void {
-            if (str_starts_with($message, 'Successfully acquired')) {
-                throw $failure;
-            }
-        });
-        $lock->setLogger($logger);
-        $factory = $this->createStub(LockFactory::class);
-        $factory->method('createLock')->willReturn($lock);
-        $tool = new EditFileTool($this->toolRuntime, $factory, new NullLogger());
-        try {
-            $tool(new EditFileArgumentsDTO(path: $path, patch: "@@\n-old\n+new"));
-            $this->fail('Expected acquisition failure after the real store grant.');
-        } catch (LockAcquiringException $e) {
-            $this->assertSame($failure, $e->getPrevious());
-        }
-        // Retain the throwing lock and exception: destruction cannot hide a leak.
-        $next = $this->lockFactory->createLock($key);
-        $this->assertTrue($next->acquire(false));
-        $next->release();
-        $this->assertSame("old\n", file_get_contents($path));
-    }
-
     public static function lockContentionCases(): iterable
     {
-        yield 'Symfony lock released' => [false, false];
-        yield 'Symfony waiter cancelled' => [false, true];
-        yield 'target lock released' => [true, false];
-        yield 'target waiter cancelled' => [true, true];
+        yield 'target lock released' => [false];
+        yield 'target waiter cancelled' => [true];
     }
 
-    public function testCancellationImmediatelyAfterSymfonyAcquisitionReleasesWithoutMutation(): void
+    public function testInodeWaitExpiresWithDiagnosticsAndNeverWritesAfterRelease(): void
+    {
+        $path = $this->tmpDir.'/timeout.txt';
+        file_put_contents($path, "private-original\n");
+        $holder = new InodeLockHolder($path);
+        $calls = 0;
+        $token = $this->createStub(CancellationTokenInterface::class);
+        $token->method('isCancellationRequested')->willReturnCallback(function () use (&$calls): bool {
+            // run(), pre-open, first lock attempt, then retry after real contention.
+            if (4 === ++$calls) {
+                $this->clock->modify('+5 seconds');
+            }
+
+            return false;
+        });
+        $arguments = new EditFileArgumentsDTO(path: $path, patch: "@@\n-private-original\n+private-replacement");
+        try {
+            try {
+                $this->contextAccessor->with(new ToolContext('run', 7, 'edit-call', 'edit', $token, 1800, stepId: 'step'), fn () => ($this->editFileTool)($arguments));
+                $this->fail('Expected bounded lock failure while the independent holder still owns the inode.');
+            } catch (ToolCallException $e) {
+                $this->assertStringContainsString('E_PATCH_LOCK_TIMEOUT', $e->getMessage());
+                $this->assertFalse($e->retryable());
+            }
+            $this->assertSame(4, $calls);
+            $this->assertSame("private-original\n", file_get_contents($path));
+            $this->assertCount(1, $this->logger->records);
+            $record = $this->logger->records[0];
+            $this->assertSame('error', $record['level']);
+            $this->assertSame('edit.inode_lock_timeout', $record['message']);
+            $evidence = $record['context'];
+            $this->assertSame('run', $evidence['run_id']);
+            $this->assertSame('edit-call', $evidence['tool_call_id']);
+            $this->assertSame('step', $evidence['step_id']);
+            $this->assertSame($path, $evidence['target_path']);
+            $this->assertSame(5.0, $evidence['wait_seconds']);
+            $this->assertSame(1, $evidence['attempts']);
+            $this->assertSame(stat($path)['ino'], $evidence['opened_file']['inode']);
+            $this->assertFalse($evidence['path_identity_changed']);
+            $this->assertStringNotContainsString('private-original', json_encode($evidence, \JSON_THROW_ON_ERROR));
+            $this->assertStringNotContainsString('private-replacement', json_encode($evidence, \JSON_THROW_ON_ERROR));
+            if ('Linux' === \PHP_OS_FAMILY && 'read' === $evidence['kernel_locks']['status']) {
+                $this->assertContains($holder->pid, array_column($evidence['kernel_locks']['records'], 'pid'));
+                $owner = array_find($evidence['processes'], static fn (array $process): bool => $process['pid'] === $holder->pid);
+                $this->assertNotNull($owner);
+                $this->assertNotEmpty($owner['matching_fds']);
+                $waiter = array_find($evidence['processes'], static fn (array $process): bool => $process['pid'] === getmypid());
+                $this->assertNotEmpty($waiter['matching_fds']);
+                foreach ($waiter['matching_fds'] as $fd) {
+                    $descriptor = '/proc/self/fd/'.$fd['fd'];
+                    clearstatcache(true, $descriptor);
+                    $this->assertFalse(file_exists($descriptor), 'Timed-out edit must close its descriptor before returning.');
+                }
+            }
+        } finally {
+            $holder->release();
+        }
+        $this->assertSame("private-original\n", file_get_contents($path), 'Expiry must not leave a pending edit that runs on lock release.');
+        ($this->editFileTool)($arguments);
+        $this->assertSame("private-replacement\n", file_get_contents($path));
+    }
+
+    public function testCancellationImmediatelyAfterInodeAcquisitionReleasesWithoutMutation(): void
     {
         $path = $this->tmpDir.'/cancel-after-acquire.txt';
         file_put_contents($path, "old\n");
-        $cancelled = false;
-        $lock = $this->createMock(SharedLockInterface::class);
-        $lock->expects($this->once())->method('acquire')->with(false)->willReturnCallback(static function () use (&$cancelled): bool {
-            $cancelled = true;
-
-            return true;
-        });
-        $lock->expects($this->once())->method('release');
-        $factory = $this->createStub(LockFactory::class);
-        $factory->method('createLock')->willReturn($lock);
+        $calls = 0;
         $token = $this->createStub(CancellationTokenInterface::class);
-        $token->method('isCancellationRequested')->willReturnCallback(static function () use (&$cancelled): bool { return $cancelled; });
-        $tool = new EditFileTool($this->toolRuntime, $factory, new NullLogger());
+        $token->method('isCancellationRequested')->willReturnCallback(static function () use (&$calls): bool {
+            return 4 === ++$calls; // run(), pre-open, pre-flock, post-flock.
+        });
         try {
-            $this->contextAccessor->with(new ToolContext('run', 1, 'call', 'edit', $token, 30), static fn () => $tool(new EditFileArgumentsDTO(path: $path, patch: "@@\n-old\n+new")));
+            $this->contextAccessor->with(new ToolContext('run', 1, 'call', 'edit', $token, 30), fn () => ($this->editFileTool)(new EditFileArgumentsDTO(path: $path, patch: "@@\n-old\n+new")));
             $this->fail('Expected post-acquisition cancellation.');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('cancelled', $e->getMessage());
         }
         $this->assertSame("old\n", file_get_contents($path));
+        $this->assertSame([], $this->logger->records);
+        ($this->editFileTool)(new EditFileArgumentsDTO(path: $path, patch: "@@\n-old\n+new"));
+        $this->assertSame("new\n", file_get_contents($path));
     }
 
     #[DataProvider('lockContentionCases')]
-    public function testEditLockContentionYieldsWithoutChangingFile(bool $targetLock, bool $cancel): void
+    public function testEditLockContentionYieldsWithoutChangingFile(bool $cancel): void
     {
         $path = $this->tmpDir.'/contended.txt';
         file_put_contents($path, "old\n");
-        $owner = $this->lockFactory->createLock('edit-file-'.hash('sha256', realpath($path)));
         $stream = fopen($path, 'r+b');
         $this->assertIsResource($stream);
-        $this->assertTrue($targetLock ? flock($stream, \LOCK_EX | \LOCK_NB) : $owner->acquire(false));
+        $this->assertTrue(flock($stream, \LOCK_EX | \LOCK_NB));
         $cancelled = false;
         $token = $this->createStub(CancellationTokenInterface::class);
         $token->method('isCancellationRequested')->willReturnCallback(static function () use (&$cancelled): bool { return $cancelled; });
@@ -451,23 +461,21 @@ PATCH;
                 }
                 $this->assertSame("old\n", file_get_contents($path));
             }
-            $owner->release();
             flock($stream, \LOCK_UN);
             if (!$cancel) {
                 $this->assertStringContainsString('Applied patch', $waiting->await(new TimeoutCancellation(2)));
             }
-            // A cancelled waiter must not retain either lock or alter content.
+            // A cancelled waiter must not retain the inode lock or alter content.
             ($this->editFileTool)(new EditFileArgumentsDTO(path: $path, patch: $cancel ? "@@\n-old\n+new" : "@@\n-new\n+new"));
             $this->assertSame("new\n", file_get_contents($path));
         } finally {
             $cancelled = true;
-            $owner->release();
             flock($stream, \LOCK_UN);
             fclose($stream);
         }
     }
 
-    public function testPatchFailureReleasesBothLocks(): void
+    public function testPatchFailureReleasesInodeLock(): void
     {
         $path = $this->tmpDir.'/failed-patch.txt';
         file_put_contents($path, "same\nsame\n");
@@ -478,13 +486,10 @@ PATCH;
             } catch (ToolCallException $e) {
                 $this->assertStringContainsString('target file is untouched', $e->getMessage());
             }
-            $lock = $this->lockFactory->createLock('edit-file-'.hash('sha256', realpath($path)));
-            $this->assertTrue($lock->acquire(false));
             $stream = fopen($path, 'r+b');
             $this->assertTrue(flock($stream, \LOCK_EX | \LOCK_NB));
             flock($stream, \LOCK_UN);
             fclose($stream);
-            $lock->release();
         }
         $this->assertSame("same\nsame\n", file_get_contents($path));
     }

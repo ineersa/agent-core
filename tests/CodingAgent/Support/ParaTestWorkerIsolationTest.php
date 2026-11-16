@@ -51,4 +51,30 @@ final class ParaTestWorkerIsolationTest extends TestCase
             ParaTestWorkerIsolation::appDatabaseFilename('qa-run-1', '', '3'),
         );
     }
+
+    public function testWorkerHomesPreserveSettingsWithoutSharingMutableSkills(): void
+    {
+        $template = TestDirectoryIsolation::createProjectTempDir('home-template');
+        $homes = [];
+        try {
+            TestDirectoryIsolation::createHatfieldTree($template);
+            $homes[] = ParaTestWorkerIsolation::createHome($template);
+            $homes[] = ParaTestWorkerIsolation::createHome($template);
+            $this->assertNotSame($homes[0], $homes[1]);
+            foreach ($homes as $home) {
+                $this->assertSame(file_get_contents($template.'/.hatfield/settings.yaml'), file_get_contents($home.'/.hatfield/settings.yaml'));
+                TestDirectoryIsolation::ensureDirectory($home.'/.hatfield/skills/code-review');
+                file_put_contents($home.'/.hatfield/skills/code-review/SKILL.md', 'owned by this worker');
+            }
+            // Replacing one worker's built-ins cannot invalidate another worker's iterator/copy.
+            TestDirectoryIsolation::removeDirectory($homes[0].'/.hatfield/skills/code-review');
+            $this->assertSame('owned by this worker', file_get_contents($homes[1].'/.hatfield/skills/code-review/SKILL.md'));
+            $this->assertFileExists($template.'/.hatfield/settings.yaml');
+        } finally {
+            foreach ($homes as $home) {
+                TestDirectoryIsolation::removeDirectory($home);
+            }
+            TestDirectoryIsolation::removeDirectory($template);
+        }
+    }
 }

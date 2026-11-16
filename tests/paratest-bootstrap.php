@@ -12,6 +12,7 @@ declare(strict_types=1);
  *
  *   1. The compiled Symfony cache directory (per worker).
  *   2. The SQLite test database (per worker).
+ *   3. HOME, whose built-in skills are replaced during discovery (per process).
  *
  * WHY PER-WORKER DBs ARE REQUIRED (not just WAL + DAMA):
  *   Even though DAMA/DoctrineTestBundle wraps each test method in a
@@ -30,6 +31,7 @@ declare(strict_types=1);
  *   HATFIELD_CACHE_DIR      — per-worker container cache
  *   HATFIELD_QA_TEST_HOME   — isolated HOME for bin/console migrations (from Castor parent)
  */
+require_once dirname(__DIR__).'/vendor/autoload.php';
 require_once __DIR__.'/CodingAgent/Support/ParaTestWorkerIsolation.php';
 
 use Ineersa\CodingAgent\Tests\Support\ParaTestWorkerIsolation;
@@ -52,22 +54,11 @@ putenv("HATFIELD_CACHE_DIR={$cacheDir}");
 $_ENV['HATFIELD_CACHE_DIR'] = $cacheDir;
 
 // ── Isolated HOME for Symfony kernel (never use developer ~/.hatfield) ──
-$qaTestHome = getenv('HATFIELD_QA_TEST_HOME') ?: '';
-if ('' === $qaTestHome) {
-    $qaTestHome = $root.'/var/tmp/qa-home/paratest-T'.$token;
-    $hatfieldDir = $qaTestHome.'/.hatfield';
-    if (!is_dir($hatfieldDir) && !mkdir($hatfieldDir, 0777, true) && !is_dir($hatfieldDir)) {
-        fwrite(\STDERR, "ParaTest bootstrap (token={$token}): unable to create QA test HOME\n");
-        exit(1);
-    }
-    $settingsPath = $hatfieldDir.'/settings.yaml';
-    $settingsContents = "ai:\n    default_model: null\n";
-    if (!is_file($settingsPath) || file_get_contents($settingsPath) !== $settingsContents) {
-        if (false === file_put_contents($settingsPath, $settingsContents)) {
-            fwrite(\STDERR, "ParaTest bootstrap (token={$token}): unable to write QA test HOME settings\n");
-            exit(1);
-        }
-    }
+$qaTestHome = ParaTestWorkerIsolation::createHome(getenv('HATFIELD_QA_TEST_HOME') ?: '');
+foreach (['HOME', 'HATFIELD_QA_TEST_HOME'] as $name) {
+    putenv($name.'='.$qaTestHome);
+    $_ENV[$name] = $qaTestHome;
+    $_SERVER[$name] = $qaTestHome;
 }
 $homeShell = 'HOME='.escapeshellarg($qaTestHome).' HATFIELD_QA_TEST_HOME='.escapeshellarg($qaTestHome);
 
@@ -110,7 +101,7 @@ if (!$gotLock) {
     exit(1);
 }
 
-// Coreutils timeout bounds the migrate child (no Composer autoload available yet).
+// Coreutils timeout bounds the migrate child independently of the test runner.
 $boundedCmd = 'timeout --kill-after=5s 60s sh -lc '.escapeshellarg($cmd);
 $output = [];
 $exitCode = 1;
