@@ -846,9 +846,10 @@ parameters:
       - AppExtensionApi
       - HatfieldExtTaskWorkflow
       - SymfonyYaml
-    # OM may use ExtensionApi + vendor libs, including its optional retrieval stores.
+    # OM may use ExtensionApi + approved vendor facilities, including the official MCP client.
     # Vendor packages are not Deptrac layers; only forbid project-layer leakage.
     HatfieldExtObservationalMemory:
+      - McpSdk
       - AppExtensionApi
       - HatfieldExtObservationalMemory
       - SymfonyAiPlatform

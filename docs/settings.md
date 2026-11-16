@@ -201,6 +201,37 @@ still need `php` on `PATH`. See [tools.md](tools.md).
 
 See [background-processes.md](background-processes.md).
 
+### Observational memory retrieval
+
+OM owns `extensions.settings.observational_memory.librarian`: omit it or set `null`
+for local literal-substring search and project-wide ID-only recall without a connection.
+Set `{url: 'http://127.0.0.1:8093/_mcp', timeout_seconds: 30}` to use a shared Librarian
+HTTP MCP service for both tools. The URL is the full absolute HTTP(S) endpoint, without
+credentials/query/fragment; timeout defaults to 30 seconds and is bounded to 1–300.
+Malformed configured settings fail rather than silently selecting local mode.
+
+For user-wide OM, install/configure the package once with `hatfield extensions:setup --user`
+and put its enablement and settings under `extensions` in `~/.hatfield/settings.yaml`.
+Keep the database path relative so each project retains its own local OM database.
+Omit project-level OM settings to inherit the user configuration; a project-level
+`librarian: null` explicitly selects local retrieval instead. A project that replaces
+`extensions.enabled` must include OM in that list to keep it enabled.
+
+Linked Git worktrees explicitly stay local even when they inherit this setting:
+literal search, ID-only recall, observation and reflection remain local, with no
+Librarian connection or project registration. Existing Git metadata that cannot be
+inspected also keeps retrieval local. Worktrees are never redirected to the primary
+checkout; this policy is separate from remote-failure handling in normal checkouts.
+
+No authentication settings or ordinary MCP registration are added. The worker lazily
+calls `ensure_project` once per connection with its canonical project-root header;
+registration does not wait for discovery/index readiness. Configured backend failures
+are explicit, never local fallback. Recall accepts only `id`, with `session_id` retained
+as output provenance. Observation/reflection remain local; child/fork OM stays disabled.
+Local embedding/reranker/semantic settings and indexing jobs have been removed, without
+deleting canonical memories or old derived storage. See the installed observational
+memory package's `README.md` for lifecycle, limits, and tool guidance.
+
 ## Environment variables
 
 | Variable | Role |

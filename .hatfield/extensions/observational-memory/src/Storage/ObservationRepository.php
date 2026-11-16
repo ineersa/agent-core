@@ -163,42 +163,7 @@ final class ObservationRepository
     }
 
     /**
-     * Exact observation lookup for recall / status-view (SQL-scoped to current run).
-     *
-     * @return array{
-     *   observation_id: string,
-     *   run_id: string,
-     *   content: string,
-     *   content_hash: string,
-     *   relevance: string,
-     *   timestamp: string,
-     *   token_count: int,
-     *   source_refs_json: string,
-     *   source_start_seq: int,
-     *   source_end_seq: int,
-     *   created_at: string
-     * }|null
-     */
-    public function findObservation(string $runId, string $observationId): ?array
-    {
-        $row = $this->connection->fetchAssociative(
-            'SELECT observation_id, run_id, content, content_hash, relevance, timestamp, token_count,
-                    source_refs_json, source_start_seq, source_end_seq, created_at
-             FROM om_observation WHERE run_id = ? AND observation_id = ?',
-            [$runId, $observationId],
-        );
-        if (false === $row) {
-            return null;
-        }
-
-        $mapped = $this->mapObservationRow($row);
-        $mapped['run_id'] = (string) ($row['run_id'] ?? '');
-
-        return $mapped;
-    }
-
-    /**
-     * Exact or unique-prefix observation lookup (SQL-scoped to current run).
+     * Bounded project-wide exact or unique-prefix observation lookup.
      *
      * @return list<array{
      *   observation_id: string,
@@ -214,28 +179,25 @@ final class ObservationRepository
      *   created_at: string
      * }>
      */
-    public function findObservationsByIdPrefix(string $runId, string $idPrefix): array
+    public function findObservationsByIdPrefix(string $idPrefix): array
     {
         $idPrefix = strtolower(trim($idPrefix));
         if ('' === $idPrefix) {
             return [];
         }
 
-        // Exact full id first (cheap primary-key path).
-        if (64 === \strlen($idPrefix)) {
-            $exact = $this->findObservation($runId, $idPrefix);
-
-            return null === $exact ? [] : [$exact];
-        }
-
+        // IDs are validated hex by OmQueryService. GLOB keeps prefix lookup indexable
+        // against the BINARY primary key; default case-insensitive LIKE does not.
+        $exact = 64 === \strlen($idPrefix);
+        $predicate = $exact ? 'observation_id = ?' : 'observation_id GLOB ?';
         $rows = $this->connection->fetchAllAssociative(
             'SELECT observation_id, run_id, content, content_hash, relevance, timestamp, token_count,
                     source_refs_json, source_start_seq, source_end_seq, created_at
              FROM om_observation
-             WHERE run_id = ? AND observation_id LIKE ?
+             WHERE '.$predicate.'
              ORDER BY observation_id ASC
-             LIMIT 3',
-            [$runId, $idPrefix.'%'],
+             LIMIT 51',
+            [$exact ? $idPrefix : $idPrefix.'*'],
         );
 
         $out = [];

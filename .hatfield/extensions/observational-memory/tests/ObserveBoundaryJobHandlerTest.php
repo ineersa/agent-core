@@ -42,6 +42,8 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
     {
         parent::setUp();
         $this->projectDir = TestDirectoryIsolation::createProjectTempDir('om-observe-job');
+        $this->assertSame($this->projectDir, realpath($this->projectDir));
+        $this->assertFalse(is_link($this->projectDir));
         TestDirectoryIsolation::createHatfieldTree($this->projectDir);
     }
 
@@ -116,26 +118,9 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
             },
         );
 
-        $semanticApi = $this->createMock(ExtensionApiInterface::class);
-        $semanticApi->method('getCwd')->willReturn($api->getCwd());
-        $semanticApi->method('getSettings')->willReturn($api->getSettings('observational_memory') + [
-            'semantic' => ['embedding_api' => ['base_url' => 'http://embed.test/v1', 'model_id' => 'embed']],
-        ]);
-        $semanticApi->method('agent')->willReturn($api->agent());
-        $semanticApi->method('sessionEvents')->willReturn($api->sessionEvents());
-        $semanticApi->expects($this->once())->method('dispatchExtensionAgentJob')->willReturnCallback(function (ExtensionAgentJobRequestDTO $job) use ($dbPath): void {
-            self::assertSame('observational_memory.semantic_index', $job->handlerId);
-            self::assertSame(['run_id' => 'run-1'], $job->payload);
-            $committed = $this->omDatabaseFactory()->connect($dbPath);
-            try {
-                self::assertSame(1, (int) $committed->fetchOne('SELECT COUNT(*) FROM om_observation'));
-            } finally {
-                $committed->close();
-            }
-        });
         $handler = new ObserveBoundaryJobHandler(new NullLogger());
         $handler->handle(
-            $semanticApi,
+            $api,
             [
                 'run_id' => 'run-1',
                 'terminal_end_seq' => 2,
@@ -611,7 +596,9 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
             public function getSettings(string $key): array
             {
                 if ('observational_memory' !== $key) {
-                    return [];
+                    return [
+                        // Retrieval availability must never gate local model work or canonical persistence.
+                        'librarian' => ['url' => 'http://unavailable.invalid/_mcp'], ];
                 }
 
                 return [

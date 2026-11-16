@@ -7,12 +7,11 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Query;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCancellationTokenInterface;
+use Ineersa\HatfieldExt\ObservationalMemory\Exception\SearchInterruptedException;
+use Ineersa\HatfieldExt\ObservationalMemory\Librarian\LibrarianClient;
+use Ineersa\HatfieldExt\ObservationalMemory\Librarian\LibrarianProjectPolicy;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
-use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SearchInterruptedException;
-use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticApiClient;
-use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticIndexService;
-use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticSearchException;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
@@ -23,7 +22,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 /**
  * Extension-owned read/query surface for /om-status, /om-view, search, and recall.
  *
- * Opens OM SQLite only. Never reads Hatfield Messenger tables.
+ * Local views/queries open OM SQLite; configured retrieval uses Librarian's SDK client.
+ * Never reads Hatfield Messenger tables.
  */
 final class OmQueryService
 {
@@ -36,13 +36,22 @@ final class OmQueryService
     private const int SEARCH_MAX_LIMIT = 50;
 
     private const string MEMORY_DATE_PATTERN = '/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/';
+    private ?LibrarianClient $librarian = null;
+    private ?bool $externalAllowed = null;
 
     public function __construct(
         private readonly ExtensionApiInterface $api,
         private readonly OmSettings $settings,
         private readonly LoggerInterface $logger = new NullLogger(),
-        private readonly ?HttpClientInterface $semanticHttpClient = null,
+        private readonly ?HttpClientInterface $librarianHttpClient = null,
     ) {
+    }
+
+    public function usesLibrarian(): bool
+    {
+        return null !== $this->settings->librarian && ($this->externalAllowed ??= (new LibrarianProjectPolicy(
+            $this->api->exec(), $this->logger,
+        ))->allows($this->api->getCwd()));
     }
 
     public function formatStatus(string $runId): string
@@ -195,7 +204,7 @@ final class OmQueryService
     }
 
     /**
-     * Exact or configured hybrid search over retained observations and reflections.
+     * Literal local search, or configured Librarian retrieval, over retained memories.
      *
      * Default scope is all retained rows (not only the active compaction pool). Optional after/before
      * filters apply to memory dates: observation `timestamp` (YYYY-MM-DD HH:MM) and reflection
@@ -251,6 +260,12 @@ final class OmQueryService
             return $interrupt;
         }
 
+        if ($this->usesLibrarian()) {
+            return $this->external()->call('memory_search', array_filter([
+                'query' => $query, 'after' => $after, 'before' => $before, 'limit' => $limit,
+            ], static fn (mixed $value): bool => null !== $value), $cancellationToken, $deadlineNs, $runId);
+        }
+
         $connection = $this->connect();
         $observations = new ObservationRepository($connection);
         $generations = new MemoryGenerationRepository($connection);
@@ -263,47 +278,6 @@ final class OmQueryService
         $obsBefore = $this->normalizeObservationFilter($before, lowerBound: false);
         $refAfter = $this->normalizeReflectionFilter($after, lowerBound: true);
         $refBefore = $this->normalizeReflectionFilter($before, lowerBound: false);
-
-        if (null !== $this->settings->semantic) {
-            $checkpoint = function () use ($cancellationToken, $timeoutSeconds, $deadlineNs): void {
-                $interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Memory search interrupted.');
-                if (null !== $interrupt) {
-                    throw new SearchInterruptedException($interrupt);
-                }
-            };
-            try {
-                $semantic = $this->settings->semantic;
-                $index = new SemanticIndexService(
-                    $connection, OmPaths::fromSettings($this->settings, $this->api->getCwd())->databasePath,
-                    $semantic, new SemanticApiClient($semantic, $this->semanticHttpClient), $this->logger, $runId,
-                );
-                $retrieval = $index->search($query, ['observation' => [$obsAfter, $obsBefore], 'reflection' => [$refAfter, $refBefore]], $checkpoint);
-                $results = $retrieval['results'];
-                $truncated = $retrieval['truncated'] || \count($results) > $limit;
-                $results = \array_slice($results, 0, $limit);
-                foreach ($results as &$result) {
-                    $result['display_id'] = $this->displayId($result['id']);
-                    $result['content'] = $this->condense($result['content']);
-                }
-                unset($result);
-
-                return ['ok' => true, 'query' => $query, 'limit' => $limit, 'truncated' => $truncated, 'partial' => $retrieval['partial'], 'count' => \count($results), 'results' => $results];
-            } catch (SearchInterruptedException $error) {
-                return $error->result;
-            } catch (\Throwable $error) {
-                $this->logger->error('om.semantic.search_failed', [
-                    'run_id' => $runId, 'session_id' => $runId,
-                    'component' => 'observational_memory', 'event_type' => 'om.semantic.search_failed',
-                    'exception_class' => $error::class,
-                    'failure_code' => $error instanceof SemanticSearchException ? $error->failureCode : 'semantic_search_failed',
-                ]);
-
-                return ['ok' => false,
-                    'error' => $error instanceof SemanticSearchException ? $error->failureCode : 'semantic_search_failed',
-                    'message' => $error instanceof SemanticSearchException ? $error->getMessage() : 'Hybrid memory search failed. Check the OM index and logs; no fallback results were returned.',
-                ] + ($error instanceof SemanticSearchException ? $error->progress : []);
-            }
-        }
 
         // Fetch limit+1 from each table so truncated can detect overflow within one kind.
         $fetchLimit = $limit + 1;
@@ -371,9 +345,8 @@ final class OmQueryService
     /**
      * Exact or unique prefix recall for one observation or reflection id.
      *
-     * Default scope is the current session (`$runId`). Pass `$sessionId` to recall from an
-     * explicit originating session returned by search. Accepts lowercase hex prefixes of
-     * length 12..64. Ambiguous or missing ids fail closed.
+     * Resolve both kinds across this project, deriving the evidence session from the unique
+     * matched record. Lowercase hex prefixes of length 12..64 are accepted; collisions fail closed.
      *
      * Cooperative cancellation/deadline checkpoints run between DB stages and during
      * supporting-observation/event hydration. A single SQLite/DBAL call may still finish
@@ -384,7 +357,6 @@ final class OmQueryService
     public function recall(
         string $runId,
         string $id,
-        ?string $sessionId = null,
         ?ToolCancellationTokenInterface $cancellationToken = null,
         ?int $timeoutSeconds = null,
         ?int $deadlineNs = null,
@@ -392,7 +364,7 @@ final class OmQueryService
         if ($this->api->isChildRun($runId)) {
             return ['ok' => false, 'error' => 'main_only', 'message' => 'Observational memory is available only in main runs.'];
         }
-        $id = strtolower(trim($id));
+        $id = trim($id);
         if (1 !== preg_match(self::ID_PATTERN, $id)) {
             return [
                 'ok' => false,
@@ -401,17 +373,8 @@ final class OmQueryService
             ];
         }
 
-        $targetRunId = $runId;
-        if (null !== $sessionId) {
-            $sessionId = trim($sessionId);
-            if ('' === $sessionId) {
-                return [
-                    'ok' => false,
-                    'error' => 'invalid_session_id',
-                    'message' => 'session_id must be a non-empty session/run id when provided.',
-                ];
-            }
-            $targetRunId = $sessionId;
+        if ($this->usesLibrarian()) {
+            return $this->external()->call('recall', ['id' => $id], $cancellationToken, $deadlineNs, $runId);
         }
 
         if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before database open.'))) {
@@ -426,13 +389,24 @@ final class OmQueryService
             return $interrupt;
         }
 
-        $obsMatches = $observations->findObservationsByIdPrefix($targetRunId, $id);
-        if (\count($obsMatches) > 1) {
-            return [
-                'ok' => false,
-                'error' => 'ambiguous_id',
-                'message' => 'Multiple observations match that id prefix in the selected session.',
-            ];
+        $obsMatches = $observations->findObservationsByIdPrefix($id);
+        $refMatches = $generations->findReflectionsByIdPrefix($id);
+        if (\count($obsMatches) + \count($refMatches) > 1) {
+            $candidates = [];
+            $bytes = 0;
+            $matches = array_merge($obsMatches, $refMatches);
+            foreach ($matches as $match) {
+                $candidate = ['id' => $match['observation_id'] ?? $match['reflection_id'], 'content' => $match['content']];
+                $bytes += \strlen(json_encode($candidate, \JSON_THROW_ON_ERROR));
+                if (\count($candidates) >= 50 || $bytes > 900_000) {
+                    break;
+                }
+                $candidates[] = $candidate;
+            }
+
+            return ['ok' => false, 'error' => 'ambiguous_id',
+                'message' => 'Multiple memories match that id; choose a full ID from the candidates.',
+                'candidates' => $candidates, 'candidates_truncated' => \count($candidates) < \count($matches)];
         }
         if (1 === \count($obsMatches)) {
             if (null !== ($interrupt = $this->interruptMap($cancellationToken, $timeoutSeconds, $deadlineNs, 'Cancelled before observation event hydration.'))) {
@@ -440,6 +414,7 @@ final class OmQueryService
             }
 
             $observation = $obsMatches[0];
+            $targetRunId = $observation['run_id'];
             $fullId = $observation['observation_id'];
             $refs = $this->sourceRefsForRun(
                 $targetRunId,
@@ -468,26 +443,12 @@ final class OmQueryService
             return $interrupt;
         }
 
-        $refMatches = $generations->findReflectionsByIdPrefix($targetRunId, $id);
-        if (\count($refMatches) > 1) {
-            return [
-                'ok' => false,
-                'error' => 'ambiguous_id',
-                'message' => 'Multiple reflections match that id prefix in the selected session.',
-            ];
-        }
         if ([] === $refMatches) {
-            return [
-                'ok' => false,
-                'error' => 'not_found',
-                'message' => \sprintf(
-                    'No observation or reflection with that id in session %s. If this id came from memory_search, pass its session_id.',
-                    $targetRunId,
-                ),
-            ];
+            return ['ok' => false, 'error' => 'not_found', 'message' => 'No observation or reflection with that id in this project.'];
         }
 
         $reflection = $refMatches[0];
+        $targetRunId = $reflection['run_id'];
         $fullId = (string) $reflection['reflection_id'];
         $requestedSupportIds = $this->decodeStringList((string) $reflection['supporting_observation_ids_json']);
         try {
@@ -545,6 +506,16 @@ final class OmQueryService
             'source_refs' => $refs,
             'events' => $events,
         ];
+    }
+
+    private function external(): LibrarianClient
+    {
+        return $this->librarian ??= new LibrarianClient(
+            $this->settings->librarian ?? throw new \LogicException('Librarian is not configured.'),
+            OmPaths::fromSettings($this->settings, $this->api->getCwd())->projectRoot($this->api->getCwd()),
+            $this->logger,
+            $this->librarianHttpClient,
+        );
     }
 
     private function connect(): \Doctrine\DBAL\Connection

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
+use Doctrine\DBAL\Connection;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
@@ -28,6 +29,24 @@ final class ObservationRepositoryIdempotencyTest extends IsolatedKernelTestCase
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
         parent::tearDown();
+    }
+
+    public function testRecallExactAndPrefixQueriesSearchThePrimaryKeyIndex(): void
+    {
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($this->tmpDir.'/om-index.sqlite');
+        $captured = $this->createMock(Connection::class);
+        $captured->expects($this->exactly(3))->method('fetchAllAssociative')->willReturnCallback(function (string $sql, array $params) use ($connection): array {
+            $plan = implode("\n", array_column($connection->fetchAllAssociative('EXPLAIN QUERY PLAN '.$sql, $params), 'detail'));
+            $this->assertStringContainsString('SEARCH om_observation USING INDEX', $plan);
+            $this->assertStringNotContainsString('SCAN', $plan);
+            $this->assertStringContainsString(str_ends_with($params[0], '*') ? 'observation_id GLOB ?' : 'observation_id = ?', $sql);
+
+            return $connection->fetchAllAssociative($sql, $params);
+        });
+        $repo = new ObservationRepository($captured);
+        foreach ([str_repeat('a', 64), str_repeat('a', 12), str_repeat('f', 64)] as $id) {
+            $this->assertSame([], $repo->findObservationsByIdPrefix($id));
+        }
     }
 
     public function testZeroObservationPartCoverageIsIdempotentAndTracksWatermark(): void

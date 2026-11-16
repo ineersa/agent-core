@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
@@ -11,6 +12,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
@@ -187,11 +189,9 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertTrue($recall->mainOnly);
         $this->assertSame('recall', $recall->name);
         $this->assertSame('^[a-f0-9]{12,64}$', $recall->parametersJsonSchema['properties']['id']['pattern'] ?? null);
-        $this->assertArrayHasKey('session_id', $recall->parametersJsonSchema['properties'] ?? []);
+        $this->assertArrayNotHasKey('session_id', $recall->parametersJsonSchema['properties'] ?? []);
 
         $this->assertStringContainsString('Recover exact evidence and source context', $recall->description);
-        $this->assertStringContainsString('current session', $recall->parametersJsonSchema['properties']['session_id']['description']);
-        $this->assertStringContainsString('Originating session_id from memory_search', $recall->parametersJsonSchema['properties']['session_id']['description']);
         $this->assertStringNotContainsString('current branch', $recall->description);
 
         $idDescription = (string) ($recall->parametersJsonSchema['properties']['id']['description'] ?? '');
@@ -200,12 +200,11 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringContainsString('memory_search', $idDescription);
 
         $this->assertSame(
-            'recall id [session_id] — retrieve source context for a selected memory',
+            'recall id — retrieve source context for a selected memory',
             $recall->promptSummary,
         );
 
         $guidelines = implode("\n", $recall->promptGuidelines);
-        $this->assertStringContainsString('not the whole session', $recall->description);
         $this->assertStringContainsString('exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance', $guidelines);
         $this->assertStringContainsString('user asks why you believe something', $guidelines);
         $this->assertStringContainsString('semantic search or transcript browsing', $recall->description);
@@ -216,16 +215,10 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
     #[Test]
     public function hybridRegistrationDescribesQueryCapabilitiesButNotReranking(): void
     {
-        $embedding = ['embedding_api' => ['base_url' => 'http://embed.test/v1', 'model_id' => 'embed']];
-        $without = $this->hybridTool($embedding);
-        $with = $this->hybridTool($embedding + ['reranker_api' => ['base_url' => 'http://rank.test/v1', 'model_id' => 'rank']]);
-        $this->assertSame($without->description, $with->description);
-        $this->assertSame($without->parametersJsonSchema, $with->parametersJsonSchema);
-        $this->assertSame($without->promptSummary, $with->promptSummary);
-        $this->assertSame($without->promptGuidelines, $with->promptGuidelines);
+        $with = $this->hybridTool();
         $text = $with->description.' '.$with->promptSummary.' '.implode(' ', $with->promptGuidelines).' '.json_encode($with->parametersJsonSchema);
-        $this->assertStringContainsString('BM25 keyword', $text);
-        $this->assertStringContainsString('semantic vector search', $text);
+        $this->assertStringContainsString('hybrid keyword', $text);
+        $this->assertStringContainsString('semantic search', $text);
         $this->assertStringContainsString('relevance-ranked', $text);
         $this->assertStringContainsString('partial: true means the index is still catching up', $text);
         $this->assertStringContainsString('Phrases are search hints, not exact-match constraints', $text);
@@ -238,13 +231,38 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertStringNotContainsString('reranker', $text);
     }
 
-    private function hybridTool(array $semantic): ToolRegistrationDTO
+    #[Test]
+    public function inheritedLibrarianInWorktreeRegistersLocalToolGuidance(): void
+    {
+        $directory = TestDirectoryIsolation::createOsTempDir('om-worktree-registration');
+        $this->assertSame($directory, realpath($directory));
+        $this->assertFalse(is_link($directory));
+        try {
+            mkdir($directory.'/metadata');
+            mkdir($directory.'/metadata/worktree');
+            file_put_contents($directory.'/.git', 'gitdir: metadata/worktree');
+            $exec = $this->createMock(ExecInterface::class);
+            $exec->expects($this->once())->method('exec')->willReturn(new ExecResultDTO($directory.'/metadata/worktree'."\n".$directory.'/metadata', '', 0));
+            $tool = $this->hybridTool($directory, $exec);
+            $text = $tool->description.' '.implode(' ', $tool->promptGuidelines);
+            $this->assertStringContainsString('one contiguous literal substring', $text);
+            $this->assertStringNotContainsString('hybrid keyword', $text);
+            $this->assertStringNotContainsString('through Librarian', $text);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($directory);
+        }
+    }
+
+    private function hybridTool(string $cwd = '/project', ?ExecInterface $exec = null): ToolRegistrationDTO
     {
         $tools = [];
         $api = $this->createMock(ExtensionApiInterface::class);
-        $api->method('getCwd')->willReturn('/project');
-        $api->method('getSettings')->willReturn(['semantic' => $semantic]);
-        $api->expects($this->once())->method('registerSessionStartHook');
+        $api->method('getCwd')->willReturn($cwd);
+        if (null !== $exec) {
+            $api->method('exec')->willReturn($exec);
+        }
+        $api->method('getSettings')->willReturn(['librarian' => ['url' => 'http://librarian.test/_mcp']]);
+        $api->expects($this->never())->method('registerSessionStartHook');
         $api->expects($this->exactly(2))->method('registerTool')->willReturnCallback(static function (ToolRegistrationDTO $tool) use (&$tools): void {
             $tools[] = $tool;
         });

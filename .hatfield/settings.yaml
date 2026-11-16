@@ -31,27 +31,6 @@ extensions:
                 cleanup:
                     script: .hatfield/task-hooks/cleanup.sh
                     timeout_seconds: 300
-        observational_memory:
-            storage: { database: .hatfield/extensions-data/observational-memory/om.sqlite }
-            model: llama_cpp/flash
-            observer: { context_window_ratio: 0.35 }
-            reflector: { reflect_after_observation_tokens: 40000 }
-            pools: { observations_max_tokens: 30000 }
-            semantic:
-                embedding_api:
-                    base_url: http://localhost:8059/v1
-                    model_id: coderankembed-q8_0.gguf
-                    query_prefix: 'Represent this query for searching relevant code:'
-                    chunk_bytes: 1200
-                    overlap_bytes: 192
-                    max_lines: 80
-                    batch_size: 4
-                reranker_api:
-                    base_url: http://localhost:8060/v1
-                    model_id: bge-reranker-base-q8_0.gguf
-                    batch_size: 8
-                    document_characters: 768
-                    min_score: -4
         safe_guard:
             allow_write_outside_cwd: [/home/ineersa/projects/agent-core-worktrees, /tmp, /home/ineersa/projects/symfony, /home/ineersa/projects/ai]
 forks:

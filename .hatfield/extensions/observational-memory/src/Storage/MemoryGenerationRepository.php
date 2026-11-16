@@ -36,38 +36,7 @@ final class MemoryGenerationRepository
     }
 
     /**
-     * Exact reflection lookup for recall (SQL-scoped to current run).
-     *
-     * @return array{
-     *   reflection_id: string,
-     *   run_id: string,
-     *   content: string,
-     *   supporting_observation_ids_json: string,
-     *   token_count: int
-     * }|null
-     */
-    public function findReflection(string $runId, string $reflectionId): ?array
-    {
-        $row = $this->connection->fetchAssociative(
-            'SELECT reflection_id, run_id, content, supporting_observation_ids_json, token_count
-             FROM om_reflection WHERE run_id = ? AND reflection_id = ?',
-            [$runId, $reflectionId],
-        );
-        if (false === $row) {
-            return null;
-        }
-
-        return [
-            'reflection_id' => (string) ($row['reflection_id'] ?? ''),
-            'run_id' => (string) ($row['run_id'] ?? ''),
-            'content' => (string) ($row['content'] ?? ''),
-            'supporting_observation_ids_json' => (string) ($row['supporting_observation_ids_json'] ?? '[]'),
-            'token_count' => (int) ($row['token_count'] ?? 0),
-        ];
-    }
-
-    /**
-     * Exact or unique-prefix reflection lookup (SQL-scoped to current run).
+     * Bounded project-wide exact or unique-prefix reflection lookup.
      *
      * @return list<array{
      *   reflection_id: string,
@@ -77,26 +46,23 @@ final class MemoryGenerationRepository
      *   token_count: int
      * }>
      */
-    public function findReflectionsByIdPrefix(string $runId, string $idPrefix): array
+    public function findReflectionsByIdPrefix(string $idPrefix): array
     {
         $idPrefix = strtolower(trim($idPrefix));
         if ('' === $idPrefix) {
             return [];
         }
 
-        if (64 === \strlen($idPrefix)) {
-            $exact = $this->findReflection($runId, $idPrefix);
-
-            return null === $exact ? [] : [$exact];
-        }
-
+        // Match the BINARY primary key for both full IDs and validated hex prefixes.
+        $exact = 64 === \strlen($idPrefix);
+        $predicate = $exact ? 'reflection_id = ?' : 'reflection_id GLOB ?';
         $rows = $this->connection->fetchAllAssociative(
             'SELECT reflection_id, run_id, content, supporting_observation_ids_json, token_count
              FROM om_reflection
-             WHERE run_id = ? AND reflection_id LIKE ?
+             WHERE '.$predicate.'
              ORDER BY reflection_id ASC
-             LIMIT 3',
-            [$runId, $idPrefix.'%'],
+             LIMIT 51',
+            [$exact ? $idPrefix : $idPrefix.'*'],
         );
 
         $out = [];

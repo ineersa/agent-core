@@ -11,7 +11,6 @@ use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmActivityReporter;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
-use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticIndexJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmConflictException;
@@ -116,10 +115,6 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
                 'generation_id' => $generationId,
                 'claim_status' => $claim['status'],
             ]);
-
-            if ('already_succeeded' === $claim['status']) {
-                SemanticIndexJobHandler::schedule($api, $settings, $runId);
-            }
 
             return;
         }
@@ -310,7 +305,6 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
                 $activity->clear($runId, $activityJobId);
             }
         }
-        SemanticIndexJobHandler::schedule($api, $settings, $runId);
     }
 
     private function nowUtc(): string

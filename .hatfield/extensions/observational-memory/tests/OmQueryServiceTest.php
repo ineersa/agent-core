@@ -13,6 +13,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
@@ -28,6 +29,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\HttpClient\MockHttpClient;
 
 /**
  * Thesis: human /om-status and /om-view read current-run OM SQLite only;
@@ -41,12 +43,58 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
     {
         parent::setUp();
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('om-query');
+        $this->assertSame($this->tmpDir, realpath($this->tmpDir));
+        $this->assertFalse(is_link($this->tmpDir));
+        $this->assertStringStartsWith(realpath(\dirname(__DIR__, 4)).'/var/tmp/', $this->tmpDir);
     }
 
     protected function tearDown(): void
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
         parent::tearDown();
+    }
+
+    #[Test]
+    public function inheritedLibrarianInLinkedWorktreeUsesLocalSearchAndRecallWithoutHttp(): void
+    {
+        mkdir($this->tmpDir.'/metadata');
+        mkdir($this->tmpDir.'/metadata/worktree');
+        file_put_contents($this->tmpDir.'/.git', 'gitdir: metadata/worktree');
+        $dbPath = $this->tmpDir.'/custom-om.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $id = str_repeat('a', 64);
+        (new ObservationRepository($connection))->commitChunkPartCoverage(
+            coverageKey: 'local-policy', runId: 'source-run', boundaryKey: 'boundary',
+            sourceStartSeq: 1, sourceEndSeq: 1, chunkKey: 'chunk', partIndex: 1, partCount: 1,
+            sourceDigest: 'source', partDigest: 'part', rendererVersion: '1', observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test', observations: [[
+                'observation_id' => $id, 'content' => 'local worktree memory',
+                'content_hash' => hash('sha256', 'local worktree memory'), 'relevance' => 'medium',
+                'timestamp' => '2026-11-16 12:00', 'token_count' => 5, 'source_refs_json' => '[]',
+            ]], coveredAt: '2026-11-16T12:00:00+00:00',
+        );
+        $exec = $this->createMock(ExecInterface::class);
+        $exec->expects($this->once())->method('exec')->willReturn(new ExecResultDTO($this->tmpDir.'/metadata/worktree'."\n".$this->tmpDir.'/metadata', '', 0));
+        $api = $this->createStub(ExtensionApiInterface::class);
+        $api->method('getCwd')->willReturn($this->tmpDir);
+        $api->method('exec')->willReturn($exec);
+        $api->method('sessionEvents')->willReturn($this->createStub(SessionEventReaderInterface::class));
+        $http = new MockHttpClient(static function (): never {
+            throw new \LogicException('Worktrees must not contact Librarian.');
+        });
+        $service = new OmQueryService($api, OmSettings::fromArray([
+            'storage' => ['database' => $dbPath],
+            'librarian' => ['url' => 'http://librarian.test/_mcp'],
+        ]), librarianHttpClient: $http);
+        $this->assertFalse($service->usesLibrarian());
+        $search = $service->search('local worktree', runId: 'worktree-run');
+        $this->assertTrue($search['ok']);
+        $this->assertSame($id, $search['results'][0]['id']);
+        $recall = $service->recall('worktree-run', substr($id, 0, 12));
+        $this->assertTrue($recall['ok']);
+        $this->assertSame('source-run', $recall['session_id']);
+        $this->assertSame('local worktree memory', $recall['content']);
+        $this->assertSame(0, $http->getRequestsCount());
     }
 
     #[Test]
@@ -279,12 +327,42 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
         $missing = $service->recall('run-prefix', str_repeat('f', 12));
         $this->assertFalse($missing['ok']);
         $this->assertSame('not_found', $missing['error']);
-        $this->assertStringContainsString('session run-prefix', (string) $missing['message']);
-        $this->assertStringContainsString('If this id came from memory_search, pass its session_id.', (string) $missing['message']);
 
         $invalid = $service->recall('run-prefix', 'short');
         $this->assertFalse($invalid['ok']);
         $this->assertSame('invalid_id', $invalid['error']);
+
+        // An exact observation ID is not allowed to win over a reflection with the same ID.
+        $reflection = [
+            'reflection_id' => $id1, 'run_id' => 'another-session',
+            'compaction_request_id' => 'collision', 'observation_set_hash' => hash('sha256', 'collision'),
+            'content' => 'Actual reflection content', 'supporting_observation_ids_json' => '[]',
+            'compression_level' => '0', 'token_count' => 1, 'reflector_model' => 'test/model',
+            'reflector_schema_version' => '1', 'created_at' => '2026-07-28T12:00:00+00:00',
+        ];
+        $connection->insert('om_reflection', $reflection);
+        $collision = $service->recall('unrelated-current-run', $id1);
+        $this->assertSame('ambiguous_id', $collision['error']);
+        $this->assertSame([
+            ['id' => $id1, 'content' => 'first'],
+            ['id' => $id1, 'content' => 'Actual reflection content'],
+        ], $collision['candidates']);
+        $this->assertFalse($collision['candidates_truncated']);
+
+        for ($i = 0; $i < 51; ++$i) {
+            $reflection['reflection_id'] = 'aaaaaaaaaaaa'.str_pad(dechex($i), 52, '0', \STR_PAD_LEFT);
+            $connection->insert('om_reflection', $reflection);
+        }
+        $bounded = $service->recall('unrelated-current-run', 'aaaaaaaaaaaa');
+        $this->assertSame('ambiguous_id', $bounded['error']);
+        $this->assertCount(50, $bounded['candidates']);
+        $this->assertTrue($bounded['candidates_truncated']);
+
+        $connection->update('om_reflection', ['content' => str_repeat('x', 900_001)], ['reflection_id' => $id1]);
+        $oversize = $service->recall('unrelated-current-run', $id1);
+        $this->assertSame('ambiguous_id', $oversize['error']);
+        $this->assertTrue($oversize['candidates_truncated']);
+        $this->assertCount(1, $oversize['candidates']);
     }
 
     #[Test]
@@ -606,7 +684,7 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
     }
 
     #[Test]
-    public function recallAcceptsExplicitSessionIdAndKeepsOmittedCurrentSessionBehavior(): void
+    public function recallDerivesPriorAndCurrentEvidenceSessionsFromProjectWideIds(): void
     {
         $dbPath = $this->tmpDir.'/om-recall-session.sqlite';
         $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
@@ -692,13 +770,7 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
             ]),
         );
 
-        $missingCross = $service->recall('run-current', substr($priorId, 0, 12));
-        $this->assertFalse($missingCross['ok']);
-        $this->assertSame('not_found', $missingCross['error']);
-        $this->assertStringContainsString('session run-current', (string) $missingCross['message']);
-        $this->assertStringContainsString('If this id came from memory_search, pass its session_id.', (string) $missingCross['message']);
-
-        $cross = $service->recall('run-current', substr($priorId, 0, 12), 'run-prior');
+        $cross = $service->recall('run-current', substr($priorId, 0, 12));
         $this->assertTrue($cross['ok']);
         $this->assertSame('observation', $cross['kind']);
         $this->assertSame('run-prior', $cross['session_id']);

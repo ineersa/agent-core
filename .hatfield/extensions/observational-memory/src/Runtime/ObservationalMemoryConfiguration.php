@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Runtime;
 
-use Ineersa\HatfieldExt\ObservationalMemory\Semantic\SemanticSettings;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
@@ -34,37 +33,12 @@ final class ObservationalMemoryConfiguration implements ConfigurationInterface
             ->arrayNode('pools')->ignoreExtraKeys(false)->normalizeKeys(false)->addDefaultsIfNotSet()->children()
                 ->integerNode('observations_max_tokens')->info('Maximum tokens in the observations pool.')->min(1)->defaultValue(OmSettings::DEFAULT_OBSERVATIONS_MAX_TOKENS)->end()
             ->end()->end()
-            ->arrayNode('semantic')->info('Optional semantic search; clear this block to disable it.')->ignoreExtraKeys(false)->normalizeKeys(false)
-                ->beforeNormalization()->ifTrue(static fn (mixed $value): bool => null === $value || [] === $value)->thenUnset()->end()
-                ->children()
-                    ->arrayNode('embedding_api')->isRequired()->ignoreExtraKeys(false)->normalizeKeys(false)->children()
-                        ->stringNode('base_url')->info('Embedding HTTP(S) endpoint, without credentials, query, or fragment.')->isRequired()->cannotBeEmpty()->end()
-                        ->stringNode('model_id')->info('Embedding model ID served by this endpoint.')->isRequired()->cannotBeEmpty()->end()
-                        ->stringNode('query_prefix')->info('Prefix added to embedding queries.')->defaultValue('')->end()
-                        ->integerNode('chunk_bytes')->info('Embedding chunk size in bytes.')->min(4)->defaultValue(SemanticSettings::DEFAULT_CHUNK_BYTES)->end()
-                        ->integerNode('overlap_bytes')->info('Overlap in bytes, smaller than the chunk size.')->min(0)->defaultValue(SemanticSettings::DEFAULT_OVERLAP_BYTES)->end()
-                        ->integerNode('max_lines')->info('Maximum lines per embedding chunk.')->min(1)->defaultValue(SemanticSettings::DEFAULT_MAX_LINES)->end()
-                        ->integerNode('batch_size')->info('Embedding batch size.')->min(1)->defaultValue(SemanticSettings::DEFAULT_EMBEDDING_BATCH_SIZE)->end()
-                    ->end()->end()
-                    ->arrayNode('reranker_api')->info('Optional reranker; clear this block to disable it.')->ignoreExtraKeys(false)->normalizeKeys(false)
-                        ->beforeNormalization()->ifNull()->thenUnset()->end()
-                        ->children()
-                            ->stringNode('base_url')->info('Reranker HTTP(S) endpoint, without credentials, query, or fragment.')->isRequired()->cannotBeEmpty()->end()
-                            ->stringNode('model_id')->info('Reranker model ID served by this endpoint.')->isRequired()->cannotBeEmpty()->end()
-                            ->integerNode('batch_size')->info('Reranker batch size.')->min(1)->defaultValue(SemanticSettings::DEFAULT_RERANKER_BATCH_SIZE)->end()
-                            ->integerNode('document_characters')->info('Maximum document characters sent to the reranker.')->min(1)->defaultValue(SemanticSettings::DEFAULT_DOCUMENT_CHARACTERS)->end()
-                            ->floatNode('min_score')->info('Optional finite minimum score; omit to use any inherited score.')->end()
-                        ->end()
-                    ->end()
-                ->end()
-                // Reuse the runtime authority for URLs, finite scores, and chunk/overlap relationships.
-                ->validate()->always(static function (array $value): array {
-                    SemanticSettings::fromArray($value);
 
-                    return $value;
-                })->end()
-            ->end()
         ->end();
+
+        $librarian = (new LibrarianConfiguration())->getConfigTreeBuilder()->getRootNode();
+        $librarian->beforeNormalization()->ifNull()->thenUnset()->end();
+        $tree->getRootNode()->append($librarian);
 
         return $tree;
     }
