@@ -1165,6 +1165,12 @@ services:
     arguments:
       $hooks: !tagged_iterator agent_core.before_provider_request_hook
 
+  Symfony\Component\Clock\MonotonicClock: ~
+
+  Ineersa\CodingAgent\Tool\Edit\PatchApplier:
+    arguments:
+      $clock: '@Symfony\Component\Clock\MonotonicClock'
+
   # LlmPlatformAdapter hooks — ImageGatingConvertHook registers as a convert_to_llm hook.
   # Only LLM retry backoff uses cooperative sleep; OAuth and other clock users
   # keep their existing framework clock binding.

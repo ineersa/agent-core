@@ -27,6 +27,7 @@ use Ineersa\AgentCore\Domain\Message\ToolPayloadMessage;
 use Ineersa\AgentCore\Domain\Tool\ToolCall as DomainToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\AttributeSerializerValidatorTestFactory;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Application\Pipeline\CodeModeBackgroundCoordinationHandler;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
@@ -38,12 +39,18 @@ use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\Tool\Support\InodeLockHolder;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
+use Ineersa\CodingAgent\Tool\Arguments\EditFileArgumentsDTO;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeDiagnosticsToolResultProcessor;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeExecutionResult;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeHostBridge;
 use Ineersa\CodingAgent\Tool\CodeMode\CodeModeIpc;
 use Ineersa\CodingAgent\Tool\CodeModeTool;
+use Ineersa\CodingAgent\Tool\Edit\EditLockDiagnosticsService;
+use Ineersa\CodingAgent\Tool\Edit\PatchApplier;
+use Ineersa\CodingAgent\Tool\Edit\PatchFailureFormatter;
+use Ineersa\CodingAgent\Tool\EditFileTool;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
 use Ineersa\CodingAgent\Tool\RawAwareToolCallArgumentResolver;
@@ -58,6 +65,8 @@ use Symfony\AI\Agent\Toolbox\EventListener\ValidateToolCallArgumentsListener;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
 use Symfony\AI\Agent\Toolbox\ToolCallArgumentResolver;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -1108,6 +1117,49 @@ PHP));
         }
     }
 
+    public function testNestedEditInodeTimeoutFailsScriptBeforeSubsequentEdits(): void
+    {
+        $path = $this->tmpDir.'/nested-edit.txt';
+        file_put_contents($path, "old\n");
+        $logger = new TestLogger();
+        $clock = new MockClock();
+        $reads = 0;
+        $waitClock = $this->createStub(ClockInterface::class);
+        $waitClock->method('now')->willReturnCallback(static function () use ($clock, &$reads) {
+            // Start, first failed flock attempt, then expiry at the next retry.
+            if (3 === ++$reads) {
+                $clock->modify('+5 seconds');
+            }
+
+            return $clock->now();
+        });
+        $tool = new EditFileTool(self::getContainer()->get(ToolRuntime::class), new PatchApplier($waitClock, new EditLockDiagnosticsService($logger, self::getContainer()->get(StackToolExecutionContextAccessor::class)), new PatchFailureFormatter()));
+        $calls = 0;
+        $bridge = $this->bridgeWithToolbox(static function (string $name, array $args) use ($tool, &$calls): string {
+            self::assertSame('edit', $name);
+            ++$calls;
+
+            return $tool(new EditFileArgumentsDTO(...$args));
+        });
+        $args = var_export(['path' => $path, 'patch' => "@@\n-old\n+new"], true);
+        $holder = new InodeLockHolder($path);
+        try {
+            try {
+                $this->runScript($bridge, "tool('edit', $args); tool('edit', $args); return 'unexpected';");
+                $this->fail('A nested lock timeout must fail the script.');
+            } catch (ToolCallException $e) {
+                $this->assertStringContainsString('E_PATCH_LOCK_TIMEOUT', $e->getMessage());
+            }
+            $this->assertSame(1, $calls);
+            $this->assertSame("old\n", file_get_contents($path));
+            $this->assertCount(1, $logger->records);
+            $this->assertNotEmpty($logger->records[0]['context']['tool_call_id']);
+        } finally {
+            $holder->release();
+        }
+        $this->assertSame("old\n", file_get_contents($path));
+    }
+
     private function bridge(): CodeModeHostBridge
     {
         $bridge = self::getContainer()->get('test.code_mode_host_bridge');
@@ -1144,7 +1196,7 @@ PHP));
 
                     public function execute(ToolCall $toolCall): \Symfony\AI\Agent\Toolbox\ToolResult
                     {
-                        return new \Symfony\AI\Agent\Toolbox\ToolResult($toolCall, ($this->executor)($toolCall->getName()));
+                        return new \Symfony\AI\Agent\Toolbox\ToolResult($toolCall, ($this->executor)($toolCall->getName(), $toolCall->getArguments()));
                     }
                 };
             }

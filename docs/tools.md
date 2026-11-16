@@ -46,6 +46,14 @@ returned artifact references before retrying; failure does not imply rollback.
 Error redaction is not a reason to include prompts, credentials or environment
 values in diagnostics.
 
+`edit` waits at most five seconds for exclusive access to the target inode. If
+contention persists, it fails with `E_PATCH_LOCK_TIMEOUT` without modifying the
+file and logs a structured error; it does not schedule a delayed edit or retry
+automatically. Investigate the competing writer before retrying. This limit also
+applies to edits called from `code_mode`; it is an edit-lock limit, not a general
+nested-tool deadline. Maintainer diagnostics are described in the repository's
+`docs/datadog.md`, under “Edit lock contention”.
+
 ## code_mode
 
 Enable `tools.code_mode.enabled: true` in settings and restart Hatfield. The tool
