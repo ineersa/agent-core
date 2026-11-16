@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\AgentCore\Application\Handler\HookDispatcher;
+use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
+use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Tui\Picker\PickerOverlay;
@@ -15,6 +20,8 @@ use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\Clock\Clock;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Tui\Terminal\ScreenBuffer;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 
@@ -34,6 +41,46 @@ final class TuiSessionPickerDeleteVirtualTest extends IsolatedKernelTestCase
         /** @var HatfieldSessionStore $store */
         $store = self::getContainer()->get(HatfieldSessionStore::class);
         $this->store = $store;
+    }
+
+    public function testResumeSelectsMostRecentlyActiveSessionRatherThanMostRecentlyCreated(): void
+    {
+        $previousClock = Clock::get();
+        $clock = new MockClock('2026-11-01 12:00:00');
+        Clock::set($clock);
+        try {
+            $older = $this->store->createSession('Older conversation');
+            $clock->modify('+1 minute');
+            $newer = $this->store->createSession('Newer conversation');
+            $clock->modify('+1 minute');
+            self::getContainer()->get(HookDispatcher::class)->dispatchAfterTurnCommit(new AfterTurnCommitHookContext(
+                runId: $older, turnNo: 1, status: RunStatus::Running->value,
+                events: [new AfterTurnCommitEventSummary(1, 'agent_command_queued', ['kind' => 'follow_up'])],
+                effectsCount: 0, runState: new RunState($older, RunStatus::Running, turnNo: 1),
+            ));
+
+            $switch = $this->createMock(TuiSessionSwitchServiceInterface::class);
+            $switch->expects($this->once())->method('requestResume')->with($older);
+            $harness = new VirtualTuiHarness(sessionId: $newer, palette: new ThemePalette('test', [ThemeColorEnum::Accent->value => 'magenta']));
+            $picker = new SessionPickerController($harness->tui(), $harness->screen(), $this->store, $switch);
+            $picker->open();
+            $text = $harness->plainScreenText();
+            $this->assertStringContainsString('Older conversation', $text);
+            $this->assertStringContainsString('Newer conversation', $text);
+            $this->assertLessThan(strpos($text, 'Newer conversation'), strpos($text, 'Older conversation'));
+            $list = $this->listWidget($picker);
+            $this->assertSame($older, $list->getSelectedItem()['value']);
+            $harness->startInputLoop();
+            try {
+                $harness->tui()->setFocus($list);
+                $harness->sendInput("\r");
+            } finally {
+                $harness->stopInputLoop();
+                $picker->closePicker();
+            }
+        } finally {
+            Clock::set($previousClock);
+        }
     }
 
     #[Test]

@@ -96,6 +96,30 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->assertSame([], $state->subagentLiveCatalog->activeRunIds());
     }
 
+    public function testOpenShowsRunningAgentsAndForksBeforeCompletedInventory(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-order');
+        $state = new TuiSessionState('picker-order');
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())->method('backgroundWork')->willReturn(new BackgroundWorkSnapshotDTO(children: [
+            new BackgroundChildStatusDTO('finished', 'finished-artifact', 'fork', 'Finished task', 'provider/model', 'low', 'completed', true),
+            new BackgroundChildStatusDTO('agent', 'agent-artifact', 'scout', 'Running agent task', 'provider/model', 'low', 'running', false),
+            new BackgroundChildStatusDTO('fork', 'fork-artifact', 'fork', 'Running fork task', 'provider/model', 'low', 'running', true),
+            new BackgroundChildStatusDTO('failed', 'failed-artifact', 'scout', 'Failed task', 'provider/model', 'low', 'failed', true),
+        ], work: []));
+        $picker = $this->picker($harness, $state, $client);
+        $picker->open();
+        $text = $harness->plainScreenText();
+        foreach (['Running agent task', 'Running fork task'] as $active) {
+            $this->assertStringContainsString($active, $text);
+            foreach (['Finished task', 'Failed task'] as $finished) {
+                $this->assertStringContainsString($finished, $text);
+                $this->assertLessThan(strpos($text, $finished), strpos($text, $active));
+            }
+        }
+        $picker->closePicker();
+    }
+
     #[Test]
     public function testOpenTwiceDoesNotStackOverlay(): void
     {
@@ -479,9 +503,10 @@ final class SubagentLivePickerControllerTest extends TestCase
             $this->assertDoesNotMatchRegularExpression('/  +/', $label, 'Picker labels must collapse repeated whitespace');
         }
 
-        $this->assertStringContainsString('Fork tool interactive test. Your task, in ord...', $items[0]['label']);
-        $this->assertStringContainsString('Inspect docs with tabs and spaces', $items[1]['label']);
-        $this->assertStringNotContainsString('Your task, in order', $items[0]['label'], 'Sanitized summary must truncate after whitespace collapse');
+        $labels = array_column($items, 'label', 'value');
+        $this->assertStringContainsString('Fork tool interactive test. Your task, in ord...', $labels['agent_fork_nl']);
+        $this->assertStringContainsString('Inspect docs with tabs and spaces', $labels['agent_scout_nl']);
+        $this->assertStringNotContainsString('Your task, in order', $labels['agent_fork_nl'], 'Sanitized summary must truncate after whitespace collapse');
     }
 
     #[Test]
