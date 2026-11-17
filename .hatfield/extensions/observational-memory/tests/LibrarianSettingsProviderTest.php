@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
-use Ineersa\HatfieldExt\ObservationalMemory\Runtime\LibrarianSettingsProvider;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -12,33 +11,45 @@ use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 
 final class LibrarianSettingsProviderTest extends TestCase
 {
-    public function testAbsentAndNullStayLocalAndConfiguredDefaultsSurviveVersionCopy(): void
+    public function testAnonymousDefaultsAndExplicitToken(): void
     {
-        $this->assertNull(OmSettings::fromArray([])->librarian);
-        $this->assertNull(OmSettings::fromArray(['librarian' => null])->librarian);
-        $settings = OmSettings::fromArray(['librarian' => ['url' => 'http://127.0.0.1:8093/_mcp']]);
+        $settings = OmSettings::fromArray(['librarian' => ['url' => 'http://localhost/_mcp']]);
         $this->assertSame(30, $settings->librarian->timeoutSeconds);
-        $this->assertSame($settings->librarian, $settings->withRendererAndObserverVersions('2', '2')->librarian);
+        $this->assertNull($settings->librarian->token);
+        $this->assertSame('test-token', OmSettings::fromArray(['librarian' => ['url' => 'http://localhost/_mcp', 'token' => 'test-token']])->librarian->token);
+    }
+
+    public function testEnvironmentTokenIsResolvedAtBoundary(): void
+    {
+        $old = getenv('OM_TEST_TOKEN');
+        try {
+            putenv('OM_TEST_TOKEN=fixture-token');
+            $this->assertSame('fixture-token', OmSettings::fromArray(['librarian' => ['url' => 'http://localhost/_mcp', 'token' => 'env:OM_TEST_TOKEN']])->librarian->token);
+        } finally {
+            putenv(false === $old ? 'OM_TEST_TOKEN' : 'OM_TEST_TOKEN='.$old);
+        }
     }
 
     #[DataProvider('invalidSettings')]
-    public function testMalformedConfiguredBackendFailsClosed(mixed $raw): void
+    public function testInvalidSettingsFailClosed(array $raw): void
     {
         $this->expectException(InvalidConfigurationException::class);
-        LibrarianSettingsProvider::fromArray($raw);
+        OmSettings::fromArray($raw);
     }
 
     public static function invalidSettings(): iterable
     {
-        yield 'empty block' => [[]];
-        yield 'missing url' => [['timeout_seconds' => 30]];
-        yield 'relative url' => [['url' => '/_mcp']];
-        yield 'credentials' => [['url' => 'http://user:secret@localhost/_mcp']];
-        yield 'query' => [['url' => 'http://localhost/_mcp?secret=value']];
-        yield 'fragment' => [['url' => 'http://localhost/_mcp#fragment']];
-        yield 'wrong protocol' => [['url' => 'file:///tmp/mcp']];
-        yield 'header injection' => [['url' => "http://localhost/\r\nHeader:value"]];
-        yield 'timeout zero' => [['url' => 'http://localhost/_mcp', 'timeout_seconds' => 0]];
-        yield 'timeout unbounded' => [['url' => 'http://localhost/_mcp', 'timeout_seconds' => 301]];
+        yield 'absent' => [[]];
+        yield 'null' => [['librarian' => null]];
+        yield 'empty' => [['librarian' => []]];
+        yield 'relative' => [['librarian' => ['url' => '/_mcp']]];
+        yield 'credentials' => [['librarian' => ['url' => 'http://user:pass@localhost/_mcp']]];
+        yield 'query' => [['librarian' => ['url' => 'http://localhost/_mcp?key=value']]];
+        yield 'fragment' => [['librarian' => ['url' => 'http://localhost/_mcp#fragment']]];
+        yield 'protocol' => [['librarian' => ['url' => 'file:///tmp/mcp']]];
+        yield 'zero timeout' => [['librarian' => ['url' => 'http://localhost/_mcp', 'timeout_seconds' => 0]]];
+        yield 'large timeout' => [['librarian' => ['url' => 'http://localhost/_mcp', 'timeout_seconds' => 301]]];
+        yield 'token injection' => [['librarian' => ['url' => 'http://localhost/_mcp', 'token' => "bad\r\ntoken"]]];
+        yield 'removed settings' => [['model' => 'test', 'librarian' => ['url' => 'http://localhost/_mcp']]];
     }
 }

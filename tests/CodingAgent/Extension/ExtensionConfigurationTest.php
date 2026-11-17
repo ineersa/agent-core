@@ -54,22 +54,13 @@ final class ExtensionConfigurationTest extends TestCase
         $this->assertSame('Hatfield Status', $workflow->workflowField);
 
         $input = [
-            'model' => 'local/Qwen/Qwen3',
-            'observer' => ['renderer_version' => 'custom'],
-            'custom-internal-key' => ['untouched' => true],
             'librarian' => ['url' => 'http://localhost:8093/_mcp'],
         ];
         $om = $processor->processConfiguration($definitions['observational_memory'], [$input]);
         $settings = OmSettings::fromArray($om);
-        $this->assertSame('local/Qwen/Qwen3', $settings->model);
-        $this->assertSame('custom', $settings->rendererVersion);
-        $this->assertSame(['untouched' => true], $om['custom-internal-key']);
-        $this->assertSame('http://localhost:8093/_mcp', $settings->librarian?->url);
-        $this->assertSame(30, $settings->librarian?->timeoutSeconds);
-        $root = $definitions['observational_memory']->getConfigTreeBuilder()->buildTree();
-        $this->assertTrue($root->getChildren()['model']->getAttribute('hatfield.model_picker'));
-        $input['librarian'] = null;
-        $this->assertNull(OmSettings::fromArray($processor->processConfiguration($definitions['observational_memory'], [$input]))->librarian);
+        $this->assertSame('http://localhost:8093/_mcp', $settings->librarian->url);
+        $this->assertSame(30, $settings->librarian->timeoutSeconds);
+        $this->assertNull($settings->librarian->token);
         $input['librarian'] = ['url' => 'https://user:secret@localhost/_mcp'];
         $this->expectException(InvalidConfigurationException::class);
         $this->expectExceptionMessage('without credentials');

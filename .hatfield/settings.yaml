@@ -14,6 +14,9 @@ extensions:
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
         - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
     settings:
+        # OM requires observational_memory.librarian.url in user/project settings.
+        # Optional librarian.token (literal or env:NAME) is shared by MCP and REST.
+        # Deploy only after Librarian discovery/import and backup restore gates pass.
         task_workflow:
             repository: ineersa/agent-core
             remote: origin

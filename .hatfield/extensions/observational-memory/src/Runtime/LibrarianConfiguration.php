@@ -23,6 +23,7 @@ final class LibrarianConfiguration implements ConfigurationInterface
                 })->thenInvalid('Expected an absolute HTTP(S) MCP endpoint without credentials, query, or fragment.')->end()
             ->end()
             ->integerNode('timeout_seconds')->info('Bounded connection and tool request timeout in seconds.')->min(1)->max(300)->defaultValue(30)->end()
+            ->stringNode('token')->info('Optional bearer token or env:NAME secret reference.')->defaultNull()->end()
         ->end();
 
         return $tree;

@@ -14,6 +14,14 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 
 final class LibrarianClientTest extends TestCase
 {
+    public function testOptionalBearerTokenReachesEveryMcpExchange(): void
+    {
+        $calls = [];
+        $client = $this->client($calls, static fn (): array => ['ok' => true], 'fixture-token');
+        $this->assertTrue($client->call('recall', ['id' => str_repeat('a', 12)])['ok']);
+        $this->assertSame(['ensure_project', 'recall'], $calls);
+    }
+
     public function testLazyConnectionEnsuresOnceAndRetainsDomainErrorsAndAmbiguity(): void
     {
         $calls = [];
@@ -137,11 +145,16 @@ final class LibrarianClientTest extends TestCase
     }
 
     /** @param list<string> $calls */
-    private function client(array &$calls, callable $payload): LibrarianClient
+    private function client(array &$calls, callable $payload, ?string $token = null): LibrarianClient
     {
-        $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$calls, $payload): MockResponse {
+        $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$calls, $payload, $token): MockResponse {
             self::assertSame('http://librarian.test/_mcp', $url);
             self::assertContains('X-Librarian-Project: /canonical/project', $options['headers']);
+            if (null !== $token) {
+                self::assertContains('Authorization: Bearer '.$token, $options['headers']);
+            } else {
+                self::assertArrayNotHasKey('authorization', $options['normalized_headers']);
+            }
             self::assertArrayNotHasKey('x-hatfield-session', $options['normalized_headers']);
             if ('DELETE' === $method) {
                 return new MockResponse('', ['http_code' => 204]);
@@ -163,6 +176,9 @@ final class LibrarianClientTest extends TestCase
                 if ('ensure_project' === $tool) {
                     self::assertSame([], $request['params']['arguments']);
                 }
+                if ('recall' === $tool) {
+                    self::assertSame(['id' => str_repeat('a', 12)], $request['params']['arguments']);
+                }
                 $value = $payload($tool, $options);
                 $result = ['content' => [['type' => 'text', 'text' => json_encode($value, \JSON_THROW_ON_ERROR)]], 'structuredContent' => $value, 'isError' => false === ($value['ok'] ?? true)];
             }
@@ -172,6 +188,6 @@ final class LibrarianClientTest extends TestCase
             ]);
         });
 
-        return new LibrarianClient(new LibrarianSettingsDTO('http://librarian.test/_mcp'), '/canonical/project', new NullLogger(), $http);
+        return new LibrarianClient(new LibrarianSettingsDTO('http://librarian.test/_mcp', token: $token), '/canonical/project', new NullLogger(), $http);
     }
 }
