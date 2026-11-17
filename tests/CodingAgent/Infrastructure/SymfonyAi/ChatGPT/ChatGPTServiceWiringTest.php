@@ -38,7 +38,7 @@ final class ChatGPTServiceWiringTest extends PerMethodIsolatedKernelTestCase
             self::assertSame(['X-Host-Proof: unchanged'], $headers['x-host-proof']);
             $json = zstd_uncompress($options['body']);
             self::assertIsString($json);
-            self::assertSame(zstd_compress($json, 4), $options['body']);
+            self::assertSame(zstd_compress($json, 3), $options['body']);
             self::assertLessThan(\strlen($json), \strlen($options['body']));
             self::assertLessThanOrEqual(100 * \strlen($options['body']), \strlen($json));
             $body = json_decode($json, true, flags: \JSON_THROW_ON_ERROR);
