@@ -14,6 +14,9 @@ final class LibrarianResponseDTO
     #[Assert\EqualTo(1)]
     public int $contract_version = 0;
 
+    #[Assert\NotNull(groups: ['delete'])]
+    public ?bool $deleted = null;
+
     #[Assert\NotNull(groups: ['projection'])]
     public ?string $text = null;
 

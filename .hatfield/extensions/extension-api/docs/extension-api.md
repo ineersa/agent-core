@@ -56,6 +56,7 @@ final class ExampleExtension implements HatfieldExtensionInterface
 | `exec` | Safe argv exec (no shell interpolation) |
 | `registerAfterTurnCommitHook` | Stable post-turn commits |
 | `registerSessionStartHook` | Interactive controller session start |
+| `registerSessionDeletedHook` | Permanent local deletion completed (captured target identity) |
 | `registerBeforeCompactionHook` | Compaction contribution/trim |
 | `sessionEvents` | Read canonical session events |
 | `isChildRun` | Host-owned session/native-child identity: child vs main run; unknown identity throws |
@@ -93,3 +94,7 @@ resolution does not depend on process CWD.
 ## Versioning
 
 Treat this package as a published API. Additive methods may appear; do not rely on host-private classes.
+
+### Permanent session deletion
+
+Register `AfterSessionDeletedHookInterface` with `registerSessionDeletedHook()`. The host calls `onAfterSessionDeleted()` only after the local metadata transaction and filesystem removal succeed. Its data-only `DTO\AfterSessionDeletedHookContextDTO` carries the normalized `runId`, stored `cwd`, and nullable `parentRunId`, captured before deletion. Do not look up deleted identity or substitute the attached session. Ordinary shutdown, switching sessions, missing sessions and failed deletion do not call this hook. Hook exceptions are logged and isolated; they cannot undo local deletion or prevent subsequent hooks. Callbacks run synchronously; bound external requests and do not dispatch into the deleted session's queue. There is no durable retry or eventual-delivery guarantee.

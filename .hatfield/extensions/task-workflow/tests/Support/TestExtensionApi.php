@@ -12,6 +12,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionDeletedHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
@@ -112,6 +113,10 @@ final class TestExtensionApi implements ExtensionApiInterface
     }
 
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
+    {
+    }
+
+    public function registerSessionDeletedHook(AfterSessionDeletedHookInterface $hook): void
     {
     }
 

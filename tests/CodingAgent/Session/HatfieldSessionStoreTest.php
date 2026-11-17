@@ -20,6 +20,7 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatch;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\ToolBatchSchedule;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
+use Ineersa\CodingAgent\Session\Event\SessionDeletedEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionToolPayloadStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
@@ -28,6 +29,7 @@ use Ineersa\CodingAgent\Tool\OutputCap;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Filesystem\Exception\IOException;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
 
@@ -42,6 +44,101 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         /** @var HatfieldSessionStore $store */
         $store = self::getContainer()->get(HatfieldSessionStore::class);
         $this->store = $store;
+    }
+
+    public function testDeletionPublishesCapturedIdentityOnlyAfterLocalRemoval(): void
+    {
+        $id = $this->store->createSession('Delete hook');
+        $entity = $this->store->findSession($id);
+        $this->assertNotNull($entity);
+        $entity->cwd = '/captured/target';
+        $entity->parentId = 'parent';
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
+        $directory = $this->store->resolveSessionsBasePath().'/'.$id;
+        $seen = new \ArrayObject();
+        $listener = function (SessionDeletedEvent $event) use ($directory, $seen): void {
+            self::assertFalse($this->store->exists($event->runId));
+            self::assertDirectoryDoesNotExist($directory);
+            $seen[] = [$event->runId, $event->cwd, $event->parentRunId];
+        };
+        $dispatcher = self::getContainer()->get(EventDispatcherInterface::class);
+        $dispatcher->addListener(SessionDeletedEvent::class, $listener);
+        try {
+            $dispatcher->dispatch(new ControllerSessionShutdownEvent($id));
+            $this->assertCount(0, $seen);
+            $this->store->deleteSession('00'.$id);
+            $this->assertSame([[$id, '/captured/target', 'parent']], $seen->getArrayCopy());
+            try {
+                $this->store->deleteSession($id);
+                $this->fail('Missing deletion must fail');
+            } catch (\RuntimeException) {
+                $this->assertCount(1, $seen);
+            }
+        } finally {
+            $dispatcher->removeListener(SessionDeletedEvent::class, $listener);
+        }
+    }
+
+    public function testFailedLocalDeletionNeverPublishesDeletion(): void
+    {
+        $id = $this->store->createSession('Rollback hook');
+        $dispatcher = self::getContainer()->get(EventDispatcherInterface::class);
+        $seen = [];
+        $listener = static function (SessionDeletedEvent $event) use (&$seen): void { $seen[] = $event; };
+        $failure = static function (): void { throw new \RuntimeException('rollback'); };
+        $dispatcher->addListener(SessionDeletedEvent::class, $listener);
+        $dispatcher->addListener(ControllerSessionShutdownEvent::class, $failure, -8192);
+        try {
+            foreach ([$id, 'invalid'] as $target) {
+                try {
+                    $this->store->deleteSession($target);
+                    $this->fail('Deletion must fail');
+                } catch (\RuntimeException) {
+                    $this->assertSame([], $seen);
+                }
+            }
+            $this->assertTrue($this->store->exists($id));
+            $this->assertDirectoryExists($this->store->resolveSessionsBasePath().'/'.$id);
+        } finally {
+            $dispatcher->removeListener(SessionDeletedEvent::class, $listener);
+            $dispatcher->removeListener(ControllerSessionShutdownEvent::class, $failure);
+        }
+    }
+
+    public function testFilesystemRemovalFailureDoesNotPublishDeletion(): void
+    {
+        if (0 === posix_geteuid()) {
+            $this->markTestSkipped('Root bypasses the filesystem permission contract.');
+        }
+        $id = $this->store->createSession('Filesystem failure');
+        $directory = $this->store->resolveSessionsBasePath().'/'.$id;
+        $this->assertSame($directory, realpath($directory));
+        $this->assertFalse(is_link($directory));
+        // Only this isolated session directory is made non-writable. A child
+        // prevents rmdir from succeeding without unlink permission inside it.
+        file_put_contents($directory.'/blocked', 'fixture');
+        chmod($directory, 0o500);
+        // Prevent Symfony's atomic top-level rename so the owned target remains
+        // addressable for permission restoration even when unlink fails.
+        $base = \dirname($directory);
+        $baseMode = fileperms($base) & 0o777;
+        chmod($base, 0o500);
+        $dispatcher = self::getContainer()->get(EventDispatcherInterface::class);
+        $seen = new \ArrayObject();
+        $listener = static function (SessionDeletedEvent $event) use ($seen): void { $seen[] = $event; };
+        $dispatcher->addListener(SessionDeletedEvent::class, $listener);
+        try {
+            try {
+                $this->store->deleteSession($id);
+                $this->fail('Filesystem deletion must fail.');
+            } catch (IOException) {
+                $this->assertCount(0, $seen);
+            }
+        } finally {
+            chmod($base, $baseMode);
+            chmod($directory, 0o700);
+            $dispatcher->removeListener(SessionDeletedEvent::class, $listener);
+        }
     }
 
     public function testCatalogAndExistenceReadsDoNotPopulateTheIdentityMap(): void

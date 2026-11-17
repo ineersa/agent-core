@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionDeletedHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
@@ -63,6 +64,9 @@ final class ExtensionHookRegistry implements PromptContributorProviderInterface,
      * @var list<array{hook: BeforeCompactionHookInterface, owner: ?string}>
      */
     private array $beforeCompactionHooks = [];
+
+    /** @var list<array{hook: AfterSessionDeletedHookInterface, owner: ?string}> */
+    private array $sessionDeletedHooks = [];
 
     public function addToolCallHook(ToolCallHookInterface $hook): void
     {
@@ -146,6 +150,17 @@ final class ExtensionHookRegistry implements PromptContributorProviderInterface,
     public function afterTurnCommitHooks(?array $allowedOwnerClasses = null): array
     {
         return $this->filterHooks($this->afterTurnCommitHooks, $allowedOwnerClasses);
+    }
+
+    public function addSessionDeletedHook(AfterSessionDeletedHookInterface $hook): void
+    {
+        $this->sessionDeletedHooks[] = ['hook' => $hook, 'owner' => ExtensionRegistrationContext::currentOwnerClass()];
+    }
+
+    /** @return list<AfterSessionDeletedHookInterface> */
+    public function sessionDeletedHooks(): array
+    {
+        return $this->filterHooks($this->sessionDeletedHooks, null);
     }
 
     public function addSessionStartHook(AfterSessionStartHookInterface $hook): void

@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
 use Ineersa\CodingAgent\Session\DTO\SessionModelMetadataDTO;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
+use Ineersa\CodingAgent\Session\Event\SessionDeletedEvent;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
@@ -382,6 +383,10 @@ final class HatfieldSessionStore
         $sessionDir = $this->getSessionDir($sessionId);
         $shutdown = new ControllerSessionShutdownEvent($sessionId, permanentDeletion: true);
 
+        // Capture identity while the row still exists; post-delete consumers must
+        // never substitute the attached session or reread deleted metadata.
+        $deleted = new SessionDeletedEvent($sessionId, $entity->cwd, $entity->parentId);
+
         $connection = $this->entityManager->getConnection();
         $connection->transactional(function () use ($shutdown, $entity): void {
             // Permanent-deletion listeners remove pending SQL work before other
@@ -395,6 +400,9 @@ final class HatfieldSessionStore
         // after SQL commits. Failed deletion must leave its authority intact.
         $this->storageLocks[$sessionId] = false;
         (new Filesystem())->remove(array_unique([$sessionDir, ...$shutdown->payloadDirectories]));
+        // Unlike shutdown listeners, extension notifications run only after both
+        // local persistence and filesystem deletion have succeeded.
+        $this->dispatcher->dispatch($deleted);
     }
 
     /**

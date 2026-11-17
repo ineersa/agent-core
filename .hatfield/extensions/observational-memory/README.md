@@ -39,7 +39,7 @@ and explaining Librarian ownership. Repeated settings reads and jobs do not emit
 migration warnings. There are no automatic configuration writes and no local
 storage or processing fallback.
 
-Linked Git worktrees are excluded completely: no registration, remote calls,
+Linked Git worktree targets are excluded: no remote calls,
 commands, memory tools or prompt additions, and no primary-checkout redirection.
 Uncertain Git identity fails closed. Children and forks cannot observe, retrieve
 or project memory even if explicitly allowlisted. A snapshot prepared for a fork
@@ -85,3 +85,9 @@ writers or import data. Preserve existing SQLite files for the coordinated impor
 this extension does not remove them. Local processing settings are no longer
 used; only the five top-level legacy keys listed above are accepted and discarded.
 Other obsolete or unknown settings are rejected.
+
+## Session deletion
+
+After permanent local session deletion succeeds, the extension sends a synchronous, bounded `DELETE /api/om/v1/sessions/hatfield/{encodedId}` with no body, using the captured session's canonical CWD as `X-Librarian-Project` and the shared optional token. HTTP 200 with `{ok: true, contract_version: 1, deleted: boolean}` is success whether `deleted` is true or false. Captured children and linked-worktree targets are excluded; the currently attached session is never substituted. The deletion hook remains registered even in an excluded active checkout so an eligible target is evaluated using its own project.
+
+Cleanup is best effort: remote failure is logged without content or credentials and never reverses local deletion. There is no retry/outbox and no eventual-cleanup guarantee; unavailable Librarian can retain memory indefinitely. Late observe requests may recreate server-side session rows; preventing this is a Librarian-side responsibility, not guaranteed by this client.

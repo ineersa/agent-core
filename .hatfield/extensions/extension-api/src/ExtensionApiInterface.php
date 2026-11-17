@@ -11,6 +11,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionDeletedHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
@@ -166,6 +167,9 @@ interface ExtensionApiInterface
      * {@see self::dispatchExtensionAgentJob()} on the async extension_agent transport.
      */
     public function registerSessionStartHook(AfterSessionStartHookInterface $hook): void;
+
+    /** Notify after successful permanent deletion; callback failures are isolated and logged. */
+    public function registerSessionDeletedHook(AfterSessionDeletedHookInterface $hook): void;
 
     /**
      * Register a public before-compaction hook.

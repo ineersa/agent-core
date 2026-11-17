@@ -22,6 +22,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionDeletedHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
@@ -197,6 +198,11 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
     {
         $this->hookRegistry->addAfterTurnCommitHook($hook);
+    }
+
+    public function registerSessionDeletedHook(AfterSessionDeletedHookInterface $hook): void
+    {
+        $this->hookRegistry->addSessionDeletedHook($hook);
     }
 
     public function registerSessionStartHook(AfterSessionStartHookInterface $hook): void
