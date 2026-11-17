@@ -68,7 +68,7 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
         );
         // One public hook for CompactRun (watermark) and snapshot/fork (null watermark).
         $api->registerBeforeCompactionHook(
-            new OmBeforeCompactionHook($api, $settings, $this->logger),
+            new OmBeforeCompactionHook($query, $this->logger),
         );
 
         $api->registerCommand(

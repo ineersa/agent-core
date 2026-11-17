@@ -64,9 +64,6 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
     /** @var array<string, ExtensionAgentJobHandlerInterface> */
     private array $extensionAgentJobHandlers = [];
 
-    /** @var list<ExtensionAgentJobRequestDTO> */
-    private array $dispatchedExtensionAgentJobs = [];
-
     public function __construct(?string $cwd = null)
     {
         $this->cwd = $cwd ?? '';
@@ -239,14 +236,7 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
 
     public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
     {
-        $this->dispatchedExtensionAgentJobs[] = $request;
-    }
-
-    /**
-     * @return list<ExtensionAgentJobRequestDTO>
-     */
-    public function getDispatchedExtensionAgentJobs(): array
-    {
-        return $this->dispatchedExtensionAgentJobs;
+        // This registration-only double has no worker or job queue. Tests that
+        // exercise dispatch use an explicit expectation on ExtensionApiInterface.
     }
 }

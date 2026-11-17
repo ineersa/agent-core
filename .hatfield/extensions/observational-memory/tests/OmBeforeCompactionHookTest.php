@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
+use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeCompactionHook;
+use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
@@ -15,6 +19,30 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 
 final class OmBeforeCompactionHookTest extends OmTestCase
 {
+    public function testRepeatedCompactionsReusePolicyButRetrieveFreshProjections(): void
+    {
+        mkdir($this->directory.'/.git');
+        $exec = $this->createMock(ExecInterface::class);
+        $exec->expects($this->once())->method('exec')->willReturn(new ExecResultDTO($this->directory.'/.git'."\n".$this->directory.'/.git', '', 0));
+        $api = $this->createMock(ExtensionApiInterface::class);
+        $api->method('getCwd')->willReturn($this->directory);
+        $api->expects($this->exactly(2))->method('isChildRun')->with('parent/id')->willReturn(false);
+        $api->method('exec')->willReturn($exec);
+        $http = new MockHttpClient([
+            new MockResponse('{"ok":true,"contract_version":1,"text":"first"}'),
+            new MockResponse('{"ok":true,"contract_version":1,"text":"updated"}'),
+        ]);
+        $query = new OmQueryService($api, $this->settings(), librarianHttpClient: $http);
+        $hook = new OmBeforeCompactionHook($query, new NullLogger());
+        $first = $hook->beforeCompaction($this->context());
+        $second = $hook->beforeCompaction($this->context());
+        $this->assertSame('first', $first->replacementSummary);
+        $this->assertSame('updated', $second->replacementSummary);
+        $this->assertSame('observational_memory', $second->metadata['om_source']);
+        $this->assertSame('active_durable_memory', $second->metadata['om_projection']);
+        $this->assertSame(2, $http->getRequestsCount());
+    }
+
     #[DataProvider('responses')]
     public function testProjectionOrOrdinaryCompaction(string $body, int $status, bool $replacement, bool $timeout = false): void
     {
@@ -30,7 +58,7 @@ final class OmBeforeCompactionHookTest extends OmTestCase
 
             return new MockResponse($body, ['http_code' => $status]);
         });
-        $result = (new OmBeforeCompactionHook($this->api(), $this->settings(), new NullLogger(), $http))->beforeCompaction($this->context());
+        $result = (new OmBeforeCompactionHook(new OmQueryService($this->api(), $this->settings(), librarianHttpClient: $http), new NullLogger()))->beforeCompaction($this->context());
         $this->assertFalse($result->cancels());
         $this->assertSame($replacement, $result->hasReplacementSummary());
         $this->assertSame($timeout ? 0 : 1, $http->getRequestsCount());
@@ -54,7 +82,7 @@ final class OmBeforeCompactionHookTest extends OmTestCase
     public function testExcludedContextsNeverRequest(bool $child, bool $worktree): void
     {
         $http = new MockHttpClient();
-        $result = (new OmBeforeCompactionHook($this->api($child, $worktree), $this->settings(), new NullLogger(), $http))->beforeCompaction($this->context());
+        $result = (new OmBeforeCompactionHook(new OmQueryService($this->api($child, $worktree), $this->settings(), librarianHttpClient: $http), new NullLogger()))->beforeCompaction($this->context());
         $this->assertFalse($result->cancels());
         $this->assertFalse($result->hasReplacementSummary());
         $this->assertSame(0, $http->getRequestsCount());

@@ -11,7 +11,7 @@ Enable the installed package and configure its required full HTTP MCP endpoint:
 ```yaml
 extensions:
   enabled:
-    - ineersa/hatfield-ext-observational-memory
+    - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
   settings:
     observational_memory:
       librarian:

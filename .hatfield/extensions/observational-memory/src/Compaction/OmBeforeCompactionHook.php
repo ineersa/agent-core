@@ -7,11 +7,8 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Compaction;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
-use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
-use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Psr\Log\LoggerInterface;
-use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
  * Bounded retrieval of the current durable Librarian memory projection.
@@ -24,21 +21,17 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInterface
 {
     public function __construct(
-        private ExtensionApiInterface $api,
-        private OmSettings $settings,
+        private OmQueryService $query,
         private LoggerInterface $logger,
-        private ?HttpClientInterface $httpClient = null,
     ) {
     }
 
     public function beforeCompaction(BeforeCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
     {
         try {
-            // A parent snapshot for a fork still has the parent's run identity.
-            if ($this->api->isChildRun($context->runId)) {
-                return BeforeCompactionHookResultDTO::continue();
-            }
-            $text = (new OmQueryService($this->api, $this->settings, $this->logger, $this->httpClient))->projection($context->runId);
+            // The shared query enforces exclusions and caches only project policy,
+            // never projection content. Parent snapshots retain the parent's identity.
+            $text = $this->query->projection($context->runId);
             if (null === $text || '' === trim($text)) {
                 return BeforeCompactionHookResultDTO::continue();
             }

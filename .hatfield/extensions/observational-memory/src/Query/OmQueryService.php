@@ -52,7 +52,12 @@ final class OmQueryService
 
     public function formatView(string $runId): string
     {
-        return $this->projection($runId) ?? 'OM view unavailable.';
+        $text = $this->projection($runId);
+        if (null === $text) {
+            return 'OM view unavailable.';
+        }
+
+        return '' === trim($text) ? 'No observational memory for this session.' : $text;
     }
 
     /** @return array<string, mixed> */

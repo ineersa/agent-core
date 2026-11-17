@@ -13,8 +13,11 @@ use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedSessionMetadataDTO
 use Ineersa\CodingAgent\Extension\ChildRun\Metadata\RunStartedToolsScopeDTO;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmCancelAwareHttpClient;
 use Ineersa\CodingAgent\Runtime\DTO\SubagentProgressSnapshotDTO;
+use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
+use Ineersa\HatfieldExt\ObservationalMemory\DTO\LibrarianResponseDTO;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use ShipMonk\PHPStan\DeadCode\Provider\ReflectionBasedMemberUsageProvider;
 use ShipMonk\PHPStan\DeadCode\Provider\VirtualUsageData;
@@ -38,7 +41,7 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
 {
     /**
      * Exact classes whose public properties are read by Symfony Serializer,
-     * durable projection persistence, or event-payload denormalization.
+     * Validator, durable projection persistence, or event-payload denormalization.
      *
      * @var list<class-string>
      */
@@ -51,6 +54,7 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         RunStartedSessionMetadataDTO::class,
         RunStartedToolsScopeDTO::class,
         SubagentProgressSnapshotDTO::class,
+        LibrarianResponseDTO::class,
     ];
 
     protected function shouldMarkMethodAsUsed(\ReflectionMethod $method): ?VirtualUsageData
@@ -66,20 +70,30 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
             return VirtualUsageData::withNote('Published Hatfield ExtensionApi contract');
         }
 
-        // These published registration methods must remain on every implementor
+        // These published capability methods must remain on every implementor
         // (host bridge and test doubles), even without current in-repo callers.
         // The Castor extension was the last local rewrite-hook registration.
         // Task-workflow now installs a versioned project skill instead of registering one.
-        if (\in_array($method->getName(), ['registerToolResultHook', 'registerToolCallRewriteHook', 'registerSkill'], true)
+        if (\in_array($method->getName(), ['registerToolResultHook', 'registerToolCallRewriteHook', 'registerSkill', 'agent', 'sessionEvents'], true)
             && $method->getDeclaringClass()->implementsInterface(ExtensionApiInterface::class)) {
             return VirtualUsageData::withNote('Published ExtensionApiInterface method with no current extension callers');
         }
 
         // External extensions consume these exact public TUI methods even when
         // no bundled extension calls them; keep internal methods analyzable.
-        if (\in_array($method->getName(), ['setExtensionWarning', 'formatMuted', 'formatRolePrefix', 'turnRowsInDisplayOrder'], true)
+        if (\in_array($method->getName(), ['setExtensionWarning', 'formatMuted', 'formatRolePrefix', 'turnRowsInDisplayOrder', 'setStatus', 'onTick'], true)
             && $method->getDeclaringClass()->implementsInterface(TuiExtensionContextInterface::class)) {
             return VirtualUsageData::withNote('Published TuiExtensionContextInterface method with no current extension callers');
+        }
+
+        if ('contextWindow' === $method->getName()
+            && $method->getDeclaringClass()->implementsInterface(AgentRunnerInterface::class)) {
+            return VirtualUsageData::withNote('Published AgentRunnerInterface method with no current extension callers');
+        }
+
+        if ('readRange' === $method->getName()
+            && $method->getDeclaringClass()->implementsInterface(SessionEventReaderInterface::class)) {
+            return VirtualUsageData::withNote('Published SessionEventReaderInterface method with no current extension callers');
         }
 
         // Measured with this rule removed: ShipMonk reports both required
@@ -104,7 +118,7 @@ final class HatfieldDeadCodeUsageProvider extends ReflectionBasedMemberUsageProv
         }
 
         if (\in_array($className, self::SERIALIZED_PROPERTY_CLASSES, true)) {
-            return VirtualUsageData::withNote('Symfony Serializer / durable projection / event payload property');
+            return VirtualUsageData::withNote('Symfony Serializer / Validator / durable projection / event payload property');
         }
 
         // PHP stream wrappers expose a public $context filled by the engine.

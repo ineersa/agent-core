@@ -8,9 +8,26 @@ use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
 
 final class OmQueryServiceTest extends OmTestCase
 {
+    #[DataProvider('viewResponses')]
+    public function testViewDistinguishesEmptyUnavailableAndExactContent(string $body, int $status, string $expected): void
+    {
+        $http = new MockHttpClient(new MockResponse($body, ['http_code' => $status]));
+        $query = new OmQueryService($this->api(), $this->settings(), librarianHttpClient: $http);
+        $this->assertSame($expected, $query->formatView('session'));
+    }
+
+    public static function viewResponses(): iterable
+    {
+        yield 'empty' => ['{"ok":true,"contract_version":1,"text":""}', 200, 'No observational memory for this session.'];
+        yield 'whitespace' => ['{"ok":true,"contract_version":1,"text":"  \\n"}', 200, 'No observational memory for this session.'];
+        yield 'error' => ['{}', 503, 'OM view unavailable.'];
+        yield 'nonempty exact' => ['{"ok":true,"contract_version":1,"text":"  memory\\n"}', 200, "  memory\n"];
+    }
+
     #[DataProvider('invalidSearches')]
     public function testSearchValidationWithoutNetwork(string $query, ?string $after, ?string $before, ?int $limit, string $error): void
     {
