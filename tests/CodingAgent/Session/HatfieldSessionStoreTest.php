@@ -46,14 +46,23 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->store = $store;
     }
 
-    public function testDeletionPublishesCapturedIdentityOnlyAfterLocalRemoval(): void
+    public function testDeletionPublishesFreshIdentityOnlyAfterLocalRemoval(): void
     {
         $id = $this->store->createSession('Delete hook');
         $entity = $this->store->findSession($id);
         $this->assertNotNull($entity);
-        $entity->cwd = '/captured/target';
-        $entity->parentId = 'parent';
-        self::getContainer()->get(EntityManagerInterface::class)->flush();
+        $entity->cwd = '/stale/target';
+        $entity->parentId = null;
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $entityManager->flush();
+        // Simulate another process committing identity changes while the TUI
+        // retains its managed copy; deletion must capture the committed row.
+        $entityManager->getConnection()->executeStatement(
+            'UPDATE hatfield_session SET cwd = ?, parent_id = ? WHERE id = ?',
+            ['/captured/target', 'parent', (int) $id],
+        );
+        $this->assertSame('/stale/target', $entity->cwd);
+        $this->assertNull($entity->parentId);
         $directory = $this->store->resolveSessionsBasePath().'/'.$id;
         $seen = new \ArrayObject();
         $listener = function (SessionDeletedEvent $event) use ($directory, $seen): void {

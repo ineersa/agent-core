@@ -383,17 +383,21 @@ final class HatfieldSessionStore
         $sessionDir = $this->getSessionDir($sessionId);
         $shutdown = new ControllerSessionShutdownEvent($sessionId, permanentDeletion: true);
 
-        // Capture identity while the row still exists; post-delete consumers must
-        // never substitute the attached session or reread deleted metadata.
-        $deleted = new SessionDeletedEvent($sessionId, $entity->cwd, $entity->parentId);
-
         $connection = $this->entityManager->getConnection();
-        $connection->transactional(function () use ($shutdown, $entity): void {
+        $deleted = $connection->transactional(function () use ($shutdown, $entity, $sessionId): SessionDeletedEvent {
+            // Another process may have updated the identity-map copy's row.
+            // Capture committed identity inside deletion's transaction while it
+            // still exists; post-delete consumers cannot reread this metadata.
+            $this->entityManager->refresh($entity);
+            $deleted = new SessionDeletedEvent($sessionId, $entity->cwd, $entity->parentId);
+
             // Permanent-deletion listeners remove pending SQL work before other
             // shutdown listeners dispose child ownership evidence. Ordinary shutdown retains it.
             $this->dispatcher->dispatch($shutdown);
             $this->entityManager->remove($entity);
             $this->entityManager->flush();
+
+            return $deleted;
         });
 
         // A reentrant deletion invalidates the held publication scope only
