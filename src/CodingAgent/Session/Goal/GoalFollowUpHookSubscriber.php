@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
 
 /** Use the existing durable follow-up path, only at a real main exchange end. */
@@ -18,8 +19,10 @@ final readonly class GoalFollowUpHookSubscriber implements EssentialAfterTurnHoo
 {
     public const string FOLLOW_UP = 'A session goal remains. Call get_goal first: if it has been cleared, stop; if changed, use the current objective. Verify the entire current goal against current evidence. If achieved, call clear_goal with the exact verified objective and report the evidence; if cleared is false, re-evaluate the current goal. Otherwise continue the necessary work with the existing tools and follow-up/completion facilities. A final answer alone is not goal completion. Do not invent a replacement goal or new authorization.';
 
-    public function __construct(private HatfieldSessionRepository $sessions)
-    {
+    public function __construct(
+        private HatfieldSessionRepository $sessions,
+        private BackgroundCompletionReceiptRepository $backgroundCompletions,
+    ) {
     }
 
     public function prepareAfterTurnCommit(AfterTurnCommitHookContext $context, int $predecessorSequence): array
@@ -37,6 +40,11 @@ final readonly class GoalFollowUpHookSubscriber implements EssentialAfterTurnHoo
                 continue;
             }
             if (null === $this->sessions->findGoal($context->runId)) {
+                return [];
+            }
+            // Ending an exchange can mean yielding to delegated work, not being
+            // idle. Its native completion will wake main; do not compete with it.
+            if ($this->backgroundCompletions->hasOutstandingWork($context->runId)) {
                 return [];
             }
             // Prepared summaries have no assigned sequence yet. Derive the final

@@ -107,6 +107,13 @@ model/tool steps, standalone `!` shell commands, child completions, failures and
 follow-up. Goals survive compaction and session resume; resuming alone does not
 start work. Forks and subagents do not own or change the main session's goal.
 
+If session-owned background agents, Bash or code_mode work still owe a completion,
+the goal reminder is suppressed: the normal completion notification wakes main.
+This includes terminal results awaiting delivery or consumption, not just running
+work. Consumed completions, unrelated sessions and recurring schedule registrations
+do not block goal reminders. A Bash process explicitly launched in the background
+counts until its completion is consumed, even if it is a long-running watcher.
+
 `/goal clear` and `/goal cancel` remove the objective immediately, including while
 the agent is busy. They do not stop already executing tools; use normal cancellation
 for that. A previously queued goal reminder instructs the agent to read the current

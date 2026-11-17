@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session\Goal;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
@@ -18,6 +19,10 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\BackgroundCompletionDispositionEnum;
+use Ineersa\CodingAgent\Application\BackgroundCompletion\DTO\BackgroundCompletionReceiptDTO;
+use Ineersa\CodingAgent\Entity\BackgroundCompletionReceiptRepository;
+use Ineersa\CodingAgent\Entity\DeferredSubagentBatch;
 use Ineersa\CodingAgent\Session\Goal\GoalFollowUpHookSubscriber;
 use Ineersa\CodingAgent\Session\Goal\SessionGoalService;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -25,6 +30,35 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
 final class GoalFollowUpHookSubscriberTest extends IsolatedKernelTestCase
 {
+    public function testYieldingToBackgroundChildDoesNotCreateReminderLoop(): void
+    {
+        $container = self::getContainer();
+        $id = $container->get(HatfieldSessionStore::class)->createSession('', 'Objective');
+        $batch = new DeferredSubagentBatch();
+        $batch->lifecycleId = 'implementation';
+        $batch->parentRunId = $id;
+        $batch->parentToolCallId = 'fork';
+        $batch->backgroundedAt = new \DateTimeImmutable();
+        $em = $container->get(EntityManagerInterface::class);
+        $em->persist($batch);
+        $em->flush();
+        $hook = $container->get(GoalFollowUpHookSubscriber::class);
+        $context = $this->context($id, 'agent_end', 'completed');
+        foreach ([41, 43, 45] as $predecessor) {
+            $this->assertSame([], $hook->prepareAfterTurnCommit($context, $predecessor));
+        }
+        $this->assertSame('Objective', $container->get(SessionGoalService::class)->get($id));
+        $batch->terminalCompletionEnqueuedAt = new \DateTimeImmutable();
+        $em->flush();
+        $this->assertSame([], $hook->prepareAfterTurnCommit($context, 47));
+        $receipts = $container->get(BackgroundCompletionReceiptRepository::class);
+        $identity = 'background-child-result-implementation';
+        $receipts->record(new BackgroundCompletionReceiptDTO($identity, $id, $id, $id, $id, 'done', 'done', BackgroundCompletionDispositionEnum::Pending));
+        $this->assertSame([], $hook->prepareAfterTurnCommit($context, 49));
+        $receipts->consume($identity, $id, false);
+        $this->assertCount(1, $hook->prepareAfterTurnCommit($context, 51), 'After the completion-driven exchange, an unfinished goal can continue normally.');
+    }
+
     public function testCommittedCompletionUsesDurableCoordinationAndNativeMailboxDeduplication(): void
     {
         $container = self::getContainer();

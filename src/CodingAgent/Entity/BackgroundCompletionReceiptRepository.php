@@ -33,6 +33,47 @@ final class BackgroundCompletionReceiptRepository extends ServiceEntityRepositor
         return false === $row ? null : $this->snapshot($row);
     }
 
+    /** Whether native background work still owes this session a completion. */
+    public function hasOutstandingWork(string $rootRunId): bool
+    {
+        // Source rows bridge execution/transport -> receipt admission. Checking
+        // only running work misses terminal results still in transit; checking
+        // only receipts misses work that has not produced its result yet.
+        // Once admitted, the receipt owns pending/forwarding/consumed state.
+        return (bool) $this->getEntityManager()->getConnection()->fetchOne(<<<'SQL'
+            SELECT EXISTS (
+                SELECT 1 FROM background_completion_receipt
+                WHERE root_run_id = :root AND disposition IN ('pending', 'forwarding')
+            ) OR EXISTS (
+                SELECT 1 FROM deferred_subagent_batch batch
+                LEFT JOIN background_completion_receipt receipt
+                    ON receipt.identity = 'background-child-result-' || batch.lifecycle_id
+                WHERE batch.parent_run_id = :root AND batch.backgrounded_at IS NOT NULL
+                    AND receipt.identity IS NULL
+            ) OR EXISTS (
+                SELECT 1 FROM background_process process
+                LEFT JOIN run_operational_state state ON state.run_id = process.session_id
+                LEFT JOIN deferred_subagent_child child ON child.child_run_id = process.session_id
+                LEFT JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
+                LEFT JOIN background_completion_receipt receipt
+                    ON receipt.identity = 'background-process-' || process.id
+                WHERE process.backgrounded_at IS NOT NULL AND process.completion_notified_at IS NULL
+                    AND receipt.identity IS NULL
+                    AND (process.session_id = :root OR state.owner_session_id = :root OR batch.parent_run_id = :root)
+            ) OR EXISTS (
+                SELECT 1 FROM tool_deferred_completion invocation
+                LEFT JOIN run_operational_state state ON state.run_id = invocation.run_id
+                LEFT JOIN deferred_subagent_child child ON child.child_run_id = invocation.run_id
+                LEFT JOIN deferred_subagent_batch batch ON batch.lifecycle_id = child.batch_lifecycle_id
+                LEFT JOIN background_completion_receipt receipt ON receipt.identity = invocation.deferred_id
+                WHERE invocation.tool_name = 'code_mode' AND invocation.status = 'pending'
+                    AND invocation.backgrounded_at IS NOT NULL AND receipt.identity IS NULL
+                    AND (invocation.interruption_reason IS NULL OR invocation.interruption_reason = 'controller_lost')
+                    AND (invocation.run_id = :root OR state.owner_session_id = :root OR batch.parent_run_id = :root)
+            )
+            SQL, ['root' => $rootRunId]);
+    }
+
     /** @return list<BackgroundCompletionReceiptDTO> */
     public function recoverableDeliveries(string $rootRunId): array
     {
