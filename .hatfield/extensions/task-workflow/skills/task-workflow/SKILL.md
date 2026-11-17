@@ -1,7 +1,7 @@
 ---
 name: task-workflow
 description: Set up task workflow for this project, or plan, implement, validate, and deliver work tracked in GitHub issues.
-version: 2.3.0
+version: 2.4.0
 ---
 
 # Task workflow
@@ -12,6 +12,8 @@ For “set up task workflow”, read the mirrored
 [project setup guide](README.md#project-setup) beside this installed skill.
 The guide and `templates/issue/` assets resolve relative to this skill directory,
 regardless of whether the extension package is installed at project or user scope.
+In a Claude Code plugin install they are in the plugin root, two directories above
+this skill, and Hatfield commands map to `/task-workflow:tasks-init` and `/task-workflow:tasks`.
 Git and a committed repository are
 prerequisites. Inspect instructions, remote/base branch, CI and existing build/test
 commands first; propose discovered settings and all three project-owned hooks.
@@ -22,7 +24,8 @@ Preserve existing files/settings. Ask only unresolved product/review/resource-ow
 decisions or required human authorization. Reuse a suitable existing owner field by its exact
 `workflow_field` name; otherwise prefer manual creation over broad account scopes.
 Leave unrelated fields alone; colors and extra artifacts are not prerequisites.
-Commit approved setup in the stable primary checkout, restart Hatfield to load it,
+Commit approved setup in the stable primary checkout, restart Hatfield (in Claude Code,
+reconnect the task-workflow MCP server with `/mcp`) to load it,
 then deliberately run `/tasks-init` with an existing ordinary issue for its read-only
 capability probe. Setup must not create, migrate or merge real tasks. Report verified
 readiness, exact blockers and unrun checks; initialization is not a lifecycle test.
@@ -51,7 +54,7 @@ All templates use the PR lifecycle, including experiments with negative results.
 
 Use `move_task` to start work in the task worktree.
 Implement directly or delegate a bounded larger piece to an implementation
-fork when useful. Give the fork its assignment and checkout; obtain changes,
+fork (a subagent in Claude Code) when useful. Give the fork its assignment and checkout; obtain changes,
 blockers, and relevant validation results. Keep one writer per checkout.
 Forks follow project development/testing rules; they do not manage task updates,
 transitions, other agents, commits, reviews or PRs. Main owns that administration.

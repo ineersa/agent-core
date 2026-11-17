@@ -1,0 +1,26 @@
+{
+  "name": "task-workflow",
+  "description": "Hatfield's GitHub issue task workflow for Claude Code: task tools, project hooks, PR delivery and recoverable worktrees.",
+  "author": {
+    "name": "ineersa"
+  },
+  "homepage": "https://github.com/ineersa/hatfield-ext-task-workflow",
+  "repository": "https://github.com/ineersa/hatfield-ext-task-workflow",
+  "license": "MIT",
+  "keywords": [
+    "hatfield",
+    "github",
+    "issues",
+    "workflow",
+    "worktrees"
+  ],
+  "mcpServers": {
+    "task-workflow": {
+      "command": "php",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/claude/bin/task-workflow-mcp"
+      ],
+      "timeout": 14400000
+    }
+  }
+}

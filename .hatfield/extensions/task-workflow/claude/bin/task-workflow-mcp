@@ -1,0 +1,111 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * Claude Code stdio MCP entry point for the task-workflow plugin.
+ *
+ * The plugin directory is a read-only, versioned copy without vendor/. On first
+ * start (and after every plugin update) this script installs the package's
+ * Composer dependencies into the persistent plugin data directory, then serves
+ * MCP on stdin/stdout. stdout is reserved for the protocol: Composer output and
+ * diagnostics go to stderr.
+ */
+
+$pluginRoot = dirname(__DIR__, 2);
+// Claude Code exports both variables to plugin MCP servers. Refuse anything
+// else (unset, relative, an unexpanded placeholder) so nothing is installed
+// into, or resolved against, the current directory by accident.
+$dataDir = taskWorkflowAbsoluteEnv('CLAUDE_PLUGIN_DATA');
+$autoload = taskWorkflowDependencies($pluginRoot, $dataDir);
+require $autoload;
+
+use Ineersa\HatfieldExt\TaskWorkflow\Claude\StderrLogger;
+use Ineersa\HatfieldExt\TaskWorkflow\Claude\TaskWorkflowMcpServerFactory;
+use Mcp\Server\Transport\StdioTransport;
+
+$logger = new StderrLogger();
+$cwd = taskWorkflowAbsoluteEnv('CLAUDE_PROJECT_DIR');
+if (!is_dir($cwd)) {
+    taskWorkflowFail('CLAUDE_PROJECT_DIR is not a directory');
+}
+$manifest = json_decode((string) file_get_contents($pluginRoot.'/.claude-plugin/plugin.json'), true);
+$server = (new TaskWorkflowMcpServerFactory($logger))->create($cwd, getenv('HOME') ?: null, (string) ($manifest['version'] ?? 'dev'));
+$server->run(new StdioTransport(logger: $logger));
+
+function taskWorkflowDependencies(string $pluginRoot, string $dataDir): string
+{
+    $autoload = $dataDir.'/vendor/autoload.php';
+    // The stamp covers this generated file, which embeds the plugin root path
+    // (it changes on every update), and the package's own requirements.
+    $composerJson = [
+        'name' => 'local/task-workflow-claude-plugin',
+        'type' => 'project',
+        'require' => [
+            'ineersa/hatfield-ext-task-workflow' => '*@dev',
+            // Track the Extension API mirror's main, which is split from the same
+            // monorepo commit as this plugin, not its latest (possibly older) tag.
+            'ineersa/hatfield-extension-api' => 'dev-main',
+            // Claude bridge only; Hatfield hosts never load src/Claude.
+            'mcp/sdk' => '^0.9',
+            'symfony/process' => '^7.3|^8.0',
+        ],
+        'repositories' => [['type' => 'path', 'url' => $pluginRoot, 'options' => ['symlink' => true]]],
+        'minimum-stability' => 'dev',
+        'prefer-stable' => true,
+    ];
+    $composerJsonText = json_encode($composerJson, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+    $stamp = hash('sha256', $composerJsonText.file_get_contents($pluginRoot.'/composer.json'));
+    $stampFile = $dataDir.'/install.stamp';
+    if (is_file($autoload) && @file_get_contents($stampFile) === $stamp) {
+        return $autoload;
+    }
+
+    if (!is_dir($dataDir) && !mkdir($dataDir, 0700, true) && !is_dir($dataDir)) {
+        taskWorkflowFail('cannot create plugin data directory');
+    }
+    // Concurrent Claude sessions share the data directory; install once.
+    $lock = fopen($dataDir.'/install.lock', 'c');
+    if (false === $lock || !flock($lock, LOCK_EX)) {
+        taskWorkflowFail('cannot lock plugin data directory');
+    }
+    if (is_file($autoload) && @file_get_contents($stampFile) === $stamp) {
+        return $autoload;
+    }
+
+    // A failed update must not leave a stamp that vouches for a mixed vendor/.
+    @unlink($stampFile);
+    file_put_contents($dataDir.'/composer.json', $composerJsonText);
+
+    $composer = getenv('COMPOSER_BINARY') ?: 'composer';
+    fwrite(STDERR, "task-workflow: installing Composer dependencies into {$dataDir}\n");
+    $process = proc_open(
+        [$composer, 'update', '--no-dev', '--no-interaction', '--no-progress', '--optimize-autoloader', '--working-dir='.$dataDir],
+        [0 => ['file', '/dev/null', 'r'], 1 => STDERR, 2 => STDERR],
+        $pipes,
+    );
+    if (!is_resource($process) || 0 !== proc_close($process) || !is_file($autoload)) {
+        taskWorkflowFail('composer update failed; run it manually in '.$dataDir);
+    }
+    file_put_contents($stampFile, $stamp);
+    flock($lock, LOCK_UN);
+
+    return $autoload;
+}
+
+function taskWorkflowAbsoluteEnv(string $name): string
+{
+    $value = getenv($name);
+    if (!is_string($value) || !str_starts_with($value, '/') || str_contains($value, '${')) {
+        taskWorkflowFail($name.' must be an absolute path; start this server through the Claude Code plugin');
+    }
+
+    return rtrim($value, '/');
+}
+
+function taskWorkflowFail(string $message): never
+{
+    fwrite(STDERR, 'task-workflow: '.$message."\n");
+    exit(1);
+}

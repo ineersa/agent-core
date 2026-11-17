@@ -842,9 +842,12 @@ parameters:
     # ExtensionApi generic TUI contracts (Symfony\Component\Tui\*) — intentional public UI API.
     AppExtensionApi:
       - SymfonyTui
+    # The Claude Code plugin bridge serves task-workflow over the official MCP SDK.
     HatfieldExtTaskWorkflow:
       - AppExtensionApi
       - HatfieldExtTaskWorkflow
+      - McpSdk
+      - SymfonyProcess
       - SymfonyYaml
     # OM may use ExtensionApi + approved vendor facilities, including the official MCP client.
     # Vendor packages are not Deptrac layers; only forbid project-layer leakage.
