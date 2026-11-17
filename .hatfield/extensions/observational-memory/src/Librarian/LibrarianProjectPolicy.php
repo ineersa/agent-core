@@ -44,7 +44,7 @@ final readonly class LibrarianProjectPolicy
                 }
             }
         } catch (\Throwable $error) {
-            // Local OM stays available, but uncertain Git identity must never be registered.
+            // Uncertain Git identity must never be registered or used for OM.
             $this->logger->warning('om.librarian.git_inspection_failed', [
                 'run_id' => null, 'session_id' => null,
                 'component' => 'observational_memory', 'event_type' => 'om.librarian.git_inspection_failed',

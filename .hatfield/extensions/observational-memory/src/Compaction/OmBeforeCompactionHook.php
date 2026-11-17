@@ -7,12 +7,11 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Compaction;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
-use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
+use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Psr\Log\LoggerInterface;
 
 /**
- * Instant deterministic projection of current durable OM memory.
+ * Bounded retrieval of the current durable Librarian memory projection.
  *
  * Serves CompactRun (paired coverage watermark present) and snapshot/fork
  * compaction (watermark null/null) via the same public before-compaction hook.
@@ -22,8 +21,7 @@ use Psr\Log\LoggerInterface;
 final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInterface
 {
     public function __construct(
-        private ExtensionApiInterface $api,
-        private OmSettings $settings,
+        private OmQueryService $query,
         private LoggerInterface $logger,
     ) {
     }
@@ -31,17 +29,10 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
     public function beforeCompaction(BeforeCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
     {
         try {
-            // A parent snapshot for a fork still has the parent's run identity.
-            if ($this->api->isChildRun($context->runId)) {
-                return BeforeCompactionHookResultDTO::continue();
-            }
-            $text = ActiveMemoryProjector::renderActive(
-                $this->api,
-                $this->settings,
-                $this->logger,
-                $context->runId,
-            );
-            if ('' === $text) {
+            // The shared query enforces exclusions and caches only project policy,
+            // never projection content. Parent snapshots retain the parent's identity.
+            $text = $this->query->projection($context->runId);
+            if (null === $text || '' === trim($text)) {
                 return BeforeCompactionHookResultDTO::continue();
             }
 
@@ -54,18 +45,16 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
 
             return $dto;
         } catch (\Throwable $e) {
-            // Privacy-safe cancel only; dispatcher would also fail-closed, but local
-            // cancel keeps an OM-specific reason without raw exception text.
+            // Intentional degradation: never cancel ordinary compaction on OM failure.
             $this->logger->error('om.compaction.hook_failed', [
                 'component' => 'observational_memory',
                 'event_type' => 'om.compaction.hook_failed',
                 'run_id' => $context->runId,
+                'session_id' => $context->runId,
                 'exception_class' => $e::class,
             ]);
 
-            return BeforeCompactionHookResultDTO::cancel(
-                'observational_memory active-memory projection failed: '.$e::class,
-            );
+            return BeforeCompactionHookResultDTO::continue();
         }
     }
 }

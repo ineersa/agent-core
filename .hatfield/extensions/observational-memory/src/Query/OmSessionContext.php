@@ -10,7 +10,7 @@ use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
  * Holds the live public TUI context for current-session slash commands.
  *
  * session_id is lazy: never cache the string returned by getSessionId().
- * Call getSessionId() on every /om-status and /om-view invocation because
+ * Call getSessionId() on every /om-view invocation because
  * BridgeTuiExtensionContext resolves mutable runtime state. Re-registering
  * TUI may replace the bound context object.
  */

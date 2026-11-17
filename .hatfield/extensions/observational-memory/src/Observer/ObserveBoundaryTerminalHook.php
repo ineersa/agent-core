@@ -9,7 +9,6 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitEventSummaryDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
-use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -23,9 +22,11 @@ final readonly class ObserveBoundaryTerminalHook implements AfterTurnCommitHookI
 
     public function __construct(
         private ExtensionApiInterface $api,
-        private OmSettings $settings,
         private LoggerInterface $logger,
+        private bool $projectAllowed,
     ) {
+        // Reuse registration's checkout decision, never spawn Git on the
+        // committed-turn path. The worker independently rechecks before sending.
     }
 
     public function onAfterTurnCommit(AfterTurnCommitHookContextDTO $context): void
@@ -35,7 +36,7 @@ final readonly class ObserveBoundaryTerminalHook implements AfterTurnCommitHookI
             return;
         }
         // OM is main-only even when explicitly selected in a child's allowlist.
-        if ($this->api->isChildRun($context->runId)) {
+        if (!$this->projectAllowed || $this->api->isChildRun($context->runId)) {
             return;
         }
 
@@ -43,8 +44,6 @@ final readonly class ObserveBoundaryTerminalHook implements AfterTurnCommitHookI
             $context->runId,
             (string) $terminal['end_seq'],
             $terminal['status'],
-            $this->settings->rendererVersion,
-            $this->settings->observerSchemaVersion,
         ]));
 
         $request = new ExtensionAgentJobRequestDTO(
@@ -53,8 +52,6 @@ final readonly class ObserveBoundaryTerminalHook implements AfterTurnCommitHookI
                 'run_id' => $context->runId,
                 'terminal_end_seq' => $terminal['end_seq'],
                 'terminal_status' => $terminal['status'],
-                'renderer_version' => $this->settings->rendererVersion,
-                'observer_schema_version' => $this->settings->observerSchemaVersion,
             ],
             jobId: $jobId,
             correlationId: $context->runId,
@@ -68,6 +65,8 @@ final readonly class ObserveBoundaryTerminalHook implements AfterTurnCommitHookI
                 'component' => 'observational_memory',
                 'event_type' => 'om.observe.dispatch_failed',
                 'run_id' => $context->runId,
+                'session_id' => $context->runId,
+                'end_seq' => $terminal['end_seq'],
                 'job_id' => $jobId,
                 'exception_class' => $e::class,
             ]);

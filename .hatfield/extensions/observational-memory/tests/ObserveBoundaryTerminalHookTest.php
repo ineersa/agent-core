@@ -4,93 +4,73 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
-use Ineersa\CodingAgent\Tests\Extension\InMemoryExtensionApiBridge;
-use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitEventSummaryDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryTerminalHook;
-use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
-use PHPUnit\Framework\TestCase;
+use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
 
-/**
- * Thesis: hot hook dispatches only on terminal agent_end / final failure, with scalar payload.
- */
-final class ObserveBoundaryTerminalHookTest extends TestCase
+final class ObserveBoundaryTerminalHookTest extends OmTestCase
 {
-    public function testExplicitlySelectedChildrenNeverDispatch(): void
+    #[DataProvider('boundaries')]
+    public function testTerminalSemantics(string $status, string $type, array $payload, bool $dispatch): void
     {
-        foreach (['subagent-run', 'fork-run'] as $runId) {
-            $api = $this->createMock(ExtensionApiInterface::class);
-            $api->expects($this->once())->method('isChildRun')->with($runId)->willReturn(true);
-            $api->expects($this->never())->method('dispatchExtensionAgentJob');
-            $api->expects($this->never())->method('sessionEvents');
-            $hook = new ObserveBoundaryTerminalHook($api, OmSettings::fromArray([]), new NullLogger());
-            $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
-                runId: $runId, turnNo: 1, status: 'completed',
-                events: [new AfterTurnCommitEventSummaryDTO(seq: 2, type: 'agent_end', payload: ['reason' => 'completed'])],
-                effectsCount: 0,
-            ));
-        }
+        $api = $this->api();
+        $api->expects($dispatch ? $this->once() : $this->never())->method('dispatchExtensionAgentJob')->with($this->callback(static function (ExtensionAgentJobRequestDTO $job) use ($payload): bool {
+            return ObserveBoundaryTerminalHook::HANDLER_ID === $job->handlerId
+                && ['run_id' => 'run-1', 'terminal_end_seq' => 148, 'terminal_status' => $payload['reason'] ?? 'failed'] === $job->payload;
+        }));
+        (new ObserveBoundaryTerminalHook($api, new NullLogger(), true))->onAfterTurnCommit(new AfterTurnCommitHookContextDTO('run-1', 2, $status, [new AfterTurnCommitEventSummaryDTO(147, 'tool_batch_committed', ['private' => 'not uploaded']), new AfterTurnCommitEventSummaryDTO(148, $type, $payload)], 0));
     }
 
-    public function testDispatchesOnAgentEndCompleted(): void
+    public static function boundaries(): iterable
     {
-        $api = new InMemoryExtensionApiBridge('/tmp');
-        $settings = OmSettings::fromArray([
-            'model' => 'llama_cpp_test/test',
-            'observer' => [
-                'schema_version' => 'o1',
-                'renderer_version' => 'r1',
-            ],
-            'reflector' => [
-            ],
-        ]);
-        $hook = new ObserveBoundaryTerminalHook($api, $settings, new NullLogger());
-
-        $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
-            runId: 'run-1',
-            turnNo: 2,
-            status: 'completed',
-            events: [
-                new AfterTurnCommitEventSummaryDTO(seq: 8, type: 'llm_step_completed', payload: []),
-                new AfterTurnCommitEventSummaryDTO(seq: 9, type: 'agent_end', payload: ['reason' => 'completed']),
-            ],
-            effectsCount: 0,
-        ));
-
-        $jobs = $api->getDispatchedExtensionAgentJobs();
-        $this->assertCount(1, $jobs);
-        $this->assertSame(ObserveBoundaryTerminalHook::HANDLER_ID, $jobs[0]->handlerId);
-        $this->assertSame('run-1', $jobs[0]->payload['run_id']);
-        $this->assertSame(9, $jobs[0]->payload['terminal_end_seq']);
-        $this->assertSame('completed', $jobs[0]->payload['terminal_status']);
+        yield 'completed' => ['completed', 'agent_end', ['reason' => 'completed'], true];
+        yield 'cancelled' => ['cancelled', 'agent_end', ['reason' => 'cancelled'], true];
+        yield 'final failure' => ['failed', 'llm_step_failed', ['retryable' => false], true];
+        yield 'exhausted' => ['failed', 'llm_step_failed', ['retryable' => true, 'retries_exhausted' => true], true];
+        yield 'retrying' => ['failed', 'llm_step_failed', ['retryable' => true], false];
+        yield 'intermediate' => ['running', 'tool_batch_committed', [], false];
     }
 
-    public function testSkipsIntermediateToolBatch(): void
+    #[DataProvider('excluded')]
+    public function testExcludedRunsNeverDispatch(bool $child, bool $projectAllowed): void
     {
-        $api = new InMemoryExtensionApiBridge('/tmp');
-        $settings = OmSettings::fromArray([
-            'model' => 'llama_cpp_test/test',
-            'observer' => [
-                'schema_version' => 'o1',
-                'renderer_version' => 'r1',
-            ],
-            'reflector' => [
-            ],
-        ]);
-        $hook = new ObserveBoundaryTerminalHook($api, $settings, new NullLogger());
+        $api = $this->api(child: $child);
+        $api->expects($this->never())->method('dispatchExtensionAgentJob');
+        (new ObserveBoundaryTerminalHook($api, new NullLogger(), $projectAllowed))->onAfterTurnCommit(new AfterTurnCommitHookContextDTO('run-1', 1, 'completed', [new AfterTurnCommitEventSummaryDTO(9, 'agent_end', ['reason' => 'completed'])], 0));
+    }
 
-        $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
-            runId: 'run-1',
-            turnNo: 2,
-            status: 'running',
-            events: [
-                new AfterTurnCommitEventSummaryDTO(seq: 5, type: 'tool_batch_committed', payload: []),
-            ],
-            effectsCount: 0,
-        ));
+    public static function excluded(): iterable
+    {
+        yield 'child/fork despite allowed project' => [true, true];
+        yield 'disallowed project' => [false, false];
+    }
 
-        $this->assertSame([], $api->getDispatchedExtensionAgentJobs());
+    public function testCheckoutInspectionStaysOutsideCommittedTurnPath(): void
+    {
+        $api = $this->api();
+        $api->expects($this->never())->method('getCwd');
+        $api->expects($this->never())->method('exec');
+        $api->expects($this->exactly(2))->method('dispatchExtensionAgentJob');
+        $hook = new ObserveBoundaryTerminalHook($api, new NullLogger(), true);
+        $context = new AfterTurnCommitHookContextDTO('run-1', 1, 'completed', [new AfterTurnCommitEventSummaryDTO(9, 'agent_end', ['reason' => 'completed'])], 0);
+        $hook->onAfterTurnCommit($context);
+        $hook->onAfterTurnCommit($context);
+    }
+
+    public function testDispatchFailureDoesNotFailCommittedTurn(): void
+    {
+        $api = $this->api();
+        $api->method('dispatchExtensionAgentJob')->willThrowException(new \RuntimeException('private'));
+        $logger = new TestLogger();
+        (new ObserveBoundaryTerminalHook($api, $logger, true))->onAfterTurnCommit(new AfterTurnCommitHookContextDTO('run-1', 1, 'completed', [new AfterTurnCommitEventSummaryDTO(9, 'agent_end', ['reason' => 'completed'])], 0));
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('run-1', $logger->records[0]['context']['session_id']);
+        $this->assertSame(9, $logger->records[0]['context']['end_seq']);
+        $this->assertStringNotContainsString('private', json_encode($logger->records));
     }
 }

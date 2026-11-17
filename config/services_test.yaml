@@ -99,14 +99,6 @@ services:
     class: Symfony\Contracts\HttpClient\HttpClientInterface
     factory: ['Ineersa\CodingAgent\Tests\Infrastructure\ProviderQuota\FakeProviderQuotaHttpClientFactory', 'create']
 
-  # TEST-ONLY OM SQLite factory wrapper. Production OmDatabaseFactory stays static;
-  # this service calls the real factory so DB-touching OM tests boot through the
-  # Symfony test container without inventing production seams.
-  test.om_database_factory:
-    class: Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService
-    public: true
-
-
   # TEST-ONLY access to the private operational projection repository for
   # kernel/database integration tests. The production service remains private.
   test.run_operational_projection_repository:

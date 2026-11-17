@@ -6,7 +6,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\DTO;
 
 final readonly class LibrarianSettingsDTO
 {
-    public function __construct(public string $url, public int $timeoutSeconds = 30)
+    public function __construct(public string $url, public int $timeoutSeconds = 30, public ?string $token = null)
     {
     }
 }

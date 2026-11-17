@@ -113,7 +113,7 @@ final class LibrarianClient
                 $psrClient = new Psr18Client($http, $factory, $factory);
                 $this->client->connect(new HttpTransport(
                     endpoint: $this->settings->url,
-                    headers: ['X-Librarian-Project' => $this->projectRoot],
+                    headers: array_filter(['X-Librarian-Project' => $this->projectRoot, 'Authorization' => null === $this->settings->token ? null : 'Bearer '.$this->settings->token], static fn (?string $value): bool => null !== $value),
                     httpClient: $psrClient,
                     requestFactory: $factory,
                     streamFactory: $factory,
