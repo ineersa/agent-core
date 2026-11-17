@@ -60,6 +60,9 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     private BgStatusTool $tool;
     private string $tmpDir;
 
+    /** @var list<resource> */
+    private array $acceptanceReleases = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -93,6 +96,11 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
             }
         }
         $this->manager->shutdownCleanup();
+
+        foreach ($this->acceptanceReleases as $release) {
+            fclose($release);
+        }
+        $this->acceptanceReleases = [];
 
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
 
@@ -277,13 +285,13 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $dataA = Toon::decode($resultA);
         $dataB = Toon::decode($resultB);
 
-        $commandsA = array_column($dataA['processes'], 'command');
-        $commandsB = array_column($dataB['processes'], 'command');
+        $commandsA = implode("\n", array_column($dataA['processes'], 'command'));
+        $commandsB = implode("\n", array_column($dataB['processes'], 'command'));
 
-        $this->assertContains('echo "A-for-test-B"', $commandsA);
-        $this->assertNotContains('echo "B-for-test-A"', $commandsA);
-        $this->assertContains('echo "B-for-test-A"', $commandsB);
-        $this->assertNotContains('echo "A-for-test-B"', $commandsB);
+        $this->assertStringContainsString('echo "A-for-test-B"', $commandsA);
+        $this->assertStringNotContainsString('echo "B-for-test-A"', $commandsA);
+        $this->assertStringContainsString('echo "B-for-test-A"', $commandsB);
+        $this->assertStringNotContainsString('echo "A-for-test-B"', $commandsB);
     }
 
     /* ── log cap regression ── */
@@ -394,8 +402,18 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     {
         $toolCallId ??= 'call-'.bin2hex(random_bytes(4));
 
+        $fifo = $this->tmpDir.'/accept-'.bin2hex(random_bytes(8));
+        $this->assertSame($this->tmpDir, realpath(\dirname($fifo)));
+        $this->assertFalse(is_link($this->tmpDir));
+        $this->assertTrue(posix_mkfifo($fifo, 0600));
+        $release = fopen($fifo, 'r+b');
+        $this->assertIsResource($release);
+        // Keep the parent's read/write handle until teardown: the release can
+        // be buffered even before the child opens the FIFO. The child cannot
+        // finish between candidate resolution and acceptance.
+        $this->acceptanceReleases[] = $release;
         $started = $this->manager->start(
-            $command,
+            'IFS= read -r accepted < '.escapeshellarg($fifo).' && '.$command,
             $sessionId,
             $toolCallId,
         );
@@ -403,12 +421,9 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $started = $this->manager->findByStatusPath($started->statusPath, $sessionId);
         $this->assertNotNull($started);
         $candidate = $this->manager->resolveBackgroundAcceptance($started->statusPath, $sessionId);
-        if (null === $candidate) {
-            // Short commands can finish before acceptance; durable acceptance still applies.
-            $this->assertTrue(self::getContainer()->get(ProcessStore::class)->acceptLocal($started->id, $sessionId));
-        } else {
-            $this->manager->acceptResolvedBackground($candidate);
-        }
+        $this->assertNotNull($candidate);
+        $this->assertTrue($this->manager->acceptResolvedBackground($candidate));
+        $this->assertSame(8, fwrite($release, "release\n"));
 
         return $started;
     }
