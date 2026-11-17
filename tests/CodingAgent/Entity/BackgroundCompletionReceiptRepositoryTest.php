@@ -14,12 +14,49 @@ use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatch;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChild;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletion;
+use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Tests\Support\SqlLoggingKernel;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 final class BackgroundCompletionReceiptRepositoryTest extends IsolatedKernelTestCase
 {
+    public function testSourceQueriesSeekByOwnerInsteadOfScanningOtherSessions(): void
+    {
+        $container = self::getContainer();
+        $em = $container->get(EntityManagerInterface::class);
+        $repository = $container->get(BackgroundCompletionReceiptRepository::class);
+        $logger = $container->get('test.sql_logger');
+        // Retain both completed Bash history and pending code_mode from foreign
+        // sessions. Assert the actual production query plan, never wall timing.
+        for ($i = 0; $i < 200; ++$i) {
+            $process = new BackgroundProcess();
+            $process->sessionId = 'foreign-'.$i;
+            $process->backgroundedAt = $process->finishedAt = $process->completionNotifiedAt = new \DateTimeImmutable();
+            $invocation = new DeferredToolCompletion();
+            $invocation->runId = $process->sessionId;
+            $invocation->deferredId = 'foreign-invocation-'.$i;
+            $invocation->toolName = 'code_mode';
+            $invocation->backgroundedAt = new \DateTimeImmutable();
+            $em->persist($process);
+            $em->persist($invocation);
+        }
+        $em->flush();
+        $logger->records = [];
+        $this->assertFalse($repository->hasOutstandingWork('main'));
+        $queries = array_values(array_filter($logger->records, static fn (array $row): bool => str_contains($row['context']['sql'] ?? '', 'SELECT EXISTS')));
+        $this->assertCount(1, $queries);
+        $query = $queries[0]['context'];
+        $plan = $em->getConnection()->fetchAllAssociative('EXPLAIN QUERY PLAN '.$query['sql'], $query['params'] ?? []);
+        $detail = implode("\n", array_column($plan, 'detail'));
+        $this->assertStringContainsString('SEARCH process USING INDEX idx_bg_process_session_id (session_id=?)', $detail);
+        $this->assertStringContainsString('SEARCH invocation USING INDEX idx_deferred_active_tool (tool_name=? AND status=? AND run_id=?)', $detail);
+        foreach (['process', 'invocation', 'state', 'batch', 'child'] as $alias) {
+            $this->assertStringNotContainsString('SCAN '.$alias, $detail);
+        }
+    }
+
     #[DataProvider('sources')]
     public function testSourcesRemainOutstandingThroughTerminalAndReceiptConsumption(string $kind, string $ownership): void
     {
@@ -129,5 +166,11 @@ final class BackgroundCompletionReceiptRepositoryTest extends IsolatedKernelTest
             $em->flush();
             $this->assertFalse($repository->hasOutstandingWork('main'), $reason);
         }
+    }
+
+    /** @param array<array-key, mixed> $options */
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new SqlLoggingKernel('test', false);
     }
 }
