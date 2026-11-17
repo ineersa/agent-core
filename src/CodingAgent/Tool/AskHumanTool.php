@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
 use Symfony\AI\Agent\Toolbox\Attribute\MapToolArguments;
@@ -42,6 +46,9 @@ final class AskHumanTool implements HatfieldToolProviderInterface
 
     public function __construct(
         private readonly AskHumanPayloadFactory $payloadFactory,
+        private readonly HatfieldSessionRepository $sessions,
+        private readonly StackToolExecutionContextAccessor $context,
+        private readonly RunRelationshipReaderInterface $relationships,
     ) {
     }
 
@@ -57,6 +64,18 @@ final class AskHumanTool implements HatfieldToolProviderInterface
         #[MapToolArguments]
         AskHumanArgumentsDTO $arguments,
     ): array {
+        $runId = $this->context->current()?->runId() ?? '';
+        if ('' !== $runId) {
+            // Children own no goal row; the owning main session's restriction
+            // applies throughout its run tree. Unknown relationships fail closed.
+            while (null !== ($parentRunId = $this->relationships->readParentRunId($runId))) {
+                $runId = $parentRunId;
+            }
+        }
+        if (null !== $this->sessions->findGoal($runId)) {
+            throw new ToolCallException('ask_human is unavailable while a session goal is active. Continue using available evidence and existing authorization. Do not clear the goal merely to ask a question.');
+        }
+
         return $this->payloadFactory->createPayload($arguments);
     }
 

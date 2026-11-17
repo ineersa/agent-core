@@ -796,6 +796,8 @@ parameters:
       - AgentCore
       # CodingAgent Bash consults immutable child-run metadata owned by AppAgent.
       - AppAgent
+      # Native goal tools use the owning session metadata service and its validated input.
+      - AppSession
       - AppConfig
       # code_mode reuses packaging CLI/cwd resolution for owned PHP subprocesses.
       - AppRuntimeProcessConfig

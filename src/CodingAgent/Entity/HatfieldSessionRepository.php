@@ -83,6 +83,44 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
         );
     }
 
+    /** Read fresh metadata across the TUI, controller and tool-worker processes. */
+    public function findGoal(string $runId): ?string
+    {
+        if ('' === $runId || !ctype_digit($runId)) {
+            return null;
+        }
+        $goal = $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT goal FROM hatfield_session WHERE id = ? AND parent_id IS NULL',
+            [$runId],
+        );
+
+        return \is_string($goal) ? $goal : null;
+    }
+
+    public function updateGoal(string $runId, ?string $goal): bool
+    {
+        if ('' === $runId || !ctype_digit($runId)) {
+            return false;
+        }
+
+        return 1 === $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE hatfield_session SET goal = ? WHERE id = ? AND parent_id IS NULL',
+            [$goal, $runId],
+        );
+    }
+
+    public function clearGoalIfMatches(string $runId, string $expectedObjective): bool
+    {
+        if ('' === $runId || !ctype_digit($runId)) {
+            return false;
+        }
+
+        return 1 === $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE hatfield_session SET goal = NULL WHERE id = ? AND parent_id IS NULL AND goal = ?',
+            [$runId, $expectedObjective],
+        );
+    }
+
     /**
      * Return whether a session row currently exists in the database.
      *

@@ -4,11 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
+use Ineersa\CodingAgent\Repository\RunOperationalProjectionRepository;
+use Ineersa\CodingAgent\Repository\RunRelationshipReaderInterface;
+use Ineersa\CodingAgent\Session\Goal\SessionGoalService;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tests\Tool\Support\NativeToolSchemaProbe;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
 use Ineersa\CodingAgent\Tool\AskHumanTool;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
@@ -24,7 +35,7 @@ use Symfony\Component\Validator\ValidatorBuilder;
  * @covers \Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory
  * @covers \Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO
  */
-final class AskHumanToolTest extends TestCase
+final class AskHumanToolTest extends IsolatedKernelTestCase
 {
     private AskHumanTool $tool;
 
@@ -34,6 +45,7 @@ final class AskHumanToolTest extends TestCase
 
     protected function setUp(): void
     {
+        parent::setUp();
         $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
         $this->serializer = new Serializer([
             new ObjectNormalizer(
@@ -44,7 +56,77 @@ final class AskHumanToolTest extends TestCase
         ]);
         $this->validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
 
-        $this->tool = new AskHumanTool(new AskHumanPayloadFactory());
+        $this->tool = new AskHumanTool(new AskHumanPayloadFactory(), self::getContainer()->get(HatfieldSessionRepository::class), self::getContainer()->get(StackToolExecutionContextAccessor::class), self::getContainer()->get(RunRelationshipReaderInterface::class));
+    }
+
+    public function testActiveGoalRefusesQuestionWithoutChangingCatalogAndClearRestoresIt(): void
+    {
+        $id = self::getContainer()->get(HatfieldSessionStore::class)->createSession('', 'Complete the task');
+        self::getContainer()->get(RunOperationalProjectionRepository::class)->replace(new RunState($id, RunStatus::Running));
+        $schema = NativeToolSchemaProbe::for($this->tool);
+        $context = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $call = new ToolContext($id, 1, 'question', 'ask_human', new NullCancellationToken(), 30);
+        try {
+            $context->with($call, fn () => $this->invoke(['question' => 'What next?']));
+            $this->fail('An active goal must refuse ask_human before creating an interrupt.');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('ask_human is unavailable while a session goal is active', $exception->getMessage());
+            $this->assertFalse($exception->retryable());
+        }
+        self::getContainer()->get(SessionGoalService::class)->set($id, null);
+        $this->assertSame('interrupt', $context->with($call, fn () => $this->invoke(['question' => 'What next?']))['kind']);
+        $this->assertSame($schema, NativeToolSchemaProbe::for($this->tool));
+    }
+
+    #[DataProvider('goalChildKinds')]
+    public function testChildrenUseOwningMainGoalAndOrdinaryQuestionsRemainAvailable(string $kind): void
+    {
+        $store = self::getContainer()->get(HatfieldSessionStore::class);
+        $root = $store->createSession();
+        $projection = self::getContainer()->get(RunOperationalProjectionRepository::class);
+        $projection->replace(new RunState($root, RunStatus::Running));
+        $parent = $root;
+        if ('descendant' === $kind) {
+            $parent = 'intermediate-child';
+            $projection->replace(new RunState($parent, RunStatus::Running, parentRunId: $root));
+        }
+        $child = 'persisted-fork' === $kind ? $store->createSession() : $kind.'-child';
+        if ('persisted-fork' === $kind) {
+            $store->updateMetadata($child, ['parent_id' => $root, 'root_id' => $root]);
+        }
+        $projection->replace(new RunState($child, RunStatus::Running, parentRunId: $parent));
+        $this->assertNull(self::getContainer()->get(HatfieldSessionRepository::class)->findGoal($child));
+        $context = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $call = new ToolContext($child, 1, 'child-question', 'ask_human', new NullCancellationToken(), 30);
+        $this->assertSame('interrupt', $context->with($call, fn () => $this->invoke(['question' => 'What next?']))['kind']);
+        $goals = self::getContainer()->get(SessionGoalService::class);
+        $goals->set($root, 'Complete the parent task');
+        try {
+            $context->with($call, fn () => $this->invoke(['question' => 'What next?']));
+            $this->fail('A child must not bypass the owning main session goal restriction.');
+        } catch (ToolCallException $exception) {
+            $this->assertStringContainsString('ask_human is unavailable while a session goal is active', $exception->getMessage());
+            $this->assertFalse($exception->retryable());
+        }
+        $goals->set($root, null);
+        $this->assertSame('interrupt', $context->with($call, fn () => $this->invoke(['question' => 'What next?']))['kind']);
+    }
+
+    public static function goalChildKinds(): iterable
+    {
+        yield 'subagent' => ['subagent'];
+        yield 'native fork' => ['fork'];
+        yield 'persisted fork' => ['persisted-fork'];
+        yield 'descendant' => ['descendant'];
+    }
+
+    public function testUnknownRunRelationshipCannotBypassRestriction(): void
+    {
+        $context = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $call = new ToolContext('unknown-child', 1, 'unknown-question', 'ask_human', new NullCancellationToken(), 30);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Operational relationship for run "unknown-child" is missing');
+        $context->with($call, fn () => $this->invoke(['question' => 'What next?']));
     }
 
     /* ── definition() tests ── */
@@ -143,7 +225,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testRejectsMissingQuestion(): void
     {
-        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('question');
 
         $this->invoke([]);
@@ -256,7 +338,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testRejectsEmptyQuestion(): void
     {
-        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('question');
 
         $this->invoke(['question' => '']);
@@ -265,7 +347,7 @@ final class AskHumanToolTest extends TestCase
     #[DataProvider('invalidKindProvider')]
     public function testRejectsInvalidKind(string $kind): void
     {
-        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Unsupported kind');
 
         $this->invoke([
@@ -296,7 +378,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testRejectsNestedObjectChoices(): void
     {
-        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('non-empty string');
 
         $this->invoke([
@@ -309,7 +391,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testRejectsEmptyChoicesList(): void
     {
-        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('At least one');
 
         $this->invoke([
@@ -320,7 +402,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testRejectsConfirmWithChoices(): void
     {
-        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('mutually exclusive');
 
         $this->invoke([
@@ -332,7 +414,7 @@ final class AskHumanToolTest extends TestCase
 
     public function testRejectsEmptyStringChoice(): void
     {
-        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('non-empty string');
 
         $this->invoke([
@@ -352,7 +434,7 @@ final class AskHumanToolTest extends TestCase
             /** @var \Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO $dto */
             $dto = $this->serializer->denormalize($arguments, \Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO::class);
         } catch (\Throwable $e) {
-            throw new \Ineersa\AgentCore\Contract\Tool\ToolCallException('Invalid ask_human arguments: '.$e->getMessage(), retryable: false);
+            throw new ToolCallException('Invalid ask_human arguments: '.$e->getMessage(), retryable: false);
         }
 
         $violations = $this->validator->validate($dto);
@@ -363,7 +445,7 @@ final class AskHumanToolTest extends TestCase
                 $messages[] = '' !== $path ? $path.': '.$violation->getMessage() : $violation->getMessage();
             }
 
-            throw new \Ineersa\AgentCore\Contract\Tool\ToolCallException(implode('; ', $messages), retryable: false);
+            throw new ToolCallException(implode('; ', $messages), retryable: false);
         }
 
         return ($this->tool)($dto);

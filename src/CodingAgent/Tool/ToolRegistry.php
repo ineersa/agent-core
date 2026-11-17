@@ -76,6 +76,7 @@ final class ToolRegistry implements ToolRegistryInterface
                 promptGuidelines: $definition->promptGuidelines,
                 executionMode: $definition->executionMode,
                 timeoutSeconds: $definition->timeoutSeconds,
+                mainOnly: $definition->mainOnly,
             );
         }
     }

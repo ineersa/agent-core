@@ -22,6 +22,7 @@ bypass approvals or sandbox it.
 | `ask_human` | Ask for text, confirmation or a choice; cancellation is not approval. |
 | `code_mode` | Opt-in PHP scripts calling tools through `tool(name, arguments)`. |
 | `hatfield_docs` | `list` available product guides, then `read` by logical ID. |
+| `get_goal` / `set_goal` / `clear_goal` | Main-only tools to read, replace, or complete/remove the session objective. |
 | `subagent` | Launch one discovered named role. |
 | `fork` | Launch a child with inherited context; does not create a Git worktree. |
 | `agent_resume` | Continue an existing parent-owned child/fork. |

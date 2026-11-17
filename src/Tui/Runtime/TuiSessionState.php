@@ -49,6 +49,9 @@ final class TuiSessionState
     /** Accepted resume startup input, consumed once after validated session readiness. */
     public ?string $pendingInitialPrompt = null;
 
+    /** A validated /goal objective awaiting ordinary lazy-draft promotion. */
+    public ?string $pendingGoal = null;
+
     /**
      * Authoritative TUI activity state for the current run.
      *
