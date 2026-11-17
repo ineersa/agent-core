@@ -13,6 +13,7 @@ use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Command\OmViewCommandHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeCompactionHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Librarian\LibrarianProjectPolicy;
+use Ineersa\HatfieldExt\ObservationalMemory\Librarian\OmSessionDeletedHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryTerminalHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
@@ -51,13 +52,16 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
 
     public function register(ExtensionApiInterface $api): void
     {
-        $projectAllowed = (new LibrarianProjectPolicy($api->exec(), $this->logger))->allows($api->getCwd());
+        $rawSettings = $api->getSettings(OmSettings::SETTINGS_KEY);
+        $settings = OmSettings::fromArray($rawSettings);
+        $exec = $api->exec();
+        // Deletion targets carry their own project identity, independent of the active checkout.
+        $api->registerSessionDeletedHook(new OmSessionDeletedHook($settings->librarian, $exec, $this->logger));
+        $projectAllowed = (new LibrarianProjectPolicy($exec, $this->logger))->allows($api->getCwd());
         if (!$projectAllowed) {
             return;
         }
         // Selection enables registration; each runtime entry point enforces main-only OM.
-        $rawSettings = $api->getSettings(OmSettings::SETTINGS_KEY);
-        $settings = OmSettings::fromArray($rawSettings);
         $obsoleteKeys = array_values(array_intersect(ObservationalMemoryConfiguration::OBSOLETE_KEYS, array_keys($rawSettings)));
         if ([] !== $obsoleteKeys) {
             $this->logger->warning('om.settings.obsolete_keys_ignored: Librarian owns memory storage and processing; these keys are ignored and can be removed.', [

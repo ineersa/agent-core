@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
 use Ineersa\CodingAgent\Session\DTO\SessionModelMetadataDTO;
 use Ineersa\CodingAgent\Session\Event\ControllerSessionShutdownEvent;
+use Ineersa\CodingAgent\Session\Event\SessionDeletedEvent;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Lock\LockFactory;
@@ -383,18 +384,29 @@ final class HatfieldSessionStore
         $shutdown = new ControllerSessionShutdownEvent($sessionId, permanentDeletion: true);
 
         $connection = $this->entityManager->getConnection();
-        $connection->transactional(function () use ($shutdown, $entity): void {
+        $deleted = $connection->transactional(function () use ($shutdown, $entity, $sessionId): SessionDeletedEvent {
+            // Another process may have updated the identity-map copy's row.
+            // Capture committed identity inside deletion's transaction while it
+            // still exists; post-delete consumers cannot reread this metadata.
+            $this->entityManager->refresh($entity);
+            $deleted = new SessionDeletedEvent($sessionId, $entity->cwd, $entity->parentId);
+
             // Permanent-deletion listeners remove pending SQL work before other
             // shutdown listeners dispose child ownership evidence. Ordinary shutdown retains it.
             $this->dispatcher->dispatch($shutdown);
             $this->entityManager->remove($entity);
             $this->entityManager->flush();
+
+            return $deleted;
         });
 
         // A reentrant deletion invalidates the held publication scope only
         // after SQL commits. Failed deletion must leave its authority intact.
         $this->storageLocks[$sessionId] = false;
         (new Filesystem())->remove(array_unique([$sessionDir, ...$shutdown->payloadDirectories]));
+        // Unlike shutdown listeners, extension notifications run only after both
+        // local persistence and filesystem deletion have succeeded.
+        $this->dispatcher->dispatch($deleted);
     }
 
     /**

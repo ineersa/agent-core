@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionDeletedHookInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -197,6 +198,10 @@ final class ChildExtensionSelectionServiceTest extends TestCase
                 }
 
                 public function registerAfterTurnCommitHook(\Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface $hook): void
+                {
+                }
+
+                public function registerSessionDeletedHook(AfterSessionDeletedHookInterface $hook): void
                 {
                 }
 

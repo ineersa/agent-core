@@ -15,6 +15,7 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionDeletedHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterSessionStartHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
@@ -182,6 +183,10 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
     {
         // Registration is accepted for ExtensionApi contract coverage; this
         // in-memory bridge does not expose after-turn hooks for inspection.
+    }
+
+    public function registerSessionDeletedHook(AfterSessionDeletedHookInterface $hook): void
+    {
     }
 
     public function registerSessionStartHook(AfterSessionStartHookInterface $hook): void

@@ -79,9 +79,10 @@ final class ObservationalMemoryExtensionRegistrationTest extends OmTestCase
         $this->assertTrue($tools['memory_search']->mainOnly);
     }
 
-    public function testWorktreeRegistersNothing(): void
+    public function testWorktreeRegistersOnlyTargetAwareDeletionHook(): void
     {
         $api = $this->api(worktree: true);
+        $api->expects($this->once())->method('registerSessionDeletedHook');
         foreach (['registerCommand', 'registerTool', 'registerExtensionAgentJobHandler', 'registerAfterTurnCommitHook', 'registerBeforeCompactionHook', 'registerPromptContributor'] as $method) {
             $api->expects($this->never())->method($method);
         }

@@ -40,6 +40,11 @@ final readonly class LibrarianOmClient
         ]);
     }
 
+    public function deleteSession(string $runId): void
+    {
+        $this->request('delete', $runId);
+    }
+
     public function projection(string $runId): ?string
     {
         return $this->request('projection', $runId)?->text;
@@ -53,7 +58,7 @@ final readonly class LibrarianOmClient
         try {
             $parts = parse_url($this->settings->url);
             $origin = $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
-            $path = 'observe' === $operation ? '/observe' : '/sessions/hatfield/'.rawurlencode($runId).'/projection';
+            $path = 'observe' === $operation ? '/observe' : '/sessions/hatfield/'.rawurlencode($runId).('delete' === $operation ? '' : '/projection');
             $headers = ['X-Librarian-Project' => $this->projectRoot, 'Accept' => 'application/json'];
             if (null !== $this->settings->token) {
                 $headers['Authorization'] = 'Bearer '.$this->settings->token;
@@ -73,7 +78,7 @@ final readonly class LibrarianOmClient
                 $options['json'] = $body;
             }
             $http = $this->httpClient ?? new CurlHttpClient();
-            $response = $http->request(null === $body ? 'GET' : 'POST', $origin.'/api/om/v1'.$path, $options);
+            $response = $http->request('delete' === $operation ? 'DELETE' : (null === $body ? 'GET' : 'POST'), $origin.'/api/om/v1'.$path, $options);
             $status = $response->getStatusCode();
             if (('observe' === $operation ? 202 : 200) !== $status) {
                 throw new \UnexpectedValueException('Unexpected Librarian response status.');
