@@ -50,6 +50,6 @@ final class LibrarianSettingsProviderTest extends TestCase
         yield 'zero timeout' => [['librarian' => ['url' => 'http://localhost/_mcp', 'timeout_seconds' => 0]]];
         yield 'large timeout' => [['librarian' => ['url' => 'http://localhost/_mcp', 'timeout_seconds' => 301]]];
         yield 'token injection' => [['librarian' => ['url' => 'http://localhost/_mcp', 'token' => "bad\r\ntoken"]]];
-        yield 'removed settings' => [['model' => 'test', 'librarian' => ['url' => 'http://localhost/_mcp']]];
+        yield 'unknown settings' => [['custom-internal-key' => 'test', 'librarian' => ['url' => 'http://localhost/_mcp']]];
     }
 }

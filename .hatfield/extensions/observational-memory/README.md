@@ -27,6 +27,18 @@ environment references and malformed settings fail closed. Tokens are shared by
 MCP and REST, never logged. REST uses the MCP URL's origin, not its path prefix.
 Both clients send `X-Librarian-Project` with the canonical host project CWD.
 
+### Legacy settings cleanup
+
+Exactly these obsolete top-level `observational_memory` keys are accepted and
+discarded: `storage`, `model`, `observer`, `reflector`, `pools`. Their values are
+ignored, not validated or migrated, even if null, scalar or malformed. Removing
+them is optional when a valid `librarian.url` is configured; that URL is still
+required, and unrelated unknown keys and invalid Librarian settings still fail.
+Registration emits one aggregate warning naming only the obsolete keys present
+and explaining Librarian ownership. Repeated settings reads and jobs do not emit
+migration warnings. There are no automatic configuration writes and no local
+storage or processing fallback.
+
 Linked Git worktrees are excluded completely: no registration, remote calls,
 commands, memory tools or prompt additions, and no primary-checkout redirection.
 Uncertain Git identity fails closed. Children and forks cannot observe, retrieve
@@ -70,5 +82,6 @@ is merged and deployed; fresh projects are discoverable without `om.sqlite`;
 legacy import and single-writer ownership are coordinated safely; and backup
 restore drills pass. Preparing this unmerged checkout does not switch live memory
 writers or import data. Preserve existing SQLite files for the coordinated import;
-this extension does not remove them. Local model, observer, reflector, pool,
-storage, embedding and reranker settings are no longer supported.
+this extension does not remove them. Local processing settings are no longer
+used; only the five top-level legacy keys listed above are accepted and discarded.
+Other obsolete or unknown settings are rejected.

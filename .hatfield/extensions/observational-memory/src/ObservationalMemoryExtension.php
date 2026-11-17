@@ -56,7 +56,17 @@ final class ObservationalMemoryExtension implements ConfigurableExtensionInterfa
             return;
         }
         // Selection enables registration; each runtime entry point enforces main-only OM.
-        $settings = OmSettings::fromApi($api);
+        $rawSettings = $api->getSettings(OmSettings::SETTINGS_KEY);
+        $settings = OmSettings::fromArray($rawSettings);
+        $obsoleteKeys = array_values(array_intersect(ObservationalMemoryConfiguration::OBSOLETE_KEYS, array_keys($rawSettings)));
+        if ([] !== $obsoleteKeys) {
+            $this->logger->warning('om.settings.obsolete_keys_ignored: Librarian owns memory storage and processing; these keys are ignored and can be removed.', [
+                'component' => 'observational_memory',
+                'event_type' => 'om.settings.obsolete_keys_ignored',
+                'run_id' => null, 'session_id' => null,
+                'obsolete_keys' => $obsoleteKeys,
+            ]);
+        }
         $query = new OmQueryService($api, $settings, $this->logger);
 
         $api->registerExtensionAgentJobHandler(

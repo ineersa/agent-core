@@ -217,6 +217,17 @@ There is no local retrieval fallback, local OM database writer, `/om-status`, or
 activity poller. Linked Git worktrees and children/forks are excluded from OM;
 worktrees are never redirected to the primary checkout.
 
+**Upgrading existing settings:** the five obsolete top-level keys under
+`extensions.settings.observational_memory` — `storage`, `model`, `observer`,
+`reflector`, and `pools` — are accepted and discarded without validating or
+migrating their values. They do not prevent registration when `librarian` is
+valid. You may remove those blocks as optional cleanup; no settings files are
+rewritten automatically. Registration emits one aggregate warning listing only
+the ignored key names and explaining that Librarian owns storage and processing.
+Repeated settings reads and jobs do not emit migration warnings. Other unknown
+keys remain errors, and a valid `librarian.url` is still required. Ignoring old
+settings does not restore local storage or processing.
+
 Install/configure the package with `hatfield extensions:setup --user` for user-wide
 settings, or under project `extensions`. Keep OM in `extensions.enabled` when
 replacing that list. See the package README for configuration and cutover gates: do
